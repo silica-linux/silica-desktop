@@ -260,10 +260,18 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let mut engine_args = options.engine_args.clone();
     let gl = match options.renderer {
-        Renderer::Gl => {
+        Renderer::Gl | Renderer::Impeller => {
             let gl = GlSurface::new(&conn, surface.wl_surface(), options.size)?;
             info!("renderer OpenGL ES: {}", gl.renderer());
+            if options.renderer == Renderer::Impeller {
+                if crate::is_software_gl(gl.renderer()) {
+                    warn!("Impeller su un driver GL software va in crash: uso Skia");
+                } else {
+                    engine_args.push("--enable-impeller".to_owned());
+                }
+            }
             let (redraw, redraw_channel) = channel::channel::<()>();
             event_loop
                 .handle()
@@ -369,7 +377,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             assets: &options.bundle,
             icu_data: &options.icu_data,
             aot: options.aot.as_deref(),
-            engine_args: &options.engine_args,
+            engine_args: &engine_args,
         },
         callbacks,
     )?;

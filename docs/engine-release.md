@@ -36,7 +36,7 @@ cd ~/build/flutter-engine && PATH=~/build/depot_tools:$PATH DEPOT_TOOLS_UPDATE=0
 SILICA_ENGINE_SRC=~/build/flutter-engine cargo xtask engine --release
 cargo xtask bundle dock --release        # apps/dock/build/release/{flutter_assets,libapp.so}
 silica-embedder --engine target/flutter-engine/<ENGINE_VERSION>-release \
-  --renderer gl apps/dock/build/release/flutter_assets
+  --renderer impeller apps/dock/build/release/flutter_assets
 ```
 
 L'embedder trova `libapp.so` accanto a `flutter_assets` (o con `--aot`). Con l'engine

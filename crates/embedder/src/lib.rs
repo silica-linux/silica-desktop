@@ -59,7 +59,19 @@ pub struct LayerOptions {
 pub enum Renderer {
     #[default]
     Software,
+    /// OpenGL ES con Skia.
     Gl,
+    /// OpenGL ES con Impeller, il renderer della shell (gate 1). Su un driver GL software
+    /// (llvmpipe) Impeller va in crash nell'engine: lì si ripiega su Skia.
+    Impeller,
+}
+
+/// Driver GL che rasterizzano sulla CPU, dal `GL_RENDERER` di Mesa.
+pub fn is_software_gl(renderer: &str) -> bool {
+    let renderer = renderer.to_ascii_lowercase();
+    ["llvmpipe", "softpipe", "swrast", "lavapipe"]
+        .iter()
+        .any(|name| renderer.contains(name))
 }
 
 pub struct Options {
@@ -90,4 +102,20 @@ pub fn release_engine_dir() -> PathBuf {
     let mut dir = default_engine_dir().into_os_string();
     dir.push("-release");
     PathBuf::from(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_software_gl;
+
+    #[test]
+    fn software_gl_drivers_are_recognised() {
+        assert!(is_software_gl("llvmpipe (LLVM 21.1.8, 256 bits)"));
+        assert!(is_software_gl("softpipe"));
+        assert!(!is_software_gl("Mesa Intel(R) Iris(R) Xe Graphics (RPL-P)"));
+        assert!(!is_software_gl(
+            "D3D12 (NVIDIA GeForce RTX 4070 Laptop GPU)"
+        ));
+        assert!(!is_software_gl(""));
+    }
 }

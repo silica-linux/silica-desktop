@@ -339,6 +339,28 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
 }
 
 #[test]
+fn impeller_renderer_draws_and_reacts_to_clicks() {
+    // Con una GPU è Impeller; su llvmpipe (CI) l'embedder ripiega su Skia, perché lì
+    // Impeller va in crash nell'engine (misure del gate 1, docs/gate1-dock.md).
+    let mut args = size_args((200, 150));
+    args.extend(["--renderer".to_owned(), "impeller".to_owned()]);
+    let session = Session::start_with("impeller", (640, 480), 2, &args);
+    let window = session.window();
+    assert_eq!((window.width, window.height), (200, 150));
+    let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
+    session.expect_pixel(x + 31, y + 31, HI_DPI);
+    session.expect_pixel(x + 33, y + 33, IDLE);
+    session
+        .client()
+        .call(
+            INPUT_CLICK,
+            json!({ "x": window.x + 100, "y": window.y + 75 }),
+        )
+        .unwrap();
+    session.expect_pixel(x + 200, y + 280, TAPPED);
+}
+
+#[test]
 fn gl_layer_at_scale_two_gets_its_size_and_clicks() {
     // Il caso di M1.5: layer OpenGL a scala 2. Il primo buffer dopo un resize può uscire
     // alla dimensione vecchia (vedi GlSurface::present): dipende dai tempi, si è visto in

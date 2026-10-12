@@ -124,7 +124,7 @@ fn variants(root: &Path) -> Result<Vec<Variant>> {
         Variant {
             name: "flutter-gl-impeller",
             description: "Flutter release AOT, embedder custom, Impeller su OpenGL ES",
-            command: format!("{} --engine-arg --enable-impeller", embedder("gl")),
+            command: embedder("impeller"),
         },
         Variant {
             name: "iced-gl",

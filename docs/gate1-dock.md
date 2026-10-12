@@ -30,6 +30,11 @@ Condizioni:
   frame persi in WSL (2–6%, peggio di Skia) vanno capiti e risolti, non aggirati. La
   misura con la GPU nativa si fa con flutter-gl-impeller, e va valutato Impeller su
   Vulkan (l'API embedder ha un renderer Vulkan) oltre che su OpenGL ES.
+
+Esito delle condizioni (2026-10-13, sezione "Misure con la GPU su hardware nativo"):
+dmabuf in Ossido fatto; Impeller con la GPU perde lo 0,17% dei frame; il crash su
+llvmpipe è aggirato con il ripiego su Skia. Resta da fissare il limite di memoria
+(Dock con Impeller: 72 MiB di PSS).
 - Il limite di memoria della shell resta da fissare (oggi circa 110 MiB di PSS per il
   Dock con la GPU in WSL, da rimisurare con la GPU nativa).
 
@@ -48,8 +53,7 @@ Due cautele, prima di decidere:
   da una copia GPU → CPU (Ossido non offre ancora dmabuf). È probabilmente correggibile, e
   va corretto comunque per le app Flutter, in qualunque opzione.
 - **Tutto è misurato in WSL**, con OpenGL tradotto in D3D12. I numeri valgono per il
-  confronto, non come valori assoluti. Su Linux nativo (sezione più sotto) la GPU non è
-  ancora raggiungibile dai client di Ossido.
+  confronto, non come valori assoluti. Le misure su Linux nativo con la GPU sono più sotto.
 
 Se conta di più la velocità di sviluppo della UI, l'opzione A resta praticabile: il
 divario di fluidità è nel nostro codice, quello di memoria (circa 45 MiB, una volta sola
@@ -177,6 +181,51 @@ software è di 14 MiB (25,7 contro 11,7) e con i driver GPU dipende da quale dri
 carica. Una misura con la GPU vera richiede `linux-dmabuf` in Ossido, che serve comunque
 (vedi "Cosa resta aperto").
 
+## Misure con la GPU su hardware nativo (2026-10-13)
+
+Ossido ora offre `zwp_linux_dmabuf_v1` versione 4 con feedback sul render node della sua
+GPU (`crates/ossido/src/dmabuf.rs`, solo backend winit). I client annidati rendono sulla
+GPU di Ossido, la Iris Xe (`renderer OpenGL ES: Mesa Intel(R) Iris(R) Xe Graphics`), e
+passano i buffer senza copie. Stesso PC e stesso banco della sezione precedente, con
+`--scale 1`. L'embedder ha `--renderer impeller` (OpenGL ES con Impeller), che il banco
+usa per flutter-gl-impeller.
+
+Mediana di 3 ripetizioni, tempi in ms, memoria in MiB.
+
+| Variante | Rende con | Avvio | Frame | p95 | p99 | Max | Lenti | PSS | RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| flutter-gl-impeller | Iris Xe | 72 | 598 | 18,30 | 19,23 | 27,5 | 1 | 72,1 | 144,9 |
+| flutter-gl | Iris Xe | 79 | 598 | 18,23 | 18,98 | 28,3 | 1 | 60,7 | 132,6 |
+| iced-gl | Iris Xe | 79 | 600 | 18,26 | 19,01 | 28,6 | 1 | 50,0 | 122,8 |
+| iced-vulkan | Vulkan (GPU scelta da wgpu) | 273 | 598 | 18,05 | 19,75 | 30,5 | 2 | 99,1 | 166,1 |
+| flutter-software | CPU | 45 | 597 | 19,10 | 20,70 | 31,5 | 2 | 25,6 | 29,3 |
+| iced-software | tiny-skia | 27 | 598 | 19,21 | 21,19 | 25,9 | 1 | 11,7 | 16,0 |
+
+Frame lenti nelle singole ripetizioni: flutter-gl-impeller 0, 1, 1; flutter-gl 1, 1, 1;
+iced-gl 0, 1, 2; iced-vulkan 2, 1, 2; flutter-software 2, 2, 3; iced-software 1, 1, 0.
+Il frame lento isolato compare in tutte le varianti, anche in software: è del percorso
+fra Ossido e GNOME, non dei toolkit.
+
+Condizioni del gate 1:
+
+| Condizione | Esito |
+| --- | --- |
+| Frame lenti < 1% con la GPU | sì: Impeller 0,17% (1 su 598), p99 19,2 ms, max 31,8 ms |
+| Nessun intervallo oltre 50 ms | sì |
+| Impeller come renderer | sì, su OpenGL ES; nessun crash con la GPU |
+| Memoria | Dock con Impeller: 72 MiB di PSS (Skia 61, iced 50). Il limite lo fissi tu |
+
+Con la GPU vera il ritardo di Flutter visto in WSL scompare: le tre varianti GPU hanno lo
+stesso ritmo. Impeller costa circa 11 MiB più di Skia. Lo screenshot
+`flutter-gl-impeller-hover.png` ha la stessa geometria degli altri e la superficie è
+trasparente.
+
+Impeller su un driver GL software (llvmpipe) va ancora in crash dentro l'engine: con
+`--renderer impeller` l'embedder ora riconosce il driver e ripiega su Skia, con un
+avviso nel log. Il test `impeller_renderer_draws_and_reacts_to_clicks` copre il caso
+(in headless e in CI il driver è llvmpipe). Impeller su Vulkan non è misurato: l'embedder
+non ha ancora un renderer Vulkan, e su OpenGL ES Impeller soddisfa già le condizioni.
+
 ## Costo di sviluppo
 
 | | Flutter | iced |
@@ -200,10 +249,9 @@ I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una 
 
 ## Cosa resta aperto
 
-- Il percorso GPU dell'embedder: dmabuf in Ossido e `wp_presentation` per il ritmo dei
-  frame, poi una nuova misura. Serve in ogni opzione, per le app.
-- La misura su hardware Linux reale con la GPU: fatta senza GPU il 2026-10-12 (sezione
-  sopra); con la GPU dopo dmabuf in Ossido.
+- `wp_presentation` per il ritmo dei frame (dmabuf in Ossido è fatto).
+- Impeller su Vulkan: renderer Vulkan nell'embedder.
+- La misura in una sessione reale (DRM/KMS, M6), non annidata in GNOME.
 - Il limite di memoria per la shell, che fissi tu.
 
 ## Ripetere le misure
