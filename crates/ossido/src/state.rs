@@ -63,6 +63,7 @@ pub struct State {
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
     pub xdg_decoration_state: XdgDecorationState,
+    pub glass_manager_state: crate::glass::GlassManagerState,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -104,6 +105,7 @@ impl State {
         let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
         let viewporter_state = ViewporterState::new::<State>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
+        let glass_manager_state = crate::glass::GlassManagerState::new(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -158,6 +160,7 @@ impl State {
             dmabuf_state: DmabufState::new(),
             dmabuf_global: None,
             xdg_decoration_state,
+            glass_manager_state,
             seat,
             mapped: 0,
             next_window_id: 0,

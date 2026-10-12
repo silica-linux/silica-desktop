@@ -5,6 +5,8 @@ use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
+use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
+use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
@@ -32,6 +34,7 @@ struct App {
     shm: Option<WlShm>,
     wm_base: Option<XdgWmBase>,
     decorations: Option<ZxdgDecorationManagerV1>,
+    glass: Option<SilicaGlassManagerV1>,
     configured: bool,
     close_requested: bool,
     /// Modo delle decorazioni scelto da Ossido.
@@ -55,6 +58,7 @@ impl Dispatch<WlRegistry, ()> for App {
                 "wl_compositor" => state.compositor = Some(registry.bind(name, 4, qh, ())),
                 "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
                 "xdg_wm_base" => state.wm_base = Some(registry.bind(name, 1, qh, ())),
+                "silica_glass_manager_v1" => state.glass = Some(registry.bind(name, 1, qh, ())),
                 "zxdg_decoration_manager_v1" => {
                     state.decorations = Some(registry.bind(name, 1, qh, ()));
                 }
@@ -112,6 +116,8 @@ delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore WlBuffer);
 delegate_noop!(App: WlShmPool);
 delegate_noop!(App: ignore ZxdgDecorationManagerV1);
+delegate_noop!(App: ignore SilicaGlassManagerV1);
+delegate_noop!(App: ignore SilicaGlassV1);
 
 impl Dispatch<ZxdgToplevelDecorationV1, ()> for App {
     fn event(
@@ -153,8 +159,13 @@ pub struct TestWindow {
     surface: WlSurface,
     _toplevel: XdgToplevel,
     _decoration: Option<ZxdgToplevelDecorationV1>,
+    glass: Option<SilicaGlassV1>,
     buffer: WlBuffer,
 }
+
+/// Una regione di vetro per `TestWindow::set_glass`: x, y, larghezza, altezza, raggio,
+/// materiale.
+pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
 
 impl TestWindow {
     /// Apre una finestra `WINDOW` piena di `RED_BGRA` e aspetta che Ossido la riceva.
@@ -222,6 +233,7 @@ impl TestWindow {
             surface,
             _toplevel: toplevel,
             _decoration: decoration,
+            glass: None,
             buffer,
         }
     }
@@ -238,6 +250,30 @@ impl TestWindow {
             self.queue.flush().unwrap();
         }
         self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Dichiara le regioni di vetro e fa il commit. Errore se Ossido ha rifiutato le
+    /// richieste (errore di protocollo: il client viene disconnesso).
+    #[allow(dead_code)]
+    pub fn set_glass(&mut self, regions: &[Region]) -> Result<(), String> {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .glass
+            .clone()
+            .expect("silica_glass_manager_v1 assente");
+        let glass = self
+            .glass
+            .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
+        glass.clear();
+        for &(x, y, w, h, radius, material) in regions {
+            glass.add_region(x, y, w, h, radius, material);
+        }
+        self.surface.commit();
+        self.queue
+            .roundtrip(&mut self.app)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Il modo delle decorazioni che Ossido ha scelto, dopo aver letto gli eventi.

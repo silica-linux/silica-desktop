@@ -7,6 +7,7 @@ mod control;
 mod decorations;
 mod dmabuf;
 mod egl;
+mod glass;
 mod handlers;
 mod input;
 mod keys;

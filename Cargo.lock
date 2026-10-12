@@ -2541,6 +2541,7 @@ dependencies = [
  "serde",
  "serde_json",
  "silica-control",
+ "silica-protocols",
  "smithay",
  "tempfile",
  "tracing",
@@ -3184,6 +3185,13 @@ version = "0.0.0"
 [[package]]
 name = "silica-protocols"
 version = "0.0.0"
+dependencies = [
+ "bitflags 2.13.2",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-scanner",
+ "wayland-server",
+]
 
 [[package]]
 name = "simd-adler32"

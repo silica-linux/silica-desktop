@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="silica_glass_v1">
+  <copyright>
+    Copyright © 2026 Silica contributors
+
+    Licensed under MIT OR Apache-2.0.
+  </copyright>
+
+  <description summary="regioni di vetro calcolate dal compositor">
+    Un client dichiara regioni di una sua superficie da rendere come vetro: il
+    compositor campiona quello che sta dietro la superficie e lo mostra sfocato,
+    con il colore e la rifrazione del materiale scelto. Il client disegna sopra il
+    proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
+  </description>
+
+  <interface name="silica_glass_manager_v1" version="1">
+    <description summary="crea l'oggetto vetro di una superficie"/>
+
+    <request name="destroy" type="destructor">
+      <description summary="distrugge il manager; gli oggetti vetro restano validi"/>
+    </request>
+
+    <enum name="error">
+      <entry name="already_has_glass" value="0"
+             summary="la superficie ha già un oggetto silica_glass_v1"/>
+    </enum>
+
+    <request name="get_glass">
+      <description summary="oggetto vetro per una superficie">
+        Una superficie ha al più un oggetto vetro: un secondo get_glass sulla stessa
+        superficie è l'errore already_has_glass.
+      </description>
+      <arg name="id" type="new_id" interface="silica_glass_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="silica_glass_v1" version="1">
+    <description summary="regioni di vetro di una superficie">
+      Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
+      corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
+      superficie, in pixel logici.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="toglie il vetro dalla superficie al prossimo commit"/>
+    </request>
+
+    <enum name="material">
+      <description summary="materiali misurati">
+        Due famiglie di vetro: chiaro (sfocatura piccola, quasi trasparente) e spesso
+        (sfocatura ampia, quasi bianco in aspetto chiaro).
+      </description>
+      <entry name="clear" value="0" summary="vetro chiaro, come il Dock"/>
+      <entry name="thick" value="1" summary="vetro spesso, come menu e ricerca"/>
+    </enum>
+
+    <enum name="error">
+      <entry name="invalid_region" value="0"
+             summary="dimensione negativa o nulla, raggio negativo o materiale sconosciuto"/>
+      <entry name="too_many_regions" value="1" summary="oltre 64 regioni in attesa"/>
+    </enum>
+
+    <request name="clear">
+      <description summary="toglie tutte le regioni in attesa"/>
+    </request>
+
+    <request name="add_region">
+      <description summary="aggiunge una regione allo stato in attesa">
+        Un rettangolo con angoli a superellisse di raggio radius (0 = angoli retti).
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="radius" type="fixed"/>
+      <arg name="material" type="uint" enum="material"/>
+    </request>
+  </interface>
+</protocol>

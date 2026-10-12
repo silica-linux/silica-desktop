@@ -29,6 +29,7 @@ pub const INPUT_TYPE: &str = "input.type";
 pub const LAYER_LIST: &str = "layer.list";
 pub const PERF_FRAMES: &str = "perf.frames";
 pub const PERF_PROCESS: &str = "perf.process";
+pub const GLASS_LIST: &str = "glass.list";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -132,6 +133,13 @@ pub const CATALOG: &[CommandSpec] = &[
         id: LAYER_LIST,
         label: "Elenca i layer",
         description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: GLASS_LIST,
+        label: "Elenca il vetro",
+        description: "Superfici con regioni di vetro (silica-glass-v1): superficie, origine e regioni.",
         shortcut: None,
         params: no_params,
     },

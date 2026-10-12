@@ -7,5 +7,17 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+default = []
+server = ["dep:wayland-server"]
+client = ["dep:wayland-client"]
+
+[dependencies]
+bitflags = "2"
+wayland-backend = "0.3"
+wayland-scanner = "0.31"
+wayland-client = { version = "0.31", optional = true }
+wayland-server = { version = "0.31", optional = true }
+
 [lints]
 workspace = true

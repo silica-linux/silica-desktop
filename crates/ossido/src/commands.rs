@@ -6,7 +6,7 @@ use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
-    self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
+    self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams, GLASS_LIST,
     INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST,
     PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams, PointerButton, PointerMove,
     SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN,
@@ -84,6 +84,7 @@ impl State {
             }
             WINDOW_LIST => to_value(self.window_list()),
             LAYER_LIST => to_value(self.layer_list()),
+            GLASS_LIST => to_value(self.glass_list()),
             WINDOW_FOCUS => {
                 let target: WindowTarget = parse(params)?;
                 let window = match target.id.and_then(|id| self.minimized_window(id)) {
