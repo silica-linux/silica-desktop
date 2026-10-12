@@ -1,13 +1,15 @@
 //! Avvio dell'embedder:
 //!
 //! ```text
-//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl] BUNDLE
+//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl] [--aot LIBAPP] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
 //! ```
 //!
 //! `BUNDLE` è la cartella `flutter_assets` di `flutter build bundle`; `DIR` contiene
-//! `libflutter_engine.so` e `icudtl.dat` (`cargo xtask engine`).
+//! `libflutter_engine.so` e `icudtl.dat` (`cargo xtask engine`). Con un engine release
+//! serve il codice AOT: `--aot`, oppure `libapp.so` accanto a `BUNDLE`
+//! (`cargo xtask bundle <app> --release`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -52,6 +54,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut bundle = None;
     let mut layer: Option<LayerOptions> = None;
     let mut renderer = Renderer::default();
+    let mut aot = None;
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
         match arg.as_str() {
@@ -101,6 +104,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 };
             }
             "--namespace" => layer_options(&mut layer).namespace = value()?,
+            "--aot" => aot = Some(PathBuf::from(value()?)),
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -115,12 +119,18 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         }
     }
     let engine_dir = engine_dir.unwrap_or_else(silica_embedder::default_engine_dir);
+    let bundle: PathBuf = bundle.ok_or("manca la cartella del bundle (flutter_assets)")?;
+    let aot = aot.or_else(|| {
+        let sibling = bundle.parent()?.join("libapp.so");
+        sibling.exists().then_some(sibling)
+    });
     Ok(Options {
-        bundle: bundle.ok_or("manca la cartella del bundle (flutter_assets)")?,
+        bundle,
         library: engine_dir.join("libflutter_engine.so"),
         icu_data: engine_dir.join("icudtl.dat"),
         size,
         layer,
         renderer,
+        aot,
     })
 }

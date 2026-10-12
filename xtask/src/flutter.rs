@@ -1,9 +1,11 @@
 //! Flutter per l'embedder: engine, binding, bundle delle app.
 //!
 //! - `engine`: scarica `libflutter_engine.so` e `icudtl.dat` per `crates/embedder/ENGINE_VERSION`.
+//! - `engine --release`: compila l'engine release dai sorgenti (`docs/engine-release.md`):
+//!   Google pubblica l'engine per embedder custom solo in debug.
 //! - `bindings`: rigenera `crates/embedder/src/ffi/bindings.rs` con bindgen.
-//! - `bundle <app>`: `flutter build bundle` per un'app in `apps/`.
-//! - `apps`/`check`: usati da `cargo xtask ci` per `flutter analyze` e `flutter test`.
+//! - `bundle <app> [--release]`: il bundle di un'app in `apps/`; in release anche `libapp.so`.
+//! - `projects`/`check`: usati da `cargo xtask ci` per `flutter analyze` e `flutter test`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -23,6 +25,13 @@ pub fn engine_dir() -> Result<PathBuf> {
     Ok(root()?
         .join("target/flutter-engine")
         .join(engine_version()?))
+}
+
+/// L'engine release compilato da `engine --release`.
+pub fn release_engine_dir() -> Result<PathBuf> {
+    Ok(root()?
+        .join("target/flutter-engine")
+        .join(format!("{}-release", engine_version()?)))
 }
 
 /// La radice dell'SDK Flutter: `FLUTTER_ROOT`, oppure da `flutter` nel PATH.
@@ -113,6 +122,84 @@ pub fn engine() -> Result<()> {
     Ok(())
 }
 
+/// Compila `libflutter_engine.so` release dal checkout in `SILICA_ENGINE_SRC`, già
+/// preparato con gclient alla revisione di `ENGINE_VERSION` (`docs/engine-release.md`).
+pub fn engine_release() -> Result<()> {
+    let version = engine_version()?;
+    let source = std::env::var_os("SILICA_ENGINE_SRC")
+        .map(PathBuf::from)
+        .ok_or(
+            "SILICA_ENGINE_SRC non impostata: il checkout dell'engine si prepara come in \
+         docs/engine-release.md",
+        )?;
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&source)
+        .output()
+        .map_err(|e| format!("git non avviabile: {e}"))?;
+    let head = String::from_utf8_lossy(&head.stdout).trim().to_owned();
+    if head != version {
+        return Err(format!(
+            "{} è alla revisione {head}, il repo vuole {version}",
+            source.display()
+        ));
+    }
+    let src = source.join("engine/src");
+    let ninja = source.join("third_party/ninja/ninja");
+    if !ninja.exists() {
+        return Err(format!("{} assente: serve `gclient sync`", ninja.display()));
+    }
+
+    // Gli script della build chiamano vpython3 di depot_tools: basta python3.
+    let shims = root()?.join("target/xtask-shims");
+    std::fs::create_dir_all(&shims).map_err(|e| format!("{}: {e}", shims.display()))?;
+    let vpython = shims.join("vpython3");
+    if !vpython.exists() {
+        std::os::unix::fs::symlink("/usr/bin/python3", &vpython)
+            .map_err(|e| format!("{}: {e}", vpython.display()))?;
+    }
+    let path = format!(
+        "{}:{}",
+        shims.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let mut gn = Command::new("python3");
+    gn.arg("flutter/tools/gn")
+        .args([
+            "--runtime-mode",
+            "release",
+            "--no-rbe",
+            "--no-goma",
+            "--no-enable-unittests",
+        ])
+        .current_dir(&src)
+        .env("PATH", &path);
+    status(gn)?;
+    let mut build = Command::new(&ninja);
+    build
+        .args([
+            "-C",
+            "out/host_release",
+            "flutter/shell/platform/embedder:flutter_engine",
+        ])
+        .current_dir(&src)
+        .env("PATH", &path);
+    status(build)?;
+
+    let dir = release_engine_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    std::fs::copy(
+        src.join("out/host_release/libflutter_engine.so"),
+        dir.join("libflutter_engine.so"),
+    )
+    .map_err(|e| format!("libflutter_engine.so: {e}"))?;
+    std::fs::copy(engine_dir()?.join("icudtl.dat"), dir.join("icudtl.dat"))
+        .map_err(|e| format!("icudtl.dat (prima `cargo xtask engine`): {e}"))?;
+    eprintln!("xtask: engine release {version} in {}", dir.display());
+    Ok(())
+}
+
 pub fn bindings() -> Result<()> {
     let header = engine_dir()?.join("flutter_embedder.h");
     if !header.exists() {
@@ -166,7 +253,64 @@ pub fn bundle(app: &str) -> Result<()> {
     Ok(())
 }
 
-/// Le app Flutter in `apps/` (cartelle con `pubspec.yaml`).
+/// Bundle release in `build/release/`: asset e `libapp.so`, il Dart compilato AOT con
+/// il frontend e il gen_snapshot dell'SDK (gli stessi passi di `flutter build linux`).
+pub fn bundle_release(app: &str) -> Result<()> {
+    let dir = root()?.join("apps").join(app);
+    if !dir.join("pubspec.yaml").exists() {
+        return Err(format!("{} non è un'app Flutter", dir.display()));
+    }
+    let out = dir.join("build/release");
+    let mut assets = flutter_command(&["build", "bundle", "--release", "--asset-dir"])?;
+    assets.arg(out.join("flutter_assets")).current_dir(&dir);
+    status(assets)?;
+
+    let cache = sdk_root()?.join("bin/cache");
+    let package = app_package(&dir)?;
+    let dill = out.join("app.dill");
+    let mut kernel = Command::new(cache.join("dart-sdk/bin/dartaotruntime"));
+    kernel
+        .arg(cache.join("dart-sdk/bin/snapshots/frontend_server_aot.dart.snapshot"))
+        .arg("--sdk-root")
+        .arg(cache.join("artifacts/engine/common/flutter_patched_sdk_product/"))
+        .args([
+            "--target=flutter",
+            "--aot",
+            "--tfa",
+            "--no-print-incremental-dependencies",
+            "-Ddart.vm.product=true",
+            "-Ddart.vm.profile=false",
+            "--packages",
+            ".dart_tool/package_config.json",
+            "--output-dill",
+        ])
+        .arg(&dill)
+        .arg(format!("package:{package}/main.dart"))
+        .current_dir(&dir);
+    status(kernel)?;
+
+    let mut snapshot = Command::new(cache.join("artifacts/engine/linux-x64-release/gen_snapshot"));
+    snapshot
+        .args(["--deterministic", "--snapshot_kind=app-aot-elf", "--strip"])
+        .arg(format!("--elf={}", out.join("libapp.so").display()))
+        .arg(&dill);
+    status(snapshot)?;
+    let _ = std::fs::remove_file(&dill);
+    eprintln!("xtask: bundle release in {}", out.display());
+    Ok(())
+}
+
+/// Il nome del pacchetto Dart dal `pubspec.yaml`.
+fn app_package(dir: &Path) -> Result<String> {
+    let pubspec = std::fs::read_to_string(dir.join("pubspec.yaml"))
+        .map_err(|e| format!("pubspec.yaml: {e}"))?;
+    pubspec
+        .lines()
+        .find_map(|line| line.strip_prefix("name:"))
+        .map(|name| name.trim().to_owned())
+        .ok_or_else(|| "pubspec.yaml senza name".to_owned())
+}
+
 /// I progetti Dart del repo: app in `apps/` e pacchetti in `packages/`, come
 /// percorsi relativi (`apps/demo`, `packages/silica_ui`).
 pub fn projects() -> Result<Vec<String>> {

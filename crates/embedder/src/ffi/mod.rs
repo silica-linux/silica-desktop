@@ -32,7 +32,8 @@ use std::ptr;
 use std::thread::ThreadId;
 
 use bindings::{
-    FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineLib,
+    FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineAOTData,
+    FlutterEngineAOTDataSource, FlutterEngineAOTDataSourceType, FlutterEngineLib,
     FlutterEngineResult, FlutterFrameInfo, FlutterKeyEvent as RawKeyEvent,
     FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterOpenGLRendererConfig,
     FlutterPlatformMessage, FlutterPlatformMessageResponseHandle, FlutterPointerDeviceKind,
@@ -209,8 +210,18 @@ type RespondFn = unsafe extern "C" fn(
     usize,
 ) -> FlutterEngineResult;
 
+type RunsAotFn = unsafe extern "C" fn() -> bool;
+type CreateAotFn = unsafe extern "C" fn(
+    *const FlutterEngineAOTDataSource,
+    *mut FlutterEngineAOTData,
+) -> FlutterEngineResult;
+type CollectAotFn = unsafe extern "C" fn(FlutterEngineAOTData) -> FlutterEngineResult;
+
 /// Le funzioni dell'engine usate qui, risolte una volta al caricamento.
 struct Api {
+    runs_aot: RunsAotFn,
+    create_aot: CreateAotFn,
+    collect_aot: CollectAotFn,
     run: RunFn,
     shutdown: ShutdownFn,
     run_task: RunTaskFn,
@@ -237,12 +248,16 @@ pub struct EngineConfig<'a> {
     pub library: &'a Path,
     pub assets: &'a Path,
     pub icu_data: &'a Path,
+    /// Il codice Dart compilato AOT (`libapp.so`), per un engine release o profile.
+    pub aot: Option<&'a Path>,
 }
 
 /// Un engine Flutter in esecuzione. Si usa e si distrugge sul thread di piattaforma.
 pub struct Engine {
     api: Api,
     engine: FlutterEngine,
+    /// Nullo con un engine debug (JIT); si libera dopo lo spegnimento.
+    aot_data: FlutterEngineAOTData,
     // Tutto ciò a cui l'engine tiene puntatori: deve vivere quanto lui.
     _callbacks: Box<Callbacks>,
     _runner: Box<FlutterTaskRunnerDescription>,
@@ -452,6 +467,9 @@ impl Engine {
         let library = unsafe { FlutterEngineLib::new(config.library) }
             .map_err(|e| Error::Load(e.to_string()))?;
         let api = Api {
+            runs_aot: symbol!(library, FlutterEngineRunsAOTCompiledDartCode),
+            create_aot: symbol!(library, FlutterEngineCreateAOTData),
+            collect_aot: symbol!(library, FlutterEngineCollectAOTData),
             run: symbol!(library, FlutterEngineRun),
             shutdown: symbol!(library, FlutterEngineShutdown),
             run_task: symbol!(library, FlutterEngineRunTask),
@@ -503,6 +521,39 @@ impl Engine {
             };
         }
 
+        // SAFETY: funzione senza argomenti né precondizioni.
+        let runs_aot = unsafe { (api.runs_aot)() };
+        let aot_data = match (runs_aot, config.aot) {
+            (false, Some(path)) => {
+                tracing::warn!(
+                    "engine debug: {} ignorato, il Dart gira in JIT",
+                    path.display()
+                );
+                ptr::null_mut()
+            }
+            (false, None) => ptr::null_mut(),
+            (true, None) => {
+                return Err(Error::Path(
+                    "engine release senza libapp.so: cargo xtask bundle <app> --release".to_owned(),
+                ));
+            }
+            (true, Some(path)) => {
+                let elf = c_path(path)?;
+                let mut source = FlutterEngineAOTDataSource {
+                    type_: FlutterEngineAOTDataSourceType::kFlutterEngineAOTDataSourceTypeElfPath,
+                    ..Default::default()
+                };
+                source.__bindgen_anon_1.elf_path = elf.as_ptr();
+                let mut data: FlutterEngineAOTData = ptr::null_mut();
+                // SAFETY: source è inizializzato e il percorso vive durante la chiamata, che
+                // carica l'ELF e ne copia ciò che serve in data.
+                check("FlutterEngineCreateAOTData", unsafe {
+                    (api.create_aot)(&source, &mut data)
+                })?;
+                data
+            }
+        };
+
         let strings = vec![
             c_path(config.assets)?,
             c_path(config.icu_data)?,
@@ -522,6 +573,7 @@ impl Engine {
             log_message_callback: Some(log_message),
             platform_message_callback: Some(platform_message),
             shutdown_dart_vm_when_done: true,
+            aot_data,
             ..Default::default()
         };
 
@@ -538,13 +590,18 @@ impl Engine {
                 &mut engine,
             )
         };
-        check("FlutterEngineRun", result)?;
-        if engine.is_null() {
+        if result != FlutterEngineResult::kSuccess || engine.is_null() {
+            if !aot_data.is_null() {
+                // SAFETY: aot_data viene da FlutterEngineCreateAOTData e nessun engine lo usa.
+                let _ = unsafe { (api.collect_aot)(aot_data) };
+            }
+            check("FlutterEngineRun", result)?;
             return Err(Error::Engine("FlutterEngineRun", -1));
         }
         Ok(Self {
             api,
             engine,
+            aot_data,
             _callbacks: callbacks,
             _runner: runner,
             _runners: runners,
@@ -742,6 +799,13 @@ impl Drop for Engine {
         let result = unsafe { (self.api.shutdown)(self.engine) };
         if let Err(err) = check("FlutterEngineShutdown", result) {
             tracing::warn!("{err}");
+        }
+        if !self.aot_data.is_null() {
+            // SAFETY: l'engine che usava i dati AOT è spento; si liberano una volta sola.
+            let result = unsafe { (self.api.collect_aot)(self.aot_data) };
+            if let Err(err) = check("FlutterEngineCollectAOTData", result) {
+                tracing::warn!("{err}");
+            }
         }
     }
 }

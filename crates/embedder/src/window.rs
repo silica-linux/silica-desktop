@@ -171,9 +171,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("{} assente: esegui `cargo xtask engine`", path.display()).into());
         }
     }
-    if !options.bundle.join("kernel_blob.bin").exists() {
+    // Un bundle debug porta il kernel Dart, uno release il manifest degli asset e libapp.so.
+    if !options.bundle.join("kernel_blob.bin").exists()
+        && !options.bundle.join("AssetManifest.bin").exists()
+    {
         return Err(format!(
-            "{} non è un bundle Flutter (manca kernel_blob.bin): esegui `cargo xtask bundle <app>`",
+            "{} non è un bundle Flutter: esegui `cargo xtask bundle <app>`",
             options.bundle.display()
         )
         .into());
@@ -329,6 +332,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             library: &options.library,
             assets: &options.bundle,
             icu_data: &options.icu_data,
+            aot: options.aot.as_deref(),
         },
         callbacks,
     )?;

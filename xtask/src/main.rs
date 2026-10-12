@@ -41,12 +41,17 @@ fn main() -> ExitCode {
         Some("assets") => assets(),
         Some("run") => run(args.get(1..).unwrap_or_default()),
         Some("unsafe") => unsafe_check(),
-        Some("engine") => flutter::engine(),
+        Some("engine") => match args.get(1).map(String::as_str) {
+            Some("--release") => flutter::engine_release(),
+            None => flutter::engine(),
+            Some(other) => Err(format!("uso: cargo xtask engine [--release], non {other}")),
+        },
         Some("bindings") => flutter::bindings(),
         Some("keymap") => flutter::keymap(),
-        Some("bundle") => match args.get(1) {
-            Some(app) => flutter::bundle(app),
-            None => Err("uso: cargo xtask bundle <app in apps/>".to_owned()),
+        Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {
+            (Some(app), None) => flutter::bundle(app),
+            (Some(app), Some("--release")) => flutter::bundle_release(app),
+            _ => Err("uso: cargo xtask bundle <app in apps/> [--release]".to_owned()),
         },
         _ => Err(
             "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle> [argomenti]"

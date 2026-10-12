@@ -72,6 +72,8 @@ pub struct Options {
     pub size: (u32, u32),
     pub layer: Option<LayerOptions>,
     pub renderer: Renderer,
+    /// `libapp.so` compilato AOT, per un engine release; con un engine debug si ignora.
+    pub aot: Option<PathBuf>,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.
@@ -79,4 +81,11 @@ pub fn default_engine_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/flutter-engine")
         .join(include_str!("../ENGINE_VERSION").trim())
+}
+
+/// L'engine release compilato da `cargo xtask engine --release` (`docs/engine-release.md`).
+pub fn release_engine_dir() -> PathBuf {
+    let mut dir = default_engine_dir().into_os_string();
+    dir.push("-release");
+    PathBuf::from(dir)
 }
