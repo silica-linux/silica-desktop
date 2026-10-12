@@ -16,7 +16,8 @@ const double step = iconSize + spacing;
 const double padding = 8;
 const double bottomMargin = 8;
 const double influence = 3;
-const double backgroundRadius = 18;
+/// Raggio del fondo: arco di cerchio di 22 pt, misurato sul Dock (dock.md).
+const double backgroundRadius = 22;
 const double restRowWidth = iconCount * iconSize + (iconCount - 1) * spacing;
 const SpringDescription spring =
     SpringDescription(mass: 1, stiffness: 400, damping: 30);
@@ -125,8 +126,14 @@ class _DockState extends State<Dock> with SingleTickerProviderStateMixin {
         bottom: bottomMargin,
         width: backgroundWidth,
         height: iconSize + 2 * padding,
-        // Il fondo è vetro di Ossido (silica-glass-v1): l'app lo lascia trasparente.
-        child: const Glass(radius: backgroundRadius, child: SizedBox.expand()),
+        // Il fondo è Liquid Glass di Ossido (silica-glass-v1) con il materiale misurato sul
+        // Dock (lente leggera, bordo luminoso): l'app lo lascia trasparente.
+        child: const LiquidGlass(
+          radius: backgroundRadius,
+          material: GlassMaterial.clear,
+          interactive: false,
+          child: SizedBox.expand(),
+        ),
       ),
     ];
 
