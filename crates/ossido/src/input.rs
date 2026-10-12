@@ -7,6 +7,7 @@ use smithay::backend::input::{
 use smithay::input::keyboard::{FilterResult, xkb};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
 
 use crate::state::State;
@@ -37,11 +38,22 @@ impl State {
         };
         let serial = SERIAL_COUNTER.next_serial();
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
-            let clicked = self
-                .space
-                .element_under(pointer.current_location())
-                .map(|(window, _)| window.clone());
-            self.focus_window(clicked);
+            let location = pointer.current_location();
+            match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
+                // Un clic su un layer non tocca le finestre; il focus solo se lo chiede.
+                Some((layer, _)) => {
+                    if layer.can_receive_keyboard_focus() {
+                        self.focus_layer(&layer);
+                    }
+                }
+                None => {
+                    let clicked = self
+                        .space
+                        .element_under(location)
+                        .map(|(window, _)| window.clone());
+                    self.focus_window(clicked);
+                }
+            }
         }
         pointer.button(
             self,

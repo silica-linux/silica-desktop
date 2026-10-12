@@ -11,7 +11,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
-use smithay::utils::Serial;
+use smithay::utils::{Logical, Point, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
@@ -69,6 +69,8 @@ impl CompositorHandler for State {
             toplevel.send_configure();
         }
 
+        self.layer_commit(surface);
+
         self.popups.commit(surface);
         if let Some(PopupKind::Xdg(popup)) = self.popups.find_popup(surface)
             && !popup.is_initial_configure_sent()
@@ -117,8 +119,11 @@ impl XdgShellHandler for State {
         let window = Window::new_wayland_window(surface);
         let id = self.assign_window_id(&window);
         info!("nuova finestra {id} a ({offset}, {offset})");
-        self.space
-            .map_element(window.clone(), (offset, offset), true);
+        self.space.map_element(
+            window.clone(),
+            self.usable_area().loc + Point::<i32, Logical>::from((offset, offset)),
+            true,
+        );
         self.focus_window(Some(window));
     }
 

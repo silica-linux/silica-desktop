@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
+use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -16,6 +16,7 @@ use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
@@ -52,6 +53,7 @@ pub struct State {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<State>,
     pub data_device_state: DataDeviceState,
+    pub layer_shell_state: WlrLayerShellState,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -78,6 +80,7 @@ impl State {
         let shm_state = ShmState::new::<State>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<State>(&dh);
         let data_device_state = DataDeviceState::new::<State>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -127,6 +130,7 @@ impl State {
             output_manager_state,
             seat_state,
             data_device_state,
+            layer_shell_state,
             seat,
             mapped: 0,
             next_window_id: 0,
@@ -135,18 +139,30 @@ impl State {
         })
     }
 
-    /// La superficie sotto un punto del desktop, con la sua origine.
+    /// La superficie sotto un punto del desktop, con la sua origine: prima i layer
+    /// sopra le finestre, poi le finestre, poi i layer sotto.
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
-                window
+        let in_layer = |levels: &[Layer]| {
+            self.layer_under(levels, pos).and_then(|(layer, location)| {
+                layer
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(surface, offset)| (surface, (offset + location).to_f64()))
             })
+        };
+        in_layer(&[Layer::Overlay, Layer::Top])
+            .or_else(|| {
+                self.space
+                    .element_under(pos)
+                    .and_then(|(window, location)| {
+                        window
+                            .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                            .map(|(surface, offset)| (surface, (offset + location).to_f64()))
+                    })
+            })
+            .or_else(|| in_layer(&[Layer::Bottom, Layer::Background]))
     }
 
     /// Manda i frame callback a tutte le finestre visibili.
@@ -155,6 +171,11 @@ impl State {
         let now = self.start_time.elapsed();
         for window in self.space.elements() {
             window.send_frame(output, now, Some(Duration::ZERO), |_, _| {
+                Some(output.clone())
+            });
+        }
+        for layer in layer_map_for_output(output).layers() {
+            layer.send_frame(output, now, Some(Duration::ZERO), |_, _| {
                 Some(output.clone())
             });
         }

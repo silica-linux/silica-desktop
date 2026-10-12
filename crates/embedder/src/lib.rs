@@ -19,13 +19,50 @@ use std::path::PathBuf;
 
 pub use window::run;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerKind {
+    Background,
+    Bottom,
+    Top,
+    Overlay,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Anchors {
+    pub top: bool,
+    pub bottom: bool,
+    pub left: bool,
+    pub right: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LayerKeyboard {
+    #[default]
+    None,
+    Exclusive,
+    OnDemand,
+}
+
+/// L'app come superficie della shell (wlr-layer-shell) invece che come finestra.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayerOptions {
+    pub layer: LayerKind,
+    pub anchor: Anchors,
+    /// Pixel logici riservati sul bordo ancorato; le finestre non ci vanno sopra.
+    pub exclusive_zone: i32,
+    pub keyboard: LayerKeyboard,
+    pub namespace: String,
+}
+
 pub struct Options {
     /// Cartella `flutter_assets` del bundle.
     pub bundle: PathBuf,
     pub library: PathBuf,
     pub icu_data: PathBuf,
     /// Dimensione iniziale della finestra in pixel logici, se il compositor non ne sceglie una.
+    /// Per un layer, i lati ancorati su entrambi i bordi li decide il compositor.
     pub size: (u32, u32),
+    pub layer: Option<LayerOptions>,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.

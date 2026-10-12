@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
-    INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key,
+    INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST,
     PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS,
     WINDOW_LIST, WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
 };
@@ -81,6 +81,7 @@ impl State {
                 self.execute_command(&id, params)
             }
             WINDOW_LIST => to_value(self.window_list()),
+            LAYER_LIST => to_value(self.layer_list()),
             WINDOW_FOCUS => {
                 let target: WindowTarget = parse(params)?;
                 let window = self.target_window(target.id)?;
@@ -258,6 +259,8 @@ impl State {
         if let Some(window) = &window {
             self.space.raise_element(window, true);
         }
+        // Un layer con tastiera esclusiva sopra le finestre tiene il focus (wlr-layer-shell).
+        let focus = self.exclusive_layer_surface().or(focus);
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
         }

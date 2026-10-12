@@ -29,6 +29,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
 | `window.list` | — | finestre dall'alto in basso: `id`, `title`, `app_id`, `x`, `y`, `width`, `height`, `focused` |
+| `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
 | `window.focus` | `id?` | — |
 | `window.close` | `id?` | — |
 | `window.move` | `id?`, `x`, `y` | — |

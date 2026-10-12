@@ -18,7 +18,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use silica_control::commands::{
-    INPUT_CLICK, INPUT_KEY, INPUT_TYPE, WINDOW_CLOSE, WINDOW_LIST, WindowInfo,
+    INPUT_CLICK, INPUT_KEY, INPUT_TYPE, LAYER_LIST, LayerInfo, WINDOW_CLOSE, WINDOW_LIST,
+    WindowInfo,
 };
 use silica_control::{Client, ScreenshotParams};
 
@@ -68,14 +69,21 @@ struct Session {
     dir: PathBuf,
     _ossido: KillOnDrop,
     embedder: Option<Child>,
+    others: Vec<KillOnDrop>,
     control: String,
+    wayland: String,
     output: (u32, u32),
 }
 
 impl Session {
-    /// Ossido headless di `output` pixel fisici a scala `scale`, con l'app demo di
-    /// `window` pixel logici.
+    /// Ossido headless di `output` pixel fisici a scala `scale`, con l'app demo in una
+    /// finestra di `window` pixel logici.
     fn start(name: &str, output: (u32, u32), scale: u32, window: (u32, u32)) -> Self {
+        Self::start_with(name, output, scale, &size_args(window))
+    }
+
+    /// Come `start`, con argomenti dell'embedder a scelta (per esempio un layer).
+    fn start_with(name: &str, output: (u32, u32), scale: u32, args: &[String]) -> Self {
         let engine = silica_embedder::default_engine_dir();
         let bundle = repo().join("apps/demo/build/flutter_assets");
         assert!(
@@ -118,27 +126,33 @@ impl Session {
             }
         }
 
-        let embedder = Command::new(env!("CARGO_BIN_EXE_silica-embedder"))
-            .args(["--size", &format!("{}x{}", window.0, window.1)])
-            .arg(&bundle)
-            .env("XDG_RUNTIME_DIR", &dir)
-            .env(
-                "WAYLAND_DISPLAY",
-                wayland.expect("Ossido senza socket Wayland"),
-            )
-            .env(
-                "RUST_LOG",
-                std::env::var("E2E_LOG").unwrap_or_else(|_| "warn".into()),
-            )
-            .spawn()
-            .unwrap();
+        let wayland = wayland.expect("Ossido senza socket Wayland");
+        let embedder = spawn_embedder(&dir, &wayland, args);
         Self {
             dir,
             _ossido: ossido,
             embedder: Some(embedder),
+            others: Vec::new(),
             control: control.expect("Ossido senza canale di controllo"),
+            wayland,
             output,
         }
+    }
+
+    /// Un'altra istanza dell'app demo nella stessa sessione.
+    fn spawn(&mut self, args: &[String]) {
+        self.others
+            .push(KillOnDrop(spawn_embedder(&self.dir, &self.wayland, args)));
+    }
+
+    fn layer(&self, namespace: &str) -> LayerInfo {
+        wait_for("il layer", || {
+            let list = self.client().call(LAYER_LIST, Value::Null).unwrap();
+            let layers: Vec<LayerInfo> = serde_json::from_value(list).unwrap();
+            layers
+                .into_iter()
+                .find(|l| l.namespace == namespace && l.width > 0 && l.height > 0)
+        })
     }
 
     fn client(&self) -> Client {
@@ -190,6 +204,24 @@ impl Drop for Session {
         }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
+}
+
+fn size_args((w, h): (u32, u32)) -> Vec<String> {
+    vec!["--size".to_owned(), format!("{w}x{h}")]
+}
+
+fn spawn_embedder(dir: &Path, wayland: &str, args: &[String]) -> Child {
+    Command::new(env!("CARGO_BIN_EXE_silica-embedder"))
+        .args(args)
+        .arg(repo().join("apps/demo/build/flutter_assets"))
+        .env("XDG_RUNTIME_DIR", dir)
+        .env("WAYLAND_DISPLAY", wayland)
+        .env(
+            "RUST_LOG",
+            std::env::var("E2E_LOG").unwrap_or_else(|_| "warn".into()),
+        )
+        .spawn()
+        .unwrap()
 }
 
 fn wait_until(mut done: impl FnMut() -> bool) -> bool {
@@ -281,4 +313,66 @@ fn demo_renders_at_scale_two() {
     // Il quadrato sonda è 16 pixel logici, quindi 32 fisici.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);
+}
+
+#[test]
+fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
+    const BAR: u32 = 48;
+    let bar_args: Vec<String> = [
+        "--layer",
+        "top",
+        "--anchor",
+        "top,left,right",
+        "--size",
+        "640x48",
+        "--exclusive-zone",
+        "48",
+        "--keyboard",
+        "exclusive",
+        "--namespace",
+        "barra",
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect();
+    let mut session = Session::start_with("layer", (640, 480), 1, &bar_args);
+
+    // Ancorato in alto su tutta la larghezza, con la tastiera.
+    let bar = session.layer("barra");
+    assert_eq!(
+        (bar.x, bar.y, bar.width, bar.height),
+        (0, 0, 640, BAR as i32)
+    );
+    assert_eq!(
+        (bar.layer.as_str(), bar.exclusive_zone),
+        ("top", BAR as i32)
+    );
+    assert!(bar.focused);
+    session.expect_pixel(600, 40, IDLE);
+
+    // Una finestra normale si apre sotto la zona esclusiva.
+    session.spawn(&size_args((200, 100)));
+    let window = session.window();
+    assert!(
+        window.y >= BAR as i32,
+        "finestra in {} sopra la barra",
+        window.y
+    );
+    let (wx, wy) = (window.x as u32, window.y as u32);
+    session.expect_pixel(wx + 100, wy + 90, IDLE);
+
+    // La tastiera va alla barra, non alla finestra.
+    let mut client = session.client();
+    client.call(INPUT_TYPE, json!({"text": "ciao"})).unwrap();
+    session.expect_pixel(600, 40, TYPED);
+    session.expect_pixel(wx + 100, wy + 90, IDLE);
+
+    // Il clic su un layer arriva al layer.
+    client.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
+    session.expect_pixel(600, 40, IDLE);
+    client
+        .call(INPUT_CLICK, json!({"x": 600, "y": 40}))
+        .unwrap();
+    session.expect_pixel(600, 40, TAPPED);
+    session.expect_pixel(wx + 100, wy + 90, IDLE);
 }

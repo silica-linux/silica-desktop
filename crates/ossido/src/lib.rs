@@ -7,6 +7,7 @@ mod control;
 mod handlers;
 mod input;
 mod keys;
+mod layers;
 pub mod state;
 
 use std::io::Write;

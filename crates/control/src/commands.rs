@@ -24,6 +24,7 @@ pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
 pub const INPUT_KEY: &str = "input.key";
 pub const INPUT_TYPE: &str = "input.type";
+pub const LAYER_LIST: &str = "layer.list";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -120,6 +121,13 @@ pub const CATALOG: &[CommandSpec] = &[
         id: WINDOW_LIST,
         label: "Elenca le finestre",
         description: "Finestre aperte, dall'alto in basso, con titolo, app e geometria.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: LAYER_LIST,
+        label: "Elenca i layer",
+        description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
         shortcut: None,
         params: no_params,
     },
@@ -344,6 +352,20 @@ pub struct Key {
 #[serde(deny_unknown_fields)]
 pub struct TypeText {
     pub text: String,
+}
+
+/// Un layer in [`LAYER_LIST`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayerInfo {
+    pub namespace: String,
+    /// `background`, `bottom`, `top` o `overlay`.
+    pub layer: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub exclusive_zone: i32,
+    pub focused: bool,
 }
 
 /// Una finestra in [`WINDOW_LIST`].

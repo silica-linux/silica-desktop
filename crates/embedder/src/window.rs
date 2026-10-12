@@ -19,6 +19,10 @@ use smithay_client_toolkit::seat::pointer::{
 };
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
+    LayerSurfaceConfigure,
+};
 use smithay_client_toolkit::shell::xdg::XdgShell;
 use smithay_client_toolkit::shell::xdg::window::{
     Window, WindowConfigure, WindowDecorations, WindowHandler,
@@ -26,15 +30,38 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{
-    delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window, registry_handlers,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
+    delegate_registry, delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
+    registry_handlers,
 };
 use tracing::{info, warn};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
-use crate::Options;
+use crate::{LayerKeyboard, LayerKind, Options};
+
+/// La superficie che ospita l'app: una finestra normale o un layer della shell.
+enum Shell {
+    Window(Window),
+    Layer(LayerSurface),
+}
+
+impl Shell {
+    fn wl_surface(&self) -> &wl_surface::WlSurface {
+        match self {
+            Shell::Window(window) => window.wl_surface(),
+            Shell::Layer(layer) => layer.wl_surface(),
+        }
+    }
+
+    fn commit(&self) {
+        match self {
+            Shell::Window(window) => window.commit(),
+            Shell::Layer(layer) => layer.commit(),
+        }
+    }
+}
 use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, KeyEvent, PlatformMessage, PointerEvent, PointerPhase,
     Task,
@@ -111,7 +138,7 @@ struct App {
     output_state: OutputState,
     shm: Shm,
     pool: SlotPool,
-    window: Window,
+    surface: Shell,
     pointer: Option<wl_pointer::WlPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     keys: Keyboard,
@@ -159,13 +186,65 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("sorgente Wayland: {e}"))?;
 
     let compositor = CompositorState::bind(&globals, &qh)?;
-    let xdg_shell = XdgShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let surface = compositor.create_surface(&qh);
-    let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &qh);
-    window.set_title("Silica");
-    window.set_app_id("dev.frascella.silica.Flutter");
-    window.commit();
+    let surface = match &options.layer {
+        None => {
+            let xdg_shell = XdgShell::bind(&globals, &qh)?;
+            let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &qh);
+            window.set_title("Silica");
+            window.set_app_id("dev.frascella.silica.Flutter");
+            window.commit();
+            Shell::Window(window)
+        }
+        Some(layer) => {
+            let shell = LayerShell::bind(&globals, &qh)?;
+            let level = match layer.layer {
+                LayerKind::Background => Layer::Background,
+                LayerKind::Bottom => Layer::Bottom,
+                LayerKind::Top => Layer::Top,
+                LayerKind::Overlay => Layer::Overlay,
+            };
+            let surface = shell.create_layer_surface(
+                &qh,
+                surface,
+                level,
+                Some(layer.namespace.clone()),
+                None,
+            );
+            let mut anchor = Anchor::empty();
+            for (on, edge) in [
+                (layer.anchor.top, Anchor::TOP),
+                (layer.anchor.bottom, Anchor::BOTTOM),
+                (layer.anchor.left, Anchor::LEFT),
+                (layer.anchor.right, Anchor::RIGHT),
+            ] {
+                anchor.set(edge, on);
+            }
+            surface.set_anchor(anchor);
+            // Una dimensione ancorata a entrambi i lati la decide il compositor (0).
+            let (w, h) = options.size;
+            let width = if layer.anchor.left && layer.anchor.right {
+                0
+            } else {
+                w
+            };
+            let height = if layer.anchor.top && layer.anchor.bottom {
+                0
+            } else {
+                h
+            };
+            surface.set_size(width, height);
+            surface.set_exclusive_zone(layer.exclusive_zone);
+            surface.set_keyboard_interactivity(match layer.keyboard {
+                LayerKeyboard::None => KeyboardInteractivity::None,
+                LayerKeyboard::Exclusive => KeyboardInteractivity::Exclusive,
+                LayerKeyboard::OnDemand => KeyboardInteractivity::OnDemand,
+            });
+            surface.commit();
+            Shell::Layer(surface)
+        }
+    };
 
     let (width, height) = options.size;
     let pool = SlotPool::new((width * height * 4) as usize, &shm)?;
@@ -248,7 +327,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         output_state: OutputState::new(&globals, &qh),
         shm,
         pool,
-        window,
+        surface,
         pointer: None,
         keyboard: None,
         keys: Keyboard::default(),
@@ -465,7 +544,7 @@ impl App {
             }
         }
 
-        let surface = self.window.wl_surface();
+        let surface = self.surface.wl_surface();
         surface.set_buffer_scale(self.scale.max(1));
         surface.damage_buffer(0, 0, width, height);
         surface.frame(qh, surface.clone());
@@ -473,7 +552,7 @@ impl App {
             warn!("attach del buffer fallito: {err}");
             return;
         }
-        self.window.commit();
+        self.surface.commit();
         self.buffer = Some(buffer);
         self.waiting_frame = true;
     }
@@ -535,6 +614,34 @@ impl OutputHandler for App {
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 }
 
+impl App {
+    fn configured(&mut self, qh: &QueueHandle<Self>, size: (u32, u32)) {
+        if size.0 > 0 && size.1 > 0 {
+            self.size = size;
+        }
+        self.configured = true;
+        self.send_metrics();
+        self.present(qh);
+    }
+}
+
+impl LayerShellHandler for App {
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
+        self.exit = true;
+    }
+
+    fn configure(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        _: &LayerSurface,
+        configure: LayerSurfaceConfigure,
+        _: u32,
+    ) {
+        self.configured(qh, configure.new_size);
+    }
+}
+
 impl WindowHandler for App {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
         self.exit = true;
@@ -548,12 +655,11 @@ impl WindowHandler for App {
         configure: WindowConfigure,
         _: u32,
     ) {
-        if let (Some(w), Some(h)) = configure.new_size {
-            self.size = (w.get(), h.get());
-        }
-        self.configured = true;
-        self.send_metrics();
-        self.present(qh);
+        let size = match configure.new_size {
+            (Some(w), Some(h)) => (w.get(), h.get()),
+            _ => (0, 0),
+        };
+        self.configured(qh, size);
     }
 }
 
@@ -625,7 +731,7 @@ impl PointerHandler for App {
         events: &[SeatPointerEvent],
     ) {
         for event in events {
-            if &event.surface != self.window.wl_surface() {
+            if &event.surface != self.surface.wl_surface() {
                 continue;
             }
             let position = event.position;
@@ -787,4 +893,5 @@ delegate_pointer!(App);
 delegate_keyboard!(App);
 delegate_xdg_shell!(App);
 delegate_xdg_window!(App);
+delegate_layer!(App);
 delegate_registry!(App);
