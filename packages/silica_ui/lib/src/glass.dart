@@ -77,15 +77,18 @@ class RenderGlass extends RenderProxyBox {
     super.paint(context, offset);
   }
 
-  /// La regione in pixel logici della superficie.
+  /// La regione in pixel logici della superficie, con le trasformazioni degli antenati
+  /// (un vetro che si gonfia cresce anche nel compositor, raggio compreso).
   Map<String, Object> region() {
-    final origin = localToGlobal(Offset.zero);
+    final transform = getTransformTo(null);
+    final rect = MatrixUtils.transformRect(transform, Offset.zero & size);
+    final factor = size.width > 0 ? rect.width / size.width : 1.0;
     return {
-      'x': origin.dx,
-      'y': origin.dy,
-      'width': size.width,
-      'height': size.height,
-      'radius': radius,
+      'x': rect.left,
+      'y': rect.top,
+      'width': rect.width,
+      'height': rect.height,
+      'radius': radius * factor,
       'material': material.name,
     };
   }
