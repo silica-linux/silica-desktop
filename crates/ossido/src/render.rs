@@ -4,6 +4,7 @@
 
 use ossido_render::corners::RoundedSurface;
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
+use ossido_render::titlebar::{Titlebar, TitlebarState};
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -14,10 +15,13 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::render_elements;
 use smithay::wayland::shell::wlr_layer::Layer;
 
+use crate::decorations;
+
 render_elements! {
     pub OutputElement<=GlesRenderer>;
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Rounded=RoundedSurface,
+    /// Elementi a pixel shader: ombre e barre del titolo.
     Shadow=PixelShaderElement,
 }
 
@@ -33,6 +37,7 @@ pub fn output_elements(
     renderer: &mut GlesRenderer,
     space: &Space<Window>,
     output: &Output,
+    titlebar_hover: Option<&Window>,
 ) -> Vec<OutputElement> {
     let shaders = ossido_render::shaders(renderer);
     let scale = output.current_scale().fractional_scale();
@@ -80,38 +85,51 @@ pub fn output_elements(
         };
         let render_location =
             (location - window.geometry().loc - output_origin).to_physical_precise_round(scale);
-        let mut window_rect = geometry.to_f64();
-        window_rect.loc -= output_origin.to_f64();
-        let window_rect = window_rect.to_physical(scale);
         let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
             renderer,
             render_location,
             scale.into(),
             1.0,
         );
+        // A schermo intero niente angoli, barra né ombra (come nelle riprese).
+        if crate::windows::is_fullscreen(window) {
+            elements.extend(surfaces.into_iter().map(OutputElement::Surface));
+            continue;
+        }
+        let mut frame = decorations::frame_of(window, geometry);
+        frame.loc -= output_origin;
+        let frame_physical = frame.to_f64().to_physical(scale);
         elements.extend(surfaces.into_iter().map(|surface| {
             OutputElement::Rounded(RoundedSurface::new(
                 surface,
-                window_rect,
+                frame_physical,
                 scale,
                 output_size,
                 shaders.corners.clone(),
             ))
         }));
-        // L'ombra va dietro le superfici della finestra.
+        let active = is_active(window);
+        if decorations::is_server_side(window)
+            && let Some(program) = &shaders.titlebar
+        {
+            window.user_data().insert_if_missing(Titlebar::default);
+            if let Some(titlebar) = window.user_data().get::<Titlebar>() {
+                let state = TitlebarState {
+                    active,
+                    hovered: titlebar_hover == Some(window),
+                    scale,
+                };
+                elements.push(OutputElement::Shadow(
+                    titlebar.element(program, frame, state),
+                ));
+            }
+        }
+        // L'ombra va dietro la finestra.
         if let Some(program) = &shaders.shadow {
-            let style = if is_active(window) {
-                ACTIVE_LIGHT
-            } else {
-                INACTIVE_LIGHT
-            };
+            let style = if active { ACTIVE_LIGHT } else { INACTIVE_LIGHT };
             window.user_data().insert_if_missing(WindowShadow::default);
             if let Some(shadow) = window.user_data().get::<WindowShadow>() {
-                let mut logical = geometry;
-                logical.loc -= output_origin;
-                elements.push(OutputElement::Shadow(
-                    shadow.element(program, logical, style),
-                ));
+                elements.push(OutputElement::Shadow(shadow.element(program, frame, style)));
             }
         }
     }

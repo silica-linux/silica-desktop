@@ -164,7 +164,12 @@ impl State {
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
-                let elements = output_elements(renderer, &self.space, &self.output);
+                let elements = output_elements(
+                    renderer,
+                    &self.space,
+                    &self.output,
+                    self.titlebar_hover.as_ref(),
+                );
                 capture_elements::<_, GlesTexture, _>(
                     renderer,
                     &self.output,
@@ -173,7 +178,12 @@ impl State {
                 )
             }
             Backend::Headless(Headless::Gles(renderer)) => {
-                let elements = output_elements(renderer, &self.space, &self.output);
+                let elements = output_elements(
+                    renderer,
+                    &self.space,
+                    &self.output,
+                    self.titlebar_hover.as_ref(),
+                );
                 capture_elements::<_, GlesTexture, _>(
                     renderer.as_mut(),
                     &self.output,
@@ -199,7 +209,12 @@ impl State {
         let size = backend.graphics.window_size();
         let damage = Rectangle::from_size(size);
         let clear_color = self.clear_color;
-        let elements = output_elements(backend.graphics.renderer(), &self.space, &self.output);
+        let elements = output_elements(
+            backend.graphics.renderer(),
+            &self.space,
+            &self.output,
+            self.titlebar_hover.as_ref(),
+        );
         let rendered = match backend.graphics.bind() {
             Ok((renderer, mut framebuffer)) => backend
                 .damage_tracker

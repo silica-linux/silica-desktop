@@ -12,6 +12,10 @@ use wayland_client::protocol::wl_shm::{self, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1;
+use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
+    self, ZxdgToplevelDecorationV1,
+};
 use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
@@ -27,8 +31,11 @@ struct App {
     compositor: Option<WlCompositor>,
     shm: Option<WlShm>,
     wm_base: Option<XdgWmBase>,
+    decorations: Option<ZxdgDecorationManagerV1>,
     configured: bool,
     close_requested: bool,
+    /// Modo delle decorazioni scelto da Ossido.
+    decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
 }
 
 impl Dispatch<WlRegistry, ()> for App {
@@ -48,6 +55,9 @@ impl Dispatch<WlRegistry, ()> for App {
                 "wl_compositor" => state.compositor = Some(registry.bind(name, 4, qh, ())),
                 "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
                 "xdg_wm_base" => state.wm_base = Some(registry.bind(name, 1, qh, ())),
+                "zxdg_decoration_manager_v1" => {
+                    state.decorations = Some(registry.bind(name, 1, qh, ()));
+                }
                 _ => {}
             }
         }
@@ -101,6 +111,25 @@ delegate_noop!(App: ignore WlCompositor);
 delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore WlBuffer);
 delegate_noop!(App: WlShmPool);
+delegate_noop!(App: ignore ZxdgDecorationManagerV1);
+
+impl Dispatch<ZxdgToplevelDecorationV1, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &ZxdgToplevelDecorationV1,
+        event: zxdg_toplevel_decoration_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_toplevel_decoration_v1::Event::Configure {
+            mode: wayland_client::WEnum::Value(mode),
+        } = event
+        {
+            state.decoration_mode = Some(mode);
+        }
+    }
+}
 
 impl Dispatch<XdgToplevel, ()> for App {
     fn event(
@@ -123,6 +152,7 @@ pub struct TestWindow {
     app: App,
     surface: WlSurface,
     _toplevel: XdgToplevel,
+    _decoration: Option<ZxdgToplevelDecorationV1>,
     buffer: WlBuffer,
 }
 
@@ -133,7 +163,16 @@ impl TestWindow {
     }
 
     /// Come `open`, con una dimensione a scelta (in pixel, a scala 1).
-    pub fn open_sized(socket: &Path, title: &str, (w, h): (u32, u32)) -> Self {
+    pub fn open_sized(socket: &Path, title: &str, size: (u32, u32)) -> Self {
+        Self::open_with(socket, title, size, false)
+    }
+
+    /// Una finestra che chiede le decorazioni a Ossido (`xdg-decoration`).
+    pub fn open_decorated(socket: &Path, title: &str, size: (u32, u32)) -> Self {
+        Self::open_with(socket, title, size, true)
+    }
+
+    fn open_with(socket: &Path, title: &str, (w, h): (u32, u32), decorated: bool) -> Self {
         let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
         let mut queue = conn.new_event_queue();
         let qh = queue.handle();
@@ -149,6 +188,12 @@ impl TestWindow {
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
         let toplevel = xdg_surface.get_toplevel(&qh, ());
         toplevel.set_title(title.to_owned());
+        let decoration = decorated.then(|| {
+            app.decorations
+                .clone()
+                .expect("zxdg_decoration_manager_v1 assente")
+                .get_toplevel_decoration(&toplevel, &qh, ())
+        });
         surface.commit();
         while !app.configured {
             queue.blocking_dispatch(&mut app).unwrap();
@@ -176,6 +221,7 @@ impl TestWindow {
             app,
             surface,
             _toplevel: toplevel,
+            _decoration: decoration,
             buffer,
         }
     }
@@ -192,6 +238,13 @@ impl TestWindow {
             self.queue.flush().unwrap();
         }
         self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Il modo delle decorazioni che Ossido ha scelto, dopo aver letto gli eventi.
+    #[allow(dead_code)]
+    pub fn decoration_mode(&mut self) -> Option<zxdg_toplevel_decoration_v1::Mode> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.decoration_mode
     }
 
     /// Legge gli eventi in arrivo e dice se Ossido ha chiesto la chiusura.

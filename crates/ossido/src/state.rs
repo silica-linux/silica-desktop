@@ -19,6 +19,7 @@ use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::viewporter::ViewporterState;
@@ -61,6 +62,7 @@ pub struct State {
     /// linux-dmabuf: buffer dalla GPU dei client (solo winit, vedi `dmabuf.rs`).
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
+    pub xdg_decoration_state: XdgDecorationState,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -74,6 +76,14 @@ pub struct State {
     pub perf: crate::perf::Perf,
     /// Colore del desktop finché non c'è uno sfondo (`--background`).
     pub clear_color: [f32; 4],
+    /// Finestre ridotte, con la posizione a cui tornano.
+    pub minimized: Vec<crate::windows::Minimized>,
+    /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
+    pub titlebar_hover: Option<Window>,
+    /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
+    pub titlebar_press: Option<(Window, ossido_render::titlebar::Part)>,
+    /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
+    pub moving: Option<(Window, Point<f64, Logical>)>,
 }
 
 impl State {
@@ -93,6 +103,7 @@ impl State {
         let data_device_state = DataDeviceState::new::<State>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
         let viewporter_state = ViewporterState::new::<State>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -146,6 +157,7 @@ impl State {
             viewporter_state,
             dmabuf_state: DmabufState::new(),
             dmabuf_global: None,
+            xdg_decoration_state,
             seat,
             mapped: 0,
             next_window_id: 0,
@@ -153,6 +165,10 @@ impl State {
             keys: crate::keys::KeyLookup::new()?,
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
+            minimized: Vec::new(),
+            titlebar_hover: None,
+            titlebar_press: None,
+            moving: None,
         })
     }
 

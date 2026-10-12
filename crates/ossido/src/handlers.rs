@@ -87,6 +87,12 @@ impl CompositorHandler for State {
         {
             toplevel.send_configure();
         }
+        // Con la barra di Ossido la cornice cresce verso l'alto: resta nell'area utile.
+        if let Some(window) = self.window_for(surface)
+            && crate::decorations::is_server_side(&window)
+        {
+            self.make_room_for_titlebar(&window);
+        }
 
         self.layer_commit(surface);
 

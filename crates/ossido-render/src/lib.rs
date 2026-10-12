@@ -4,8 +4,10 @@
 //! dell'output. I parametri vengono dalle misure di macOS 27 in `plan/reference/`, citate
 //! accanto a ogni costante.
 
+pub mod cache;
 pub mod corners;
 pub mod shadow;
+pub mod titlebar;
 
 use smithay::backend::renderer::gles::{
     GlesPixelProgram, GlesRenderer, GlesTexProgram, UniformName, UniformType,
@@ -18,6 +20,7 @@ use tracing::warn;
 pub struct Shaders {
     pub corners: Option<GlesTexProgram>,
     pub shadow: Option<GlesPixelProgram>,
+    pub titlebar: Option<GlesPixelProgram>,
 }
 
 /// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
@@ -27,7 +30,17 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
     }
     let corners = compile_texture(renderer, "angoli", corners::SHADER, &corners::UNIFORMS);
     let shadow = compile_pixel(renderer, "ombra", shadow::SHADER, &shadow::UNIFORMS);
-    let shaders = Shaders { corners, shadow };
+    let titlebar = compile_pixel(
+        renderer,
+        "barra del titolo",
+        titlebar::SHADER,
+        &titlebar::UNIFORMS,
+    );
+    let shaders = Shaders {
+        corners,
+        shadow,
+        titlebar,
+    };
     renderer
         .egl_context()
         .user_data()

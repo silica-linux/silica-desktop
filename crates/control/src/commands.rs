@@ -17,6 +17,8 @@ pub const WINDOW_LIST: &str = "window.list";
 pub const WINDOW_FOCUS: &str = "window.focus";
 pub const WINDOW_CLOSE: &str = "window.close";
 pub const WINDOW_MOVE: &str = "window.move";
+pub const WINDOW_MINIMIZE: &str = "window.minimize";
+pub const WINDOW_FULLSCREEN: &str = "window.fullscreen";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
@@ -136,7 +138,7 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: WINDOW_FOCUS,
         label: "Porta in primo piano",
-        description: "Dà il focus a una finestra e la porta sopra le altre.",
+        description: "Dà il focus a una finestra e la porta sopra le altre; se è ridotta la riporta.",
         shortcut: None,
         params: window_target,
     },
@@ -145,6 +147,20 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Chiudi finestra",
         description: "Chiede alla finestra di chiudersi.",
         shortcut: Some("Logo+W"),
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_MINIMIZE,
+        label: "Riduci finestra",
+        description: "Nasconde la finestra; window.focus la riporta.",
+        shortcut: Some("Logo+M"),
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_FULLSCREEN,
+        label: "Schermo intero",
+        description: "Porta la finestra a schermo intero, o la riporta com'era.",
+        shortcut: Some("Logo+Ctrl+F"),
         params: window_target,
     },
     CommandSpec {
@@ -451,6 +467,12 @@ pub struct WindowInfo {
     pub width: i32,
     pub height: i32,
     pub focused: bool,
+    /// Ridotta: non è sullo schermo, window.focus la riporta.
+    #[serde(default)]
+    pub minimized: bool,
+    /// A schermo intero.
+    #[serde(default)]
+    pub fullscreen: bool,
 }
 
 /// Una scorciatoia da tastiera: modificatori più il nome del keysym xkb.

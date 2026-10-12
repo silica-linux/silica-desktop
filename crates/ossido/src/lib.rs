@@ -4,6 +4,7 @@ pub mod backend;
 mod capture;
 pub mod commands;
 mod control;
+mod decorations;
 mod dmabuf;
 mod egl;
 mod handlers;
@@ -13,6 +14,7 @@ mod layers;
 mod perf;
 mod render;
 pub mod state;
+mod windows;
 
 use std::io::Write;
 

@@ -28,11 +28,13 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `ui.screenshot` | `path?` | `width`, `height`, `path` o `png_base64` |
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
-| `window.list` | — | finestre dall'alto in basso: `id`, `title`, `app_id`, `x`, `y`, `width`, `height`, `focused` |
+| `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |
 | `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
-| `window.focus` | `id?` | — |
+| `window.focus` | `id?` | — (riporta anche una finestra ridotta) |
 | `window.close` | `id?` | — |
 | `window.move` | `id?`, `x`, `y` | — |
+| `window.minimize` | `id?` | — (Logo+M) |
+| `window.fullscreen` | `id?` | — (Logo+Ctrl+F; di nuovo per tornare) |
 | `app.launch` | `command` | `pid` |
 | `session.quit` | — | — |
 | `input.pointer_move` | `x`, `y` | — |

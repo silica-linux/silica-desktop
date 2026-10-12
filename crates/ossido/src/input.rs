@@ -10,6 +10,9 @@ use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
 
+use ossido_render::titlebar::{self, Part};
+
+use crate::decorations::{self, Hit};
 use crate::state::State;
 
 impl State {
@@ -18,7 +21,33 @@ impl State {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
-        let under = self.surface_under(location);
+        // Trascinamento per la barra: la cornice segue il punto di presa.
+        if let Some((window, grab)) = self.moving.clone() {
+            let bar = decorations::titlebar_height(&window);
+            let frame = (location - grab).to_i32_round::<i32>();
+            self.space
+                .map_element(window, frame + Point::from((0, bar)), false);
+        }
+        let over_layer = self
+            .layer_under(&[Layer::Overlay, Layer::Top], location)
+            .is_some();
+        let hit = if over_layer {
+            None
+        } else {
+            self.window_hit(location)
+        };
+        let hover = match &hit {
+            Some(Hit::Titlebar(window, _, local)) if titlebar::over_buttons(*local) => {
+                Some(window.clone())
+            }
+            _ => None,
+        };
+        self.titlebar_hover = hover;
+        // Sulla barra il puntatore non è su nessuna superficie del client.
+        let under = match hit {
+            Some(Hit::Titlebar(..)) => None,
+            _ => self.surface_under(location),
+        };
         pointer.motion(
             self,
             under,
@@ -37,8 +66,8 @@ impl State {
             return;
         };
         let serial = SERIAL_COUNTER.next_serial();
+        let location = pointer.current_location();
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
-            let location = pointer.current_location();
             match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
                 // Un clic su un layer non tocca le finestre; il focus solo se lo chiede.
                 Some((layer, _)) => {
@@ -46,13 +75,28 @@ impl State {
                         self.focus_layer(&layer);
                     }
                 }
-                None => {
-                    let clicked = self
-                        .space
-                        .element_under(location)
-                        .map(|(window, _)| window.clone());
-                    self.focus_window(clicked);
-                }
+                None => match self.window_hit(location) {
+                    Some(Hit::Titlebar(window, part, local)) => {
+                        self.focus_window(Some(window.clone()));
+                        if part == Part::Bar {
+                            self.moving = Some((window, local));
+                        } else {
+                            self.titlebar_press = Some((window, part));
+                        }
+                    }
+                    Some(Hit::Content(window)) => self.focus_window(Some(window)),
+                    None => self.focus_window(None),
+                },
+            }
+        }
+        if state == ButtonState::Released {
+            self.moving = None;
+            if let Some((window, part)) = self.titlebar_press.take()
+                && let Some(Hit::Titlebar(over, over_part, _)) = self.window_hit(location)
+                && over == window
+                && over_part == part
+            {
+                self.titlebar_action(&window, part);
             }
         }
         pointer.button(

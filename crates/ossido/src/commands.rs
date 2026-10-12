@@ -9,8 +9,8 @@ use silica_control::commands::{
     self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
     INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST,
     PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams, PointerButton, PointerMove,
-    SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE,
-    WindowInfo, WindowMove, WindowTarget,
+    SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN,
+    WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -86,8 +86,26 @@ impl State {
             LAYER_LIST => to_value(self.layer_list()),
             WINDOW_FOCUS => {
                 let target: WindowTarget = parse(params)?;
-                let window = self.target_window(target.id)?;
+                let window = match target.id.and_then(|id| self.minimized_window(id)) {
+                    Some(window) => {
+                        self.restore_window(&window);
+                        window
+                    }
+                    None => self.target_window(target.id)?,
+                };
                 self.focus_window(Some(window));
+                Ok(Value::Null)
+            }
+            WINDOW_MINIMIZE => {
+                let target: WindowTarget = parse(params)?;
+                let window = self.target_window(target.id)?;
+                self.minimize_window(&window)?;
+                Ok(Value::Null)
+            }
+            WINDOW_FULLSCREEN => {
+                let target: WindowTarget = parse(params)?;
+                let window = self.target_window(target.id)?;
+                self.toggle_fullscreen(&window)?;
                 Ok(Value::Null)
             }
             WINDOW_CLOSE => {
@@ -269,7 +287,7 @@ impl State {
         id
     }
 
-    fn window_id(window: &Window) -> Option<u64> {
+    pub fn window_id(window: &Window) -> Option<u64> {
         window.user_data().get::<WindowId>().map(|id| id.0)
     }
 
@@ -322,13 +340,22 @@ impl State {
     fn window_list(&self) -> Vec<WindowInfo> {
         let focused = self.focused_window();
         // Space elenca dal basso verso l'alto: si rovescia per avere la cima prima.
-        let windows: Vec<&Window> = self.space.elements().collect();
+        let mut windows: Vec<(&Window, bool)> =
+            self.space.elements().rev().map(|w| (w, false)).collect();
+        windows.extend(self.minimized.iter().map(|(w, _)| (w, true)));
         windows
             .into_iter()
-            .rev()
-            .filter_map(|window| {
+            .filter_map(|(window, minimized)| {
                 let id = Self::window_id(window)?;
-                let location = self.space.element_location(window).unwrap_or_default();
+                let location = if minimized {
+                    self.minimized
+                        .iter()
+                        .find(|(w, _)| w == window)
+                        .map(|(_, location)| *location)
+                        .unwrap_or_default()
+                } else {
+                    self.space.element_location(window).unwrap_or_default()
+                };
                 let size = window.geometry().size;
                 let (title, app_id) = window
                     .toplevel()
@@ -352,6 +379,8 @@ impl State {
                     width: size.w,
                     height: size.h,
                     focused: focused.as_ref() == Some(window),
+                    minimized,
+                    fullscreen: crate::windows::is_fullscreen(window),
                 })
             })
             .collect()

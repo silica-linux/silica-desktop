@@ -2,13 +2,11 @@
 //! "Finestre · ombra"): nera, profilo da sfocatura gaussiana, spostata in basso, più
 //! ampia per la finestra attiva, con un anello di 1 pt a contatto.
 
-use std::cell::RefCell;
-
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+use crate::cache::ShaderCache;
 use crate::corners::{CORNER_EXPONENT, CORNER_RADIUS};
 
 /// Parametri di un'ombra, in punti logici; alfa da 0 a 1.
@@ -64,18 +62,14 @@ pub const UNIFORMS: [(&str, UniformType); 9] = [
     ("ring_top", UniformType::_1f),
 ];
 
-/// L'ombra di una finestra, tenuta fra un frame e l'altro (nei dati della finestra) perché
-/// il damage tracker la ridisegni solo quando cambia geometria o stile.
+/// L'ombra di una finestra, tenuta nei dati della finestra.
 #[derive(Default)]
 pub struct WindowShadow {
-    state: RefCell<Option<Cached>>,
+    cache: ShaderCache<(Size<i32, Logical>, ShadowStyle)>,
 }
 
-/// L'elemento con la geometria e lo stile per cui è stato preparato.
-type Cached = (PixelShaderElement, Rectangle<i32, Logical>, ShadowStyle);
-
 impl WindowShadow {
-    /// L'elemento dell'ombra per una finestra con questa geometria (logica, nell'output).
+    /// L'elemento dell'ombra per una finestra con questa cornice (logica, nell'output).
     pub fn element(
         &self,
         program: &GlesPixelProgram,
@@ -87,34 +81,9 @@ impl WindowShadow {
             window.loc - Point::from((side, top)),
             window.size + Size::from((side.saturating_mul(2), top.saturating_add(bottom))),
         );
-        let uniforms = uniforms(window.size, (side, top), style);
-        let mut state = self.state.borrow_mut();
-        match state.as_mut() {
-            Some((element, last_window, last_style))
-                if *last_window == window && *last_style == style =>
-            {
-                element.clone()
-            }
-            Some((element, last_window, last_style)) => {
-                element.resize(area, None);
-                element.update_uniforms(uniforms);
-                *last_window = window;
-                *last_style = style;
-                element.clone()
-            }
-            None => {
-                let element = PixelShaderElement::new(
-                    program.clone(),
-                    area,
-                    None,
-                    1.0,
-                    uniforms,
-                    Kind::Unspecified,
-                );
-                *state = Some((element.clone(), window, style));
-                element
-            }
-        }
+        self.cache.element(program, area, (window.size, style), || {
+            uniforms(window.size, (side, top), style)
+        })
     }
 }
 
