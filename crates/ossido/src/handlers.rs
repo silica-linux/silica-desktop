@@ -143,6 +143,7 @@ impl XdgShellHandler for State {
 
         let window = Window::new_wayland_window(surface);
         let id = self.assign_window_id(&window);
+        self.publish_toplevel(&window);
         info!("nuova finestra {id} a ({offset}, {offset})");
         self.space.map_element(
             window.clone(),
@@ -179,6 +180,15 @@ impl XdgShellHandler for State {
         if let Some(window) = self.window_for(surface.wl_surface()) {
             self.start_closing(&window);
         }
+        self.unpublish_toplevel(&surface);
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        self.update_toplevel(&surface);
+    }
+
+    fn app_id_changed(&mut self, surface: ToplevelSurface) {
+        self.update_toplevel(&surface);
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {

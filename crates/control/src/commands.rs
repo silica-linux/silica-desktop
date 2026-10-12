@@ -241,7 +241,10 @@ pub const CATALOG: &[CommandSpec] = &[
         params: || {
             json!({
                 "type": "object",
-                "properties": {"command": {"type": "string"}},
+                "properties": {
+                    "command": {"type": "string"},
+                    "shell": {"type": "boolean", "description": "Componente della shell (vede silica-shell-v1)"}
+                },
                 "required": ["command"],
                 "additionalProperties": false
             })
@@ -390,6 +393,9 @@ pub struct WindowMove {
 #[serde(deny_unknown_fields)]
 pub struct AppLaunch {
     pub command: String,
+    /// Un componente della shell: vede i protocolli della shell.
+    #[serde(default)]
+    pub shell: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

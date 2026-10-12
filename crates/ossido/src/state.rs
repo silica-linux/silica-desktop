@@ -64,6 +64,9 @@ pub struct State {
     pub dmabuf_global: Option<DmabufGlobal>,
     pub xdg_decoration_state: XdgDecorationState,
     pub glass_manager_state: crate::glass::GlassManagerState,
+    /// Le finestre per la shell (`ext-foreign-toplevel-list`, solo ai suoi componenti).
+    pub foreign_toplevel_list: smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
+    pub shell_manager_state: crate::shell::ShellManagerState,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -149,6 +152,8 @@ impl State {
         let viewporter_state = ViewporterState::new::<State>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
         let glass_manager_state = crate::glass::GlassManagerState::new(&dh);
+        let foreign_toplevel_list = crate::shell::toplevel_list(&dh);
+        let shell_manager_state = crate::shell::ShellManagerState::new(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -161,11 +166,17 @@ impl State {
         let socket = ListeningSocketSource::new_auto()?;
         let socket_name = socket.socket_name().to_os_string();
         loop_handle.insert_source(socket, |stream, _, data| {
-            if let Err(err) = data
-                .state
-                .display_handle
-                .insert_client(stream, Arc::new(ClientState::default()))
-            {
+            // Il processo dall'altra parte del socket dice se è un componente della shell:
+            // si legge qui, una volta, perché i filtri dei global non possono interrogare il
+            // display mentre è bloccato dal dispatch.
+            let shell = crate::shell::stream_is_shell(&stream);
+            if let Err(err) = data.state.display_handle.insert_client(
+                stream,
+                Arc::new(ClientState {
+                    shell,
+                    ..ClientState::default()
+                }),
+            ) {
                 warn!("client Wayland rifiutato: {err}");
             }
         })?;
@@ -204,6 +215,8 @@ impl State {
             dmabuf_global: None,
             xdg_decoration_state,
             glass_manager_state,
+            foreign_toplevel_list,
+            shell_manager_state,
             seat,
             mapped: 0,
             next_window_id: 0,
@@ -268,6 +281,8 @@ impl State {
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    /// Componente della shell (`shell.rs`): vede i protocolli della shell.
+    pub shell: bool,
 }
 
 impl ClientData for ClientState {

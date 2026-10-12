@@ -38,7 +38,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `window.move` | `id?`, `x`, `y` | — |
 | `window.minimize` | `id?` | — (Logo+M) |
 | `window.fullscreen` | `id?` | — (Logo+Ctrl+F; di nuovo per tornare) |
-| `app.launch` | `command` | `pid` |
+| `app.launch` | `command`, `shell?` | `pid` (con `shell` il processo vede i protocolli della shell) |
 | `session.quit` | — | — |
 | `input.pointer_move` | `x`, `y` | — |
 | `input.pointer_button` | `button?`, `pressed` | — |

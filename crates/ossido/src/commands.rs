@@ -149,8 +149,8 @@ impl State {
                 Ok(Value::Null)
             }
             APP_LAUNCH => {
-                let AppLaunch { command } = parse_required(params)?;
-                let pid = self.launch(&command)?;
+                let AppLaunch { command, shell } = parse_required(params)?;
+                let pid = self.launch_with(&command, shell)?;
                 Ok(json!({ "pid": pid }))
             }
             INPUT_POINTER_MOVE => {
@@ -263,10 +263,23 @@ impl State {
 
     /// Avvia un comando di shell come client di questa sessione.
     pub fn launch(&mut self, command: &str) -> Result<u32, String> {
-        let child = Command::new("sh")
+        self.launch_with(command, false)
+    }
+
+    /// Come `launch`; con `shell` il processo è un componente della shell e vede i suoi
+    /// protocolli (`shell.rs`).
+    pub fn launch_with(&mut self, command: &str, shell: bool) -> Result<u32, String> {
+        let mut process = Command::new("sh");
+        process
             .arg("-c")
             .arg(command)
-            .env("WAYLAND_DISPLAY", &self.socket_name)
+            .env("WAYLAND_DISPLAY", &self.socket_name);
+        if shell {
+            process.env(silica_protocols::shell::SHELL_ENV, "1");
+        } else {
+            process.env_remove(silica_protocols::shell::SHELL_ENV);
+        }
+        let child = process
             .spawn()
             .map_err(|e| format!("avvio di {command}: {e}"))?;
         info!("avviato {command} (pid {})", child.id());

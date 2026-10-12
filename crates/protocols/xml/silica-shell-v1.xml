@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="silica_shell_v1">
+  <copyright>
+    Copyright © 2026 Silica contributors
+
+    Licensed under MIT OR Apache-2.0.
+  </copyright>
+
+  <description summary="comandi della shell verso Ossido">
+    Riservato ai componenti della shell di Silica (Dock, barra dei menu, Faro): il global
+    è visibile solo a loro. Le finestre si elencano con ext-foreign-toplevel-list-v1;
+    questo protocollo aggiunge quello che la shell chiede al compositor.
+  </description>
+
+  <interface name="silica_shell_manager_v1" version="1">
+    <request name="destroy" type="destructor"/>
+
+    <request name="activate">
+      <description summary="porta in primo piano una finestra">
+        La finestra con questo identificatore (l'evento identifier di
+        ext_foreign_toplevel_handle_v1) riceve il focus e va sopra le altre; se è
+        ridotta, torna dov'era. Un identificatore sconosciuto non fa niente.
+      </description>
+      <arg name="identifier" type="string"/>
+    </request>
+
+    <request name="launch">
+      <description summary="avvia un'app come client della sessione">
+        Il comando (sintassi della shell POSIX, già senza i codici di campo di Exec)
+        diventa un processo figlio di Ossido, come app.launch del canale di controllo.
+      </description>
+      <arg name="command" type="string"/>
+    </request>
+  </interface>
+</protocol>

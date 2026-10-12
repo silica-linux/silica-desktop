@@ -3,7 +3,7 @@
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
-//!     [--spawn COMANDO]...
+//!     [--spawn COMANDO]... [--spawn-shell COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -94,6 +94,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--spawn" => {
                 let command = value()?;
                 options.spawn.push(command);
+            }
+            "--spawn-shell" => {
+                let command = value()?;
+                options.spawn_shell.push(command);
             }
             _ => return Err(format!("argomento sconosciuto: {arg}")),
         }

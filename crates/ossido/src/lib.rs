@@ -14,6 +14,7 @@ mod keys;
 mod layers;
 mod perf;
 mod render;
+mod shell;
 pub mod state;
 mod windows;
 
@@ -46,6 +47,8 @@ pub struct Options {
     pub control: Option<u16>,
     /// Comandi da avviare come client una volta aperto il socket Wayland.
     pub spawn: Vec<String>,
+    /// Componenti della shell da avviare (`--spawn-shell`): vedono i protocolli della shell.
+    pub spawn_shell: Vec<String>,
     /// Colore del desktop finché non c'è uno sfondo (RGBA 0–1, valori sRGB).
     pub background: [f32; 4],
     /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
@@ -62,6 +65,7 @@ impl Default for Options {
             scale: 1,
             control: None,
             spawn: Vec::new(),
+            spawn_shell: Vec::new(),
             background: state::CLEAR_COLOR,
             animation_scale: 1.0,
             glass: state::GlassSetting::Auto,
@@ -99,6 +103,11 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     std::io::stdout().flush()?;
     for command in &options.spawn {
         if let Err(err) = ossido.state.launch(command) {
+            warn!("{err}");
+        }
+    }
+    for command in &options.spawn_shell {
+        if let Err(err) = ossido.state.launch_with(command, true) {
             warn!("{err}");
         }
     }

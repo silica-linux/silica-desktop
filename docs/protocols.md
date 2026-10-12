@@ -25,3 +25,16 @@ sopra testo e icone.
   Ossido continua.
 
 Le regioni correnti si leggono con `glass.list` (`docs/control.md`).
+
+## silica-shell-v1 e l'elenco delle finestre
+
+Riservati ai componenti della shell: processi con `SILICA_SHELL=1` nell'ambiente, che
+Ossido mette quando li lancia (`--spawn-shell`, `app.launch` con `shell: true`). Ossido lo
+legge alla connessione (pid da `SO_PEERCRED`, ambiente da `/proc`). Non è una barriera
+contro altri processi dello stesso utente: quella arriverà con la sandbox delle app.
+
+- `ext-foreign-toplevel-list-v1` (standard): le finestre aperte, con titolo, app id e un
+  identificatore.
+- `silica_shell_manager_v1.activate(identifier)`: focus alla finestra (e la riporta se è
+  ridotta).
+- `silica_shell_manager_v1.launch(command)`: avvia un'app come figlia di Ossido.
