@@ -85,6 +85,11 @@ pub struct State {
     pub titlebar_press: Option<(Window, ossido_render::titlebar::Part)>,
     /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
     pub moving: Option<(Window, Point<f64, Logical>)>,
+    /// Moltiplicatore delle durate delle animazioni; 0 le spegne (`--animation-scale`,
+    /// `ui.animation_scale`).
+    pub animation_speed: f64,
+    /// Finestre chiuse che stanno svanendo.
+    pub closing: Vec<crate::render::Closing>,
 }
 
 impl State {
@@ -172,6 +177,8 @@ impl State {
             titlebar_hover: None,
             titlebar_press: None,
             moving: None,
+            animation_speed: 1.0,
+            closing: Vec::new(),
         })
     }
 

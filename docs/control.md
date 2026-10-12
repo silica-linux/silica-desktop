@@ -26,6 +26,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | Comando | Parametri | Risultato |
 | --- | --- | --- |
 | `ui.screenshot` | `path?` | `width`, `height`, `path` o `png_base64` |
+| `ui.animation_scale` | `scale` (0–1000) | — (moltiplica le durate delle animazioni; 0 le spegne) |
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
 | `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |

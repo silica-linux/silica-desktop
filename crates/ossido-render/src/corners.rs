@@ -3,6 +3,7 @@
 
 use smithay::backend::renderer::Frame;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform, UniformValue,
@@ -60,10 +61,14 @@ fn frag_to_local(
     )
 }
 
-/// Una superficie della finestra (principale o sottosuperficie) con gli angoli tagliati.
-/// Senza programma (shader non compilato) si disegna com'è.
+/// Una superficie della finestra (principale o sottosuperficie), scalata attorno a un
+/// punto durante le animazioni (scala 1 a riposo).
+pub type WindowSurface = RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>;
+
+/// Una superficie della finestra con gli angoli tagliati. Senza programma (shader non
+/// compilato) si disegna com'è.
 pub struct RoundedSurface {
-    inner: WaylandSurfaceRenderElement<GlesRenderer>,
+    inner: WindowSurface,
     /// La geometria della finestra nell'output, in pixel fisici.
     window: Rectangle<f64, Physical>,
     radius: f64,
@@ -75,7 +80,7 @@ pub struct RoundedSurface {
 
 impl RoundedSurface {
     pub fn new(
-        inner: WaylandSurfaceRenderElement<GlesRenderer>,
+        inner: WindowSurface,
         window: Rectangle<f64, Physical>,
         scale: f64,
         output: Size<i32, Physical>,

@@ -4,6 +4,7 @@
 //! dell'output. I parametri vengono dalle misure di macOS 27 in `plan/reference/`, citate
 //! accanto a ogni costante.
 
+pub mod animation;
 pub mod cache;
 pub mod corners;
 pub mod glass;

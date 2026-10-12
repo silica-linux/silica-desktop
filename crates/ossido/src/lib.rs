@@ -48,6 +48,8 @@ pub struct Options {
     pub spawn: Vec<String>,
     /// Colore del desktop finché non c'è uno sfondo (RGBA 0–1, valori sRGB).
     pub background: [f32; 4],
+    /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
+    pub animation_scale: f64,
 }
 
 impl Default for Options {
@@ -59,6 +61,7 @@ impl Default for Options {
             control: None,
             spawn: Vec::new(),
             background: state::CLEAR_COLOR,
+            animation_scale: 1.0,
         }
     }
 }
@@ -72,6 +75,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     ossido.state.clear_color = options.background;
+    ossido.state.animation_speed = options.animation_scale;
     if options.scale != 1 {
         ossido.state.output.change_current_state(
             None,

@@ -45,6 +45,8 @@ fn ossido_child_process() {
         size: (w.parse().unwrap(), h.parse().unwrap()),
         scale: scale.parse().unwrap(),
         control: Some(0),
+        // Screenshot deterministici: le finestre compaiono subito alla dimensione piena.
+        animation_scale: 0.0,
         ..Default::default()
     })
     .unwrap();

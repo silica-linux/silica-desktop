@@ -2,20 +2,29 @@
 //! `ossido-render`, dal primo piano allo sfondo. Con pixman (headless senza EGL) si usa
 //! ancora `space_render_elements`, senza effetti.
 
-use ossido_render::corners::RoundedSurface;
-use ossido_render::glass::{CLEAR_LIGHT, GlassCache, GlassElement, PhysicalRegion, THICK_LIGHT};
+use std::cell::Cell;
+use std::time::Instant;
+
+use ossido_render::animation;
+use ossido_render::corners::{RoundedSurface, WindowSurface};
+use ossido_render::glass::{
+    CLEAR_LIGHT, GlassCache, GlassElement, PhysicalRegion, THICK_LIGHT, render_to_texture,
+};
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
 use ossido_render::titlebar::{Titlebar, TitlebarState};
-use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
+use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
 use smithay::backend::renderer::gles::element::PixelShaderElement;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::{Renderer, Texture};
 use smithay::desktop::{LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::render_elements;
-use smithay::utils::{Physical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
@@ -27,10 +36,44 @@ render_elements! {
     pub OutputElement<=GlesRenderer>;
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Rounded=RoundedSurface,
-    /// Elementi a pixel shader: ombre e barre del titolo.
-    Shadow=PixelShaderElement,
+    /// Elementi a pixel shader della finestra: barra del titolo e ombra.
+    Shader=RescaleRenderElement<PixelShaderElement>,
     Glass=GlassElement,
+    /// Istantanea di una finestra che si chiude.
+    Closing=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
 }
+
+/// Quello che serve al frame oltre allo spazio.
+pub struct RenderContext<'a> {
+    /// Finestra con il puntatore sui pulsanti della barra.
+    pub titlebar_hover: Option<&'a Window>,
+    pub clear_color: [f32; 4],
+    /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
+    pub animation_speed: f64,
+    pub closing: &'a [Closing],
+    pub now: Instant,
+}
+
+/// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
+pub struct Closing {
+    pub id: Id,
+    pub texture: GlesTexture,
+    /// Dove sta l'istantanea nell'output, in pixel fisici.
+    pub bbox: Rectangle<i32, Physical>,
+    /// Centro della cornice, attorno a cui la finestra si riduce.
+    pub center: Point<i32, Physical>,
+    pub start: Instant,
+}
+
+impl Closing {
+    pub fn finished(&self, now: Instant, speed: f64) -> bool {
+        animation::progress(now - self.start, animation::CLOSE, speed) >= 1.0
+    }
+}
+
+/// Quando la finestra ha mostrato il primo buffer: l'apertura parte da lì.
+#[derive(Default)]
+struct Opened(Cell<Option<Instant>>);
 
 /// Dove va il vetro di una superficie: subito dietro le sue superfici nella lista.
 struct GlassAnchor {
@@ -47,13 +90,175 @@ fn is_active(window: &Window) -> bool {
     })
 }
 
+/// La scala dell'apertura in questo momento (1 a riposo).
+fn open_scale(window: &Window, context: &RenderContext<'_>) -> f64 {
+    window.user_data().insert_if_missing(Opened::default);
+    let Some(opened) = window.user_data().get::<Opened>() else {
+        return 1.0;
+    };
+    let start = match opened.0.get() {
+        Some(start) => start,
+        // Senza contenuto non c'è ancora niente da mostrare.
+        None if window.geometry().size.is_empty() => return 1.0,
+        None => {
+            opened.0.set(Some(context.now));
+            context.now
+        }
+    };
+    let progress = animation::progress(
+        context.now.saturating_duration_since(start),
+        animation::OPEN,
+        context.animation_speed,
+    );
+    animation::open_scale(progress)
+}
+
+/// Un rettangolo scalato attorno a `center`.
+fn scale_rect(
+    rect: Rectangle<f64, Physical>,
+    center: Point<f64, Physical>,
+    factor: f64,
+) -> Rectangle<f64, Physical> {
+    let loc = center + (rect.loc - center).upscale(factor);
+    Rectangle::new(loc, rect.size.upscale(factor))
+}
+
+/// Gli elementi di una finestra, dal primo piano allo sfondo (superfici, barra, ombra),
+/// scalati di `factor` attorno al centro della cornice. Con il vetro, l'indice dopo il
+/// quale va (dietro le superfici, senza vedere barra e ombra della finestra).
+#[allow(clippy::too_many_arguments)]
+fn window_elements(
+    renderer: &mut GlesRenderer,
+    shaders: &ossido_render::Shaders,
+    space: &Space<Window>,
+    window: &Window,
+    output_origin: Point<i32, Logical>,
+    output_size: Size<i32, Physical>,
+    scale: f64,
+    factor: f64,
+    hovered: bool,
+) -> Vec<OutputElement> {
+    let (Some(location), Some(geometry)) = (
+        space.element_location(window),
+        space.element_geometry(window),
+    ) else {
+        return Vec::new();
+    };
+    let render_location =
+        (location - window.geometry().loc - output_origin).to_physical_precise_round(scale);
+    let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+        renderer,
+        render_location,
+        scale.into(),
+        1.0,
+    );
+    // A schermo intero niente angoli, barra, ombra né animazione (come nelle riprese).
+    if crate::windows::is_fullscreen(window) {
+        return surfaces.into_iter().map(OutputElement::Surface).collect();
+    }
+    let mut frame = decorations::frame_of(window, geometry);
+    frame.loc -= output_origin;
+    let frame_physical = frame.to_f64().to_physical(scale);
+    let center_f = frame_physical.loc + frame_physical.size.downscale(2.0).to_point();
+    let center = center_f.to_i32_round();
+    let mut elements: Vec<OutputElement> = surfaces
+        .into_iter()
+        .map(|surface| {
+            OutputElement::Rounded(RoundedSurface::new(
+                WindowSurface::from_element(surface, center, factor),
+                scale_rect(frame_physical, center_f, factor),
+                scale * factor,
+                output_size,
+                shaders.corners.clone(),
+            ))
+        })
+        .collect();
+    let active = is_active(window);
+    if decorations::is_server_side(window)
+        && let Some(program) = &shaders.titlebar
+    {
+        window.user_data().insert_if_missing(Titlebar::default);
+        if let Some(titlebar) = window.user_data().get::<Titlebar>() {
+            let state = TitlebarState {
+                active,
+                hovered,
+                scale,
+            };
+            elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
+                titlebar.element(program, frame, state),
+                center,
+                factor,
+            )));
+        }
+    }
+    if let Some(program) = &shaders.shadow {
+        let style = if active { ACTIVE_LIGHT } else { INACTIVE_LIGHT };
+        window.user_data().insert_if_missing(WindowShadow::default);
+        if let Some(shadow) = window.user_data().get::<WindowShadow>() {
+            elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
+                shadow.element(program, frame, style),
+                center,
+                factor,
+            )));
+        }
+    }
+    elements
+}
+
+/// L'istantanea di una finestra (superfici, barra e ombra) per l'animazione di chiusura.
+pub fn snapshot_window(
+    renderer: &mut GlesRenderer,
+    space: &Space<Window>,
+    output: &Output,
+    window: &Window,
+) -> Option<Closing> {
+    let shaders = ossido_render::shaders(renderer);
+    let scale = output.current_scale().fractional_scale();
+    let output_size = output.current_mode()?.size;
+    let output_origin = space.output_geometry(output)?.loc;
+    let elements = window_elements(
+        renderer,
+        &shaders,
+        space,
+        window,
+        output_origin,
+        output_size,
+        scale,
+        1.0,
+        false,
+    );
+    let bbox = elements
+        .iter()
+        .map(|element| {
+            smithay::backend::renderer::element::Element::geometry(element, scale.into())
+        })
+        .reduce(|a, b| a.merge(b))?
+        .intersection(Rectangle::from_size(output_size))?;
+    let mut frame = decorations::frame_of(window, space.element_geometry(window)?);
+    frame.loc -= output_origin;
+    let frame = frame.to_f64().to_physical(scale);
+    let center = (frame.loc + frame.size.downscale(2.0).to_point()).to_i32_round();
+    match render_to_texture(renderer, &elements, bbox, scale, [0.0; 4]) {
+        Ok(texture) => Some(Closing {
+            id: Id::new(),
+            texture,
+            bbox,
+            center,
+            start: Instant::now(),
+        }),
+        Err(err) => {
+            warn!("istantanea della finestra chiusa non riuscita: {err:?}");
+            None
+        }
+    }
+}
+
 /// Gli elementi dell'output, dal primo piano allo sfondo.
 pub fn output_elements(
     renderer: &mut GlesRenderer,
     space: &Space<Window>,
     output: &Output,
-    titlebar_hover: Option<&Window>,
-    clear_color: [f32; 4],
+    context: &RenderContext<'_>,
 ) -> Vec<OutputElement> {
     let shaders = ossido_render::shaders(renderer);
     let scale = output.current_scale().fractional_scale();
@@ -101,77 +306,58 @@ pub fn output_elements(
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
     push_layers(&mut elements, &mut anchors, renderer, Layer::Top);
 
-    for window in space.elements().rev() {
-        let (Some(location), Some(geometry)) = (
-            space.element_location(window),
-            space.element_geometry(window),
-        ) else {
-            continue;
-        };
-        let render_location =
-            (location - window.geometry().loc - output_origin).to_physical_precise_round(scale);
-        let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-            renderer,
-            render_location,
-            scale.into(),
-            1.0,
+    // Le finestre chiuse svaniscono sopra le altre.
+    let context_id = renderer.context_id();
+    for closing in context.closing {
+        let progress = animation::progress(
+            context.now.saturating_duration_since(closing.start),
+            animation::CLOSE,
+            context.animation_speed,
         );
-        let anchor = window.toplevel().map(|toplevel| GlassAnchor {
-            index: 0,
-            surface: toplevel.wl_surface().clone(),
-            origin: render_location,
-        });
-        // A schermo intero niente angoli, barra né ombra (come nelle riprese).
-        if crate::windows::is_fullscreen(window) {
-            elements.extend(surfaces.into_iter().map(OutputElement::Surface));
-            anchors.extend(anchor.map(|anchor| GlassAnchor {
-                index: elements.len(),
-                ..anchor
-            }));
-            continue;
-        }
-        let mut frame = decorations::frame_of(window, geometry);
-        frame.loc -= output_origin;
-        let frame_physical = frame.to_f64().to_physical(scale);
-        elements.extend(surfaces.into_iter().map(|surface| {
-            OutputElement::Rounded(RoundedSurface::new(
-                surface,
-                frame_physical,
-                scale,
-                output_size,
-                shaders.corners.clone(),
-            ))
-        }));
-        let active = is_active(window);
-        if decorations::is_server_side(window)
-            && let Some(program) = &shaders.titlebar
+        let texture = TextureRenderElement::from_static_texture(
+            closing.id.clone(),
+            context_id.clone(),
+            closing.bbox.loc.to_f64(),
+            closing.texture.clone(),
+            1,
+            Transform::Normal,
+            Some(animation::close_alpha(progress)),
+            None,
+            Some(closing.texture.size().to_logical(1, Transform::Normal)),
+            None,
+            Kind::Unspecified,
+        );
+        elements.push(OutputElement::Closing(RescaleRenderElement::from_element(
+            texture,
+            closing.center,
+            animation::close_scale(progress),
+        )));
+    }
+
+    for window in space.elements().rev() {
+        let factor = open_scale(window, context);
+        let hovered = context.titlebar_hover == Some(window);
+        elements.extend(window_elements(
+            renderer,
+            &shaders,
+            space,
+            window,
+            output_origin,
+            output_size,
+            scale,
+            factor,
+            hovered,
+        ));
+        if let Some(toplevel) = window.toplevel()
+            && let Some(location) = space.element_location(window)
         {
-            window.user_data().insert_if_missing(Titlebar::default);
-            if let Some(titlebar) = window.user_data().get::<Titlebar>() {
-                let state = TitlebarState {
-                    active,
-                    hovered: titlebar_hover == Some(window),
-                    scale,
-                };
-                elements.push(OutputElement::Shadow(
-                    titlebar.element(program, frame, state),
-                ));
-            }
+            anchors.push(GlassAnchor {
+                index: elements.len(),
+                surface: toplevel.wl_surface().clone(),
+                origin: (location - window.geometry().loc - output_origin)
+                    .to_physical_precise_round(scale),
+            });
         }
-        // L'ombra va dietro la finestra.
-        if let Some(program) = &shaders.shadow {
-            let style = if active { ACTIVE_LIGHT } else { INACTIVE_LIGHT };
-            window.user_data().insert_if_missing(WindowShadow::default);
-            if let Some(shadow) = window.user_data().get::<WindowShadow>() {
-                elements.push(OutputElement::Shadow(shadow.element(program, frame, style)));
-            }
-        }
-        // Il vetro della finestra va dietro le sue superfici ma non vede la sua barra né
-        // la sua ombra (che dentro la cornice è comunque nascosta).
-        anchors.extend(anchor.map(|anchor| GlassAnchor {
-            index: elements.len(),
-            ..anchor
-        }));
     }
 
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
@@ -186,9 +372,9 @@ pub fn output_elements(
                 .map(|region| PhysicalRegion {
                     rect: Rectangle::new(
                         anchor.origin
-                            + Point::<i32, smithay::utils::Logical>::from((region.x, region.y))
+                            + Point::<i32, Logical>::from((region.x, region.y))
                                 .to_physical_precise_round(scale),
-                        Size::<i32, smithay::utils::Logical>::from((region.width, region.height))
+                        Size::<i32, Logical>::from((region.width, region.height))
                             .to_physical_precise_round(scale),
                     ),
                     radius: region.radius * scale,
@@ -214,7 +400,7 @@ pub fn output_elements(
                         behind,
                         output_rect,
                         scale,
-                        clear_color,
+                        context.clear_color,
                     )
                 })
             });

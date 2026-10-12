@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
-//!     [--background RRGGBB] [--spawn COMANDO]...
+//!     [--background RRGGBB] [--animation-scale F] [--spawn COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -68,6 +68,16 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     port.parse()
                         .map_err(|_| format!("porta non valida: {port}"))?,
                 );
+            }
+            "--animation-scale" => {
+                let text = value()?;
+                options.animation_scale = text
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|scale| scale.is_finite() && (0.0..=1000.0).contains(scale))
+                    .ok_or(format!(
+                        "scala delle animazioni non valida (0–1000): {text}"
+                    ))?;
             }
             "--background" => {
                 let hex = value()?;

@@ -174,6 +174,13 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        // La finestra svanisce dall'ultima immagine: la superficie ha ancora il buffer.
+        if let Some(window) = self.window_for(surface.wl_surface()) {
+            self.start_closing(&window);
+        }
+    }
+
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // I grab dei popup arrivano con i menu (M3); per ora il popup resta aperto.
     }

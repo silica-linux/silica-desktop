@@ -187,7 +187,7 @@ impl GlassCache {
             cached.signature == signature && cached.regions == regions && cached.bbox == bbox
         });
         if !reuse {
-            let sharp = capture(renderer, behind, bbox, scale, clear_color)?;
+            let sharp = render_to_texture(renderer, behind, bbox, scale, clear_color)?;
             let mut textures: Vec<(MaterialParams, GlesTexture)> = Vec::new();
             for region in regions {
                 if textures
@@ -255,10 +255,12 @@ fn buffer_size(size: Size<i32, Physical>) -> Size<i32, Buffer> {
     size.to_logical(1).to_buffer(1, Transform::Normal)
 }
 
-/// Ridisegna gli elementi dietro il vetro (e il colore del desktop) dentro `bbox`.
-fn capture<E: RenderElement<GlesRenderer>>(
+/// Disegna `elements` (dal primo piano allo sfondo) sopra `clear_color` in una texture
+/// nuova che copre `bbox` dell'output: lo sfondo del vetro, l'istantanea di una finestra
+/// che si chiude.
+pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
     renderer: &mut GlesRenderer,
-    behind: &[E],
+    elements: &[E],
     bbox: Rectangle<i32, Physical>,
     scale: f64,
     clear_color: [f32; 4],
@@ -268,7 +270,7 @@ fn capture<E: RenderElement<GlesRenderer>>(
         let mut target = renderer.bind(&mut texture)?;
         let mut frame = renderer.render(&mut target, bbox.size, Transform::Normal)?;
         frame.clear(clear_color.into(), &[Rectangle::from_size(bbox.size)])?;
-        for element in behind.iter().rev() {
+        for element in elements.iter().rev() {
             let geometry = element.geometry(Scale::from(scale));
             let Some(visible) = geometry.intersection(bbox) else {
                 continue;

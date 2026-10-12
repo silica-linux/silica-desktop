@@ -5,7 +5,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -15,7 +15,7 @@ use smithay::utils::{Rectangle, Transform};
 use tracing::{info, warn};
 
 use crate::capture::{Capture, capture, capture_elements};
-use crate::render::output_elements;
+use crate::render::{RenderContext, output_elements};
 use crate::state::{Ossido, State};
 
 pub enum Backend {
@@ -164,13 +164,14 @@ impl State {
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
-                let elements = output_elements(
-                    renderer,
-                    &self.space,
-                    &self.output,
-                    self.titlebar_hover.as_ref(),
-                    self.clear_color,
-                );
+                let context = RenderContext {
+                    titlebar_hover: self.titlebar_hover.as_ref(),
+                    clear_color: self.clear_color,
+                    animation_speed: self.animation_speed,
+                    closing: &self.closing,
+                    now: Instant::now(),
+                };
+                let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
                     renderer,
                     &self.output,
@@ -179,13 +180,14 @@ impl State {
                 )
             }
             Backend::Headless(Headless::Gles(renderer)) => {
-                let elements = output_elements(
-                    renderer,
-                    &self.space,
-                    &self.output,
-                    self.titlebar_hover.as_ref(),
-                    self.clear_color,
-                );
+                let context = RenderContext {
+                    titlebar_hover: self.titlebar_hover.as_ref(),
+                    clear_color: self.clear_color,
+                    animation_speed: self.animation_speed,
+                    closing: &self.closing,
+                    now: Instant::now(),
+                };
+                let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
                     renderer.as_mut(),
                     &self.output,
@@ -205,18 +207,27 @@ impl State {
     }
 
     fn render_winit(&mut self) {
+        let now = Instant::now();
+        let speed = self.animation_speed;
+        self.closing.retain(|closing| !closing.finished(now, speed));
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
         let size = backend.graphics.window_size();
         let damage = Rectangle::from_size(size);
         let clear_color = self.clear_color;
+        let context = RenderContext {
+            titlebar_hover: self.titlebar_hover.as_ref(),
+            clear_color,
+            animation_speed: speed,
+            closing: &self.closing,
+            now,
+        };
         let elements = output_elements(
             backend.graphics.renderer(),
             &self.space,
             &self.output,
-            self.titlebar_hover.as_ref(),
-            clear_color,
+            &context,
         );
         let rendered = match backend.graphics.bind() {
             Ok((renderer, mut framebuffer)) => backend
@@ -236,5 +247,27 @@ impl State {
         }
         backend.graphics.window().request_redraw();
         self.send_frames();
+    }
+}
+
+impl State {
+    /// L'istantanea della finestra che si chiude, per farla svanire (solo con GLES).
+    pub fn start_closing(&mut self, window: &smithay::desktop::Window) {
+        if self.animation_speed <= 0.0 {
+            return;
+        }
+        let renderer = match &mut self.backend {
+            Backend::Winit(backend) => backend.graphics.renderer(),
+            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
+            Backend::Headless(Headless::Pixman(_)) => return,
+        };
+        let now = Instant::now();
+        let speed = self.animation_speed;
+        self.closing.retain(|closing| !closing.finished(now, speed));
+        if let Some(closing) =
+            crate::render::snapshot_window(renderer, &self.space, &self.output, window)
+        {
+            self.closing.push(closing);
+        }
     }
 }

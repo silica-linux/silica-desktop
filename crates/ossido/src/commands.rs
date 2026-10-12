@@ -6,11 +6,12 @@ use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
-    self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams, GLASS_LIST,
-    INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST,
-    PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams, PointerButton, PointerMove,
-    SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN,
-    WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
+    self, APP_LAUNCH, AnimationScale, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE,
+    ExecuteParams, GLASS_LIST, INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE,
+    INPUT_TYPE, Key, LAYER_LIST, PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams,
+    PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_SCREENSHOT,
+    WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE,
+    WindowInfo, WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -74,6 +75,16 @@ impl State {
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
+            UI_ANIMATION_SCALE => {
+                let AnimationScale { scale } = parse_required(params)?;
+                if !scale.is_finite() || !(0.0..=1000.0).contains(&scale) {
+                    return Err(format!(
+                        "scala delle animazioni non valida (0–1000): {scale}"
+                    ));
+                }
+                self.animation_speed = scale;
+                Ok(Value::Null)
+            }
             ENGINE_COMMANDS => Ok(commands::catalog_json()),
             ENGINE_EXECUTE => {
                 let ExecuteParams { id, params } = parse_required(params)?;

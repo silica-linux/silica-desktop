@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 /// Cattura l'output come PNG.
 pub const UI_SCREENSHOT: &str = "ui.screenshot";
+pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
 /// Elenca il catalogo dei comandi.
 pub const ENGINE_COMMANDS: &str = "engine.commands";
 /// Esegue un comando del catalogo per id: `{"id": "...", "params": {...}}`.
@@ -94,6 +95,20 @@ pub const CATALOG: &[CommandSpec] = &[
                 "properties": {
                     "path": {"type": "string", "description": "Dove scrivere il PNG; senza, torna in png_base64"}
                 },
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: UI_ANIMATION_SCALE,
+        label: "Velocità delle animazioni",
+        description: "Moltiplica le durate delle animazioni; 0 le spegne (riduci movimento).",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"scale": {"type": "number", "minimum": 0, "maximum": 1000}},
+                "required": ["scale"],
                 "additionalProperties": false
             })
         },
@@ -579,4 +594,11 @@ mod tests {
             WindowTarget::default()
         );
     }
+}
+
+/// Parametri di [`UI_ANIMATION_SCALE`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationScale {
+    pub scale: f64,
 }

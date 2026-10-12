@@ -294,6 +294,13 @@ impl TestWindow {
             .map_err(|e| e.to_string())
     }
 
+    /// Distrugge il toplevel (la finestra si chiude) lasciando viva la superficie.
+    #[allow(dead_code)]
+    pub fn destroy_toplevel(&mut self) {
+        self._toplevel.destroy();
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
     /// Il modo delle decorazioni che Ossido ha scelto, dopo aver letto gli eventi.
     #[allow(dead_code)]
     pub fn decoration_mode(&mut self) -> Option<zxdg_toplevel_decoration_v1::Mode> {

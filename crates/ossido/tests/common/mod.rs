@@ -48,6 +48,8 @@ impl Headless {
                 "--size",
                 &format!("{width}x{height}"),
             ])
+            // Screenshot deterministici: niente animazioni, salvo chi le riaccende.
+            .args(["--animation-scale", "0"])
             .args(extra)
             .args(["--control", "0"])
             .env("XDG_RUNTIME_DIR", &dir)
