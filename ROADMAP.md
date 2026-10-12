@@ -80,4 +80,4 @@ conformità), mai stimata.
 
 | Area | Metrica | Valore | Misurato il |
 | --- | --- | --- | --- |
-| — | — | nessuna misura ancora | — |
+| Finestre · angoli | pixel mancanti per riga dell'angolo contro la maschera di riferimento (test `window_corners_follow_the_reference`) | errore massimo 0,44 px, rms 0,13 px | 2026-10-13 |
