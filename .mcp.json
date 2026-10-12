@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "silica": {
+      "command": "cargo",
+      "args": ["run", "--quiet", "--package", "silica-cli", "--", "mcp"],
+      "env": { "SILICA_CONTROL": "127.0.0.1:7979" }
+    }
+  }
+}

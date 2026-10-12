@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod commands;
+pub mod mcp;
 
 pub use commands::{CATALOG, CommandSpec, Shortcut, UI_SCREENSHOT};
 

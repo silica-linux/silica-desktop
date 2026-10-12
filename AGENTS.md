@@ -101,7 +101,9 @@ Flutter, e `ossido` non dipende da `daemon`.
 
 1. `cargo xtask run --nested --control 7979` avvia Ossido annidato (backend winit) con
    canale di controllo.
-2. L'agente invia comandi JSON sul socket (`engine.execute`, `ui.screenshot`) o via MCP.
+2. L'agente invia comandi JSON sul socket (`engine.execute`, `ui.screenshot`), con
+   `silica-cli` o via MCP (`silica-cli mcp`, già in `.mcp.json`). Protocollo e comandi:
+   `docs/control.md`.
 3. Lo screenshot viene confrontato con il riferimento in `plan/reference/` con una
    metrica di differenza visiva; il risultato aggiorna la parità in `ROADMAP.md`.
 4. In headless lo stesso ciclo gira in CI, senza finestra.
