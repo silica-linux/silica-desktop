@@ -13,8 +13,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
+pub mod client;
+
 use ossido::state::CLEAR_COLOR;
-use silica_control::Client;
+use silica_control::{Client, ScreenshotParams};
 
 pub const WIDTH: u32 = 320;
 pub const HEIGHT: u32 = 200;
@@ -68,6 +70,10 @@ impl Headless {
         }
     }
 
+    pub fn try_wait(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().unwrap()
+    }
+
     pub fn client(&self) -> Client {
         Client::connect(&self.control).unwrap()
     }
@@ -100,4 +106,22 @@ pub fn assert_clear_color(pixels: &[u8], x: u32, y: u32) {
             "pixel ({x}, {y}) = {pixel:?}, atteso il colore di fondo {CLEAR_COLOR:?}"
         );
     }
+}
+
+/// RGBA del pixel (x, y) in uno screenshot `WIDTH`×`HEIGHT`.
+pub fn pixel(shot: &[u8], x: u32, y: u32) -> [u8; 4] {
+    let offset = ((y * WIDTH + x) * 4) as usize;
+    shot[offset..offset + 4].try_into().unwrap()
+}
+
+/// Uno screenshot su file, decodificato in RGBA.
+pub fn screenshot(ossido: &Headless) -> Vec<u8> {
+    let path = ossido.dir.join("shot.png");
+    ossido
+        .client()
+        .screenshot(&ScreenshotParams {
+            path: Some(path.to_string_lossy().into_owned()),
+        })
+        .unwrap();
+    decode(&std::fs::read(&path).unwrap()).1
 }

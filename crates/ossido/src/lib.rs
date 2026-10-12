@@ -2,17 +2,17 @@
 
 pub mod backend;
 mod capture;
+pub mod commands;
 mod control;
 mod handlers;
 mod input;
 pub mod state;
 
 use std::io::Write;
-use std::process::Command;
 
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::state::State;
 
@@ -65,14 +65,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     }
     std::io::stdout().flush()?;
     for command in &options.spawn {
-        match Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .env("WAYLAND_DISPLAY", &socket)
-            .spawn()
-        {
-            Ok(_) => info!("avviato: {command}"),
-            Err(err) => warn!("avvio di {command} fallito: {err}"),
+        if let Err(err) = ossido.state.launch(command) {
+            warn!("{err}");
         }
     }
 

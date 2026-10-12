@@ -11,7 +11,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
-use smithay::utils::{SERIAL_COUNTER, Serial};
+use smithay::utils::Serial;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
@@ -114,21 +114,12 @@ impl XdgShellHandler for State {
         let offset = CASCADE_STEP.saturating_mul(slot.saturating_add(1));
         self.mapped = self.mapped.wrapping_add(1);
 
-        info!("nuova finestra a ({offset}, {offset})");
-        let wl_surface = surface.wl_surface().clone();
         let window = Window::new_wayland_window(surface);
-        for other in self.space.elements() {
-            other.set_activated(false);
-        }
-        self.space.map_element(window, (offset, offset), true);
-        if let Some(keyboard) = self.seat.get_keyboard() {
-            keyboard.set_focus(self, Some(wl_surface), SERIAL_COUNTER.next_serial());
-        }
-        for window in self.space.elements() {
-            if let Some(toplevel) = window.toplevel() {
-                toplevel.send_pending_configure();
-            }
-        }
+        let id = self.assign_window_id(&window);
+        info!("nuova finestra {id} a ({offset}, {offset})");
+        self.space
+            .map_element(window.clone(), (offset, offset), true);
+        self.focus_window(Some(window));
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {

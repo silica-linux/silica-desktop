@@ -15,8 +15,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Cattura l'output come PNG. Parametri: [`ScreenshotParams`]; risultato: [`Screenshot`].
-pub const UI_SCREENSHOT: &str = "ui.screenshot";
+pub mod commands;
+
+pub use commands::{CATALOG, CommandSpec, Shortcut, UI_SCREENSHOT};
 
 /// Lunghezza massima di una richiesta: oltre, il server chiude la connessione.
 pub const MAX_REQUEST_BYTES: usize = 1 << 20;
@@ -60,6 +61,7 @@ impl Response {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotParams {
     /// Dove scrivere il PNG. Senza, il PNG torna in base64 in `png_base64`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1019,6 +1019,7 @@ version = "0.0.0"
 dependencies = [
  "base64",
  "png",
+ "serde",
  "serde_json",
  "silica-control",
  "smithay",

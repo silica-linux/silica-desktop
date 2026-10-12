@@ -21,6 +21,8 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use tracing::{info, warn};
 
+use silica_control::Shortcut;
+
 use crate::backend::Backend;
 
 /// Colore di fondo del desktop finché non c'è uno sfondo (RGBA lineare).
@@ -54,6 +56,9 @@ pub struct State {
 
     /// Numero di finestre aperte finora, per disporle a cascata.
     pub mapped: u32,
+    /// Ultimo id assegnato a una finestra.
+    pub next_window_id: u64,
+    pub shortcuts: Vec<(Shortcut, &'static str)>,
 }
 
 impl State {
@@ -122,6 +127,8 @@ impl State {
             data_device_state,
             seat,
             mapped: 0,
+            next_window_id: 0,
+            shortcuts: crate::commands::shortcuts(),
         })
     }
 

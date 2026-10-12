@@ -2,11 +2,12 @@
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
 };
-use smithay::input::keyboard::FilterResult;
+use smithay::input::keyboard::{FilterResult, xkb};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::SERIAL_COUNTER;
+use tracing::warn;
 
 use crate::state::State;
 
@@ -16,15 +17,43 @@ impl State {
             InputEvent::Keyboard { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
-                if let Some(keyboard) = self.seat.get_keyboard() {
-                    keyboard.input::<(), _>(
-                        self,
-                        event.key_code(),
-                        event.state(),
-                        serial,
-                        time,
-                        |_, _, _| FilterResult::Forward,
-                    );
+                let Some(keyboard) = self.seat.get_keyboard() else {
+                    return;
+                };
+                let pressed = event.state() == KeyState::Pressed;
+                let shortcuts = self.shortcuts.clone();
+                let command = keyboard.input::<&'static str, _>(
+                    self,
+                    event.key_code(),
+                    event.state(),
+                    serial,
+                    time,
+                    |_, modifiers, keysym| {
+                        let key = xkb::keysym_get_name(
+                            keysym
+                                .raw_latin_sym_or_raw_current_sym()
+                                .unwrap_or(keysym.modified_sym()),
+                        );
+                        match shortcuts.iter().find(|(shortcut, _)| {
+                            pressed
+                                && shortcut.matches(
+                                    modifiers.logo,
+                                    modifiers.ctrl,
+                                    modifiers.alt,
+                                    modifiers.shift,
+                                    &key,
+                                )
+                        }) {
+                            Some((_, id)) => FilterResult::Intercept(*id),
+                            None => FilterResult::Forward,
+                        }
+                    },
+                );
+                if let Some(id) = command {
+                    let response = self.execute_command(id, serde_json::Value::Null);
+                    if let Err(err) = response {
+                        warn!("scorciatoia {id}: {err}");
+                    }
                 }
             }
             InputEvent::PointerMotionAbsolute { event } => {
@@ -48,9 +77,7 @@ impl State {
                 pointer.frame(self);
             }
             InputEvent::PointerButton { event } => {
-                let (Some(pointer), Some(keyboard)) =
-                    (self.seat.get_pointer(), self.seat.get_keyboard())
-                else {
+                let Some(pointer) = self.seat.get_pointer() else {
                     return;
                 };
                 let serial = SERIAL_COUNTER.next_serial();
@@ -60,22 +87,7 @@ impl State {
                         .space
                         .element_under(pointer.current_location())
                         .map(|(window, _)| window.clone());
-                    for window in self.space.elements() {
-                        window.set_activated(false);
-                    }
-                    match clicked {
-                        Some(window) => {
-                            self.space.raise_element(&window, true);
-                            let focus = window.toplevel().map(|t| t.wl_surface().clone());
-                            keyboard.set_focus(self, focus, serial);
-                        }
-                        None => keyboard.set_focus(self, None, serial),
-                    }
-                    for window in self.space.elements() {
-                        if let Some(toplevel) = window.toplevel() {
-                            toplevel.send_pending_configure();
-                        }
-                    }
+                    self.focus_window(clicked);
                 }
                 pointer.button(
                     self,

@@ -4,14 +4,12 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-use base64::Engine;
-use serde_json::Value;
-use silica_control::{LineBuffer, Request, Response, Screenshot, ScreenshotParams, UI_SCREENSHOT};
+use silica_control::{LineBuffer, Request, Response};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use tracing::{info, warn};
 
-use crate::state::{Ossido, State};
+use crate::state::Ossido;
 
 /// Tempo massimo per consegnare una risposta prima di chiudere il client.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -97,42 +95,4 @@ fn reply(stream: &TcpStream, response: &Response) -> std::io::Result<()> {
     let written = (&*stream).write_all(&line);
     stream.set_nonblocking(true)?;
     written
-}
-
-impl State {
-    /// Esegue un comando del canale di controllo.
-    pub fn execute(&mut self, request: Request) -> Response {
-        let result = match request.command.as_str() {
-            UI_SCREENSHOT => self.command_screenshot(request.params),
-            other => Err(format!("comando sconosciuto: {other}")),
-        };
-        match result {
-            Ok(value) => Response::ok(request.id, value),
-            Err(err) => Response::err(request.id, err),
-        }
-    }
-
-    fn command_screenshot(&mut self, params: Value) -> Result<Value, String> {
-        let params: ScreenshotParams = if params.is_null() {
-            ScreenshotParams::default()
-        } else {
-            serde_json::from_value(params).map_err(|e| format!("parametri: {e}"))?
-        };
-        let capture = self.screenshot()?;
-        let png = capture.to_png()?;
-        let mut shot = Screenshot {
-            width: capture.width,
-            height: capture.height,
-            path: None,
-            png_base64: None,
-        };
-        match params.path {
-            Some(path) => {
-                std::fs::write(&path, &png).map_err(|e| format!("scrittura di {path}: {e}"))?;
-                shot.path = Some(path);
-            }
-            None => shot.png_base64 = Some(base64::engine::general_purpose::STANDARD.encode(&png)),
-        }
-        serde_json::to_value(shot).map_err(|e| e.to_string())
-    }
 }
