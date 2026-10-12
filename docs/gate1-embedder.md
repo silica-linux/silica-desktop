@@ -1,5 +1,9 @@
 # Gate 1 · Embedder Flutter custom
 
+> Aggiornamento M1.5: il confronto misurato fra Flutter e Rust per la shell è in
+> `docs/gate1-dock.md`, che sostituisce la raccomandazione qui sotto per la shell.
+> Il renderer OpenGL e l'engine release (rischi aperti qui sotto) ora ci sono.
+
 Raccomandazione: **go**. L'embedder custom in Rust porta un'app Flutter su Ossido con
 rendering, puntatore, tastiera, testo, HiDPI e layer-shell in circa 2.400 righe scritte a
 mano, con l'API dell'engine stabile e l'aggiornamento di versione automatizzato. Due
