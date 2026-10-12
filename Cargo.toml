@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/frascella-dev/silica"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Mai crashare: vedi AGENTS.md. Nei test sono consentiti (clippy.toml).
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"

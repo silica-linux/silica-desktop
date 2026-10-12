@@ -1,0 +1,20 @@
+[package]
+name = "ossido"
+description = "Ossido, il compositor Wayland di Silica"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+png = "0.17"
+serde_json = "1"
+silica-control = { path = "../control" }
+smithay = { version = "0.7", default-features = false, features = ["backend_winit", "renderer_gl", "renderer_pixman", "wayland_frontend", "desktop"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
