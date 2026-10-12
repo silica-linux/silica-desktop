@@ -7,11 +7,12 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AnimationScale, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE,
-    ExecuteParams, GLASS_LIST, INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE,
-    INPUT_TYPE, Key, LAYER_LIST, PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams,
-    PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_SCREENSHOT,
-    WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE,
-    WindowInfo, WindowMove, WindowTarget,
+    ExecuteParams, GLASS_LIST, GlassQualityParams, INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON,
+    INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST, PERF_FRAMES, PERF_PROCESS, PERF_RENDER,
+    PerfFramesParams, PerfProcessParams, PerfRenderParams, PointerButton, PointerMove,
+    SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_GLASS_QUALITY, UI_SCREENSHOT, WINDOW_CLOSE,
+    WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE, WindowInfo,
+    WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -75,6 +76,20 @@ impl State {
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
+            UI_GLASS_QUALITY => {
+                let GlassQualityParams { quality } = parse_required(params)?;
+                self.glass_setting =
+                    crate::state::GlassSetting::parse(&quality).ok_or_else(|| {
+                        format!(
+                            "qualità del vetro sconosciuta (auto, full, frosted, opaque): {quality}"
+                        )
+                    })?;
+                Ok(json!({ "quality": self.glass_quality().name() }))
+            }
+            PERF_RENDER => {
+                let PerfRenderParams { reset } = parse(params)?;
+                to_value(self.perf.render_times(reset))
+            }
             UI_ANIMATION_SCALE => {
                 let AnimationScale { scale } = parse_required(params)?;
                 if !scale.is_finite() || !(0.0..=1000.0).contains(&scale) {

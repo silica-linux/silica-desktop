@@ -8,7 +8,8 @@ use std::time::Instant;
 use ossido_render::animation;
 use ossido_render::corners::{RoundedSurface, WindowSurface};
 use ossido_render::glass::{
-    CLEAR_LIGHT, GlassCache, GlassElement, PhysicalRegion, THICK_LIGHT, render_to_texture,
+    CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, PhysicalRegion, THICK_LIGHT,
+    render_to_texture,
 };
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
 use ossido_render::titlebar::{Titlebar, TitlebarState};
@@ -52,6 +53,7 @@ pub struct RenderContext<'a> {
     pub animation_speed: f64,
     pub closing: &'a [Closing],
     pub now: Instant,
+    pub glass_quality: GlassQuality,
 }
 
 /// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
@@ -360,6 +362,8 @@ pub fn output_elements(
         }
     }
 
+    // Da qui in giù solo lo sfondo del desktop: è quello che vede il vetro smerigliato.
+    let static_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
 
@@ -390,6 +394,7 @@ pub fn output_elements(
             }
             let index = anchor.index.min(elements.len());
             let behind = elements.get(index..).unwrap_or_default();
+            let behind_static = elements.get(index.max(static_start)..).unwrap_or_default();
             let glass = with_states(&anchor.surface, |states| {
                 states.data_map.insert_if_missing(GlassCache::default);
                 states.data_map.get::<GlassCache>().map(|cache| {
@@ -398,6 +403,8 @@ pub fn output_elements(
                         programs,
                         &regions,
                         behind,
+                        behind_static,
+                        context.glass_quality,
                         output_rect,
                         scale,
                         context.clear_color,

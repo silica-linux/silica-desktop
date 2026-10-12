@@ -90,6 +90,44 @@ pub struct State {
     pub animation_speed: f64,
     /// Finestre chiuse che stanno svanendo.
     pub closing: Vec<crate::render::Closing>,
+    /// Qualità del vetro scelta (`--glass`, `ui.glass_quality`).
+    pub glass_setting: GlassSetting,
+    /// Il renderer gira su un rasterizzatore software (llvmpipe): il vetro automatico è
+    /// smerigliato.
+    pub software_renderer: bool,
+}
+
+/// Qualità del vetro chiesta: una fissa o la scelta automatica.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GlassSetting {
+    #[default]
+    Auto,
+    Fixed(ossido_render::glass::GlassQuality),
+}
+
+impl GlassSetting {
+    pub fn parse(text: &str) -> Option<Self> {
+        use ossido_render::glass::GlassQuality;
+        Some(match text {
+            "auto" => GlassSetting::Auto,
+            "full" => GlassSetting::Fixed(GlassQuality::Full),
+            "frosted" => GlassSetting::Fixed(GlassQuality::Frosted),
+            "opaque" => GlassSetting::Fixed(GlassQuality::Opaque),
+            _ => return None,
+        })
+    }
+}
+
+impl State {
+    /// La qualità del vetro in uso.
+    pub fn glass_quality(&self) -> ossido_render::glass::GlassQuality {
+        use ossido_render::glass::GlassQuality;
+        match self.glass_setting {
+            GlassSetting::Fixed(quality) => quality,
+            GlassSetting::Auto if self.software_renderer => GlassQuality::Frosted,
+            GlassSetting::Auto => GlassQuality::Full,
+        }
+    }
 }
 
 impl State {
@@ -179,6 +217,8 @@ impl State {
             moving: None,
             animation_speed: 1.0,
             closing: Vec::new(),
+            glass_setting: GlassSetting::Auto,
+            software_renderer: false,
         })
     }
 

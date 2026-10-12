@@ -21,15 +21,15 @@ use silica_control::commands::{
 use crate::{Result, cargo_command, flutter, root, status, wslg_socket};
 
 /// Output logico: 1280×800, a scala 2 salvo `--scale`.
-const OUTPUT: (f64, f64) = (1280.0, 800.0);
+pub(crate) const OUTPUT: (f64, f64) = (1280.0, 800.0);
 /// Riga delle icone a riposo: da (1280 − 664) / 2 a + 664, centro verticale a 760.
-const ROW: (f64, f64) = (308.0, 972.0);
-const ROW_Y: f64 = 760.0;
+pub(crate) const ROW: (f64, f64) = (308.0, 972.0);
+pub(crate) const ROW_Y: f64 = 760.0;
 /// Centro a riposo della sesta icona, per lo screenshot ingrandito.
 const ICON_6: f64 = 308.0 + 5.0 * 56.0 + 24.0;
-const EVENTS_PER_SECOND: f64 = 120.0;
+pub(crate) const EVENTS_PER_SECOND: f64 = 120.0;
 /// Andata e ritorno sulla riga.
-const SWEEP_PERIOD: f64 = 2.0;
+pub(crate) const SWEEP_PERIOD: f64 = 2.0;
 const SURFACE: &str = "layer dock";
 
 struct Options {
@@ -221,9 +221,9 @@ pub fn dock(args: &[String]) -> Result<()> {
 }
 
 /// Ossido annidato per una ripetizione; si chiude quando esce di scena.
-struct Session {
+pub(crate) struct Session {
     child: Child,
-    control: String,
+    pub(crate) control: String,
 }
 
 impl Drop for Session {
@@ -243,7 +243,7 @@ impl Drop for Session {
     }
 }
 
-fn start_ossido(root: &Path, scale: u32) -> Result<Session> {
+pub(crate) fn start_ossido(root: &Path, scale: u32, extra: &[&str]) -> Result<Session> {
     let size = format!("{}x{}", 1280 * scale, 800 * scale);
     let scale = scale.to_string();
     let mut command = Command::new(root.join("target/release/ossido"));
@@ -258,6 +258,7 @@ fn start_ossido(root: &Path, scale: u32) -> Result<Session> {
             "--control",
             "0",
         ])
+        .args(extra)
         .env(
             "RUST_LOG",
             std::env::var("BENCH_LOG").unwrap_or_else(|_| "warn".to_owned()),
@@ -288,7 +289,7 @@ fn start_ossido(root: &Path, scale: u32) -> Result<Session> {
     Ok(Session { child, control })
 }
 
-fn frames(client: &mut Client, reset: bool) -> Result<Option<SurfaceFrames>> {
+pub(crate) fn frames(client: &mut Client, reset: bool) -> Result<Option<SurfaceFrames>> {
     let value = client
         .call(PERF_FRAMES, json!({ "reset": reset }))
         .map_err(|e| e.to_string())?;
@@ -296,7 +297,7 @@ fn frames(client: &mut Client, reset: bool) -> Result<Option<SurfaceFrames>> {
     Ok(list.into_iter().find(|s| s.surface == SURFACE))
 }
 
-fn pointer(client: &mut Client, x: f64, y: f64) -> Result<()> {
+pub(crate) fn pointer(client: &mut Client, x: f64, y: f64) -> Result<()> {
     client
         .call(INPUT_POINTER_MOVE, json!({ "x": x, "y": y }))
         .map(|_| ())
@@ -314,7 +315,7 @@ fn screenshot(client: &mut Client, path: &Path) -> Result<()> {
 }
 
 fn measure(root: &Path, variant: &Variant, options: &Options, shots: Option<&Path>) -> Result<Run> {
-    let session = start_ossido(root, options.scale)?;
+    let session = start_ossido(root, options.scale, &[])?;
     let mut client = Client::connect(&session.control).map_err(|e| e.to_string())?;
     pointer(&mut client, OUTPUT.0 / 2.0, OUTPUT.1 / 2.0)?;
     client
@@ -397,7 +398,7 @@ fn measure(root: &Path, variant: &Variant, options: &Options, shots: Option<&Pat
     })
 }
 
-fn median(mut values: Vec<f64>) -> f64 {
+pub(crate) fn median(mut values: Vec<f64>) -> f64 {
     values.sort_by(f64::total_cmp);
     let mid = values.len() / 2;
     match (values.len() % 2, values.get(mid), mid.checked_sub(1)) {

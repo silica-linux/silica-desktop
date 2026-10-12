@@ -79,7 +79,7 @@ pub fn init_headless(
         refresh: NESTED_REFRESH_MHZ,
     };
     let output = new_output("headless", "Ossido headless", mode, Transform::Normal);
-    let state = State::new(
+    let mut state = State::new(
         &mut display,
         event_loop.handle(),
         event_loop.get_signal(),
@@ -92,6 +92,9 @@ pub fn init_headless(
             data.state.send_frames();
             TimeoutAction::ToDuration(HEADLESS_FRAME)
         })?;
+    if let Backend::Headless(Headless::Gles(renderer)) = &state.backend {
+        state.software_renderer = is_software(renderer);
+    }
     info!("backend headless pronto ({width}x{height})");
     Ok(Ossido { state, display })
 }
@@ -128,6 +131,7 @@ pub fn init_winit(
         })),
     )?;
     if let Backend::Winit(backend) = &mut state.backend {
+        state.software_renderer = is_software(backend.graphics.renderer());
         let dh = display.handle();
         state.dmabuf_global = Some(crate::dmabuf::create_global(
             &mut state.dmabuf_state,
@@ -161,6 +165,7 @@ pub fn init_winit(
 impl State {
     /// Disegna l'output corrente fuori schermo e lo restituisce in RGBA.
     pub fn screenshot(&mut self) -> Result<Capture, String> {
+        let glass_quality = self.glass_quality();
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
@@ -170,6 +175,7 @@ impl State {
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
                     now: Instant::now(),
+                    glass_quality,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -186,6 +192,7 @@ impl State {
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
                     now: Instant::now(),
+                    glass_quality,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -209,6 +216,7 @@ impl State {
     fn render_winit(&mut self) {
         let now = Instant::now();
         let speed = self.animation_speed;
+        let glass_quality = self.glass_quality();
         self.closing.retain(|closing| !closing.finished(now, speed));
         let Backend::Winit(backend) = &mut self.backend else {
             return;
@@ -222,6 +230,7 @@ impl State {
             animation_speed: speed,
             closing: &self.closing,
             now,
+            glass_quality,
         };
         let elements = output_elements(
             backend.graphics.renderer(),
@@ -246,6 +255,7 @@ impl State {
             Err(err) => warn!("render fallito: {err}"),
         }
         backend.graphics.window().request_redraw();
+        self.perf.rendered(now.elapsed());
         self.send_frames();
     }
 }
@@ -270,4 +280,10 @@ impl State {
             self.closing.push(closing);
         }
     }
+}
+
+/// Il renderer gira su un rasterizzatore software (EGL_MESA_device_software).
+fn is_software(renderer: &GlesRenderer) -> bool {
+    smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
+        .is_ok_and(|device| device.is_software())
 }

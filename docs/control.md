@@ -27,6 +27,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | --- | --- | --- |
 | `ui.screenshot` | `path?` | `width`, `height`, `path` o `png_base64` |
 | `ui.animation_scale` | `scale` (0–1000) | — (moltiplica le durate delle animazioni; 0 le spegne) |
+| `ui.glass_quality` | `quality` (`auto`, `full`, `frosted`, `opaque`) | `quality` in uso |
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
 | `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |
@@ -46,6 +47,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `input.type` | `text` | — |
 | `perf.frames` | `reset?` | per superficie: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
+| `perf.render` | `reset?` | rendering di Ossido (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
 Le misure di `perf.frames` sono quelle del compositor, uguali per ogni toolkit: un frame è
 un commit con un buffer nuovo, l'intervallo è il tempo fra due frame della stessa

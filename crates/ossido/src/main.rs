@@ -2,7 +2,8 @@
 //!
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
-//!     [--background RRGGBB] [--animation-scale F] [--spawn COMANDO]...
+//!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
+//!     [--spawn COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -78,6 +79,12 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .ok_or(format!(
                         "scala delle animazioni non valida (0–1000): {text}"
                     ))?;
+            }
+            "--glass" => {
+                let text = value()?;
+                options.glass = ossido::state::GlassSetting::parse(&text).ok_or(format!(
+                    "qualità del vetro sconosciuta (auto, full, frosted, opaque): {text}"
+                ))?;
             }
             "--background" => {
                 let hex = value()?;

@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 /// Cattura l'output come PNG.
 pub const UI_SCREENSHOT: &str = "ui.screenshot";
 pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
+pub const UI_GLASS_QUALITY: &str = "ui.glass_quality";
+pub const PERF_RENDER: &str = "perf.render";
 /// Elenca il catalogo dei comandi.
 pub const ENGINE_COMMANDS: &str = "engine.commands";
 /// Esegue un comando del catalogo per id: `{"id": "...", "params": {...}}`.
@@ -109,6 +111,33 @@ pub const CATALOG: &[CommandSpec] = &[
                 "type": "object",
                 "properties": {"scale": {"type": "number", "minimum": 0, "maximum": 1000}},
                 "required": ["scale"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: UI_GLASS_QUALITY,
+        label: "Qualità del vetro",
+        description: "Vetro pieno, smerigliato statico (solo lo sfondo del desktop) o opaco; auto sceglie in base alla GPU.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"quality": {"type": "string", "enum": ["auto", "full", "frosted", "opaque"]}},
+                "required": ["quality"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: PERF_RENDER,
+        label: "Tempi di rendering",
+        description: "Durata del rendering di Ossido per frame (backend winit): media, percentili, massimo.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"reset": {"type": "boolean"}},
                 "additionalProperties": false
             })
         },
@@ -601,4 +630,30 @@ mod tests {
 #[serde(deny_unknown_fields)]
 pub struct AnimationScale {
     pub scale: f64,
+}
+
+/// Parametri di [`UI_GLASS_QUALITY`]: `auto`, `full`, `frosted`, `opaque`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlassQualityParams {
+    pub quality: String,
+}
+
+/// Risultato di [`PERF_RENDER`]: il tempo del rendering di Ossido per frame, in ms.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RenderTimes {
+    pub frames: u64,
+    pub mean_ms: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+    pub max_ms: f64,
+}
+
+/// Parametri di [`PERF_RENDER`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PerfRenderParams {
+    #[serde(default)]
+    pub reset: bool,
 }

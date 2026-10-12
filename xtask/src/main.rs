@@ -8,6 +8,7 @@
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
 mod bench;
+mod bench_glass;
 mod flutter;
 
 use std::collections::{BTreeSet, HashMap};
@@ -50,7 +51,8 @@ fn main() -> ExitCode {
         Some("bindings") => flutter::bindings(),
         Some("bench") => match args.get(1).map(String::as_str) {
             Some("dock") => bench::dock(args.get(2..).unwrap_or_default()),
-            _ => Err("uso: cargo xtask bench dock [--runs N] [--seconds S] [--only VARIANTE] [--scale N]".to_owned()),
+            Some("glass") => bench_glass::glass(args.get(2..).unwrap_or_default()),
+            _ => Err("uso: cargo xtask bench dock [--runs N] [--seconds S] [--only VARIANTE] [--scale N]\n     cargo xtask bench glass [--runs N] [--seconds S] [--scale N]".to_owned()),
         },
         Some("keymap") => flutter::keymap(),
         Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {

@@ -34,6 +34,8 @@ struct Track {
 pub struct Perf {
     surfaces: HashMap<ObjectId, Track>,
     launches: HashMap<u32, Instant>,
+    /// Durata dei rendering di Ossido (backend winit), gli ultimi `MAX_INTERVALS`.
+    renders: VecDeque<Duration>,
 }
 
 impl Perf {
@@ -110,6 +112,33 @@ impl Perf {
             .collect();
         report.sort_by(|a, b| a.surface.cmp(&b.surface));
         report
+    }
+
+    /// Un rendering di Ossido durato `duration`.
+    pub fn rendered(&mut self, duration: Duration) {
+        if self.renders.len() >= MAX_INTERVALS {
+            self.renders.pop_front();
+        }
+        self.renders.push_back(duration);
+    }
+
+    /// Le durate dei rendering dall'ultimo azzeramento.
+    pub fn render_times(&mut self, reset: bool) -> silica_control::commands::RenderTimes {
+        let durations: Vec<Duration> = self.renders.iter().copied().collect();
+        // Il conteggio dei lenti non serve qui: un periodo lungo ma finito (mul_f64 su
+        // Duration::MAX andrebbe in overflow).
+        let stats = Stats::of(&durations, Duration::from_secs(3600));
+        if reset {
+            self.renders.clear();
+        }
+        silica_control::commands::RenderTimes {
+            frames: durations.len() as u64,
+            mean_ms: stats.mean,
+            p50_ms: stats.p50,
+            p95_ms: stats.p95,
+            p99_ms: stats.p99,
+            max_ms: stats.max,
+        }
     }
 
     /// Azzera i frame contati; il tempo di avvio resta, non si ripete.

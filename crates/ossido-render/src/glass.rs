@@ -96,6 +96,26 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 14] = [
     ("side_dark", UniformType::_1f),
 ];
 
+/// Livelli di qualità del vetro: pieno (sfoca tutto quello che sta dietro), smerigliato
+/// statico (solo lo sfondo del desktop: si ricalcola di rado), opaco (il materiale sopra il
+/// colore del desktop, senza sfocatura). Per le GPU deboli (piano, "Rischi").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlassQuality {
+    Full,
+    Frosted,
+    Opaque,
+}
+
+impl GlassQuality {
+    pub fn name(self) -> &'static str {
+        match self {
+            GlassQuality::Full => "full",
+            GlassQuality::Frosted => "frosted",
+            GlassQuality::Opaque => "opaque",
+        }
+    }
+}
+
 /// Oltre questo σ (pixel) si sfoca a metà o a un quarto della risoluzione: il nucleo
 /// dello shader arriva a 48 pixel.
 const MAX_SIGMA_PX: f64 = 12.0;
@@ -120,6 +140,7 @@ pub struct GlassCache {
 }
 
 struct Cached {
+    quality: GlassQuality,
     signature: Signature,
     regions: Vec<PhysicalRegion>,
     bbox: Rectangle<i32, Physical>,
@@ -138,7 +159,8 @@ pub struct GlassPrograms {
 
 impl GlassCache {
     /// Gli elementi del vetro per queste regioni, dato quello che sta dietro (`behind`,
-    /// dal primo piano allo sfondo). Errore se il renderer non riesce a disegnare fuori
+    /// dal primo piano allo sfondo) e la sua parte fissa (`behind_static`: sfondo del
+    /// desktop, per lo smerigliato). Errore se il renderer non riesce a disegnare fuori
     /// schermo: il chiamante salta il vetro per questo frame.
     #[allow(clippy::too_many_arguments)]
     pub fn elements<E: RenderElement<GlesRenderer>>(
@@ -147,10 +169,17 @@ impl GlassCache {
         programs: &GlassPrograms,
         regions: &[PhysicalRegion],
         behind: &[E],
+        behind_static: &[E],
+        quality: GlassQuality,
         output: Rectangle<i32, Physical>,
         scale: f64,
         clear_color: [f32; 4],
     ) -> Result<Vec<GlassElement>, GlesError> {
+        let behind = match quality {
+            GlassQuality::Full => behind,
+            GlassQuality::Frosted => behind_static,
+            GlassQuality::Opaque => behind.get(..0).unwrap_or_default(),
+        };
         let margin = regions
             .iter()
             .map(|region| (region.material.sigma * scale * 3.0).ceil() as i32 + 2)
@@ -184,7 +213,10 @@ impl GlassCache {
 
         let mut state = self.state.borrow_mut();
         let reuse = state.as_ref().is_some_and(|cached| {
-            cached.signature == signature && cached.regions == regions && cached.bbox == bbox
+            cached.quality == quality
+                && cached.signature == signature
+                && cached.regions == regions
+                && cached.bbox == bbox
         });
         if !reuse {
             let sharp = render_to_texture(renderer, behind, bbox, scale, clear_color)?;
@@ -216,6 +248,7 @@ impl GlassCache {
             };
             commit.increment();
             *state = Some(Cached {
+                quality,
                 signature,
                 regions: regions.to_vec(),
                 bbox,

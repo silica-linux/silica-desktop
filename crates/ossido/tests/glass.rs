@@ -289,3 +289,40 @@ fn clear_glass_refracts_near_the_side_edges_like_the_dock() {
     );
     assert!(far <= 1.0, "rifrazione lontano dal bordo: {far:.2} pt");
 }
+
+#[test]
+fn glass_quality_levels_choose_what_the_glass_sees() {
+    let ossido = Headless::start_with("glass-quality", SHOT, &[]);
+    let back = (400, 200);
+    let _stripes = TestWindow::open_pixels(&ossido.wayland, "strisce", back, &stripes(back));
+    let size = (200, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "vetro", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Clear)])
+        .unwrap();
+    let mut client = ossido.client();
+    // Escursione del verde sulla riga a metà del vetro (x 74–254, lontano dai bordi).
+    let mut spread = |quality: &str| {
+        let resolved = client
+            .call(
+                silica_control::commands::UI_GLASS_QUALITY,
+                serde_json::json!({ "quality": quality }),
+            )
+            .unwrap();
+        let shot = shot(&ossido, &format!("glass-{quality}.png"));
+        let row: Vec<u8> = (74..254).map(|x| rgb(&shot, x, 114)[1]).collect();
+        let spread = row.iter().max().unwrap() - row.iter().min().unwrap();
+        eprintln!("{quality} ({resolved}): escursione {spread}");
+        (
+            resolved["quality"].as_str().unwrap_or_default().to_owned(),
+            spread,
+        )
+    };
+    // Pieno: le strisce sfocate restano (nero → 39, bianco → 228).
+    assert!(spread("full").1 > 150);
+    // Smerigliato: vede solo il desktop, non la finestra a strisce; opaco: niente sfondo.
+    assert!(spread("frosted").1 <= 2);
+    assert!(spread("opaque").1 <= 2);
+    // Su llvmpipe (headless) l'automatico è smerigliato.
+    assert_eq!(spread("auto").0, "frosted");
+}

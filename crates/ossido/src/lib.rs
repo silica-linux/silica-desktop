@@ -50,6 +50,8 @@ pub struct Options {
     pub background: [f32; 4],
     /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
     pub animation_scale: f64,
+    /// Qualità del vetro (`--glass auto|full|frosted|opaque`).
+    pub glass: state::GlassSetting,
 }
 
 impl Default for Options {
@@ -62,6 +64,7 @@ impl Default for Options {
             spawn: Vec::new(),
             background: state::CLEAR_COLOR,
             animation_scale: 1.0,
+            glass: state::GlassSetting::Auto,
         }
     }
 }
@@ -76,6 +79,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
 
     ossido.state.clear_color = options.background;
     ossido.state.animation_speed = options.animation_scale;
+    ossido.state.glass_setting = options.glass;
     if options.scale != 1 {
         ossido.state.output.change_current_state(
             None,

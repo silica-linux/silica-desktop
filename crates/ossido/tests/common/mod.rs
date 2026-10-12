@@ -50,6 +50,8 @@ impl Headless {
             ])
             // Screenshot deterministici: niente animazioni, salvo chi le riaccende.
             .args(["--animation-scale", "0"])
+            // Vetro pieno anche su llvmpipe (l'automatico lì sarebbe smerigliato).
+            .args(["--glass", "full"])
             .args(extra)
             .args(["--control", "0"])
             .env("XDG_RUNTIME_DIR", &dir)
