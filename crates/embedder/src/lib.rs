@@ -11,6 +11,7 @@
 
 mod codec;
 mod ffi;
+mod glass;
 mod keyboard;
 mod keymap;
 mod text_input;

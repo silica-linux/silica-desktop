@@ -5,6 +5,8 @@ use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
+use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
@@ -66,6 +68,7 @@ use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
     PointerPhase, Task, VsyncBaton,
 };
+use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::text_input::{self, EditKey, TextInput};
 
@@ -147,6 +150,9 @@ struct App {
     keys: Keyboard,
     modifiers: Modifiers,
     text_input: TextInput,
+    /// Regioni di vetro dei widget `Glass` (`silica/glass`).
+    glass: Glass,
+    qh: QueueHandle<App>,
     key_results: channel::Sender<KeyResult>,
     engine: Option<Engine>,
 
@@ -395,6 +401,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         keys: Keyboard::default(),
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
+        glass: Glass::new(
+            globals
+                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=1, ())
+                .ok(),
+        ),
+        qh: qh.clone(),
         key_results,
         engine: Some(engine),
         tasks: BinaryHeap::new(),
@@ -428,6 +440,16 @@ impl App {
     fn handle_message(&mut self, message: PlatformMessage) {
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
+            glass::CHANNEL => {
+                let (reply, changed) =
+                    self.glass
+                        .handle_call(&message.data, self.surface.wl_surface(), &self.qh);
+                // Le regioni valgono dal commit: senza un frame nuovo serve qui.
+                if changed {
+                    self.surface.commit();
+                }
+                reply
+            }
             // StandardMethodCodec: getKeyboardState, i tasti premuti fisica → logica.
             "flutter/keyboard" => crate::codec::success_int_map(
                 self.keys
@@ -1001,3 +1023,5 @@ delegate_xdg_shell!(App);
 delegate_xdg_window!(App);
 delegate_layer!(App);
 delegate_registry!(App);
+wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
+wayland_client::delegate_noop!(App: ignore SilicaGlassV1);

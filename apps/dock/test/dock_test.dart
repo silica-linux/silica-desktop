@@ -44,13 +44,13 @@ void main() {
     await mouse.moveTo(Offset(restCenter(1280, 2), 140));
     await tester.pumpAndSettle();
     expect(find.text('App 3'), findsOneWidget);
-    final grown = tester.getSize(find.byType(DecoratedBox).at(3));
+    final grown = tester.getSize(find.byType(DecoratedBox).at(2));
     expect(grown.width, closeTo(96, 0.5));
 
     await mouse.moveTo(const Offset(0, -10));
     await mouse.removePointer();
     await tester.pumpAndSettle();
     expect(find.text('App 3'), findsNothing);
-    expect(tester.getSize(find.byType(DecoratedBox).at(3)).width, closeTo(48, 0.5));
+    expect(tester.getSize(find.byType(DecoratedBox).at(2)).width, closeTo(48, 0.5));
   });
 }

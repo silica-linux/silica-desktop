@@ -3,6 +3,8 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+export 'src/glass.dart';
+
 /// Il font dell'interfaccia: Inter (OFL), al posto dei font di sistema di Apple.
 const String uiFontFamily = 'Inter';
 

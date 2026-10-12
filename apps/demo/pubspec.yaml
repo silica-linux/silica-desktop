@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  silica_ui:
+    path: ../../packages/silica_ui
 
 dev_dependencies:
   flutter_test:

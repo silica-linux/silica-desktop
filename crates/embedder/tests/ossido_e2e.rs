@@ -457,3 +457,29 @@ fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
     session.expect_pixel(600, 40, TAPPED);
     session.expect_pixel(wx + 100, wy + 90, IDLE);
 }
+
+#[test]
+fn glass_widget_declares_its_region_to_ossido() {
+    let session = Session::start("glass", (640, 480), 1, (300, 200));
+    let window = session.window();
+    // La demo mette un Glass 40 × 20 in alto a destra (apps/demo, glassSize).
+    let list = wait_for("le regioni di vetro della demo", || {
+        let list = session
+            .client()
+            .call(silica_control::commands::GLASS_LIST, Value::Null)
+            .ok()?;
+        list.as_array().filter(|list| !list.is_empty()).cloned()
+    });
+    let region = &list[0]["regions"][0];
+    assert_eq!(list[0]["surface"], format!("window {}", window.id));
+    assert_eq!(
+        (region["x"].as_i64(), region["y"].as_i64()),
+        (Some(260), Some(0))
+    );
+    assert_eq!(
+        (region["width"].as_i64(), region["height"].as_i64()),
+        (Some(40), Some(20))
+    );
+    assert_eq!(region["radius"].as_f64(), Some(6.0));
+    assert_eq!(region["material"], "clear");
+}

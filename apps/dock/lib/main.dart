@@ -125,12 +125,8 @@ class _DockState extends State<Dock> with SingleTickerProviderStateMixin {
         bottom: bottomMargin,
         width: backgroundWidth,
         height: iconSize + 2 * padding,
-        child: const DecoratedBox(
-          decoration: BoxDecoration(
-            color: Color(0x40FFFFFF),
-            borderRadius: BorderRadius.all(Radius.circular(backgroundRadius)),
-          ),
-        ),
+        // Il fondo è vetro di Ossido (silica-glass-v1): l'app lo lascia trasparente.
+        child: const Glass(radius: backgroundRadius, child: SizedBox.expand()),
       ),
     ];
 
