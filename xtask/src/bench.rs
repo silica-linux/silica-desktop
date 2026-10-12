@@ -121,6 +121,11 @@ fn variants(root: &Path) -> Result<Vec<Variant>> {
             command: format!("env WGPU_BACKEND=gl {}", iced.display()),
         },
         Variant {
+            name: "iced-vulkan",
+            description: "iced 0.14, wgpu su Vulkan (in WSL è lavapipe, cioè CPU)",
+            command: format!("env WGPU_BACKEND=vulkan {}", iced.display()),
+        },
+        Variant {
             name: "flutter-software",
             description: "Flutter release AOT, renderer software (CPU)",
             command: embedder("software"),
