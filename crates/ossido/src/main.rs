@@ -1,7 +1,7 @@
 //! Avvio di Ossido.
 //!
 //! ```text
-//! ossido [--backend winit|headless] [--size LxA] [--control PORTA] [--spawn COMANDO]...
+//! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA] [--spawn COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -52,6 +52,14 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 options.size = parse(w)
                     .zip(parse(h))
                     .ok_or(format!("dimensione non valida: {size}"))?;
+            }
+            "--scale" => {
+                let scale = value()?;
+                options.scale = scale
+                    .parse()
+                    .ok()
+                    .filter(|s| (1..=4).contains(s))
+                    .ok_or(format!("scala non valida (1-4): {scale}"))?;
             }
             "--control" => {
                 let port = value()?;

@@ -6,12 +6,55 @@ use smithay::backend::input::{
 };
 use smithay::input::keyboard::{FilterResult, xkb};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
-use smithay::utils::SERIAL_COUNTER;
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use tracing::warn;
 
 use crate::state::State;
 
 impl State {
+    /// Muove il puntatore in un punto del desktop (pixel logici).
+    pub fn pointer_move_to(&mut self, location: Point<f64, Logical>, time: u32) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let under = self.surface_under(location);
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    /// Preme o rilascia un pulsante; la pressione dà il focus alla finestra sotto.
+    pub fn pointer_button(&mut self, button: u32, state: ButtonState, time: u32) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        if state == ButtonState::Pressed && !pointer.is_grabbed() {
+            let clicked = self
+                .space
+                .element_under(pointer.current_location())
+                .map(|(window, _)| window.clone());
+            self.focus_window(clicked);
+        }
+        pointer.button(
+            self,
+            &ButtonEvent {
+                button,
+                state,
+                serial,
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
+
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         match event {
             InputEvent::Keyboard { event } => {
@@ -61,44 +104,10 @@ impl State {
                     return;
                 };
                 let location = event.position_transformed(geometry.size) + geometry.loc.to_f64();
-                let Some(pointer) = self.seat.get_pointer() else {
-                    return;
-                };
-                let under = self.surface_under(location);
-                pointer.motion(
-                    self,
-                    under,
-                    &MotionEvent {
-                        location,
-                        serial: SERIAL_COUNTER.next_serial(),
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
+                self.pointer_move_to(location, event.time_msec());
             }
             InputEvent::PointerButton { event } => {
-                let Some(pointer) = self.seat.get_pointer() else {
-                    return;
-                };
-                let serial = SERIAL_COUNTER.next_serial();
-                let state = event.state();
-                if state == ButtonState::Pressed && !pointer.is_grabbed() {
-                    let clicked = self
-                        .space
-                        .element_under(pointer.current_location())
-                        .map(|(window, _)| window.clone());
-                    self.focus_window(clicked);
-                }
-                pointer.button(
-                    self,
-                    &ButtonEvent {
-                        button: event.button_code(),
-                        state,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
+                self.pointer_button(event.button_code(), event.state(), event.time_msec());
             }
             InputEvent::PointerAxis { event } => {
                 let Some(pointer) = self.seat.get_pointer() else {

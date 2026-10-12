@@ -1,9 +1,13 @@
 //! `cargo xtask`: automazione del repository.
 //!
-//! - `ci`: fmt, clippy con warning come errori, test, layers, assets.
+//! - `ci`: fmt, flutter analyze/test, clippy con warning come errori, test, layers, assets, unsafe.
 //! - `layers`: verifica le dipendenze vietate tra i livelli.
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
 //! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`).
+//! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
+//! - `engine`, `bindings`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
+
+mod flutter;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -11,7 +15,7 @@ use std::process::{Command, ExitCode};
 
 use serde_json::Value;
 
-type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 /// Dipendenze vietate: (crate, dipendenza anche transitiva, motivo).
 const FORBIDDEN: &[(&str, &str, &str)] = &[(
@@ -36,7 +40,17 @@ fn main() -> ExitCode {
         Some("layers") => layers(),
         Some("assets") => assets(),
         Some("run") => run(args.get(1..).unwrap_or_default()),
-        _ => Err("uso: cargo xtask <ci|layers|assets|run> [argomenti]".to_owned()),
+        Some("unsafe") => unsafe_check(),
+        Some("engine") => flutter::engine(),
+        Some("bindings") => flutter::bindings(),
+        Some("bundle") => match args.get(1) {
+            Some(app) => flutter::bundle(app),
+            None => Err("uso: cargo xtask bundle <app in apps/>".to_owned()),
+        },
+        _ => Err(
+            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|bundle> [argomenti]"
+                .to_owned(),
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -47,7 +61,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn root() -> Result<PathBuf> {
+pub(crate) fn root() -> Result<PathBuf> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
@@ -63,8 +77,12 @@ fn cargo_command(args: &[&str]) -> Command {
     command
 }
 
-fn status(mut command: Command) -> Result<()> {
-    let line = format!("{command:?}");
+pub(crate) fn status(mut command: Command) -> Result<()> {
+    let line = std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .map(|part| part.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(" ");
     eprintln!("xtask: {line}");
     let status = command
         .status()
@@ -82,6 +100,12 @@ fn cargo(args: &[&str]) -> Result<()> {
 
 fn ci() -> Result<()> {
     cargo(&["fmt", "--all", "--check"])?;
+    // I test dell'embedder fanno girare l'app demo: servono engine e bundle.
+    flutter::engine()?;
+    for app in flutter::apps()? {
+        flutter::check(&app)?;
+    }
+    flutter::bundle("demo")?;
     cargo(&[
         "clippy",
         "--workspace",
@@ -94,6 +118,7 @@ fn ci() -> Result<()> {
     cargo(&["test", "--workspace", "--locked"])?;
     layers()?;
     assets()?;
+    unsafe_check()?;
     eprintln!("xtask: ci ok");
     Ok(())
 }
@@ -264,6 +289,42 @@ fn assets() -> Result<()> {
         Err(format!(
             "asset senza riga in ASSETS.md:\n  {}",
             missing.join("\n  ")
+        ))
+    }
+}
+
+/// Dove `unsafe` è ammesso: l'FFI dell'embedder (AGENTS.md, "Mai crashare").
+const UNSAFE_ALLOWED: &str = "crates/embedder/src/ffi/";
+
+fn unsafe_check() -> Result<()> {
+    let root = root()?;
+    let output = Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "*.rs",
+        ])
+        .current_dir(&root)
+        .output()
+        .map_err(|e| format!("git non avviabile: {e}"))?;
+    let files = String::from_utf8_lossy(&output.stdout);
+    let mut offenders = Vec::new();
+    for path in files.lines().filter(|p| !p.starts_with(UNSAFE_ALLOWED)) {
+        let text = std::fs::read_to_string(root.join(path)).unwrap_or_default();
+        // In due pezzi, perché questo file non trovi sé stesso.
+        if text.contains(concat!("allow(", "unsafe_code)")) {
+            offenders.push(path.to_owned());
+        }
+    }
+    if offenders.is_empty() {
+        eprintln!("xtask: unsafe ok (solo in {UNSAFE_ALLOWED})");
+        Ok(())
+    } else {
+        Err(format!(
+            "unsafe consentito fuori da {UNSAFE_ALLOWED}:\n  {}",
+            offenders.join("\n  ")
         ))
     }
 }

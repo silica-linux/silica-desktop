@@ -10,7 +10,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/frascella-dev/silica"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# "deny" e non "forbid": l'FFI dell'embedder lo riabilita, e solo lì (cargo xtask unsafe).
+unsafe_code = "deny"
 
 # Mai crashare: vedi AGENTS.md. Nei test sono consentiti (clippy.toml).
 [workspace.lints.clippy]
@@ -21,3 +22,4 @@ todo = "deny"
 unreachable = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
+undocumented_unsafe_blocks = "deny"

@@ -19,6 +19,9 @@ pub const WINDOW_CLOSE: &str = "window.close";
 pub const WINDOW_MOVE: &str = "window.move";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
+pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
+pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
+pub const INPUT_CLICK: &str = "input.click";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -54,6 +57,19 @@ fn window_target() -> Value {
         "properties": {
             "id": {"type": "integer", "minimum": 0, "description": "Finestra; senza, quella con il focus"}
         },
+        "additionalProperties": false
+    })
+}
+
+fn point() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "x": {"type": "number", "description": "Pixel logici dal bordo sinistro dell'output"},
+            "y": {"type": "number", "description": "Pixel logici dal bordo superiore dell'output"},
+            "button": {"type": "string", "enum": ["left", "right", "middle"]}
+        },
+        "required": ["x", "y"],
         "additionalProperties": false
     })
 }
@@ -158,6 +174,44 @@ pub const CATALOG: &[CommandSpec] = &[
         shortcut: Some("Logo+Shift+Q"),
         params: no_params,
     },
+    CommandSpec {
+        id: INPUT_POINTER_MOVE,
+        label: "Muovi il puntatore",
+        description: "Porta il puntatore in un punto dell'output, come un mouse vero.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                "required": ["x", "y"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: INPUT_POINTER_BUTTON,
+        label: "Premi o rilascia un pulsante",
+        description: "Preme o rilascia un pulsante del mouse dove si trova il puntatore.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "button": {"type": "string", "enum": ["left", "right", "middle"]},
+                    "pressed": {"type": "boolean"}
+                },
+                "required": ["pressed"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: INPUT_CLICK,
+        label: "Clic",
+        description: "Muove il puntatore in un punto e fa clic (pulsante sinistro se non indicato).",
+        shortcut: None,
+        params: point,
+    },
 ];
 
 pub fn find(id: &str) -> Option<&'static CommandSpec> {
@@ -198,6 +252,50 @@ pub struct WindowMove {
 #[serde(deny_unknown_fields)]
 pub struct AppLaunch {
     pub command: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MouseButton {
+    #[default]
+    Left,
+    Right,
+    Middle,
+}
+
+impl MouseButton {
+    /// Codice evdev del pulsante (linux/input-event-codes.h).
+    pub fn code(self) -> u32 {
+        match self {
+            MouseButton::Left => 0x110,
+            MouseButton::Right => 0x111,
+            MouseButton::Middle => 0x112,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointerMove {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointerButton {
+    #[serde(default)]
+    pub button: MouseButton,
+    pub pressed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Click {
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub button: MouseButton,
 }
 
 /// Una finestra in [`WINDOW_LIST`].

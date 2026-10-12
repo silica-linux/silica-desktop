@@ -1429,6 +1429,17 @@ version = "0.0.0"
 [[package]]
 name = "silica-embedder"
 version = "0.0.0"
+dependencies = [
+ "libloading",
+ "ossido",
+ "png",
+ "serde_json",
+ "silica-control",
+ "smithay-client-toolkit",
+ "tracing",
+ "tracing-subscriber",
+ "wayland-client",
+]
 
 [[package]]
 name = "silica-portal"

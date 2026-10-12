@@ -31,6 +31,8 @@ pub struct Options {
     pub backend: BackendKind,
     /// Dimensione dell'output headless, in pixel.
     pub size: (i32, i32),
+    /// Fattore di scala intero dell'output (HiDPI).
+    pub scale: i32,
     /// Porta del canale di controllo su 127.0.0.1; 0 sceglie una porta libera.
     pub control: Option<u16>,
     /// Comandi da avviare come client una volta aperto il socket Wayland.
@@ -42,6 +44,7 @@ impl Default for Options {
         Self {
             backend: BackendKind::Winit,
             size: (1280, 800),
+            scale: 1,
             control: None,
             spawn: Vec::new(),
         }
@@ -55,6 +58,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         BackendKind::Winit => backend::init_winit(&mut event_loop, display)?,
         BackendKind::Headless => backend::init_headless(&mut event_loop, display, options.size)?,
     };
+
+    if options.scale != 1 {
+        ossido.state.output.change_current_state(
+            None,
+            None,
+            Some(smithay::output::Scale::Integer(options.scale)),
+            None,
+        );
+    }
 
     // Le righe su stdout sono l'interfaccia per script e test: una per variabile.
     let socket = ossido.state.socket_name.clone();

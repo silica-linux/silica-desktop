@@ -6,11 +6,13 @@ use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
-    self, APP_LAUNCH, AppLaunch, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams, SESSION_QUIT,
-    UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE, WindowInfo, WindowMove,
-    WindowTarget,
+    self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
+    INPUT_CLICK, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, PointerButton, PointerMove,
+    SESSION_QUIT, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE, WindowInfo,
+    WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
+use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::compositor::with_states;
@@ -102,6 +104,29 @@ impl State {
                 let pid = self.launch(&command)?;
                 Ok(json!({ "pid": pid }))
             }
+            INPUT_POINTER_MOVE => {
+                let PointerMove { x, y } = parse_required(params)?;
+                self.pointer_move_to((x, y).into(), self.now_msec());
+                Ok(Value::Null)
+            }
+            INPUT_POINTER_BUTTON => {
+                let PointerButton { button, pressed } = parse_required(params)?;
+                let state = if pressed {
+                    ButtonState::Pressed
+                } else {
+                    ButtonState::Released
+                };
+                self.pointer_button(button.code(), state, self.now_msec());
+                Ok(Value::Null)
+            }
+            INPUT_CLICK => {
+                let Click { x, y, button } = parse_required(params)?;
+                let time = self.now_msec();
+                self.pointer_move_to((x, y).into(), time);
+                self.pointer_button(button.code(), ButtonState::Pressed, time);
+                self.pointer_button(button.code(), ButtonState::Released, time);
+                Ok(Value::Null)
+            }
             SESSION_QUIT => {
                 info!("uscita richiesta");
                 self.loop_signal.stop();
@@ -109,6 +134,11 @@ impl State {
             }
             other => Err(format!("comando sconosciuto: {other}")),
         }
+    }
+
+    /// Tempo per gli eventi di input sintetici, in millisecondi dall'avvio.
+    fn now_msec(&self) -> u32 {
+        u32::try_from(self.start_time.elapsed().as_millis()).unwrap_or(u32::MAX)
     }
 
     /// Avvia un comando di shell come client di questa sessione.

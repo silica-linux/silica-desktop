@@ -56,7 +56,8 @@ where
     let mut framebuffer = renderer
         .bind(&mut target)
         .map_err(|e| format!("bind: {e:?}"))?;
-    let mut damage_tracker = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+    let scale = output.current_scale().fractional_scale();
+    let mut damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
     damage_tracker
         .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
         .map_err(|e| format!("render: {e:?}"))?;

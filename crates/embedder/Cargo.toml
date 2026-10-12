@@ -7,5 +7,18 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[dependencies]
+libloading = "0.8"
+smithay-client-toolkit = { version = "0.19", default-features = false, features = ["calloop"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wayland-client = "0.31"
+
+[dev-dependencies]
+ossido = { path = "../ossido" }
+png = "0.17"
+serde_json = "1"
+silica-control = { path = "../control" }
+
 [lints]
 workspace = true
