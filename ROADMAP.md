@@ -82,3 +82,5 @@ conformità), mai stimata.
 | --- | --- | --- | --- |
 | Finestre · angoli | pixel mancanti per riga dell'angolo contro la maschera di riferimento (test `window_corners_follow_the_reference`) | errore massimo 0,44 px, rms 0,13 px | 2026-10-13 |
 | Finestre · ombra | alfa del profilo laterale (d 2–48 pt), anello e asimmetria sopra/sotto, finestra attiva e inattiva in chiaro (test `window_shadows_follow_the_reference`) | errore massimo 2 livelli d'alfa su 255 | 2026-10-13 |
+| Vetro · colore | riempimento su `#7a7b80`, materiale chiaro (Dock) e spesso (menu), aspetto chiaro (test `materials_on_the_reference_gray_match_the_measured_fill`) | entro 3 livelli su 255 per canale | 2026-10-13 |
+| Vetro · sfocatura | profilo di un bordo di striscia nel materiale chiaro contro il Dock (test `clear_glass_blurs_a_stripe_edge_like_the_dock`) | rms 5,0 livelli su 255 | 2026-10-13 |

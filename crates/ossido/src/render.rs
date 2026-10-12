@@ -3,6 +3,7 @@
 //! ancora `space_render_elements`, senza effetti.
 
 use ossido_render::corners::RoundedSurface;
+use ossido_render::glass::{CLEAR_LIGHT, GlassCache, GlassElement, PhysicalRegion, THICK_LIGHT};
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
 use ossido_render::titlebar::{Titlebar, TitlebarState};
 use smithay::backend::renderer::element::AsRenderElements;
@@ -12,10 +13,15 @@ use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::desktop::{LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::render_elements;
+use smithay::utils::{Physical, Point, Rectangle, Size};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
+use tracing::warn;
 
 use crate::decorations;
+use crate::glass::{Material, current_regions};
 
 render_elements! {
     pub OutputElement<=GlesRenderer>;
@@ -23,6 +29,15 @@ render_elements! {
     Rounded=RoundedSurface,
     /// Elementi a pixel shader: ombre e barre del titolo.
     Shadow=PixelShaderElement,
+    Glass=GlassElement,
+}
+
+/// Dove va il vetro di una superficie: subito dietro le sue superfici nella lista.
+struct GlassAnchor {
+    index: usize,
+    surface: WlSurface,
+    /// Origine della superficie nell'output, in pixel fisici.
+    origin: Point<i32, Physical>,
 }
 
 /// La finestra ha lo stato attivo (focus), anche se il configure non è ancora partito.
@@ -38,6 +53,7 @@ pub fn output_elements(
     space: &Space<Window>,
     output: &Output,
     titlebar_hover: Option<&Window>,
+    clear_color: [f32; 4],
 ) -> Vec<OutputElement> {
     let shaders = ossido_render::shaders(renderer);
     let scale = output.current_scale().fractional_scale();
@@ -50,9 +66,13 @@ pub fn output_elements(
         .map(|geo| geo.loc)
         .unwrap_or_default();
     let mut elements = Vec::new();
+    let mut anchors: Vec<GlassAnchor> = Vec::new();
 
     let layer_map = layer_map_for_output(output);
-    let push_layers = |elements: &mut Vec<OutputElement>, renderer: &mut GlesRenderer, level| {
+    let push_layers = |elements: &mut Vec<OutputElement>,
+                       anchors: &mut Vec<GlassAnchor>,
+                       renderer: &mut GlesRenderer,
+                       level| {
         for layer in layer_map.layers_on(level).rev() {
             let Some(geometry) = layer_map.layer_geometry(layer) else {
                 continue;
@@ -71,10 +91,15 @@ pub fn output_elements(
                 .into_iter()
                 .map(OutputElement::Surface),
             );
+            anchors.push(GlassAnchor {
+                index: elements.len(),
+                surface: layer.wl_surface().clone(),
+                origin: location,
+            });
         }
     };
-    push_layers(&mut elements, renderer, Layer::Overlay);
-    push_layers(&mut elements, renderer, Layer::Top);
+    push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
+    push_layers(&mut elements, &mut anchors, renderer, Layer::Top);
 
     for window in space.elements().rev() {
         let (Some(location), Some(geometry)) = (
@@ -91,9 +116,18 @@ pub fn output_elements(
             scale.into(),
             1.0,
         );
+        let anchor = window.toplevel().map(|toplevel| GlassAnchor {
+            index: 0,
+            surface: toplevel.wl_surface().clone(),
+            origin: render_location,
+        });
         // A schermo intero niente angoli, barra né ombra (come nelle riprese).
         if crate::windows::is_fullscreen(window) {
             elements.extend(surfaces.into_iter().map(OutputElement::Surface));
+            anchors.extend(anchor.map(|anchor| GlassAnchor {
+                index: elements.len(),
+                ..anchor
+            }));
             continue;
         }
         let mut frame = decorations::frame_of(window, geometry);
@@ -107,6 +141,10 @@ pub fn output_elements(
                 output_size,
                 shaders.corners.clone(),
             ))
+        }));
+        anchors.extend(anchor.map(|anchor| GlassAnchor {
+            index: elements.len(),
+            ..anchor
         }));
         let active = is_active(window);
         if decorations::is_server_side(window)
@@ -134,7 +172,59 @@ pub fn output_elements(
         }
     }
 
-    push_layers(&mut elements, renderer, Layer::Bottom);
-    push_layers(&mut elements, renderer, Layer::Background);
+    push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
+    push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
+
+    // Il vetro dallo sfondo verso il primo piano: un vetro più in alto vede quelli sotto.
+    if let Some(programs) = &shaders.glass {
+        let output_rect = Rectangle::from_size(output_size);
+        for anchor in anchors.iter().rev() {
+            let regions: Vec<PhysicalRegion> = current_regions(&anchor.surface)
+                .iter()
+                .map(|region| PhysicalRegion {
+                    rect: Rectangle::new(
+                        anchor.origin
+                            + Point::<i32, smithay::utils::Logical>::from((region.x, region.y))
+                                .to_physical_precise_round(scale),
+                        Size::<i32, smithay::utils::Logical>::from((region.width, region.height))
+                            .to_physical_precise_round(scale),
+                    ),
+                    radius: region.radius * scale,
+                    material: match region.material {
+                        Material::Clear => CLEAR_LIGHT,
+                        Material::Thick => THICK_LIGHT,
+                    },
+                })
+                .collect();
+            if regions.is_empty() {
+                continue;
+            }
+            let index = anchor.index.min(elements.len());
+            let behind = elements.get(index..).unwrap_or_default();
+            let glass = with_states(&anchor.surface, |states| {
+                states.data_map.insert_if_missing(GlassCache::default);
+                states.data_map.get::<GlassCache>().map(|cache| {
+                    cache.elements(
+                        renderer,
+                        programs,
+                        &regions,
+                        behind,
+                        output_rect,
+                        scale,
+                        clear_color,
+                    )
+                })
+            });
+            match glass {
+                Some(Ok(glass)) => {
+                    let glass: Vec<OutputElement> =
+                        glass.into_iter().map(OutputElement::Glass).collect();
+                    elements.splice(index..index, glass);
+                }
+                Some(Err(err)) => warn!("vetro saltato in questo frame: {err:?}"),
+                None => {}
+            }
+        }
+    }
     elements
 }

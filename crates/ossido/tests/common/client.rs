@@ -183,7 +183,24 @@ impl TestWindow {
         Self::open_with(socket, title, size, true)
     }
 
+    /// Una finestra con pixel a scelta (BGRA premoltiplicato, righe dall'alto).
+    #[allow(dead_code)]
+    pub fn open_pixels(socket: &Path, title: &str, size: (u32, u32), pixels: &[u8]) -> Self {
+        Self::open_full(socket, title, size, false, pixels)
+    }
+
     fn open_with(socket: &Path, title: &str, (w, h): (u32, u32), decorated: bool) -> Self {
+        let pixels = RED_BGRA.repeat((w * h) as usize);
+        Self::open_full(socket, title, (w, h), decorated, &pixels)
+    }
+
+    fn open_full(
+        socket: &Path,
+        title: &str,
+        (w, h): (u32, u32),
+        decorated: bool,
+        pixels: &[u8],
+    ) -> Self {
         let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
         let mut queue = conn.new_event_queue();
         let qh = queue.handle();
@@ -212,7 +229,8 @@ impl TestWindow {
 
         let stride = w * 4;
         let mut file = tempfile::tempfile().unwrap();
-        file.write_all(&RED_BGRA.repeat((w * h) as usize)).unwrap();
+        assert_eq!(pixels.len(), (w * h * 4) as usize, "pixel della finestra");
+        file.write_all(pixels).unwrap();
         let pool = shm.create_pool(file.as_fd(), (stride * h) as i32, &qh, ());
         let buffer = pool.create_buffer(
             0,

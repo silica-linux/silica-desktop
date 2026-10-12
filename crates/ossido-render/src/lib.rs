@@ -6,6 +6,7 @@
 
 pub mod cache;
 pub mod corners;
+pub mod glass;
 pub mod shadow;
 pub mod titlebar;
 
@@ -21,6 +22,7 @@ pub struct Shaders {
     pub corners: Option<GlesTexProgram>,
     pub shadow: Option<GlesPixelProgram>,
     pub titlebar: Option<GlesPixelProgram>,
+    pub glass: Option<glass::GlassPrograms>,
 }
 
 /// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
@@ -36,10 +38,26 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         titlebar::SHADER,
         &titlebar::UNIFORMS,
     );
+    let blur = compile_texture(
+        renderer,
+        "sfocatura",
+        glass::BLUR_SHADER,
+        &glass::BLUR_UNIFORMS,
+    );
+    let material = compile_texture(
+        renderer,
+        "materiale",
+        glass::MATERIAL_SHADER,
+        &glass::MATERIAL_UNIFORMS,
+    );
+    let glass = blur
+        .zip(material)
+        .map(|(blur, material)| glass::GlassPrograms { blur, material });
     let shaders = Shaders {
         corners,
         shadow,
         titlebar,
+        glass,
     };
     renderer
         .egl_context()

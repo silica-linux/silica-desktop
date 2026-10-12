@@ -169,6 +169,7 @@ impl State {
                     &self.space,
                     &self.output,
                     self.titlebar_hover.as_ref(),
+                    self.clear_color,
                 );
                 capture_elements::<_, GlesTexture, _>(
                     renderer,
@@ -183,6 +184,7 @@ impl State {
                     &self.space,
                     &self.output,
                     self.titlebar_hover.as_ref(),
+                    self.clear_color,
                 );
                 capture_elements::<_, GlesTexture, _>(
                     renderer.as_mut(),
@@ -214,6 +216,7 @@ impl State {
             &self.space,
             &self.output,
             self.titlebar_hover.as_ref(),
+            clear_color,
         );
         let rendered = match backend.graphics.bind() {
             Ok((renderer, mut framebuffer)) => backend

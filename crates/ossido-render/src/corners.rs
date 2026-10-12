@@ -67,6 +67,7 @@ pub struct RoundedSurface {
     /// La geometria della finestra nell'output, in pixel fisici.
     window: Rectangle<f64, Physical>,
     radius: f64,
+    scale: f64,
     /// Dimensione dell'output in pixel fisici, prima della trasformazione del frame.
     output: Size<i32, Physical>,
     program: Option<GlesTexProgram>,
@@ -85,13 +86,20 @@ impl RoundedSurface {
             inner,
             window,
             radius,
+            scale,
             output,
             program,
         }
     }
 
-    fn uniforms(&self, transform: Transform) -> Vec<Uniform<'static>> {
-        let (x, y) = frag_to_local(self.output, self.window, transform);
+    /// `shift`: di quanto il frame sposta l'elemento rispetto all'output (cattura del vetro
+    /// in una texture più piccola, sempre con trasformazione Normal).
+    fn uniforms(&self, transform: Transform, shift: Point<i32, Physical>) -> Vec<Uniform<'static>> {
+        let (mut x, mut y) = frag_to_local(self.output, self.window, transform);
+        if transform == Transform::Normal {
+            x[2] += shift.x as f32;
+            y[2] += shift.y as f32;
+        }
         vec![
             Uniform::new("frag_to_local_x", UniformValue::_3f(x[0], x[1], x[2])),
             Uniform::new("frag_to_local_y", UniformValue::_3f(y[0], y[1], y[2])),
@@ -192,7 +200,8 @@ impl RenderElement<GlesRenderer> for RoundedSurface {
         let Some(program) = &self.program else {
             return self.inner.draw(frame, src, dst, damage, opaque_regions);
         };
-        let uniforms = self.uniforms(frame.transformation());
+        let shift = self.inner.geometry(Scale::from(self.scale)).loc - dst.loc;
+        let uniforms = self.uniforms(frame.transformation(), shift);
         frame.override_default_tex_program(program.clone(), uniforms);
         let result = self.inner.draw(frame, src, dst, damage, opaque_regions);
         frame.clear_tex_program_override();
