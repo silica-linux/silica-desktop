@@ -20,12 +20,15 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Dimensione della texture (sfondo già sfocato) in pixel fisici, e la regione dentro la
-// texture: origine e dimensione, con raggio ed esponente degli angoli (2: i vetri misurati
-// hanno angoli ad arco di cerchio).
+// Dimensione della texture (sfondo già sfocato) in pixel fisici, e le regioni dentro la
+// texture: fino a 8 rettangoli (una colonna per rettangolo: x, y, larghezza, altezza), i
+// loro raggi, quante sono. Le regioni si fondono con un'unione morbida entro `merge`
+// pixel, come gocce. Esponente degli angoli: 2, i vetri misurati hanno archi di cerchio.
 uniform vec2 tex_size;
-uniform vec4 region;
-uniform float radius;
+uniform mat4 shapes[2];
+uniform mat4 radii;
+uniform float shape_count;
+uniform float merge;
 uniform float exponent;
 // Colore del materiale sui valori sRGB codificati: out = M · in + b (righe di M).
 uniform vec3 row_r;
@@ -57,8 +60,27 @@ float rounded_distance(vec2 p, vec4 rect, float r) {
     return max(d.x, d.y) - max(r, 0.0);
 }
 
-float shape_distance(vec2 p, vec4 rect) {
-    return rounded_distance(p, rect, radius);
+// Minimo morbido (polinomiale): il ponte fra due forme vicine.
+float smooth_min(float a, float b, float k) {
+    if (k <= 0.0) {
+        return min(a, b);
+    }
+    float h = max(k - abs(a - b), 0.0) / k;
+    return min(a, b) - h * h * k * 0.25;
+}
+
+// Distanza con segno dall'unione delle regioni, con angoli almeno di `min_radius`.
+float union_distance(vec2 p, float min_radius) {
+    float d = 1.0e6;
+    for (int i = 0; i < 8; i++) {
+        if (float(i) >= shape_count) {
+            break;
+        }
+        vec4 rect = shapes[i / 4][i - (i / 4) * 4];
+        float r = radii[i / 4][i - (i / 4) * 4];
+        d = smooth_min(d, rounded_distance(p, rect, max(r, min_radius)), merge);
+    }
+    return d;
 }
 
 // La distanza della sorgente per un pixel a distanza t, interpolando la curva.
@@ -83,15 +105,14 @@ float lens_source(mat4 curve, float t) {
 
 void main() {
     vec2 p = v_coords * tex_size;
-    float sd = shape_distance(p, region);
+    float sd = union_distance(p, 0.0);
     float t = -sd;
     // Normale verso l'esterno dalla distanza (differenze centrali), su una forma con angoli
     // almeno ampi quanto la fascia della rifrazione: senza, sulla diagonale di un angolo
     // retto la normale salta e lo spostamento lascia una cucitura.
     vec2 e = vec2(0.5, 0.0);
-    float rn = max(radius, lens_reach);
-    vec2 n = vec2(rounded_distance(p + e.xy, region, rn) - rounded_distance(p - e.xy, region, rn),
-                  rounded_distance(p + e.yx, region, rn) - rounded_distance(p - e.yx, region, rn));
+    vec2 n = vec2(union_distance(p + e.xy, lens_reach) - union_distance(p - e.xy, lens_reach),
+                  union_distance(p + e.yx, lens_reach) - union_distance(p - e.yx, lens_reach));
     n = length(n) > 0.0 ? normalize(n) : vec2(0.0, -1.0);
     float vertical = n.y * n.y;
 

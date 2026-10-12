@@ -415,3 +415,50 @@ fn regular_glass_is_the_liquid_lens_of_the_control_center() {
         "la lente non preleva lo sfondo fuori dal bordo"
     );
 }
+
+#[test]
+fn nearby_regions_of_the_same_glass_merge_like_drops() {
+    let ossido = Headless::start_with("glass-merge", SHOT, &["--background", "7a7b80"]);
+    let size = (400, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "gocce", size, &transparent(size));
+    let background = [0x7a_u8, 0x7b, 0x80];
+    let differs = |shot: &[u8], x: u32, y: u32| {
+        rgb(shot, x, y)
+            .iter()
+            .zip(background)
+            .any(|(got, bg)| got.abs_diff(bg) > 6)
+    };
+    // Due capsule a 10 pt l'una dall'altra: il punto in mezzo diventa vetro (finestra a
+    // (32, 32): capsule a x 32–131 e 142–241, spazio centrato a x 136, y 82).
+    glass
+        .set_glass(&[
+            (0, 20, 100, 60, 30.0, Material::Regular),
+            (110, 20, 100, 60, 30.0, Material::Regular),
+        ])
+        .unwrap();
+    let joined = shot(&ossido, "glass-merge.png");
+    assert!(
+        differs(&joined, 136, 82),
+        "le capsule vicine non si fondono"
+    );
+
+    // Lontane (60 pt): resta il fondo.
+    glass
+        .set_glass(&[
+            (0, 20, 100, 60, 30.0, Material::Regular),
+            (160, 20, 100, 60, 30.0, Material::Regular),
+        ])
+        .unwrap();
+    let apart = shot(&ossido, "glass-apart.png");
+    assert!(!differs(&apart, 162, 82), "le capsule lontane si fondono");
+
+    // Materiali diversi non si fondono, anche vicini.
+    glass
+        .set_glass(&[
+            (0, 20, 100, 60, 30.0, Material::Regular),
+            (110, 20, 100, 60, 30.0, Material::Clear),
+        ])
+        .unwrap();
+    let mixed = shot(&ossido, "glass-mixed.png");
+    assert!(!differs(&mixed, 136, 82), "materiali diversi si fondono");
+}

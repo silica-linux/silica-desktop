@@ -197,10 +197,12 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 14] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 16] = [
     ("tex_size", UniformType::_2f),
-    ("region", UniformType::_4f),
-    ("radius", UniformType::_1f),
+    ("shapes", UniformType::Matrix4x4),
+    ("radii", UniformType::Matrix4x4),
+    ("shape_count", UniformType::_1f),
+    ("merge", UniformType::_1f),
     ("exponent", UniformType::_1f),
     ("row_r", UniformType::_3f),
     ("row_g", UniformType::_3f),
@@ -243,6 +245,14 @@ impl GlassQuality {
         }
     }
 }
+
+/// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola
+/// forma, come gocce (unione morbida delle distanze, k = 2 · MERGE_PT: due bordi a distanza
+/// g si toccano quando g < k / 2). PROVVISORIO: la fusione non è ancora misurata
+/// (plan/execution-plan.md, "Da misurare sul Mac per il Liquid Glass").
+pub const MERGE_PT: f32 = 16.0;
+/// Regioni che lo shader fonde insieme al più: oltre, gruppi separati.
+const MAX_SHAPES: usize = 8;
 
 /// Oltre questo σ (pixel) si sfoca a metà o a un quarto della risoluzione: il nucleo
 /// dello shader arriva a 48 pixel.
@@ -311,7 +321,7 @@ impl GlassCache {
         let margin = regions
             .iter()
             .map(|region| {
-                let reach = f64::from(region.material.lens.outward_reach());
+                let reach = f64::from(region.material.lens.outward_reach() + MERGE_PT);
                 ((region.material.sigma * 3.0 + reach) * scale).ceil() as i32 + 2
             })
             .max()
@@ -369,11 +379,12 @@ impl GlassCache {
                 )?;
                 textures.push((region.material, blurred));
             }
+            let count = groups(regions).len();
             let (ids, mut commit) = match state.take() {
-                Some(cached) if cached.ids.len() == regions.len() => (cached.ids, cached.commit),
-                Some(cached) => (regions.iter().map(|_| Id::new()).collect(), cached.commit),
+                Some(cached) if cached.ids.len() == count => (cached.ids, cached.commit),
+                Some(cached) => ((0..count).map(|_| Id::new()).collect(), cached.commit),
                 None => (
-                    regions.iter().map(|_| Id::new()).collect(),
+                    (0..count).map(|_| Id::new()).collect(),
                     CommitCounter::default(),
                 ),
             };
@@ -391,28 +402,59 @@ impl GlassCache {
         let Some(cached) = state.as_ref() else {
             return Ok(Vec::new());
         };
-        Ok(cached
-            .regions
-            .iter()
+        Ok(groups(&cached.regions)
+            .into_iter()
             .zip(&cached.ids)
-            .filter_map(|(region, id)| {
+            .filter_map(|(shapes, id)| {
+                let material = shapes.first()?.material;
                 let texture = cached
                     .textures
                     .iter()
-                    .find(|(material, _)| *material == region.material)?
+                    .find(|(m, _)| *m == material)?
                     .1
                     .clone();
+                let scale = shapes.first()?.scale;
+                // L'unione morbida esce dalle regioni al più di k / 4 = MERGE_PT / 2.
+                let bulge = (f64::from(MERGE_PT) * scale * 0.5).ceil() as i32 + 1;
+                let area = shapes
+                    .iter()
+                    .map(|shape| shape.rect)
+                    .reduce(|a, b| a.merge(b))?;
+                let area = Rectangle::new(
+                    area.loc - Point::from((bulge, bulge)),
+                    area.size + Size::from((bulge.saturating_mul(2), bulge.saturating_mul(2))),
+                )
+                .intersection(cached.bbox)?;
                 Some(GlassElement {
                     id: id.clone(),
                     commit: cached.commit,
                     texture,
                     bbox: cached.bbox,
-                    region: *region,
+                    area,
+                    shapes,
                     program: programs.material.clone(),
                 })
             })
             .collect())
     }
+}
+
+/// Le regioni raggruppate per materiale (nell'ordine in cui compaiono), al più
+/// `MAX_SHAPES` per gruppo: le regioni di un gruppo si fondono fra loro.
+fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
+    let mut groups: Vec<Vec<PhysicalRegion>> = Vec::new();
+    for region in regions {
+        match groups.iter_mut().find(|group| {
+            group.len() < MAX_SHAPES
+                && group
+                    .first()
+                    .is_some_and(|first| first.material == region.material)
+        }) {
+            Some(group) => group.push(*region),
+            None => groups.push(vec![*region]),
+        }
+    }
+    groups
 }
 
 fn buffer_size(size: Size<i32, Physical>) -> Size<i32, Buffer> {
@@ -561,7 +603,10 @@ pub struct GlassElement {
     /// Lo sfondo sfocato, grande quanto `bbox`.
     texture: GlesTexture,
     bbox: Rectangle<i32, Physical>,
-    region: PhysicalRegion,
+    /// Dove si disegna: le regioni del gruppo più lo spazio della fusione.
+    area: Rectangle<i32, Physical>,
+    /// Le regioni del gruppo (stesso materiale, al più `MAX_SHAPES`).
+    shapes: Vec<PhysicalRegion>,
     program: GlesTexProgram,
 }
 
@@ -575,7 +620,7 @@ impl Element for GlassElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        let local = Rectangle::new(self.region.rect.loc - self.bbox.loc, self.region.rect.size);
+        let local = Rectangle::new(self.area.loc - self.bbox.loc, self.area.size);
         Rectangle::new(
             Point::from((f64::from(local.loc.x), f64::from(local.loc.y))),
             buffer_size(local.size).to_f64(),
@@ -583,7 +628,7 @@ impl Element for GlassElement {
     }
 
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.region.rect
+        self.area
     }
 
     fn kind(&self) -> Kind {
@@ -600,22 +645,59 @@ impl RenderElement<GlesRenderer> for GlassElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        let local = self.region.rect.loc - self.bbox.loc;
-        let size = self.region.rect.size;
-        let m = self.region.material.matrix;
-        let b = self.region.material.offset;
-        let lens = self.region.material.lens;
-        let px = self.region.scale as f32;
+        let Some(first) = self.shapes.first() else {
+            return Ok(());
+        };
+        let m = first.material.matrix;
+        let b = first.material.offset;
+        let lens = first.material.lens;
+        let px = first.scale as f32;
+        // Le regioni rispetto alla texture: fino a 8 rettangoli in due mat4 (una colonna
+        // per rettangolo: x, y, larghezza, altezza) e i raggi in una mat4.
+        let mut rects = [[0.0_f32; 16]; 2];
+        let mut radii = [0.0_f32; 16];
+        for (i, shape) in self.shapes.iter().take(MAX_SHAPES).enumerate() {
+            let local = shape.rect.loc - self.bbox.loc;
+            let values = [
+                local.x as f32,
+                local.y as f32,
+                shape.rect.size.w as f32,
+                shape.rect.size.h as f32,
+            ];
+            if let Some(slot) = rects
+                .get_mut(i / 4)
+                .and_then(|matrix| matrix.get_mut((i % 4) * 4..(i % 4) * 4 + 4))
+            {
+                slot.copy_from_slice(&values);
+            }
+            if let Some(slot) = radii.get_mut(i) {
+                *slot = shape.radius as f32;
+            }
+        }
         let uniforms = [
             Uniform::new(
                 "tex_size",
                 UniformValue::_2f(self.bbox.size.w as f32, self.bbox.size.h as f32),
             ),
             Uniform::new(
-                "region",
-                UniformValue::_4f(local.x as f32, local.y as f32, size.w as f32, size.h as f32),
+                "shapes",
+                UniformValue::Matrix4x4 {
+                    matrices: rects.to_vec(),
+                    transpose: false,
+                },
             ),
-            Uniform::new("radius", UniformValue::_1f(self.region.radius as f32)),
+            Uniform::new(
+                "radii",
+                UniformValue::Matrix4x4 {
+                    matrices: vec![radii],
+                    transpose: false,
+                },
+            ),
+            Uniform::new(
+                "shape_count",
+                UniformValue::_1f(self.shapes.len().min(MAX_SHAPES) as f32),
+            ),
+            Uniform::new("merge", UniformValue::_1f(2.0 * MERGE_PT * px)),
             Uniform::new("exponent", UniformValue::_1f(2.0)),
             Uniform::new("row_r", UniformValue::_3f(m[0][0], m[0][1], m[0][2])),
             Uniform::new("row_g", UniformValue::_3f(m[1][0], m[1][1], m[1][2])),
