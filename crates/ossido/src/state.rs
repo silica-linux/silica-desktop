@@ -20,6 +20,7 @@ use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::viewporter::ViewporterState;
 use tracing::{info, warn};
 
 use silica_control::Shortcut;
@@ -54,6 +55,8 @@ pub struct State {
     pub seat_state: SeatState<State>,
     pub data_device_state: DataDeviceState,
     pub layer_shell_state: WlrLayerShellState,
+    /// wp_viewporter: superfici scalate o ritagliate (iced lo richiede per l'HiDPI).
+    pub viewporter_state: ViewporterState,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -83,6 +86,7 @@ impl State {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<State>(&dh);
         let data_device_state = DataDeviceState::new::<State>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
+        let viewporter_state = ViewporterState::new::<State>(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -133,6 +137,7 @@ impl State {
             seat_state,
             data_device_state,
             layer_shell_state,
+            viewporter_state,
             seat,
             mapped: 0,
             next_window_id: 0,

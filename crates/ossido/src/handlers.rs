@@ -29,7 +29,7 @@ use smithay::wayland::shell::xdg::{
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm,
-    delegate_xdg_shell,
+    delegate_viewporter, delegate_xdg_shell,
 };
 use tracing::{info, warn};
 
@@ -214,3 +214,4 @@ delegate_xdg_shell!(State);
 delegate_seat!(State);
 delegate_data_device!(State);
 delegate_output!(State);
+delegate_viewporter!(State);
