@@ -22,6 +22,7 @@ use crate::state::State;
 pub enum Material {
     Clear,
     Thick,
+    Regular,
 }
 
 /// Una regione di vetro, in pixel logici relativi alla superficie.
@@ -157,6 +158,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                 let material = match material {
                     WEnum::Value(silica_glass_v1::Material::Clear) => Some(Material::Clear),
                     WEnum::Value(silica_glass_v1::Material::Thick) => Some(Material::Thick),
+                    WEnum::Value(silica_glass_v1::Material::Regular) => Some(Material::Regular),
                     _ => None,
                 };
                 let valid = width > 0 && height > 0 && radius.is_finite() && radius >= 0.0;

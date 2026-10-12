@@ -8,8 +8,8 @@ use std::time::Instant;
 use ossido_render::animation;
 use ossido_render::corners::{RoundedSurface, WindowSurface};
 use ossido_render::glass::{
-    CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, PhysicalRegion, THICK_LIGHT,
-    render_to_texture,
+    CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, PhysicalRegion, REGULAR_LIGHT,
+    THICK_LIGHT, render_to_texture,
 };
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
 use ossido_render::title::Title;
@@ -410,6 +410,7 @@ pub fn output_elements(
                     material: match region.material {
                         Material::Clear => CLEAR_LIGHT,
                         Material::Thick => THICK_LIGHT,
+                        Material::Regular => REGULAR_LIGHT,
                     },
                     scale,
                 })

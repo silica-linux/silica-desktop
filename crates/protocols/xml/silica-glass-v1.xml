@@ -48,11 +48,13 @@
 
     <enum name="material">
       <description summary="materiali misurati">
-        Due famiglie di vetro: chiaro (sfocatura piccola, quasi trasparente) e spesso
-        (sfocatura ampia, quasi bianco in aspetto chiaro).
+        Le famiglie di vetro misurate: chiaro (sfocatura piccola, quasi trasparente),
+        spesso (sfocatura ampia, quasi bianco in aspetto chiaro) e regolare (il Liquid Glass
+        dei controlli: lente forte sul bordo).
       </description>
       <entry name="clear" value="0" summary="vetro chiaro, come il Dock"/>
       <entry name="thick" value="1" summary="vetro spesso, come menu e ricerca"/>
+      <entry name="regular" value="2" summary="vetro dei controlli, con la lente del bordo"/>
     </enum>
 
     <enum name="error">

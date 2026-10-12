@@ -86,3 +86,5 @@ conformità), mai stimata.
 | Vetro · sfocatura | profilo di un bordo di striscia nel materiale chiaro contro il Dock (test `clear_glass_blurs_a_stripe_edge_like_the_dock`) | rms 5,0 livelli su 255 | 2026-10-13 |
 | Vetro · bordo | riga luminosa, sfumatura di 7 righe e bordo laterale del materiale chiaro su `#7a7b80` contro il Dock (test `clear_glass_edge_matches_the_dock_border`) | entro 3 livelli su 255 per canale | 2026-10-13 |
 | Vetro · rifrazione | spostamento degli attraversamenti di strisce vicino al bordo laterale, materiale chiaro (test `clear_glass_refracts_near_the_side_edges_like_the_dock`) | 4,6 pt a 5,4 pt dal bordo (Dock: ~5 pt a 6 pt), 0 oltre 22 pt | 2026-10-13 |
+| Liquid Glass · lente | sorgente prelevata in funzione della distanza dal bordo, materiale `regular`, contro la curva misurata sui moduli del Centro di controllo (test `regular_glass_is_the_liquid_lens_of_the_control_center`) | entro 1,1 pt nei 30 pt dal bordo (incertezza della misura ±3 pt) | 2026-10-13 |
+| Liquid Glass · colore | riempimento del materiale `regular` su `#7a7b80` contro i moduli (`#6a6b70`) | entro 2 livelli su 255 | 2026-10-13 |

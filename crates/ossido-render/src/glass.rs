@@ -30,9 +30,46 @@ pub struct MaterialParams {
     pub sharp: f32,
     pub matrix: [[f32; 3]; 3],
     pub offset: [f32; 3],
-    /// Rifrazione in punti: ampiezza ai lati, sopra, sotto; distanza dal bordo del
-    /// massimo e della fine.
-    pub refraction: [f32; 5],
+    /// La lente del bordo.
+    pub lens: Lens,
+}
+
+/// La lente del bordo: per ogni lato, da quale distanza dal bordo (s) il vetro preleva lo
+/// sfondo per un pixel a distanza t, in punti, con punti (t, s) a t crescente (al più 8).
+/// s > t ingrandisce (preleva più verso l'interno), s < 0 preleva fuori dal bordo. Prima
+/// del primo punto vale il primo, oltre l'ultimo s = t.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Lens {
+    pub side: &'static [(f32, f32)],
+    pub top: &'static [(f32, f32)],
+    pub bottom: &'static [(f32, f32)],
+}
+
+impl Lens {
+    /// Quanto lontano fuori dal bordo può prelevare, in punti.
+    pub fn outward_reach(&self) -> f32 {
+        [self.side, self.top, self.bottom]
+            .iter()
+            .flat_map(|curve| curve.iter().map(|(_, s)| -s))
+            .fold(0.0, f32::max)
+    }
+
+    /// Le tre curve come array di `mat4` (colonne: t0, s0, t1, s1), scalate in pixel.
+    fn uniform(&self, px: f32) -> UniformValue {
+        let pack = |curve: &[(f32, f32)]| {
+            // I posti vuoti hanno t enorme: lo shader si ferma lì.
+            let mut m = [1.0e6_f32; 16];
+            for ([slot_t, slot_s], (t, s)) in m.as_chunks_mut::<2>().0.iter_mut().zip(curve) {
+                *slot_t = t * px;
+                *slot_s = s * px;
+            }
+            m
+        };
+        UniformValue::Matrix4x4 {
+            matrices: vec![pack(self.side), pack(self.top), pack(self.bottom)],
+            transpose: false,
+        }
+    }
 }
 
 /// Bordo comune ai vetri misurati (Dock, moduli, HUD, notifiche, Spotlight): sul grigio
@@ -55,9 +92,79 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
         [-0.158, -0.328, 1.242],
     ],
     offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
-    // Rifrazione del Dock: ai lati fino a ~5 pt a 6 pt dal bordo, nulla oltre ~22 pt;
-    // sopra ≤ 1 pt, sotto ~3 pt.
-    refraction: [5.0, 1.0, 3.0, 6.0, 22.0],
+    lens: DOCK_LENS,
+};
+
+/// Lente del Dock: ai lati fino a ~5 pt verso l'interno a 6 pt dal bordo, nulla oltre
+/// ~22 pt; sopra ≤ 1 pt, sotto ~3 pt (glass.md, "Vetro · Dock · Rifrazione").
+const DOCK_LENS: Lens = Lens {
+    side: &[
+        (0.0, 0.0),
+        (6.0, 11.0),
+        (10.0, 14.3),
+        (14.0, 16.5),
+        (18.0, 18.7),
+        (22.0, 22.0),
+    ],
+    top: &[
+        (0.0, 0.0),
+        (6.0, 7.0),
+        (10.0, 10.9),
+        (14.0, 14.5),
+        (18.0, 18.1),
+        (22.0, 22.0),
+    ],
+    bottom: &[
+        (0.0, 0.0),
+        (6.0, 9.0),
+        (10.0, 12.6),
+        (14.0, 15.5),
+        (18.0, 18.4),
+        (22.0, 22.0),
+    ],
+};
+
+/// Moduli del Centro di controllo, chiaro: σ 4,5 pt, w 0,04, matrice libera (rmse 3,33)
+/// con b = (30,6; 32,0; 30,3); identica in scuro (glass.md, "Centro di controllo").
+pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
+    sigma: 4.5,
+    sharp: 0.04,
+    matrix: [
+        [0.946, -0.285, -0.037],
+        [-0.126, 0.651, 0.094],
+        [-0.140, -0.297, 1.064],
+    ],
+    offset: [30.6 / 255.0, 32.0 / 255.0, 30.3 / 255.0],
+    lens: LIQUID_LENS,
+};
+
+/// La lente del Liquid Glass, misurata sui moduli del Centro di controllo: fra ~6 e
+/// ~24 pt dal bordo ingrandisce (fino a ~4 pt verso l'interno), nei ~6 pt esterni preleva
+/// lo sfondo che sta fuori dal modulo, fino a ~25 pt oltre il bordo, schiacciato. Sopra la
+/// fascia esterna è di ~2 pt. Il lato inferiore non è misurato: come quello superiore.
+/// Incertezza ±3 pt nella fascia esterna (glass.md, "Rifrazione, molto più forte").
+const LIQUID_LENS: Lens = Lens {
+    side: &[
+        (0.0, -25.0),
+        (6.0, -4.0),
+        (10.0, 14.2),
+        (24.0, 25.5),
+        (30.0, 30.0),
+    ],
+    top: &[
+        (0.0, -27.0),
+        (2.0, -5.0),
+        (6.0, 9.6),
+        (19.0, 21.3),
+        (28.0, 28.0),
+    ],
+    bottom: &[
+        (0.0, -27.0),
+        (2.0, -5.0),
+        (6.0, 9.6),
+        (19.0, 21.3),
+        (28.0, 28.0),
+    ],
 };
 
 /// Menu, chiaro: σ ≈ 9 pt, componente nitida trascurabile, matrice (rmse 4,1) con
@@ -72,7 +179,18 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
     ],
     offset: [142.0 / 255.0, 140.0 / 255.0, 140.0 / 255.0],
     // Nei menu la sfocatura nasconde la rifrazione: ≤ 1–2 pt ai lati.
-    refraction: [1.5, 0.0, 0.0, 6.0, 22.0],
+    lens: Lens {
+        side: &[
+            (0.0, 0.0),
+            (6.0, 7.5),
+            (10.0, 11.3),
+            (14.0, 14.75),
+            (18.0, 18.2),
+            (22.0, 22.0),
+        ],
+        top: &[],
+        bottom: &[],
+    },
 };
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
@@ -89,12 +207,22 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 14] = [
     ("row_b", UniformType::_3f),
     ("offset", UniformType::_3f),
     ("scale_px", UniformType::_1f),
-    ("refraction", UniformType::_3f),
-    ("refraction_band", UniformType::_2f),
+    ("lens", UniformType::Matrix4x4),
+    ("lens_reach", UniformType::_1f),
     ("rim", UniformType::_3f),
     ("edge", UniformType::_2f),
     ("side_dark", UniformType::_1f),
 ];
+
+/// Fin dove arriva la lente dentro il vetro (l'ultimo punto delle curve), in punti: la
+/// normale si calcola su angoli almeno così ampi, perché sulla diagonale di un angolo
+/// retto non salti.
+fn lens_extent(lens: &Lens) -> f32 {
+    [lens.side, lens.top, lens.bottom]
+        .iter()
+        .filter_map(|curve| curve.last().map(|(t, _)| *t))
+        .fold(0.0, f32::max)
+}
 
 /// Livelli di qualità del vetro: pieno (sfoca tutto quello che sta dietro), smerigliato
 /// statico (solo lo sfondo del desktop: si ricalcola di rado), opaco (il materiale sopra il
@@ -182,7 +310,10 @@ impl GlassCache {
         };
         let margin = regions
             .iter()
-            .map(|region| (region.material.sigma * scale * 3.0).ceil() as i32 + 2)
+            .map(|region| {
+                let reach = f64::from(region.material.lens.outward_reach());
+                ((region.material.sigma * 3.0 + reach) * scale).ceil() as i32 + 2
+            })
             .max()
             .unwrap_or(0);
         let Some(bbox) = regions
@@ -473,7 +604,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
         let size = self.region.rect.size;
         let m = self.region.material.matrix;
         let b = self.region.material.offset;
-        let r = self.region.material.refraction;
+        let lens = self.region.material.lens;
         let px = self.region.scale as f32;
         let uniforms = [
             Uniform::new(
@@ -491,11 +622,8 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("row_b", UniformValue::_3f(m[2][0], m[2][1], m[2][2])),
             Uniform::new("offset", UniformValue::_3f(b[0], b[1], b[2])),
             Uniform::new("scale_px", UniformValue::_1f(px)),
-            Uniform::new(
-                "refraction",
-                UniformValue::_3f(r[0] * px, r[1] * px, r[2] * px),
-            ),
-            Uniform::new("refraction_band", UniformValue::_2f(r[3] * px, r[4] * px)),
+            Uniform::new("lens", lens.uniform(px)),
+            Uniform::new("lens_reach", UniformValue::_1f(lens_extent(&lens) * px)),
             Uniform::new(
                 "rim",
                 UniformValue::_3f(EDGE_RIM[0], EDGE_RIM[1], EDGE_RIM[2]),

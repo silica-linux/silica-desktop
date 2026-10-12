@@ -34,10 +34,11 @@ uniform vec3 row_b;
 uniform vec3 offset;
 // Pixel fisici per punto.
 uniform float scale_px;
-// Rifrazione: ampiezza in pixel ai lati, sopra e sotto; distanza dal bordo del massimo e
-// della fine dello spostamento (pixel).
-uniform vec3 refraction;
-uniform vec2 refraction_band;
+// Lente del bordo: per lato (0 lati, 1 sopra, 2 sotto) i punti (t, s) in pixel: un pixel
+// a distanza t dal bordo preleva lo sfondo a distanza s (negativa: fuori dal bordo).
+// Colonne di ogni mat4: t0, s0, t1, s1. lens_reach: fin dove arriva la lente.
+uniform mat4 lens[3];
+uniform float lens_reach;
 // Bordo: riga luminosa di 1 pt sopra e sotto (aggiunta per canale), sfumatura interna
 // (aggiunta al primo pixel e decadimento in pixel), riga scura ai lati (alfa del nero).
 uniform vec3 rim;
@@ -60,6 +61,26 @@ float shape_distance(vec2 p, vec4 rect) {
     return rounded_distance(p, rect, radius);
 }
 
+// La distanza della sorgente per un pixel a distanza t, interpolando la curva.
+float lens_source(mat4 curve, float t) {
+    vec2 previous = vec2(-1.0, 0.0);
+    for (int i = 0; i < 8; i++) {
+        vec4 column = curve[i / 2];
+        vec2 q = (i - (i / 2) * 2 == 0) ? column.xy : column.zw;
+        if (q.x > 1.0e5) {
+            break;
+        }
+        if (t <= q.x) {
+            if (previous.x < 0.0) {
+                return q.y;
+            }
+            return mix(previous.y, q.y, (t - previous.x) / max(q.x - previous.x, 1e-3));
+        }
+        previous = q;
+    }
+    return t;
+}
+
 void main() {
     vec2 p = v_coords * tex_size;
     float sd = shape_distance(p, region);
@@ -68,19 +89,17 @@ void main() {
     // almeno ampi quanto la fascia della rifrazione: senza, sulla diagonale di un angolo
     // retto la normale salta e lo spostamento lascia una cucitura.
     vec2 e = vec2(0.5, 0.0);
-    float rn = max(radius, refraction_band.y);
+    float rn = max(radius, lens_reach);
     vec2 n = vec2(rounded_distance(p + e.xy, region, rn) - rounded_distance(p - e.xy, region, rn),
                   rounded_distance(p + e.yx, region, rn) - rounded_distance(p - e.yx, region, rn));
     n = length(n) > 0.0 ? normalize(n) : vec2(0.0, -1.0);
     float vertical = n.y * n.y;
 
-    // Rifrazione: vicino al bordo il vetro preleva lo sfondo più verso l'interno, come
-    // una lente (glass.md, "Rifrazione").
-    float amplitude = mix(refraction.x, n.y < 0.0 ? refraction.y : refraction.z, vertical);
-    float rise = clamp(t / max(refraction_band.x, 1e-3), 0.0, 1.0);
-    float fall = clamp((t - refraction_band.x) / max(refraction_band.y - refraction_band.x, 1e-3), 0.0, 1.0);
-    float displacement = amplitude * (t < refraction_band.x ? rise : 0.5 + 0.5 * cos(3.14159265 * fall));
-    vec2 sample_at = (p - n * displacement) / tex_size;
+    // Lente: il pixel a distanza t preleva lo sfondo a distanza s lungo la normale
+    // (glass.md, "Rifrazione").
+    float source = mix(lens_source(lens[0], t),
+                       lens_source(n.y < 0.0 ? lens[1] : lens[2], t), vertical);
+    vec2 sample_at = (p + n * (t - source)) / tex_size;
 
     vec3 background = texture2D(tex, sample_at).rgb;
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;

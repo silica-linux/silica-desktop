@@ -8,8 +8,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-/// Le due famiglie di vetro misurate: chiaro (Dock) e spesso (menu, ricerca).
-enum GlassMaterial { clear, thick }
+/// I vetri misurati: chiaro (Dock), spesso (menu, ricerca) e regolare (il Liquid Glass
+/// dei controlli, con la lente forte sul bordo).
+enum GlassMaterial { clear, thick, regular }
 
 /// Un'area di vetro grande quanto il figlio, con angoli ad arco di cerchio.
 class Glass extends SingleChildRenderObjectWidget {

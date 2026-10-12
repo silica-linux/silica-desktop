@@ -16,8 +16,10 @@ sopra testo e icone.
   in attesa, corrente al prossimo `wl_surface.commit`. Coordinate della superficie in
   pixel logici; angoli ad arco di cerchio di raggio `radius`, come i vetri misurati
   (Dock, menu, notifiche: le finestre invece hanno angoli a superellisse).
-- Materiali: `clear` (vetro chiaro, come il Dock) e `thick` (vetro spesso, come menu e
-  ricerca), dalle due famiglie misurate in `plan/reference/glass.md`.
+- Materiali: `clear` (vetro chiaro, come il Dock), `thick` (vetro spesso, come menu e
+  ricerca) e `regular` (il Liquid Glass dei controlli, come i moduli del Centro di
+  controllo: lente forte che sul bordo preleva anche lo sfondo esterno), dalle misure in
+  `plan/reference/glass.md`.
 - Errori: `invalid_region` (dimensione non positiva, raggio negativo o non finito,
   materiale sconosciuto), `too_many_regions` (oltre 64). Il client viene disconnesso;
   Ossido continua.

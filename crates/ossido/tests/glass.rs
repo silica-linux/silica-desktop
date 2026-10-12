@@ -326,3 +326,92 @@ fn glass_quality_levels_choose_what_the_glass_sees() {
     // Su llvmpipe (headless) l'automatico è smerigliato.
     assert_eq!(spread("auto").0, "frosted");
 }
+
+#[test]
+fn regular_glass_is_the_liquid_lens_of_the_control_center() {
+    // Riempimento sul grigio di riferimento: i moduli del Centro di controllo, #6a6b70.
+    let ossido = Headless::start_with("glass-liquid-fill", SHOT, &["--background", "7a7b80"]);
+    let size = (200, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "liquido", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Regular)])
+        .unwrap();
+    let fill = rgb(&shot(&ossido, "glass-liquid-fill.png"), 132, 82);
+    eprintln!("riempimento: {fill:?} (riferimento [106, 107, 112])");
+    for (got, want) in fill.iter().zip([0x6a_u8, 0x6b, 0x70]) {
+        assert!(got.abs_diff(want) <= 3, "riempimento {fill:?}");
+    }
+    drop(glass);
+    drop(ossido);
+
+    // Lente: strisce da 12 px dietro (bordi a x 32 + 12k), vetro da x 64 a 363.
+    let ossido = Headless::start_with("glass-liquid-lens", SHOT, &[]);
+    let back = (500, 200);
+    let mut pixels = Vec::new();
+    for _ in 0..back.1 {
+        for x in 0..back.0 {
+            let level = if x % 24 < 12 { 0 } else { 255 };
+            pixels.extend_from_slice(&[level, level, level, 255]);
+        }
+    }
+    let _stripes = TestWindow::open_pixels(&ossido.wayland, "strisce", back, &pixels);
+    let size = (300, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "liquido", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 300, 100, 0.0, Material::Regular)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-liquid-lens.png");
+    let row: Vec<f64> = (64..364)
+        .map(|x| f64::from(rgb(&shot, x, 114)[1]))
+        .collect();
+    let low = row.iter().cloned().fold(f64::MAX, f64::min);
+    let high = row.iter().cloned().fold(0.0, f64::max);
+    let mid = (low + high) / 2.0;
+    // Attraversamenti del livello medio nella metà sinistra, a distanza t dal bordo.
+    let mut crossings = Vec::new();
+    for i in 1..row.len() / 2 {
+        let (a, b) = (row[i - 1], row[i]);
+        if (a - mid) * (b - mid) <= 0.0 && a != b {
+            crossings.push((i - 1) as f64 + 0.5 + (mid - a) / (b - a));
+        }
+    }
+    // Oltre ~30 pt la lente non agisce: l'ultimo attraversamento cade su un bordo vero, e
+    // la curva è monotona, quindi i precedenti cadono sui bordi prima, uno per volta.
+    let last = *crossings.last().unwrap();
+    let last_edge = (32.0 + 12.0 * ((64.0 + last - 32.0) / 12.0).round()) - 64.0;
+    let count = crossings.len();
+    // Curva misurata ai lati dei moduli (glass.md): (distanza dal bordo, sorgente) in pt.
+    let measured = [
+        (0.0, -25.0),
+        (6.0, -4.0),
+        (10.0, 14.2),
+        (24.0, 25.5),
+        (30.0, 30.0),
+    ];
+    let reference = |t: f64| match measured.windows(2).find(|w| t <= w[1].0) {
+        Some(w) => w[0].1 + (w[1].1 - w[0].1) * (t - w[0].0) / (w[1].0 - w[0].0),
+        None => t,
+    };
+    let mut worst: f64 = 0.0;
+    let mut outside = 0;
+    for (k, t) in crossings.iter().enumerate() {
+        let source = last_edge - 12.0 * (count - 1 - k) as f64;
+        let expected = reference(*t);
+        eprintln!("t {t:.1} pt → sorgente {source:.1} pt (curva misurata {expected:.1})");
+        if *t <= 30.0 {
+            worst = worst.max((source - expected).abs());
+        }
+        if *t < 6.0 && source < -2.0 {
+            outside += 1;
+        }
+    }
+    // Incertezza della misura nella fascia esterna: ±3 pt.
+    assert!(
+        worst <= 3.0,
+        "lente lontana dalla curva misurata: {worst:.1} pt"
+    );
+    assert!(
+        outside >= 1,
+        "la lente non preleva lo sfondo fuori dal bordo"
+    );
+}

@@ -42,6 +42,7 @@ impl Region {
             .unwrap_or(0.0);
         let material = match value.get("material").and_then(Value::as_str) {
             Some("thick") => Material::Thick,
+            Some("regular") => Material::Regular,
             _ => Material::Clear,
         };
         let region = Self {
