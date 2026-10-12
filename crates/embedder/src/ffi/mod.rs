@@ -21,6 +21,9 @@
     clippy::unwrap_used
 )]
 mod bindings;
+mod gl;
+
+pub use gl::GlSurface;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
@@ -30,12 +33,12 @@ use std::thread::ThreadId;
 
 use bindings::{
     FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineLib,
-    FlutterEngineResult, FlutterKeyEvent as RawKeyEvent, FlutterKeyEventDeviceType,
-    FlutterKeyEventType, FlutterPlatformMessage, FlutterPlatformMessageResponseHandle,
-    FlutterPointerDeviceKind, FlutterPointerEvent as RawPointerEvent, FlutterPointerPhase,
-    FlutterPointerSignalKind, FlutterProjectArgs, FlutterRendererConfig, FlutterRendererType,
-    FlutterSoftwareRendererConfig, FlutterTask, FlutterTaskRunnerDescription,
-    FlutterWindowMetricsEvent,
+    FlutterEngineResult, FlutterFrameInfo, FlutterKeyEvent as RawKeyEvent,
+    FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterOpenGLRendererConfig,
+    FlutterPlatformMessage, FlutterPlatformMessageResponseHandle, FlutterPointerDeviceKind,
+    FlutterPointerEvent as RawPointerEvent, FlutterPointerPhase, FlutterPointerSignalKind,
+    FlutterProjectArgs, FlutterRendererConfig, FlutterRendererType, FlutterSoftwareRendererConfig,
+    FlutterTask, FlutterTaskRunnerDescription, FlutterWindowMetricsEvent,
 };
 
 #[derive(Debug)]
@@ -44,6 +47,7 @@ pub enum Error {
     Symbol(&'static str, String),
     Path(String),
     Engine(&'static str, i32),
+    Gl(&'static str, String),
 }
 
 impl std::fmt::Display for Error {
@@ -53,6 +57,7 @@ impl std::fmt::Display for Error {
             Error::Symbol(name, err) => write!(f, "simbolo {name} assente: {err}"),
             Error::Path(path) => write!(f, "percorso non valido: {path}"),
             Error::Engine(call, code) => write!(f, "{call} ha restituito l'errore {code}"),
+            Error::Gl(call, err) => write!(f, "{call}: {err}"),
         }
     }
 }
@@ -130,8 +135,11 @@ pub struct KeyEvent {
 pub struct Callbacks {
     pub platform_thread: ThreadId,
     pub post_task: Box<dyn Fn(Task) + Send + Sync>,
+    /// Frame del renderer software; inutile con `gl`.
     pub present: Box<dyn Fn(Frame) + Send + Sync>,
     pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
+    /// Con una superficie EGL l'engine disegna con OpenGL ES, altrimenti in software.
+    pub gl: Option<GlSurface>,
 }
 
 /// Chi aspetta di sapere se il framework ha gestito un tasto.
@@ -287,6 +295,63 @@ unsafe extern "C" fn present(
     true
 }
 
+/// La superficie EGL dei callback, se l'engine usa il renderer OpenGL.
+///
+/// # Safety
+/// Come [`callbacks`].
+unsafe fn gl_surface<'a>(user_data: *mut c_void) -> Option<&'a GlSurface> {
+    // SAFETY: garantito dal chiamante.
+    unsafe { callbacks(user_data) }.gl.as_ref()
+}
+
+unsafe extern "C" fn gl_make_current(user_data: *mut c_void) -> bool {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    unsafe { gl_surface(user_data) }.is_some_and(GlSurface::make_current)
+}
+
+unsafe extern "C" fn gl_clear_current(user_data: *mut c_void) -> bool {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    unsafe { gl_surface(user_data) }.is_some_and(GlSurface::clear_current)
+}
+
+unsafe extern "C" fn gl_make_resource_current(user_data: *mut c_void) -> bool {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    unsafe { gl_surface(user_data) }.is_some_and(GlSurface::make_resource_current)
+}
+
+unsafe extern "C" fn gl_present(user_data: *mut c_void) -> bool {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    unsafe { gl_surface(user_data) }.is_some_and(GlSurface::present)
+}
+
+unsafe extern "C" fn gl_fbo(user_data: *mut c_void, info: *const FlutterFrameInfo) -> u32 {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    if let Some(gl) = unsafe { gl_surface(user_data) }
+        && !info.is_null()
+    {
+        // SAFETY: l'engine passa un FlutterFrameInfo valido per la durata della chiamata.
+        let size = unsafe { (*info).size };
+        gl.resize(size.width, size.height);
+    }
+    // Il framebuffer predefinito della superficie EGL.
+    0
+}
+
+unsafe extern "C" fn gl_proc_resolver(user_data: *mut c_void, name: *const c_char) -> *mut c_void {
+    if name.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    let Some(gl) = (unsafe { gl_surface(user_data) }) else {
+        return ptr::null_mut();
+    };
+    // SAFETY: l'engine passa il nome della funzione GL come stringa C terminata da NUL.
+    match unsafe { CStr::from_ptr(name) }.to_str() {
+        Ok(name) => gl.proc_address(name),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
 unsafe extern "C" fn post_task(task: FlutterTask, target_nanos: u64, user_data: *mut c_void) {
     // SAFETY: user_data è quello del FlutterTaskRunnerDescription (vedi `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
@@ -417,14 +482,26 @@ impl Engine {
             platform_task_runner: ptr::from_ref(&*runner),
             ..Default::default()
         });
-        let mut renderer = FlutterRendererConfig {
-            type_: FlutterRendererType::kSoftware,
-            ..Default::default()
-        };
-        renderer.__bindgen_anon_1.software = FlutterSoftwareRendererConfig {
-            struct_size: size_of::<FlutterSoftwareRendererConfig>(),
-            surface_present_callback: Some(present),
-        };
+        let mut renderer = FlutterRendererConfig::default();
+        if callbacks.gl.is_some() {
+            renderer.type_ = FlutterRendererType::kOpenGL;
+            renderer.__bindgen_anon_1.open_gl = FlutterOpenGLRendererConfig {
+                struct_size: size_of::<FlutterOpenGLRendererConfig>(),
+                make_current: Some(gl_make_current),
+                clear_current: Some(gl_clear_current),
+                present: Some(gl_present),
+                fbo_with_frame_info_callback: Some(gl_fbo),
+                make_resource_current: Some(gl_make_resource_current),
+                gl_proc_resolver: Some(gl_proc_resolver),
+                ..Default::default()
+            };
+        } else {
+            renderer.type_ = FlutterRendererType::kSoftware;
+            renderer.__bindgen_anon_1.software = FlutterSoftwareRendererConfig {
+                struct_size: size_of::<FlutterSoftwareRendererConfig>(),
+                surface_present_callback: Some(present),
+            };
+        }
 
         let strings = vec![
             c_path(config.assets)?,

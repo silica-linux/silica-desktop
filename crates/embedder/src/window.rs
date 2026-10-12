@@ -39,7 +39,7 @@ use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
-use crate::{LayerKeyboard, LayerKind, Options};
+use crate::{LayerKeyboard, LayerKind, Options, Renderer};
 
 /// La superficie che ospita l'app: una finestra normale o un layer della shell.
 enum Shell {
@@ -63,8 +63,8 @@ impl Shell {
     }
 }
 use crate::ffi::{
-    Callbacks, Engine, EngineConfig, Frame, KeyEvent, PlatformMessage, PointerEvent, PointerPhase,
-    Task,
+    Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
+    PointerPhase, Task,
 };
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::text_input::{self, EditKey, TextInput};
@@ -160,6 +160,8 @@ struct App {
     waiting_frame: bool,
     buffer: Option<Buffer>,
     buttons: i64,
+    /// Con OpenGL lo swap dell'engine fa attach e commit: qui si cura solo la scala.
+    gl: bool,
     exit: bool,
 }
 
@@ -246,6 +248,16 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let gl = match options.renderer {
+        Renderer::Gl => {
+            let gl = GlSurface::new(&conn, surface.wl_surface(), options.size)?;
+            info!("renderer OpenGL ES: {}", gl.renderer());
+            Some(gl)
+        }
+        Renderer::Software => None,
+    };
+    let gl_mode = gl.is_some();
+
     let (width, height) = options.size;
     let pool = SlotPool::new((width * height * 4) as usize, &shm)?;
 
@@ -310,6 +322,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             // spegnendo e non aspetta più risposte.
             let _ = message_sender.send(message);
         }),
+        gl,
     };
     let engine = Engine::run(
         &EngineConfig {
@@ -344,6 +357,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         waiting_frame: false,
         buffer: None,
         buttons: 0,
+        gl: gl_mode,
         exit: false,
     };
 
@@ -512,7 +526,7 @@ impl App {
 
     /// Presenta l'ultimo frame dell'engine, se il compositor è pronto a riceverne uno.
     fn present(&mut self, qh: &QueueHandle<Self>) {
-        if self.waiting_frame || !self.configured {
+        if self.gl || self.waiting_frame || !self.configured {
             return;
         }
         let Some(frame) = self.pending.take() else {
@@ -568,6 +582,10 @@ impl CompositorHandler for App {
     ) {
         if factor != self.scale && factor >= 1 {
             self.scale = factor;
+            if self.gl {
+                // Vale dal prossimo commit, cioè dallo swap del frame alla nuova dimensione.
+                self.surface.wl_surface().set_buffer_scale(factor);
+            }
             self.send_metrics();
         }
     }

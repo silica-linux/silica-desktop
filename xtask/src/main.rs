@@ -139,6 +139,11 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: WAYLAND_DISPLAY={}", socket.display());
         command.env("WAYLAND_DISPLAY", socket);
     }
+    // In WSL2 Mesa sceglie llvmpipe per i client EGL: con /dev/dxg la GPU passa da d3d12.
+    if Path::new("/dev/dxg").exists() && std::env::var_os("GALLIUM_DRIVER").is_none() {
+        eprintln!("xtask: GALLIUM_DRIVER=d3d12");
+        command.env("GALLIUM_DRIVER", "d3d12");
+    }
     status(command)
 }
 

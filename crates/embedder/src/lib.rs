@@ -2,8 +2,9 @@
 //!
 //! - Il thread principale è il thread di piattaforma: gira il ciclo Wayland (calloop) ed
 //!   esegue i task che l'engine vi accoda.
-//! - L'engine disegna con il renderer software sul suo thread raster; ogni frame arriva
-//!   qui per canale e va in un buffer `wl_shm`. Il renderer GL arriva dopo il gate 1.
+//! - L'engine disegna sul suo thread raster con OpenGL ES (EGL sulla `wl_surface`, lo
+//!   swap fa il commit) oppure in software: ogni frame arriva qui per canale e va in un
+//!   buffer `wl_shm`. Il software è il default perché gira ovunque, anche su Ossido headless.
 //! - Gli eventi del puntatore diventano `FlutterPointerEvent` in pixel fisici; i tasti
 //!   `FlutterKeyEvent`, e quelli che il framework non consuma vanno al campo di testo
 //!   attivo (`flutter/textinput`).
@@ -54,6 +55,13 @@ pub struct LayerOptions {
     pub namespace: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Renderer {
+    #[default]
+    Software,
+    Gl,
+}
+
 pub struct Options {
     /// Cartella `flutter_assets` del bundle.
     pub bundle: PathBuf,
@@ -63,6 +71,7 @@ pub struct Options {
     /// Per un layer, i lati ancorati su entrambi i bordi li decide il compositor.
     pub size: (u32, u32),
     pub layer: Option<LayerOptions>,
+    pub renderer: Renderer,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.

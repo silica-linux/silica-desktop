@@ -216,6 +216,8 @@ fn spawn_embedder(dir: &Path, wayland: &str, args: &[String]) -> Child {
         .arg(repo().join("apps/demo/build/flutter_assets"))
         .env("XDG_RUNTIME_DIR", dir)
         .env("WAYLAND_DISPLAY", wayland)
+        // Ossido headless non offre buffer GPU: Mesa disegna in software (llvmpipe) su wl_shm.
+        .env("LIBGL_ALWAYS_SOFTWARE", "1")
         .env(
             "RUST_LOG",
             std::env::var("E2E_LOG").unwrap_or_else(|_| "warn".into()),
@@ -313,6 +315,27 @@ fn demo_renders_at_scale_two() {
     // Il quadrato sonda è 16 pixel logici, quindi 32 fisici.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);
+}
+
+#[test]
+fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
+    let mut args = size_args((200, 150));
+    args.extend(["--renderer".to_owned(), "gl".to_owned()]);
+    let session = Session::start_with("gl", (640, 480), 2, &args);
+    let window = session.window();
+    assert_eq!((window.width, window.height), (200, 150));
+    let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
+    // Stessi pixel del renderer software: scala del buffer e dimensione della finestra EGL.
+    session.expect_pixel(x + 31, y + 31, HI_DPI);
+    session.expect_pixel(x + 33, y + 33, IDLE);
+    session
+        .client()
+        .call(
+            INPUT_CLICK,
+            json!({ "x": window.x + 100, "y": window.y + 75 }),
+        )
+        .unwrap();
+    session.expect_pixel(x + 200, y + 280, TAPPED);
 }
 
 #[test]

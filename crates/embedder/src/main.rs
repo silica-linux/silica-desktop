@@ -1,7 +1,7 @@
 //! Avvio dell'embedder:
 //!
 //! ```text
-//! silica-embedder [--engine DIR] [--size LxA] BUNDLE
+//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
 //! ```
@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use silica_embedder::{Anchors, LayerKeyboard, LayerKind, LayerOptions, Options};
+use silica_embedder::{Anchors, LayerKeyboard, LayerKind, LayerOptions, Options, Renderer};
 use tracing_subscriber::EnvFilter;
 
 fn main() -> ExitCode {
@@ -51,6 +51,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut size = (800, 600);
     let mut bundle = None;
     let mut layer: Option<LayerOptions> = None;
+    let mut renderer = Renderer::default();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
         match arg.as_str() {
@@ -100,6 +101,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 };
             }
             "--namespace" => layer_options(&mut layer).namespace = value()?,
+            "--renderer" => {
+                renderer = match value()?.as_str() {
+                    "software" => Renderer::Software,
+                    "gl" => Renderer::Gl,
+                    other => return Err(format!("renderer sconosciuto: {other}")),
+                };
+            }
             other if other.starts_with("--") => {
                 return Err(format!("argomento sconosciuto: {other}"));
             }
@@ -113,5 +121,6 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         icu_data: engine_dir.join("icudtl.dat"),
         size,
         layer,
+        renderer,
     })
 }
