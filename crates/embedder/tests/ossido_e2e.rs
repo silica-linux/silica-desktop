@@ -45,7 +45,7 @@ fn ossido_child_process() {
         size: (w.parse().unwrap(), h.parse().unwrap()),
         scale: scale.parse().unwrap(),
         control: Some(0),
-        spawn: Vec::new(),
+        ..Default::default()
     })
     .unwrap();
     std::process::exit(0);

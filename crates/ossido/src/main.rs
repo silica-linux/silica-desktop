@@ -1,7 +1,8 @@
 //! Avvio di Ossido.
 //!
 //! ```text
-//! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA] [--spawn COMANDO]...
+//! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
+//!     [--background RRGGBB] [--spawn COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -68,6 +69,11 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                         .map_err(|_| format!("porta non valida: {port}"))?,
                 );
             }
+            "--background" => {
+                let hex = value()?;
+                options.background =
+                    parse_color(&hex).ok_or(format!("colore non valido (RRGGBB): {hex}"))?;
+            }
             "--spawn" => {
                 let command = value()?;
                 options.spawn.push(command);
@@ -76,4 +82,32 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         }
     }
     Ok(options)
+}
+
+/// `RRGGBB` (con o senza `#`) in RGBA 0–1.
+fn parse_color(text: &str) -> Option<[f32; 4]> {
+    let hex = text.strip_prefix('#').unwrap_or(text);
+    if hex.len() != 6 || !hex.is_ascii() {
+        return None;
+    }
+    let channel = |at: usize| {
+        hex.get(at..at + 2)
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+            .map(|value| f32::from(value) / 255.0)
+    };
+    Some([channel(0)?, channel(2)?, channel(4)?, 1.0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_color;
+
+    #[test]
+    fn colors_parse_from_hex() {
+        assert_eq!(parse_color("#ff0000"), Some([1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(parse_color("00ff00"), Some([0.0, 1.0, 0.0, 1.0]));
+        assert_eq!(parse_color("#7a7b8"), None);
+        assert_eq!(parse_color("zzzzzz"), None);
+        assert_eq!(parse_color("éééé"), None);
+    }
 }

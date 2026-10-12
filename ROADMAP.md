@@ -81,3 +81,4 @@ conformità), mai stimata.
 | Area | Metrica | Valore | Misurato il |
 | --- | --- | --- | --- |
 | Finestre · angoli | pixel mancanti per riga dell'angolo contro la maschera di riferimento (test `window_corners_follow_the_reference`) | errore massimo 0,44 px, rms 0,13 px | 2026-10-13 |
+| Finestre · ombra | alfa del profilo laterale (d 2–48 pt), anello e asimmetria sopra/sotto, finestra attiva e inattiva in chiaro (test `window_shadows_follow_the_reference`) | errore massimo 2 livelli d'alfa su 255 | 2026-10-13 |

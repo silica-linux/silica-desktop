@@ -16,7 +16,7 @@ use tracing::{info, warn};
 
 use crate::capture::{Capture, capture, capture_elements};
 use crate::render::output_elements;
-use crate::state::{CLEAR_COLOR, Ossido, State};
+use crate::state::{Ossido, State};
 
 pub enum Backend {
     Winit(Box<WinitBackend>),
@@ -165,14 +165,29 @@ impl State {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
                 let elements = output_elements(renderer, &self.space, &self.output);
-                capture_elements::<_, GlesTexture, _>(renderer, &self.output, &elements)
+                capture_elements::<_, GlesTexture, _>(
+                    renderer,
+                    &self.output,
+                    &elements,
+                    self.clear_color,
+                )
             }
             Backend::Headless(Headless::Gles(renderer)) => {
                 let elements = output_elements(renderer, &self.space, &self.output);
-                capture_elements::<_, GlesTexture, _>(renderer.as_mut(), &self.output, &elements)
+                capture_elements::<_, GlesTexture, _>(
+                    renderer.as_mut(),
+                    &self.output,
+                    &elements,
+                    self.clear_color,
+                )
             }
             Backend::Headless(Headless::Pixman(renderer)) => {
-                capture::<_, pixman::Image<'static, 'static>>(renderer, &self.output, &self.space)
+                capture::<_, pixman::Image<'static, 'static>>(
+                    renderer,
+                    &self.output,
+                    &self.space,
+                    self.clear_color,
+                )
             }
         }
     }
@@ -183,11 +198,12 @@ impl State {
         };
         let size = backend.graphics.window_size();
         let damage = Rectangle::from_size(size);
+        let clear_color = self.clear_color;
         let elements = output_elements(backend.graphics.renderer(), &self.space, &self.output);
         let rendered = match backend.graphics.bind() {
             Ok((renderer, mut framebuffer)) => backend
                 .damage_tracker
-                .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
+                .render_output(renderer, &mut framebuffer, 0, &elements, clear_color)
                 .map(|_| ())
                 .map_err(|err| format!("{err:?}")),
             Err(err) => Err(format!("{err:?}")),

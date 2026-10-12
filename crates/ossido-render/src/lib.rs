@@ -5,8 +5,11 @@
 //! accanto a ogni costante.
 
 pub mod corners;
+pub mod shadow;
 
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram, UniformName};
+use smithay::backend::renderer::gles::{
+    GlesPixelProgram, GlesRenderer, GlesTexProgram, UniformName, UniformType,
+};
 use tracing::warn;
 
 /// I programmi compilati per un renderer. Se uno shader non compila, l'effetto manca ma
@@ -14,6 +17,7 @@ use tracing::warn;
 #[derive(Clone, Default)]
 pub struct Shaders {
     pub corners: Option<GlesTexProgram>,
+    pub shadow: Option<GlesPixelProgram>,
 }
 
 /// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
@@ -22,7 +26,8 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         return shaders.clone();
     }
     let corners = compile_texture(renderer, "angoli", corners::SHADER, &corners::UNIFORMS);
-    let shaders = Shaders { corners };
+    let shadow = compile_pixel(renderer, "ombra", shadow::SHADER, &shadow::UNIFORMS);
+    let shaders = Shaders { corners, shadow };
     renderer
         .egl_context()
         .user_data()
@@ -34,13 +39,32 @@ fn compile_texture(
     renderer: &mut GlesRenderer,
     name: &str,
     source: &str,
-    uniforms: &[(&str, smithay::backend::renderer::gles::UniformType)],
+    uniforms: &[(&str, UniformType)],
 ) -> Option<GlesTexProgram> {
     let names: Vec<UniformName<'_>> = uniforms
         .iter()
         .map(|(name, type_)| UniformName::new(*name, *type_))
         .collect();
     match renderer.compile_custom_texture_shader(source, &names) {
+        Ok(program) => Some(program),
+        Err(err) => {
+            warn!("shader {name} non compilato, effetto disattivato: {err:?}");
+            None
+        }
+    }
+}
+
+fn compile_pixel(
+    renderer: &mut GlesRenderer,
+    name: &str,
+    source: &str,
+    uniforms: &[(&str, UniformType)],
+) -> Option<GlesPixelProgram> {
+    let names: Vec<UniformName<'_>> = uniforms
+        .iter()
+        .map(|(name, type_)| UniformName::new(*name, *type_))
+        .collect();
+    match renderer.compile_custom_pixel_shader(source, &names) {
         Ok(program) => Some(program),
         Err(err) => {
             warn!("shader {name} non compilato, effetto disattivato: {err:?}");

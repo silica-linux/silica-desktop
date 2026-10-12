@@ -11,7 +11,7 @@
 mod common;
 
 use common::client::{FIRST_WINDOW_AT, TestWindow, WINDOW};
-use common::{Headless, assert_clear_color, pixel, screenshot};
+use common::{Headless, assert_outside_window, pixel, screenshot};
 
 #[test]
 fn xdg_toplevel_appears_in_screenshot() {
@@ -35,6 +35,6 @@ fn xdg_toplevel_appears_in_screenshot() {
             "finestra assente in ({x}, {y})"
         );
     }
-    assert_clear_color(&shot, at - 1, at + h / 2);
-    assert_clear_color(&shot, at + w, at + h / 2);
+    assert_outside_window(&shot, at - 1, at + h / 2);
+    assert_outside_window(&shot, at + w, at + h / 2);
 }

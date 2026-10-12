@@ -43,6 +43,8 @@ pub struct Options {
     pub control: Option<u16>,
     /// Comandi da avviare come client una volta aperto il socket Wayland.
     pub spawn: Vec<String>,
+    /// Colore del desktop finché non c'è uno sfondo (RGBA 0–1, valori sRGB).
+    pub background: [f32; 4],
 }
 
 impl Default for Options {
@@ -53,6 +55,7 @@ impl Default for Options {
             scale: 1,
             control: None,
             spawn: Vec::new(),
+            background: state::CLEAR_COLOR,
         }
     }
 }
@@ -65,6 +68,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         BackendKind::Headless => backend::init_headless(&mut event_loop, display, options.size)?,
     };
 
+    ossido.state.clear_color = options.background;
     if options.scale != 1 {
         ossido.state.output.change_current_state(
             None,

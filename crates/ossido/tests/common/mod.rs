@@ -32,6 +32,11 @@ pub struct Headless {
 
 impl Headless {
     pub fn start(name: &str) -> Self {
+        Self::start_with(name, (WIDTH, HEIGHT), &[])
+    }
+
+    /// Come `start`, con un'altra dimensione dell'output e argomenti in più per Ossido.
+    pub fn start_with(name: &str, (width, height): (u32, u32), extra: &[&str]) -> Self {
         let dir = std::env::temp_dir().join(format!("ossido-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -41,8 +46,9 @@ impl Headless {
                 "--backend",
                 "headless",
                 "--size",
-                &format!("{WIDTH}x{HEIGHT}"),
+                &format!("{width}x{height}"),
             ])
+            .args(extra)
             .args(["--control", "0"])
             .env("XDG_RUNTIME_DIR", &dir)
             .env("RUST_LOG", "warn")
@@ -108,9 +114,24 @@ pub fn assert_clear_color(pixels: &[u8], x: u32, y: u32) {
     }
 }
 
+/// Il pixel è fuori dalla finestra di prova (rossa): fondo, ombra o anello d'ombra.
+pub fn assert_outside_window(pixels: &[u8], x: u32, y: u32) {
+    let [r, g, b, _] = pixel(pixels, x, y);
+    assert!(
+        r < 64 && r.abs_diff(g) < 32 && r.abs_diff(b) < 32,
+        "pixel ({x}, {y}) = {:?}: atteso fuori dalla finestra",
+        [r, g, b]
+    );
+}
+
 /// RGBA del pixel (x, y) in uno screenshot `WIDTH`×`HEIGHT`.
 pub fn pixel(shot: &[u8], x: u32, y: u32) -> [u8; 4] {
-    let offset = ((y * WIDTH + x) * 4) as usize;
+    pixel_in(shot, WIDTH, x, y)
+}
+
+/// RGBA del pixel (x, y) in uno screenshot largo `width`.
+pub fn pixel_in(shot: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+    let offset = ((y * width + x) * 4) as usize;
     shot[offset..offset + 4].try_into().unwrap()
 }
 

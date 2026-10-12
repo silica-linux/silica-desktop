@@ -72,6 +72,8 @@ pub struct State {
     pub keys: crate::keys::KeyLookup,
     /// Ritmo dei frame, avvio e memoria dei client (`perf.*`).
     pub perf: crate::perf::Perf,
+    /// Colore del desktop finché non c'è uno sfondo (`--background`).
+    pub clear_color: [f32; 4],
 }
 
 impl State {
@@ -150,6 +152,7 @@ impl State {
             shortcuts: crate::commands::shortcuts(),
             keys: crate::keys::KeyLookup::new()?,
             perf: crate::perf::Perf::default(),
+            clear_color: CLEAR_COLOR,
         })
     }
 

@@ -9,8 +9,6 @@ use smithay::desktop::{Space, Window};
 use smithay::output::Output;
 use smithay::utils::{Rectangle, Transform};
 
-use crate::state::CLEAR_COLOR;
-
 /// Un frame in RGBA a 8 bit, righe dall'alto in basso.
 pub struct Capture {
     pub width: u32,
@@ -38,6 +36,7 @@ pub fn capture<R, T>(
     renderer: &mut R,
     output: &Output,
     space: &Space<Window>,
+    clear_color: [f32; 4],
 ) -> Result<Capture, String>
 where
     R: Renderer + ImportAll + Offscreen<T> + ExportMem,
@@ -45,7 +44,7 @@ where
 {
     let elements = space_render_elements::<_, Window, _>(renderer, [space], output, 1.0)
         .map_err(|e| format!("{e:?}"))?;
-    capture_elements(renderer, output, &elements)
+    capture_elements(renderer, output, &elements, clear_color)
 }
 
 /// Disegna gli elementi dati in un buffer fuori schermo e lo rilegge.
@@ -53,6 +52,7 @@ pub fn capture_elements<R, T, E>(
     renderer: &mut R,
     output: &Output,
     elements: &[E],
+    clear_color: [f32; 4],
 ) -> Result<Capture, String>
 where
     R: Renderer + Offscreen<T> + ExportMem,
@@ -73,7 +73,7 @@ where
     let scale = output.current_scale().fractional_scale();
     let mut damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
     damage_tracker
-        .render_output(renderer, &mut framebuffer, 0, elements, CLEAR_COLOR)
+        .render_output(renderer, &mut framebuffer, 0, elements, clear_color)
         .map_err(|e| format!("render: {e:?}"))?;
     let mapping = renderer
         .copy_framebuffer(

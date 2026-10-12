@@ -12,7 +12,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::client::{FIRST_WINDOW_AT, TestWindow};
-use common::{Headless, assert_clear_color, pixel, screenshot};
+use common::{Headless, assert_outside_window, pixel, screenshot};
 use serde_json::{Value, json};
 use silica_control::commands::{
     ENGINE_COMMANDS, ENGINE_EXECUTE, PERF_FRAMES, PERF_PROCESS, ProcessInfo, SESSION_QUIT,
@@ -91,7 +91,7 @@ fn window_list_focus_move_and_close() {
     let shot = screenshot(&ossido);
     // A metà del lato sinistro: lontano dagli angoli tagliati.
     assert_eq!(pixel(&shot, 200, 160), [255, 0, 0, 255]);
-    assert_clear_color(&shot, 199, 160);
+    assert_outside_window(&shot, 199, 160);
 
     // Senza id, window.close agisce sulla finestra con il focus.
     assert!(!first.close_requested());
