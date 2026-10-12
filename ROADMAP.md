@@ -24,6 +24,10 @@ costo dell'embedder è l'incognita che pesa su tutto il resto.
 Si sceglie dalle misure del prototipo: shell e app in Flutter con l'embedder custom,
 shell in Rust e app in Flutter, oppure embedder GTK ufficiale come ripiego.
 
+Deciso il 2026-10-13: shell e app in Flutter con l'embedder custom e Impeller
+(`docs/gate1-dock.md`).
+Prima di M2: `linux-dmabuf` in Ossido e una misura del Dock con la GPU su hardware nativo.
+
 ### M2 · Vetro e finestre
 
 - Shader di sfocatura e rifrazione, protocollo `silica-glass-v1`

@@ -4,7 +4,36 @@ Rapporto di M1.5 (`docs/m1.5-dock.md`): lo stesso Dock scritto in Flutter (`apps
 in Rust con iced (`crates/dock-iced`), misurato da Ossido sullo stesso banco di prova
 (`cargo xtask bench dock`). Dati del 2026-10-12.
 
-## Raccomandazione
+## Decisione (2026-10-13)
+
+**Opzione A: shell e app in Flutter**, con l'embedder custom. Decisa dall'utente dopo le
+misure su hardware nativo (sezione più sotto) e una prova a mano dei due Dock.
+
+Perché, rispetto alla raccomandazione iniziale qui sotto:
+
+- Il vantaggio di fluidità di iced non si ripete su Linux nativo: con lo stesso renderer
+  (llvmpipe) le due versioni perdono gli stessi frame.
+- A vista iced rende peggio: le forme del canvas non hanno antialiasing (MSAA spento di
+  default, accenderlo ha un costo da rimisurare) e il testo di cosmic-text/cryoglyph,
+  senza hinting né correzione gamma, è meno nitido di quello di Skia con lo stesso Inter.
+- iced chiede più codice (2,3 volte), cose scritte a mano che Flutter dà già, e un
+  secondo design system da tenere allineato a quello delle app.
+- I costi di Flutter (engine release, percorso GPU dell'embedder, dmabuf in Ossido) si
+  pagano comunque per le app.
+
+Condizioni:
+
+- `linux-dmabuf` in Ossido, poi una nuova misura del Dock Flutter con la GPU vera su
+  hardware nativo: frame lenti sotto l'1%.
+- **Impeller, non Skia** (decisione dell'utente). Impeller è il renderer su cui Flutter
+  investe; Skia è il ripiego che verrà tolto. Quindi il crash di Impeller su llvmpipe e i
+  frame persi in WSL (2–6%, peggio di Skia) vanno capiti e risolti, non aggirati. La
+  misura con la GPU nativa si fa con flutter-gl-impeller, e va valutato Impeller su
+  Vulkan (l'API embedder ha un renderer Vulkan) oltre che su OpenGL ES.
+- Il limite di memoria della shell resta da fissare (oggi circa 110 MiB di PSS per il
+  Dock con la GPU in WSL, da rimisurare con la GPU nativa).
+
+## Raccomandazione iniziale (2026-10-12, superata)
 
 **Opzione B: shell in Rust (iced), app in Flutter.** Sulle misure di oggi iced è più
 fluido (nessun frame perso con la GPU, contro l'1,4% di Flutter) e occupa 45 MiB in meno.

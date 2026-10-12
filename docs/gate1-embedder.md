@@ -2,6 +2,7 @@
 
 > Aggiornamento M1.5: il confronto misurato fra Flutter e Rust per la shell è in
 > `docs/gate1-dock.md`, che sostituisce la raccomandazione qui sotto per la shell.
+> Decisione del 2026-10-13: shell e app in Flutter.
 > Il renderer OpenGL e l'engine release (rischi aperti qui sotto) ora ci sono.
 
 Raccomandazione: **go**. L'embedder custom in Rust porta un'app Flutter su Ossido con
