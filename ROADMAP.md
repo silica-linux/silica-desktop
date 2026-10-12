@@ -84,3 +84,5 @@ conformità), mai stimata.
 | Finestre · ombra | alfa del profilo laterale (d 2–48 pt), anello e asimmetria sopra/sotto, finestra attiva e inattiva in chiaro (test `window_shadows_follow_the_reference`) | errore massimo 2 livelli d'alfa su 255 | 2026-10-13 |
 | Vetro · colore | riempimento su `#7a7b80`, materiale chiaro (Dock) e spesso (menu), aspetto chiaro (test `materials_on_the_reference_gray_match_the_measured_fill`) | entro 3 livelli su 255 per canale | 2026-10-13 |
 | Vetro · sfocatura | profilo di un bordo di striscia nel materiale chiaro contro il Dock (test `clear_glass_blurs_a_stripe_edge_like_the_dock`) | rms 5,0 livelli su 255 | 2026-10-13 |
+| Vetro · bordo | riga luminosa, sfumatura di 7 righe e bordo laterale del materiale chiaro su `#7a7b80` contro il Dock (test `clear_glass_edge_matches_the_dock_border`) | entro 3 livelli su 255 per canale | 2026-10-13 |
+| Vetro · rifrazione | spostamento degli attraversamenti di strisce vicino al bordo laterale, materiale chiaro (test `clear_glass_refracts_near_the_side_edges_like_the_dock`) | 4,6 pt a 5,4 pt dal bordo (Dock: ~5 pt a 6 pt), 0 oltre 22 pt | 2026-10-13 |

@@ -67,7 +67,7 @@
 
     <request name="add_region">
       <description summary="aggiunge una regione allo stato in attesa">
-        Un rettangolo con angoli a superellisse di raggio radius (0 = angoli retti).
+        Un rettangolo con angoli ad arco di cerchio di raggio radius (0 = angoli retti).
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>

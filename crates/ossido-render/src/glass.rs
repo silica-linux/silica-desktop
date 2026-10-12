@@ -20,8 +20,6 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::corners::CORNER_EXPONENT;
-
 /// Parametri di un materiale: sfocatura, quota nitida e colore (`out = M · in + b` sui
 /// valori sRGB codificati, 0–1).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,7 +30,19 @@ pub struct MaterialParams {
     pub sharp: f32,
     pub matrix: [[f32; 3]; 3],
     pub offset: [f32; 3],
+    /// Rifrazione in punti: ampiezza ai lati, sopra, sotto; distanza dal bordo del
+    /// massimo e della fine.
+    pub refraction: [f32; 5],
 }
+
+/// Bordo comune ai vetri misurati (Dock, moduli, HUD, notifiche, Spotlight): sul grigio
+/// del Dock la riga di 1 pt sopra e sotto vale +60, +60, +63 sul riempimento, la
+/// sfumatura interna +13, +8, +5, +3, +2, +1 (≈ 13·e^(−t/2,2)), additiva anche su nero;
+/// ai lati 1 pt scuro (`#3c3c40` su `#818289`: nero con alfa 0,535). `dock.md`, `glass.md`.
+const EDGE_RIM: [f32; 3] = [60.0 / 255.0, 60.0 / 255.0, 63.0 / 255.0];
+const EDGE_GLOW: f32 = 13.0 / 255.0;
+const EDGE_GLOW_DECAY_PT: f32 = 2.2;
+const EDGE_SIDE_DARK: f32 = 0.535;
 
 /// Fondo del Dock, chiaro: σ 2,5–3,25 pt (si usa 2,75), w 0,28, matrice libera
 /// (rmse 2,45) con b = (37,3; 39,3; 36,8).
@@ -45,6 +55,9 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
         [-0.158, -0.328, 1.242],
     ],
     offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
+    // Rifrazione del Dock: ai lati fino a ~5 pt a 6 pt dal bordo, nulla oltre ~22 pt;
+    // sopra ≤ 1 pt, sotto ~3 pt.
+    refraction: [5.0, 1.0, 3.0, 6.0, 22.0],
 };
 
 /// Menu, chiaro: σ ≈ 9 pt, componente nitida trascurabile, matrice (rmse 4,1) con
@@ -58,13 +71,15 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
         [-0.166, -0.263, 0.899],
     ],
     offset: [142.0 / 255.0, 140.0 / 255.0, 140.0 / 255.0],
+    // Nei menu la sfocatura nasconde la rifrazione: ≤ 1–2 pt ai lati.
+    refraction: [1.5, 0.0, 0.0, 6.0, 22.0],
 };
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 8] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 14] = [
     ("tex_size", UniformType::_2f),
     ("region", UniformType::_4f),
     ("radius", UniformType::_1f),
@@ -73,6 +88,12 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 8] = [
     ("row_g", UniformType::_3f),
     ("row_b", UniformType::_3f),
     ("offset", UniformType::_3f),
+    ("scale_px", UniformType::_1f),
+    ("refraction", UniformType::_3f),
+    ("refraction_band", UniformType::_2f),
+    ("rim", UniformType::_3f),
+    ("edge", UniformType::_2f),
+    ("side_dark", UniformType::_1f),
 ];
 
 /// Oltre questo σ (pixel) si sfoca a metà o a un quarto della risoluzione: il nucleo
@@ -85,6 +106,8 @@ pub struct PhysicalRegion {
     pub rect: Rectangle<i32, Physical>,
     pub radius: f64,
     pub material: MaterialParams,
+    /// Pixel fisici per punto.
+    pub scale: f64,
 }
 
 /// Lo stato degli elementi dietro il vetro: se non cambia, la texture si riusa.
@@ -415,6 +438,8 @@ impl RenderElement<GlesRenderer> for GlassElement {
         let size = self.region.rect.size;
         let m = self.region.material.matrix;
         let b = self.region.material.offset;
+        let r = self.region.material.refraction;
+        let px = self.region.scale as f32;
         let uniforms = [
             Uniform::new(
                 "tex_size",
@@ -425,11 +450,26 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 UniformValue::_4f(local.x as f32, local.y as f32, size.w as f32, size.h as f32),
             ),
             Uniform::new("radius", UniformValue::_1f(self.region.radius as f32)),
-            Uniform::new("exponent", UniformValue::_1f(CORNER_EXPONENT)),
+            Uniform::new("exponent", UniformValue::_1f(2.0)),
             Uniform::new("row_r", UniformValue::_3f(m[0][0], m[0][1], m[0][2])),
             Uniform::new("row_g", UniformValue::_3f(m[1][0], m[1][1], m[1][2])),
             Uniform::new("row_b", UniformValue::_3f(m[2][0], m[2][1], m[2][2])),
             Uniform::new("offset", UniformValue::_3f(b[0], b[1], b[2])),
+            Uniform::new("scale_px", UniformValue::_1f(px)),
+            Uniform::new(
+                "refraction",
+                UniformValue::_3f(r[0] * px, r[1] * px, r[2] * px),
+            ),
+            Uniform::new("refraction_band", UniformValue::_2f(r[3] * px, r[4] * px)),
+            Uniform::new(
+                "rim",
+                UniformValue::_3f(EDGE_RIM[0], EDGE_RIM[1], EDGE_RIM[2]),
+            ),
+            Uniform::new(
+                "edge",
+                UniformValue::_2f(EDGE_GLOW, EDGE_GLOW_DECAY_PT * px),
+            ),
+            Uniform::new("side_dark", UniformValue::_1f(EDGE_SIDE_DARK)),
         ];
         frame.render_texture_from_to(
             &self.texture,

@@ -183,3 +183,109 @@ fn clear_glass_blurs_a_stripe_edge_like_the_dock() {
     // L'adattamento del modello sulle riprese ha rmse 3,4: si accetta il doppio.
     assert!(rms <= 7.0, "bordo sfocato lontano dal Dock: rms {rms:.2}");
 }
+
+/// Bordo del fondo del Dock su `#7a7b80`, chiaro (dock.md): riga superiore, sfumatura di
+/// 7 pt verso il riempimento, bordo laterale.
+const DOCK_RIM: [u8; 3] = [0xbd, 0xbe, 0xc8];
+const DOCK_GLOW: [[u8; 3]; 7] = [
+    [0x8e, 0x8f, 0x97],
+    [0x89, 0x8a, 0x91],
+    [0x86, 0x87, 0x8e],
+    [0x84, 0x85, 0x8c],
+    [0x83, 0x84, 0x8b],
+    [0x82, 0x83, 0x8a],
+    [0x81, 0x82, 0x89],
+];
+const DOCK_SIDE: [u8; 3] = [0x3c, 0x3c, 0x40];
+
+#[test]
+fn clear_glass_edge_matches_the_dock_border() {
+    let ossido = Headless::start_with("glass-edge", SHOT, &["--background", "7a7b80"]);
+    let size = (300, 80);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "bordo", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 300, 80, 22.0, Material::Clear)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-edge.png");
+    // Finestra a (32, 32): colonna a metà, riga a metà.
+    let (x, top, bottom, mid) = (182, 32, 111, 72);
+    let mut worst = 0;
+    let mut check = |at: (u32, u32), expected: [u8; 3], what: &str| {
+        let got = rgb(&shot, at.0, at.1);
+        let diff = got
+            .iter()
+            .zip(expected)
+            .map(|(g, e)| g.abs_diff(e))
+            .max()
+            .unwrap_or(0);
+        eprintln!("{what}: {got:?} (riferimento {expected:?})");
+        worst = worst.max(diff);
+    };
+    check((x, top), DOCK_RIM, "riga superiore");
+    check((x, bottom), DOCK_RIM, "riga inferiore");
+    for (row, expected) in DOCK_GLOW.iter().enumerate() {
+        check((x, top + 1 + row as u32), *expected, "sfumatura sopra");
+        check((x, bottom - 1 - row as u32), *expected, "sfumatura sotto");
+    }
+    check((32, mid), DOCK_SIDE, "bordo sinistro");
+    check((331, mid), DOCK_SIDE, "bordo destro");
+    assert!(worst <= 3, "bordo lontano dal Dock: {worst} livelli");
+}
+
+#[test]
+fn clear_glass_refracts_near_the_side_edges_like_the_dock() {
+    let ossido = Headless::start_with("glass-refraction", SHOT, &[]);
+    // Strisce da 12 px dietro (nero per (x + 6) mod 24 < 12), finestra a (32, 32): bordi a
+    // x 26 + 12k, uno a 10 pt dal bordo del vetro, dove lo spostamento è massimo.
+    let back = (500, 200);
+    let mut pixels = Vec::new();
+    for _ in 0..back.1 {
+        for x in 0..back.0 {
+            let level = if (x + 6) % 24 < 12 { 0 } else { 255 };
+            pixels.extend_from_slice(&[level, level, level, 255]);
+        }
+    }
+    let _stripes = TestWindow::open_pixels(&ossido.wayland, "strisce", back, &pixels);
+    let size = (300, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "vetro", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 300, 100, 0.0, Material::Clear)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-refraction.png");
+    // Vetro da x 64; bordi delle strisce a 26 + 12k. Attraversamenti del livello medio
+    // sulla riga a metà del vetro (y 114), interpolati.
+    let row: Vec<f64> = (64..364)
+        .map(|x| f64::from(rgb(&shot, x, 114)[1]))
+        .collect();
+    let mid = (row.iter().cloned().fold(f64::MAX, f64::min)
+        + row.iter().cloned().fold(0.0, f64::max))
+        / 2.0;
+    let mut near = 0.0_f64;
+    let mut far = 0.0_f64;
+    for i in 3..row.len() / 2 {
+        let (a, b) = (row[i - 1], row[i]);
+        if (a - mid) * (b - mid) > 0.0 || a == b {
+            continue;
+        }
+        // Posizione del pixel (centro) dove si attraversa il livello medio.
+        let crossing = 64.0 + (i - 1) as f64 + 0.5 + (mid - a) / (b - a);
+        let distance = crossing - 64.0;
+        // Lo sfondo campionato è più verso l'interno: il bordo vero è il primo dopo.
+        let edge = 26.0 + 12.0 * ((crossing - 26.0) / 12.0 - 1e-6).ceil();
+        let shift = edge - crossing;
+        eprintln!("attraversamento a {distance:.1} pt dal bordo: spostamento {shift:.2} pt");
+        if (3.0..=12.0).contains(&distance) {
+            near = near.max(shift);
+        }
+        if distance >= 28.0 {
+            far = far.max(shift.min(12.0 - shift));
+        }
+    }
+    eprintln!("massimo vicino al bordo {near:.2} pt, lontano {far:.2} pt");
+    // Dock: ~5 pt a 6 pt dal bordo sinistro, nulla oltre ~24 pt (rumore ±0,5–1).
+    assert!(
+        (3.5..=6.5).contains(&near),
+        "rifrazione vicino al bordo: {near:.2} pt"
+    );
+    assert!(far <= 1.0, "rifrazione lontano dal bordo: {far:.2} pt");
+}

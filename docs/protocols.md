@@ -14,7 +14,8 @@ sopra testo e icone.
   (un secondo è l'errore `already_has_glass`).
 - `silica_glass_v1.clear()`, `add_region(x, y, width, height, radius, material)`: stato
   in attesa, corrente al prossimo `wl_surface.commit`. Coordinate della superficie in
-  pixel logici; angoli a superellisse come le finestre.
+  pixel logici; angoli ad arco di cerchio di raggio `radius`, come i vetri misurati
+  (Dock, menu, notifiche: le finestre invece hanno angoli a superellisse).
 - Materiali: `clear` (vetro chiaro, come il Dock) e `thick` (vetro spesso, come menu e
   ricerca), dalle due famiglie misurate in `plan/reference/glass.md`.
 - Errori: `invalid_region` (dimensione non positiva, raggio negativo o non finito,

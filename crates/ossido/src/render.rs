@@ -142,10 +142,6 @@ pub fn output_elements(
                 shaders.corners.clone(),
             ))
         }));
-        anchors.extend(anchor.map(|anchor| GlassAnchor {
-            index: elements.len(),
-            ..anchor
-        }));
         let active = is_active(window);
         if decorations::is_server_side(window)
             && let Some(program) = &shaders.titlebar
@@ -170,6 +166,12 @@ pub fn output_elements(
                 elements.push(OutputElement::Shadow(shadow.element(program, frame, style)));
             }
         }
+        // Il vetro della finestra va dietro le sue superfici ma non vede la sua barra né
+        // la sua ombra (che dentro la cornice è comunque nascosta).
+        anchors.extend(anchor.map(|anchor| GlassAnchor {
+            index: elements.len(),
+            ..anchor
+        }));
     }
 
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
@@ -194,6 +196,7 @@ pub fn output_elements(
                         Material::Clear => CLEAR_LIGHT,
                         Material::Thick => THICK_LIGHT,
                     },
+                    scale,
                 })
                 .collect();
             if regions.is_empty() {
