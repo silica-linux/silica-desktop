@@ -323,8 +323,11 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
     let mut args = size_args((200, 150));
     args.extend(["--renderer".to_owned(), "gl".to_owned()]);
     let session = Session::start_with("gl", (640, 480), 2, &args);
-    let window = session.window();
-    assert_eq!((window.width, window.height), (200, 150));
+    // Il primo buffer GL dopo il passaggio a scala 2 può avere la dimensione vecchia
+    // (GlSurface::present): si aspetta quella chiesta.
+    let window = wait_for("la finestra a 200 × 150", || {
+        Some(session.window()).filter(|w| (w.width, w.height) == (200, 150))
+    });
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
     // Stessi pixel del renderer software: scala del buffer e dimensione della finestra EGL.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
@@ -346,8 +349,9 @@ fn impeller_renderer_draws_and_reacts_to_clicks() {
     let mut args = size_args((200, 150));
     args.extend(["--renderer".to_owned(), "impeller".to_owned()]);
     let session = Session::start_with("impeller", (640, 480), 2, &args);
-    let window = session.window();
-    assert_eq!((window.width, window.height), (200, 150));
+    let window = wait_for("la finestra a 200 × 150", || {
+        Some(session.window()).filter(|w| (w.width, w.height) == (200, 150))
+    });
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);
