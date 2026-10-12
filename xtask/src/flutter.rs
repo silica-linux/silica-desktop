@@ -167,21 +167,29 @@ pub fn bundle(app: &str) -> Result<()> {
 }
 
 /// Le app Flutter in `apps/` (cartelle con `pubspec.yaml`).
-pub fn apps() -> Result<Vec<String>> {
-    let dir = root()?.join("apps");
-    let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut apps: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().join("pubspec.yaml").exists())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    apps.sort();
-    Ok(apps)
+/// I progetti Dart del repo: app in `apps/` e pacchetti in `packages/`, come
+/// percorsi relativi (`apps/demo`, `packages/silica_ui`).
+pub fn projects() -> Result<Vec<String>> {
+    let root = root()?;
+    let mut projects = Vec::new();
+    for parent in ["apps", "packages"] {
+        let dir = root.join(parent);
+        let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        projects.extend(
+            entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().join("pubspec.yaml").exists())
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .map(|name| format!("{parent}/{name}")),
+        );
+    }
+    projects.sort();
+    Ok(projects)
 }
 
-/// `flutter analyze` e `flutter test` per un'app in `apps/`.
-pub fn check(app: &str) -> Result<()> {
-    let dir = root()?.join("apps").join(app);
+/// `flutter analyze` e `flutter test` per un progetto di [`projects`].
+pub fn check(project: &str) -> Result<()> {
+    let dir = root()?.join(project);
     for args in [["analyze", "--fatal-infos"].as_slice(), ["test"].as_slice()] {
         let mut command = flutter_command(args)?;
         command.current_dir(&dir);

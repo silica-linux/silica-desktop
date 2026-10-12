@@ -1,0 +1,18 @@
+name: silica_dock
+description: Prototipo del Dock di Silica in Flutter (M1.5), per il confronto con crates/dock-iced.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  silica_ui:
+    path: ../../packages/silica_ui
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+

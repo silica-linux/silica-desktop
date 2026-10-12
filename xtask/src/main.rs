@@ -103,8 +103,8 @@ fn ci() -> Result<()> {
     cargo(&["fmt", "--all", "--check"])?;
     // I test dell'embedder fanno girare l'app demo: servono engine e bundle.
     flutter::engine()?;
-    for app in flutter::apps()? {
-        flutter::check(&app)?;
+    for project in flutter::projects()? {
+        flutter::check(&project)?;
     }
     flutter::bundle("demo")?;
     cargo(&[
