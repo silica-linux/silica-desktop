@@ -220,12 +220,20 @@ impl canvas::Program<Message> for Dock {
         _: &mut (),
         event: &Event,
         bounds: Rectangle,
-        _: mouse::Cursor,
+        cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
         match event {
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 Some(canvas::Action::publish(Message::Moved {
                     x: f64::from(position.x - bounds.x),
+                    width: f64::from(bounds.width),
+                }))
+            }
+            // L'ingresso porta già una posizione: vale come movimento (come in Flutter).
+            Event::Mouse(mouse::Event::CursorEntered) => {
+                let position = cursor.position_in(bounds)?;
+                Some(canvas::Action::publish(Message::Moved {
+                    x: f64::from(position.x),
                     width: f64::from(bounds.width),
                 }))
             }

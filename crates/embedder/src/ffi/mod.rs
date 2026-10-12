@@ -132,6 +132,9 @@ pub struct KeyEvent {
     pub timestamp_micros: u64,
 }
 
+/// La richiesta di vsync dell'engine: va restituita con [`Engine::on_vsync`].
+pub struct VsyncBaton(isize);
+
 /// Le funzioni dell'embedder chiamate dall'engine, da thread qualsiasi.
 pub struct Callbacks {
     pub platform_thread: ThreadId,
@@ -141,6 +144,9 @@ pub struct Callbacks {
     pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
     /// Con una superficie EGL l'engine disegna con OpenGL ES, altrimenti in software.
     pub gl: Option<GlSurface>,
+    /// Il ritmo dei frame lo dà l'embedder (frame callback del compositor); senza, l'engine
+    /// usa un suo timer a 60 Hz, scollegato dal compositor.
+    pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
 }
 
 /// Chi aspetta di sapere se il framework ha gestito un tasto.
@@ -212,6 +218,7 @@ type RespondFn = unsafe extern "C" fn(
 
 type RunsAotFn = unsafe extern "C" fn() -> bool;
 type ScheduleFrameFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
+type OnVsyncFn = unsafe extern "C" fn(FlutterEngine, isize, u64, u64) -> FlutterEngineResult;
 type CreateAotFn = unsafe extern "C" fn(
     *const FlutterEngineAOTDataSource,
     *mut FlutterEngineAOTData,
@@ -221,6 +228,7 @@ type CollectAotFn = unsafe extern "C" fn(FlutterEngineAOTData) -> FlutterEngineR
 /// Le funzioni dell'engine usate qui, risolte una volta al caricamento.
 struct Api {
     schedule_frame: ScheduleFrameFn,
+    on_vsync: OnVsyncFn,
     runs_aot: RunsAotFn,
     create_aot: CreateAotFn,
     collect_aot: CollectAotFn,
@@ -371,6 +379,14 @@ unsafe extern "C" fn gl_proc_resolver(user_data: *mut c_void, name: *const c_cha
     }
 }
 
+unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    let callbacks = unsafe { callbacks(user_data) };
+    if let Some(vsync) = &callbacks.vsync {
+        vsync(VsyncBaton(baton));
+    }
+}
+
 unsafe extern "C" fn post_task(task: FlutterTask, target_nanos: u64, user_data: *mut c_void) {
     // SAFETY: user_data è quello del FlutterTaskRunnerDescription (vedi `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
@@ -472,6 +488,7 @@ impl Engine {
             .map_err(|e| Error::Load(e.to_string()))?;
         let api = Api {
             schedule_frame: symbol!(library, FlutterEngineScheduleFrame),
+            on_vsync: symbol!(library, FlutterEngineOnVsync),
             runs_aot: symbol!(library, FlutterEngineRunsAOTCompiledDartCode),
             create_aot: symbol!(library, FlutterEngineCreateAOTData),
             collect_aot: symbol!(library, FlutterEngineCollectAOTData),
@@ -582,6 +599,11 @@ impl Engine {
             platform_message_callback: Some(platform_message),
             shutdown_dart_vm_when_done: true,
             aot_data,
+            vsync_callback: if callbacks.vsync.is_some() {
+                Some(vsync)
+            } else {
+                None
+            },
             ..Default::default()
         };
 
@@ -661,6 +683,20 @@ impl Engine {
         if let Some(gl) = &self._callbacks.gl {
             gl.resize(width, height);
         }
+    }
+
+    /// Risponde a una richiesta di vsync: il frame parte a `start` e va finito entro
+    /// `target`, nella base di [`Engine::current_time`].
+    pub fn on_vsync(&self, baton: VsyncBaton, start: u64, target: u64) -> Result<(), Error> {
+        // SAFETY: engine è vivo; il baton viene da questo engine ed è consumato qui.
+        check("FlutterEngineOnVsync", unsafe {
+            (self.api.on_vsync)(self.engine, baton.0, start, target)
+        })
+    }
+
+    /// Se la superficie EGL ha già presentato un frame; `true` senza OpenGL.
+    pub fn gl_presented(&self) -> bool {
+        self._callbacks.gl.as_ref().is_none_or(GlSurface::presented)
     }
 
     /// Chiede un frame anche se il framework non ne ha in programma.

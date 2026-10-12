@@ -15,6 +15,8 @@ use smithay::reexports::wayland_server::{Resource, Weak};
 
 /// Intervalli tenuti per superficie: più di 2 minuti a 60 Hz.
 const MAX_INTERVALS: usize = 8192;
+/// Intervalli oltre questa soglia finiscono nel log di debug, per vedere quando cadono.
+const SLOW_LOG: Duration = Duration::from_millis(25);
 /// Quanti antenati risalire per legare un client a un processo lanciato (sh -c, wrapper).
 const MAX_ANCESTORS: usize = 8;
 
@@ -62,9 +64,16 @@ impl Perf {
             if track.intervals.len() >= MAX_INTERVALS {
                 track.intervals.pop_front();
             }
-            track
-                .intervals
-                .push_back(now.saturating_duration_since(last));
+            let interval = now.saturating_duration_since(last);
+            if interval > SLOW_LOG {
+                tracing::debug!(
+                    "frame lento: {:.1} ms dopo {} frame (pid {:?})",
+                    millis(interval),
+                    track.frames,
+                    track.pid
+                );
+            }
+            track.intervals.push_back(interval);
         }
         track.last = Some(now);
         track.frames = track.frames.saturating_add(1);

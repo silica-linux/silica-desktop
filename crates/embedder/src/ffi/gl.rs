@@ -39,6 +39,10 @@ pub struct GlSurface {
     /// Ridimensionata dall'ultimo swap: Mesa (almeno il percorso software di WSL) applica
     /// la dimensione nuova solo dal buffer successivo, quindi serve un altro frame.
     resized: AtomicBool,
+    /// Almeno un frame è arrivato al compositor: da qui i frame callback funzionano.
+    presented: AtomicBool,
+    /// Quando il thread raster ha iniziato il frame in corso, per il log dei frame lenti.
+    frame_start: Mutex<Option<std::time::Instant>>,
     /// Chiede all'engine un frame in più; lo imposta l'embedder.
     redraw: Mutex<Option<Box<dyn Fn() + Send>>>,
     renderer: String,
@@ -129,6 +133,8 @@ impl GlSurface {
             surface,
             window: Mutex::new((window, size)),
             resized: AtomicBool::new(false),
+            presented: AtomicBool::new(false),
+            frame_start: Mutex::new(None),
             redraw: Mutex::new(None),
             renderer: String::new(),
         };
@@ -169,6 +175,9 @@ impl GlSurface {
     }
 
     pub(super) fn make_current(&self) -> bool {
+        if let Ok(mut start) = self.frame_start.lock() {
+            *start = Some(std::time::Instant::now());
+        }
         self.egl
             .make_current(
                 self.display,
@@ -191,6 +200,10 @@ impl GlSurface {
             .is_ok()
     }
 
+    pub fn presented(&self) -> bool {
+        self.presented.load(Ordering::Acquire)
+    }
+
     /// Chi chiamare quando serve un frame in più dopo un ridimensionamento.
     pub fn on_redraw(&self, redraw: impl Fn() + Send + 'static) {
         if let Ok(mut slot) = self.redraw.lock() {
@@ -199,7 +212,21 @@ impl GlSurface {
     }
 
     pub(super) fn present(&self) -> bool {
+        let swap_start = std::time::Instant::now();
         let swapped = self.egl.swap_buffers(self.display, self.surface).is_ok();
+        if let Ok(start) = self.frame_start.lock()
+            && let Some(start) = *start
+            && start.elapsed() > std::time::Duration::from_millis(12)
+        {
+            tracing::debug!(
+                "frame raster lento: {:.1} ms, di cui swap {:.1} ms",
+                start.elapsed().as_secs_f64() * 1000.0,
+                swap_start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        if swapped {
+            self.presented.store(true, Ordering::Release);
+        }
         if self.resized.swap(false, Ordering::AcqRel)
             && let Ok(redraw) = self.redraw.lock()
             && let Some(redraw) = redraw.as_ref()

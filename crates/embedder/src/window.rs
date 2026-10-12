@@ -64,7 +64,7 @@ impl Shell {
 }
 use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
-    PointerPhase, Task,
+    PointerPhase, Task, VsyncBaton,
 };
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::text_input::{self, EditKey, TextInput};
@@ -104,6 +104,9 @@ impl KeyJoin {
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
+
+/// Periodo dei frame dato all'engine con ogni vsync: 60 Hz.
+const FRAME_PERIOD_NANOS: u64 = 16_666_667;
 
 /// Intervallo massimo tra due giri del ciclo quando non c'è alcun task in coda.
 const IDLE_WAKEUP: Duration = Duration::from_millis(100);
@@ -162,6 +165,12 @@ struct App {
     buttons: i64,
     /// Con OpenGL lo swap dell'engine fa attach e commit: qui si cura solo la scala.
     gl: bool,
+    /// Il software ha presentato almeno un frame (con OpenGL lo sa la superficie EGL).
+    presented: bool,
+    /// La richiesta di vsync dell'engine in attesa del frame callback del compositor.
+    vsync: Option<VsyncBaton>,
+    /// Un frame callback chiesto per il vsync e non ancora arrivato.
+    vsync_requested: bool,
     exit: bool,
 }
 
@@ -304,6 +313,16 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .map_err(|e| format!("canale dei messaggi: {e}"))?;
+    let (vsync_sender, vsync_channel) = channel::channel::<VsyncBaton>();
+    let vsync_qh = qh.clone();
+    event_loop
+        .handle()
+        .insert_source(vsync_channel, move |event, _, app: &mut App| {
+            if let Event::Msg(baton) = event {
+                app.request_vsync(baton, &vsync_qh);
+            }
+        })
+        .map_err(|e| format!("canale del vsync: {e}"))?;
     let (key_results, key_channel) = channel::channel::<KeyResult>();
     event_loop
         .handle()
@@ -340,6 +359,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             let _ = message_sender.send(message);
         }),
         gl,
+        vsync: Some(Box::new(move |baton| {
+            let _ = vsync_sender.send(baton);
+        })),
     };
     let engine = Engine::run(
         &EngineConfig {
@@ -377,6 +399,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         buffer: None,
         buttons: 0,
         gl: gl_mode,
+        presented: false,
+        vsync: None,
+        vsync_requested: false,
         exit: false,
     };
 
@@ -544,6 +569,36 @@ impl App {
         }
     }
 
+    /// L'engine vuole il prossimo vsync: arriva con il frame callback del compositor.
+    /// Prima del primo frame il compositor non ne manda, quindi si risponde subito.
+    fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
+        let presented =
+            self.presented || (self.gl && self.engine.as_ref().is_some_and(Engine::gl_presented));
+        if !presented || !self.configured {
+            self.answer_vsync(baton);
+            return;
+        }
+        self.vsync = Some(baton);
+        // Un frame callback già chiesto (dal vsync o dalla presentazione) basta.
+        if self.vsync_requested || self.waiting_frame {
+            return;
+        }
+        let surface = self.surface.wl_surface();
+        surface.frame(qh, surface.clone());
+        self.surface.commit();
+        self.vsync_requested = true;
+    }
+
+    fn answer_vsync(&self, baton: VsyncBaton) {
+        let Some(engine) = &self.engine else {
+            return;
+        };
+        let start = engine.current_time();
+        if let Err(err) = engine.on_vsync(baton, start, start.saturating_add(FRAME_PERIOD_NANOS)) {
+            warn!("{err}");
+        }
+    }
+
     /// Presenta l'ultimo frame dell'engine, se il compositor è pronto a riceverne uno.
     fn present(&mut self, qh: &QueueHandle<Self>) {
         if self.gl || self.waiting_frame || !self.configured {
@@ -589,6 +644,7 @@ impl App {
         self.surface.commit();
         self.buffer = Some(buffer);
         self.waiting_frame = true;
+        self.presented = true;
     }
 }
 
@@ -621,6 +677,10 @@ impl CompositorHandler for App {
 
     fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
         self.waiting_frame = false;
+        self.vsync_requested = false;
+        if let Some(baton) = self.vsync.take() {
+            self.answer_vsync(baton);
+        }
         self.present(qh);
     }
 

@@ -95,8 +95,9 @@ fn variants(root: &Path) -> Result<Vec<Variant>> {
     }
     let embedder = |renderer: &str| {
         format!(
-            "{} --engine {} --renderer {renderer} --layer bottom --anchor left,right,bottom \
+            "env RUST_LOG={} {} --engine {} --renderer {renderer} --layer bottom --anchor left,right,bottom \
              --size 1280x160 --exclusive-zone 72 --namespace dock {}",
+            std::env::var("BENCH_CLIENT_LOG").unwrap_or_else(|_| "warn".to_owned()),
             release.join("silica-embedder").display(),
             engine.display(),
             bundle.display()
@@ -239,7 +240,10 @@ fn start_ossido(root: &Path) -> Result<Session> {
             "--control",
             "0",
         ])
-        .env("RUST_LOG", "warn")
+        .env(
+            "RUST_LOG",
+            std::env::var("BENCH_LOG").unwrap_or_else(|_| "warn".to_owned()),
+        )
         .stdout(Stdio::piped());
     if let Some(socket) = wslg_socket() {
         command.env("WAYLAND_DISPLAY", socket);
