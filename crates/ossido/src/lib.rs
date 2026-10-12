@@ -4,6 +4,7 @@ pub mod backend;
 mod capture;
 pub mod commands;
 mod control;
+mod dmabuf;
 mod handlers;
 mod input;
 mod keys;

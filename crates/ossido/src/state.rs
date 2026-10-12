@@ -14,6 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
@@ -57,6 +58,9 @@ pub struct State {
     pub layer_shell_state: WlrLayerShellState,
     /// wp_viewporter: superfici scalate o ritagliate (iced lo richiede per l'HiDPI).
     pub viewporter_state: ViewporterState,
+    /// linux-dmabuf: buffer dalla GPU dei client (solo winit, vedi `dmabuf.rs`).
+    pub dmabuf_state: DmabufState,
+    pub dmabuf_global: Option<DmabufGlobal>,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -138,6 +142,8 @@ impl State {
             data_device_state,
             layer_shell_state,
             viewporter_state,
+            dmabuf_state: DmabufState::new(),
+            dmabuf_global: None,
             seat,
             mapped: 0,
             next_window_id: 0,

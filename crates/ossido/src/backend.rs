@@ -98,7 +98,7 @@ pub fn init_winit(
     let output = new_output("winit", "Ossido annidato", mode, Transform::Flipped180);
     let damage_tracker = OutputDamageTracker::from_output(&output);
 
-    let state = State::new(
+    let mut state = State::new(
         &mut display,
         event_loop.handle(),
         event_loop.get_signal(),
@@ -108,6 +108,14 @@ pub fn init_winit(
             damage_tracker,
         })),
     )?;
+    if let Backend::Winit(backend) = &mut state.backend {
+        let dh = display.handle();
+        state.dmabuf_global = Some(crate::dmabuf::create_global(
+            &mut state.dmabuf_state,
+            &dh,
+            backend.graphics.renderer(),
+        ));
+    }
 
     event_loop
         .handle()
