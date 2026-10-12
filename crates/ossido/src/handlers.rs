@@ -14,7 +14,8 @@ use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::utils::{Logical, Point, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
+    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+    get_parent, is_sync_subsurface, with_states,
 };
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::selection::SelectionHandler;
@@ -52,6 +53,24 @@ impl CompositorHandler for State {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        // Va letto prima del buffer handler, che consuma il buffer appena assegnato.
+        let new_buffer = with_states(surface, |states| {
+            matches!(
+                states
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .current()
+                    .buffer,
+                Some(BufferAssignment::NewBuffer(_))
+            )
+        });
+        if new_buffer {
+            let pid = surface
+                .client()
+                .and_then(|client| client.get_credentials(&self.display_handle).ok())
+                .and_then(|credentials| u32::try_from(credentials.pid).ok());
+            self.perf.frame(surface, pid, std::time::Instant::now());
+        }
         on_commit_buffer_handler::<Self>(surface);
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();

@@ -1,0 +1,262 @@
+//! Misure dei client, uguali per ogni toolkit: ritmo dei frame visto dal compositor,
+//! tempo di avvio e memoria dei processi (`perf.frames`, `perf.process`).
+//!
+//! Un frame è un commit con un buffer nuovo; l'intervallo è il tempo fra due frame della
+//! stessa superficie. Si misura in Ossido perché il confronto fra toolkit (M1.5) non può
+//! dipendere da contatori interni a ciascuno.
+
+use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
+
+use silica_control::commands::{ProcessInfo, SurfaceFrames};
+use smithay::reexports::wayland_server::backend::ObjectId;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Resource, Weak};
+
+/// Intervalli tenuti per superficie: più di 2 minuti a 60 Hz.
+const MAX_INTERVALS: usize = 8192;
+/// Quanti antenati risalire per legare un client a un processo lanciato (sh -c, wrapper).
+const MAX_ANCESTORS: usize = 8;
+
+#[derive(Debug)]
+struct Track {
+    surface: Weak<WlSurface>,
+    pid: Option<u32>,
+    last: Option<Instant>,
+    frames: u64,
+    intervals: VecDeque<Duration>,
+    startup: Option<Duration>,
+}
+
+#[derive(Debug, Default)]
+pub struct Perf {
+    surfaces: HashMap<ObjectId, Track>,
+    launches: HashMap<u32, Instant>,
+}
+
+impl Perf {
+    /// Un processo avviato da Ossido: il suo primo buffer misura il tempo di avvio.
+    pub fn launched(&mut self, pid: u32, at: Instant) {
+        self.launches.insert(pid, at);
+    }
+
+    /// Un commit con un buffer nuovo su `surface`, del client `pid`.
+    pub fn frame(&mut self, surface: &WlSurface, pid: Option<u32>, now: Instant) {
+        let track = self.surfaces.entry(surface.id()).or_insert_with(|| Track {
+            surface: surface.downgrade(),
+            pid: None,
+            last: None,
+            frames: 0,
+            intervals: VecDeque::new(),
+            startup: None,
+        });
+        if track.pid.is_none() {
+            track.pid = pid;
+        }
+        if track.frames == 0 && track.startup.is_none() {
+            track.startup = pid
+                .and_then(|pid| launched_ancestor(pid, &self.launches))
+                .map(|at| now.saturating_duration_since(at));
+        }
+        if let Some(last) = track.last {
+            if track.intervals.len() >= MAX_INTERVALS {
+                track.intervals.pop_front();
+            }
+            track
+                .intervals
+                .push_back(now.saturating_duration_since(last));
+        }
+        track.last = Some(now);
+        track.frames = track.frames.saturating_add(1);
+    }
+
+    /// Le misure delle superfici ancora vive; `label` dà il nome di una superficie.
+    pub fn report(
+        &mut self,
+        period: Duration,
+        label: impl Fn(&ObjectId) -> String,
+    ) -> Vec<SurfaceFrames> {
+        self.surfaces
+            .retain(|_, track| track.surface.upgrade().is_ok());
+        let mut report: Vec<SurfaceFrames> = self
+            .surfaces
+            .iter()
+            .map(|(id, track)| {
+                let intervals: Vec<Duration> = track.intervals.iter().copied().collect();
+                let stats = Stats::of(&intervals, period);
+                SurfaceFrames {
+                    surface: label(id),
+                    pid: track.pid,
+                    frames: track.frames,
+                    mean_ms: stats.mean,
+                    p50_ms: stats.p50,
+                    p95_ms: stats.p95,
+                    p99_ms: stats.p99,
+                    max_ms: stats.max,
+                    slow: stats.slow,
+                    period_ms: millis(period),
+                    startup_ms: track.startup.map(millis),
+                }
+            })
+            .collect();
+        report.sort_by(|a, b| a.surface.cmp(&b.surface));
+        report
+    }
+
+    /// Azzera i frame contati; il tempo di avvio resta, non si ripete.
+    pub fn reset(&mut self) {
+        for track in self.surfaces.values_mut() {
+            track.last = None;
+            track.frames = 0;
+            track.intervals.clear();
+        }
+    }
+}
+
+fn millis(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
+}
+
+/// Statistiche degli intervalli, in millisecondi.
+#[derive(Debug, Default, PartialEq)]
+struct Stats {
+    mean: f64,
+    p50: f64,
+    p95: f64,
+    p99: f64,
+    max: f64,
+    slow: u64,
+}
+
+impl Stats {
+    fn of(intervals: &[Duration], period: Duration) -> Self {
+        if intervals.is_empty() {
+            return Self::default();
+        }
+        let mut sorted = intervals.to_vec();
+        sorted.sort_unstable();
+        // Percentile per rango più vicino: il più piccolo valore con almeno p% dei campioni.
+        let percentile = |p: f64| {
+            let rank = (p / 100.0 * sorted.len() as f64).ceil() as usize;
+            sorted
+                .get(rank.saturating_sub(1))
+                .copied()
+                .map_or(0.0, millis)
+        };
+        let total: Duration = sorted.iter().sum();
+        let limit = period.mul_f64(1.5);
+        Self {
+            mean: millis(total) / sorted.len() as f64,
+            p50: percentile(50.0),
+            p95: percentile(95.0),
+            p99: percentile(99.0),
+            max: sorted.last().copied().map_or(0.0, millis),
+            slow: sorted.iter().filter(|d| **d > limit).count() as u64,
+        }
+    }
+}
+
+/// Il primo processo lanciato da Ossido fra `pid` e i suoi antenati.
+fn launched_ancestor(pid: u32, launches: &HashMap<u32, Instant>) -> Option<Instant> {
+    let mut current = pid;
+    for _ in 0..MAX_ANCESTORS {
+        if let Some(at) = launches.get(&current) {
+            return Some(*at);
+        }
+        current = parent_pid(current)?;
+        if current <= 1 {
+            return None;
+        }
+    }
+    None
+}
+
+/// Il genitore di un processo, dal quarto campo di `/proc/<pid>/stat`.
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    parse_parent(&stat)
+}
+
+fn parse_parent(stat: &str) -> Option<u32> {
+    // Il nome del comando è fra parentesi e può contenerne altre: si parte dall'ultima.
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// RSS e PSS di un processo da `/proc/<pid>/smaps_rollup`.
+pub fn process_info(pid: u32) -> Result<ProcessInfo, String> {
+    let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup"))
+        .map_err(|e| format!("processo {pid}: {e}"))?;
+    parse_rollup(pid, &rollup)
+}
+
+fn parse_rollup(pid: u32, rollup: &str) -> Result<ProcessInfo, String> {
+    let field = |name: &str| {
+        rollup
+            .lines()
+            .find_map(|line| line.strip_prefix(name))
+            .and_then(|rest| {
+                rest.trim()
+                    .trim_end_matches("kB")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
+            .ok_or_else(|| format!("{name} assente in smaps_rollup"))
+    };
+    Ok(ProcessInfo {
+        pid,
+        rss_kib: field("Rss:")?,
+        pss_kib: field("Pss:")?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    #[test]
+    fn stats_use_nearest_rank_and_count_slow_frames() {
+        let mut intervals: Vec<Duration> = (0..98).map(|_| ms(16)).collect();
+        intervals.push(ms(30));
+        intervals.push(ms(50));
+        let stats = Stats::of(&intervals, ms(16));
+        assert_eq!(stats.p50, 16.0);
+        assert_eq!(stats.p99, 30.0);
+        assert_eq!(stats.max, 50.0);
+        // Oltre 24 ms: 30 e 50.
+        assert_eq!(stats.slow, 2);
+        assert!((stats.mean - 16.48).abs() < 1e-9);
+        assert_eq!(Stats::of(&[], ms(16)), Stats::default());
+    }
+
+    #[test]
+    fn parent_from_stat_with_parentheses_in_name() {
+        assert_eq!(parse_parent("42 (a) b) S 7 42 42 0"), Some(7));
+        assert_eq!(parse_parent("garbage"), None);
+    }
+
+    #[test]
+    fn rollup_fields() {
+        let rollup = "00400000-7fff [rollup]\nRss:              51200 kB\nPss:              40960 kB\nPss_Anon:  1 kB\n";
+        assert_eq!(
+            parse_rollup(9, rollup),
+            Ok(ProcessInfo {
+                pid: 9,
+                rss_kib: 51200,
+                pss_kib: 40960
+            })
+        );
+        assert!(parse_rollup(9, "Rss: 1 kB").is_err());
+    }
+
+    #[test]
+    fn own_process_is_measurable() {
+        let info = process_info(std::process::id()).unwrap();
+        assert!(info.rss_kib > 0 && info.pss_kib > 0);
+    }
+}

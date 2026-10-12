@@ -8,6 +8,7 @@ mod handlers;
 mod input;
 mod keys;
 mod layers;
+mod perf;
 pub mod state;
 
 use std::io::Write;

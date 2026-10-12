@@ -25,6 +25,8 @@ pub const INPUT_CLICK: &str = "input.click";
 pub const INPUT_KEY: &str = "input.key";
 pub const INPUT_TYPE: &str = "input.type";
 pub const LAYER_LIST: &str = "layer.list";
+pub const PERF_FRAMES: &str = "perf.frames";
+pub const PERF_PROCESS: &str = "perf.process";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -253,6 +255,33 @@ pub const CATALOG: &[CommandSpec] = &[
             })
         },
     },
+    CommandSpec {
+        id: PERF_FRAMES,
+        label: "Misura i frame",
+        description: "Per ogni superficie con buffer: frame ricevuti, intervalli fra i commit (media, p50, p95, p99, massimo), frame lenti (oltre 1,5 periodi di refresh) e tempo dall'avvio al primo buffer. Con reset azzera le misure dopo averle restituite.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"reset": {"type": "boolean"}},
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: PERF_PROCESS,
+        label: "Misura un processo",
+        description: "Memoria di un processo client (RSS e PSS da /proc, in KiB).",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"pid": {"type": "integer", "minimum": 1}},
+                "required": ["pid"],
+                "additionalProperties": false
+            })
+        },
+    },
 ];
 
 pub fn find(id: &str) -> Option<&'static CommandSpec> {
@@ -352,6 +381,49 @@ pub struct Key {
 #[serde(deny_unknown_fields)]
 pub struct TypeText {
     pub text: String,
+}
+
+/// Parametri di [`PERF_FRAMES`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PerfFramesParams {
+    #[serde(default)]
+    pub reset: bool,
+}
+
+/// Le misure di una superficie in [`PERF_FRAMES`]. Tempi in millisecondi.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SurfaceFrames {
+    /// `window <id>`, `layer <namespace>` o `surface` per le altre.
+    pub surface: String,
+    pub pid: Option<u32>,
+    /// Commit con un buffer nuovo dall'ultimo reset.
+    pub frames: u64,
+    pub mean_ms: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+    pub max_ms: f64,
+    /// Intervalli oltre 1,5 periodi di refresh dell'output.
+    pub slow: u64,
+    pub period_ms: f64,
+    /// Dal lancio con `app.launch` (o `--spawn`) al primo buffer, se lanciato da Ossido.
+    pub startup_ms: Option<f64>,
+}
+
+/// Parametri di [`PERF_PROCESS`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PerfProcessParams {
+    pub pid: u32,
+}
+
+/// Il risultato di [`PERF_PROCESS`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub rss_kib: u64,
+    pub pss_kib: u64,
 }
 
 /// Un layer in [`LAYER_LIST`].

@@ -40,6 +40,13 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `input.click` | `x`, `y`, `button?` | — |
 | `input.key` | `key` (nome xkb o carattere), `pressed?` | — |
 | `input.type` | `text` | — |
+| `perf.frames` | `reset?` | per superficie: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
+| `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
+
+Le misure di `perf.frames` sono quelle del compositor, uguali per ogni toolkit: un frame è
+un commit con un buffer nuovo, l'intervallo è il tempo fra due frame della stessa
+superficie, lento se supera 1,5 periodi di refresh dell'output. `startup_ms` va dal lancio
+con `app.launch` (o `--spawn`) al primo buffer del processo o di un suo discendente.
 
 Senza `id`, i comandi sulle finestre agiscono su quella con il focus.
 

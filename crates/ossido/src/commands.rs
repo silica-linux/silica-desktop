@@ -8,13 +8,15 @@ use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
     INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST,
-    PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS,
-    WINDOW_LIST, WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
+    PERF_FRAMES, PERF_PROCESS, PerfFramesParams, PerfProcessParams, PointerButton, PointerMove,
+    SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE,
+    WindowInfo, WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
 use smithay::input::keyboard::{FilterResult, Keycode};
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
@@ -162,6 +164,18 @@ impl State {
                 }
                 Ok(Value::Null)
             }
+            PERF_FRAMES => {
+                let PerfFramesParams { reset } = parse(params)?;
+                let report = self.perf_frames();
+                if reset {
+                    self.perf.reset();
+                }
+                to_value(report)
+            }
+            PERF_PROCESS => {
+                let PerfProcessParams { pid } = parse_required(params)?;
+                to_value(crate::perf::process_info(pid)?)
+            }
             SESSION_QUIT => {
                 info!("uscita richiesta");
                 self.loop_signal.stop();
@@ -203,7 +217,7 @@ impl State {
     }
 
     /// Avvia un comando di shell come client di questa sessione.
-    pub fn launch(&self, command: &str) -> Result<u32, String> {
+    pub fn launch(&mut self, command: &str) -> Result<u32, String> {
         let child = Command::new("sh")
             .arg("-c")
             .arg(command)
@@ -211,7 +225,41 @@ impl State {
             .spawn()
             .map_err(|e| format!("avvio di {command}: {e}"))?;
         info!("avviato {command} (pid {})", child.id());
+        self.perf.launched(child.id(), std::time::Instant::now());
         Ok(child.id())
+    }
+
+    /// Le misure dei frame, con le superfici chiamate come in `window.list` e `layer.list`.
+    fn perf_frames(&mut self) -> Vec<silica_control::commands::SurfaceFrames> {
+        let mut names = std::collections::HashMap::new();
+        for window in self.space.elements() {
+            if let (Some(toplevel), Some(id)) = (window.toplevel(), Self::window_id(window)) {
+                names.insert(toplevel.wl_surface().id(), format!("window {id}"));
+            }
+        }
+        for layer in smithay::desktop::layer_map_for_output(&self.output).layers() {
+            names.insert(
+                layer.wl_surface().id(),
+                format!("layer {}", layer.namespace()),
+            );
+        }
+        let refresh = self
+            .output
+            .current_mode()
+            .map_or(0, |mode| mode.refresh)
+            .max(1);
+        // refresh è in mHz; senza un valore sensato si assume 60 Hz.
+        let period = if refresh < 1000 {
+            std::time::Duration::from_micros(16_667)
+        } else {
+            std::time::Duration::from_secs_f64(1000.0 / f64::from(refresh))
+        };
+        self.perf.report(period, |id| {
+            names
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| "surface".to_owned())
+        })
     }
 
     pub fn assign_window_id(&mut self, window: &Window) -> u64 {

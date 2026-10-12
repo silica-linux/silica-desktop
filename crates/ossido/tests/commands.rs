@@ -15,8 +15,8 @@ use common::client::{FIRST_WINDOW_AT, TestWindow};
 use common::{Headless, assert_clear_color, pixel, screenshot};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    ENGINE_COMMANDS, ENGINE_EXECUTE, SESSION_QUIT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST,
-    WINDOW_MOVE, WindowInfo,
+    ENGINE_COMMANDS, ENGINE_EXECUTE, PERF_FRAMES, PERF_PROCESS, ProcessInfo, SESSION_QUIT,
+    SurfaceFrames, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE, WindowInfo,
 };
 use silica_control::{CATALOG, Error};
 
@@ -128,4 +128,35 @@ fn session_quit_stops_ossido() {
         assert!(Instant::now() < deadline, "Ossido non è uscito");
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn perf_measures_frame_intervals_and_process_memory() {
+    let ossido = Headless::start("perf");
+    let mut window = TestWindow::open(&ossido.wayland, "ritmo");
+    let mut client = ossido.client();
+    client.call(PERF_FRAMES, json!({"reset": true})).unwrap();
+
+    window.commit_frames(6, Duration::from_millis(40));
+    let report: Vec<SurfaceFrames> =
+        serde_json::from_value(client.call(PERF_FRAMES, Value::Null).unwrap()).unwrap();
+    let frames = report
+        .iter()
+        .find(|s| s.surface == "window 1")
+        .expect("la finestra non ha misure");
+    assert_eq!(frames.frames, 6);
+    assert_eq!(frames.pid, Some(std::process::id()));
+    // 5 intervalli da circa 40 ms: tutti oltre 1,5 periodi a 60 Hz.
+    assert!(frames.p50_ms >= 35.0 && frames.p50_ms < 200.0, "{frames:?}");
+    assert_eq!(frames.slow, 5);
+    assert!(frames.startup_ms.is_none());
+
+    let info: ProcessInfo = serde_json::from_value(
+        client
+            .call(PERF_PROCESS, json!({"pid": std::process::id()}))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(info.pss_kib > 0 && info.rss_kib >= info.pss_kib);
+    assert!(client.call(PERF_PROCESS, json!({"pid": u32::MAX})).is_err());
 }

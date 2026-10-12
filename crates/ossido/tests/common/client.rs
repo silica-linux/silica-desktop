@@ -121,9 +121,9 @@ impl Dispatch<XdgToplevel, ()> for App {
 pub struct TestWindow {
     queue: EventQueue<App>,
     app: App,
-    _surface: WlSurface,
+    surface: WlSurface,
     _toplevel: XdgToplevel,
-    _buffer: WlBuffer,
+    buffer: WlBuffer,
 }
 
 impl TestWindow {
@@ -170,10 +170,24 @@ impl TestWindow {
         Self {
             queue,
             app,
-            _surface: surface,
+            surface,
             _toplevel: toplevel,
-            _buffer: buffer,
+            buffer,
         }
+    }
+
+    /// Ricommitta lo stesso buffer `count` volte, ogni `every`: frame a ritmo noto.
+    #[allow(dead_code)]
+    pub fn commit_frames(&mut self, count: u32, every: std::time::Duration) {
+        let (w, h) = WINDOW;
+        for _ in 0..count {
+            std::thread::sleep(every);
+            self.surface.attach(Some(&self.buffer), 0, 0);
+            self.surface.damage_buffer(0, 0, w as i32, h as i32);
+            self.surface.commit();
+            self.queue.flush().unwrap();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// Legge gli eventi in arrivo e dice se Ossido ha chiesto la chiusura.

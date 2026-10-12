@@ -63,6 +63,8 @@ pub struct State {
     pub shortcuts: Vec<(Shortcut, &'static str)>,
     /// Keycode per i tasti sintetici (`input.key`, `input.type`).
     pub keys: crate::keys::KeyLookup,
+    /// Ritmo dei frame, avvio e memoria dei client (`perf.*`).
+    pub perf: crate::perf::Perf,
 }
 
 impl State {
@@ -136,6 +138,7 @@ impl State {
             next_window_id: 0,
             shortcuts: crate::commands::shortcuts(),
             keys: crate::keys::KeyLookup::new()?,
+            perf: crate::perf::Perf::default(),
         })
     }
 
