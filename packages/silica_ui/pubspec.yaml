@@ -1,5 +1,5 @@
 name: silica_ui
-description: Design system di Silica per Flutter. Per ora solo il font dell'interfaccia (Inter, OFL).
+description: Design system di Silica per Flutter. Font dell'interfaccia (Inter, OFL) e vetro (Glass).
 publish_to: none
 version: 0.0.0
 
@@ -19,3 +19,5 @@ flutter:
     - family: Inter
       fonts:
         - asset: fonts/Inter-Regular.ttf
+        - asset: fonts/Inter-SemiBold.ttf
+          weight: 600

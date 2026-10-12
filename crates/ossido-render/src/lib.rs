@@ -9,6 +9,7 @@ pub mod cache;
 pub mod corners;
 pub mod glass;
 pub mod shadow;
+pub mod title;
 pub mod titlebar;
 
 use smithay::backend::renderer::gles::{

@@ -12,6 +12,7 @@ use ossido_render::glass::{
     render_to_texture,
 };
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
+use ossido_render::title::Title;
 use ossido_render::titlebar::{Titlebar, TitlebarState};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
@@ -40,8 +41,8 @@ render_elements! {
     /// Elementi a pixel shader della finestra: barra del titolo e ombra.
     Shader=RescaleRenderElement<PixelShaderElement>,
     Glass=GlassElement,
-    /// Istantanea di una finestra che si chiude.
-    Closing=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
+    /// Texture: titoli delle barre, istantanee delle finestre che si chiudono.
+    Texture=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
 }
 
 /// Quello che serve al frame oltre allo spazio.
@@ -90,6 +91,22 @@ fn is_active(window: &Window) -> bool {
     window.toplevel().is_some_and(|toplevel| {
         toplevel.with_pending_state(|state| state.states.contains(xdg_toplevel::State::Activated))
     })
+}
+
+/// Il titolo della finestra (`xdg_toplevel.set_title`), vuoto se non c'è.
+fn window_title(window: &Window) -> String {
+    window
+        .toplevel()
+        .and_then(|toplevel| {
+            with_states(toplevel.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                    .and_then(|data| data.lock().ok())
+                    .and_then(|data| data.title.clone())
+            })
+        })
+        .unwrap_or_default()
 }
 
 /// La scala dell'apertura in questo momento (1 a riposo).
@@ -179,6 +196,14 @@ fn window_elements(
     if decorations::is_server_side(window)
         && let Some(program) = &shaders.titlebar
     {
+        window.user_data().insert_if_missing(Title::default);
+        if let Some(title) = window.user_data().get::<Title>()
+            && let Some(text) = title.element(renderer, &window_title(window), frame, active, scale)
+        {
+            elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
+                text, center, factor,
+            )));
+        }
         window.user_data().insert_if_missing(Titlebar::default);
         if let Some(titlebar) = window.user_data().get::<Titlebar>() {
             let state = TitlebarState {
@@ -329,7 +354,7 @@ pub fn output_elements(
             None,
             Kind::Unspecified,
         );
-        elements.push(OutputElement::Closing(RescaleRenderElement::from_element(
+        elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
             texture,
             closing.center,
             animation::close_scale(progress),

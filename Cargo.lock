@@ -2554,6 +2554,7 @@ dependencies = [
 name = "ossido-render"
 version = "0.0.0"
 dependencies = [
+ "ab_glyph",
  "smithay",
  "tracing",
 ]
