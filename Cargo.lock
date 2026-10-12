@@ -1022,8 +1022,11 @@ dependencies = [
  "serde_json",
  "silica-control",
  "smithay",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]

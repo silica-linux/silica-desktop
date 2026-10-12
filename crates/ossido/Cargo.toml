@@ -7,9 +7,6 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[lints]
-workspace = true
-
 [dependencies]
 base64 = "0.22"
 png = "0.17"
@@ -18,3 +15,11 @@ silica-control = { path = "../control" }
 smithay = { version = "0.7", default-features = false, features = ["backend_winit", "renderer_gl", "renderer_pixman", "wayland_frontend", "desktop"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+
+[lints]
+workspace = true

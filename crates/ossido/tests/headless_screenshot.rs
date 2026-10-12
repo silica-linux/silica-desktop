@@ -8,91 +8,11 @@
     clippy::indexing_slicing
 )]
 
-use std::io::{BufRead, BufReader};
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+mod common;
 
 use base64::Engine;
-use ossido::state::CLEAR_COLOR;
-use silica_control::{Client, Error, ScreenshotParams};
-
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 200;
-
-/// Un Ossido headless con la sua directory runtime; muore con il test.
-struct Headless {
-    child: Child,
-    dir: PathBuf,
-    control: String,
-}
-
-impl Headless {
-    fn start(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("ossido-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-
-        let mut child = Command::new(env!("CARGO_BIN_EXE_ossido"))
-            .args([
-                "--backend",
-                "headless",
-                "--size",
-                &format!("{WIDTH}x{HEIGHT}"),
-            ])
-            .args(["--control", "0"])
-            .env("XDG_RUNTIME_DIR", &dir)
-            .env("RUST_LOG", "warn")
-            .env_remove("WAYLAND_DISPLAY")
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        let control = stdout
-            .lines()
-            .map(Result::unwrap)
-            .find_map(|line| line.strip_prefix("OSSIDO_CONTROL=").map(str::to_owned))
-            .expect("Ossido è uscito senza aprire il canale di controllo");
-        Self {
-            child,
-            dir,
-            control,
-        }
-    }
-
-    fn client(&self) -> Client {
-        Client::connect(&self.control).unwrap()
-    }
-}
-
-impl Drop for Headless {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-fn decode(png_bytes: &[u8]) -> (png::OutputInfo, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(png_bytes))
-        .read_info()
-        .unwrap();
-    let mut pixels = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut pixels).unwrap();
-    (info, pixels)
-}
-
-fn assert_clear_color(pixels: &[u8], x: u32, y: u32) {
-    let offset = ((y * WIDTH + x) * 4) as usize;
-    let pixel = &pixels[offset..offset + 4];
-    for (channel, expected) in pixel.iter().zip(CLEAR_COLOR) {
-        let expected = (expected * 255.0).round() as i32;
-        assert!(
-            (i32::from(*channel) - expected).abs() <= 1,
-            "pixel ({x}, {y}) = {pixel:?}, atteso il colore di fondo {CLEAR_COLOR:?}"
-        );
-    }
-}
+use common::{HEIGHT, Headless, WIDTH, assert_clear_color, decode};
+use silica_control::{Error, ScreenshotParams};
 
 #[test]
 fn screenshot_to_file_has_output_size_and_background() {
