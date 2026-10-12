@@ -57,6 +57,7 @@ Osservazione consentita:
   screenshot, misure (dimensioni, raggi, spaziature, durate e curve delle animazioni).
 - Le osservazioni vanno in `plan/reference/` (gitignored): screenshot e note misurate,
   mai committati.
+  Procedura, condizioni e formato: `docs/reference-capture.md`.
 - Specifiche pubbliche: protocolli Wayland, specifiche freedesktop, documentazione
   Smithay e Flutter.
 
