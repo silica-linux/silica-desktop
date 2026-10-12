@@ -10,7 +10,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/silica-linux/silica"
 
 [workspace.lints.rust]
-# "deny" e non "forbid": l'FFI dell'embedder lo riabilita, e solo lì (cargo xtask unsafe).
+# "deny" e non "forbid": l'FFI dell'embedder e l'EGL di Ossido lo riabilitano, solo lì
+# (cargo xtask unsafe).
 unsafe_code = "deny"
 
 # Mai crashare: vedi AGENTS.md. Nei test sono consentiti (clippy.toml).

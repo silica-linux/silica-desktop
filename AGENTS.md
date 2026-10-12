@@ -23,8 +23,9 @@ environment Linux scritto da zero in Rust, con il linguaggio visivo di macOS 27
 ## Mai crashare
 
 - Nel codice non di test niente `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`;
-  `unsafe` vietato salvo FFI dell'embedder, isolato in un modulo con commento `SAFETY`
-  per ogni blocco. Clippy lo fa rispettare (vedi `[workspace.lints]` in `Cargo.toml`).
+  `unsafe` vietato salvo FFI dell'embedder (`crates/embedder/src/ffi/`) e
+  inizializzazione EGL/GLES di Ossido (`crates/ossido/src/egl.rs`), isolato in un modulo
+  con commento `SAFETY` per ogni blocco. Clippy lo fa rispettare (vedi `[workspace.lints]` in `Cargo.toml`).
 - Errori come `Result` con `?`; input da client Wayland, file e comandi trattati come
   ostili (indici controllati, aritmetica checked).
 - Un client che si comporta male viene disconnesso, mai il compositor che cade.

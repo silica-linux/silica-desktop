@@ -20,8 +20,27 @@ use crate::state::{CLEAR_COLOR, Ossido, State};
 
 pub enum Backend {
     Winit(Box<WinitBackend>),
-    /// Nessuna finestra né GPU: si disegna con pixman solo quando serve una cattura.
-    Headless(PixmanRenderer),
+    /// Nessuna finestra: si disegna solo quando serve una cattura, con GLES su un device
+    /// EGL (la GPU o llvmpipe) se c'è, altrimenti con pixman.
+    Headless(Headless),
+}
+
+pub enum Headless {
+    Gles(Box<GlesRenderer>),
+    Pixman(PixmanRenderer),
+}
+
+/// Il renderer headless, da `OSSIDO_HEADLESS_RENDERER`: GLES su llvmpipe (predefinito),
+/// `gpu` per GLES sulla GPU, `pixman` senza GLES. Se EGL manca, pixman.
+fn headless_renderer() -> Result<Headless, Box<dyn std::error::Error>> {
+    let choice = std::env::var("OSSIDO_HEADLESS_RENDERER").unwrap_or_default();
+    if choice != "pixman" {
+        match crate::egl::headless_renderer(choice == "gpu") {
+            Ok(renderer) => return Ok(Headless::Gles(Box::new(renderer))),
+            Err(err) => warn!("headless senza GLES, uso pixman: {err}"),
+        }
+    }
+    Ok(Headless::Pixman(PixmanRenderer::new()?))
 }
 
 pub struct WinitBackend {
@@ -54,7 +73,7 @@ pub fn init_headless(
     mut display: Display<State>,
     (width, height): (i32, i32),
 ) -> Result<Ossido, Box<dyn std::error::Error>> {
-    let renderer = PixmanRenderer::new()?;
+    let renderer = headless_renderer()?;
     let mode = Mode {
         size: (width, height).into(),
         refresh: NESTED_REFRESH_MHZ,
@@ -146,7 +165,10 @@ impl State {
             Backend::Winit(backend) => {
                 capture::<_, GlesTexture>(backend.graphics.renderer(), &self.output, &self.space)
             }
-            Backend::Headless(renderer) => {
+            Backend::Headless(Headless::Gles(renderer)) => {
+                capture::<_, GlesTexture>(renderer.as_mut(), &self.output, &self.space)
+            }
+            Backend::Headless(Headless::Pixman(renderer)) => {
                 capture::<_, pixman::Image<'static, 'static>>(renderer, &self.output, &self.space)
             }
         }

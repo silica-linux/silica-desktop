@@ -5,6 +5,7 @@ mod capture;
 pub mod commands;
 mod control;
 mod dmabuf;
+mod egl;
 mod handlers;
 mod input;
 mod keys;

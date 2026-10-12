@@ -309,8 +309,9 @@ fn assets() -> Result<()> {
     }
 }
 
-/// Dove `unsafe` è ammesso: l'FFI dell'embedder (AGENTS.md, "Mai crashare").
-const UNSAFE_ALLOWED: &str = "crates/embedder/src/ffi/";
+/// Dove `unsafe` è ammesso: l'FFI dell'embedder e l'inizializzazione EGL di Ossido
+/// (AGENTS.md, "Mai crashare").
+const UNSAFE_ALLOWED: [&str; 2] = ["crates/embedder/src/ffi/", "crates/ossido/src/egl.rs"];
 
 fn unsafe_check() -> Result<()> {
     let root = root()?;
@@ -327,7 +328,10 @@ fn unsafe_check() -> Result<()> {
         .map_err(|e| format!("git non avviabile: {e}"))?;
     let files = String::from_utf8_lossy(&output.stdout);
     let mut offenders = Vec::new();
-    for path in files.lines().filter(|p| !p.starts_with(UNSAFE_ALLOWED)) {
+    for path in files
+        .lines()
+        .filter(|p| !UNSAFE_ALLOWED.iter().any(|allowed| p.starts_with(allowed)))
+    {
         let text = std::fs::read_to_string(root.join(path)).unwrap_or_default();
         // In due pezzi, perché questo file non trovi sé stesso.
         if text.contains(concat!("allow(", "unsafe_code)")) {
@@ -335,11 +339,12 @@ fn unsafe_check() -> Result<()> {
         }
     }
     if offenders.is_empty() {
-        eprintln!("xtask: unsafe ok (solo in {UNSAFE_ALLOWED})");
+        eprintln!("xtask: unsafe ok (solo in {})", UNSAFE_ALLOWED.join(", "));
         Ok(())
     } else {
         Err(format!(
-            "unsafe consentito fuori da {UNSAFE_ALLOWED}:\n  {}",
+            "unsafe consentito fuori da {}:\n  {}",
+            UNSAFE_ALLOWED.join(", "),
             offenders.join("\n  ")
         ))
     }
