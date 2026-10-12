@@ -1,0 +1,17 @@
+name: silica_shell
+description: La shell di Silica in Flutter (M3) - Dock, barra dei menu, Faro, sfondo; un componente per processo.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  silica_ui:
+    path: ../packages/silica_ui
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

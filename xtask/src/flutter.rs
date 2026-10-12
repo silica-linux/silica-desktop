@@ -238,8 +238,19 @@ pub fn bindings() -> Result<()> {
     })
 }
 
+/// La cartella di un progetto Flutter da costruire: `shell` è la shell, il resto un'app
+/// in `apps/`.
+fn app_dir(app: &str) -> Result<PathBuf> {
+    let root = root()?;
+    Ok(if app == "shell" {
+        root.join("shell")
+    } else {
+        root.join("apps").join(app)
+    })
+}
+
 pub fn bundle(app: &str) -> Result<()> {
-    let dir = root()?.join("apps").join(app);
+    let dir = app_dir(app)?;
     if !dir.join("pubspec.yaml").exists() {
         return Err(format!("{} non è un'app Flutter", dir.display()));
     }
@@ -256,7 +267,7 @@ pub fn bundle(app: &str) -> Result<()> {
 /// Bundle release in `build/release/`: asset e `libapp.so`, il Dart compilato AOT con
 /// il frontend e il gen_snapshot dell'SDK (gli stessi passi di `flutter build linux`).
 pub fn bundle_release(app: &str) -> Result<()> {
-    let dir = root()?.join("apps").join(app);
+    let dir = app_dir(app)?;
     if !dir.join("pubspec.yaml").exists() {
         return Err(format!("{} non è un'app Flutter", dir.display()));
     }
@@ -311,11 +322,14 @@ fn app_package(dir: &Path) -> Result<String> {
         .ok_or_else(|| "pubspec.yaml senza name".to_owned())
 }
 
-/// I progetti Dart del repo: app in `apps/` e pacchetti in `packages/`, come
-/// percorsi relativi (`apps/demo`, `packages/silica_ui`).
+/// I progetti Dart del repo: la shell, le app in `apps/` e i pacchetti in `packages/`,
+/// come percorsi relativi (`shell`, `apps/demo`, `packages/silica_ui`).
 pub fn projects() -> Result<Vec<String>> {
     let root = root()?;
     let mut projects = Vec::new();
+    if root.join("shell/pubspec.yaml").exists() {
+        projects.push("shell".to_owned());
+    }
     for parent in ["apps", "packages"] {
         let dir = root.join(parent);
         let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;

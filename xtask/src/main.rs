@@ -58,7 +58,7 @@ fn main() -> ExitCode {
         Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {
             (Some(app), None) => flutter::bundle(app),
             (Some(app), Some("--release")) => flutter::bundle_release(app),
-            _ => Err("uso: cargo xtask bundle <app in apps/> [--release]".to_owned()),
+            _ => Err("uso: cargo xtask bundle <app in apps/ | shell> [--release]".to_owned()),
         },
         _ => Err(
             "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle> [argomenti]"

@@ -384,6 +384,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             icu_data: &options.icu_data,
             aot: options.aot.as_deref(),
             engine_args: &engine_args,
+            dart_args: &options.dart_args,
         },
         callbacks,
     )?;

@@ -262,6 +262,8 @@ pub struct EngineConfig<'a> {
     pub aot: Option<&'a Path>,
     /// Opzioni da riga di comando per l'engine (per esempio `--enable-impeller`).
     pub engine_args: &'a [String],
+    /// Argomenti di `main(List<String> args)` dell'app Dart.
+    pub dart_args: &'a [String],
 }
 
 /// Un engine Flutter in esecuzione. Si usa e si distrugge sul thread di piattaforma.
@@ -276,6 +278,9 @@ pub struct Engine {
     _runners: Box<FlutterCustomTaskRunners>,
     _strings: Vec<CString>,
     _argv: Vec<*const c_char>,
+    /// Gli argomenti di `main` dell'app: l'engine li legge all'avvio dell'isolate.
+    _dart_strings: Vec<CString>,
+    _dart_argv: Vec<*const c_char>,
     _library: FlutterEngineLib,
 }
 
@@ -584,6 +589,12 @@ impl Engine {
         for arg in config.engine_args {
             strings.push(CString::new(arg.as_str()).map_err(|_| Error::Path(arg.clone()))?);
         }
+        let dart_strings = config
+            .dart_args
+            .iter()
+            .map(|arg| CString::new(arg.as_str()).map_err(|_| Error::Path(arg.clone())))
+            .collect::<Result<Vec<CString>, Error>>()?;
+        let dart_argv: Vec<*const c_char> = dart_strings.iter().map(|s| s.as_ptr()).collect();
         let argv: Vec<*const c_char> = strings.iter().skip(2).map(|s| s.as_ptr()).collect();
         let (Some(assets), Some(icu)) = (strings.first(), strings.get(1)) else {
             return Err(Error::Path("argomenti mancanti".to_owned()));
@@ -594,6 +605,8 @@ impl Engine {
             icu_data_path: icu.as_ptr(),
             command_line_argc: i32::try_from(argv.len()).unwrap_or(0),
             command_line_argv: argv.as_ptr(),
+            dart_entrypoint_argc: i32::try_from(dart_argv.len()).unwrap_or(0),
+            dart_entrypoint_argv: dart_argv.as_ptr(),
             custom_task_runners: ptr::from_ref(&*runners),
             log_message_callback: Some(log_message),
             platform_message_callback: Some(platform_message),
@@ -637,6 +650,8 @@ impl Engine {
             _runners: runners,
             _strings: strings,
             _argv: argv,
+            _dart_strings: dart_strings,
+            _dart_argv: dart_argv,
             _library: library,
         })
     }

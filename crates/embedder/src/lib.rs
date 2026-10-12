@@ -89,6 +89,8 @@ pub struct Options {
     pub aot: Option<PathBuf>,
     /// Opzioni passate all'engine così come sono (`--engine-arg`).
     pub engine_args: Vec<String>,
+    /// Argomenti di `main(List<String> args)` dell'app (`--dart-arg`).
+    pub dart_args: Vec<String>,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.
