@@ -16,10 +16,13 @@ costo dell'embedder è l'incognita che pesa su tutto il resto.
 
 - App Flutter su Ossido tramite embedder Rust: finestre, input, HiDPI
 - Poi layer-shell per la shell e stima del costo di manutenzione
+- Renderer OpenGL e prototipo del Dock in Flutter e in Rust (iced), misurati sullo stesso
+  banco di prova (`docs/m1.5-dock.md`)
 
-### Gate 1 · embedder
+### Gate 1 · toolkit della shell
 
-Go: shell in Flutter. No-go: embedder GTK ufficiale, meno integrazione.
+Si sceglie dalle misure del prototipo: shell e app in Flutter con l'embedder custom,
+shell in Rust e app in Flutter, oppure embedder GTK ufficiale come ripiego.
 
 ### M2 · Vetro e finestre
 
