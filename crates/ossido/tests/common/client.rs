@@ -129,6 +129,11 @@ pub struct TestWindow {
 impl TestWindow {
     /// Apre una finestra `WINDOW` piena di `RED_BGRA` e aspetta che Ossido la riceva.
     pub fn open(socket: &Path, title: &str) -> Self {
+        Self::open_sized(socket, title, WINDOW)
+    }
+
+    /// Come `open`, con una dimensione a scelta (in pixel, a scala 1).
+    pub fn open_sized(socket: &Path, title: &str, (w, h): (u32, u32)) -> Self {
         let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
         let mut queue = conn.new_event_queue();
         let qh = queue.handle();
@@ -149,7 +154,6 @@ impl TestWindow {
             queue.blocking_dispatch(&mut app).unwrap();
         }
 
-        let (w, h) = WINDOW;
         let stride = w * 4;
         let mut file = tempfile::tempfile().unwrap();
         file.write_all(&RED_BGRA.repeat((w * h) as usize)).unwrap();

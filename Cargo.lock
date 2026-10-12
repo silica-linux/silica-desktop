@@ -2536,6 +2536,7 @@ name = "ossido"
 version = "0.0.0"
 dependencies = [
  "base64",
+ "ossido-render",
  "png",
  "serde",
  "serde_json",
@@ -2551,6 +2552,10 @@ dependencies = [
 [[package]]
 name = "ossido-render"
 version = "0.0.0"
+dependencies = [
+ "smithay",
+ "tracing",
+]
 
 [[package]]
 name = "owned_ttf_parser"

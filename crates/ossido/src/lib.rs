@@ -11,6 +11,7 @@ mod input;
 mod keys;
 mod layers;
 mod perf;
+mod render;
 pub mod state;
 
 use std::io::Write;

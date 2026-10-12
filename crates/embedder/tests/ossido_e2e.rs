@@ -258,7 +258,8 @@ fn demo_renders_reacts_to_clicks_and_closes() {
 
     // Primo frame: fondo e quadrato sonda a densità 1.
     session.expect_pixel(x + 150, y + 190, IDLE);
-    session.expect_pixel(x + 2, y + 2, LO_DPI);
+    // Dentro la sonda ma fuori dall'angolo tagliato da Ossido (superellisse, raggio 33,5).
+    session.expect_pixel(x + 15, y + 15, LO_DPI);
 
     // Un clic attraversa Ossido, Wayland, l'embedder e Flutter.
     session
@@ -311,7 +312,7 @@ fn demo_renders_at_scale_two() {
     // Geometria logica invariata; lo screenshot è in pixel fisici.
     assert_eq!((window.width, window.height), (200, 150));
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
-    session.expect_pixel(x + 2, y + 2, HI_DPI);
+    session.expect_pixel(x + 30, y + 30, HI_DPI);
     // Il quadrato sonda è 16 pixel logici, quindi 32 fisici.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);

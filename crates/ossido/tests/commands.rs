@@ -89,8 +89,9 @@ fn window_list_focus_move_and_close() {
         .unwrap();
     assert_eq!((moved.x, moved.y), (200, 130));
     let shot = screenshot(&ossido);
-    assert_eq!(pixel(&shot, 200, 130), [255, 0, 0, 255]);
-    assert_clear_color(&shot, 199, 130);
+    // A metà del lato sinistro: lontano dagli angoli tagliati.
+    assert_eq!(pixel(&shot, 200, 160), [255, 0, 0, 255]);
+    assert_clear_color(&shot, 199, 160);
 
     // Senza id, window.close agisce sulla finestra con il focus.
     assert!(!first.close_requested());

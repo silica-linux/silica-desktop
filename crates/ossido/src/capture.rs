@@ -2,6 +2,7 @@
 
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::{ExportMem, ImportAll, Offscreen, Renderer, Texture};
 use smithay::desktop::space::space_render_elements;
 use smithay::desktop::{Space, Window};
@@ -32,7 +33,7 @@ impl Capture {
     }
 }
 
-/// Disegna lo spazio in un buffer fuori schermo e lo rilegge.
+/// Disegna lo spazio in un buffer fuori schermo e lo rilegge (renderer senza effetti).
 pub fn capture<R, T>(
     renderer: &mut R,
     output: &Output,
@@ -42,14 +43,27 @@ where
     R: Renderer + ImportAll + Offscreen<T> + ExportMem,
     R::TextureId: Clone + Texture + 'static,
 {
+    let elements = space_render_elements::<_, Window, _>(renderer, [space], output, 1.0)
+        .map_err(|e| format!("{e:?}"))?;
+    capture_elements(renderer, output, &elements)
+}
+
+/// Disegna gli elementi dati in un buffer fuori schermo e lo rilegge.
+pub fn capture_elements<R, T, E>(
+    renderer: &mut R,
+    output: &Output,
+    elements: &[E],
+) -> Result<Capture, String>
+where
+    R: Renderer + Offscreen<T> + ExportMem,
+    E: RenderElement<R>,
+{
     let mode = output.current_mode().ok_or("output senza modo")?;
     let size = mode.size;
     let width = u32::try_from(size.w).map_err(|_| "larghezza non valida")?;
     let height = u32::try_from(size.h).map_err(|_| "altezza non valida")?;
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
 
-    let elements = space_render_elements::<_, Window, _>(renderer, [space], output, 1.0)
-        .map_err(|e| format!("{e:?}"))?;
     let mut target = renderer
         .create_buffer(Fourcc::Abgr8888, buffer_size)
         .map_err(|e| format!("buffer fuori schermo: {e:?}"))?;
@@ -59,7 +73,7 @@ where
     let scale = output.current_scale().fractional_scale();
     let mut damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
     damage_tracker
-        .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
+        .render_output(renderer, &mut framebuffer, 0, elements, CLEAR_COLOR)
         .map_err(|e| format!("render: {e:?}"))?;
     let mapping = renderer
         .copy_framebuffer(

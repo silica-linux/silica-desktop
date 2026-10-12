@@ -1,7 +1,6 @@
 //! Backend di Ossido: winit (annidato, per lo sviluppo) e headless (test e CI).
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
@@ -15,7 +14,8 @@ use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Rectangle, Transform};
 use tracing::{info, warn};
 
-use crate::capture::{Capture, capture};
+use crate::capture::{Capture, capture, capture_elements};
+use crate::render::output_elements;
 use crate::state::{CLEAR_COLOR, Ossido, State};
 
 pub enum Backend {
@@ -163,10 +163,13 @@ impl State {
     pub fn screenshot(&mut self) -> Result<Capture, String> {
         match &mut self.backend {
             Backend::Winit(backend) => {
-                capture::<_, GlesTexture>(backend.graphics.renderer(), &self.output, &self.space)
+                let renderer = backend.graphics.renderer();
+                let elements = output_elements(renderer, &self.space, &self.output);
+                capture_elements::<_, GlesTexture, _>(renderer, &self.output, &elements)
             }
             Backend::Headless(Headless::Gles(renderer)) => {
-                capture::<_, GlesTexture>(renderer.as_mut(), &self.output, &self.space)
+                let elements = output_elements(renderer, &self.space, &self.output);
+                capture_elements::<_, GlesTexture, _>(renderer.as_mut(), &self.output, &elements)
             }
             Backend::Headless(Headless::Pixman(renderer)) => {
                 capture::<_, pixman::Image<'static, 'static>>(renderer, &self.output, &self.space)
@@ -180,25 +183,13 @@ impl State {
         };
         let size = backend.graphics.window_size();
         let damage = Rectangle::from_size(size);
+        let elements = output_elements(backend.graphics.renderer(), &self.space, &self.output);
         let rendered = match backend.graphics.bind() {
-            Ok((renderer, mut framebuffer)) => smithay::desktop::space::render_output::<
-                _,
-                WaylandSurfaceRenderElement<GlesRenderer>,
-                _,
-                _,
-            >(
-                &self.output,
-                renderer,
-                &mut framebuffer,
-                1.0,
-                0,
-                [&self.space],
-                &[],
-                &mut backend.damage_tracker,
-                CLEAR_COLOR,
-            )
-            .map(|_| ())
-            .map_err(|err| format!("{err:?}")),
+            Ok((renderer, mut framebuffer)) => backend
+                .damage_tracker
+                .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
+                .map(|_| ())
+                .map_err(|err| format!("{err:?}")),
             Err(err) => Err(format!("{err:?}")),
         };
         match rendered {

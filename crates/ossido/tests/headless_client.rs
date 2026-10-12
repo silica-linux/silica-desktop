@@ -21,13 +21,20 @@ fn xdg_toplevel_appears_in_screenshot() {
 
     let (w, h) = WINDOW;
     let at = FIRST_WINDOW_AT;
-    for (x, y) in [(at, at), (at + w / 2, at + h / 2), (at + w - 1, at + h - 1)] {
+    // Centro e metà dei lati: gli angoli sono tagliati (window_corners_follow_the_reference).
+    for (x, y) in [
+        (at + w / 2, at + h / 2),
+        (at, at + h / 2),
+        (at + w - 1, at + h / 2),
+        (at + w / 2, at),
+        (at + w / 2, at + h - 1),
+    ] {
         assert_eq!(
             pixel(&shot, x, y),
             [255, 0, 0, 255],
             "finestra assente in ({x}, {y})"
         );
     }
-    assert_clear_color(&shot, at - 1, at);
-    assert_clear_color(&shot, at + w, at + h);
+    assert_clear_color(&shot, at - 1, at + h / 2);
+    assert_clear_color(&shot, at + w, at + h / 2);
 }
