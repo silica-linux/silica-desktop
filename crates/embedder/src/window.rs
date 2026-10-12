@@ -255,6 +255,20 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         Renderer::Gl => {
             let gl = GlSurface::new(&conn, surface.wl_surface(), options.size)?;
             info!("renderer OpenGL ES: {}", gl.renderer());
+            let (redraw, redraw_channel) = channel::channel::<()>();
+            event_loop
+                .handle()
+                .insert_source(redraw_channel, |event, _, app: &mut App| {
+                    if let (Event::Msg(()), Some(engine)) = (event, &app.engine)
+                        && let Err(err) = engine.schedule_frame()
+                    {
+                        warn!("{err}");
+                    }
+                })
+                .map_err(|e| format!("canale dei ridisegni: {e}"))?;
+            gl.on_redraw(move || {
+                let _ = redraw.send(());
+            });
             Some(gl)
         }
         Renderer::Software => None,
@@ -333,6 +347,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             assets: &options.bundle,
             icu_data: &options.icu_data,
             aot: options.aot.as_deref(),
+            engine_args: &options.engine_args,
         },
         callbacks,
     )?;
@@ -505,6 +520,7 @@ impl App {
             self.size.0.saturating_mul(scale),
             self.size.1.saturating_mul(scale),
         );
+        engine.resize_surface(w, h);
         if let Err(err) = engine.send_window_metrics(w, h, f64::from(scale)) {
             warn!("{err}");
         }

@@ -211,6 +211,7 @@ type RespondFn = unsafe extern "C" fn(
 ) -> FlutterEngineResult;
 
 type RunsAotFn = unsafe extern "C" fn() -> bool;
+type ScheduleFrameFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
 type CreateAotFn = unsafe extern "C" fn(
     *const FlutterEngineAOTDataSource,
     *mut FlutterEngineAOTData,
@@ -219,6 +220,7 @@ type CollectAotFn = unsafe extern "C" fn(FlutterEngineAOTData) -> FlutterEngineR
 
 /// Le funzioni dell'engine usate qui, risolte una volta al caricamento.
 struct Api {
+    schedule_frame: ScheduleFrameFn,
     runs_aot: RunsAotFn,
     create_aot: CreateAotFn,
     collect_aot: CollectAotFn,
@@ -250,6 +252,8 @@ pub struct EngineConfig<'a> {
     pub icu_data: &'a Path,
     /// Il codice Dart compilato AOT (`libapp.so`), per un engine release o profile.
     pub aot: Option<&'a Path>,
+    /// Opzioni da riga di comando per l'engine (per esempio `--enable-impeller`).
+    pub engine_args: &'a [String],
 }
 
 /// Un engine Flutter in esecuzione. Si usa e si distrugge sul thread di piattaforma.
@@ -467,6 +471,7 @@ impl Engine {
         let library = unsafe { FlutterEngineLib::new(config.library) }
             .map_err(|e| Error::Load(e.to_string()))?;
         let api = Api {
+            schedule_frame: symbol!(library, FlutterEngineScheduleFrame),
             runs_aot: symbol!(library, FlutterEngineRunsAOTCompiledDartCode),
             create_aot: symbol!(library, FlutterEngineCreateAOTData),
             collect_aot: symbol!(library, FlutterEngineCollectAOTData),
@@ -554,11 +559,14 @@ impl Engine {
             }
         };
 
-        let strings = vec![
+        let mut strings = vec![
             c_path(config.assets)?,
             c_path(config.icu_data)?,
             CString::from(c"silica-embedder"),
         ];
+        for arg in config.engine_args {
+            strings.push(CString::new(arg.as_str()).map_err(|_| Error::Path(arg.clone()))?);
+        }
         let argv: Vec<*const c_char> = strings.iter().skip(2).map(|s| s.as_ptr()).collect();
         let (Some(assets), Some(icu)) = (strings.first(), strings.get(1)) else {
             return Err(Error::Path("argomenti mancanti".to_owned()));
@@ -643,6 +651,23 @@ impl Engine {
         // SAFETY: engine è vivo; event è inizializzato e vive per la durata della chiamata.
         check("FlutterEngineSendWindowMetricsEvent", unsafe {
             (self.api.metrics)(self.engine, &event)
+        })
+    }
+
+    /// Porta la superficie EGL (se c'è) a `width`×`height` pixel fisici. Va chiamato prima
+    /// di mandare le metriche: Mesa fissa la dimensione del buffer quando il contesto
+    /// diventa corrente, prima del callback del frame.
+    pub fn resize_surface(&self, width: u32, height: u32) {
+        if let Some(gl) = &self._callbacks.gl {
+            gl.resize(width, height);
+        }
+    }
+
+    /// Chiede un frame anche se il framework non ne ha in programma.
+    pub fn schedule_frame(&self) -> Result<(), Error> {
+        // SAFETY: engine è vivo; la funzione non ha altri argomenti.
+        check("FlutterEngineScheduleFrame", unsafe {
+            (self.api.schedule_frame)(self.engine)
         })
     }
 

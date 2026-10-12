@@ -6,6 +6,7 @@
 
 use std::ffi::c_void;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use khronos_egl as egl;
 use wayland_client::Connection;
@@ -35,6 +36,11 @@ pub struct GlSurface {
     surface: egl::Surface,
     /// La finestra EGL e la sua dimensione in pixel fisici; la ridimensiona il thread raster.
     window: Mutex<(WlEglSurface, (u32, u32))>,
+    /// Ridimensionata dall'ultimo swap: Mesa (almeno il percorso software di WSL) applica
+    /// la dimensione nuova solo dal buffer successivo, quindi serve un altro frame.
+    resized: AtomicBool,
+    /// Chiede all'engine un frame in più; lo imposta l'embedder.
+    redraw: Mutex<Option<Box<dyn Fn() + Send>>>,
     renderer: String,
 }
 
@@ -122,6 +128,8 @@ impl GlSurface {
             resource_context,
             surface,
             window: Mutex::new((window, size)),
+            resized: AtomicBool::new(false),
+            redraw: Mutex::new(None),
             renderer: String::new(),
         };
         // Lo swap non aspetta il frame callback: il ritmo lo dà il vsync dell'engine, e il
@@ -183,11 +191,25 @@ impl GlSurface {
             .is_ok()
     }
 
-    pub(super) fn present(&self) -> bool {
-        self.egl.swap_buffers(self.display, self.surface).is_ok()
+    /// Chi chiamare quando serve un frame in più dopo un ridimensionamento.
+    pub fn on_redraw(&self, redraw: impl Fn() + Send + 'static) {
+        if let Ok(mut slot) = self.redraw.lock() {
+            *slot = Some(Box::new(redraw));
+        }
     }
 
-    /// Porta la finestra EGL alla dimensione del frame che l'engine sta per disegnare.
+    pub(super) fn present(&self) -> bool {
+        let swapped = self.egl.swap_buffers(self.display, self.surface).is_ok();
+        if self.resized.swap(false, Ordering::AcqRel)
+            && let Ok(redraw) = self.redraw.lock()
+            && let Some(redraw) = redraw.as_ref()
+        {
+            redraw();
+        }
+        swapped
+    }
+
+    /// Porta la finestra EGL a una nuova dimensione; vale dal prossimo buffer.
     pub(super) fn resize(&self, width: u32, height: u32) {
         let Ok(mut window) = self.window.lock() else {
             return;
@@ -200,6 +222,7 @@ impl GlSurface {
         };
         window.0.resize(w, h, 0, 0);
         window.1 = (width, height);
+        self.resized.store(true, Ordering::Release);
     }
 
     pub(super) fn proc_address(&self, name: &str) -> *mut c_void {

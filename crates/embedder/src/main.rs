@@ -1,7 +1,8 @@
 //! Avvio dell'embedder:
 //!
 //! ```text
-//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl] [--aot LIBAPP] BUNDLE
+//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl] [--aot LIBAPP]
+//!     [--engine-arg ARG]... BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
 //! ```
@@ -55,6 +56,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut layer: Option<LayerOptions> = None;
     let mut renderer = Renderer::default();
     let mut aot = None;
+    let mut engine_args = Vec::new();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
         match arg.as_str() {
@@ -105,6 +107,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             }
             "--namespace" => layer_options(&mut layer).namespace = value()?,
             "--aot" => aot = Some(PathBuf::from(value()?)),
+            "--engine-arg" => engine_args.push(value()?),
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -132,5 +135,6 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         layer,
         renderer,
         aot,
+        engine_args,
     })
 }

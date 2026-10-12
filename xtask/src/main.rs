@@ -7,6 +7,7 @@
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
+mod bench;
 mod flutter;
 
 use std::collections::{BTreeSet, HashMap};
@@ -47,6 +48,10 @@ fn main() -> ExitCode {
             Some(other) => Err(format!("uso: cargo xtask engine [--release], non {other}")),
         },
         Some("bindings") => flutter::bindings(),
+        Some("bench") => match args.get(1).map(String::as_str) {
+            Some("dock") => bench::dock(args.get(2..).unwrap_or_default()),
+            _ => Err("uso: cargo xtask bench dock [--runs N] [--seconds S] [--only VARIANTE]".to_owned()),
+        },
         Some("keymap") => flutter::keymap(),
         Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {
             (Some(app), None) => flutter::bundle(app),
@@ -74,7 +79,7 @@ pub(crate) fn root() -> Result<PathBuf> {
         .ok_or_else(|| "radice del repository non trovata".to_owned())
 }
 
-fn cargo_command(args: &[&str]) -> Command {
+pub(crate) fn cargo_command(args: &[&str]) -> Command {
     let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned()));
     command.args(args);
     if let Ok(root) = root() {
@@ -154,7 +159,7 @@ fn run(args: &[String]) -> Result<()> {
 
 /// In WSL2 il link `$XDG_RUNTIME_DIR/wayland-0` verso WSLg a volte manca: in quel caso
 /// winit va puntato direttamente al socket di WSLg.
-fn wslg_socket() -> Option<PathBuf> {
+pub(crate) fn wslg_socket() -> Option<PathBuf> {
     let display = std::env::var("WAYLAND_DISPLAY").ok()?;
     let runtime = std::env::var("XDG_RUNTIME_DIR").ok()?;
     let wslg = Path::new("/mnt/wslg/runtime-dir").join(&display);

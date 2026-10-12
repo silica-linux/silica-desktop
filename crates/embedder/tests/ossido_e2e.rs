@@ -339,6 +339,41 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
 }
 
 #[test]
+fn gl_layer_at_scale_two_gets_its_size_and_clicks() {
+    // Il caso di M1.5: layer OpenGL a scala 2. In WSL con d3d12 il primo buffer usciva
+    // alla dimensione vecchia (vedi GlSurface::present); qui con llvmpipe non succede,
+    // quel caso lo copre `cargo xtask bench dock`, che fallisce senza frame.
+    let args: Vec<String> = [
+        "--renderer",
+        "gl",
+        "--layer",
+        "bottom",
+        "--anchor",
+        "left,right,bottom",
+        "--size",
+        "320x100",
+        "--namespace",
+        "gl-layer",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let session = Session::start_with("gl-layer", (640, 480), 2, &args);
+    let layer = wait_for("il layer alla dimensione chiesta", || {
+        Some(session.layer("gl-layer")).filter(|l| (l.width, l.height) == (320, 100))
+    });
+    let (x, y) = (layer.x as u32 * 2, layer.y as u32 * 2);
+    session.expect_pixel(x + 100, y + 150, IDLE);
+    session
+        .client()
+        .call(
+            INPUT_CLICK,
+            json!({ "x": layer.x + 160, "y": layer.y + 50 }),
+        )
+        .unwrap();
+    session.expect_pixel(x + 100, y + 150, TAPPED);
+}
+
+#[test]
 fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
     const BAR: u32 = 48;
     let bar_args: Vec<String> = [

@@ -58,7 +58,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop: EventLoop<'static, _> = EventLoop::try_new()?;
     let display: Display<State> = Display::new()?;
     let mut ossido = match options.backend {
-        BackendKind::Winit => backend::init_winit(&mut event_loop, display)?,
+        BackendKind::Winit => backend::init_winit(&mut event_loop, display, options.size)?,
         BackendKind::Headless => backend::init_headless(&mut event_loop, display, options.size)?,
     };
 

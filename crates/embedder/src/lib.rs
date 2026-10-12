@@ -74,6 +74,8 @@ pub struct Options {
     pub renderer: Renderer,
     /// `libapp.so` compilato AOT, per un engine release; con un engine debug si ignora.
     pub aot: Option<PathBuf>,
+    /// Opzioni passate all'engine così come sono (`--engine-arg`).
+    pub engine_args: Vec<String>,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.

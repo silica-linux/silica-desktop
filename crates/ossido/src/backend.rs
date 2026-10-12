@@ -80,8 +80,17 @@ pub fn init_headless(
 pub fn init_winit(
     event_loop: &mut EventLoop<'static, Ossido>,
     mut display: Display<State>,
+    (width, height): (i32, i32),
 ) -> Result<Ossido, Box<dyn std::error::Error>> {
-    let (graphics, winit_loop) = winit::init::<GlesRenderer>()?;
+    // La finestra annidata ha la dimensione chiesta in pixel fisici, come l'output headless.
+    let attributes = smithay::reexports::winit::window::Window::default_attributes()
+        .with_inner_size(smithay::reexports::winit::dpi::PhysicalSize::new(
+            width.max(1).unsigned_abs(),
+            height.max(1).unsigned_abs(),
+        ))
+        .with_title("Ossido")
+        .with_visible(true);
+    let (graphics, winit_loop) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     let mode = Mode {
         size: graphics.window_size(),
         refresh: NESTED_REFRESH_MHZ,
