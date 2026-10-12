@@ -2,6 +2,7 @@
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -10,6 +11,9 @@ use smithay_client_toolkit::reexports::calloop::EventLoop;
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
+use smithay_client_toolkit::seat::keyboard::{
+    KeyEvent as SeatKeyEvent, KeyboardHandler, Keysym, Modifiers,
+};
 use smithay_client_toolkit::seat::pointer::{
     PointerEvent as SeatPointerEvent, PointerEventKind, PointerHandler,
 };
@@ -22,16 +26,52 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{
-    delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_shm, delegate_xdg_shell, delegate_xdg_window, registry_handlers,
+    delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window, registry_handlers,
 };
 use tracing::{info, warn};
 use wayland_client::globals::registry_queue_init;
-use wayland_client::protocol::{wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
+use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use crate::Options;
-use crate::ffi::{Callbacks, Engine, EngineConfig, Frame, PointerEvent, PointerPhase, Task};
+use crate::ffi::{
+    Callbacks, Engine, EngineConfig, Frame, KeyEvent, PlatformMessage, PointerEvent, PointerPhase,
+    Task,
+};
+use crate::keyboard::{Keyboard, edit_key, raw_key_message};
+use crate::text_input::{self, EditKey, TextInput};
+
+/// Esito di un tasto mandato al framework, con l'azione di editing da fare se ignorato.
+struct KeyResult {
+    handled: bool,
+    edit: Option<EditKey>,
+}
+
+/// Raccoglie le risposte delle due strade di un tasto; all'ultima manda il risultato.
+struct KeyJoin {
+    remaining: u8,
+    handled: bool,
+    edit: Option<EditKey>,
+    results: channel::Sender<KeyResult>,
+}
+
+impl KeyJoin {
+    fn done(join: &Mutex<KeyJoin>, handled: bool) {
+        let Ok(mut join) = join.lock() else {
+            return;
+        };
+        join.handled |= handled;
+        join.remaining = join.remaining.saturating_sub(1);
+        if join.remaining == 0 {
+            let result = KeyResult {
+                handled: join.handled,
+                edit: join.edit.take(),
+            };
+            let _ = join.results.send(result);
+        }
+    }
+}
 
 /// Codici dei pulsanti del mouse (linux/input-event-codes.h) e maschere di Flutter.
 const BTN_LEFT: u32 = 0x110;
@@ -73,6 +113,11 @@ struct App {
     pool: SlotPool,
     window: Window,
     pointer: Option<wl_pointer::WlPointer>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    keys: Keyboard,
+    modifiers: Modifiers,
+    text_input: TextInput,
+    key_results: channel::Sender<KeyResult>,
     engine: Option<Engine>,
 
     tasks: BinaryHeap<Reverse<Queued>>,
@@ -142,6 +187,24 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .map_err(|e| format!("canale dei task: {e}"))?;
+    let (message_sender, message_channel) = channel::channel::<PlatformMessage>();
+    event_loop
+        .handle()
+        .insert_source(message_channel, |event, _, app: &mut App| {
+            if let Event::Msg(message) = event {
+                app.handle_message(message);
+            }
+        })
+        .map_err(|e| format!("canale dei messaggi: {e}"))?;
+    let (key_results, key_channel) = channel::channel::<KeyResult>();
+    event_loop
+        .handle()
+        .insert_source(key_channel, |event, _, app: &mut App| {
+            if let Event::Msg(result) = event {
+                app.key_result(result);
+            }
+        })
+        .map_err(|e| format!("canale dei tasti: {e}"))?;
     let frame_qh = qh.clone();
     event_loop
         .handle()
@@ -163,6 +226,11 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         present: Box::new(move |frame| {
             let _ = frame_sender.send(frame);
         }),
+        platform_message: Box::new(move |message| {
+            // Se il ciclo è chiuso il messaggio cade con il suo handle: l'engine si sta
+            // spegnendo e non aspetta più risposte.
+            let _ = message_sender.send(message);
+        }),
     };
     let engine = Engine::run(
         &EngineConfig {
@@ -182,6 +250,11 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         pool,
         window,
         pointer: None,
+        keyboard: None,
+        keys: Keyboard::default(),
+        modifiers: Modifiers::default(),
+        text_input: TextInput::default(),
+        key_results,
         engine: Some(engine),
         tasks: BinaryHeap::new(),
         next_seq: 0,
@@ -205,6 +278,104 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl App {
+    /// Risponde a un messaggio del framework. Ogni messaggio con handle riceve una
+    /// risposta, vuota se il canale non è gestito.
+    fn handle_message(&mut self, message: PlatformMessage) {
+        let reply = match message.channel.as_str() {
+            text_input::CHANNEL => self.text_input.handle_call(&message.data),
+            // StandardMethodCodec: getKeyboardState, i tasti premuti fisica → logica.
+            "flutter/keyboard" => crate::codec::success_int_map(
+                self.keys
+                    .pressed()
+                    .iter()
+                    .map(|(physical, logical)| (*physical as i64, *logical as i64)),
+            ),
+            _ => Vec::new(),
+        };
+        if let (Some(engine), Some(handle)) = (&self.engine, message.response)
+            && let Err(err) = engine.respond(handle, &reply)
+        {
+            warn!("risposta su {}: {err}", message.channel);
+        }
+    }
+
+    /// Manda un tasto al framework per le due strade che si aspetta (dato tasto e
+    /// messaggio `flutter/keyevent`); se nessuna delle due lo consuma, l'azione di
+    /// editing va al campo di testo.
+    fn send_key(&self, event: &KeyEvent, raw: Option<Vec<u8>>, edit: Option<EditKey>) {
+        let Some(engine) = &self.engine else {
+            return;
+        };
+        let join = Arc::new(Mutex::new(KeyJoin {
+            remaining: if raw.is_some() { 2 } else { 1 },
+            handled: false,
+            edit,
+            results: self.key_results.clone(),
+        }));
+        let data_join = Arc::clone(&join);
+        if let Err(err) = engine.send_key(event, move |handled| KeyJoin::done(&data_join, handled))
+        {
+            warn!("{err}");
+            KeyJoin::done(&join, false);
+        }
+        if let Some(raw) = raw {
+            let raw_join = Arc::clone(&join);
+            let sent = engine.send_message_with_reply("flutter/keyevent", &raw, move |reply| {
+                let handled = serde_json::from_slice::<serde_json::Value>(&reply)
+                    .ok()
+                    .and_then(|reply| reply.get("handled")?.as_bool())
+                    .unwrap_or(false);
+                KeyJoin::done(&raw_join, handled);
+            });
+            if let Err(err) = sent {
+                warn!("{err}");
+                KeyJoin::done(&join, false);
+            }
+        }
+    }
+
+    fn gtk_modifiers(&self) -> i64 {
+        use crate::keyboard::gtk_modifiers::{ALT, CAPS_LOCK, CONTROL, META, NUM_LOCK, SHIFT};
+        let m = &self.modifiers;
+        [
+            (m.shift, SHIFT),
+            (m.caps_lock, CAPS_LOCK),
+            (m.ctrl, CONTROL),
+            (m.alt, ALT),
+            (m.num_lock, NUM_LOCK),
+            (m.logo, META),
+        ]
+        .into_iter()
+        .filter(|(on, _)| *on)
+        .fold(0, |mask, (_, bit)| mask | bit)
+    }
+
+    /// Un tasto non consumato dal framework va al campo di testo attivo.
+    fn key_result(&mut self, result: KeyResult) {
+        tracing::debug!(
+            "tasto gestito dal framework: {}, editing: {:?}",
+            result.handled,
+            result.edit
+        );
+        let (false, Some(edit)) = (result.handled, result.edit) else {
+            return;
+        };
+        let Some(engine) = &self.engine else {
+            return;
+        };
+        for message in self.text_input.handle_key(&edit) {
+            if let Err(err) = engine.send_message(text_input::CHANNEL, &message) {
+                warn!("{err}");
+            }
+        }
+    }
+
+    fn now_micros(&self) -> u64 {
+        self.engine
+            .as_ref()
+            .map_or(0, |engine| engine.current_time() / 1000)
+    }
+
     /// Esegue i task scaduti e dice quanto aspettare il prossimo.
     fn run_due_tasks(&mut self) -> Duration {
         let Some(engine) = &self.engine else {
@@ -400,6 +571,12 @@ impl SeatHandler for App {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            match self.seat_state.get_keyboard(qh, &seat, None) {
+                Ok(keyboard) => self.keyboard = Some(keyboard),
+                Err(err) => warn!("tastiera non disponibile: {err}"),
+            }
+        }
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seat_state.get_pointer(qh, &seat) {
                 Ok(pointer) => self.pointer = Some(pointer),
@@ -419,6 +596,11 @@ impl SeatHandler for App {
             && let Some(pointer) = self.pointer.take()
         {
             pointer.release();
+        }
+        if capability == Capability::Keyboard
+            && let Some(keyboard) = self.keyboard.take()
+        {
+            keyboard.release();
         }
     }
 
@@ -500,6 +682,90 @@ impl PointerHandler for App {
     }
 }
 
+impl KeyboardHandler for App {
+    fn enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+        _: &[u32],
+        _: &[Keysym],
+    ) {
+    }
+
+    fn leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+        // Fuori dalla finestra i rilasci non arrivano: li si sintetizza ora.
+        let micros = self.now_micros();
+        for event in self.keys.release_all(micros) {
+            self.send_key(&event, None, None);
+        }
+    }
+
+    fn press_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: SeatKeyEvent,
+    ) {
+        let keysym = event.keysym.raw();
+        let utf8 = event.utf8.as_deref();
+        let micros = self.now_micros();
+        let key = self.keys.press(event.raw_code, keysym, utf8, micros);
+        let raw = raw_key_message(true, event.raw_code, keysym, utf8, self.gtk_modifiers());
+        let edit = edit_key(
+            keysym,
+            utf8,
+            self.modifiers.shift,
+            self.modifiers.ctrl || self.modifiers.alt,
+        );
+        self.send_key(&key, Some(raw), edit);
+    }
+
+    fn release_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: SeatKeyEvent,
+    ) {
+        let micros = self.now_micros();
+        if let Some(key) = self.keys.release(event.raw_code, micros) {
+            let raw = raw_key_message(
+                false,
+                event.raw_code,
+                event.keysym.raw(),
+                None,
+                self.gtk_modifiers(),
+            );
+            self.send_key(&key, Some(raw), None);
+        }
+    }
+
+    fn update_modifiers(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        modifiers: Modifiers,
+        _: u32,
+    ) {
+        self.modifiers = modifiers;
+    }
+}
+
 impl ShmHandler for App {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
@@ -518,6 +784,7 @@ delegate_output!(App);
 delegate_shm!(App);
 delegate_seat!(App);
 delegate_pointer!(App);
+delegate_keyboard!(App);
 delegate_xdg_shell!(App);
 delegate_xdg_window!(App);
 delegate_registry!(App);

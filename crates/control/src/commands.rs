@@ -22,6 +22,8 @@ pub const SESSION_QUIT: &str = "session.quit";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
 pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
+pub const INPUT_KEY: &str = "input.key";
+pub const INPUT_TYPE: &str = "input.type";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -212,6 +214,37 @@ pub const CATALOG: &[CommandSpec] = &[
         shortcut: None,
         params: point,
     },
+    CommandSpec {
+        id: INPUT_KEY,
+        label: "Premi un tasto",
+        description: "Preme e rilascia un tasto per nome xkb (Return, BackSpace, Escape, Left...) o carattere; con pressed solo pressione o rilascio.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "pressed": {"type": "boolean"}
+                },
+                "required": ["key"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: INPUT_TYPE,
+        label: "Scrivi testo",
+        description: "Scrive un testo tasto per tasto nella finestra con il focus.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": false
+            })
+        },
+    },
 ];
 
 pub fn find(id: &str) -> Option<&'static CommandSpec> {
@@ -296,6 +329,21 @@ pub struct Click {
     pub y: f64,
     #[serde(default)]
     pub button: MouseButton,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Key {
+    pub key: String,
+    /// Assente: pressione e rilascio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeText {
+    pub text: String,
 }
 
 /// Una finestra in [`WINDOW_LIST`].

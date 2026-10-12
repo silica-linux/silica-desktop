@@ -5,7 +5,7 @@
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
 //! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`).
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
-//! - `engine`, `bindings`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
+//! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
 mod flutter;
 
@@ -43,12 +43,13 @@ fn main() -> ExitCode {
         Some("unsafe") => unsafe_check(),
         Some("engine") => flutter::engine(),
         Some("bindings") => flutter::bindings(),
+        Some("keymap") => flutter::keymap(),
         Some("bundle") => match args.get(1) {
             Some(app) => flutter::bundle(app),
             None => Err("uso: cargo xtask bundle <app in apps/>".to_owned()),
         },
         _ => Err(
-            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|bundle> [argomenti]"
+            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle> [argomenti]"
                 .to_owned(),
         ),
     };

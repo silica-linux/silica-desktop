@@ -4,9 +4,15 @@
 //!   esegue i task che l'engine vi accoda.
 //! - L'engine disegna con il renderer software sul suo thread raster; ogni frame arriva
 //!   qui per canale e va in un buffer `wl_shm`. Il renderer GL arriva dopo il gate 1.
-//! - Gli eventi del puntatore diventano `FlutterPointerEvent` in pixel fisici.
+//! - Gli eventi del puntatore diventano `FlutterPointerEvent` in pixel fisici; i tasti
+//!   `FlutterKeyEvent`, e quelli che il framework non consuma vanno al campo di testo
+//!   attivo (`flutter/textinput`).
 
+mod codec;
 mod ffi;
+mod keyboard;
+mod keymap;
+mod text_input;
 mod window;
 
 use std::path::PathBuf;

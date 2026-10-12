@@ -59,6 +59,8 @@ pub struct State {
     /// Ultimo id assegnato a una finestra.
     pub next_window_id: u64,
     pub shortcuts: Vec<(Shortcut, &'static str)>,
+    /// Keycode per i tasti sintetici (`input.key`, `input.type`).
+    pub keys: crate::keys::KeyLookup,
 }
 
 impl State {
@@ -129,6 +131,7 @@ impl State {
             mapped: 0,
             next_window_id: 0,
             shortcuts: crate::commands::shortcuts(),
+            keys: crate::keys::KeyLookup::new()?,
         })
     }
 

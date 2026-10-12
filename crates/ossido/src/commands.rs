@@ -7,13 +7,14 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE, ExecuteParams,
-    INPUT_CLICK, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, PointerButton, PointerMove,
-    SESSION_QUIT, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MOVE, WindowInfo,
-    WindowMove, WindowTarget,
+    INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key,
+    PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS,
+    WINDOW_LIST, WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
-use smithay::backend::input::ButtonState;
+use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
+use smithay::input::keyboard::{FilterResult, Keycode};
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
@@ -127,12 +128,71 @@ impl State {
                 self.pointer_button(button.code(), ButtonState::Released, time);
                 Ok(Value::Null)
             }
+            INPUT_KEY => {
+                let Key { key, pressed } = parse_required(params)?;
+                let (code, shift) = self
+                    .keys
+                    .find(&key)
+                    .ok_or_else(|| format!("tasto sconosciuto: {key}"))?;
+                let states: &[KeyState] = match pressed {
+                    Some(true) => &[KeyState::Pressed],
+                    Some(false) => &[KeyState::Released],
+                    None => &[KeyState::Pressed, KeyState::Released],
+                };
+                for state in states {
+                    self.synthetic_key(code, shift, *state);
+                }
+                Ok(Value::Null)
+            }
+            INPUT_TYPE => {
+                let TypeText { text } = parse_required(params)?;
+                // Si controlla tutto prima di premere qualcosa: niente testo a metà.
+                let codes = text
+                    .chars()
+                    .map(|ch| {
+                        self.keys
+                            .find(&ch.to_string())
+                            .ok_or_else(|| format!("carattere non digitabile: {ch:?}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                for (code, shift) in codes {
+                    self.synthetic_key(code, shift, KeyState::Pressed);
+                    self.synthetic_key(code, shift, KeyState::Released);
+                }
+                Ok(Value::Null)
+            }
             SESSION_QUIT => {
                 info!("uscita richiesta");
                 self.loop_signal.stop();
                 Ok(Value::Null)
             }
             other => Err(format!("comando sconosciuto: {other}")),
+        }
+    }
+
+    /// Un tasto sintetico verso la finestra con il focus, con Maiusc attorno se serve.
+    /// Passa dallo stesso filtro dei tasti veri, quindi anche le scorciatoie funzionano.
+    fn synthetic_key(&mut self, code: u32, shift: bool, state: KeyState) {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let time = self.now_msec();
+        let press = |state: &mut Self, code: u32, key_state: KeyState| {
+            keyboard.input::<(), _>(
+                state,
+                Keycode::new(code),
+                key_state,
+                SERIAL_COUNTER.next_serial(),
+                time,
+                |_, _, _| FilterResult::Forward,
+            );
+        };
+        if shift && state == KeyState::Pressed {
+            press(self, crate::keys::SHIFT_LEFT, KeyState::Pressed);
+        }
+        press(self, code, state);
+        if shift && state == KeyState::Released {
+            press(self, crate::keys::SHIFT_LEFT, KeyState::Released);
         }
     }
 

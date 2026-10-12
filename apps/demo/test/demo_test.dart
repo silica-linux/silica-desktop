@@ -1,18 +1,34 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_demo/main.dart';
 
 void main() {
+  Color background(WidgetTester tester) =>
+      tester.widget<ColoredBox>(find.byType(ColoredBox).first).color;
+
   testWidgets('un tocco cambia colore e contatore', (tester) async {
     await tester.pumpWidget(const DemoApp());
     expect(find.text('Silica · 0'), findsOneWidget);
-    ColoredBox box() => tester.widget(find.byType(ColoredBox).first);
-    expect(box().color, idle);
+    expect(background(tester), idle);
 
-    await tester.tap(find.byType(GestureDetector));
+    await tester.tapAt(const Offset(10, 300));
     await tester.pump();
     expect(find.text('Silica · 1'), findsOneWidget);
-    expect(box().color, tapped);
+    expect(background(tester), tapped);
+  });
+
+  testWidgets('scrivere la parola magica colora il fondo, Esc azzera', (tester) async {
+    await tester.pumpWidget(const DemoApp());
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText), magicWord);
+    await tester.pump();
+    expect(background(tester), typed);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(background(tester), idle);
+    expect(find.text(magicWord), findsNothing);
   });
 
   testWidgets('il quadrato sonda segue il devicePixelRatio', (tester) async {

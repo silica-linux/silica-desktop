@@ -17,11 +17,14 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use silica_control::commands::{INPUT_CLICK, WINDOW_CLOSE, WINDOW_LIST, WindowInfo};
+use silica_control::commands::{
+    INPUT_CLICK, INPUT_KEY, INPUT_TYPE, WINDOW_CLOSE, WINDOW_LIST, WindowInfo,
+};
 use silica_control::{Client, ScreenshotParams};
 
 const IDLE: [u8; 4] = [0x33, 0x66, 0xCC, 0xFF];
 const TAPPED: [u8; 4] = [0xCC, 0x66, 0x33, 0xFF];
+const TYPED: [u8; 4] = [0x33, 0xCC, 0x66, 0xFF];
 const LO_DPI: [u8; 4] = [0xFF, 0x00, 0xFF, 0xFF];
 const HI_DPI: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF];
 const APP_ID: &str = "dev.frascella.silica.Flutter";
@@ -123,7 +126,10 @@ impl Session {
                 "WAYLAND_DISPLAY",
                 wayland.expect("Ossido senza socket Wayland"),
             )
-            .env("RUST_LOG", "warn")
+            .env(
+                "RUST_LOG",
+                std::env::var("E2E_LOG").unwrap_or_else(|_| "warn".into()),
+            )
             .spawn()
             .unwrap();
         Self {
@@ -239,6 +245,29 @@ fn demo_renders_reacts_to_clicks_and_closes() {
         "l'embedder non è uscito"
     );
     assert!(status.unwrap().success(), "uscita con {status:?}");
+}
+
+#[test]
+fn keyboard_reaches_text_field_and_hardware_keyboard() {
+    let session = Session::start("keys", (640, 480), 1, (300, 200));
+    let window = session.window();
+    let (x, y) = (window.x as u32, window.y as u32);
+    session.expect_pixel(x + 150, y + 30, IDLE);
+
+    // Testo: tasti non consumati dal framework → flutter/textinput → EditableText.
+    let mut client = session.client();
+    client.call(INPUT_TYPE, json!({"text": "ciao"})).unwrap();
+    session.expect_pixel(x + 150, y + 30, TYPED);
+
+    // Backspace e riscrittura passano dal modello di editing dell'embedder.
+    client.call(INPUT_KEY, json!({"key": "BackSpace"})).unwrap();
+    session.expect_pixel(x + 150, y + 30, IDLE);
+    client.call(INPUT_TYPE, json!({"text": "o"})).unwrap();
+    session.expect_pixel(x + 150, y + 30, TYPED);
+
+    // Esc: evento tasto gestito da HardwareKeyboard, che azzera il campo.
+    client.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
+    session.expect_pixel(x + 150, y + 30, IDLE);
 }
 
 #[test]

@@ -189,3 +189,110 @@ pub fn check(app: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Estrae una mappa `chiave: Tipo.nome,` da `keyboard_maps.g.dart` e risolve i nomi.
+fn dart_map(
+    maps: &str,
+    map_name: &str,
+    values: &std::collections::HashMap<String, u64>,
+) -> Result<Vec<(u32, u64)>> {
+    let start = maps
+        .find(&format!("{map_name} = "))
+        .ok_or_else(|| format!("{map_name} assente"))?;
+    let body = maps
+        .get(start..)
+        .and_then(|rest| rest.split_once("};"))
+        .map(|(body, _)| body)
+        .ok_or_else(|| format!("{map_name} non chiusa"))?;
+    let mut entries = Vec::new();
+    for line in body.lines().skip(1) {
+        let Some((key, value)) = line.trim().trim_end_matches(',').split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let key = match key.strip_prefix("0x") {
+            Some(hex) => u32::from_str_radix(hex, 16),
+            None => key.parse(),
+        }
+        .map_err(|e| format!("{map_name}: chiave {key}: {e}"))?;
+        let name = value
+            .trim()
+            .rsplit('.')
+            .next()
+            .ok_or_else(|| format!("{map_name}: valore {value}"))?;
+        let code = values
+            .get(name)
+            .ok_or_else(|| format!("{map_name}: {name} non definito"))?;
+        entries.push((key, *code));
+    }
+    entries.sort_unstable();
+    entries.dedup_by_key(|(key, _)| *key);
+    Ok(entries)
+}
+
+/// Rigenera `crates/embedder/src/keymap.rs` dalle tabelle dell'SDK Flutter.
+pub fn keymap() -> Result<()> {
+    let services = sdk_root()?.join("packages/flutter/lib/src/services");
+    let read = |name: &str| {
+        std::fs::read_to_string(services.join(name)).map_err(|e| format!("{name}: {e}"))
+    };
+    let keys = read("keyboard_key.g.dart")?;
+    let maps = read("keyboard_maps.g.dart")?;
+
+    // `static const LogicalKeyboardKey nome = LogicalKeyboardKey(0x...);`
+    let mut logical = std::collections::HashMap::new();
+    let mut physical = std::collections::HashMap::new();
+    for line in keys.lines() {
+        let Some(rest) = line.trim().strip_prefix("static const ") else {
+            continue;
+        };
+        let Some((kind, rest)) = rest.split_once(' ') else {
+            continue;
+        };
+        let Some((name, value)) = rest.split_once(" = ") else {
+            continue;
+        };
+        let Some(hex) = value.split_once("(0x").and_then(|(_, v)| v.split_once(')')) else {
+            continue;
+        };
+        let Ok(code) = u64::from_str_radix(hex.0, 16) else {
+            continue;
+        };
+        match kind {
+            "LogicalKeyboardKey" => logical.insert(name.to_owned(), code),
+            "PhysicalKeyboardKey" => physical.insert(name.to_owned(), code),
+            _ => None,
+        };
+    }
+
+    let table = |name: &str, doc: &str, entries: &[(u32, u64)]| {
+        let rows: String = entries
+            .iter()
+            .map(|(key, value)| format!("    (0x{key:08x}, 0x{value:011x}),\n"))
+            .collect();
+        format!("/// {doc}\npub const {name}: &[(u32, u64)] = &[\n{rows}];\n")
+    };
+    let out = format!(
+        "//! Generato da `cargo xtask keymap` da keyboard_maps.g.dart dell'SDK Flutter\n\
+         //! (BSD, The Flutter Authors). Non modificare a mano.\n\n{}\n{}\n{}",
+        table(
+            "LINUX_TO_PHYSICAL",
+            "Keycode xkb (evdev + 8) → chiave fisica di Flutter. Ordinata per chiave.",
+            &dart_map(&maps, "kLinuxToPhysicalKey", &physical)?,
+        ),
+        table(
+            "GTK_TO_LOGICAL",
+            "Keysym xkb → chiave logica di Flutter. Ordinata per chiave.",
+            &dart_map(&maps, "kGtkToLogicalKey", &logical)?,
+        ),
+        table(
+            "GTK_NUMPAD",
+            "Keysym del tastierino numerico → chiave logica di Flutter. Ordinata per chiave.",
+            &dart_map(&maps, "kGtkNumpadMap", &logical)?,
+        ),
+    );
+    let path = root()?.join("crates/embedder/src/keymap.rs");
+    std::fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))?;
+    eprintln!("xtask: {}", path.display());
+    Ok(())
+}

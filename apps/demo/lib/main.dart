@@ -1,13 +1,21 @@
 // App di prova per l'embedder di Silica: colori noti, così i test leggono lo
-// screenshot. Ogni tocco alterna il fondo tra [idle] e [tapped]; il quadrato in
-// alto a sinistra dice il devicePixelRatio ([hiDpi] da 2 in su, altrimenti [loDpi]).
+// screenshot.
+//
+// - Ogni tocco alterna il fondo tra [idle] e [tapped].
+// - Scrivere "ciao" nel campo di testo rende il fondo [typed] (input di testo).
+// - Esc azzera tocchi e testo (eventi tasto, via HardwareKeyboard).
+// - Il quadrato in alto a sinistra dice il devicePixelRatio: [hiDpi] da 2 in su,
+//   altrimenti [loDpi].
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 const Color idle = Color(0xFF3366CC);
 const Color tapped = Color(0xFFCC6633);
+const Color typed = Color(0xFF33CC66);
 const Color loDpi = Color(0xFFFF00FF);
 const Color hiDpi = Color(0xFF00FF00);
 const double probeSize = 16;
+const String magicWord = 'ciao';
 
 void main() => runApp(const DemoApp());
 
@@ -20,16 +28,48 @@ class DemoApp extends StatefulWidget {
 
 class _DemoAppState extends State<DemoApp> {
   int taps = 0;
+  final TextEditingController text = TextEditingController();
+  final FocusNode textFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    text.addListener(() => setState(() {}));
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    text.dispose();
+    textFocus.dispose();
+    super.dispose();
+  }
+
+  bool _onKey(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => taps = 0);
+      text.clear();
+      return true;
+    }
+    return false;
+  }
+
+  Color get background {
+    if (text.text == magicWord) return typed;
+    return taps.isEven ? idle : tapped;
+  }
 
   @override
   Widget build(BuildContext context) {
+    const white = Color(0xFFFFFFFF);
     return Directionality(
       textDirection: TextDirection.ltr,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => taps++),
         child: ColoredBox(
-          color: taps.isEven ? idle : tapped,
+          color: background,
           child: Stack(
             children: [
               Positioned(
@@ -44,7 +84,21 @@ class _DemoAppState extends State<DemoApp> {
               Center(
                 child: Text(
                   'Silica · $taps',
-                  style: const TextStyle(fontSize: 32, color: Color(0xFFFFFFFF)),
+                  style: const TextStyle(fontSize: 32, color: white),
+                ),
+              ),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 16,
+                child: EditableText(
+                  controller: text,
+                  focusNode: textFocus,
+                  autofocus: true,
+                  onTapOutside: (_) {},
+                  style: const TextStyle(fontSize: 20, color: white),
+                  cursorColor: white,
+                  backgroundCursorColor: const Color(0xFF000000),
                 ),
               ),
             ],

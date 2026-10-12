@@ -30,9 +30,11 @@ use std::thread::ThreadId;
 
 use bindings::{
     FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineLib,
-    FlutterEngineResult, FlutterPointerDeviceKind, FlutterPointerEvent as RawPointerEvent,
-    FlutterPointerPhase, FlutterPointerSignalKind, FlutterProjectArgs, FlutterRendererConfig,
-    FlutterRendererType, FlutterSoftwareRendererConfig, FlutterTask, FlutterTaskRunnerDescription,
+    FlutterEngineResult, FlutterKeyEvent as RawKeyEvent, FlutterKeyEventDeviceType,
+    FlutterKeyEventType, FlutterPlatformMessage, FlutterPlatformMessageResponseHandle,
+    FlutterPointerDeviceKind, FlutterPointerEvent as RawPointerEvent, FlutterPointerPhase,
+    FlutterPointerSignalKind, FlutterProjectArgs, FlutterRendererConfig, FlutterRendererType,
+    FlutterSoftwareRendererConfig, FlutterTask, FlutterTaskRunnerDescription,
     FlutterWindowMetricsEvent,
 };
 
@@ -86,12 +88,56 @@ pub struct Frame {
     pub pixels: Vec<u8>,
 }
 
+/// La risposta dovuta a un messaggio di piattaforma: va consumata con
+/// [`Engine::respond`] esattamente una volta, altrimenti il Future Dart non si chiude.
+pub struct ResponseHandle(*const FlutterPlatformMessageResponseHandle);
+
+// SAFETY: l'handle è opaco e l'engine accetta FlutterEngineSendPlatformMessageResponse
+// da qualsiasi thread; qui lo si usa comunque solo sul thread di piattaforma.
+unsafe impl Send for ResponseHandle {}
+
+/// Un messaggio dal framework Dart verso l'embedder.
+pub struct PlatformMessage {
+    pub channel: String,
+    pub data: Vec<u8>,
+    /// Assente per i messaggi che non aspettano risposta.
+    pub response: Option<ResponseHandle>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyPhase {
+    Down,
+    Up,
+    Repeat,
+}
+
+/// Un evento tasto per il `HardwareKeyboard` di Flutter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyEvent {
+    pub phase: KeyPhase,
+    /// Chiave fisica di Flutter (pagina USB HID).
+    pub physical: u64,
+    /// Chiave logica di Flutter.
+    pub logical: u64,
+    /// Il testo prodotto dal tasto, solo per `Down` e `Repeat`.
+    pub character: Option<String>,
+    /// Evento inventato dall'embedder per riallineare lo stato dei tasti.
+    pub synthesized: bool,
+    pub timestamp_micros: u64,
+}
+
 /// Le funzioni dell'embedder chiamate dall'engine, da thread qualsiasi.
 pub struct Callbacks {
     pub platform_thread: ThreadId,
     pub post_task: Box<dyn Fn(Task) + Send + Sync>,
     pub present: Box<dyn Fn(Frame) + Send + Sync>,
+    pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
 }
+
+/// Chi aspetta di sapere se il framework ha gestito un tasto.
+type KeyHandled = Box<dyn FnOnce(bool) + Send>;
+/// Chi aspetta la risposta del framework a un messaggio.
+type Reply = Box<dyn FnOnce(Vec<u8>) + Send>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerPhase {
@@ -130,6 +176,30 @@ type MetricsFn =
 type PointerFn =
     unsafe extern "C" fn(FlutterEngine, *const RawPointerEvent, usize) -> FlutterEngineResult;
 type TimeFn = unsafe extern "C" fn() -> u64;
+type KeyFn = unsafe extern "C" fn(
+    FlutterEngine,
+    *const RawKeyEvent,
+    bindings::FlutterKeyEventCallback,
+    *mut c_void,
+) -> FlutterEngineResult;
+type SendMessageFn =
+    unsafe extern "C" fn(FlutterEngine, *const FlutterPlatformMessage) -> FlutterEngineResult;
+type CreateReplyFn = unsafe extern "C" fn(
+    FlutterEngine,
+    bindings::FlutterDataCallback,
+    *mut c_void,
+    *mut *mut FlutterPlatformMessageResponseHandle,
+) -> FlutterEngineResult;
+type ReleaseReplyFn = unsafe extern "C" fn(
+    FlutterEngine,
+    *mut FlutterPlatformMessageResponseHandle,
+) -> FlutterEngineResult;
+type RespondFn = unsafe extern "C" fn(
+    FlutterEngine,
+    *const FlutterPlatformMessageResponseHandle,
+    *const u8,
+    usize,
+) -> FlutterEngineResult;
 
 /// Le funzioni dell'engine usate qui, risolte una volta al caricamento.
 struct Api {
@@ -139,6 +209,11 @@ struct Api {
     metrics: MetricsFn,
     pointer: PointerFn,
     time: TimeFn,
+    key: KeyFn,
+    send_message: SendMessageFn,
+    respond: RespondFn,
+    create_reply: CreateReplyFn,
+    release_reply: ReleaseReplyFn,
 }
 
 macro_rules! symbol {
@@ -227,6 +302,67 @@ unsafe extern "C" fn runs_on_current_thread(user_data: *mut c_void) -> bool {
     callbacks.platform_thread == std::thread::current().id()
 }
 
+unsafe extern "C" fn platform_message(
+    message: *const FlutterPlatformMessage,
+    user_data: *mut c_void,
+) {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    let callbacks = unsafe { callbacks(user_data) };
+    if message.is_null() {
+        return;
+    }
+    // SAFETY: l'engine passa un messaggio valido per la durata della chiamata.
+    let message = unsafe { &*message };
+    let channel = if message.channel.is_null() {
+        String::new()
+    } else {
+        // SAFETY: il nome del canale è una stringa C terminata da NUL.
+        unsafe { CStr::from_ptr(message.channel) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    let data = if message.message.is_null() || message.message_size == 0 {
+        Vec::new()
+    } else {
+        // SAFETY: message punta a message_size byte validi durante la chiamata; si copiano.
+        unsafe { std::slice::from_raw_parts(message.message, message.message_size) }.to_vec()
+    };
+    let response =
+        (!message.response_handle.is_null()).then_some(ResponseHandle(message.response_handle));
+    (callbacks.platform_message)(PlatformMessage {
+        channel,
+        data,
+        response,
+    });
+}
+
+unsafe extern "C" fn key_handled(handled: bool, user_data: *mut c_void) {
+    if user_data.is_null() {
+        return;
+    }
+    // SAFETY: user_data è il Box<KeyHandled> creato in send_key con Box::into_raw;
+    // l'engine chiama questo callback una sola volta per evento, quindi lo si
+    // riprende in possesso una sola volta.
+    let done = unsafe { Box::from_raw(user_data.cast::<KeyHandled>()) };
+    done(handled);
+}
+
+unsafe extern "C" fn reply_received(data: *const u8, size: usize, user_data: *mut c_void) {
+    if user_data.is_null() {
+        return;
+    }
+    // SAFETY: user_data è il Box<Reply> creato in send_message_with_reply; l'engine
+    // chiama il callback di un response handle una sola volta.
+    let reply = unsafe { Box::from_raw(user_data.cast::<Reply>()) };
+    let bytes = if data.is_null() || size == 0 {
+        Vec::new()
+    } else {
+        // SAFETY: data punta a size byte validi durante la chiamata; si copiano.
+        unsafe { std::slice::from_raw_parts(data, size) }.to_vec()
+    };
+    reply(bytes);
+}
+
 unsafe extern "C" fn log_message(tag: *const c_char, message: *const c_char, _: *mut c_void) {
     let text = |ptr: *const c_char| {
         if ptr.is_null() {
@@ -257,6 +393,11 @@ impl Engine {
             metrics: symbol!(library, FlutterEngineSendWindowMetricsEvent),
             pointer: symbol!(library, FlutterEngineSendPointerEvent),
             time: symbol!(library, FlutterEngineGetCurrentTime),
+            key: symbol!(library, FlutterEngineSendKeyEvent),
+            send_message: symbol!(library, FlutterEngineSendPlatformMessage),
+            respond: symbol!(library, FlutterEngineSendPlatformMessageResponse),
+            create_reply: symbol!(library, FlutterPlatformMessageCreateResponseHandle),
+            release_reply: symbol!(library, FlutterPlatformMessageReleaseResponseHandle),
         };
 
         let callbacks = Box::new(callbacks);
@@ -302,6 +443,7 @@ impl Engine {
             command_line_argv: argv.as_ptr(),
             custom_task_runners: ptr::from_ref(&*runners),
             log_message_callback: Some(log_message),
+            platform_message_callback: Some(platform_message),
             shutdown_dart_vm_when_done: true,
             ..Default::default()
         };
@@ -405,6 +547,113 @@ impl Engine {
         // SAFETY: engine è vivo; raw è un array di un elemento inizializzato.
         check("FlutterEngineSendPointerEvent", unsafe {
             (self.api.pointer)(self.engine, &raw, 1)
+        })
+    }
+}
+
+impl Engine {
+    /// Manda un tasto al framework; `handled` riceve se un widget l'ha consumato.
+    pub fn send_key(
+        &self,
+        event: &KeyEvent,
+        handled: impl FnOnce(bool) + Send + 'static,
+    ) -> Result<(), Error> {
+        let type_ = match event.phase {
+            KeyPhase::Down => FlutterKeyEventType::kFlutterKeyEventTypeDown,
+            KeyPhase::Up => FlutterKeyEventType::kFlutterKeyEventTypeUp,
+            KeyPhase::Repeat => FlutterKeyEventType::kFlutterKeyEventTypeRepeat,
+        };
+        let character = event
+            .character
+            .as_deref()
+            .and_then(|text| CString::new(text).ok());
+        let raw = RawKeyEvent {
+            struct_size: size_of::<RawKeyEvent>(),
+            timestamp: event.timestamp_micros as f64,
+            type_,
+            physical: event.physical,
+            logical: event.logical,
+            character: character.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+            synthesized: event.synthesized,
+            device_type: FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeKeyboard,
+        };
+        let done: Box<KeyHandled> = Box::new(Box::new(handled));
+        let user_data = Box::into_raw(done).cast::<c_void>();
+        // SAFETY: engine è vivo; raw e character vivono per la durata della chiamata
+        // (l'engine copia l'evento); user_data passa a key_handled, che lo libera.
+        let result = unsafe { (self.api.key)(self.engine, &raw, Some(key_handled), user_data) };
+        if result != FlutterEngineResult::kSuccess {
+            // L'engine ha rifiutato l'evento e non chiamerà key_handled: si libera qui.
+            // SAFETY: user_data viene da Box::into_raw qui sopra e non è stato consumato.
+            drop(unsafe { Box::from_raw(user_data.cast::<KeyHandled>()) });
+        }
+        check("FlutterEngineSendKeyEvent", result)
+    }
+
+    /// Risponde a un messaggio di piattaforma; `data` vuoto vuol dire "non gestito".
+    pub fn respond(&self, handle: ResponseHandle, data: &[u8]) -> Result<(), Error> {
+        let pointer = if data.is_empty() {
+            ptr::null()
+        } else {
+            data.as_ptr()
+        };
+        // SAFETY: engine è vivo; handle viene da un messaggio di questo engine ed è
+        // consumato qui (ResponseHandle non è Clone); data vive durante la chiamata.
+        check("FlutterEngineSendPlatformMessageResponse", unsafe {
+            (self.api.respond)(self.engine, handle.0, pointer, data.len())
+        })
+    }
+
+    /// Manda un messaggio al framework su `channel`; `reply` riceve la risposta
+    /// (vuota se nessuno lo gestisce).
+    pub fn send_message_with_reply(
+        &self,
+        channel: &str,
+        data: &[u8],
+        reply: impl FnOnce(Vec<u8>) + Send + 'static,
+    ) -> Result<(), Error> {
+        let channel = CString::new(channel).map_err(|_| Error::Path(channel.to_owned()))?;
+        let boxed: Box<Reply> = Box::new(Box::new(reply));
+        let user_data = Box::into_raw(boxed).cast::<c_void>();
+        let mut handle: *mut FlutterPlatformMessageResponseHandle = ptr::null_mut();
+        // SAFETY: engine è vivo; user_data passa a reply_received, che lo libera.
+        let created = unsafe {
+            (self.api.create_reply)(self.engine, Some(reply_received), user_data, &mut handle)
+        };
+        if created != FlutterEngineResult::kSuccess || handle.is_null() {
+            // SAFETY: l'handle non esiste, quindi reply_received non verrà chiamato.
+            drop(unsafe { Box::from_raw(user_data.cast::<Reply>()) });
+            return check("FlutterPlatformMessageCreateResponseHandle", created);
+        }
+        let message = FlutterPlatformMessage {
+            struct_size: size_of::<FlutterPlatformMessage>(),
+            channel: channel.as_ptr(),
+            message: data.as_ptr(),
+            message_size: data.len(),
+            response_handle: handle,
+        };
+        // SAFETY: engine è vivo; message, channel e data vivono durante la chiamata.
+        let sent = unsafe { (self.api.send_message)(self.engine, &message) };
+        // SAFETY: l'handle è stato creato qui; dopo l'invio l'engine ne tiene una copia
+        // propria e quello dell'embedder va rilasciato (flutter_embedder.h).
+        let released = unsafe { (self.api.release_reply)(self.engine, handle) };
+        check("FlutterEngineSendPlatformMessage", sent)?;
+        check("FlutterPlatformMessageReleaseResponseHandle", released)
+    }
+
+    /// Manda un messaggio senza risposta al framework su `channel`.
+    pub fn send_message(&self, channel: &str, data: &[u8]) -> Result<(), Error> {
+        let channel = CString::new(channel).map_err(|_| Error::Path(channel.to_owned()))?;
+        let message = FlutterPlatformMessage {
+            struct_size: size_of::<FlutterPlatformMessage>(),
+            channel: channel.as_ptr(),
+            message: data.as_ptr(),
+            message_size: data.len(),
+            response_handle: ptr::null(),
+        };
+        // SAFETY: engine è vivo; message, channel e data vivono durante la chiamata.
+        check("FlutterEngineSendPlatformMessage", unsafe {
+            (self.api.send_message)(self.engine, &message)
         })
     }
 }

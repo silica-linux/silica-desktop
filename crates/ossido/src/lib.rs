@@ -6,6 +6,7 @@ pub mod commands;
 mod control;
 mod handlers;
 mod input;
+mod keys;
 pub mod state;
 
 use std::io::Write;

@@ -34,6 +34,11 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `window.move` | `id?`, `x`, `y` | — |
 | `app.launch` | `command` | `pid` |
 | `session.quit` | — | — |
+| `input.pointer_move` | `x`, `y` | — |
+| `input.pointer_button` | `button?`, `pressed` | — |
+| `input.click` | `x`, `y`, `button?` | — |
+| `input.key` | `key` (nome xkb o carattere), `pressed?` | — |
+| `input.type` | `text` | — |
 
 Senza `id`, i comandi sulle finestre agiscono su quella con il focus.
 
