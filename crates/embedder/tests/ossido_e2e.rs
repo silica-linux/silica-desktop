@@ -340,9 +340,9 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
 
 #[test]
 fn gl_layer_at_scale_two_gets_its_size_and_clicks() {
-    // Il caso di M1.5: layer OpenGL a scala 2. In WSL con d3d12 il primo buffer usciva
-    // alla dimensione vecchia (vedi GlSurface::present); qui con llvmpipe non succede,
-    // quel caso lo copre `cargo xtask bench dock`, che fallisce senza frame.
+    // Il caso di M1.5: layer OpenGL a scala 2. Il primo buffer dopo un resize può uscire
+    // alla dimensione vecchia (vedi GlSurface::present): dipende dai tempi, si è visto in
+    // WSL con d3d12 e su GitHub con llvmpipe (gl_renderer_draws_at_scale_two_...).
     let args: Vec<String> = [
         "--renderer",
         "gl",
