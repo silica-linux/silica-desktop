@@ -20,7 +20,7 @@ use silica_control::commands::{
 
 use crate::{Result, cargo_command, flutter, root, status, wslg_socket};
 
-/// Output logico: 1280×800 a scala 2.
+/// Output logico: 1280×800, a scala 2 salvo `--scale`.
 const OUTPUT: (f64, f64) = (1280.0, 800.0);
 /// Riga delle icone a riposo: da (1280 − 664) / 2 a + 664, centro verticale a 760.
 const ROW: (f64, f64) = (308.0, 972.0);
@@ -36,6 +36,9 @@ struct Options {
     runs: usize,
     seconds: f64,
     only: Option<String>,
+    /// Scala dell'output: la finestra di Ossido è OUTPUT × scala pixel, e deve entrare
+    /// nello schermo del compositor ospite (2560×1600 non entra in uno schermo 1920×1200).
+    scale: u32,
 }
 
 fn options(args: &[String]) -> Result<Options> {
@@ -43,6 +46,7 @@ fn options(args: &[String]) -> Result<Options> {
         runs: 3,
         seconds: 10.0,
         only: None,
+        scale: 2,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -63,6 +67,13 @@ fn options(args: &[String]) -> Result<Options> {
                     .ok_or("--seconds vuole un numero positivo")?;
             }
             "--only" => options.only = Some(value()?.clone()),
+            "--scale" => {
+                options.scale = value()?
+                    .parse()
+                    .ok()
+                    .filter(|s| (1..=4).contains(s))
+                    .ok_or("--scale vuole un intero da 1 a 4")?;
+            }
             other => return Err(format!("argomento sconosciuto: {other}")),
         }
     }
@@ -232,16 +243,18 @@ impl Drop for Session {
     }
 }
 
-fn start_ossido(root: &Path) -> Result<Session> {
+fn start_ossido(root: &Path, scale: u32) -> Result<Session> {
+    let size = format!("{}x{}", 1280 * scale, 800 * scale);
+    let scale = scale.to_string();
     let mut command = Command::new(root.join("target/release/ossido"));
     command
         .args([
             "--backend",
             "winit",
             "--size",
-            "2560x1600",
+            &size,
             "--scale",
-            "2",
+            &scale,
             "--control",
             "0",
         ])
@@ -301,7 +314,7 @@ fn screenshot(client: &mut Client, path: &Path) -> Result<()> {
 }
 
 fn measure(root: &Path, variant: &Variant, options: &Options, shots: Option<&Path>) -> Result<Run> {
-    let session = start_ossido(root)?;
+    let session = start_ossido(root, options.scale)?;
     let mut client = Client::connect(&session.control).map_err(|e| e.to_string())?;
     pointer(&mut client, OUTPUT.0 / 2.0, OUTPUT.1 / 2.0)?;
     client

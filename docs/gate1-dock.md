@@ -19,7 +19,8 @@ Due cautele, prima di decidere:
   da una copia GPU → CPU (Ossido non offre ancora dmabuf). È probabilmente correggibile, e
   va corretto comunque per le app Flutter, in qualunque opzione.
 - **Tutto è misurato in WSL**, con OpenGL tradotto in D3D12. I numeri valgono per il
-  confronto, non come valori assoluti. La conferma su hardware Linux reale arriva con M6.
+  confronto, non come valori assoluti. Su Linux nativo (sezione più sotto) la GPU non è
+  ancora raggiungibile dai client di Ossido.
 
 Se conta di più la velocità di sviluppo della UI, l'opzione A resta praticabile: il
 divario di fluidità è nel nostro codice, quello di memoria (circa 45 MiB, una volta sola
@@ -87,6 +88,66 @@ Con le soglie proposte in `docs/m1.5-dock.md`:
   (`wgpu-hal/src/gles/adapter.rs`, un TODO), tiny-skia idem. La trasparenza c'è con Vulkan,
   che in WSL è solo lavapipe (CPU); su hardware reale con Vulkan va verificata.
 
+## Misure su hardware nativo (2026-10-12)
+
+Stesso banco, stesso PC, con Ubuntu 26.04 nativo al posto di WSL: Core i9-13900H
+(20 thread), Iris Xe (Raptor Lake-P) e RTX 4070 Laptop, Mesa 26.0.8, driver NVIDIA 595.91. Ossido annidato nella sessione GNOME (Wayland), schermo 1920×1200 a 59,88 Hz.
+
+**Le varianti "GPU" qui non usano la GPU.** Ossido non offre `zwp_linux_dmabuf_v1` (né
+`wl_drm`), e senza uno dei due Mesa non sa quale device usare per una superficie Wayland:
+l'EGL dei client ricade su llvmpipe (`libEGL warning: failed to get driver name for fd -1`,
+e l'embedder scrive `renderer OpenGL ES: llvmpipe`). Con Vulkan wgpu sceglie lavapipe; con
+solo il driver Intel o solo quello NVIDIA nessuna superficie Vulkan è utilizzabile e iced
+ripiega su tiny-skia (PSS 14–16 MiB). In WSL il problema non si vedeva perché il driver
+d3d12 di Mesa non ha bisogno di dmabuf e copia sempre il frame in memoria condivisa.
+
+**Scala 1 invece di 2.** GNOME stringe la finestra 2560×1600 di Ossido a 1920×1082, e il
+puntatore del banco cadeva fuori dal Dock (0 frame in ogni variante). Il banco ha ora
+`--scale N` (predefinita 2): qui gira con `--scale 1`, output 1280×800 pixel. L'output
+logico, la geometria e il percorso del puntatore sono gli stessi; i pixel da disegnare
+sono un quarto.
+
+Mediana di 3 ripetizioni, tempi in ms, memoria in MiB. Fra parentesi il valore in WSL.
+
+| Variante | Rende con | Avvio | Frame | p95 | p99 | Max | Lenti | PSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| flutter-gl | llvmpipe | 1794 (361) | 597 | 19,03 | 20,74 (30,57) | 33,6 | 2 (8) | 113,1 (106,5) |
+| flutter-gl-impeller | llvmpipe | — | — | — | — | — | crash | — |
+| iced-gl | llvmpipe | 1868 (297) | 597 | 19,14 | 20,89 (21,39) | 35,0 | 3 (0) | 103,3 (60,8) |
+| iced-vulkan | lavapipe | 143 | 597 | 19,05 | 20,60 | 32,5 | 2 | 81,3 |
+| flutter-software | CPU | 44 (20) | 598 | 19,03 | 20,29 (21,86) | 26,0 | 1 (0) | 25,7 (33,3) |
+| iced-software | tiny-skia | 27 (10) | 598 | 19,29 | 21,12 (21,05) | 29,4 | 1 (0) | 11,7 (11,4) |
+
+Frame lenti nelle singole ripetizioni: flutter-gl 2, 2, 2; iced-gl 2, 3, 3; iced-vulkan
+3, 2, 2; flutter-software 3, 1, 1; iced-software 1, 1, 1. Avvio delle varianti llvmpipe e
+lavapipe molto variabile (113–2072 ms): in alcune ripetizioni il caricatore EGL o Vulkan
+prova prima i driver NVIDIA.
+
+Risposte alle tre domande, per quanto queste misure permettono:
+
+- **Flutter con la GPU perde ancora frame?** Non misurabile finché Ossido non offre dmabuf.
+  Con llvmpipe flutter-gl perde lo 0,3% dei frame (2 su 597) con p99 20,7 ms, contro
+  l'1,4% e 30,6 ms in WSL, ed è ora alla pari con iced-gl (3 frame, p99 20,9 ms). Il
+  confronto regge (stesso renderer per entrambi), ma non dice nulla del percorso GPU reale.
+  È coerente con l'ipotesi del rapporto: le perdite in WSL venivano dal percorso del
+  frame, non dal disegno di Flutter.
+- **Impeller cambia qualcosa?** Su llvmpipe l'engine va in segmentation fault durante lo
+  scorrimento in 4 tentativi su 4 (`embedder_surface_gl_impeller.cc` dichiara il backend
+  OpenGLES, poi il processo muore e il banco non trova più la superficie).
+  Il crash è dentro l'engine; non c'è una misura da confrontare.
+- **iced su Vulkan è trasparente?** Sì, ma con lavapipe, non con la GPU: lo screenshot
+  `iced-vulkan-hover.png` mostra lo sfondo di Ossido attorno al Dock. Anche iced-gl su
+  llvmpipe qui è trasparente, a differenza che in WSL. iced-software resta opaco (nero
+  attorno al Dock). Con Vulkan su Intel o NVIDIA la domanda resta aperta per la stessa
+  ragione: serve dmabuf.
+
+Cosa cambia per il gate 1: le misure native non contraddicono la raccomandazione, ma ne
+tolgono l'argomento principale. Il vantaggio di fluidità di iced in WSL non si ripete qui
+(sullo stesso renderer le due versioni sono pari); resta il vantaggio di memoria, che in
+software è di 14 MiB (25,7 contro 11,7) e con i driver GPU dipende da quale driver si
+carica. Una misura con la GPU vera richiede `linux-dmabuf` in Ossido, che serve comunque
+(vedi "Cosa resta aperto").
+
 ## Costo di sviluppo
 
 | | Flutter | iced |
@@ -112,7 +173,8 @@ I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una 
 
 - Il percorso GPU dell'embedder: dmabuf in Ossido e `wp_presentation` per il ritmo dei
   frame, poi una nuova misura. Serve in ogni opzione, per le app.
-- La misura su hardware Linux reale (M6).
+- La misura su hardware Linux reale con la GPU: fatta senza GPU il 2026-10-12 (sezione
+  sopra); con la GPU dopo dmabuf in Ossido.
 - Il limite di memoria per la shell, che fissi tu.
 
 ## Ripetere le misure
@@ -120,7 +182,7 @@ I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una 
 ```bash
 SILICA_ENGINE_SRC=~/build/flutter-engine cargo xtask engine --release
 cargo xtask bundle dock --release
-cargo xtask bench dock                 # --runs N --seconds S --only VARIANTE
+cargo xtask bench dock                 # --runs N --seconds S --only VARIANTE --scale N
 ```
 
 Risultati in `target/bench/dock/results.json`, screenshot accanto.
