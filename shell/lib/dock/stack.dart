@@ -116,45 +116,9 @@ String fileName(String path) {
 }
 
 /// L'icona di silica-icons per un file o una cartella.
-LayeredIcon? fileIcon(FileSystemEntity entry) {
-  if (entry is Directory) return findSilicaIcon('folder');
-  final name = fileName(entry.path).toLowerCase();
-  final dot = name.lastIndexOf('.');
-  final ext = dot < 0 ? '' : name.substring(dot + 1);
-  final kind = switch (ext) {
-    'png' ||
-    'jpg' ||
-    'jpeg' ||
-    'gif' ||
-    'webp' ||
-    'svg' ||
-    'heic' => 'file-image',
-    'mp3' || 'ogg' || 'flac' || 'wav' || 'm4a' => 'file-audio',
-    'mp4' || 'mkv' || 'webm' || 'mov' || 'avi' => 'file-video',
-    'pdf' => 'file-pdf',
-    'zip' ||
-    'tar' ||
-    'gz' ||
-    'xz' ||
-    'zst' ||
-    '7z' ||
-    'rar' ||
-    'deb' => 'file-archive',
-    'txt' || 'md' || 'rtf' || 'odt' || 'doc' || 'docx' => 'file-text',
-    'rs' ||
-    'dart' ||
-    'py' ||
-    'js' ||
-    'ts' ||
-    'c' ||
-    'h' ||
-    'json' ||
-    'sh' => 'file-code',
-    '' => 'file-unknown',
-    _ => 'file-generic',
-  };
-  return findSilicaIcon(kind) ?? findSilicaIcon('file-generic');
-}
+LayeredIcon? fileIcon(FileSystemEntity entry) => entry is Directory
+    ? findSilicaIcon('folder')
+    : fileIconFor(fileName(entry.path));
 
 /// La geometria del ventaglio per l'elemento `i` (dal basso): centro e lato, rispetto al
 /// centro dell'icona della pila in x e alla cima della zona del Dock in y; rotazione.
