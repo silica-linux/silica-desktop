@@ -29,6 +29,7 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 
 const CHILD_SOCKET: &str = "SILICA_TEST_SHELL_SOCKET";
 const CHILD_LISTEN: &str = "SILICA_TEST_SHELL_LISTEN";
+const CHILD_THUMBNAIL: &str = "SILICA_TEST_SHELL_THUMBNAIL";
 
 #[derive(Default)]
 struct Shell {
@@ -39,6 +40,9 @@ struct Shell {
     toplevels: Vec<(String, String)>,
     /// Gli identificatori annunciati con `focused`.
     focused: Vec<String>,
+    /// Gli eventi `minimized` (identificatore, stato) e la miniatura ricevuta.
+    minimized: Vec<(String, u32)>,
+    thumbnail: Option<(u32, u32)>,
     /// I comandi inoltrati da Ossido.
     commands: Vec<String>,
 }
@@ -60,7 +64,7 @@ impl Dispatch<WlRegistry, ()> for Shell {
                 "ext_foreign_toplevel_list_v1" => {
                     state.list = Some(registry.bind(name, 1, qh, ()));
                 }
-                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 1, qh, ())),
+                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 2, qh, ())),
                 _ => {}
             }
             state.globals.push(interface);
@@ -121,6 +125,13 @@ impl Dispatch<SilicaShellManagerV1, ()> for Shell {
                 state.focused.push(identifier)
             }
             silica_shell_manager_v1::Event::Command { id } => state.commands.push(id),
+            silica_shell_manager_v1::Event::Minimized {
+                identifier,
+                minimized,
+            } => state.minimized.push((identifier, minimized)),
+            silica_shell_manager_v1::Event::Thumbnail { width, height, .. } => {
+                state.thumbnail = Some((width, height));
+            }
             _ => {}
         }
     }
@@ -136,6 +147,35 @@ fn shell_client(socket: &str) {
     conn.display().get_registry(&qh, ());
     queue.roundtrip(&mut shell).unwrap();
     queue.roundtrip(&mut shell).unwrap();
+    // Le finestre ridotte annunciate al collegamento e la miniatura della prima.
+    if std::env::var_os(CHILD_THUMBNAIL).is_some() {
+        if let (Some(manager), Some((identifier, _))) =
+            (shell.manager.clone(), shell.minimized.first().cloned())
+        {
+            let path = std::env::temp_dir().join(format!("silica-thumb-{}", std::process::id()));
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+                .unwrap();
+            file.set_len(256 * 256 * 4).unwrap();
+            manager.thumbnail(identifier.clone(), std::os::fd::AsFd::as_fd(&file));
+            queue.roundtrip(&mut shell).unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            let (w, h) = shell.thumbnail.unwrap_or_default();
+            let opaque = bytes
+                .chunks(4)
+                .take((w * h) as usize)
+                .filter(|px| px[3] > 200)
+                .count();
+            println!("MINIMIZED {}", shell.minimized.len());
+            println!("THUMBNAIL {w} {h} {opaque}");
+        }
+        return;
+    }
     // In ascolto per qualche secondo: il test padre intanto preme i tasti.
     if let Ok(ms) = std::env::var(CHILD_LISTEN) {
         println!("READY");
@@ -340,4 +380,43 @@ fn activating_a_window_brings_all_the_windows_of_its_app() {
     // con "prima" (quella chiesta) in cima.
     run_child(&ossido.wayland, true);
     assert_eq!(titles(&ossido), ["prima", "terza", "altra"]);
+}
+
+#[test]
+fn minimized_windows_are_announced_with_a_thumbnail() {
+    let ossido = Headless::start_with("shell-thumbnail", (640, 400), &["--animation-scale", "1"]);
+    let _window = TestWindow::open_sized(&ossido.wayland, "ridotta", (300, 200));
+    ossido
+        .client()
+        .call(silica_control::commands::WINDOW_MINIMIZE, Value::Null)
+        .unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "shell_child",
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
+        .env(CHILD_SOCKET, &ossido.wayland)
+        .env(CHILD_THUMBNAIL, "1")
+        .env("SILICA_SHELL", "1")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    assert!(out.contains("MINIMIZED 1"), "{out}");
+    // La cornice 300 × 200 (senza ombra) sta nei 256 pt: ridotta a 256 × ~171.
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("THUMBNAIL"))
+        .unwrap_or_else(|| panic!("{out}"));
+    let numbers: Vec<u32> = line
+        .split_whitespace()
+        .skip(1)
+        .map(|n| n.parse().unwrap())
+        .collect();
+    assert_eq!(numbers[0], 256, "{line}");
+    assert!((160..=180).contains(&numbers[1]), "{line}");
+    // Quasi tutti i pixel sono pieni (la finestra rossa, senza ombra intorno).
+    assert!(numbers[2] > 256 * 160 * 9 / 10, "{line}");
 }

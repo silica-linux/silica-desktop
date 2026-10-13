@@ -466,7 +466,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=1, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=2, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -586,6 +586,7 @@ impl App {
     /// puntatore né tastiera (Faro chiuso resta in esecuzione, trasparente).
     /// - `setKeyboardInteractivity {mode: none|exclusive|on-demand}`;
     /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: tutta la superficie);
+    /// - `outputSize` → `{width, height}` dello schermo in punti (null se non si sa);
     /// - `setSize {width, height}` in punti, 0 per seguire gli ancoraggi (la barra dei menu si
     ///   allunga finché un menu è aperto).
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
@@ -607,6 +608,20 @@ impl App {
                     }
                     Shell::Window(_) => false,
                 }
+            }
+            Some("outputSize") => {
+                // La dimensione logica dello schermo (il primo output): per centrare un avviso
+                // in una superficie che si allunga fino a coprirlo.
+                let size = self
+                    .output_state
+                    .outputs()
+                    .next()
+                    .and_then(|output| self.output_state.info(&output))
+                    .and_then(|info| info.logical_size);
+                return text_input::success(match size {
+                    Some((w, h)) => serde_json::json!({"width": w, "height": h}),
+                    None => serde_json::Value::Null,
+                });
             }
             Some("setSize") => {
                 let value = |key: &str| {
@@ -1241,6 +1256,15 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
                 serde_json::to_vec(&serde_json::json!({ "method": "command", "args": id }))
                     .unwrap_or_default()
             }
+            Event::Minimized {
+                identifier,
+                minimized,
+            } => app.shell.set_minimized(identifier, minimized != 0),
+            Event::Thumbnail {
+                identifier,
+                width,
+                height,
+            } => app.shell.thumbnail_ready(&identifier, width, height),
             _ => return,
         };
         if let Some(engine) = &app.engine

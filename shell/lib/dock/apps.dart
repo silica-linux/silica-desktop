@@ -4,6 +4,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
@@ -82,8 +83,10 @@ Item _appItem(
 List<Item> dockItems(
   Map<String, DesktopEntry> entries,
   List<String> pinned,
-  List<Toplevel> toplevels,
-) {
+  List<Toplevel> toplevels, {
+  List<String> minimized = const [],
+  Map<String, ui.Image> thumbnails = const {},
+}) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
       if (entry.matchesAppId(t.appId)) t,
@@ -115,6 +118,10 @@ List<Item> dockItems(
       layered: findSilicaIcon('folder'),
       command: 'xdg-open "$home/Download" || xdg-open "$home/Downloads"',
     ),
+    // Le finestre ridotte, dalla prima ridotta, prima del Cestino (D-08).
+    for (final id in minimized)
+      if (toplevels.where((t) => t.id == id).firstOrNull case final window?)
+        _windowItem(window, entries, thumbnails[id]),
     Item.app(
       'Cestino',
       iconPath: findIcon(trashFull ? 'user-trash-full' : 'user-trash'),
@@ -122,6 +129,23 @@ List<Item> dockItems(
       command: 'xdg-open trash:///',
     ),
   ];
+}
+
+Item _windowItem(
+  Toplevel window,
+  Map<String, DesktopEntry> entries,
+  ui.Image? thumbnail,
+) {
+  final entry = entries.values
+      .where((e) => e.matchesAppId(window.appId))
+      .firstOrNull;
+  return Item.window(
+    window.title.isNotEmpty ? window.title : (entry?.name ?? window.appId),
+    window: window.id,
+    thumbnail: thumbnail,
+    iconPath: entry == null ? null : findIcon(entry.icon),
+    layered: entry == null ? null : silicaIconFor(entry),
+  );
 }
 
 /// Il cestino dell'utente contiene qualcosa (specifica freedesktop Trash).

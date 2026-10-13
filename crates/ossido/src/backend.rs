@@ -310,6 +310,118 @@ impl State {
     }
 }
 
+/// La miniatura di una finestra ridotta, nei suoi dati: RGBA premoltiplicato, al più
+/// `THUMBNAIL_MAX` pixel per lato.
+#[derive(Default)]
+pub struct Thumbnail(pub std::sync::Mutex<Option<(u32, u32, Vec<u8>)>>);
+
+pub const THUMBNAIL_MAX: u32 = 256;
+
+impl State {
+    /// Fotografa la cornice della finestra (senza ombra) e la tiene, ridotta, nei suoi dati.
+    pub fn capture_thumbnail(&mut self, window: &smithay::desktop::Window) {
+        use smithay::backend::renderer::ExportMem;
+        let renderer = match &mut self.backend {
+            Backend::Winit(backend) => backend.graphics.renderer(),
+            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
+            Backend::Headless(Headless::Pixman(_)) => return,
+        };
+        let Some(snapshot) =
+            crate::render::snapshot_window(renderer, &self.space, &self.output, window)
+        else {
+            return;
+        };
+        let scale = self.output.current_scale().fractional_scale();
+        let (Some(geometry), Some(origin)) = (
+            self.space.element_geometry(window),
+            self.space.output_geometry(&self.output),
+        ) else {
+            return;
+        };
+        let mut frame = crate::decorations::frame_of(window, geometry);
+        frame.loc -= origin.loc;
+        let frame = frame.to_physical_precise_round(scale);
+        let Some(visible) = frame.intersection(snapshot.bbox) else {
+            return;
+        };
+        let region = Rectangle::<i32, smithay::utils::Buffer>::new(
+            (visible.loc - snapshot.bbox.loc).to_logical(1).to_buffer(
+                1,
+                Transform::Normal,
+                &visible.size.to_logical(1),
+            ),
+            visible.size.to_logical(1).to_buffer(1, Transform::Normal),
+        );
+        let pixels = renderer
+            .copy_texture(
+                &snapshot.texture,
+                region,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+            )
+            .and_then(|mapping| renderer.map_texture(&mapping).map(<[u8]>::to_vec));
+        let pixels = match pixels {
+            Ok(pixels) => pixels,
+            Err(err) => {
+                warn!("miniatura non letta: {err:?}");
+                return;
+            }
+        };
+        let (Ok(w), Ok(h)) = (u32::try_from(visible.size.w), u32::try_from(visible.size.h)) else {
+            return;
+        };
+        let small = shrink(&pixels, w, h, THUMBNAIL_MAX);
+        window
+            .user_data()
+            .insert_if_missing_threadsafe(Thumbnail::default);
+        if let Some(slot) = window.user_data().get::<Thumbnail>()
+            && let Ok(mut slot) = slot.0.lock()
+        {
+            *slot = small;
+        }
+    }
+}
+
+/// Riduce un'immagine RGBA (media dei pixel di ogni riquadro) a non più di `max` per lato.
+pub fn shrink(pixels: &[u8], w: u32, h: u32, max: u32) -> Option<(u32, u32, Vec<u8>)> {
+    if w == 0 || h == 0 || pixels.len() < (w as usize) * (h as usize) * 4 {
+        return None;
+    }
+    let factor = (w.max(h) as f64 / max as f64).max(1.0);
+    let (tw, th) = (
+        ((w as f64 / factor).round() as u32).max(1),
+        ((h as f64 / factor).round() as u32).max(1),
+    );
+    let mut out = vec![0u8; (tw as usize) * (th as usize) * 4];
+    for ty in 0..th {
+        let y0 = (ty as f64 * factor) as u32;
+        let y1 = (((ty + 1) as f64 * factor) as u32).clamp(y0 + 1, h);
+        for tx in 0..tw {
+            let x0 = (tx as f64 * factor) as u32;
+            let x1 = (((tx + 1) as f64 * factor) as u32).clamp(x0 + 1, w);
+            let mut sum = [0u64; 4];
+            let mut n = 0u64;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let i = ((y as usize) * (w as usize) + x as usize) * 4;
+                    if let Some(px) = pixels.get(i..i + 4) {
+                        for (s, &v) in sum.iter_mut().zip(px) {
+                            *s += u64::from(v);
+                        }
+                        n += 1;
+                    }
+                }
+            }
+            let o = ((ty as usize) * (tw as usize) + tx as usize) * 4;
+            if let Some(dst) = out.get_mut(o..o + 4) {
+                for (d, s) in dst.iter_mut().zip(sum) {
+                    *d = (s / n.max(1)) as u8;
+                }
+            }
+        }
+    }
+    Some((tw, th, out))
+}
+
 /// Il renderer gira su un rasterizzatore software (EGL_MESA_device_software).
 fn is_software(renderer: &GlesRenderer) -> bool {
     smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())

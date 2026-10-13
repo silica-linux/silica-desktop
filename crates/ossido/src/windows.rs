@@ -28,8 +28,11 @@ impl State {
             .space
             .element_location(window)
             .ok_or("finestra non sullo schermo")?;
+        // La miniatura per il Dock, finché la finestra è ancora sullo schermo.
+        self.capture_thumbnail(window);
         self.space.unmap_elem(window);
         self.minimized.push((window.clone(), location));
+        self.announce_minimized(window, true);
         let next = self.space.elements().last().cloned();
         self.focus_window(next);
         Ok(())
@@ -41,6 +44,7 @@ impl State {
             return false;
         };
         let (window, location) = self.minimized.remove(index);
+        self.announce_minimized(&window, false);
         self.space.map_element(window, location, true);
         true
     }

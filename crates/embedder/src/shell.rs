@@ -7,12 +7,16 @@
 //! - da Dart: `list` → l'elenco; `focused` → l'identificatore con il focus;
 //!   `activate {id}`; `launch {command}`; `execute {id}` (comando del catalogo) → `true`
 //!   se inviato;
-//! - verso Dart: `toplevels [{id, title, app_id}]` e `focused id` a ogni cambiamento,
-//!   `command id` quando Ossido inoltra un comando alla shell (es. `faro.toggle`).
+//! - verso Dart: `toplevels [{id, title, app_id, minimized}]` e `focused id` a ogni
+//!   cambiamento, `command id` quando Ossido inoltra un comando alla shell (es.
+//!   `faro.toggle`), `minimized [id…]` (le ridotte, dalla prima ridotta);
+//! - `thumbnail {id}` da Dart chiede la miniatura di una finestra ridotta: arriva come
+//!   `thumbnail {id, width, height, path}`, un file RGBA premoltiplicato che Dart legge e
+//!   cancella (width 0 se non c'è).
 
 use serde_json::{Value, json};
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
-use wayland_client::QueueHandle;
+use wayland_client::{Proxy, QueueHandle};
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::{
     self, ExtForeignToplevelHandleV1,
 };
@@ -21,6 +25,9 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 use crate::text_input::success;
 
 pub const CHANNEL: &str = "silica/shell";
+
+/// Lato massimo delle miniature (silica-shell-v1 versione 2).
+const THUMBNAIL_MAX: u32 = 256;
 
 /// Una finestra annunciata da Ossido.
 struct Toplevel {
@@ -37,6 +44,11 @@ pub struct ShellLink {
     toplevels: Vec<Toplevel>,
     /// La finestra con il focus (identificatore), vuoto se nessuna.
     focused: String,
+    /// Le finestre ridotte, dalla prima ridotta.
+    minimized: Vec<String>,
+    /// Le miniature chieste e non ancora arrivate: identificatore e file.
+    thumbnails: std::cell::RefCell<Vec<(String, std::path::PathBuf)>>,
+    serial: std::cell::Cell<u64>,
 }
 
 impl ShellLink {
@@ -50,6 +62,9 @@ impl ShellLink {
             _list: list,
             toplevels: Vec::new(),
             focused: String::new(),
+            minimized: Vec::new(),
+            thumbnails: std::cell::RefCell::new(Vec::new()),
+            serial: std::cell::Cell::new(0),
         }
     }
 
@@ -109,13 +124,92 @@ impl ShellLink {
         }
     }
 
+    /// Una finestra ridotta o tornata: il messaggio `minimized` per Dart.
+    pub fn set_minimized(&mut self, identifier: String, minimized: bool) -> Vec<u8> {
+        self.minimized.retain(|id| *id != identifier);
+        if minimized {
+            self.minimized.push(identifier);
+        }
+        serde_json::to_vec(&json!({ "method": "minimized", "args": self.minimized }))
+            .unwrap_or_default()
+    }
+
+    /// Chiede a Ossido la miniatura in un file nuovo di `$XDG_RUNTIME_DIR`.
+    fn request_thumbnail(&self, identifier: &str) -> bool {
+        let Some(manager) = self.manager.as_ref().filter(|m| m.version() >= 2) else {
+            return false;
+        };
+        if identifier.is_empty() {
+            return false;
+        }
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map_or_else(std::env::temp_dir, std::path::PathBuf::from)
+            .join(format!("silica-thumbnails-{}", std::process::id()));
+        let serial = self.serial.get().wrapping_add(1);
+        self.serial.set(serial);
+        let path = dir.join(format!("{serial}.rgba"));
+        let size = u64::from(THUMBNAIL_MAX) * u64::from(THUMBNAIL_MAX) * 4;
+        let file = std::fs::create_dir_all(&dir).and_then(|()| {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)?;
+            file.set_len(size)?;
+            Ok(file)
+        });
+        match file {
+            Ok(file) => {
+                manager.thumbnail(identifier.to_owned(), std::os::fd::AsFd::as_fd(&file));
+                self.thumbnails
+                    .borrow_mut()
+                    .push((identifier.to_owned(), path));
+                true
+            }
+            Err(err) => {
+                tracing::warn!("miniatura: {err}");
+                false
+            }
+        }
+    }
+
+    /// La miniatura è nel file: il messaggio `thumbnail` per Dart.
+    pub fn thumbnail_ready(&self, identifier: &str, width: u32, height: u32) -> Vec<u8> {
+        let mut pending = self.thumbnails.borrow_mut();
+        let Some(index) = pending.iter().position(|(id, _)| id == identifier) else {
+            return Vec::new();
+        };
+        let (_, path) = pending.remove(index);
+        if width == 0 || height == 0 || width > THUMBNAIL_MAX || height > THUMBNAIL_MAX {
+            let _ = std::fs::remove_file(&path);
+            return serde_json::to_vec(&json!({
+                "method": "thumbnail",
+                "args": {"id": identifier, "width": 0, "height": 0, "path": ""},
+            }))
+            .unwrap_or_default();
+        }
+        serde_json::to_vec(&json!({
+            "method": "thumbnail",
+            "args": {"id": identifier, "width": width, "height": height, "path": path},
+        }))
+        .unwrap_or_default()
+    }
+
     /// L'elenco delle finestre, come lo vede Dart.
     pub fn list(&self) -> Value {
         Value::Array(
             self.toplevels
                 .iter()
                 .filter(|t| !t.identifier.is_empty())
-                .map(|t| json!({ "id": t.identifier, "title": t.title, "app_id": t.app_id }))
+                .map(|t| {
+                    json!({
+                        "id": t.identifier,
+                        "title": t.title,
+                        "app_id": t.app_id,
+                        "minimized": self.minimized.contains(&t.identifier),
+                    })
+                })
                 .collect(),
         )
     }
@@ -140,6 +234,8 @@ impl ShellLink {
         };
         match call.get("method").and_then(Value::as_str) {
             Some("list") => success(self.list()),
+            Some("minimized") => success(json!(self.minimized)),
+            Some("thumbnail") => success(json!(self.request_thumbnail(&text("id")))),
             Some("focused") => success(json!(self.focused)),
             Some("activate") => {
                 let sent = self.manager.as_ref().is_some_and(|manager| {

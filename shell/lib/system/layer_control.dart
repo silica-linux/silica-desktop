@@ -30,6 +30,22 @@ class LayerControl {
   static Future<void> size(double width, double height) =>
       _call('setSize', {'width': width, 'height': height});
 
+  /// La dimensione dello schermo in punti (null fuori da Silica o se non si sa).
+  static Future<Size?> outputSize() async {
+    try {
+      final size = await channel.invokeMethod<Object?>('outputSize');
+      if (size is Map && size['width'] is num && size['height'] is num) {
+        return Size(
+          (size['width'] as num).toDouble(),
+          (size['height'] as num).toDouble(),
+        );
+      }
+    } on MissingPluginException {
+      // Fuori da Silica.
+    }
+    return null;
+  }
+
   static Future<void> _call(String method, Map<String, Object?> args) async {
     try {
       await channel.invokeMethod<Object?>(method, args);

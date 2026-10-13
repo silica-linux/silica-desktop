@@ -3,6 +3,8 @@
 // indicatori ed etichetta disegnati qui.
 
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -16,6 +18,7 @@ import '../system/shell_channel.dart';
 import '../system/shell_icon.dart';
 import 'apps.dart';
 import 'icons.dart';
+import 'trash_alert.dart';
 import 'model.dart';
 
 /// Il Dock con le app vere: installate (.desktop), fissate e aperte (da Ossido).
@@ -33,18 +36,50 @@ class _LiveDockState extends State<LiveDock> {
   /// Le finestre dalla più recente (focus): un clic sull'app porta in cima l'ultima usata.
   final List<String> _recent = [];
 
+  /// L'avviso "Svuota il Cestino" aperto.
+  bool _confirmEmpty = false;
+
+  /// Le miniature delle finestre ridotte, chieste a Ossido alla riduzione.
+  final Map<String, ui.Image> _thumbnails = {};
+
   @override
   void initState() {
     super.initState();
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_focused);
+    ShellChannel.instance.minimized.addListener(_minimized);
     ShellChannel.instance.refresh();
+  }
+
+  void _minimized() {
+    final ids = ShellChannel.instance.minimized.value;
+    _thumbnails.removeWhere((id, image) {
+      final gone = !ids.contains(id);
+      if (gone) image.dispose();
+      return gone;
+    });
+    for (final id in ids) {
+      if (_thumbnails.containsKey(id)) continue;
+      ShellChannel.instance.thumbnail(id).then((image) {
+        if (!mounted || image == null) return;
+        if (ShellChannel.instance.minimized.value.contains(id)) {
+          setState(() => _thumbnails[id] = image);
+        } else {
+          image.dispose();
+        }
+      });
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_focused);
+    ShellChannel.instance.minimized.removeListener(_minimized);
+    for (final image in _thumbnails.values) {
+      image.dispose();
+    }
     super.dispose();
   }
 
@@ -67,8 +102,17 @@ class _LiveDockState extends State<LiveDock> {
   }
 
   void _activate(Item item) {
-    // Un'app aperta torna in primo piano; altrimenti si avvia.
-    if (item.windows.isNotEmpty) {
+    // Una finestra ridotta torna lei; un'app con tutte le finestre ridotte riporta l'ultima
+    // ridotta (D-03); un'app aperta torna in primo piano; altrimenti si avvia.
+    final minimized = ShellChannel.instance.minimized.value;
+    if (item.minimizedWindow case final window?) {
+      ShellChannel.instance.activate(window);
+    } else if (item.windows.isNotEmpty &&
+        item.windows.every(minimized.contains)) {
+      ShellChannel.instance.activate(
+        minimized.lastWhere(item.windows.contains),
+      );
+    } else if (item.windows.isNotEmpty) {
       ShellChannel.instance.activate(_latest(item));
     } else if (item.command case final command?) {
       ShellChannel.instance.launch(command);
@@ -89,11 +133,27 @@ class _LiveDockState extends State<LiveDock> {
   List<MenuEntry> _menu(Item item) {
     final shell = ShellChannel.instance;
     final toplevels = shell.toplevels.value;
-    // Cartelle e cestino: solo Apri.
+    if (item.minimizedWindow case final window?) {
+      return [
+        MenuAction(
+          'Apri "${item.label}"',
+          onSelected: () => shell.activate(window),
+        ),
+      ];
+    }
+    // Cartelle e cestino: Apri; il Cestino pieno anche Svuota (D-07).
     if (item.id == null) {
       return [
         if (item.command case final command?)
           MenuAction('Apri', onSelected: () => shell.launch(command)),
+        if (item.label == 'Cestino' &&
+            trashHasFiles(Platform.environment['HOME'] ?? '')) ...[
+          const MenuDivider(),
+          MenuAction(
+            'Svuota il Cestino…',
+            onSelected: () => setState(() => _confirmEmpty = true),
+          ),
+        ],
       ];
     }
     return [
@@ -141,9 +201,25 @@ class _LiveDockState extends State<LiveDock> {
 
   @override
   Widget build(BuildContext context) => Dock(
-    items: dockItems(_entries, _pinned, ShellChannel.instance.toplevels.value),
+    items: dockItems(
+      _entries,
+      _pinned,
+      ShellChannel.instance.toplevels.value,
+      minimized: ShellChannel.instance.minimized.value,
+      thumbnails: _thumbnails,
+    ),
     onActivate: _activate,
     menuFor: _menu,
+    alert: _confirmEmpty
+        ? TrashAlert(
+            onEmpty: () async {
+              setState(() => _confirmEmpty = false);
+              await emptyTrash();
+              if (mounted) setState(() {});
+            },
+            onCancel: () => setState(() => _confirmEmpty = false),
+          )
+        : null,
     onReorder: (order, dropped) {
       // Le fissate nel nuovo ordine; un'app aperta lasciata cadere fra loro diventa fissata.
       final ids = [
@@ -222,6 +298,13 @@ class _Ghost {
   Duration elapsed = Duration.zero;
 }
 
+/// Finestre ridotte nel Dock (D-08): miniatura 57 × 47 nella cella da 63, icona dell'app da
+/// 18 pt che sporge 4 pt sotto la miniatura.
+const double minimizedThumbWidth = 57;
+const double minimizedThumbHeight = 47;
+const double minimizedBadge = 18;
+const double minimizedBadgeBelow = 4;
+
 /// Icona premuta: scurita (stima, il valore non è misurato).
 const Color pressedShade = Color(0x40000000);
 const Color labelBodyTop = Color(0xFFD7D8DE);
@@ -247,6 +330,7 @@ class Dock extends StatefulWidget {
     this.onActivate,
     this.menuFor,
     this.onReorder,
+    this.alert,
   });
 
   final List<Item> items;
@@ -254,6 +338,9 @@ class Dock extends StatefulWidget {
 
   /// Clic su un'app.
   final void Function(Item item)? onActivate;
+
+  /// Un avviso modale sopra lo schermo (Svuota il Cestino), grande [trashAlertSize].
+  final Widget? alert;
 
   /// Il menu di un elemento (clic destro, pressione lunga); null o vuoto: niente menu.
   final List<MenuEntry> Function(Item item)? menuFor;
@@ -298,6 +385,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       setState(() => ghost.elapsed = elapsed);
     }
   });
+
+  /// L'altezza di partenza della superficie e lo schermo (per centrare l'avviso).
+  double? _baseHeight;
+  Size? _screen;
 
   /// Quello che si è chiesto al layer per ultimo (regione d'input, altezza, tastiera).
   String _layerState = '';
@@ -520,17 +611,29 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   /// Regione d'input, altezza della superficie e tastiera: solo quando cambiano.
-  void _syncLayer(Rect dock, Rect? menu, Size size) {
-    final height = menu == null
-        ? null
-        : (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0);
-    final key = '$dock $menu $height';
+  void _syncLayer(Rect dock, Rect? menu, Rect? alert, Size size) {
+    _baseHeight ??= size.height;
+    final base = _baseHeight ?? size.height;
+    // Con un menu la superficie arriva fin sopra il menu, con l'avviso a tutto lo schermo;
+    // senza, torna all'altezza di partenza.
+    final height = alert != null
+        ? _screen?.height ?? size.height
+        : menu != null
+        ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
+        : base;
+    final key = '$dock $menu $alert $height';
     if (key == _layerState) return;
     _layerState = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (height != null && height > size.height) LayerControl.size(0, height);
-      LayerControl.inputRegion([dock, if (menu != null) menu.inflate(4)]);
-      LayerControl.keyboard(menu == null ? 'none' : 'exclusive');
+      if (height != size.height) LayerControl.size(0, height);
+      LayerControl.inputRegion([
+        dock,
+        if (menu != null) menu.inflate(4),
+        if (alert != null) alert,
+      ]);
+      LayerControl.keyboard(
+        menu == null && alert == null ? 'none' : 'exclusive',
+      );
     });
   }
 
@@ -692,7 +795,25 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           bx + bw + dockInputMargin,
           size.height,
         );
-        _syncLayer(dockRect, menuRect, size);
+        // L'avviso (D-07): centrato in orizzontale, la cima al ~20 % dello schermo, quando
+        // la superficie è alta quanto lo schermo.
+        final screen = _screen;
+        final alert = widget.alert;
+        if (alert != null && screen == null) {
+          LayerControl.outputSize().then((size) {
+            if (mounted)
+              setState(() => _screen = size ?? const Size(1280, 800));
+          });
+        }
+        final alertRect = alert == null || screen == null
+            ? null
+            : Rect.fromLTWH(
+                (size.width - trashAlertSize.width) / 2,
+                screen.height * trashAlertTop - (screen.height - size.height),
+                trashAlertSize.width,
+                trashAlertSize.height,
+              );
+        _syncLayer(dockRect, menuRect, alertRect, size);
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (e) => _pointerDown(e, l, size),
@@ -734,7 +855,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   ),
                 ),
                 for (var i = 0; i < items.length; i++)
-                  if (items[i].icon case final source?)
+                  if (items[i].minimizedWindow != null)
+                    _windowCell(
+                      l,
+                      i,
+                      iconRect(l, i, size.height).$1,
+                      iconRect(l, i, size.height).$2,
+                      iconRect(l, i, size.height).$3,
+                      items[i].icon,
+                      items[i],
+                    )
+                  else if (items[i].icon case final source?)
                     _icon(l, i, size.height, source, items[i], sliding),
                 if (_drag case final drag?) ..._dragged(drag),
                 if (_ghost case final ghost?) _faded(ghost),
@@ -745,6 +876,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     size.height,
                     _labelAnim.value.clamp(0.0, 1.0),
                   ),
+                if (alertRect != null && alert != null && alertRect.top >= 0)
+                  Positioned.fromRect(rect: alertRect, child: alert),
                 if (tip != null)
                   Positioned.fill(
                     child: MenuHost(
@@ -841,6 +974,57 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
+  /// Una finestra ridotta (D-08): la miniatura 57 × 47 centrata nella cella, a filo con la
+  /// cima dell'icona, con l'icona dell'app da 18 pt nell'angolo in basso a destra, 4 pt
+  /// più in basso della miniatura.
+  Widget _windowCell(
+    Layout l,
+    int index,
+    double x,
+    double y,
+    double side,
+    IconSource? source,
+    Item item,
+  ) {
+    final k = side / iconSize;
+    final thumbWidth = minimizedThumbWidth * k;
+    final thumbHeight = minimizedThumbHeight * k;
+    final badge = minimizedBadge * k;
+    final left = l.center(index) - thumbWidth / 2;
+    final image = item.thumbnail;
+    return Positioned(
+      key: ValueKey(_key(item)),
+      left: left,
+      top: y,
+      width: thumbWidth,
+      height: thumbHeight + minimizedBadgeBelow * k,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            width: thumbWidth,
+            height: thumbHeight,
+            child: image == null
+                ? const DecoratedBox(
+                    decoration: BoxDecoration(color: Color(0x33FFFFFF)),
+                  )
+                : RawImage(image: image, fit: BoxFit.contain),
+          ),
+          if (source != null)
+            Positioned(
+              left: thumbWidth - badge + 2 * k,
+              top: thumbHeight - badge + minimizedBadgeBelow * k,
+              width: badge,
+              height: badge,
+              child: ShellIcon(source, side: badge),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// L'icona di un'app: a livelli da silica-icons, o dal tema del sistema.
   Widget _icon(
     Layout l,
@@ -923,7 +1107,7 @@ class _DockPainter extends CustomPainter {
         );
         continue;
       }
-      if (identical(item, gapItem)) continue;
+      if (identical(item, gapItem) || item.minimizedWindow != null) continue;
       final (ix, iy, side) = iconRect(l, i, height);
       if (item.icon == null) {
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);

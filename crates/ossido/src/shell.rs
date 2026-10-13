@@ -51,7 +51,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            1,
+            2,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -179,6 +179,57 @@ impl State {
         self.shell_managers.len()
     }
 
+    /// Annuncia ai componenti della shell che una finestra è stata ridotta o è tornata.
+    pub fn announce_minimized(&mut self, window: &Window, minimized: bool) {
+        let Some(identifier) = window
+            .user_data()
+            .get::<ForeignToplevelHandle>()
+            .map(ForeignToplevelHandle::identifier)
+        else {
+            return;
+        };
+        self.shell_managers.retain(|manager| manager.is_alive());
+        for manager in &self.shell_managers {
+            if manager.version() >= 2 {
+                manager.minimized(identifier.clone(), u32::from(minimized));
+            }
+        }
+    }
+
+    /// Scrive nel file la miniatura della finestra ridotta con questo identificatore;
+    /// restituisce la sua dimensione (0 × 0 se non c'è).
+    fn write_thumbnail(&self, identifier: &str, fd: std::os::fd::OwnedFd) -> (u32, u32) {
+        use std::io::{Seek, Write};
+        let Some(window) = self.minimized.iter().map(|(w, _)| w).find(|w| {
+            w.user_data()
+                .get::<ForeignToplevelHandle>()
+                .is_some_and(|handle| handle.identifier() == identifier)
+        }) else {
+            return (0, 0);
+        };
+        let Some(thumbnail) = window.user_data().get::<crate::backend::Thumbnail>() else {
+            return (0, 0);
+        };
+        let Ok(slot) = thumbnail.0.lock() else {
+            return (0, 0);
+        };
+        let Some((w, h, pixels)) = slot.as_ref() else {
+            return (0, 0);
+        };
+        let mut file = std::fs::File::from(fd);
+        let written = file
+            .seek(std::io::SeekFrom::Start(0))
+            .and_then(|_| file.write_all(pixels))
+            .and_then(|()| file.flush());
+        match written {
+            Ok(()) => (*w, *h),
+            Err(err) => {
+                warn!("miniatura: {err}");
+                (0, 0)
+            }
+        }
+    }
+
     /// La finestra con questo identificatore della lista: focus, e torna se era ridotta.
     pub fn activate_identifier(&mut self, identifier: &str) {
         let window = self
@@ -195,8 +246,8 @@ impl State {
             return;
         };
         // Come un clic sull'app nel Dock (dock.md, D-03): tutte le finestre dell'app sullo
-        // schermo vengono davanti nel loro ordine, con quella chiesta in cima; se sono tutte
-        // ridotte torna solo l'ultima ridotta.
+        // schermo vengono davanti nel loro ordine, con quella chiesta in cima. Una finestra
+        // ridotta torna da sola (il Dock, se sono tutte ridotte, chiede l'ultima ridotta).
         if self.space.elements().any(|w| *w == window)
             && let Some(app) = crate::panorama::window_app(&window)
         {
@@ -212,25 +263,6 @@ impl State {
             // La finestra chiesta in cima (il Dock passa quella dell'app usata per ultima).
             self.focus_window(Some(window));
             return;
-        }
-        if self.minimized.iter().any(|(w, _)| *w == window)
-            && let Some(app) = crate::panorama::window_app(&window)
-            && !self
-                .space
-                .elements()
-                .any(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
-        {
-            let last = self
-                .minimized
-                .iter()
-                .rev()
-                .find(|(w, _)| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
-                .map(|(w, _)| w.clone());
-            if let Some(last) = last {
-                self.restore_window(&last);
-                self.focus_window(Some(last));
-                return;
-            }
         }
         self.restore_window(&window);
         self.focus_window(Some(window));
@@ -256,6 +288,13 @@ impl GlobalDispatch<SilicaShellManagerV1, ShellGlobal> for State {
     ) {
         let manager = data_init.init(resource, ());
         manager.focused(state.focused_identifier());
+        if manager.version() >= 2 {
+            for (window, _) in &state.minimized {
+                if let Some(handle) = window.user_data().get::<ForeignToplevelHandle>() {
+                    manager.minimized(handle.identifier(), 1);
+                }
+            }
+        }
         state.shell_managers.push(manager);
     }
 
@@ -268,7 +307,7 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
     fn request(
         state: &mut Self,
         _client: &Client,
-        _manager: &SilicaShellManagerV1,
+        manager: &SilicaShellManagerV1,
         request: silica_shell_manager_v1::Request,
         _data: &(),
         _dh: &DisplayHandle,
@@ -286,6 +325,10 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
                 if let Err(err) = state.execute_command(&id, serde_json::Value::Null) {
                     warn!("shell: {id}: {err}");
                 }
+            }
+            silica_shell_manager_v1::Request::Thumbnail { identifier, fd } => {
+                let (width, height) = state.write_thumbnail(&identifier, fd);
+                manager.thumbnail(identifier, width, height);
             }
             silica_shell_manager_v1::Request::Destroy => {}
             _ => {}

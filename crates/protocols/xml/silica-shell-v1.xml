@@ -12,7 +12,7 @@
     questo protocollo aggiunge quello che la shell chiede al compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="1">
+  <interface name="silica_shell_manager_v1" version="2">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -56,5 +56,36 @@
       </description>
       <arg name="command" type="string"/>
     </request>
+
+    <event name="minimized" since="2">
+      <description summary="una finestra è ridotta o tornata">
+        La finestra con questo identificatore è stata ridotta (minimized 1) o è tornata
+        (0). Al collegamento si mandano tutte quelle ridotte, nell'ordine in cui sono state
+        ridotte; poi a ogni cambiamento. Il Dock le mette accanto al Cestino.
+      </description>
+      <arg name="identifier" type="string"/>
+      <arg name="minimized" type="uint"/>
+    </event>
+
+    <request name="thumbnail" since="2">
+      <description summary="la miniatura di una finestra ridotta">
+        Ossido scrive nel file la miniatura della finestra (RGBA a 8 bit premoltiplicati,
+        righe dall'alto, senza spazi fra le righe), presa quando è stata ridotta, al più
+        256 pixel per lato; poi manda l'evento thumbnail. Il file deve essere scrivibile e
+        grande almeno 256 × 256 × 4 byte.
+      </description>
+      <arg name="identifier" type="string"/>
+      <arg name="fd" type="fd"/>
+    </request>
+
+    <event name="thumbnail" since="2">
+      <description summary="la miniatura è nel file">
+        Larghezza e altezza della miniatura scritta nel file; 0 e 0 se la finestra non è
+        ridotta o non ha una miniatura.
+      </description>
+      <arg name="identifier" type="string"/>
+      <arg name="width" type="uint"/>
+      <arg name="height" type="uint"/>
+    </event>
   </interface>
 </protocol>

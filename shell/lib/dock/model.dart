@@ -3,6 +3,7 @@
 // con l'origine in alto a sinistra della superficie del Dock (larga quanto lo schermo,
 // con il bordo inferiore sul bordo dello schermo).
 
+import 'dart:ui' as ui;
 import '../system/shell_icon.dart';
 import '../system/silica_icons.dart';
 
@@ -134,7 +135,24 @@ class Item {
     this.windows = const [],
     this.id,
     this.pinned = false,
-  }) : kind = ItemKind.app;
+  }) : kind = ItemKind.app,
+       minimizedWindow = null,
+       thumbnail = null;
+
+  /// Una finestra ridotta (D-08): la sua miniatura con l'icona dell'app nell'angolo.
+  const Item.window(
+    this.label, {
+    required String window,
+    this.thumbnail,
+    this.iconPath,
+    this.layered,
+  }) : kind = ItemKind.app,
+       running = false,
+       command = null,
+       windows = const [],
+       id = null,
+       pinned = false,
+       minimizedWindow = window;
   const Item.separator()
     : kind = ItemKind.separator,
       label = '',
@@ -144,7 +162,9 @@ class Item {
       command = null,
       windows = const [],
       id = null,
-      pinned = false;
+      pinned = false,
+      minimizedWindow = null,
+      thumbnail = null;
 
   final ItemKind kind;
   final String label;
@@ -167,6 +187,12 @@ class Item {
 
   /// Fissata nel Dock (resta anche chiusa).
   final bool pinned;
+
+  /// La finestra ridotta che questo elemento rappresenta (null per app e cartelle).
+  final String? minimizedWindow;
+
+  /// La sua miniatura, se è già arrivata da Ossido.
+  final ui.Image? thumbnail;
 
   /// L'icona da disegnare; null: segnaposto con l'iniziale.
   IconSource? get icon => switch ((layered, iconPath)) {

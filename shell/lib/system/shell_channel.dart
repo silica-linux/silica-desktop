@@ -2,6 +2,8 @@
 // activate e launch. Fuori da Silica il canale non risponde: niente finestre.
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +37,14 @@ class ShellChannel {
           focused.value = '${call.arguments ?? ''}';
         case 'command':
           _commands.add('${call.arguments ?? ''}');
+        case 'minimized':
+          final list = call.arguments;
+          minimized.value = [
+            if (list is List)
+              for (final id in list) '$id',
+          ];
+        case 'thumbnail':
+          _thumbnailArrived(call.arguments);
       }
       return null;
     });
@@ -58,6 +68,58 @@ class ShellChannel {
   /// L'identificatore della finestra con il focus (vuoto: nessuna).
   final ValueNotifier<String> focused = ValueNotifier('');
 
+  /// Le finestre ridotte, dalla prima ridotta (Ossido, silica-shell-v1 versione 2).
+  final ValueNotifier<List<String>> minimized = ValueNotifier(const []);
+
+  final Map<String, Completer<ui.Image?>> _thumbnails = {};
+
+  /// La miniatura di una finestra ridotta (null se non c'è).
+  Future<ui.Image?> thumbnail(String id) {
+    final pending = _thumbnails[id];
+    if (pending != null) return pending.future;
+    final completer = Completer<ui.Image?>();
+    _thumbnails[id] = completer;
+    _call('thumbnail', {'id': id}).then((sent) {
+      if (!sent && !completer.isCompleted) {
+        _thumbnails.remove(id);
+        completer.complete(null);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<void> _thumbnailArrived(Object? args) async {
+    final map = args is Map ? args : const {};
+    final id = '${map['id'] ?? ''}';
+    final completer = _thumbnails.remove(id);
+    if (completer == null) return;
+    final width = map['width'] is int ? map['width'] as int : 0;
+    final height = map['height'] is int ? map['height'] as int : 0;
+    final path = '${map['path'] ?? ''}';
+    if (width <= 0 || height <= 0 || path.isEmpty) {
+      completer.complete(null);
+      return;
+    }
+    try {
+      final file = File(path);
+      final bytes = await file.readAsBytes();
+      await file.delete();
+      if (bytes.length < width * height * 4) {
+        completer.complete(null);
+        return;
+      }
+      ui.decodeImageFromPixels(
+        bytes,
+        width,
+        height,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+    } on FileSystemException {
+      completer.complete(null);
+    }
+  }
+
   /// La finestra con il focus, se è nell'elenco.
   Toplevel? get focusedToplevel =>
       toplevels.value.where((t) => t.id == focused.value).firstOrNull;
@@ -74,6 +136,11 @@ class ShellChannel {
     try {
       _update(await channel.invokeMethod<Object?>('list'));
       focused.value = await channel.invokeMethod<String>('focused') ?? '';
+      final list = await channel.invokeMethod<Object?>('minimized');
+      minimized.value = [
+        if (list is List)
+          for (final id in list) '$id',
+      ];
     } on MissingPluginException {
       // Fuori da Silica.
     }
