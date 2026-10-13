@@ -61,6 +61,11 @@ Osservazione consentita:
   Procedura, condizioni e formato: `docs/reference-capture.md`.
 - Specifiche pubbliche: protocolli Wayland, specifiche freedesktop, documentazione
   Smithay e Flutter.
+- Documentazione pubblica di Apple (developer.apple.com, Human Interface Guidelines,
+  sessioni WWDC): solo per sapere quali comportamenti esistono e come si usano (es. le
+  forme di vetro che si fondono, il vetro che reagisce al tocco). Non se ne copiano testi,
+  immagini, codice o nomi; i valori (dimensioni, curve, colori) si misurano comunque
+  sull'osservazione.
 
 Vietato:
 
