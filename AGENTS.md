@@ -112,7 +112,7 @@ Gli altri repository di `silica-linux`:
 
 | Repository | Cosa | Licenza |
 | --- | --- | --- |
-| `silica-ui` | pacchetto Dart `silica_ui`: Inter, vetro, Liquid Glass. API stabile, versioni con tag `vX.Y.Z`; la shell e le app lo prendono dal tag | MIT OR Apache-2.0 |
+| `silica-ui` (pubblico) | pacchetto Dart `silica_ui`: Inter, vetro, Liquid Glass. API stabile, versioni con tag `vX.Y.Z`; la shell e le app lo prendono dal tag | MIT OR Apache-2.0 |
 | `silica-icons` | icone delle app e dei file (a livelli), 303 simboli di sistema | CC BY-SA 4.0 |
 | `silica-cursors` | cursori | CC BY-SA 4.0 |
 | `silica-reference` | osservazioni di macOS 27, clonato in `plan/reference/` (privato) | — |
