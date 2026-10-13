@@ -89,6 +89,13 @@ class LayeredSource extends IconSource {
   final LayeredIcon icon;
 }
 
+/// Una cartella: la cartella generica con simbolo e tinta, o quella semplice
+/// (`resolveFolderIcon`).
+class FolderSource extends IconSource {
+  const FolderSource(this.folder);
+  final FolderIcon folder;
+}
+
 /// Un file SVG o PNG già composto (tema freedesktop).
 class FlatSource extends IconSource {
   const FlatSource(this.path);
@@ -127,6 +134,7 @@ class ShellIcon extends StatelessWidget {
             _svg(layer.pathFor(dark: isDark), canvas),
         ],
       ),
+      FolderSource(:final folder) => _folder(folder, canvas, isDark),
       FlatSource(:final path) => _flat(path, canvas, body, isDark),
     };
     return SizedBox(
@@ -191,7 +199,7 @@ class ShellIcon extends StatelessWidget {
                   canvas: canvas,
                   dark: isDark,
                 ),
-                null => const SizedBox.shrink(),
+                FolderSymbol() || null => const SizedBox.shrink(),
               },
             ],
           ),
@@ -201,6 +209,71 @@ class ShellIcon extends StatelessWidget {
           painter: _RimPainter(body, side, isDark),
         ),
       ],
+    );
+  }
+
+  /// La cartella: livelli, simbolo inciso (riflesso spostato in basso, poi il simbolo) e
+  /// tinta sulla luminanza del tutto (icon-format.md, "Cartella generica").
+  Widget _folder(FolderIcon folder, double canvas, bool isDark) {
+    final icon = folder.icon;
+    final dyn = icon.dynamic;
+    final children = <Widget>[
+      for (final layer in icon.layers)
+        _svg(layer.pathFor(dark: isDark), canvas),
+    ];
+    if (dyn is FolderSymbol) {
+      final name = folder.symbol;
+      final band = dyn.bandFor(side);
+      final file = name == null || band == null
+          ? null
+          : dyn.symbolFile(name, band.weight);
+      if (band != null && file != null) {
+        final k = canvas / canvasSide;
+        final box = dyn.box;
+        final w = box.width * band.scale * k;
+        final h = box.height * band.scale * k;
+        final left = box.center.dx * k - w / 2;
+        final top = box.center.dy * k - h / 2;
+        final fx = isDark ? dyn.dark : dyn.light;
+        Widget glyph(Color color, double opacity, double dy) => Positioned(
+          left: left,
+          top: top + dy,
+          width: w,
+          height: h,
+          child: Opacity(
+            opacity: opacity,
+            child: SvgPicture.string(
+              svgText(file),
+              width: w,
+              height: h,
+              theme: SvgTheme(currentColor: color),
+            ),
+          ),
+        );
+        if (band.highlight && fx.highlightOpacity > 0) {
+          children.add(
+            glyph(
+              fx.highlight,
+              fx.highlightOpacity,
+              math.max(fx.offset * k, 0.5),
+            ),
+          );
+        }
+        children.add(glyph(fx.color, fx.opacity, 0));
+      }
+    }
+    final Widget stack = SizedBox.square(
+      dimension: canvas,
+      child: Stack(children: children),
+    );
+    final tint = folder.tint;
+    final ramp = dyn is FolderSymbol
+        ? (isDark ? dyn.darkTint : dyn.lightTint)
+        : null;
+    if (tint == null || ramp == null) return stack;
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(ramp.matrix(tint)),
+      child: stack,
     );
   }
 
