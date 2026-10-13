@@ -76,8 +76,10 @@ Asset:
 
 - Ogni asset ha una riga in `ASSETS.md` con autore, licenza e fonte;
   `cargo xtask assets` (parte di `cargo xtask ci`) blocca i file senza riga.
-- Licenze ammesse: originale del progetto, CC0, CC-BY, OFL, MIT/Apache. Da preferire
+- Licenze ammesse: originale del progetto, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Da preferire
   la grafica generata in codice.
+- Icone delle app, dei file e di sistema: repo `silica-linux/silica-icons`, licenza
+  CC BY-SA 4.0; cursori: repo `silica-linux/silica-cursors`, stessa licenza.
 - Sfondi delle versioni: foto proprie o di fotografi con cessione scritta dei diritti,
   oppure Wikimedia Commons con licenza compatibile.
 

@@ -4,7 +4,7 @@ Ogni asset del repository (immagini, icone, font, suoni, sfondi, cursori) ha una
 qui. `cargo xtask assets` blocca i file con estensione da asset che non compaiono nella
 colonna Percorso.
 
-Licenze ammesse: originale del progetto, CC0, CC-BY, OFL, MIT/Apache. Da preferire la
+Licenze ammesse: originale del progetto, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Da preferire la
 grafica generata in codice.
 
 | Percorso | Autore | Licenza | Fonte |
