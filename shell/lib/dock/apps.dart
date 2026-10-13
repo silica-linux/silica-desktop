@@ -8,6 +8,7 @@ import 'dart:io';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/shell_channel.dart';
+import '../system/silica_icons.dart';
 import 'model.dart';
 
 /// App fissate quando manca la configurazione: le prime installate di questo elenco.
@@ -54,6 +55,7 @@ Item _appItem(DesktopEntry entry, List<Toplevel> windows) => Item.app(
   entry.name,
   running: windows.isNotEmpty,
   iconPath: findIcon(entry.icon),
+  layered: silicaIconFor(entry),
   command: entry.exec,
   windows: [for (final w in windows) w.id],
 );
@@ -85,18 +87,31 @@ List<Item> dockItems(
     items.add(_appItem(entry, windowsOf(entry)));
   }
   final home = Platform.environment['HOME'] ?? '';
+  final trashFull = trashHasFiles(home);
   return [
     ...items,
     const Item.separator(),
     Item.app(
       'Download',
       iconPath: findIcon('folder-download'),
+      layered: findSilicaIcon('folder'),
       command: 'xdg-open "$home/Download" || xdg-open "$home/Downloads"',
     ),
     Item.app(
       'Cestino',
-      iconPath: findIcon('user-trash'),
+      iconPath: findIcon(trashFull ? 'user-trash-full' : 'user-trash'),
+      layered: findSilicaIcon(trashFull ? 'trash-full' : 'trash-empty'),
       command: 'xdg-open trash:///',
     ),
   ];
+}
+
+/// Il cestino dell'utente contiene qualcosa (specifica freedesktop Trash).
+bool trashHasFiles(String home) {
+  try {
+    final files = Directory('$home/.local/share/Trash/files');
+    return files.existsSync() && files.listSync().isNotEmpty;
+  } on FileSystemException {
+    return false;
+  }
 }

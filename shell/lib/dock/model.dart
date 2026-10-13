@@ -3,6 +3,9 @@
 // con l'origine in alto a sinistra della superficie del Dock (larga quanto lo schermo,
 // con il bordo inferiore sul bordo dello schermo).
 
+import '../system/shell_icon.dart';
+import '../system/silica_icons.dart';
+
 /// Passo fra le celle delle app: 63 pt (AX).
 const double cellPitch = 63;
 
@@ -126,6 +129,7 @@ class Item {
     this.label, {
     this.running = false,
     this.iconPath,
+    this.layered,
     this.command,
     this.windows = const [],
   }) : kind = ItemKind.app;
@@ -134,6 +138,7 @@ class Item {
       label = '',
       running = false,
       iconPath = null,
+      layered = null,
       command = null,
       windows = const [];
 
@@ -144,11 +149,21 @@ class Item {
   /// Il file dell'icona (SVG o PNG); null: segnaposto disegnato in codice.
   final String? iconPath;
 
+  /// L'icona a livelli di silica-icons, preferita a [iconPath].
+  final LayeredIcon? layered;
+
   /// Il comando per avviarla (Exec senza codici di campo), se è un'app.
   final String? command;
 
   /// Le finestre aperte dell'app (identificatori della lista di Ossido).
   final List<String> windows;
+
+  /// L'icona da disegnare; null: segnaposto con l'iniziale.
+  IconSource? get icon => switch ((layered, iconPath)) {
+    (final LayeredIcon l, _) => LayeredSource(l),
+    (null, final String path) => FlatSource(path),
+    _ => null,
+  };
 
   double get restWidth =>
       kind == ItemKind.separator ? separatorCell : cellPitch;

@@ -7,18 +7,18 @@
 // disegna niente e non prende né puntatore né tastiera (silica/layer).
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
+import '../system/shell_icon.dart';
+import '../system/silica_icons.dart';
 import 'search.dart';
 
 const double wideWidth = 640;
@@ -26,6 +26,9 @@ const double narrowWidth = 384;
 const double topFraction = 0.30;
 const double headerHeight = 56;
 const double rowHeight = 57;
+
+/// Icona dell'app nella riga: ~38–39 pt visibili (spotlight.md).
+const double rowIconSide = 38;
 const double maxHeight = 467;
 const double radius = 28.5;
 
@@ -309,7 +312,13 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   }
 
   Widget _row(DesktopEntry entry, bool selected) {
-    final icon = findIcon(entry.icon);
+    final layered = silicaIconFor(entry);
+    final flat = findIcon(entry.icon);
+    final IconSource? icon = layered != null
+        ? LayeredSource(layered)
+        : flat != null
+        ? FlatSource(flat)
+        : null;
     return GestureDetector(
       onTap: () => _launch(entry),
       child: Padding(
@@ -327,9 +336,7 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
                 height: 38,
                 child: icon == null
                     ? null
-                    : icon.endsWith('.svg')
-                    ? SvgPicture.file(File(icon))
-                    : Image.file(File(icon)),
+                    : Center(child: ShellIcon(icon, side: rowIconSide)),
               ),
               const SizedBox(width: 15),
               Expanded(

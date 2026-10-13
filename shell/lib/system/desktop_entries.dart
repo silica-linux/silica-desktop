@@ -12,6 +12,7 @@ class DesktopEntry {
     this.icon,
     this.wmClass,
     this.keywords = const [],
+    this.silicaIcon,
   });
 
   /// Nome del file senza `.desktop` (es. `org.gnome.Nautilus`).
@@ -23,6 +24,9 @@ class DesktopEntry {
   final String? icon;
   final String? wmClass;
   final List<String> keywords;
+
+  /// L'icona a livelli di silica-icons scelta dall'app (`X-Silica-Icon`).
+  final String? silicaIcon;
 
   /// La finestra con questo app id appartiene a questa app.
   bool matchesAppId(String appId) {
@@ -89,6 +93,7 @@ DesktopEntry? parseDesktopEntry(
         .split(';')
         .where((k) => k.isNotEmpty)
         .toList(),
+    silicaIcon: values['X-Silica-Icon'],
   );
 }
 

@@ -2,15 +2,13 @@
 // plan/reference/dock.md), fondo di Liquid Glass calcolato da Ossido, icone, separatore,
 // indicatori ed etichetta disegnati qui.
 
-import 'dart:io';
-
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
+import '../system/shell_icon.dart';
 import 'apps.dart';
 import 'icons.dart';
 import 'model.dart';
@@ -187,8 +185,8 @@ class _DockState extends State<Dock> with SingleTickerProviderStateMixin {
                   ),
                 ),
                 for (var i = 0; i < widget.items.length; i++)
-                  if (widget.items[i].iconPath case final path?)
-                    _icon(l, i, size.height, path),
+                  if (widget.items[i].icon case final source?)
+                    _icon(l, i, size.height, source),
                 if (hovered != null) _label(l, hovered, size.height),
               ],
             ),
@@ -198,25 +196,15 @@ class _DockState extends State<Dock> with SingleTickerProviderStateMixin {
     );
   }
 
-  /// L'icona di un'app dal tema del sistema.
-  Widget _icon(Layout l, int index, double height, String path) {
+  /// L'icona di un'app: a livelli da silica-icons, o dal tema del sistema.
+  Widget _icon(Layout l, int index, double height, IconSource source) {
     final (x, y, side) = iconRect(l, index, height);
-    final file = File(path);
     return Positioned(
       left: x,
       top: y,
       width: side,
       height: side,
-      child: IgnorePointer(
-        child: path.endsWith('.svg')
-            ? SvgPicture.file(file, width: side, height: side)
-            : Image.file(
-                file,
-                width: side,
-                height: side,
-                filterQuality: FilterQuality.medium,
-              ),
-      ),
+      child: ShellIcon(source, side: side),
     );
   }
 
@@ -266,7 +254,7 @@ class _DockPainter extends CustomPainter {
         continue;
       }
       final (ix, iy, side) = iconRect(l, i, height);
-      if (item.iconPath == null) {
+      if (item.icon == null) {
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
       }
       if (item.running) {
