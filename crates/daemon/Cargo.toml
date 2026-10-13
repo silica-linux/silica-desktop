@@ -9,3 +9,14 @@ publish = false
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "silica-daemon"
+path = "src/main.rs"
+
+[dependencies]
+async-io = "2"
+event-listener = "5"
+futures-lite = "2"
+serde = { version = "1", features = ["derive"] }
+zbus = "5.19"

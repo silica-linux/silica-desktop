@@ -3152,6 +3152,13 @@ dependencies = [
 [[package]]
 name = "silica-daemon"
 version = "0.0.0"
+dependencies = [
+ "async-io",
+ "event-listener",
+ "futures-lite",
+ "serde",
+ "zbus",
+]
 
 [[package]]
 name = "silica-dock-iced"
