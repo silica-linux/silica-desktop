@@ -12,6 +12,7 @@ mod handlers;
 mod input;
 mod keys;
 mod layers;
+mod panorama;
 mod perf;
 mod render;
 mod session_bus;

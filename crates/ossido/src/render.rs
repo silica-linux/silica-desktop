@@ -69,6 +69,10 @@ pub struct RenderContext<'a> {
     pub glass_quality: GlassQuality,
     /// Cambio di spazio in corso: sfondo e barra dei menu scorrono con le finestre.
     pub space_shift: Option<crate::workspaces::SpaceShift>,
+    /// Panorama aperto o in chiusura: finestre disposte, barra degli spazi.
+    pub panorama: Option<crate::panorama::PanoramaView>,
+    /// Numero di spazi e spazio attivo, per la barra di Panorama.
+    pub spaces: (usize, usize),
 }
 
 /// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
@@ -107,6 +111,8 @@ struct GlassAnchor {
     surface: WlSurface,
     /// Origine della superficie nell'output, in pixel fisici.
     origin: Point<i32, Physical>,
+    /// Opacità dello strato (la barra dei menu svanisce con Panorama).
+    opacity: f32,
 }
 
 /// La finestra ha lo stato attivo (focus), anche se il configure non è ancora partito.
@@ -166,8 +172,7 @@ fn scale_rect(
 }
 
 /// Gli elementi di una finestra, dal primo piano allo sfondo (superfici, barra, ombra),
-/// scalati di `factor` attorno al centro della cornice. Con il vetro, l'indice dopo il
-/// quale va (dietro le superfici, senza vedere barra e ombra della finestra).
+/// spostati di `offset` e scalati di `factor` attorno al centro della cornice.
 #[allow(clippy::too_many_arguments)]
 fn window_elements(
     renderer: &mut GlesRenderer,
@@ -177,6 +182,7 @@ fn window_elements(
     output_origin: Point<i32, Logical>,
     output_size: Size<i32, Physical>,
     scale: f64,
+    offset: Point<i32, Logical>,
     factor: f64,
     hovered: bool,
 ) -> Vec<OutputElement> {
@@ -186,8 +192,8 @@ fn window_elements(
     ) else {
         return Vec::new();
     };
-    let render_location =
-        (location - window.geometry().loc - output_origin).to_physical_precise_round(scale);
+    let render_location = (location - window.geometry().loc - output_origin + offset)
+        .to_physical_precise_round(scale);
     let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
         renderer,
         render_location,
@@ -200,6 +206,7 @@ fn window_elements(
     }
     let mut frame = decorations::frame_of(window, geometry);
     frame.loc -= output_origin;
+    frame.loc += offset;
     let frame_physical = frame.to_f64().to_physical(scale);
     let center_f = frame_physical.loc + frame_physical.size.downscale(2.0).to_point();
     let center = center_f.to_i32_round();
@@ -274,6 +281,7 @@ pub fn snapshot_window(
         output_origin,
         output_size,
         scale,
+        Point::default(),
         1.0,
         false,
     );
@@ -340,6 +348,12 @@ pub fn output_elements(
                 }
                 _ => vec![0.0],
             };
+            let alpha = match &context.panorama {
+                Some(panorama) if layer.namespace() == "menubar" => {
+                    (1.0 - panorama.progress).clamp(0.0, 1.0) as f32
+                }
+                _ => 1.0,
+            };
             for offset in offsets {
                 let location = (geometry.loc.to_f64() + Point::from((offset, 0.0)))
                     .to_physical_precise_round(scale);
@@ -351,7 +365,7 @@ pub fn output_elements(
                         renderer,
                         location,
                         scale.into(),
-                        1.0,
+                        alpha,
                     )
                     .into_iter()
                     .map(OutputElement::Surface),
@@ -360,11 +374,34 @@ pub fn output_elements(
                     index: elements.len(),
                     surface: layer.wl_surface().clone(),
                     origin: location,
+                    opacity: alpha,
                 });
             }
         }
     };
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
+    // La barra degli spazi di Panorama scende sopra la barra dei menu che svanisce.
+    if let Some(panorama) = &context.panorama {
+        let width = f64::from(output_size.w) / scale;
+        let sprite = output
+            .user_data()
+            .get_or_insert(ossido_render::sprite::Sprite::default);
+        if let Some(bar) = crate::panorama::bar_element(
+            renderer,
+            sprite,
+            width,
+            context.spaces.0,
+            context.spaces.1,
+            panorama.progress,
+            scale,
+        ) {
+            elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
+                bar,
+                Point::default(),
+                1.0,
+            )));
+        }
+    }
     push_layers(&mut elements, &mut anchors, renderer, Layer::Top);
 
     // Le finestre chiuse svaniscono sopra le altre.
@@ -396,7 +433,18 @@ pub fn output_elements(
     }
 
     for window in space.elements().rev() {
-        let factor = open_scale(window, context);
+        let mut factor = open_scale(window, context);
+        let mut offset = Point::<i32, Logical>::default();
+        // In Panorama la cornice va dalla sua posizione a quella disposta.
+        if let Some(panorama) = &context.panorama
+            && let Some(placement) = panorama.placements.iter().find(|p| &p.window == window)
+            && placement.from.size.w > 0.0
+        {
+            let now = crate::panorama::interpolate(placement, panorama.progress);
+            let center = |r: Rectangle<f64, Logical>| r.loc + r.size.downscale(2.0).to_point();
+            offset = (center(now) - center(placement.from)).to_i32_round();
+            factor *= now.size.w / placement.from.size.w;
+        }
         let hovered = context.titlebar_hover == Some(window);
         elements.extend(window_elements(
             renderer,
@@ -406,6 +454,7 @@ pub fn output_elements(
             output_origin,
             output_size,
             scale,
+            offset,
             factor,
             hovered,
         ));
@@ -415,8 +464,9 @@ pub fn output_elements(
             anchors.push(GlassAnchor {
                 index: elements.len(),
                 surface: toplevel.wl_surface().clone(),
-                origin: (location - window.geometry().loc - output_origin)
+                origin: (location - window.geometry().loc - output_origin + offset)
                     .to_physical_precise_round(scale),
+                opacity: 1.0,
             });
         }
     }
@@ -502,7 +552,7 @@ pub fn output_elements(
                         Material::Regular => REGULAR_LIGHT,
                         Material::Notification => NOTIFICATION_LIGHT,
                     },
-                    opacity: region.opacity as f32,
+                    opacity: region.opacity as f32 * anchor.opacity,
                     scale,
                 })
                 .collect();

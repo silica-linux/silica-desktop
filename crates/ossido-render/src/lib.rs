@@ -10,6 +10,7 @@ pub mod cache;
 pub mod corners;
 pub mod glass;
 pub mod shadow;
+pub mod sprite;
 pub mod title;
 pub mod titlebar;
 

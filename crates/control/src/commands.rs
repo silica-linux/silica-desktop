@@ -44,6 +44,8 @@ pub const SPACE_GOTO: &str = "space.goto";
 pub const SPACE_ADD: &str = "space.add";
 pub const SPACE_REMOVE: &str = "space.remove";
 pub const WINDOW_MOVE_TO_SPACE: &str = "window.move_to_space";
+pub const PANORAMA_TOGGLE: &str = "panorama.toggle";
+pub const PANORAMA_STATE: &str = "panorama.state";
 pub const SYSTEM_WIFI: &str = "system.wifi";
 pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
 pub const SYSTEM_VOLUME: &str = "system.volume";
@@ -312,6 +314,20 @@ pub const CATALOG: &[CommandSpec] = &[
                 "additionalProperties": false
             })
         },
+    },
+    CommandSpec {
+        id: PANORAMA_TOGGLE,
+        label: "Panorama",
+        description: "Mostra tutte le finestre dello spazio una accanto all'altra con la barra degli spazi in alto; se è aperto lo chiude.",
+        shortcut: Some("Ctrl+Up"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: PANORAMA_STATE,
+        label: "Stato di Panorama",
+        description: "Se Panorama è aperto, l'avanzamento dell'animazione (0–1) e le cornici disposte delle finestre.",
+        shortcut: None,
+        params: no_params,
     },
     CommandSpec {
         id: SYSTEM_STATUS,
@@ -900,6 +916,24 @@ pub struct MoveToSpaceParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<u64>,
     pub index: usize,
+}
+
+/// Una finestra disposta in [`PANORAMA_STATE`] (punti logici).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PanoramaWindow {
+    pub id: u64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Risposta di [`PANORAMA_STATE`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PanoramaState {
+    pub open: bool,
+    pub progress: f64,
+    pub windows: Vec<PanoramaWindow>,
 }
 
 /// Uno spazio in [`SPACE_LIST`].

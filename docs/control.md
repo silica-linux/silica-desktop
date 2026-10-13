@@ -37,6 +37,8 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `space.add` | — | `index` dello spazio nuovo (al più 16) |
 | `space.remove` | `index` | — ; le finestre passano allo spazio prima (o al primo) |
 | `window.move_to_space` | `id?`, `index` | — |
+| `panorama.toggle` | — | `open`: apre o chiude Panorama (⌃↑; Esc chiude). Aperto, un clic su una finestra la porta in primo piano, sul vuoto chiude, su uno spazio della barra ci passa, sul "+" aggiunge uno spazio |
+| `panorama.state` | — | `open`, `progress` (0–1), `windows`: `id`, `x`, `y`, `width`, `height` delle cornici disposte |
 | `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |
 | `controlcenter.toggle` | — | `forwarded`: apre o chiude il Centro di controllo (icona nella barra) |

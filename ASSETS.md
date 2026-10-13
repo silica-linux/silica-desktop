@@ -9,4 +9,5 @@ grafica generata in codice.
 
 | Percorso | Autore | Licenza | Fonte |
 | --- | --- | --- | --- |
+| `crates/ossido-render/fonts/Inter-Regular.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
 | `crates/ossido-render/fonts/Inter-SemiBold.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |

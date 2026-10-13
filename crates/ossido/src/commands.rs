@@ -25,6 +25,7 @@ use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
+use silica_control::commands::{PANORAMA_STATE, PANORAMA_TOGGLE};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -145,6 +146,11 @@ impl State {
                 }
                 Ok(json!({ "switched": self.switch_space(index, std::time::Instant::now()) }))
             }
+            PANORAMA_TOGGLE => {
+                self.toggle_panorama(std::time::Instant::now());
+                Ok(json!({ "open": self.panorama_open() }))
+            }
+            PANORAMA_STATE => to_value(self.panorama_state()),
             SPACE_ADD => Ok(json!({ "index": self.add_space()? })),
             SPACE_REMOVE => {
                 let IndexParams { index } = parse_required(params)?;

@@ -93,6 +93,10 @@ pub struct State {
     pub minimized: Vec<crate::windows::Minimized>,
     /// Gli spazi di lavoro e lo scorrimento in corso (`workspaces.rs`).
     pub workspaces: crate::workspaces::Workspaces,
+    /// Panorama aperto o in chiusura (`panorama.rs`).
+    pub panorama: Option<crate::panorama::Panorama>,
+    /// Il clic che ha aperto o usato Panorama: il rilascio non va al client.
+    pub panorama_press: bool,
     /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
     pub titlebar_hover: Option<Window>,
     /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
@@ -241,6 +245,8 @@ impl State {
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
             workspaces: crate::workspaces::Workspaces::default(),
+            panorama: None,
+            panorama_press: false,
             titlebar_hover: None,
             titlebar_press: None,
             moving: None,

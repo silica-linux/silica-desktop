@@ -31,7 +31,9 @@ impl State {
         let over_layer = self
             .layer_under(&[Layer::Overlay, Layer::Top], location)
             .is_some();
-        let hit = if over_layer {
+        // In Panorama le finestre non ricevono il puntatore (sono disegnate altrove).
+        let in_panorama = self.panorama.is_some() && !self.over_dock_layer(location);
+        let hit = if over_layer || in_panorama {
             None
         } else {
             self.window_hit(location)
@@ -46,6 +48,7 @@ impl State {
         // Sulla barra il puntatore non è su nessuna superficie del client.
         let under = match hit {
             Some(Hit::Titlebar(..)) => None,
+            _ if in_panorama => None,
             _ => self.surface_under(location),
         };
         pointer.motion(
@@ -67,6 +70,17 @@ impl State {
         };
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
+        // Panorama prende i clic, tranne quelli sul Dock e sui pannelli.
+        if state == ButtonState::Pressed && self.panorama_open() && !self.over_dock_layer(location)
+        {
+            self.panorama_press = true;
+            self.panorama_click(location, std::time::Instant::now());
+            return;
+        }
+        if state == ButtonState::Released && self.panorama_press {
+            self.panorama_press = false;
+            return;
+        }
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
             match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
                 // Un clic su un layer non tocca le finestre; il focus solo se lo chiede.
@@ -120,6 +134,7 @@ impl State {
         };
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
+        let panorama_open = self.panorama_open();
         let command = keyboard.input::<&'static str, _>(
             self,
             code,
@@ -132,6 +147,10 @@ impl State {
                         .raw_latin_sym_or_raw_current_sym()
                         .unwrap_or(keysym.modified_sym()),
                 );
+                // Esc chiude Panorama.
+                if pressed && panorama_open && key == "Escape" {
+                    return FilterResult::Intercept(silica_control::commands::PANORAMA_TOGGLE);
+                }
                 match shortcuts.iter().find(|(shortcut, _)| {
                     pressed
                         && shortcut.matches(
@@ -153,6 +172,12 @@ impl State {
                 warn!("scorciatoia {id}: {err}");
             }
         }
+    }
+
+    /// Il puntatore è su uno strato in primo piano che non è la barra dei menu (il Dock).
+    fn over_dock_layer(&self, location: Point<f64, Logical>) -> bool {
+        self.layer_under(&[Layer::Overlay, Layer::Top], location)
+            .is_some_and(|(layer, _)| layer.namespace() != "menubar")
     }
 
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {

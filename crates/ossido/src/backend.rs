@@ -90,6 +90,7 @@ pub fn init_headless(
         .handle()
         .insert_source(Timer::from_duration(HEADLESS_FRAME), |_, _, data| {
             data.state.advance_spaces(std::time::Instant::now());
+            data.state.advance_panorama(std::time::Instant::now());
             data.state.send_frames();
             TimeoutAction::ToDuration(HEADLESS_FRAME)
         })?;
@@ -168,7 +169,10 @@ impl State {
     pub fn screenshot(&mut self) -> Result<Capture, String> {
         let glass_quality = self.glass_quality();
         self.advance_spaces(Instant::now());
+        self.advance_panorama(Instant::now());
         let space_shift = self.space_shift();
+        let panorama = self.panorama_view();
+        let spaces = (self.workspaces.count(), self.workspaces.active);
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
@@ -180,6 +184,8 @@ impl State {
                     now: Instant::now(),
                     glass_quality,
                     space_shift,
+                    panorama: panorama.clone(),
+                    spaces,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -198,6 +204,8 @@ impl State {
                     now: Instant::now(),
                     glass_quality,
                     space_shift,
+                    panorama: panorama.clone(),
+                    spaces,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -224,7 +232,10 @@ impl State {
         let glass_quality = self.glass_quality();
         self.closing.retain(|closing| !closing.finished(now, speed));
         self.advance_spaces(now);
+        self.advance_panorama(now);
         let space_shift = self.space_shift();
+        let panorama = self.panorama_view();
+        let spaces = (self.workspaces.count(), self.workspaces.active);
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
@@ -239,6 +250,8 @@ impl State {
             now,
             glass_quality,
             space_shift,
+            panorama,
+            spaces,
         };
         let elements = output_elements(
             backend.graphics.renderer(),
