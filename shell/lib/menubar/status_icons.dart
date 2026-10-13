@@ -55,28 +55,61 @@ class _MarkPainter extends CustomPainter {
   bool shouldRepaint(_MarkPainter old) => old.color != color;
 }
 
-enum StatusKind { network, search, controls }
+enum StatusKind { network, wired, battery, search, controls }
 
 class StatusIcon extends StatelessWidget {
-  const StatusIcon({super.key, required this.kind, required this.cell});
+  const StatusIcon({
+    super.key,
+    required this.kind,
+    required this.cell,
+    this.level = 1,
+    this.dim = false,
+    this.charging = false,
+  });
 
   final StatusKind kind;
 
   /// Larghezza della casella (le misure: 22–33 pt).
   final double cell;
 
+  /// Intensità del Wi-Fi o carica della batteria, 0–1.
+  final double level;
+
+  /// Spento (Wi-Fi disattivato): tutto al 35 %.
+  final bool dim;
+
+  /// Batteria in carica: un fulmine ritagliato nel riempimento.
+  final bool charging;
+
   @override
   Widget build(BuildContext context) => SizedBox(
     width: cell,
     height: barHeight,
-    child: CustomPaint(painter: _StatusPainter(kind)),
+    child: CustomPaint(
+      painter: _StatusPainter(kind, level: level, dim: dim, charging: charging),
+    ),
   );
 }
 
+/// Quanti archi del Wi-Fi sono accesi per un'intensità 0–1 (il punto lo è sempre).
+int wifiArcs(double level) => level >= 0.67
+    ? 3
+    : level >= 0.34
+    ? 2
+    : 1;
+
 class _StatusPainter extends CustomPainter {
-  _StatusPainter(this.kind);
+  _StatusPainter(
+    this.kind, {
+    this.level = 1,
+    this.dim = false,
+    this.charging = false,
+  });
 
   final StatusKind kind;
+  final double level;
+  final bool dim;
+  final bool charging;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -89,18 +122,93 @@ class _StatusPainter extends CustomPainter {
     final fill = Paint()..color = statusColor;
     switch (kind) {
       case StatusKind.network:
-        // Tre archi e un punto, ~17 × 12 pt.
+        // Tre archi e un punto, ~17 × 12 pt; gli archi oltre l'intensità al 35 %.
         final base = c + const Offset(0, 5);
-        for (final r in [4.5, 8.0, 11.5]) {
+        final faint = statusColor.withValues(alpha: statusColor.a * 0.35);
+        final lit = dim ? 0 : wifiArcs(level);
+        final radii = [4.5, 8.0, 11.5];
+        for (var i = 0; i < radii.length; i++) {
           canvas.drawArc(
-            Rect.fromCircle(center: base, radius: r),
+            Rect.fromCircle(center: base, radius: radii[i]),
             -math.pi * 0.75,
             math.pi * 0.5,
             false,
-            stroke,
+            Paint.from(stroke)..color = i < lit ? statusColor : faint,
           );
         }
-        canvas.drawCircle(base, 1.4, fill);
+        canvas.drawCircle(base, 1.4, dim ? (Paint()..color = faint) : fill);
+      case StatusKind.wired:
+        // Rete via cavo: tre caselle collegate, ~16 × 12 pt.
+        final link = stroke..strokeWidth = 1.4;
+        final top = Rect.fromCenter(
+          center: c - const Offset(0, 3.5),
+          width: 6,
+          height: 5,
+        );
+        canvas.drawRect(top, link);
+        for (final dx in [-5.5, 5.5]) {
+          canvas.drawRect(
+            Rect.fromCenter(center: c + Offset(dx, 4), width: 5, height: 4),
+            link,
+          );
+          canvas.drawLine(c + Offset(dx, 2), c + Offset(dx, 0.5), link);
+        }
+        canvas.drawLine(
+          c + const Offset(-5.5, 0.5),
+          c + const Offset(5.5, 0.5),
+          link,
+        );
+        canvas.drawLine(
+          c + const Offset(0, -1),
+          c + const Offset(0, 0.5),
+          link,
+        );
+      case StatusKind.battery:
+        // Batteria ~25 × 12 pt con il riempimento della carica (dimensioni provvisorie:
+        // il riferimento è un fisso, senza batteria).
+        final body = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: c - const Offset(1.5, 0),
+            width: 23,
+            height: 11.5,
+          ),
+          const Radius.circular(3.5),
+        );
+        canvas.drawRRect(body, Paint.from(stroke)..strokeWidth = 1.1);
+        final inner = body.outerRect.deflate(2);
+        canvas.saveLayer(body.outerRect.inflate(2), Paint());
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              inner.left,
+              inner.top,
+              inner.width * level.clamp(0, 1),
+              inner.height,
+            ),
+            const Radius.circular(1.5),
+          ),
+          fill,
+        );
+        if (charging) {
+          final bolt = Path()
+            ..moveTo(c.dx + 0.5, c.dy - 6)
+            ..lineTo(c.dx - 4, c.dy + 0.8)
+            ..lineTo(c.dx - 0.8, c.dy + 0.8)
+            ..lineTo(c.dx - 2, c.dy + 6)
+            ..lineTo(c.dx + 2.5, c.dy - 0.8)
+            ..lineTo(c.dx - 0.6, c.dy - 0.8)
+            ..close();
+          canvas.drawPath(bolt, Paint()..blendMode = BlendMode.clear);
+          canvas.drawPath(bolt, Paint.from(stroke)..strokeWidth = 0.9);
+        }
+        canvas.restore();
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(body.right + 1, c.dy - 2, 1.6, 4),
+            const Radius.circular(0.8),
+          ),
+          fill,
+        );
       case StatusKind.search:
         // Lente: 13 × 13 pt.
         canvas.drawCircle(c + const Offset(-1.5, -1.5), 4.6, stroke);
@@ -123,5 +231,9 @@ class _StatusPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_StatusPainter old) => old.kind != kind;
+  bool shouldRepaint(_StatusPainter old) =>
+      old.kind != kind ||
+      old.level != level ||
+      old.dim != dim ||
+      old.charging != charging;
 }

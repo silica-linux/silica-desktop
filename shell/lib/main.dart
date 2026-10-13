@@ -55,6 +55,7 @@ class ShellComponent extends StatelessWidget {
         onSearch: () => ShellChannel.instance.execute('faro.toggle'),
         onClock: () => ShellChannel.instance.execute('notifications.toggle'),
         onControls: () => ShellChannel.instance.execute('controlcenter.toggle'),
+        system: DBusSystem(),
       ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
       'faro' => Faro(entries: loadDesktopEntries()),

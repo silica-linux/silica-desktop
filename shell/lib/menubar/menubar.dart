@@ -10,6 +10,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
+import '../system/system_status.dart';
 import 'status_icons.dart';
 
 const double barHeight = 30;
@@ -75,6 +76,7 @@ class MenuBar extends StatefulWidget {
     this.onSearch,
     this.onClock,
     this.onControls,
+    this.system,
     this.now,
   });
 
@@ -89,6 +91,9 @@ class MenuBar extends StatefulWidget {
 
   /// Clic sull'icona dei controlli: il Centro di controllo.
   final VoidCallback? onControls;
+
+  /// Stato del sistema: Wi-Fi o rete via cavo, batteria.
+  final SystemSource? system;
 
   /// Orologio fisso (test).
   final DateTime? now;
@@ -105,6 +110,7 @@ class _MenuBarState extends State<MenuBar> {
     super.initState();
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
+    widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
     _scheduleTick();
   }
@@ -131,6 +137,7 @@ class _MenuBarState extends State<MenuBar> {
     _timer?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
+    widget.system?.removeListener(_changed);
     super.dispose();
   }
 
@@ -187,7 +194,7 @@ class _MenuBarState extends State<MenuBar> {
             height: barHeight,
             child: Row(
               children: [
-                const StatusIcon(kind: StatusKind.network, cell: 22),
+                ..._systemIcons(),
                 const SizedBox(width: statusGap),
                 GestureDetector(
                   onTap: widget.onSearch,
@@ -214,6 +221,34 @@ class _MenuBarState extends State<MenuBar> {
         ],
       ),
     );
+  }
+
+  /// Batteria (se c'è) e rete, dallo stato del sistema; senza, l'icona del Wi-Fi piena.
+  List<Widget> _systemIcons() {
+    final s = widget.system?.value;
+    if (s == null) {
+      return const [StatusIcon(kind: StatusKind.network, cell: 22)];
+    }
+    return [
+      if (s.batteryPresent) ...[
+        StatusIcon(
+          kind: StatusKind.battery,
+          cell: 33,
+          level: s.batteryPercent / 100,
+          charging: s.batteryCharging,
+        ),
+        const SizedBox(width: statusGap),
+      ],
+      if (s.wired && s.wifiSsid.isEmpty)
+        const StatusIcon(kind: StatusKind.wired, cell: 22)
+      else if (s.wifiAvailable)
+        StatusIcon(
+          kind: StatusKind.network,
+          cell: 22,
+          level: s.wifiStrength / 100,
+          dim: !s.wifiEnabled || s.wifiSsid.isEmpty,
+        ),
+    ];
   }
 
   /// Una voce: il testo con ~10,75 pt per lato.
