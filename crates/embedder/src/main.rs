@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl|impeller] [--aot LIBAPP]
-//!     [--engine-arg ARG]... [--dart-arg ARG]... BUNDLE
+//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITOLO] [--app-id ID] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
 //! ```
@@ -58,6 +58,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut aot = None;
     let mut engine_args = Vec::new();
     let mut dart_args = Vec::new();
+    let mut title = "Silica".to_owned();
+    let mut app_id = "dev.frascella.silica.Flutter".to_owned();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
         match arg.as_str() {
@@ -110,6 +112,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--aot" => aot = Some(PathBuf::from(value()?)),
             "--engine-arg" => engine_args.push(value()?),
             "--dart-arg" => dart_args.push(value()?),
+            "--title" => title = value()?,
+            "--app-id" => app_id = value()?,
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -140,5 +144,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         aot,
         engine_args,
         dart_args,
+        title,
+        app_id,
     })
 }

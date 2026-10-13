@@ -70,6 +70,13 @@ impl Shell {
             Shell::Layer(layer) => layer.commit(),
         }
     }
+
+    /// Il titolo della finestra; i layer della shell non ne hanno.
+    fn set_title(&self, title: &str) {
+        if let Shell::Window(window) = self {
+            window.set_title(title.to_owned());
+        }
+    }
 }
 use crate::dbus;
 use crate::ffi::{
@@ -230,8 +237,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         None => {
             let xdg_shell = XdgShell::bind(&globals, &qh)?;
             let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &qh);
-            window.set_title("Silica");
-            window.set_app_id("dev.frascella.silica.Flutter");
+            window.set_title(options.title.clone());
+            window.set_app_id(options.app_id.clone());
             window.commit();
             Shell::Window(window)
         }
@@ -504,6 +511,7 @@ impl App {
                 }
                 reply
             }
+            "flutter/platform" => self.handle_platform_call(&message.data),
             // StandardMethodCodec: getKeyboardState, i tasti premuti fisica → logica.
             "flutter/keyboard" => crate::codec::success_int_map(
                 self.keys
@@ -517,6 +525,30 @@ impl App {
             && let Err(err) = engine.respond(handle, &reply)
         {
             warn!("risposta su {}: {err}", message.channel);
+        }
+    }
+
+    /// Il canale `flutter/platform` (JSONMethodCodec): per ora il titolo della finestra
+    /// (`SystemChrome.setApplicationSwitcherDescription`, `label`). Il resto non è
+    /// implementato (risposta vuota).
+    fn handle_platform_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
+            return Vec::new();
+        };
+        match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("SystemChrome.setApplicationSwitcherDescription") => {
+                let label = call
+                    .get("args")
+                    .and_then(|args| args.get("label"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                // Un titolo lunghissimo da un'app non deve diventare un problema per Ossido.
+                let title: String = label.chars().take(256).collect();
+                self.surface.set_title(&title);
+                self.surface.commit();
+                b"[null]".to_vec()
+            }
+            _ => Vec::new(),
         }
     }
 

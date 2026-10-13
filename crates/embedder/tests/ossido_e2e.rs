@@ -489,3 +489,12 @@ fn glass_widget_declares_its_region_to_ossido() {
     assert_eq!(region["radius"].as_f64(), Some(6.0));
     assert_eq!(region["material"], "clear");
 }
+
+#[test]
+fn the_window_title_comes_from_the_command_line() {
+    let mut args = size_args((300, 200));
+    args.extend(["--title".to_owned(), "Prova del titolo".to_owned()]);
+    let session = Session::start_with("title", (640, 480), 1, &args);
+    let window = session.window();
+    assert_eq!(window.title.as_deref(), Some("Prova del titolo"));
+}

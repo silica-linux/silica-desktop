@@ -93,6 +93,11 @@ pub struct Options {
     pub engine_args: Vec<String>,
     /// Argomenti di `main(List<String> args)` dell'app (`--dart-arg`).
     pub dart_args: Vec<String>,
+    /// Titolo iniziale della finestra (`--title`); l'app lo cambia con
+    /// `SystemChrome.setApplicationSwitcherDescription`.
+    pub title: String,
+    /// App id della finestra (`--app-id`): lega la finestra alla sua voce `.desktop`.
+    pub app_id: String,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.
