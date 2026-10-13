@@ -97,6 +97,8 @@ pub struct State {
     pub panorama: Option<crate::panorama::Panorama>,
     /// Il clic che ha aperto o usato Panorama: il rilascio non va al client.
     pub panorama_press: bool,
+    /// Il selettore delle app è aperto: il rilascio del tasto Logo lo conferma.
+    pub switcher_active: bool,
     /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
     pub titlebar_hover: Option<Window>,
     /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
@@ -247,6 +249,7 @@ impl State {
             workspaces: crate::workspaces::Workspaces::default(),
             panorama: None,
             panorama_press: false,
+            switcher_active: false,
             titlebar_hover: None,
             titlebar_press: None,
             moving: None,

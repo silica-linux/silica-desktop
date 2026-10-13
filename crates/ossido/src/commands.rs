@@ -28,6 +28,9 @@ use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
+use silica_control::commands::{
+    SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
+};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -231,6 +234,14 @@ impl State {
                     matches!(id, SYSTEM_BRIGHTNESS_UP_FINE | SYSTEM_BRIGHTNESS_DOWN_FINE),
                 )
             })),
+            SWITCHER_NEXT | SWITCHER_PREVIOUS => {
+                self.switcher_active = true;
+                Ok(json!({ "forwarded": self.forward_to_shell(id) }))
+            }
+            SWITCHER_COMMIT | SWITCHER_CANCEL => {
+                self.switcher_active = false;
+                Ok(json!({ "forwarded": self.forward_to_shell(id) }))
+            }
             FARO_TOGGLE | NOTIFICATIONS_TOGGLE | CONTROLCENTER_TOGGLE => {
                 let sent = self.forward_to_shell(id);
                 Ok(json!({ "forwarded": sent }))

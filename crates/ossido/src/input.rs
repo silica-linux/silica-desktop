@@ -139,6 +139,8 @@ impl State {
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
         // Esc chiude la vista aperta: si esegue il suo stesso comando.
+        let switcher = self.switcher_active;
+        let logo_released = std::cell::Cell::new(false);
         let close_view = self.panorama_mode().map(|mode| match mode {
             crate::panorama::Mode::Panorama => silica_control::commands::PANORAMA_TOGGLE,
             crate::panorama::Mode::App => silica_control::commands::PANORAMA_APP,
@@ -156,6 +158,16 @@ impl State {
                         .raw_latin_sym_or_raw_current_sym()
                         .unwrap_or(keysym.modified_sym()),
                 );
+                // Selettore delle app: Esc annulla, il tasto Logo rilasciato conferma
+                // (il rilascio arriva comunque all'app, che ne ha visto la pressione).
+                if switcher {
+                    if pressed && key == "Escape" {
+                        return FilterResult::Intercept(silica_control::commands::SWITCHER_CANCEL);
+                    }
+                    if !pressed && (key == "Super_L" || key == "Super_R") {
+                        logo_released.set(true);
+                    }
+                }
                 if pressed
                     && key == "Escape"
                     && let Some(id) = close_view
@@ -177,6 +189,10 @@ impl State {
                 }
             },
         );
+        let command = match command {
+            None if logo_released.get() => Some(silica_control::commands::SWITCHER_COMMIT),
+            other => other,
+        };
         if let Some(id) = command {
             let response = self.execute_command(id, serde_json::Value::Null);
             if let Err(err) = response {

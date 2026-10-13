@@ -15,8 +15,8 @@ use std::process::Command;
 
 use common::Headless;
 use common::client::TestWindow;
-use serde_json::Value;
-use silica_control::commands::{WINDOW_LIST, WindowInfo};
+use serde_json::{Value, json};
+use silica_control::commands::{INPUT_KEY, WINDOW_LIST, WindowInfo};
 use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::{Connection, Dispatch, QueueHandle, event_created_child};
@@ -28,6 +28,7 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 };
 
 const CHILD_SOCKET: &str = "SILICA_TEST_SHELL_SOCKET";
+const CHILD_LISTEN: &str = "SILICA_TEST_SHELL_LISTEN";
 
 #[derive(Default)]
 struct Shell {
@@ -135,6 +136,20 @@ fn shell_client(socket: &str) {
     conn.display().get_registry(&qh, ());
     queue.roundtrip(&mut shell).unwrap();
     queue.roundtrip(&mut shell).unwrap();
+    // In ascolto per qualche secondo: il test padre intanto preme i tasti.
+    if let Ok(ms) = std::env::var(CHILD_LISTEN) {
+        println!("READY");
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(ms.parse().unwrap());
+        while std::time::Instant::now() < deadline {
+            queue.roundtrip(&mut shell).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        for id in &shell.commands {
+            println!("COMMAND {id}");
+        }
+        return;
+    }
     let target = shell
         .toplevels
         .iter()
@@ -228,4 +243,61 @@ fn only_shell_components_see_the_window_list_and_can_activate() {
         serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
     assert_eq!(list[0].title.as_deref(), Some("prima"), "{list:?}");
     assert!(list[0].focused);
+}
+
+#[test]
+fn the_logo_key_drives_the_app_switcher() {
+    let ossido = Headless::start("shell-switcher");
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "shell_child",
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
+        .env(CHILD_SOCKET, &ossido.wayland)
+        .env(CHILD_LISTEN, "2500")
+        .env("SILICA_SHELL", "1")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    let mut c = ossido.client();
+    let mut key = |key: &str, pressed: Option<bool>| {
+        let params = match pressed {
+            Some(pressed) => json!({"key": key, "pressed": pressed}),
+            None => json!({"key": key}),
+        };
+        c.call(INPUT_KEY, params).unwrap();
+    };
+    // ⌘Tab Tab, poi ⌘ rilasciato: due passi e la conferma.
+    key("Super_L", Some(true));
+    key("Tab", None);
+    key("Tab", None);
+    key("Super_L", Some(false));
+    // ⌘⇧Tab ed Esc: indietro e annullato; il rilascio dopo non conferma niente.
+    key("Super_L", Some(true));
+    key("Shift_L", Some(true));
+    key("Tab", None);
+    key("Shift_L", Some(false));
+    key("Escape", None);
+    key("Super_L", Some(false));
+    let output = child.wait_with_output().unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    let commands: Vec<&str> = out
+        .lines()
+        .filter_map(|l| l.strip_prefix("COMMAND "))
+        .collect();
+    assert_eq!(
+        commands,
+        [
+            "switcher.next",
+            "switcher.next",
+            "switcher.commit",
+            "switcher.previous",
+            "switcher.cancel"
+        ],
+        "{out}"
+    );
 }

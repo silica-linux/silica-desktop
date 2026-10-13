@@ -35,6 +35,10 @@ pub const PERF_PROCESS: &str = "perf.process";
 pub const GLASS_LIST: &str = "glass.list";
 pub const FARO_TOGGLE: &str = "faro.toggle";
 pub const NOTIFICATIONS_TOGGLE: &str = "notifications.toggle";
+pub const SWITCHER_NEXT: &str = "switcher.next";
+pub const SWITCHER_PREVIOUS: &str = "switcher.previous";
+pub const SWITCHER_COMMIT: &str = "switcher.commit";
+pub const SWITCHER_CANCEL: &str = "switcher.cancel";
 pub const CONTROLCENTER_TOGGLE: &str = "controlcenter.toggle";
 pub const SYSTEM_STATUS: &str = "system.status";
 pub const SPACE_LIST: &str = "space.list";
@@ -235,6 +239,34 @@ pub const CATALOG: &[CommandSpec] = &[
         id: LAYER_LIST,
         label: "Elenca i layer",
         description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SWITCHER_NEXT,
+        label: "App successiva",
+        description: "Apre il selettore delle app sull'app usata prima, o passa alla successiva; al rilascio del tasto Logo si attiva l'app scelta (componente della shell).",
+        shortcut: Some("Logo+Tab"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SWITCHER_PREVIOUS,
+        label: "App precedente",
+        description: "Come switcher.next, all'indietro.",
+        shortcut: Some("Logo+Shift+Tab"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SWITCHER_COMMIT,
+        label: "Attiva l'app scelta",
+        description: "Chiude il selettore delle app attivando l'app scelta (il rilascio del tasto Logo).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SWITCHER_CANCEL,
+        label: "Annulla il selettore",
+        description: "Chiude il selettore delle app senza cambiare app (Esc).",
         shortcut: None,
         params: no_params,
     },
