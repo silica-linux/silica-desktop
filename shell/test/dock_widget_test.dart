@@ -104,4 +104,56 @@ void main() {
     await tester.pump(const Duration(milliseconds: 150));
     expect(log, ['attiva Terminale', 'menu Note']);
   });
+
+  testWidgets(
+    'trascinare riordina; in alto compare "Rimuovi" e l\'icona si toglie',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final orders = <String>[];
+      const items = [
+        Item.app('Uno', command: 'uno', pinned: true),
+        Item.app('Due', command: 'due', pinned: true),
+        Item.app('Tre', command: 'tre', pinned: true),
+        Item.separator(),
+        Item.app('Cestino', command: 'cestino'),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(
+            items: items,
+            onReorder: (order, dropped) => orders.add(
+              '${[for (final i in order) i.label].join(' ')} | ${dropped?.label}',
+            ),
+          ),
+        ),
+      );
+      final rest = layout(items, width: 1280, height: 400);
+      final y = 400 - bottomGap - backgroundHeight / 2;
+      // Uno dopo Due.
+      var gesture = await tester.startGesture(Offset(rest.center(0), y));
+      await gesture.moveBy(const Offset(10, 0));
+      await tester.pump();
+      await gesture.moveTo(Offset(rest.center(1) + 20, y));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(orders, ['Due Uno Tre | Uno']);
+      // Tre in alto, oltre 130 pt sopra la presa: "Rimuovi", e al rilascio sparisce.
+      gesture = await tester.startGesture(Offset(rest.center(2), y));
+      await gesture.moveBy(const Offset(0, -10));
+      await tester.pump();
+      await gesture.moveTo(Offset(rest.center(2), y - 140));
+      await tester.pump();
+      expect(find.text('Rimuovi'), findsOneWidget);
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(orders.last, 'Uno Due | null');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Rimuovi'), findsNothing);
+    },
+  );
 }

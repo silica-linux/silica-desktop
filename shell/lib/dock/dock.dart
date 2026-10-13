@@ -144,6 +144,21 @@ class _LiveDockState extends State<LiveDock> {
     items: dockItems(_entries, _pinned, ShellChannel.instance.toplevels.value),
     onActivate: _activate,
     menuFor: _menu,
+    onReorder: (order, dropped) {
+      // Le fissate nel nuovo ordine; un'app aperta lasciata cadere fra loro diventa fissata.
+      final ids = [
+        for (final item in order)
+          if (item.id case final id?
+              when item.pinned || identical(item, dropped))
+            id,
+      ];
+      setState(() {
+        _pinned
+          ..clear()
+          ..addAll(ids);
+      });
+      savePinned(_pinned);
+    },
   );
 }
 
@@ -164,6 +179,48 @@ const double menuShadowRoom = 30;
 /// La regione d'input del Dock: il fondo, più quanto serve all'ingrandimento e all'isteresi.
 const double dockInputMargin = 60;
 const double dockInputAbove = 60;
+
+/// Trascinamento (D-05): il posto vuoto, lo scorrimento delle vicine (~265 ms, a S),
+/// "Rimuovi" a ~130 pt sopra la presa, dissolvenza dell'elemento tolto (~250 ms). Il
+/// puntatore conta come "nel Dock" fino a 20 pt sopra il fondo.
+const Duration gapSlide = Duration(milliseconds: 265);
+const double removeAbove = 130;
+const Duration removeFade = Duration(milliseconds: 250);
+const double dragInsideAbove = 20;
+
+/// Il posto vuoto dove cadrebbe l'icona trascinata.
+const Item gapItem = Item.app('');
+
+/// Un trascinamento: l'elemento preso, il punto di presa nell'icona, dove è il puntatore.
+class _DockDrag {
+  _DockDrag({
+    required this.index,
+    required this.item,
+    required this.grab,
+    required this.side,
+    required this.downY,
+    required this.pointer,
+  });
+
+  final int index;
+  final Item item;
+  final Offset grab;
+  final double side;
+  final double downY;
+  Offset pointer;
+  bool started = false;
+  bool inside = true;
+  bool remove = false;
+}
+
+/// L'elemento tolto che sfuma: icona, posizione, lato e inizio.
+class _Ghost {
+  _Ghost(this.item, this.at, this.side);
+  final Item item;
+  final Offset at;
+  final double side;
+  Duration elapsed = Duration.zero;
+}
 
 /// Icona premuta: scurita (stima, il valore non è misurato).
 const Color pressedShade = Color(0x40000000);
@@ -189,6 +246,7 @@ class Dock extends StatefulWidget {
     this.magnification = defaultMagnification,
     this.onActivate,
     this.menuFor,
+    this.onReorder,
   });
 
   final List<Item> items;
@@ -199,6 +257,11 @@ class Dock extends StatefulWidget {
 
   /// Il menu di un elemento (clic destro, pressione lunga); null o vuoto: niente menu.
   final List<MenuEntry> Function(Item item)? menuFor;
+
+  /// Trascinamento (D-05): il nuovo ordine delle app a sinistra del separatore e l'elemento
+  /// lasciato cadere (null se è stato tolto con "Rimuovi", e allora manca dall'ordine).
+  /// Null: le icone non si trascinano.
+  final void Function(List<Item> order, Item? dropped)? onReorder;
 
   @override
   State<Dock> createState() => _DockState();
@@ -221,6 +284,20 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   Timer? _longPress;
   Offset? _downAt;
   int? _downIndex;
+
+  /// Il trascinamento in corso e l'icona tolta che sfuma sul posto.
+  _DockDrag? _drag;
+  _Ghost? _ghost;
+  DateTime? _settleUntil;
+  late final Ticker _ghostTicker = createTicker((elapsed) {
+    final ghost = _ghost;
+    if (ghost == null || elapsed >= removeFade) {
+      _ghostTicker.stop();
+      setState(() => _ghost = null);
+    } else {
+      setState(() => ghost.elapsed = elapsed);
+    }
+  });
 
   /// Quello che si è chiesto al layer per ultimo (regione d'input, altezza, tastiera).
   String _layerState = '';
@@ -246,7 +323,105 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _labelAnim.dispose();
     _labelTimer?.cancel();
     _longPress?.cancel();
+    _ghostTicker.dispose();
     super.dispose();
+  }
+
+  /// L'ultimo elemento a sinistra del separatore (dove si può trascinare).
+  int get _leftEnd {
+    final separator = widget.items.indexWhere(
+      (i) => i.kind == ItemKind.separator,
+    );
+    return separator < 0 ? widget.items.length : separator;
+  }
+
+  /// Gli elementi da disporre: durante il trascinamento senza quello preso e, se il puntatore
+  /// è nel Dock, con un posto vuoto dove cadrebbe.
+  List<Item> _displayItems(Size size) {
+    final drag = _drag;
+    if (drag == null || !drag.started) return widget.items;
+    final rest = [...widget.items]..removeAt(drag.index);
+    if (!drag.inside || drag.remove) return rest;
+    final slot = _dropSlot(rest, size, drag.pointer.dx);
+    return [...rest]..insert(slot, gapItem);
+  }
+
+  /// Dove cadrebbe l'icona: il primo elemento a sinistra il cui centro è oltre il puntatore.
+  int _dropSlot(List<Item> rest, Size size, double x) {
+    final l = layout(rest, width: size.width, height: size.height);
+    final end = rest.indexWhere((i) => i.kind == ItemKind.separator);
+    final limit = end < 0 ? rest.length : end;
+    for (var i = 0; i < limit; i++) {
+      if (x < l.center(i)) return i;
+    }
+    return limit;
+  }
+
+  void _startDrag(Offset p, Size size) {
+    final index = _downIndex;
+    if (index == null || index >= _leftEnd || widget.onReorder == null) return;
+    final item = widget.items[index];
+    if (item.kind != ItemKind.app) return;
+    final l = layout(
+      widget.items,
+      width: size.width,
+      height: size.height,
+      pointerX: _pointerX,
+      amount: _amount,
+      magnification: widget.magnification,
+    );
+    final (x, y, side) = iconRect(l, index, size.height);
+    _longPress?.cancel();
+    _longPress = null;
+    _showLabel(null);
+    setState(() {
+      _pressed = null;
+      _drag = _DockDrag(
+        index: index,
+        item: item,
+        grab: p - Offset(x, y),
+        side: side,
+        downY: _downAt?.dy ?? p.dy,
+        pointer: p,
+      )..started = true;
+    });
+  }
+
+  void _moveDrag(Offset p, Size size) {
+    final drag = _drag;
+    if (drag == null) return;
+    final rest = layout(widget.items, width: size.width, height: size.height);
+    setState(() {
+      drag.pointer = p;
+      drag.inside =
+          inActiveZone(rest, p.dx, p.dy, size.height) ||
+          p.dy >= size.height - bottomGap - backgroundHeight - dragInsideAbove;
+      // "Rimuovi" compare 125–135 pt sopra il punto di presa.
+      drag.remove = p.dy < drag.downY - removeAbove;
+    });
+  }
+
+  void _endDrag(Size size) {
+    final drag = _drag;
+    if (drag == null) return;
+    final rest = [...widget.items]..removeAt(drag.index);
+    final left = rest.indexWhere((i) => i.kind == ItemKind.separator);
+    final leftItems = rest.sublist(0, left < 0 ? rest.length : left);
+    if (drag.remove) {
+      // Tolta: l'icona e la capsula sfumano sul posto (~250 ms), senza altri effetti.
+      _ghost = _Ghost(drag.item, drag.pointer - drag.grab, drag.side);
+      _ghostTicker.start();
+      widget.onReorder?.call(leftItems, null);
+    } else if (drag.inside) {
+      final slot = _dropSlot(rest, size, drag.pointer.dx);
+      final order = [...leftItems]
+        ..insert(slot.clamp(0, leftItems.length), drag.item);
+      widget.onReorder?.call(order, drag.item);
+    }
+    setState(() {
+      _drag = null;
+      _settleUntil = DateTime.now().add(gapSlide);
+    });
   }
 
   /// Apre il menu di un elemento (D-04): l'icona resta premuta, l'etichetta sparisce.
@@ -302,18 +477,28 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     });
   }
 
-  void _pointerMove(Offset p) {
+  void _pointerMove(Offset p, Size size) {
+    if (_drag != null) {
+      _moveDrag(p, size);
+      return;
+    }
     if (_longPress != null &&
         _downAt != null &&
         (p - _downAt!).distance > dragThreshold) {
+      // Oltre 5 pt la pressione diventa trascinamento.
+      _startDrag(p, size);
       _longPress?.cancel();
       _longPress = null;
     }
     if (_menuIndex != null) _menuKey.currentState?.pointerMoved(p);
   }
 
-  void _pointerUp(PointerUpEvent e, Layout l) {
+  void _pointerUp(PointerUpEvent e, Layout l, Size size) {
     final p = e.localPosition;
+    if (_drag != null) {
+      _endDrag(size);
+      return;
+    }
     if (_longPress != null) {
       // Un clic: l'elemento sotto il puntatore, se è lo stesso della pressione.
       _longPress?.cancel();
@@ -365,8 +550,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (_bounces.isEmpty && _bounceTicker.isActive) _bounceTicker.stop();
   }
 
-  double _bounce(int index) {
-    final start = _bounces[_key(widget.items[index])];
+  double _bounce(int index) => _bounceOf(widget.items[index]);
+
+  double _bounceOf(Item item) {
+    final start = _bounces[_key(item)];
     if (start == null) return 0;
     return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
@@ -459,8 +646,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
+        final items = _displayItems(size);
+        final dragging = _drag != null;
         final l = layout(
-          widget.items,
+          items,
           width: size.width,
           height: size.height,
           pointerX: _pointerX,
@@ -469,9 +658,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         );
         final (bx, by, bw, bh) = l.background;
         final label = _labelIndex;
-        final hovered = label != null && label < widget.items.length
+        final hovered =
+            !dragging && label != null && label < widget.items.length
             ? label
             : null;
+        // Durante e subito dopo il trascinamento le icone scorrono al loro posto (~265 ms).
+        final settle = _settleUntil;
+        final sliding =
+            dragging || (settle != null && DateTime.now().isBefore(settle));
+        if (sliding && !dragging) {
+          WidgetsBinding.instance.scheduleFrame();
+        }
         // La punta del menu: sopra l'icona, ~11 pt sopra il fondo del Dock (D-04).
         final menuIndex = _menuIndex;
         final tip = menuIndex == null || menuIndex >= l.cells.length
@@ -499,13 +696,14 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (e) => _pointerDown(e, l, size),
-          onPointerMove: (e) => _pointerMove(e.localPosition),
+          onPointerMove: (e) => _pointerMove(e.localPosition, size),
           onPointerHover: (e) {
             if (_menuIndex != null)
               _menuKey.currentState?.pointerMoved(e.localPosition);
           },
-          onPointerUp: (e) => _pointerUp(e, l),
+          onPointerUp: (e) => _pointerUp(e, l, size),
           onPointerCancel: (_) {
+            if (_drag != null) setState(() => _drag = null);
             _longPress?.cancel();
             _longPress = null;
             if (_menuIndex == null) setState(() => _pressed = null);
@@ -532,12 +730,14 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                 ),
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _DockPainter(widget.items, l, size.height),
+                    painter: _DockPainter(items, l, size.height),
                   ),
                 ),
-                for (var i = 0; i < widget.items.length; i++)
-                  if (widget.items[i].icon case final source?)
-                    _icon(l, i, size.height, source),
+                for (var i = 0; i < items.length; i++)
+                  if (items[i].icon case final source?)
+                    _icon(l, i, size.height, source, items[i], sliding),
+                if (_drag case final drag?) ..._dragged(drag),
+                if (_ghost case final ghost?) _faded(ghost),
                 if (hovered != null && _menuIndex == null)
                   _label(
                     l,
@@ -564,17 +764,104 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
+  /// L'icona trascinata: a grandezza piena, opaca, agganciata al punto di presa; sopra, la
+  /// capsula "Rimuovi" quando è abbastanza in alto.
+  List<Widget> _dragged(_DockDrag drag) {
+    final source = drag.item.icon;
+    final at = drag.pointer - drag.grab;
+    return [
+      if (source != null)
+        Positioned(
+          left: at.dx,
+          top: at.dy,
+          width: drag.side,
+          height: drag.side,
+          child: ShellIcon(source, side: drag.side),
+        ),
+      if (drag.remove)
+        _capsule('Rimuovi', at.dx + drag.side / 2, at.dy - labelGap, 1),
+    ];
+  }
+
+  /// L'elemento tolto sfuma sul posto con la sua capsula.
+  Widget _faded(_Ghost ghost) {
+    final t = ghost.elapsed.inMicroseconds / removeFade.inMicroseconds;
+    final opacity = (1 - t).clamp(0.0, 1.0);
+    final source = ghost.item.icon;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: opacity,
+          child: Stack(
+            children: [
+              if (source != null)
+                Positioned(
+                  left: ghost.at.dx,
+                  top: ghost.at.dy,
+                  width: ghost.side,
+                  height: ghost.side,
+                  child: ShellIcon(source, side: ghost.side),
+                ),
+              _capsule(
+                'Rimuovi',
+                ghost.at.dx + ghost.side / 2,
+                ghost.at.dy - labelGap,
+                1,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Una capsula come l'etichetta, con la punta in (`centerX`, `tipY`).
+  Widget _capsule(String text, double centerX, double tipY, double opacity) {
+    final style = uiText(size: labelFontSize, color: labelText);
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final width = painter.width + 2 * labelPadding;
+    return Positioned(
+      left: centerX - width / 2,
+      top: tipY - labelTip - labelHeight,
+      width: width,
+      height: labelHeight + labelTip,
+      child: Opacity(
+        opacity: opacity,
+        child: CustomPaint(
+          painter: const _LabelPainter(),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: labelTip),
+            child: Center(child: Text(text, style: style)),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// L'icona di un'app: a livelli da silica-icons, o dal tema del sistema.
-  Widget _icon(Layout l, int index, double height, IconSource source) {
+  Widget _icon(
+    Layout l,
+    int index,
+    double height,
+    IconSource source,
+    Item item,
+    bool sliding,
+  ) {
     final (x, y, side) = iconRect(l, index, height);
     final icon = ShellIcon(source, side: side);
-    return Positioned(
+    return AnimatedPositioned(
+      key: ValueKey(_key(item)),
+      duration: sliding ? gapSlide : Duration.zero,
+      curve: Curves.easeInOut,
       left: x,
-      top: y - _bounce(index),
+      top: y - _bounceOf(item),
       width: side,
       height: side,
       // Premuta: l'icona si scurisce (D-02).
-      child: _pressed == index
+      child: !sliding && _pressed == index
           ? ColorFiltered(
               colorFilter: const ColorFilter.mode(
                 pressedShade,
@@ -636,6 +923,7 @@ class _DockPainter extends CustomPainter {
         );
         continue;
       }
+      if (identical(item, gapItem)) continue;
       final (ix, iy, side) = iconRect(l, i, height);
       if (item.icon == null) {
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
