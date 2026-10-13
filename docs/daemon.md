@@ -108,6 +108,11 @@ dei menu.
 - `SetWifiEnabled(b)`, `SetBluetoothPowered(b)`, `SetVolume(d)`, `SetMuted(b)`,
   `SetBrightness(d)` (0–1, mai a zero), `SetDoNotDisturb(b)`. Una sorgente assente è
   l'errore `org.freedesktop.DBus.Error.Failed`.
+- Per i pannelli di dettaglio del Centro di controllo, letti su richiesta:
+  `WifiNetworks() → a(sybbb)` (nome, segnale 0–100, protetta, salvata, in uso; quella in uso
+  prima, poi le salvate, poi per segnale; al più 40), `ConnectWifi(s)` (solo reti salvate: una
+  rete nuova chiede una password), `AudioOutputs() → a(usb)` (id di PipeWire, nome,
+  predefinita; da `wpctl status`), `SetAudioOutput(u)`.
 - Segnale `Changed(a{sv})` con lo stato intero a ogni cambiamento.
 
 Sorgenti: NetworkManager (`WirelessEnabled`, connessione principale, intensità del punto

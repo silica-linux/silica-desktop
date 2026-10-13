@@ -8,8 +8,10 @@
 // pila; apertura e chiusura con le opacità e la scala misurate fotogramma per fotogramma.
 //
 // Moduli con un effetto vero: Wi-Fi, Bluetooth, Non disturbare, Schermo, Suono (da
-// silica-daemon), la batteria se c'è. Non ci sono ancora i pannelli di dettaglio né
-// "Modifica controlli".
+// silica-daemon), la batteria se c'è. Clic sul disco dell'icona: accende o spegne; clic sul
+// testo (o sul titolo dei cursori): il pannello di dettaglio (`detail.dart`), dove c'è; con
+// il puntatore sopra un modulo con dettaglio compare la freccia ">". Esc dal dettaglio torna
+// al Centro. Non c'è ancora "Modifica controlli" né il menu del clic destro.
 //
 // Il componente resta in esecuzione su un layer overlay a schermo intero: chiuso non disegna
 // niente e non prende né puntatore né tastiera (silica/layer).
@@ -24,6 +26,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/system_status.dart';
+import 'detail.dart';
 import 'glyphs.dart';
 import 'hud.dart';
 
@@ -214,9 +217,29 @@ class ControlCenter extends StatefulWidget {
   State<ControlCenter> createState() => _ControlCenterState();
 }
 
+/// I moduli con un pannello di dettaglio.
+const Set<String> detailModules = {'wifi', 'sound', 'display'};
+
+/// Spazio attorno alla pila per il pannello di dettaglio, che sporge a sinistra e in alto.
+const Offset detailPad = Offset(-detailLeft, -detailTop);
+
 class _ControlCenterState extends State<ControlCenter>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _anim;
+
+  /// Il dettaglio aperto (o in apertura o chiusura) e la sua trasformazione (valore = ms).
+  String? _detail;
+  bool _detailClosing = false;
+  late final AnimationController _detailAnim = AnimationController(
+    vsync: this,
+    upperBound: detailCurveEnd * detailBackStretch,
+    value: 0,
+    duration: Duration(
+      milliseconds: (detailCurveEnd * detailBackStretch).round(),
+    ),
+  )..addListener(_detailTick);
+  DetailData _detailData = const DetailData();
+  bool _othersOpen = false;
   final FocusNode _focus = FocusNode();
   StreamSubscription<String>? _commands;
   bool _open = false;
@@ -243,6 +266,7 @@ class _ControlCenterState extends State<ControlCenter>
     widget.system.removeListener(_changed);
     _commands?.cancel();
     _anim.dispose();
+    _detailAnim.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -260,7 +284,53 @@ class _ControlCenterState extends State<ControlCenter>
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
+  void _detailTick() {
+    // Finito il ritorno, il dettaglio sparisce.
+    if (_detailClosing && _detailProgress() <= 0) {
+      _detail = null;
+      _detailClosing = false;
+    }
+    setState(() {});
+  }
+
+  Future<void> _openDetail(String key) async {
+    setState(() {
+      _detail = key;
+      _detailClosing = false;
+      _othersOpen = false;
+      _detailData = const DetailData();
+    });
+    _detailAnim.forward(from: 0);
+    final system = widget.system;
+    final data = switch (key) {
+      'wifi' => DetailData(networks: await system.wifiNetworks()),
+      'sound' => DetailData(outputs: await system.audioOutputs()),
+      _ => const DetailData(),
+    };
+    if (mounted && _detail == key) setState(() => _detailData = data);
+  }
+
+  void _closeDetail() {
+    if (_detail == null || _detailClosing) return;
+    setState(() => _detailClosing = true);
+    _detailAnim.forward(from: 0);
+  }
+
+  /// Quanto del modulo `_detail` è diventato pannello (0–1).
+  double _detailProgress() {
+    final key = _detail;
+    if (key == null) return 0;
+    final slot = layoutModules(widget.system.value)[key];
+    final scale = detailTimeScale(slot == null ? 0 : slot.rect.top - detailTop);
+    if (_detailClosing) {
+      return 1 - detailProgress(_detailAnim.value / detailBackStretch, scale);
+    }
+    return detailProgress(_detailAnim.value, scale);
+  }
+
   void _hide() {
+    _detail = null;
+    _detailClosing = false;
     setState(() => _open = false);
     LayerControl.keyboard('none');
     LayerControl.inputRegion(const []);
@@ -298,6 +368,34 @@ class _ControlCenterState extends State<ControlCenter>
     final height = slots.values
         .map((s) => s.rect.bottom)
         .reduce((a, b) => a > b ? a : b);
+    // Il dettaglio: rettangolo e raggio fra il modulo e il pannello, e il contenuto.
+    final progress = _detailProgress();
+    final opening = !_detailClosing;
+    final othersAlpha = _detail == null
+        ? 1.0
+        : opening
+        ? othersOpacity(_detailAnim.value)
+        : (1 - progress).clamp(0.0, 1.0);
+    final content = _detailContent(snapshot);
+    final from = slots[_detail];
+    final (Rect, double, DetailContent)? detail =
+        content == null || from == null
+        ? null
+        : (
+            lerpRect(
+              _glassRect(from.rect),
+              Rect.fromLTWH(detailLeft, detailTop, detailWidth, content.height),
+              progress,
+            ),
+            from.radius + (detailRadius - from.radius) * progress,
+            content,
+          );
+    final totalHeight = detail == null
+        ? height
+        : (detail.$1.bottom > height ? detail.$1.bottom : height);
+    final shadowSlots = detail != null && progress > 0.5
+        ? [ModuleSlot(detail.$1, detail.$2)]
+        : slots.values.toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -308,7 +406,8 @@ class _ControlCenterState extends State<ControlCenter>
           onKeyEvent: (node, event) {
             if (event is KeyDownEvent &&
                 event.logicalKey == LogicalKeyboardKey.escape) {
-              _hide();
+              // Dal dettaglio si torna al Centro; dal Centro si chiude.
+              _detail != null && !_detailClosing ? _closeDetail() : _hide();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -330,36 +429,46 @@ class _ControlCenterState extends State<ControlCenter>
                     child: CustomPaint(
                       painter: _StackShadow(
                         origin: origin,
-                        height: height,
-                        slots: slots.values.toList(),
+                        height: totalHeight,
+                        slots: shadowSlots,
                       ),
                     ),
                   ),
                 ),
               ),
               Positioned(
-                left: left,
-                top: stackTop,
-                width: stackWidth,
-                height: height,
+                left: left - detailPad.dx,
+                top: stackTop - detailPad.dy,
+                width: detailWidth,
+                height: totalHeight + detailPad.dy,
                 child: Transform.scale(
                   scale: scale,
                   child: Opacity(
                     opacity: opacity,
                     child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
                         // Il vetro sporge di 1 pt a sinistra e a destra del riquadro del
                         // modulo (la riga scura dei lati cade fuori), non sopra e sotto.
-                        for (final slot in slots.values)
-                          Positioned.fromRect(
-                            rect: Rect.fromLTRB(
-                              slot.rect.left - 1,
-                              slot.rect.top,
-                              slot.rect.right + 1,
-                              slot.rect.bottom,
+                        for (final MapEntry(:key, :value) in slots.entries)
+                          if (key != _detail)
+                            Positioned.fromRect(
+                              rect: _glassRect(value.rect).shift(detailPad),
+                              child: Opacity(
+                                opacity: othersAlpha,
+                                child: LiquidGlass(
+                                  radius: value.radius,
+                                  material: GlassMaterial.regular,
+                                  interactive: false,
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
                             ),
+                        if (detail case (final rect, final radius, _))
+                          Positioned.fromRect(
+                            rect: rect.shift(detailPad),
                             child: LiquidGlass(
-                              radius: slot.radius,
+                              radius: radius,
                               material: GlassMaterial.regular,
                               interactive: false,
                               child: const SizedBox.expand(),
@@ -367,8 +476,41 @@ class _ControlCenterState extends State<ControlCenter>
                           ),
                         for (final MapEntry(:key, :value) in slots.entries)
                           Positioned.fromRect(
-                            rect: value.rect,
-                            child: _module(key, snapshot),
+                            rect: value.rect.shift(detailPad),
+                            child: Opacity(
+                              opacity: key == _detail
+                                  ? (1 - progress * 3).clamp(0.0, 1.0)
+                                  : othersAlpha,
+                              child: IgnorePointer(
+                                ignoring: _detail != null,
+                                child: _module(key, snapshot),
+                              ),
+                            ),
+                          ),
+                        if (detail case (
+                          final rect,
+                          final radius,
+                          final content,
+                        ))
+                          Positioned.fromRect(
+                            rect: rect.shift(detailPad),
+                            child: Opacity(
+                              opacity: ((progress - 0.25) / 0.4).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(radius),
+                                child: OverflowBox(
+                                  alignment: Alignment.topLeft,
+                                  minWidth: detailWidth,
+                                  maxWidth: detailWidth,
+                                  minHeight: 0,
+                                  maxHeight: double.infinity,
+                                  child: content.build(),
+                                ),
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -380,6 +522,47 @@ class _ControlCenterState extends State<ControlCenter>
         );
       },
     );
+  }
+
+  /// Il vetro di un modulo: 1 pt in più a sinistra e a destra.
+  Rect _glassRect(Rect r) =>
+      Rect.fromLTRB(r.left - 1, r.top, r.right + 1, r.bottom);
+
+  /// Il contenuto del dettaglio aperto.
+  DetailContent? _detailContent(SystemSnapshot s) {
+    final system = widget.system;
+    Widget track(double? v) => CustomPaint(painter: _Track(v));
+    return switch (_detail) {
+      'wifi' => wifiDetail(
+        s: s,
+        networks: _detailData.networks,
+        othersOpen: _othersOpen,
+        onSwitch: system.setWifi,
+        onConnect: system.connectWifi,
+        onToggleOthers: () => setState(() => _othersOpen = !_othersOpen),
+      ),
+      'sound' => soundDetail(
+        s: s,
+        outputs: _detailData.outputs,
+        onVolume: (v) {
+          if (s.muted && v > 0) system.setMuted(false);
+          system.setVolume(v);
+        },
+        onOutput: (id) async {
+          await system.setAudioOutput(id);
+          final outputs = await system.audioOutputs();
+          if (mounted)
+            setState(() => _detailData = DetailData(outputs: outputs));
+        },
+        track: track,
+      ),
+      'display' => displayDetail(
+        s: s,
+        onBrightness: system.setBrightness,
+        track: track,
+      ),
+      _ => null,
+    };
   }
 
   Widget _module(String key, SystemSnapshot s) {
@@ -399,6 +582,7 @@ class _ControlCenterState extends State<ControlCenter>
             : 'Non connesso',
         active: s.wifiAvailable && s.wifiEnabled,
         onTap: s.wifiAvailable ? () => system.setWifi(!s.wifiEnabled) : null,
+        onOpen: s.wifiAvailable ? () => _openDetail('wifi') : null,
       ),
       'bluetooth' => _Capsule(
         glyph: GlyphKind.bluetooth,
@@ -430,6 +614,7 @@ class _ControlCenterState extends State<ControlCenter>
       ),
       'media' => const _Media(),
       'display' => _SliderModule(
+        onOpen: () => _openDetail('display'),
         title: 'Schermo',
         value: s.brightness,
         enabled: s.brightnessAvailable,
@@ -438,6 +623,7 @@ class _ControlCenterState extends State<ControlCenter>
         onChanged: system.setBrightness,
       ),
       _ => _SliderModule(
+        onOpen: () => _openDetail('sound'),
         title: 'Suono',
         value: s.muted ? 0 : s.volume,
         enabled: s.audioAvailable,
@@ -452,13 +638,14 @@ class _ControlCenterState extends State<ControlCenter>
   }
 }
 
-class _Capsule extends StatelessWidget {
+class _Capsule extends StatefulWidget {
   const _Capsule({
     required this.glyph,
     required this.title,
     required this.subtitle,
     required this.active,
     this.onTap,
+    this.onOpen,
     this.glyphLevel = 1,
   });
 
@@ -467,62 +654,100 @@ class _Capsule extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool active;
+
+  /// Il disco dell'icona: accende o spegne.
   final VoidCallback? onTap;
 
+  /// Il testo: apre il dettaglio; senza dettaglio il testo fa come il disco.
+  final VoidCallback? onOpen;
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    behavior: HitTestBehavior.opaque,
-    child: Stack(
-      children: [
-        Positioned(
-          left: discInset,
-          top: discInset,
-          width: disc,
-          height: disc,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: active ? discOn : discOff,
+  State<_Capsule> createState() => _CapsuleState();
+}
+
+/// Freccia ">" dei moduli con dettaglio, al passaggio del puntatore: a destra, sopra il
+/// testo (che si accorcia). Posizione e misura stimate dalla cattura (CC-01).
+const double hoverChevronRight = 16;
+
+class _CapsuleState extends State<_Capsule> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final widget = this.widget;
+    final arrow = _hover && widget.onOpen != null;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Stack(
+        children: [
+          // Testo: dettaglio (o, senza, lo stesso effetto del disco).
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: widget.onOpen ?? widget.onTap,
+              behavior: HitTestBehavior.opaque,
             ),
-            child: Center(
-              child: Glyph(
-                glyph,
-                color: active ? glyphOn : glyphOff,
-                level: glyphLevel,
+          ),
+          Positioned(
+            left: discInset,
+            top: discInset,
+            width: disc,
+            height: disc,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.active ? discOn : discOff,
+                ),
+                child: Center(
+                  child: Glyph(
+                    widget.glyph,
+                    color: widget.active ? glyphOn : glyphOff,
+                    level: widget.glyphLevel,
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-        Positioned(
-          left: textLeft,
-          right: 10,
-          top: 0,
-          bottom: 0,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Come nel riferimento i testi lunghi vanno a capo ("Full immersion", il
-              // nome di una rete), al più due righe ciascuno.
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: _text(titleSize, weight: FontWeight.w600),
+          Positioned(
+            left: textLeft,
+            right: arrow ? hoverChevronRight + 12 : 10,
+            top: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Come nel riferimento i testi lunghi vanno a capo ("Full immersion", il
+                  // nome di una rete), al più due righe ciascuno.
+                  Text(
+                    widget.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: _text(titleSize, weight: FontWeight.w600),
+                  ),
+                  Text(
+                    widget.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: _text(subtitleSize),
+                  ),
+                ],
               ),
-              Text(
-                subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: _text(subtitleSize),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          if (arrow)
+            const Positioned(
+              right: hoverChevronRight,
+              top: (rowHeight - 12) / 2,
+              child: IgnorePointer(child: Chevron(color: textColor)),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Il modulo multimediale senza riproduzione: la copertina vuota 40 × 40 a 14 pt dal bordo
@@ -563,6 +788,7 @@ class _Media extends StatelessWidget {
 
 class _SliderModule extends StatelessWidget {
   const _SliderModule({
+    this.onOpen,
     required this.title,
     required this.value,
     required this.enabled,
@@ -578,6 +804,9 @@ class _SliderModule extends StatelessWidget {
   final GlyphKind high;
   final ValueChanged<double> onChanged;
 
+  /// Il titolo apre il dettaglio.
+  final VoidCallback? onOpen;
+
   void _set(Offset local) {
     if (enabled) onChanged(sliderValue(local.dx - trackLeft));
   }
@@ -585,7 +814,14 @@ class _SliderModule extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTapDown: (d) => _set(d.localPosition),
+    onTapDown: (d) {
+      // Sopra la traccia (il titolo): il dettaglio; sulla traccia: il valore.
+      if (onOpen != null && d.localPosition.dy < trackCenter - 10) {
+        onOpen!();
+      } else {
+        _set(d.localPosition);
+      }
+    },
     onHorizontalDragUpdate: (d) => _set(d.localPosition),
     child: Stack(
       children: [

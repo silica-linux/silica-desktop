@@ -51,7 +51,13 @@ pub(super) async fn run(shared: &Shared) {
     .await;
 }
 
-async fn prop<T>(bus: &Connection, dest: &str, path: &str, iface: &str, name: &str) -> Result<T>
+pub(super) async fn prop<T>(
+    bus: &Connection,
+    dest: &str,
+    path: &str,
+    iface: &str,
+    name: &str,
+) -> Result<T>
 where
     T: TryFrom<OwnedValue>,
     T::Error: std::fmt::Display,
@@ -429,7 +435,7 @@ pub(super) async fn set_brightness(shared: &Shared, fraction: f64) -> Result<()>
     Ok(())
 }
 
-async fn wpctl(program: &Path, args: &[&str]) -> Result<String> {
+pub(super) async fn wpctl(program: &Path, args: &[&str]) -> Result<String> {
     let run = async {
         let output = async_process::Command::new(program)
             .args(args)

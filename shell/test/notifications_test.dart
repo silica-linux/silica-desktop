@@ -344,4 +344,12 @@ class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {
   Future<void> setMuted(bool muted) async {}
   @override
   Future<void> setDoNotDisturb(bool enabled) async {}
+  @override
+  Future<List<WifiNetwork>> wifiNetworks() async => const [];
+  @override
+  Future<void> connectWifi(String ssid) async {}
+  @override
+  Future<List<AudioOutput>> audioOutputs() async => const [];
+  @override
+  Future<void> setAudioOutput(int id) async {}
 }

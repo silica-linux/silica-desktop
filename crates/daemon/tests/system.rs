@@ -74,6 +74,55 @@ impl FakeNm {
     fn primary_connection(&self) -> OwnedObjectPath {
         OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/ActiveConnection/1").unwrap()
     }
+    fn get_devices(&self) -> Vec<OwnedObjectPath> {
+        vec![OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Devices/2").unwrap()]
+    }
+    fn activate_connection(
+        &self,
+        connection: OwnedObjectPath,
+        _device: OwnedObjectPath,
+        _specific: OwnedObjectPath,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        if connection.as_str() != "/org/freedesktop/NetworkManager/Settings/5" {
+            return Err(zbus::fdo::Error::InvalidArgs(connection.to_string()));
+        }
+        Ok(
+            OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/ActiveConnection/1")
+                .unwrap(),
+        )
+    }
+}
+
+struct FakeSettings;
+
+#[interface(name = "org.freedesktop.NetworkManager.Settings")]
+impl FakeSettings {
+    fn list_connections(&self) -> Vec<OwnedObjectPath> {
+        vec![OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/5").unwrap()]
+    }
+}
+
+struct FakeSaved;
+
+#[interface(name = "org.freedesktop.NetworkManager.Settings.Connection")]
+impl FakeSaved {
+    fn get_settings(&self) -> HashMap<String, HashMap<String, OwnedValue>> {
+        let ssid = OwnedValue::try_from(zbus::zvariant::Value::from(b"Ufficio".to_vec())).unwrap();
+        HashMap::from([(
+            "802-11-wireless".to_owned(),
+            HashMap::from([("ssid".to_owned(), ssid)]),
+        )])
+    }
+}
+
+struct FakeDevice;
+
+#[interface(name = "org.freedesktop.NetworkManager.Device")]
+impl FakeDevice {
+    #[zbus(property)]
+    fn device_type(&self) -> u32 {
+        2
+    }
 }
 
 struct FakeActive;
@@ -102,15 +151,46 @@ impl FakeWireless {
     fn active_access_point(&self) -> OwnedObjectPath {
         OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/AccessPoint/9").unwrap()
     }
+    #[zbus(property)]
+    fn access_points(&self) -> Vec<OwnedObjectPath> {
+        [9, 10, 11]
+            .map(|n| {
+                OwnedObjectPath::try_from(format!(
+                    "/org/freedesktop/NetworkManager/AccessPoint/{n}"
+                ))
+                .unwrap()
+            })
+            .to_vec()
+    }
 }
 
-struct FakeAp;
+struct FakeAp {
+    ssid: &'static str,
+    strength: u8,
+    rsn: u32,
+}
 
 #[interface(name = "org.freedesktop.NetworkManager.AccessPoint")]
 impl FakeAp {
     #[zbus(property)]
     fn strength(&self) -> u8 {
-        70
+        self.strength
+    }
+    #[zbus(property)]
+    fn ssid(&self) -> Vec<u8> {
+        self.ssid.as_bytes().to_vec()
+    }
+    #[zbus(property)]
+    fn flags(&self) -> u32 {
+        0
+    }
+    #[zbus(property)]
+    fn wpa_flags(&self) -> u32 {
+        0
+    }
+    #[zbus(property)]
+    fn rsn_flags(&self) -> u32 {
+        self.rsn
     }
 }
 
@@ -171,8 +251,33 @@ async fn fake_services(bus: &Bus) -> Vec<Connection> {
         .at("/org/freedesktop/NetworkManager/Devices/2", FakeWireless)
         .await
         .unwrap();
+    for (n, ssid, strength, rsn) in [
+        (9, "Casa", 70, 0x188),
+        (10, "Ufficio", 40, 0x188),
+        (11, "Bar", 90, 0),
+    ] {
+        server
+            .at(
+                format!("/org/freedesktop/NetworkManager/AccessPoint/{n}"),
+                FakeAp {
+                    ssid,
+                    strength,
+                    rsn,
+                },
+            )
+            .await
+            .unwrap();
+    }
     server
-        .at("/org/freedesktop/NetworkManager/AccessPoint/9", FakeAp)
+        .at("/org/freedesktop/NetworkManager/Devices/2", FakeDevice)
+        .await
+        .unwrap();
+    server
+        .at("/org/freedesktop/NetworkManager/Settings", FakeSettings)
+        .await
+        .unwrap();
+    server
+        .at("/org/freedesktop/NetworkManager/Settings/5", FakeSaved)
         .await
         .unwrap();
     nm.request_name("org.freedesktop.NetworkManager")
@@ -212,6 +317,8 @@ case "$1" in
   set-volume) echo "$3" > "$S" ;;
   set-mute) echo "$3" > "$S.mute" ;;
   inspect) echo '  * node.description = "Altoparlanti di prova"' ;;
+  status) printf 'Audio\n ├─ Sinks:\n │      62. Cuffie [vol: 1.00]\n │  *   74. Altoparlanti di prova [vol: 0.50]\n │  \n ├─ Sources:\n' ;;
+  set-default) echo "$2" > "$S.default" ;;
   *) exit 1 ;;
 esac
 "#,
@@ -228,6 +335,9 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+/// (nome, segnale, protetta, salvata, in uso).
+type Network = (String, u8, bool, bool, bool);
+
 #[proxy(
     interface = "dev.frascella.Silica.System1",
     default_path = "/dev/frascella/Silica/System1"
@@ -239,6 +349,10 @@ trait System {
     fn set_volume(&self, volume: f64) -> zbus::Result<()>;
     fn set_muted(&self, muted: bool) -> zbus::Result<()>;
     fn set_brightness(&self, brightness: f64) -> zbus::Result<()>;
+    fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
+    fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
+    fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
+    fn set_audio_output(&self, id: u32) -> zbus::Result<()>;
     fn set_do_not_disturb(&self, enabled: bool) -> zbus::Result<()>;
     #[zbus(signal)]
     fn changed(&self, state: HashMap<String, OwnedValue>) -> zbus::Result<()>;
@@ -355,6 +469,33 @@ fn reads_and_changes_the_system() {
 
             proxy.set_do_not_disturb(true).await.unwrap();
             wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
+
+            // Reti: quella in uso, poi la salvata, poi le altre per segnale.
+            let networks = proxy.wifi_networks().await.unwrap();
+            assert_eq!(
+                networks,
+                [
+                    ("Casa".to_owned(), 70, true, false, true),
+                    ("Ufficio".to_owned(), 40, true, true, false),
+                    ("Bar".to_owned(), 90, false, false, false),
+                ]
+            );
+            proxy.connect_wifi("Ufficio").await.unwrap();
+            assert!(proxy.connect_wifi("Bar").await.is_err());
+
+            // Uscite audio da `wpctl status`.
+            let outputs = proxy.audio_outputs().await.unwrap();
+            assert_eq!(
+                outputs,
+                [
+                    (62, "Cuffie".to_owned(), false),
+                    (74, "Altoparlanti di prova".to_owned(), true),
+                ]
+            );
+            proxy.set_audio_output(62).await.unwrap();
+            let chosen = std::fs::read_to_string(dir.join("volume.default")).unwrap();
+            assert_eq!(chosen.trim(), "62");
+            assert!(proxy.set_audio_output(999).await.is_err());
         };
         future::or(test, async {
             let result = service.run().await;

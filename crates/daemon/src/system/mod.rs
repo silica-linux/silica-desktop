@@ -8,6 +8,9 @@
 //! con lo stato intero: per la shell è più semplice di un segnale per proprietà.
 
 mod backends;
+mod details;
+
+pub use details::{Network, Output, parse_outputs};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -258,6 +261,41 @@ impl System {
             ));
         }
         backends::set_brightness(&self.shared, brightness.clamp(0.0, 1.0))
+            .await
+            .map_err(failed)
+    }
+
+    /// Le reti Wi-Fi visibili: (nome, segnale 0–100, protetta, salvata, in uso), quella in
+    /// uso prima, poi le salvate, poi per segnale.
+    async fn wifi_networks(&self) -> zbus::fdo::Result<Vec<(String, u8, bool, bool, bool)>> {
+        let list = details::wifi_networks(&self.shared).await.map_err(failed)?;
+        Ok(list
+            .into_iter()
+            .map(|n| (n.ssid, n.strength, n.secure, n.known, n.active))
+            .collect())
+    }
+
+    /// Si collega a una rete salvata.
+    async fn connect_wifi(&self, ssid: String) -> zbus::fdo::Result<()> {
+        details::connect_wifi(&self.shared, &ssid)
+            .await
+            .map_err(failed)
+    }
+
+    /// Le uscite audio: (id, nome, predefinita).
+    async fn audio_outputs(&self) -> zbus::fdo::Result<Vec<(u32, String, bool)>> {
+        let list = details::audio_outputs(&self.shared.config.wpctl)
+            .await
+            .map_err(failed)?;
+        Ok(list
+            .into_iter()
+            .map(|o| (o.id, o.name, o.default))
+            .collect())
+    }
+
+    /// Sceglie l'uscita audio predefinita.
+    async fn set_audio_output(&self, id: u32) -> zbus::fdo::Result<()> {
+        details::set_audio_output(&self.shared.config.wpctl, id)
             .await
             .map_err(failed)
     }

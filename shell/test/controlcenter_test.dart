@@ -31,6 +31,33 @@ class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
 
   @override
   Future<void> setDoNotDisturb(bool enabled) async => calls.add('dnd $enabled');
+
+  List<WifiNetwork> networks = const [
+    WifiNetwork(
+      ssid: 'Casa',
+      strength: 70,
+      secure: true,
+      known: true,
+      active: true,
+    ),
+    WifiNetwork(ssid: 'Ufficio', strength: 40, secure: true, known: true),
+    WifiNetwork(ssid: 'Bar', strength: 90),
+  ];
+
+  @override
+  Future<List<WifiNetwork>> wifiNetworks() async => networks;
+
+  @override
+  Future<void> connectWifi(String ssid) async => calls.add('connect $ssid');
+
+  @override
+  Future<List<AudioOutput>> audioOutputs() async => const [
+    AudioOutput(id: 74, name: 'Altoparlanti', isDefault: true),
+    AudioOutput(id: 62, name: 'Cuffie'),
+  ];
+
+  @override
+  Future<void> setAudioOutput(int id) async => calls.add('output $id');
 }
 
 const SystemSnapshot laptop = SystemSnapshot(
@@ -118,10 +145,15 @@ void main() {
     expect(wifi.right, lessThanOrEqualTo(1280 - 14 - 152));
     expect(tester.getTopLeft(find.text('Wi-Fi')).dx, 1280 - 14 - 292 + 56);
 
-    await tester.tap(find.text('Wi-Fi'));
+    // Il disco dell'icona spegne; il testo apre il dettaglio.
+    final wifiText = tester.getTopLeft(find.text('Wi-Fi'));
+    await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
     await tester.pump();
     expect(system.calls, ['wifi false']);
     expect(find.text('Spento'), findsWidgets);
+    await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
+    await tester.pump();
+    expect(system.calls.last, 'wifi true');
 
     // Un tocco a metà della traccia del Suono.
     final sound = tester.getTopLeft(find.text('Suono'));
@@ -133,5 +165,70 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('Wi-Fi'), findsNothing);
+  });
+
+  testWidgets(
+    'il testo apre il dettaglio del Wi-Fi; Esc torna al Centro, poi chiude',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final system = FakeSystem(laptop);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(system: system),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      await tester.tapAt(tester.getCenter(find.text('Wi-Fi')));
+      await tester.pumpAndSettle();
+      // Il pannello: 308 pt, 10 a sinistra della pila, 6 sopra; le reti conosciute.
+      expect(find.text('Reti conosciute'), findsOneWidget); // Casa e Ufficio
+      expect(find.text('Ufficio'), findsOneWidget);
+      expect(find.text('Bar'), findsNothing);
+      final title = tester.getTopLeft(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == 'Wi-Fi' && w.style?.fontSize == 14,
+        ),
+      );
+      expect(title.dx, 1280 - 14 - 292 - 10 + 14);
+      // Una rete conosciuta si collega; "Altre reti" mostra le altre.
+      await tester.tap(find.text('Ufficio'));
+      expect(system.calls.last, 'connect Ufficio');
+      await tester.tap(find.text('Altre reti'));
+      await tester.pumpAndSettle();
+      expect(find.text('Bar'), findsOneWidget);
+      // Esc: di nuovo il Centro, con i moduli.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Reti conosciute'), findsNothing);
+      expect(find.text('Casa'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Wi-Fi'), findsNothing);
+    },
+  );
+
+  testWidgets('il titolo del Suono apre le uscite', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final system = FakeSystem(laptop);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ControlCenter(system: system),
+      ),
+    );
+    await sendCommand(tester, 'controlcenter.toggle');
+    await tester.pumpAndSettle();
+    await tester.tapAt(tester.getCenter(find.text('Suono')));
+    await tester.pumpAndSettle();
+    expect(find.text('Uscita'), findsOneWidget);
+    await tester.tap(find.text('Cuffie'));
+    await tester.pump();
+    expect(system.calls.last, 'output 62');
   });
 }

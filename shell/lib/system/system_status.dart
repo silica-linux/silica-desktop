@@ -112,9 +112,73 @@ class SystemSnapshot {
   );
 }
 
+/// Una rete senza fili visibile (pannello di dettaglio del Wi-Fi).
+@immutable
+class WifiNetwork {
+  const WifiNetwork({
+    required this.ssid,
+    required this.strength,
+    this.secure = false,
+    this.known = false,
+    this.active = false,
+  });
+
+  final String ssid;
+
+  /// 0–100.
+  final int strength;
+  final bool secure;
+
+  /// C'è una connessione salvata.
+  final bool known;
+  final bool active;
+
+  /// Da `(sybbb)` di `WifiNetworks`.
+  static WifiNetwork? fromTuple(Object? tuple) {
+    if (tuple is! List || tuple.length < 5) return null;
+    final [ssid, strength, secure, known, active, ...] = tuple;
+    if (ssid is! String || strength is! int) return null;
+    return WifiNetwork(
+      ssid: ssid,
+      strength: strength.clamp(0, 100),
+      secure: secure == true,
+      known: known == true,
+      active: active == true,
+    );
+  }
+}
+
+/// Un'uscita audio (pannello di dettaglio del Suono).
+@immutable
+class AudioOutput {
+  const AudioOutput({
+    required this.id,
+    required this.name,
+    this.isDefault = false,
+  });
+
+  final int id;
+  final String name;
+  final bool isDefault;
+
+  /// Da `(usb)` di `AudioOutputs`.
+  static AudioOutput? fromTuple(Object? tuple) {
+    if (tuple is! List || tuple.length < 3) return null;
+    final [id, name, isDefault, ...] = tuple;
+    if (id is! int || name is! String) return null;
+    return AudioOutput(id: id, name: name, isDefault: isDefault == true);
+  }
+}
+
 /// Lo stato e le azioni; le azioni aggiornano subito la fotografia (la risposta del
 /// daemon arriva poi con `Changed`).
 abstract class SystemSource implements ValueListenable<SystemSnapshot> {
+  /// Le reti visibili, quella in uso prima (vuoto se il daemon non risponde).
+  Future<List<WifiNetwork>> wifiNetworks();
+  Future<void> connectWifi(String ssid);
+  Future<List<AudioOutput>> audioOutputs();
+  Future<void> setAudioOutput(int id);
+
   Future<void> setWifi(bool enabled);
   Future<void> setBluetooth(bool powered);
   Future<void> setBrightness(double value);
@@ -215,6 +279,37 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
     value = value.copyWith(doNotDisturb: enabled);
     return _set('SetDoNotDisturb', 'b', enabled);
   }
+
+  Future<List<T>> _list<T>(String method, T? Function(Object?) parse) async {
+    try {
+      final reply = await _call(method);
+      final list = reply.isEmpty ? null : reply.first;
+      return [
+        if (list is List)
+          for (final item in list)
+            if (parse(item) case final T value) value,
+      ];
+    } on PlatformException catch (error) {
+      debugPrint('sistema: $method: ${error.code}: ${error.message}');
+    } on MissingPluginException {
+      // Fuori da Silica.
+    }
+    return const [];
+  }
+
+  @override
+  Future<List<WifiNetwork>> wifiNetworks() =>
+      _list('WifiNetworks', WifiNetwork.fromTuple);
+
+  @override
+  Future<void> connectWifi(String ssid) => _set('ConnectWifi', 's', ssid);
+
+  @override
+  Future<List<AudioOutput>> audioOutputs() =>
+      _list('AudioOutputs', AudioOutput.fromTuple);
+
+  @override
+  Future<void> setAudioOutput(int id) => _set('SetAudioOutput', 'u', id);
 
   @override
   void dispose() {
