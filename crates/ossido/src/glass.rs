@@ -23,6 +23,7 @@ pub enum Material {
     Clear,
     Thick,
     Regular,
+    Notification,
 }
 
 /// Una regione di vetro, in pixel logici relativi alla superficie.
@@ -72,7 +73,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(1, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(2, ());
         Self
     }
 }
@@ -159,6 +160,12 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                     WEnum::Value(silica_glass_v1::Material::Clear) => Some(Material::Clear),
                     WEnum::Value(silica_glass_v1::Material::Thick) => Some(Material::Thick),
                     WEnum::Value(silica_glass_v1::Material::Regular) => Some(Material::Regular),
+                    // Dalla versione 2 del protocollo.
+                    WEnum::Value(silica_glass_v1::Material::Notification)
+                        if glass.version() >= 2 =>
+                    {
+                        Some(Material::Notification)
+                    }
                     _ => None,
                 };
                 let valid = width > 0 && height > 0 && radius.is_finite() && radius >= 0.0;

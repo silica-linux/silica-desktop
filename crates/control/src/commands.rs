@@ -34,6 +34,7 @@ pub const PERF_FRAMES: &str = "perf.frames";
 pub const PERF_PROCESS: &str = "perf.process";
 pub const GLASS_LIST: &str = "glass.list";
 pub const FARO_TOGGLE: &str = "faro.toggle";
+pub const NOTIFICATIONS_TOGGLE: &str = "notifications.toggle";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -186,6 +187,13 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Faro",
         description: "Apre o chiude Faro, la ricerca delle app (componente della shell).",
         shortcut: Some("Logo+space"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: NOTIFICATIONS_TOGGLE,
+        label: "Centro notifiche",
+        description: "Apre o chiude il Centro notifiche (componente della shell; clic sull'orologio).",
+        shortcut: None,
         params: no_params,
     },
     CommandSpec {

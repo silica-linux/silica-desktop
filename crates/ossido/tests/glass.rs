@@ -472,3 +472,45 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
     let mixed = shot(&ossido, "glass-mixed.png");
     assert!(!differs(&mixed, 134, 82), "materiali diversi si fondono");
 }
+
+#[test]
+fn notification_glass_matches_the_isolated_banner() {
+    // Il banner isolato sul grigio di riferimento: #bfc0c5 in alto, #c2c3c8 in basso
+    // (notifications.md, "Banner · materiale su grigio").
+    let ossido = Headless::start_with("glass-notification", SHOT, &["--background", "7a7b80"]);
+    let size = (344, 91);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 344, 91, 20.0, Material::Notification)])
+        .unwrap();
+    let fill = rgb(&shot(&ossido, "glass-notification.png"), 32 + 172, 32 + 45);
+    eprintln!("riempimento: {fill:?} (riferimento [192, 193, 198])");
+    for (got, want) in fill.iter().zip([0xc0_u8, 0xc1, 0xc6]) {
+        assert!(got.abs_diff(want) <= 3, "riempimento {fill:?}");
+    }
+
+    // Due carte a 6 pt (le carte del Centro, con il vetro più largo di 1 pt per lato)
+    // restano separate: nello spazio fra loro c'è lo sfondo.
+    glass
+        .set_glass(&[
+            (0, 0, 344, 40, 20.0, Material::Notification),
+            (0, 46, 344, 40, 20.0, Material::Notification),
+        ])
+        .unwrap();
+    let gap = rgb(
+        &shot(&ossido, "glass-notification-gap.png"),
+        32 + 172,
+        32 + 43,
+    );
+    assert_eq!(gap, [0x7a, 0x7b, 0x80], "fra le carte: {gap:?}");
+    drop(glass);
+
+    // È della versione 2: un client legato alla 1 che lo chiede viene disconnesso.
+    common::client::GLASS_VERSION.with(|v| v.set(1));
+    let mut old = TestWindow::open_pixels(&ossido.wayland, "vecchio", size, &transparent(size));
+    assert!(
+        old.set_glass(&[(0, 0, 344, 91, 20.0, Material::Notification)])
+            .is_err()
+    );
+    common::client::GLASS_VERSION.with(|v| v.set(2));
+}

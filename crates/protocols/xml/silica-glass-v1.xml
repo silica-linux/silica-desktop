@@ -13,7 +13,7 @@
     proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="1">
+  <interface name="silica_glass_manager_v1" version="2">
     <description summary="crea l'oggetto vetro di una superficie"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="1">
+  <interface name="silica_glass_v1" version="2">
     <description summary="regioni di vetro di una superficie">
       Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
       corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
@@ -50,11 +50,13 @@
       <description summary="materiali misurati">
         Le famiglie di vetro misurate: chiaro (sfocatura piccola, quasi trasparente),
         spesso (sfocatura ampia, quasi bianco in aspetto chiaro) e regolare (il Liquid Glass
-        dei controlli: lente forte sul bordo).
+        dei controlli: lente forte sul bordo). Dalla versione 2: notifica (sfocatura molto
+        ampia, quasi opaco, come banner e Centro notifiche).
       </description>
       <entry name="clear" value="0" summary="vetro chiaro, come il Dock"/>
       <entry name="thick" value="1" summary="vetro spesso, come menu e ricerca"/>
       <entry name="regular" value="2" summary="vetro dei controlli, con la lente del bordo"/>
+      <entry name="notification" value="3" since="2" summary="vetro delle notifiche"/>
     </enum>
 
     <enum name="error">

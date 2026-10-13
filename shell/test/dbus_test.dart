@@ -9,28 +9,31 @@ void main() {
 
   tearDown(() => messenger.setMockMethodCallHandler(DBus.channel, null));
 
-  test('call manda firma e argomenti e restituisce la lista della risposta', () async {
-    final calls = <MethodCall>[];
-    messenger.setMockMethodCallHandler(DBus.channel, (call) async {
-      calls.add(call);
-      return [
-        {'Percentage': 80.0},
-      ];
-    });
-    final props = await DBus.instance.getAll(
-      bus: DBusBus.system,
-      destination: 'org.freedesktop.UPower',
-      path: '/org/freedesktop/UPower/devices/DisplayDevice',
-      interface: 'org.freedesktop.UPower.Device',
-    );
-    expect(props['Percentage'], 80.0);
-    expect(calls.single.method, 'call');
-    final args = calls.single.arguments as Map;
-    expect(args['bus'], 'system');
-    expect(args['method'], 'GetAll');
-    expect(args['signature'], 's');
-    expect(args['args'], ['org.freedesktop.UPower.Device']);
-  });
+  test(
+    'call manda firma e argomenti e restituisce la lista della risposta',
+    () async {
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(DBus.channel, (call) async {
+        calls.add(call);
+        return [
+          {'Percentage': 80.0},
+        ];
+      });
+      final props = await DBus.instance.getAll(
+        bus: DBusBus.system,
+        destination: 'org.freedesktop.UPower',
+        path: '/org/freedesktop/UPower/devices/DisplayDevice',
+        interface: 'org.freedesktop.UPower.Device',
+      );
+      expect(props['Percentage'], 80.0);
+      expect(calls.single.method, 'call');
+      final args = calls.single.arguments as Map;
+      expect(args['bus'], 'system');
+      expect(args['method'], 'GetAll');
+      expect(args['signature'], 's');
+      expect(args['args'], ['org.freedesktop.UPower.Device']);
+    },
+  );
 
   test('gli errori D-Bus arrivano con il loro nome', () async {
     messenger.setMockMethodCallHandler(DBus.channel, (call) async {

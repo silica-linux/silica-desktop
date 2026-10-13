@@ -69,13 +69,22 @@ String clockText(DateTime t) {
 }
 
 class MenuBar extends StatefulWidget {
-  const MenuBar({super.key, this.entries, this.onSearch, this.now});
+  const MenuBar({
+    super.key,
+    this.entries,
+    this.onSearch,
+    this.onClock,
+    this.now,
+  });
 
   /// Le app installate, per il nome dell'app con il focus.
   final Map<String, DesktopEntry>? entries;
 
   /// Clic sull'icona di Faro.
   final VoidCallback? onSearch;
+
+  /// Clic sull'orologio: il Centro notifiche.
+  final VoidCallback? onClock;
 
   /// Orologio fisso (test).
   final DateTime? now;
@@ -183,7 +192,14 @@ class _MenuBarState extends State<MenuBar> {
                 const SizedBox(width: statusGap),
                 const StatusIcon(kind: StatusKind.controls, cell: 26),
                 const SizedBox(width: clockGap),
-                _baselined(clockText(widget.now ?? DateTime.now()), status),
+                GestureDetector(
+                  onTap: widget.onClock,
+                  behavior: HitTestBehavior.opaque,
+                  child: _baselined(
+                    clockText(widget.now ?? DateTime.now()),
+                    status,
+                  ),
+                ),
               ],
             ),
           ),

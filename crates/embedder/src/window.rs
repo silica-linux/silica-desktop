@@ -436,7 +436,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         text_input: TextInput::default(),
         glass: Glass::new(
             globals
-                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=1, ())
+                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=2, ())
                 .ok(),
         ),
         shell: ShellLink::new(

@@ -10,7 +10,7 @@ use silica_protocols::glass::MAX_REGIONS;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{Material, SilicaGlassV1};
 use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{Dispatch, QueueHandle};
+use wayland_client::{Dispatch, Proxy, QueueHandle};
 
 pub const CHANNEL: &str = "silica/glass";
 
@@ -43,6 +43,7 @@ impl Region {
         let material = match value.get("material").and_then(Value::as_str) {
             Some("thick") => Material::Thick,
             Some("regular") => Material::Regular,
+            Some("notification") => Material::Notification,
             _ => Material::Clear,
         };
         let region = Self {
@@ -130,14 +131,21 @@ impl Glass {
             .object
             .get_or_insert_with(|| manager.get_glass(surface, qh, ()));
         object.clear();
+        // Un Ossido con la versione 1 del protocollo non conosce il vetro delle notifiche:
+        // il più vicino è quello spesso.
+        let notification = object.version() >= 2;
         for region in &regions {
+            let material = match region.material {
+                Material::Notification if !notification => Material::Thick,
+                material => material,
+            };
             object.add_region(
                 region.x,
                 region.y,
                 region.width,
                 region.height,
                 region.radius,
-                region.material,
+                material,
             );
         }
         self.current = regions;

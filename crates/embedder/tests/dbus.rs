@@ -213,3 +213,23 @@ fn signals_reach_dart_until_unsubscribed() {
     assert_eq!(h.call("unsubscribe", json!({"id": id})), json!([false]));
     drop(other);
 }
+
+#[test]
+fn signals_filtered_by_path_and_interface() {
+    let mut h = Harness::new();
+    let reply = h.call(
+        "subscribe",
+        json!({"path": "/org/freedesktop/DBus", "interface": "org.freedesktop.DBus"}),
+    );
+    let id = reply[0].as_u64().unwrap();
+    let _other = zbus::block_on(async {
+        zbus::connection::Builder::address(h.address.as_str())
+            .unwrap()
+            .build()
+            .await
+            .unwrap()
+    });
+    let signal = h.next_signal();
+    assert_eq!(signal["args"]["id"], id);
+    assert_eq!(signal["args"]["interface"], "org.freedesktop.DBus");
+}

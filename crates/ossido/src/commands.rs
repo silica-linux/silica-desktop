@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AnimationScale, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE,
     ExecuteParams, FARO_TOGGLE, GLASS_LIST, GlassQualityParams, INPUT_CLICK, INPUT_KEY,
-    INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST, PERF_FRAMES,
-    PERF_PROCESS, PERF_RENDER, PerfFramesParams, PerfProcessParams, PerfRenderParams,
+    INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST, NOTIFICATIONS_TOGGLE,
+    PERF_FRAMES, PERF_PROCESS, PERF_RENDER, PerfFramesParams, PerfProcessParams, PerfRenderParams,
     PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_GLASS_QUALITY,
     UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE,
     WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
@@ -112,7 +112,7 @@ impl State {
             LAYER_LIST => to_value(self.layer_list()),
             GLASS_LIST => to_value(self.glass_list()),
             // Comandi dei componenti della shell: Ossido li inoltra.
-            FARO_TOGGLE => {
+            FARO_TOGGLE | NOTIFICATIONS_TOGGLE => {
                 let sent = self.forward_to_shell(id);
                 Ok(json!({ "forwarded": sent }))
             }

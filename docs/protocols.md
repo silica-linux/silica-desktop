@@ -19,7 +19,11 @@ sopra testo e icone.
 - Materiali: `clear` (vetro chiaro, come il Dock), `thick` (vetro spesso, come menu e
   ricerca) e `regular` (il Liquid Glass dei controlli, come i moduli del Centro di
   controllo: lente forte che sul bordo preleva anche lo sfondo esterno), dalle misure in
-  `plan/reference/glass.md`.
+  `plan/reference/glass.md`. Dalla versione 2 anche `notification` (banner e Centro
+  notifiche: sfocatura molto ampia, quasi opaco, riga scura del bordo sul primo pixel della
+  regione, che il client allarga di 1 pt per lato; le regioni non si fondono). Un client
+  legato alla versione 1 che lo chiede è un errore `invalid_region`; l'embedder lì ripiega
+  su `thick`.
 - Errori: `invalid_region` (dimensione non positiva, raggio negativo o non finito,
   materiale sconosciuto), `too_many_regions` (oltre 64). Il client viene disconnesso;
   Ossido continua.

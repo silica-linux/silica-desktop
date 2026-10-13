@@ -32,6 +32,20 @@ pub struct MaterialParams {
     pub offset: [f32; 3],
     /// La lente del bordo.
     pub lens: Lens,
+    /// La riga del bordo e la sfumatura interna.
+    pub edge: Edge,
+    /// Spazio sotto il quale due regioni di questo materiale si fondono (0: mai).
+    pub merge_pt: f32,
+}
+
+/// Il bordo del vetro: sopra e sotto la riga di 1 pt `rim` si aggiunge al materiale, poi
+/// una sfumatura `glow · e^(−t/decay)`; ai lati la riga è nero con alfa `side_dark`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Edge {
+    pub rim: [f32; 3],
+    pub glow: f32,
+    pub glow_decay_pt: f32,
+    pub side_dark: f32,
 }
 
 /// La lente del bordo: per ogni lato, da quale distanza dal bordo (s) il vetro preleva lo
@@ -76,10 +90,24 @@ impl Lens {
 /// del Dock la riga di 1 pt sopra e sotto vale +60, +60, +63 sul riempimento, la
 /// sfumatura interna +13, +8, +5, +3, +2, +1 (≈ 13·e^(−t/2,2)), additiva anche su nero;
 /// ai lati 1 pt scuro (`#3c3c40` su `#818289`: nero con alfa 0,535). `dock.md`, `glass.md`.
-const EDGE_RIM: [f32; 3] = [60.0 / 255.0, 60.0 / 255.0, 63.0 / 255.0];
-const EDGE_GLOW: f32 = 13.0 / 255.0;
-const EDGE_GLOW_DECAY_PT: f32 = 2.2;
-const EDGE_SIDE_DARK: f32 = 0.535;
+const EDGE: Edge = Edge {
+    rim: [60.0 / 255.0, 60.0 / 255.0, 63.0 / 255.0],
+    glow: 13.0 / 255.0,
+    glow_decay_pt: 2.2,
+    side_dark: 0.535,
+};
+
+/// Bordo delle notifiche: la riga di 1 pt è scura tutto intorno ed è **fuori** dalla
+/// cornice (il client allarga la regione di 1 pt per lato): sopra `#5e6064` e sotto
+/// `#636367` su un riempimento ~`#c0` (−98), ai lati `#393a3d` (nero con alfa ~0,70).
+/// Dentro, la prima riga sopra e sotto è più chiara di ~22 livelli e la sfumatura si
+/// assorbe in 2 pt (`d6 c3 c1 bf`). `notifications.md`, "Banner · materiale su grigio".
+const NOTIFICATION_EDGE: Edge = Edge {
+    rim: [-98.0 / 255.0, -97.0 / 255.0, -98.0 / 255.0],
+    glow: 22.0 / 255.0,
+    glow_decay_pt: 0.5,
+    side_dark: 0.70,
+};
 
 /// Fondo del Dock, chiaro: σ 2,5–3,25 pt (si usa 2,75), w 0,28, matrice libera
 /// (rmse 2,45) con b = (37,3; 39,3; 36,8).
@@ -93,6 +121,8 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     ],
     offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
     lens: DOCK_LENS,
+    edge: EDGE,
+    merge_pt: MERGE_PT,
 };
 
 /// Lente del Dock: ai lati fino a ~5 pt verso l'interno a 6 pt dal bordo, nulla oltre
@@ -136,6 +166,8 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     ],
     offset: [30.6 / 255.0, 32.0 / 255.0, 30.3 / 255.0],
     lens: LIQUID_LENS,
+    edge: EDGE,
+    merge_pt: MERGE_PT,
 };
 
 /// La lente del Liquid Glass, misurata sui moduli del Centro di controllo: fra ~6 e
@@ -191,6 +223,8 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
         top: &[],
         bottom: &[],
     },
+    edge: EDGE,
+    merge_pt: MERGE_PT,
 };
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
@@ -245,6 +279,32 @@ impl GlassQuality {
         }
     }
 }
+
+/// Vetro delle notifiche, aspetto chiaro: banner e Centro notifiche. Sfocatura σ 10–11 pt
+/// senza componente nitida; matrice della seconda notifica del Centro, la più affidabile
+/// (rmse 3,5; la carta in cima a una pila ha più offset e meno guadagno). L'offset misurato
+/// lì (141, 139, 139) include lo scrim del Centro: qui è ricalcolato perché sul grigio di
+/// riferimento (`#7a7b80`) il riempimento sia quello del banner isolato, `#c0c1c6`. Vicino ai
+/// bordi alto e basso un leggero ingrandimento orizzontale (~4 % a 5–6 pt), invisibile
+/// sotto questa sfocatura: nessuna lente (notifications.md, "Banner").
+pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
+    sigma: 10.5,
+    sharp: 0.03,
+    matrix: [
+        [0.632, -0.150, -0.096],
+        [-0.052, 0.469, -0.023],
+        [-0.132, -0.202, 0.731],
+    ],
+    offset: [145.6 / 255.0, 144.6 / 255.0, 145.3 / 255.0],
+    lens: Lens {
+        side: &[],
+        top: &[],
+        bottom: &[],
+    },
+    edge: NOTIFICATION_EDGE,
+    // Carte separate anche a pochi punti l'una dall'altra (Centro notifiche).
+    merge_pt: 0.0,
+};
 
 /// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola
 /// forma, come gocce (unione morbida delle distanze, k = 2 · MERGE_PT: due bordi a distanza
@@ -323,7 +383,8 @@ impl GlassCache {
         let margin = regions
             .iter()
             .map(|region| {
-                let reach = f64::from(region.material.lens.outward_reach() + MERGE_PT);
+                let reach =
+                    f64::from(region.material.lens.outward_reach() + region.material.merge_pt);
                 ((region.material.sigma * 3.0 + reach) * scale).ceil() as i32 + 2
             })
             .max()
@@ -416,8 +477,8 @@ impl GlassCache {
                     .1
                     .clone();
                 let scale = shapes.first()?.scale;
-                // L'unione morbida esce dalle regioni al più di k / 4 = MERGE_PT / 2.
-                let bulge = (f64::from(MERGE_PT) * scale * 0.5).ceil() as i32 + 1;
+                // L'unione morbida esce dalle regioni al più di k / 4 = merge_pt / 2.
+                let bulge = (f64::from(material.merge_pt) * scale * 0.5).ceil() as i32 + 1;
                 let area = shapes
                     .iter()
                     .map(|shape| shape.rect)
@@ -653,6 +714,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
         let m = first.material.matrix;
         let b = first.material.offset;
         let lens = first.material.lens;
+        let edge = first.material.edge;
         let px = first.scale as f32;
         // Le regioni rispetto alla texture: fino a 8 rettangoli in due mat4 (una colonna
         // per rettangolo: x, y, larghezza, altezza) e i raggi in una mat4.
@@ -699,7 +761,10 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 "shape_count",
                 UniformValue::_1f(self.shapes.len().min(MAX_SHAPES) as f32),
             ),
-            Uniform::new("merge", UniformValue::_1f(2.0 * MERGE_PT * px)),
+            Uniform::new(
+                "merge",
+                UniformValue::_1f(2.0 * first.material.merge_pt * px),
+            ),
             Uniform::new("exponent", UniformValue::_1f(2.0)),
             Uniform::new("row_r", UniformValue::_3f(m[0][0], m[0][1], m[0][2])),
             Uniform::new("row_g", UniformValue::_3f(m[1][0], m[1][1], m[1][2])),
@@ -710,13 +775,13 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("lens_reach", UniformValue::_1f(lens_extent(&lens) * px)),
             Uniform::new(
                 "rim",
-                UniformValue::_3f(EDGE_RIM[0], EDGE_RIM[1], EDGE_RIM[2]),
+                UniformValue::_3f(edge.rim[0], edge.rim[1], edge.rim[2]),
             ),
             Uniform::new(
                 "edge",
-                UniformValue::_2f(EDGE_GLOW, EDGE_GLOW_DECAY_PT * px),
+                UniformValue::_2f(edge.glow, edge.glow_decay_pt * px),
             ),
-            Uniform::new("side_dark", UniformValue::_1f(EDGE_SIDE_DARK)),
+            Uniform::new("side_dark", UniformValue::_1f(edge.side_dark)),
         ];
         frame.render_texture_from_to(
             &self.texture,

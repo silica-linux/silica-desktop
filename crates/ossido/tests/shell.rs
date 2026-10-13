@@ -145,6 +145,7 @@ fn shell_client(socket: &str) {
         queue.roundtrip(&mut shell).unwrap();
         // Un comando del catalogo chiesto dalla shell torna a tutta la shell.
         manager.execute("faro.toggle".to_owned());
+        manager.execute("notifications.toggle".to_owned());
         queue.roundtrip(&mut shell).unwrap();
     }
     for id in &shell.commands {
@@ -220,6 +221,7 @@ fn only_shell_components_see_the_window_list_and_can_activate() {
     assert_eq!(focused, ["FOCUSED seconda", "FOCUSED prima"], "{shell}");
 
     assert!(shell.contains("COMMAND faro.toggle"), "{shell}");
+    assert!(shell.contains("COMMAND notifications.toggle"), "{shell}");
 
     // Il figlio della shell ha attivato "prima": ora ha il focus ed è in cima.
     let list: Vec<WindowInfo> =

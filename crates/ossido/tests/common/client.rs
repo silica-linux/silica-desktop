@@ -51,14 +51,19 @@ impl Dispatch<WlRegistry, ()> for App {
         qh: &QueueHandle<Self>,
     ) {
         if let wl_registry::Event::Global {
-            name, interface, ..
+            name,
+            interface,
+            version,
         } = event
         {
             match interface.as_str() {
                 "wl_compositor" => state.compositor = Some(registry.bind(name, 4, qh, ())),
                 "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
                 "xdg_wm_base" => state.wm_base = Some(registry.bind(name, 1, qh, ())),
-                "silica_glass_manager_v1" => state.glass = Some(registry.bind(name, 1, qh, ())),
+                "silica_glass_manager_v1" => {
+                    let version = GLASS_VERSION.with(std::cell::Cell::get).min(version);
+                    state.glass = Some(registry.bind(name, version, qh, ()));
+                }
                 "zxdg_decoration_manager_v1" => {
                     state.decorations = Some(registry.bind(name, 1, qh, ()));
                 }
@@ -166,6 +171,11 @@ pub struct TestWindow {
 /// Una regione di vetro per `TestWindow::set_glass`: x, y, larghezza, altezza, raggio,
 /// materiale.
 pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
+
+thread_local! {
+    /// Versione di silica-glass-v1 che le finestre di questo thread (un test) chiedono.
+    pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(2) };
+}
 
 impl TestWindow {
     /// Apre una finestra `WINDOW` piena di `RED_BGRA` e aspetta che Ossido la riceva.

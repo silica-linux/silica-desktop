@@ -4,7 +4,7 @@
 //! - `layers`: verifica le dipendenze vietate tra i livelli.
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
 //! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`); con `--shell` anche
-//!   la shell completa (sfondo, barra dei menu, Dock, Faro) e il bus di sessione privato
+//!   la shell completa (sfondo, barra dei menu, Dock, Faro, notifiche) e il bus di sessione privato
 //!   con `silica-daemon`, in release.
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
@@ -173,7 +173,7 @@ fn run(args: &[String]) -> Result<()> {
 
 /// La shell completa: Ossido ed embedder in release, il bundle della shell (costruito se
 /// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock,
-/// Faro).
+/// Faro, notifiche).
 fn shell_components() -> Result<Vec<String>> {
     let root = root()?;
     status(cargo_command(&[
@@ -215,6 +215,9 @@ fn shell_components() -> Result<Vec<String>> {
         ),
         format!(
             "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro --dart-arg faro {bundle}"
+        ),
+        format!(
+            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace notifications --dart-arg notifications {bundle}"
         ),
     ];
     // Bus di sessione privato con silica-daemon (notifiche): annidato, quelli della

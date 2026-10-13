@@ -294,17 +294,71 @@ impl<T: 'static> Worker<T> {
 /// Gli argomenti di un messaggio, in JSON.
 fn reply_args(message: &Message) -> Result<Vec<Json>, (String, String)> {
     let body = message.body();
-    let signature = body.signature();
-    if matches!(signature, Signature::Unit) {
+    if matches!(body.signature(), Signature::Unit) {
         return Ok(Vec::new());
     }
-    // Gli argomenti di un messaggio si leggono come i campi di una struttura.
-    let fields = format!("({})", signature.to_string_no_parens());
+    // Gli argomenti di un messaggio si leggono come i campi di una struttura. Serve la
+    // firma com'è scritta nell'intestazione: una volta letta, `us` (due argomenti) e `(us)`
+    // (una struttura) diventano la stessa `Signature`.
+    let raw = header_signature(message.data().bytes())
+        .ok_or_else(|| failed("firma del messaggio illeggibile"))?;
+    let fields = format!("({raw})");
     let (structure, _): (Structure<'_>, usize) = body
         .data()
         .deserialize_for_dynamic_signature(fields.as_str())
         .map_err(|e| failed(&format!("risposta illeggibile: {e}")))?;
     Ok(structure.fields().iter().map(json::to_json).collect())
+}
+
+/// La firma del corpo come è scritta nell'intestazione del messaggio (campo 8). Formato:
+/// specifica D-Bus, "Message Format"; i byte vengono dal bus e si leggono con controlli.
+fn header_signature(bytes: &[u8]) -> Option<&str> {
+    let little = match bytes.first()? {
+        b'l' => true,
+        b'B' => false,
+        _ => return None,
+    };
+    let u32_at = |at: usize| -> Option<usize> {
+        let raw: [u8; 4] = bytes.get(at..at.checked_add(4)?)?.try_into().ok()?;
+        let value = if little {
+            u32::from_le_bytes(raw)
+        } else {
+            u32::from_be_bytes(raw)
+        };
+        usize::try_from(value).ok()
+    };
+    let align = |at: usize, to: usize| at.checked_add(to - 1).map(|v| v / to * to);
+    let end = u32_at(12)?.checked_add(16)?;
+    let mut at = 16;
+    loop {
+        at = align(at, 8)?;
+        if at >= end {
+            return Some("");
+        }
+        let code = *bytes.get(at)?;
+        let sig_len = usize::from(*bytes.get(at.checked_add(1)?)?);
+        let sig_start = at.checked_add(2)?;
+        let sig = bytes.get(sig_start..sig_start.checked_add(sig_len)?)?;
+        at = sig_start.checked_add(sig_len)?.checked_add(1)?;
+        match sig {
+            b"g" => {
+                let len = usize::from(*bytes.get(at)?);
+                let start = at.checked_add(1)?;
+                let value = bytes.get(start..start.checked_add(len)?)?;
+                if code == 8 {
+                    return std::str::from_utf8(value).ok();
+                }
+                at = start.checked_add(len)?.checked_add(1)?;
+            }
+            b"s" | b"o" => {
+                at = align(at, 4)?;
+                let len = u32_at(at)?;
+                at = at.checked_add(4)?.checked_add(len)?.checked_add(1)?;
+            }
+            b"u" => at = align(at, 4)?.checked_add(4)?,
+            _ => return None,
+        }
+    }
 }
 
 fn dbus_error(error: &zbus::Error) -> (String, String) {
@@ -328,4 +382,43 @@ fn failed(message: &str) -> (String, String) {
         "org.freedesktop.DBus.Error.Failed".to_owned(),
         message.to_owned(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn signal(
+        body: &(impl zbus::export::serde::Serialize + zbus::zvariant::DynamicType),
+    ) -> Message {
+        Message::signal("/a/b", "dev.frascella.Prova", "Cambiato")
+            .unwrap()
+            .build(body)
+            .unwrap()
+    }
+
+    #[test]
+    fn one_struct_is_not_many_arguments() {
+        let many = signal(&(7u32, "x"));
+        assert_eq!(header_signature(many.data().bytes()), Some("us"));
+        assert_eq!(reply_args(&many).unwrap(), [json!(7), json!("x")]);
+
+        let one = signal(&((7u32, "x"),));
+        assert_eq!(header_signature(one.data().bytes()), Some("(us)"));
+        assert_eq!(reply_args(&one).unwrap(), [json!([7, "x"])]);
+
+        let none = signal(&());
+        assert!(reply_args(&none).unwrap().is_empty());
+    }
+
+    #[test]
+    fn broken_headers_are_rejected() {
+        let message = signal(&(7u32, "x"));
+        let bytes = message.data().bytes();
+        for cut in 0..bytes.len().min(64) {
+            // Mai un panico, qualunque troncamento.
+            let _ = header_signature(&bytes[..cut]);
+        }
+        assert_eq!(header_signature(b"x"), None);
+    }
 }
