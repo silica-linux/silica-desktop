@@ -1,6 +1,6 @@
 //! `cargo xtask bench glass`: il costo del vetro per Ossido, per livello di qualità.
 //!
-//! Caso peggiore: il Dock Flutter (vetro chiaro, Impeller) con una finestra che scorre
+//! Caso peggiore: il Dock della shell (Liquid Glass, Impeller) con una finestra che scorre
 //! dietro di lui a ogni frame, così lo sfondo del vetro cambia sempre, e il puntatore che
 //! passa sulle icone. Per ogni livello si misurano il tempo di rendering di Ossido
 //! (`perf.render`, backend winit) e il ritmo del Dock (`perf.frames`). Va lanciato in una
@@ -82,12 +82,12 @@ pub fn glass(args: &[String]) -> Result<()> {
     ]))?;
     let release_engine = flutter::release_engine_dir()?;
     let debug_engine = flutter::engine_dir()?;
-    let dock = root.join("apps/dock/build/release/flutter_assets");
-    let demo = root.join("apps/demo/build/flutter_assets");
+    let dock = root.join("shell/build/release/flutter_assets");
+    let demo = root.join("testapps/demo/build/flutter_assets");
     for (path, hint) in [
         (
             dock.with_file_name("libapp.so"),
-            "cargo xtask bundle dock --release",
+            "cargo xtask bundle shell --release",
         ),
         (demo.join("kernel_blob.bin"), "cargo xtask bundle demo"),
     ] {
@@ -98,7 +98,7 @@ pub fn glass(args: &[String]) -> Result<()> {
     let embedder = root.join("target/release/silica-embedder");
     let dock_command = format!(
         "{} --engine {} --renderer impeller --layer top --anchor left,right,bottom \
-         --size 1280x160 --exclusive-zone 72 --namespace dock {}",
+         --size 1280x200 --exclusive-zone 84 --namespace dock --dart-arg dock-demo {}",
         embedder.display(),
         release_engine.display(),
         dock.display()

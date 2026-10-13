@@ -16,8 +16,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use tracing::warn;
 
-const INTER_SEMIBOLD: &[u8] =
-    include_bytes!("../../../packages/silica_ui/fonts/Inter-SemiBold.ttf");
+const INTER_SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.ttf");
 
 /// Corpo del titolo in punti.
 pub const SIZE: f32 = 15.0;

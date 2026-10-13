@@ -52,15 +52,14 @@ fn main() -> ExitCode {
         },
         Some("bindings") => flutter::bindings(),
         Some("bench") => match args.get(1).map(String::as_str) {
-            Some("dock") => bench::dock(args.get(2..).unwrap_or_default()),
             Some("glass") => bench_glass::glass(args.get(2..).unwrap_or_default()),
-            _ => Err("uso: cargo xtask bench dock [--runs N] [--seconds S] [--only VARIANTE] [--scale N]\n     cargo xtask bench glass [--runs N] [--seconds S] [--scale N]".to_owned()),
+            _ => Err("uso: cargo xtask bench glass [--runs N] [--seconds S] [--scale N]".to_owned()),
         },
         Some("keymap") => flutter::keymap(),
         Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {
             (Some(app), None) => flutter::bundle(app),
             (Some(app), Some("--release")) => flutter::bundle_release(app),
-            _ => Err("uso: cargo xtask bundle <app in apps/ | shell> [--release]".to_owned()),
+            _ => Err("uso: cargo xtask bundle <shell | demo | percorso di un'app> [--release]".to_owned()),
         },
         _ => Err(
             "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle> [argomenti]"

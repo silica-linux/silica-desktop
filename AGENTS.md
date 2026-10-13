@@ -99,12 +99,27 @@ crates/daemon/         servizi di sistema (D-Bus)
 crates/portal/         backend xdg-desktop-portal
 crates/control/        canale di controllo JSON + server MCP
 crates/cli/            silica-cli
-xtask/                 cargo xtask: ci, layers, assets, run
+shell/                 la shell in Flutter: Dock, barra dei menu, Faro, notifiche, Centro di controllo
+testapps/demo/         app di prova per i test dell'embedder
+xtask/                 cargo xtask: ci, layers, assets, run, bundle
 plan/                  gitignored: stato, piano, riferimenti macOS
 ```
 
 `cargo xtask layers` verifica i livelli: nessun crate sotto la shell dipende da
 Flutter, e `ossido` non dipende da `daemon`.
+
+Gli altri repository di `silica-linux`:
+
+| Repository | Cosa | Licenza |
+| --- | --- | --- |
+| `silica-ui` | pacchetto Dart `silica_ui`: Inter, vetro, Liquid Glass. API stabile, versioni con tag `vX.Y.Z`; la shell e le app lo prendono dal tag | MIT OR Apache-2.0 |
+| `silica-icons` | icone delle app e dei file (a livelli), 303 simboli di sistema | CC BY-SA 4.0 |
+| `silica-cursors` | cursori | CC BY-SA 4.0 |
+| `silica-reference` | osservazioni di macOS 27, clonato in `plan/reference/` (privato) | — |
+| un repository per app | Mustache, Impostazioni, Terminale, …: dipendono da `silica-ui`; si costruiscono con `cargo xtask bundle <percorso>` | MIT OR Apache-2.0 |
+
+Faro e gli altri componenti della shell non sono app: restano in `shell/`. Un cambiamento a
+`silica-ui` si rilascia con un tag prima di usarlo qui (`ref` in `shell/pubspec.yaml`).
 
 ## Harness
 

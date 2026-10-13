@@ -87,7 +87,7 @@ impl Session {
     /// Come `start`, con argomenti dell'embedder a scelta (per esempio un layer).
     fn start_with(name: &str, output: (u32, u32), scale: u32, args: &[String]) -> Self {
         let engine = silica_embedder::default_engine_dir();
-        let bundle = repo().join("apps/demo/build/flutter_assets");
+        let bundle = repo().join("testapps/demo/build/flutter_assets");
         assert!(
             engine.join("libflutter_engine.so").exists() && bundle.join("kernel_blob.bin").exists(),
             "servono l'engine e il bundle: cargo xtask engine && cargo xtask bundle demo"
@@ -215,7 +215,7 @@ fn size_args((w, h): (u32, u32)) -> Vec<String> {
 fn spawn_embedder(dir: &Path, wayland: &str, args: &[String]) -> Child {
     Command::new(env!("CARGO_BIN_EXE_silica-embedder"))
         .args(args)
-        .arg(repo().join("apps/demo/build/flutter_assets"))
+        .arg(repo().join("testapps/demo/build/flutter_assets"))
         .env("XDG_RUNTIME_DIR", dir)
         .env("WAYLAND_DISPLAY", wayland)
         // Ossido headless non offre buffer GPU: Mesa disegna in software (llvmpipe) su wl_shm.
@@ -468,7 +468,7 @@ fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
 fn glass_widget_declares_its_region_to_ossido() {
     let session = Session::start("glass", (640, 480), 1, (300, 200));
     let window = session.window();
-    // La demo mette un Glass 40 × 20 in alto a destra (apps/demo, glassSize).
+    // La demo mette un Glass 40 × 20 in alto a destra (testapps/demo, glassSize).
     let list = wait_for("le regioni di vetro della demo", || {
         let list = session
             .client()

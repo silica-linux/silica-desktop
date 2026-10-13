@@ -4,7 +4,8 @@
 //! - `engine --release`: compila l'engine release dai sorgenti (`docs/engine-release.md`):
 //!   Google pubblica l'engine per embedder custom solo in debug.
 //! - `bindings`: rigenera `crates/embedder/src/ffi/bindings.rs` con bindgen.
-//! - `bundle <app> [--release]`: il bundle di un'app in `apps/`; in release anche `libapp.so`.
+//! - `bundle <shell | demo | percorso> [--release]`: il bundle della shell, dell'app di prova
+//!   o di un'app esterna (il suo repository); in release anche `libapp.so`.
 //! - `projects`/`check`: usati da `cargo xtask ci` per `flutter analyze` e `flutter test`.
 
 use std::path::{Path, PathBuf};
@@ -238,14 +239,15 @@ pub fn bindings() -> Result<()> {
     })
 }
 
-/// La cartella di un progetto Flutter da costruire: `shell` è la shell, il resto un'app
-/// in `apps/`.
+/// La cartella di un progetto Flutter da costruire: `shell` è la shell, `demo` l'app di
+/// prova dei test dell'embedder, altrimenti il percorso di un'app esterna (le app di Silica
+/// stanno nei loro repository).
 fn app_dir(app: &str) -> Result<PathBuf> {
     let root = root()?;
-    Ok(if app == "shell" {
-        root.join("shell")
-    } else {
-        root.join("apps").join(app)
+    Ok(match app {
+        "shell" => root.join("shell"),
+        "demo" => root.join("testapps/demo"),
+        path => std::path::absolute(path).map_err(|e| format!("{path}: {e}"))?,
     })
 }
 
@@ -322,25 +324,23 @@ fn app_package(dir: &Path) -> Result<String> {
         .ok_or_else(|| "pubspec.yaml senza name".to_owned())
 }
 
-/// I progetti Dart del repo: la shell, le app in `apps/` e i pacchetti in `packages/`,
-/// come percorsi relativi (`shell`, `apps/demo`, `packages/silica_ui`).
+/// I progetti Dart del repo: la shell e le app di prova in `testapps/`, come percorsi
+/// relativi (`shell`, `testapps/demo`). `silica_ui` e le app hanno i loro repository.
 pub fn projects() -> Result<Vec<String>> {
     let root = root()?;
     let mut projects = Vec::new();
     if root.join("shell/pubspec.yaml").exists() {
         projects.push("shell".to_owned());
     }
-    for parent in ["apps", "packages"] {
-        let dir = root.join(parent);
-        let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        projects.extend(
-            entries
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.path().join("pubspec.yaml").exists())
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .map(|name| format!("{parent}/{name}")),
-        );
-    }
+    let dir = root.join("testapps");
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    projects.extend(
+        entries
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().join("pubspec.yaml").exists())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .map(|name| format!("testapps/{name}")),
+    );
     projects.sort();
     Ok(projects)
 }
