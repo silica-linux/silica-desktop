@@ -261,6 +261,76 @@ bool inActiveZone(Layout rest, double x, double y, double height) {
   return y >= top && x >= left && x <= left + w;
 }
 
+/// Uscendo verso l'alto la zona resta attiva finché il puntatore è nella cella ingrandita
+/// (isteresi, dock.md D-01): fino alla cima della sua icona meno questo margine.
+const double activeZoneHold = 6;
+
+/// Resta nella zona: in orizzontale come all'ingresso (la lista a riposo), in verticale fino
+/// alla cima della cella ingrandita sotto il puntatore.
+bool staysInActiveZone(
+  Layout rest,
+  Layout current,
+  List<Item> items,
+  double x,
+  double y,
+  double height,
+) {
+  final (left, _, w, _) = rest.background;
+  if (x < left || x > left + w) return false;
+  if (inActiveZone(rest, x, y, height)) return true;
+  for (var i = 0; i < current.cells.length; i++) {
+    final (cellLeft, cellWidth) = current.cells[i];
+    if (x >= cellLeft && x < cellLeft + cellWidth) {
+      final (_, top, _) = iconRect(current, i, height);
+      return y >= top - activeZoneHold;
+    }
+  }
+  return false;
+}
+
+/// Etichetta (D-12): compare con l'ingresso (piena in ~40 ms), salta subito da un'icona
+/// all'altra, all'uscita resta ~40 ms e sfuma in ~250 ms.
+const Duration labelAppear = Duration(milliseconds: 40);
+const Duration labelHold = Duration(milliseconds: 40);
+const Duration labelVanish = Duration(milliseconds: 250);
+
+/// Rimbalzo all'avvio (misc.md): quota in pt sopra la quiete, un salto ogni ~0,7 s, finché
+/// l'app non apre una finestra (al più `bounceLimit`).
+const List<(double, double)> bounceCurve = [
+  (0, 0),
+  (27, 3),
+  (40, 5),
+  (53, 6),
+  (80, 8),
+  (93, 9),
+  (133, 11),
+  (160, 13),
+  (213, 14),
+  (293, 17),
+  (440, 14),
+  (533, 11),
+  (587, 7),
+  (613, 6),
+  (653, 3),
+  (693, 0),
+];
+const double bouncePeriod = 693;
+const Duration bounceLimit = Duration(seconds: 10);
+
+/// Quota del rimbalzo `ms` dopo l'inizio (ripetuto).
+double bounceHeight(double ms) {
+  if (ms <= 0) return 0;
+  final t = ms % bouncePeriod;
+  for (var i = 1; i < bounceCurve.length; i++) {
+    final (t1, h1) = bounceCurve[i];
+    if (t <= t1) {
+      final (t0, h0) = bounceCurve[i - 1];
+      return h0 + (h1 - h0) * (t - t0) / (t1 - t0);
+    }
+  }
+  return 0;
+}
+
 /// La cella sotto il puntatore, se c'è un'app.
 int? itemAt(Layout l, List<Item> items, double x) {
   for (var i = 0; i < l.cells.length; i++) {

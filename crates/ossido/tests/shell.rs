@@ -303,3 +303,41 @@ fn the_logo_key_drives_the_app_switcher() {
         "{out}"
     );
 }
+
+#[test]
+fn activating_a_window_brings_all_the_windows_of_its_app() {
+    use common::client::APP_ID;
+    use silica_control::commands::WINDOW_FOCUS;
+    let ossido = Headless::start("shell-app");
+    APP_ID.with(|id| *id.borrow_mut() = "uno".to_owned());
+    let _first = TestWindow::open(&ossido.wayland, "prima");
+    APP_ID.with(|id| *id.borrow_mut() = "due".to_owned());
+    let _other = TestWindow::open(&ossido.wayland, "altra");
+    APP_ID.with(|id| *id.borrow_mut() = "uno".to_owned());
+    let _third = TestWindow::open(&ossido.wayland, "terza");
+    APP_ID.with(|id| id.borrow_mut().clear());
+    let titles = |ossido: &Headless| -> Vec<String> {
+        let list: Vec<WindowInfo> =
+            serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap())
+                .unwrap();
+        list.iter().filter_map(|w| w.title.clone()).collect()
+    };
+    // "altra" in cima: prima < terza < altra.
+    let other = {
+        let list: Vec<WindowInfo> =
+            serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap())
+                .unwrap();
+        list.into_iter()
+            .find(|w| w.title.as_deref() == Some("altra"))
+            .unwrap()
+    };
+    ossido
+        .client()
+        .call(WINDOW_FOCUS, json!({"id": other.id}))
+        .unwrap();
+    assert_eq!(titles(&ossido), ["altra", "terza", "prima"]);
+    // Il figlio della shell attiva "prima": vengono davanti tutte e due le finestre di "uno",
+    // nel loro ordine (terza sopra prima).
+    run_child(&ossido.wayland, true);
+    assert_eq!(titles(&ossido), ["terza", "prima", "altra"]);
+}

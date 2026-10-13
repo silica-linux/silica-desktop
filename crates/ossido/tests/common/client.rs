@@ -175,6 +175,8 @@ pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
 thread_local! {
     /// Versione di silica-glass-v1 che le finestre di questo thread (un test) chiedono.
     pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(3) };
+    /// L'app_id delle finestre che questo thread apre (nessuno se vuoto).
+    pub static APP_ID: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 impl TestWindow {
@@ -226,6 +228,10 @@ impl TestWindow {
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
         let toplevel = xdg_surface.get_toplevel(&qh, ());
         toplevel.set_title(title.to_owned());
+        let app_id = APP_ID.with(|id| id.borrow().clone());
+        if !app_id.is_empty() {
+            toplevel.set_app_id(app_id);
+        }
         let decoration = decorated.then(|| {
             app.decorations
                 .clone()

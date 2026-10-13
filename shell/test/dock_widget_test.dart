@@ -22,10 +22,27 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(find.text('Foto'), findsOneWidget);
 
+      // Isteresi: poco sopra la soglia d'ingresso ma ancora sull'icona ingrandita, resta.
+      final zoneTop = 200 - bottomGap - backgroundHeight - activeZoneAbove;
+      await mouse.moveTo(Offset(rest.center(6), zoneTop - 3));
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(find.text('Foto'), findsOneWidget);
+
+      // Uscendo l'etichetta resta ~40 ms, poi sfuma in ~250 ms.
       await mouse.moveTo(const Offset(1280, 10));
       await tester.pump(const Duration(milliseconds: 30));
-      await tester.pump(const Duration(milliseconds: 40));
+      expect(find.text('Foto'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 50));
       expect(find.text('Foto'), findsNothing);
     },
   );
+
+  test('il rimbalzo sale a 17 pt e torna a terra ogni ~0,7 s', () {
+    expect(bounceHeight(0), 0);
+    expect(bounceHeight(293), 17);
+    expect(bounceHeight(693 + 293), closeTo(17, 0.01));
+    expect(bounceHeight(693), 0);
+  });
 }

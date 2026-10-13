@@ -13,7 +13,7 @@ mod handlers;
 mod input;
 pub mod keys;
 mod layers;
-mod panorama;
+pub(crate) mod panorama;
 mod perf;
 mod render;
 mod session_bus;

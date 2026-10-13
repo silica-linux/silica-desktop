@@ -194,6 +194,43 @@ impl State {
         let Some(window) = window else {
             return;
         };
+        // Come un clic sull'app nel Dock (dock.md, D-03): tutte le finestre dell'app sullo
+        // schermo vengono davanti nel loro ordine; se sono tutte ridotte torna solo l'ultima
+        // ridotta.
+        if self.space.elements().any(|w| *w == window)
+            && let Some(app) = crate::panorama::window_app(&window)
+        {
+            let same: Vec<Window> = self
+                .space
+                .elements()
+                .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
+                .cloned()
+                .collect();
+            for w in &same {
+                self.space.raise_element(w, false);
+            }
+            self.focus_window(same.last().cloned());
+            return;
+        }
+        if self.minimized.iter().any(|(w, _)| *w == window)
+            && let Some(app) = crate::panorama::window_app(&window)
+            && !self
+                .space
+                .elements()
+                .any(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
+        {
+            let last = self
+                .minimized
+                .iter()
+                .rev()
+                .find(|(w, _)| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
+                .map(|(w, _)| w.clone());
+            if let Some(last) = last {
+                self.restore_window(&last);
+                self.focus_window(Some(last));
+                return;
+            }
+        }
         self.restore_window(&window);
         self.focus_window(Some(window));
     }
