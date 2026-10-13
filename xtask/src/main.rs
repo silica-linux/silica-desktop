@@ -4,7 +4,7 @@
 //! - `layers`: verifica le dipendenze vietate tra i livelli.
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
 //! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`); con `--shell` anche
-//!   la shell completa (sfondo, barra dei menu, Dock), in release.
+//!   la shell completa (sfondo, barra dei menu, Dock, Faro), in release.
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
@@ -209,6 +209,9 @@ fn shell_components() -> Result<Vec<String>> {
         ),
         format!(
             "--layer top --anchor left,right,bottom --size 1280x200 --exclusive-zone 84 --namespace dock --dart-arg dock {bundle}"
+        ),
+        format!(
+            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro --dart-arg faro {bundle}"
         ),
     ];
     Ok(components
