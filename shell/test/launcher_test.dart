@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/faro/faro.dart' show backProgress;
 import 'package:silica_shell/faro/launcher.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 
@@ -151,6 +152,62 @@ void main() {
       // Le capsule spariscono, il gettone resta.
       expect(find.text('Social'), findsNothing);
       expect(find.text('Utility'), findsOneWidget);
+    },
+  );
+
+  test(
+    'completamento in linea: solo se il primo risultato comincia con il testo',
+    () {
+      final results = launcherApps(entries.values, query: 'cal');
+      expect(completionFor('cal', results), 'colatrice — Apri');
+      expect(completionFor('Cal', results), 'colatrice — Apri');
+      expect(
+        completionFor('lat', launcherApps(entries.values, query: 'lat')),
+        isNull,
+      );
+      expect(completionFor('', results), isNull);
+    },
+  );
+
+  test('il ritorno a Faro segue l\'altezza misurata', () {
+    expect(backProgress(0), 0);
+    // 577 → 234 pt a 106,7 ms: 343 / 520.
+    expect(backProgress(106.7), closeTo(343 / 520, 0.001));
+    expect(backProgress(300), 1);
+  });
+
+  testWidgets(
+    'scrivere completa il nome e mette l\'anello sul primo risultato',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Launcher(
+              entries: entries,
+              recents: const [],
+              onLaunch: (_) {},
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.enterText(find.byType(EditableText), 'cal');
+      await tester.pump();
+      expect(find.text('colatrice — Apri'), findsOneWidget);
+      // L'anello: un bordo di 4 pt attorno all'icona del primo risultato.
+      final ring = find.byWidgetPredicate(
+        (w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).border != null,
+      );
+      expect(ring, findsOneWidget);
+      expect(tester.getSize(ring), const Size(69, 69));
     },
   );
 }

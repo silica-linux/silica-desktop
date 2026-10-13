@@ -94,6 +94,41 @@ double launcherScaleAt(double ms) {
   return 1;
 }
 
+/// Esc nel launcher: il pannello si stringe verso Faro (altezza misurata, curva a S, 215 ms);
+/// larghezza, posizione e raggio seguono lo stesso avanzamento.
+const List<(double, double)> backHeights = [
+  (0, 577),
+  (26.7, 556),
+  (40, 509),
+  (53.3, 468),
+  (80, 349),
+  (93.3, 294),
+  (106.7, 234),
+  (133.3, 170),
+  (146.7, 143),
+  (160, 122),
+  (186.7, 90),
+  (200, 59),
+  (213.3, 57),
+];
+const double backDuration = 213.3;
+
+/// Avanzamento 0–1 del ritorno a Faro dopo `ms`.
+double backProgress(double ms) {
+  if (ms <= 0) return 0;
+  final first = backHeights.first.$2;
+  final last = backHeights.last.$2;
+  for (var i = 1; i < backHeights.length; i++) {
+    final (t1, h1) = backHeights[i];
+    if (ms <= t1) {
+      final (t0, h0) = backHeights[i - 1];
+      final h = h0 + (h1 - h0) * (ms - t0) / (t1 - t0);
+      return (first - h) / (first - last);
+    }
+  }
+  return 1;
+}
+
 class Faro extends StatefulWidget {
   const Faro({
     super.key,
@@ -116,7 +151,7 @@ class Faro extends StatefulWidget {
   State<Faro> createState() => _FaroState();
 }
 
-class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
+class _FaroState extends State<Faro> with TickerProviderStateMixin {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode();
   late final AnimationController _open = AnimationController.unbounded(
@@ -127,6 +162,14 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   bool _launcher = false;
   int _selected = 0;
   DateTime? _openedAt;
+
+  /// Il ritorno dal launcher (valore = ms dall'inizio).
+  late final AnimationController _back = AnimationController(
+    vsync: this,
+    upperBound: backDuration,
+    value: backDuration,
+    duration: const Duration(microseconds: 213300),
+  )..addListener(() => setState(() {}));
   late final RecentApps _recents = widget.recents ?? RecentApps();
   List<String> _recentIds = const [];
 
@@ -152,12 +195,25 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   void dispose() {
     _commands?.cancel();
     _open.dispose();
+    _back.dispose();
     _query.dispose();
     _focus.dispose();
     super.dispose();
   }
 
   void _toggle() => _visible && !_launcher ? _hide() : _show();
+
+  /// Esc dal launcher: niente dissolvenza, il pannello si trasforma in Faro.
+  void _backToFaro() {
+    setState(() {
+      _launcher = false;
+      _openedAt = null;
+      _query.clear();
+    });
+    _open.value = 1;
+    _back.forward(from: 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
 
   void _toggleLauncher() => _visible && _launcher ? _hide() : _showLauncher();
 
@@ -257,8 +313,20 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
-        final left = (screen.width - wideWidth) / 2;
+        var left = (screen.width - wideWidth) / 2;
         final top = screen.height * topFraction;
+        // Dal launcher: dimensioni e posizione dal pannello grande a quello di Faro.
+        final back = _back.isAnimating ? backProgress(_back.value) : 1.0;
+        var panelWidth = width;
+        var panelHeight = height;
+        var panelRadius = radius;
+        if (back < 1) {
+          double lerp(double a, double b) => a + (b - a) * back;
+          left = lerp((screen.width - launcherWidth) / 2, left);
+          panelWidth = lerp(launcherWidth, width);
+          panelHeight = lerp(launcherHeight, height);
+          panelRadius = lerp(launcherRadius, radius);
+        }
         return Stack(
           children: [
             // Un clic fuori chiude Faro.
@@ -271,18 +339,23 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
             Positioned(
               left: left,
               top: top,
-              width: width,
-              height: height,
+              width: panelWidth,
+              height: panelHeight,
               child: Transform(
                 alignment: Alignment.center,
                 transform: Matrix4.diagonal3Values(1, scaleY, 1),
                 child: Opacity(
                   opacity: opacity,
-                  child: _panel(results, searching, listHeight),
+                  child: _panel(
+                    results,
+                    searching,
+                    listHeight,
+                    panelRadius: panelRadius,
+                  ),
                 ),
               ),
             ),
-            if (!searching)
+            if (!searching && back >= 1)
               for (var i = 0; i < 4; i++)
                 Positioned(
                   left: left + narrowWidth + 10 + i * circlePitch,
@@ -297,14 +370,19 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _panel(List<DesktopEntry> results, bool searching, double listHeight) {
+  Widget _panel(
+    List<DesktopEntry> results,
+    bool searching,
+    double listHeight, {
+    double panelRadius = radius,
+  }) {
     return OuterShadow(
       // Ombra spostata in basso (~20 pt): sotto si estende ~65 pt, sopra ~25, ai lati ~45.
-      radius: radius,
+      radius: panelRadius,
       blurRadius: 42,
       offset: const Offset(0, 20),
       child: LiquidGlass(
-        radius: radius,
+        radius: panelRadius,
         material: GlassMaterial.thick,
         interactive: false,
         child: Column(
@@ -473,7 +551,7 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
                         entries: widget.entries,
                         recents: _recentIds,
                         onLaunch: _launch,
-                        onBack: _show,
+                        onBack: _backToFaro,
                       ),
                     ),
                   ),

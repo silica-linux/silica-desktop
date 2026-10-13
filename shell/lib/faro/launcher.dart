@@ -9,8 +9,11 @@
 // (dentro la categoria, o su tutte le app con la migliore per prima e un anello attorno).
 // Esc toglie il testo, poi la categoria, poi torna a Faro.
 //
-// Non fatti: completamento in linea nel campo e anteprima a destra, menù del "…", morphing
-// verso Faro con Esc (215 ms, misurato), ondeggiamento finale dell'apertura.
+// Cercando su tutte le app, se il primo risultato comincia con il testo il campo lo completa
+// in linea ("cal" + "endario — Apri" in un rettangolo grigio) e mostra l'icona dell'app a destra.
+//
+// Non fatti (PA-60): selezione da tastiera nella griglia, menù del "…", ondeggiamento finale
+// dell'apertura.
 
 import 'dart:convert';
 import 'dart:io';
@@ -89,6 +92,25 @@ const Color tokenFill = Color(0x20000000);
 const Color tokenText = Color(0xFF0D0E13);
 const Color scrollTrack = Color(0xFFF2F2F2);
 const Color scrollThumb = Color(0xFF808080);
+
+/// Completamento in linea: rettangolo alto 32 centrato nella testata (12 pt dalla cima), raggio 8, `#a2a3a8` sopra
+/// `#c8c9ce` (nero al ~19 %); testo `#232429`. Anteprima dell'app: 27 pt, a 18 pt dal "…".
+const double completionHeight = 32;
+const double completionRadius = 8;
+const Color completionFill = Color(0x30000000);
+const Color completionText = Color(0xFF232429);
+const double previewSide = 27;
+const double previewRight = 60;
+
+/// Il suffisso da completare: il resto del nome del primo risultato, se comincia con il
+/// testo scritto (e non c'è una categoria).
+String? completionFor(String query, List<DesktopEntry> results) {
+  final q = query.trimLeft();
+  final first = results.firstOrNull;
+  if (q.isEmpty || first == null) return null;
+  if (!first.name.toLowerCase().startsWith(q.toLowerCase())) return null;
+  return '${first.name.substring(q.length)} — Apri';
+}
 
 /// `#838488 → #747579` sopra `#c8c9ce`.
 const Color ringColor = Color(0x80404145);
@@ -333,7 +355,7 @@ class LauncherState extends State<Launcher>
                 apps,
                 recents,
                 areaHeight,
-                ringFirst: searching && _category == null,
+                ringFirst: _completion(apps) != null,
               ),
             ),
           ),
@@ -351,8 +373,22 @@ class LauncherState extends State<Launcher>
     );
   }
 
+  String? _completion(List<DesktopEntry> apps) =>
+      _category == null ? completionFor(_query.text, apps) : null;
+
   Widget _header(List<DesktopEntry> apps) {
     final token = _category;
+    final completion = _completion(apps);
+    final typed = completion == null
+        ? 0.0
+        : (TextPainter(
+            text: TextSpan(
+              text: _query.text,
+              style: uiText(size: 26, color: launcherText),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout()).width;
+    final preview = completion == null ? null : iconOf(apps.first);
     return Focus(
       onKeyEvent: (node, event) => _key(node, event, apps),
       child: Stack(
@@ -411,6 +447,38 @@ class LauncherState extends State<Launcher>
                             ),
                           ),
                         ),
+                      if (completion != null)
+                        Positioned(
+                          left: typed + 1,
+                          top: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            child: Center(
+                              child: Container(
+                                height: completionHeight,
+                                padding: const EdgeInsets.only(
+                                  left: 1,
+                                  right: 6,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(
+                                  color: completionFill,
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(completionRadius),
+                                  ),
+                                ),
+                                child: Text(
+                                  completion,
+                                  maxLines: 1,
+                                  style: uiText(
+                                    size: 26,
+                                    color: completionText,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       EditableText(
                         controller: _query,
                         focusNode: _focus,
@@ -426,6 +494,14 @@ class LauncherState extends State<Launcher>
               ],
             ),
           ),
+          if (preview != null)
+            Positioned(
+              right: previewRight,
+              top: (launcherHeader - previewSide) / 2,
+              width: previewSide,
+              height: previewSide,
+              child: ShellIcon(preview, side: previewSide, dark: false),
+            ),
           // "…": tre punti 4 × 3 a passo 7, l'ultimo a 23 pt dal bordo destro.
           Positioned(
             right: 23,
