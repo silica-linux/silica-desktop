@@ -19,6 +19,7 @@ import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/shell_icon.dart';
 import '../system/silica_icons.dart';
+import 'launcher.dart';
 import 'search.dart';
 
 const double wideWidth = 640;
@@ -66,11 +67,50 @@ double opacityAt(double ms) {
   return 1;
 }
 
+/// Apertura del launcher: parte ~8 % più grande e si riduce (eccesso residuo misurato a 0,
+/// 13, 40, 53, 67, 93, 107, 120 e 147 ms), con la stessa dissolvenza di Faro.
+const double launcherOpenScale = 0.08;
+const List<(double, double)> launcherExcess = [
+  (0, 1),
+  (13.3, 0.79),
+  (40, 0.43),
+  (53.3, 0.34),
+  (66.7, 0.24),
+  (93.3, 0.09),
+  (106.7, 0.03),
+  (120, 0.01),
+  (146.7, 0),
+];
+
+double launcherScaleAt(double ms) {
+  if (ms <= 0) return 1 + launcherOpenScale;
+  for (var i = 1; i < launcherExcess.length; i++) {
+    final (t1, e1) = launcherExcess[i];
+    if (ms <= t1) {
+      final (t0, e0) = launcherExcess[i - 1];
+      return 1 + launcherOpenScale * (e0 + (e1 - e0) * (ms - t0) / (t1 - t0));
+    }
+  }
+  return 1;
+}
+
 class Faro extends StatefulWidget {
-  const Faro({super.key, required this.entries, this.startOpen = false});
+  const Faro({
+    super.key,
+    required this.entries,
+    this.startOpen = false,
+    this.startLauncher = false,
+    this.recents,
+  });
 
   final Map<String, DesktopEntry> entries;
   final bool startOpen;
+
+  /// Apre subito il launcher (prove e riprese).
+  final bool startLauncher;
+
+  /// Dove si ricordano le app recenti (predefinito: ~/.local/state/silica).
+  final RecentApps? recents;
 
   @override
   State<Faro> createState() => _FaroState();
@@ -84,8 +124,11 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   )..addListener(() => setState(() {}));
   StreamSubscription<String>? _commands;
   bool _visible = false;
+  bool _launcher = false;
   int _selected = 0;
   DateTime? _openedAt;
+  late final RecentApps _recents = widget.recents ?? RecentApps();
+  List<String> _recentIds = const [];
 
   @override
   void initState() {
@@ -93,8 +136,11 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
     _query.addListener(() => setState(() => _selected = 0));
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'faro.toggle') _toggle();
+      if (id == 'launcher.toggle') _toggleLauncher();
     });
-    if (widget.startOpen) {
+    if (widget.startLauncher) {
+      _showLauncher();
+    } else if (widget.startOpen) {
       _show();
     } else {
       LayerControl.inputRegion(const []);
@@ -111,11 +157,28 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
-  void _toggle() => _visible ? _hide() : _show();
+  void _toggle() => _visible && !_launcher ? _hide() : _show();
+
+  void _toggleLauncher() => _visible && _launcher ? _hide() : _showLauncher();
+
+  void _showLauncher() {
+    setState(() {
+      _visible = true;
+      _launcher = true;
+      _openedAt = DateTime.now();
+      _recentIds = _recents.load();
+    });
+    // Il controller ricostruisce a ogni fotogramma finché dura l'apertura.
+    _open.value = 0;
+    _open.animateTo(1, duration: const Duration(milliseconds: 200));
+    LayerControl.inputRegion(null);
+    LayerControl.keyboard('exclusive');
+  }
 
   void _show() {
     setState(() {
       _visible = true;
+      _launcher = false;
       _openedAt = DateTime.now();
       _query.clear();
     });
@@ -142,6 +205,7 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
 
   void _launch(DesktopEntry entry) {
     ShellChannel.instance.launch(entry.exec);
+    _recents.add(entry.id);
     _hide();
   }
 
@@ -175,6 +239,7 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.expand();
+    if (_launcher) return _launcherView();
     final results = searchApps(widget.entries.values, _query.text);
     final searching = _query.text.trim().isNotEmpty;
     final width = searching ? wideWidth : narrowWidth;
@@ -233,18 +298,11 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
   }
 
   Widget _panel(List<DesktopEntry> results, bool searching, double listHeight) {
-    return DecoratedBox(
+    return OuterShadow(
       // Ombra spostata in basso (~20 pt): sotto si estende ~65 pt, sopra ~25, ai lati ~45.
-      decoration: const BoxDecoration(
-        borderRadius: BorderRadius.all(Radius.circular(radius)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x40000000),
-            blurRadius: 42,
-            offset: Offset(0, 20),
-          ),
-        ],
-      ),
+      radius: radius,
+      blurRadius: 42,
+      offset: const Offset(0, 20),
       child: LiquidGlass(
         radius: radius,
         material: GlassMaterial.thick,
@@ -365,12 +423,68 @@ class _FaroState extends State<Faro> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _circleButton(int index) => LiquidGlass(
-    radius: circle / 2,
-    material: GlassMaterial.thick,
-    interactive: true,
-    child: CustomPaint(painter: _CircleGlyphPainter(index)),
+  Widget _circleButton(int index) => GestureDetector(
+    // Il primo pulsante apre il launcher.
+    onTap: index == 0 ? _showLauncher : null,
+    child: LiquidGlass(
+      radius: circle / 2,
+      material: GlassMaterial.thick,
+      interactive: true,
+      child: CustomPaint(painter: _CircleGlyphPainter(index)),
+    ),
   );
+
+  Widget _launcherView() {
+    final elapsed = _openedAt == null
+        ? 1000.0
+        : DateTime.now().difference(_openedAt!).inMicroseconds / 1000;
+    if (elapsed < 160) WidgetsBinding.instance.scheduleFrame();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screen = constraints.biggest;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _hide,
+                behavior: HitTestBehavior.opaque,
+              ),
+            ),
+            Positioned(
+              left: (screen.width - launcherWidth) / 2,
+              top: screen.height * topFraction,
+              width: launcherWidth,
+              height: launcherHeight,
+              child: Transform.scale(
+                scale: launcherScaleAt(elapsed),
+                child: Opacity(
+                  opacity: opacityAt(elapsed),
+                  // Ombra spostata in basso di ~17 pt, estesa ~35 pt.
+                  child: OuterShadow(
+                    radius: launcherRadius,
+                    blurRadius: 36,
+                    color: const Color(0x5C000000),
+                    offset: const Offset(0, 17),
+                    child: LiquidGlass(
+                      radius: launcherRadius,
+                      material: GlassMaterial.thick,
+                      interactive: false,
+                      child: Launcher(
+                        entries: widget.entries,
+                        recents: _recentIds,
+                        onLaunch: _launch,
+                        onBack: _show,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _LensPainter extends CustomPainter {
@@ -481,4 +595,71 @@ class _CircleGlyphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CircleGlyphPainter old) => old.index != index;
+}
+
+/// L'ombra di un pannello di vetro disegnata solo fuori dal pannello: sotto il vetro, che
+/// Ossido compone dietro la superficie, non deve scurire niente (un BoxShadow lo farebbe).
+class OuterShadow extends StatelessWidget {
+  const OuterShadow({
+    super.key,
+    required this.radius,
+    required this.blurRadius,
+    required this.offset,
+    required this.child,
+    this.color = const Color(0x40000000),
+  });
+
+  final double radius;
+  final double blurRadius;
+  final Offset offset;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _OuterShadowPainter(radius, blurRadius, offset, color),
+    child: child,
+  );
+}
+
+class _OuterShadowPainter extends CustomPainter {
+  const _OuterShadowPainter(this.radius, this.blur, this.offset, this.color);
+
+  final double radius;
+  final double blur;
+  final Offset offset;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final panel = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    canvas
+      ..save()
+      ..clipPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect((Offset.zero & size).inflate(blur * 3 + offset.distance))
+          ..addRRect(panel),
+      )
+      ..drawRRect(
+        panel.shift(offset),
+        Paint()
+          ..color = color
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            Shadow.convertRadiusToSigma(blur),
+          ),
+      )
+      ..restore();
+  }
+
+  @override
+  bool shouldRepaint(_OuterShadowPainter old) =>
+      old.radius != radius ||
+      old.blur != blur ||
+      old.offset != offset ||
+      old.color != color;
 }

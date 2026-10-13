@@ -35,6 +35,7 @@ pub const PERF_PROCESS: &str = "perf.process";
 pub const GLASS_LIST: &str = "glass.list";
 pub const FARO_TOGGLE: &str = "faro.toggle";
 pub const NOTIFICATIONS_TOGGLE: &str = "notifications.toggle";
+pub const LAUNCHER_TOGGLE: &str = "launcher.toggle";
 pub const SWITCHER_NEXT: &str = "switcher.next";
 pub const SWITCHER_PREVIOUS: &str = "switcher.previous";
 pub const SWITCHER_COMMIT: &str = "switcher.commit";
@@ -239,6 +240,13 @@ pub const CATALOG: &[CommandSpec] = &[
         id: LAYER_LIST,
         label: "Elenca i layer",
         description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: LAUNCHER_TOGGLE,
+        label: "App",
+        description: "Apre o chiude il launcher delle app: tutte le app in una griglia per categoria, con le recenti in cima (componente della shell).",
         shortcut: None,
         params: no_params,
     },

@@ -44,6 +44,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `panorama.spaces_bar` | `enabled` | — ; espande o richiude la barra degli spazi (come il puntatore in alto). Con la barra espansa una finestra trascinata su una miniatura passa a quello spazio; un clic su una miniatura ci va |
 | `switcher.next`, `switcher.previous` | — | `forwarded`: apre il selettore delle app o sposta la scelta (Logo+Tab, Logo+Shift+Tab); finché è aperto il rilascio del tasto Logo esegue `switcher.commit` ed Esc `switcher.cancel` |
 | `switcher.commit`, `switcher.cancel` | — | `forwarded`: chiude il selettore attivando l'app scelta, o senza cambiare app |
+| `launcher.toggle` | — | `forwarded`: apre o chiude il launcher delle app (Faro in modalità griglia) |
 | `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |
 | `controlcenter.toggle` | — | `forwarded`: apre o chiude il Centro di controllo (icona nella barra) |
