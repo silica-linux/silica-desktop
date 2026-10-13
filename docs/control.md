@@ -60,6 +60,7 @@ Senza `id`, i comandi sulle finestre agiscono su quella con il focus.
 
 ```
 cargo xtask run --nested --control 7979 --spawn foot
+cargo xtask run --nested --shell --control 7979   # con sfondo, barra dei menu e Dock
 silica-cli window.list
 silica-cli window.move x=100 y=80
 silica-cli screenshot /tmp/silica.png

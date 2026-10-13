@@ -3,7 +3,8 @@
 //! - `ci`: fmt, flutter analyze/test, clippy con warning come errori, test, layers, assets, unsafe.
 //! - `layers`: verifica le dipendenze vietate tra i livelli.
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
-//! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`).
+//! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`); con `--shell` anche
+//!   la shell completa (sfondo, barra dei menu, Dock), in release.
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
@@ -137,16 +138,26 @@ fn ci() -> Result<()> {
 }
 
 fn run(args: &[String]) -> Result<()> {
-    let mut forwarded = Vec::new();
+    let mut forwarded: Vec<String> = Vec::new();
+    let mut shell = false;
     for arg in args {
         match arg.as_str() {
-            "--nested" => forwarded.extend(["--backend", "winit"]),
-            "--headless" => forwarded.extend(["--backend", "headless"]),
-            other => forwarded.push(other),
+            "--nested" => forwarded.extend(["--backend".to_owned(), "winit".to_owned()]),
+            "--headless" => forwarded.extend(["--backend".to_owned(), "headless".to_owned()]),
+            "--shell" => shell = true,
+            other => forwarded.push(other.to_owned()),
         }
     }
-    let mut command = cargo_command(&["run", "--package", "ossido", "--"]);
-    command.args(forwarded);
+    let mut command = if shell {
+        forwarded.extend(shell_components()?);
+        let mut command = Command::new(root()?.join("target/release/ossido"));
+        command.args(&forwarded);
+        command
+    } else {
+        let mut command = cargo_command(&["run", "--package", "ossido", "--"]);
+        command.args(&forwarded);
+        command
+    };
     if let Some(socket) = wslg_socket() {
         eprintln!("xtask: WAYLAND_DISPLAY={}", socket.display());
         command.env("WAYLAND_DISPLAY", socket);
@@ -157,6 +168,52 @@ fn run(args: &[String]) -> Result<()> {
         command.env("GALLIUM_DRIVER", "d3d12");
     }
     status(command)
+}
+
+/// La shell completa: Ossido ed embedder in release, il bundle della shell (costruito se
+/// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock).
+fn shell_components() -> Result<Vec<String>> {
+    let root = root()?;
+    status(cargo_command(&[
+        "build",
+        "--release",
+        "--package",
+        "ossido",
+        "--package",
+        "silica-embedder",
+    ]))?;
+    let engine = flutter::release_engine_dir()?;
+    if !engine.join("libflutter_engine.so").exists() {
+        return Err(format!(
+            "{} assente: cargo xtask engine --release (docs/engine-release.md)",
+            engine.display()
+        ));
+    }
+    let bundle = root.join("shell/build/release/flutter_assets");
+    if !bundle.with_file_name("libapp.so").exists() {
+        flutter::bundle_release("shell")?;
+    }
+    let embedder = format!(
+        "{} --engine {} --renderer impeller",
+        root.join("target/release/silica-embedder").display(),
+        engine.display()
+    );
+    let bundle = bundle.display();
+    let components = [
+        format!(
+            "--layer background --anchor top,bottom,left,right --size 1280x800 --namespace wallpaper --dart-arg wallpaper {bundle}"
+        ),
+        format!(
+            "--layer top --anchor top,left,right --size 1280x30 --exclusive-zone 30 --namespace menubar --dart-arg menubar {bundle}"
+        ),
+        format!(
+            "--layer top --anchor left,right,bottom --size 1280x200 --exclusive-zone 84 --namespace dock --dart-arg dock {bundle}"
+        ),
+    ];
+    Ok(components
+        .iter()
+        .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")])
+        .collect())
 }
 
 /// In WSL2 il link `$XDG_RUNTIME_DIR/wayland-0` verso WSLg a volte manca: in quel caso
