@@ -428,19 +428,29 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
             .zip(background)
             .any(|(got, bg)| got.abs_diff(bg) > 6)
     };
-    // Due capsule a 10 pt l'una dall'altra: il punto in mezzo diventa vetro (finestra a
-    // (32, 32): capsule a x 32–131 e 142–241, spazio centrato a x 136, y 82).
+    // Due capsule a 4 pt l'una dall'altra: il punto in mezzo diventa vetro (finestra a
+    // (32, 32): capsule a x 32–131 e 136–235, spazio centrato a x 134, y 82).
+    glass
+        .set_glass(&[
+            (0, 20, 100, 60, 30.0, Material::Regular),
+            (104, 20, 100, 60, 30.0, Material::Regular),
+        ])
+        .unwrap();
+    let joined = shot(&ossido, "glass-merge.png");
+    assert!(
+        differs(&joined, 134, 82),
+        "le capsule vicine non si fondono"
+    );
+
+    // A 10 pt (i pulsanti di Spotlight dal pannello) restano separate.
     glass
         .set_glass(&[
             (0, 20, 100, 60, 30.0, Material::Regular),
             (110, 20, 100, 60, 30.0, Material::Regular),
         ])
         .unwrap();
-    let joined = shot(&ossido, "glass-merge.png");
-    assert!(
-        differs(&joined, 136, 82),
-        "le capsule vicine non si fondono"
-    );
+    let near = shot(&ossido, "glass-near.png");
+    assert!(!differs(&near, 136, 82), "a 10 pt le capsule si fondono");
 
     // Lontane (60 pt): resta il fondo.
     glass
@@ -456,9 +466,9 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
     glass
         .set_glass(&[
             (0, 20, 100, 60, 30.0, Material::Regular),
-            (110, 20, 100, 60, 30.0, Material::Clear),
+            (104, 20, 100, 60, 30.0, Material::Clear),
         ])
         .unwrap();
     let mixed = shot(&ossido, "glass-mixed.png");
-    assert!(!differs(&mixed, 136, 82), "materiali diversi si fondono");
+    assert!(!differs(&mixed, 134, 82), "materiali diversi si fondono");
 }

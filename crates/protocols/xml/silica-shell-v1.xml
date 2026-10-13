@@ -33,6 +33,22 @@
       <arg name="identifier" type="string"/>
     </event>
 
+    <request name="execute">
+      <description summary="esegue un comando del catalogo">
+        Un comando senza parametri del catalogo di Ossido (lo stesso di scorciatoie,
+        canale di controllo e MCP), per esempio faro.toggle dalla lente della barra.
+      </description>
+      <arg name="id" type="string"/>
+    </request>
+
+    <event name="command">
+      <description summary="un comando per la shell">
+        Un comando del catalogo che tocca a un componente della shell (per esempio
+        faro.toggle): Ossido lo inoltra a tutti; ognuno risponde ai suoi.
+      </description>
+      <arg name="id" type="string"/>
+    </event>
+
     <request name="launch">
       <description summary="avvia un'app come client della sessione">
         Il comando (sintassi della shell POSIX, già senza i codici di campo di Exec)

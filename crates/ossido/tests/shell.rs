@@ -38,6 +38,8 @@ struct Shell {
     toplevels: Vec<(String, String)>,
     /// Gli identificatori annunciati con `focused`.
     focused: Vec<String>,
+    /// I comandi inoltrati da Ossido.
+    commands: Vec<String>,
 }
 
 impl Dispatch<WlRegistry, ()> for Shell {
@@ -113,8 +115,12 @@ impl Dispatch<SilicaShellManagerV1, ()> for Shell {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let silica_shell_manager_v1::Event::Focused { identifier } = event {
-            state.focused.push(identifier);
+        match event {
+            silica_shell_manager_v1::Event::Focused { identifier } => {
+                state.focused.push(identifier)
+            }
+            silica_shell_manager_v1::Event::Command { id } => state.commands.push(id),
+            _ => {}
         }
     }
 }
@@ -129,11 +135,20 @@ fn shell_client(socket: &str) {
     conn.display().get_registry(&qh, ());
     queue.roundtrip(&mut shell).unwrap();
     queue.roundtrip(&mut shell).unwrap();
-    if let Some(manager) = &shell.manager
-        && let Some((identifier, _)) = shell.toplevels.iter().find(|(_, title)| title == "prima")
-    {
-        manager.activate(identifier.clone());
+    let target = shell
+        .toplevels
+        .iter()
+        .find(|(_, title)| title == "prima")
+        .map(|(identifier, _)| identifier.clone());
+    if let (Some(manager), Some(identifier)) = (shell.manager.clone(), target) {
+        manager.activate(identifier);
         queue.roundtrip(&mut shell).unwrap();
+        // Un comando del catalogo chiesto dalla shell torna a tutta la shell.
+        manager.execute("faro.toggle".to_owned());
+        queue.roundtrip(&mut shell).unwrap();
+    }
+    for id in &shell.commands {
+        println!("COMMAND {id}");
     }
     for global in &shell.globals {
         println!("GLOBAL {global}");
@@ -203,6 +218,8 @@ fn only_shell_components_see_the_window_list_and_can_activate() {
     // Al collegamento il focus era su "seconda"; dopo l'attivazione su "prima".
     let focused: Vec<&str> = shell.lines().filter(|l| l.starts_with("FOCUSED")).collect();
     assert_eq!(focused, ["FOCUSED seconda", "FOCUSED prima"], "{shell}");
+
+    assert!(shell.contains("COMMAND faro.toggle"), "{shell}");
 
     // Il figlio della shell ha attivato "prima": ora ha il focus ed è in cima.
     let list: Vec<WindowInfo> =

@@ -38,5 +38,9 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
 - `silica_shell_manager_v1.activate(identifier)`: focus alla finestra (e la riporta se è
   ridotta).
 - `silica_shell_manager_v1.launch(command)`: avvia un'app come figlia di Ossido.
+- `silica_shell_manager_v1.execute(id)`: esegue un comando senza parametri del catalogo
+  (la lente della barra apre Faro con `faro.toggle`).
+- evento `silica_shell_manager_v1.command(id)`: un comando del catalogo che tocca alla
+  shell (`faro.toggle`, Logo+Spazio), inoltrato a tutti i componenti.
 - evento `silica_shell_manager_v1.focused(identifier)`: la finestra con il focus (vuoto se
   nessuna), al collegamento e a ogni cambiamento.

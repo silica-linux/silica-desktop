@@ -8,7 +8,7 @@ use std::time::Duration;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
@@ -78,6 +78,9 @@ use crate::ffi::{
 use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
+
+/// Il canale per regione d'input e tastiera di un layer (componenti della shell).
+const LAYER_CHANNEL: &str = "silica/layer";
 use crate::text_input::{self, EditKey, TextInput};
 
 /// Esito di un tasto mandato al framework, con l'azione di editing da fare se ignorato.
@@ -162,6 +165,8 @@ struct App {
     glass: Glass,
     /// Finestre e comandi per i componenti della shell (`silica/shell`).
     shell: ShellLink,
+    /// Per le regioni d'input (`silica/layer`).
+    compositor: CompositorState,
     qh: QueueHandle<App>,
     key_results: channel::Sender<KeyResult>,
     engine: Option<Engine>,
@@ -425,6 +430,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
                 .ok(),
         ),
+        compositor,
         qh: qh.clone(),
         key_results,
         engine: Some(engine),
@@ -460,6 +466,7 @@ impl App {
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
+            LAYER_CHANNEL => self.handle_layer_call(&message.data),
             glass::CHANNEL => {
                 let (reply, changed) =
                     self.glass
@@ -484,6 +491,72 @@ impl App {
         {
             warn!("risposta su {}: {err}", message.channel);
         }
+    }
+
+    /// Il canale `silica/layer`: un componente della shell nascosto non deve prendere
+    /// puntatore né tastiera (Faro chiuso resta in esecuzione, trasparente).
+    /// - `setKeyboardInteractivity {mode: none|exclusive|on-demand}`;
+    /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: tutta la superficie).
+    fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
+            return Vec::new();
+        };
+        let args = call.get("args").cloned().unwrap_or(serde_json::Value::Null);
+        let done = match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("setKeyboardInteractivity") => {
+                let mode = match args.get("mode").and_then(serde_json::Value::as_str) {
+                    Some("exclusive") => KeyboardInteractivity::Exclusive,
+                    Some("on-demand") => KeyboardInteractivity::OnDemand,
+                    _ => KeyboardInteractivity::None,
+                };
+                match &self.surface {
+                    Shell::Layer(layer) => {
+                        layer.set_keyboard_interactivity(mode);
+                        true
+                    }
+                    Shell::Window(_) => false,
+                }
+            }
+            Some("setInputRegion") => match args.get("rects").and_then(serde_json::Value::as_array)
+            {
+                None => {
+                    self.surface.wl_surface().set_input_region(None);
+                    true
+                }
+                Some(rects) => match Region::new(&self.compositor) {
+                    Ok(region) => {
+                        for rect in rects {
+                            let value = |i: usize| {
+                                rect.get(i)
+                                    .and_then(serde_json::Value::as_f64)
+                                    .filter(|v| v.is_finite())
+                                    .map(|v| v.round().clamp(-16384.0, 16384.0) as i32)
+                            };
+                            if let (Some(x), Some(y), Some(w), Some(h)) =
+                                (value(0), value(1), value(2), value(3))
+                                && w > 0
+                                && h > 0
+                            {
+                                region.add(x, y, w, h);
+                            }
+                        }
+                        self.surface
+                            .wl_surface()
+                            .set_input_region(Some(region.wl_region()));
+                        true
+                    }
+                    Err(err) => {
+                        warn!("regione d'input: {err}");
+                        false
+                    }
+                },
+            },
+            _ => return Vec::new(),
+        };
+        if done {
+            self.surface.commit();
+        }
+        text_input::success(serde_json::json!(done))
     }
 
     /// Manda un tasto al framework per le due strade che si aspetta (dato tasto e
@@ -1054,16 +1127,20 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
         _: &wayland_client::Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let silica_protocols::shell::client::silica_shell_manager_v1::Event::Focused {
-            identifier,
-        } = event
-        {
-            let message = app.shell.set_focused(identifier);
-            if let Some(engine) = &app.engine
-                && let Err(err) = engine.send_message(shell::CHANNEL, &message)
-            {
-                warn!("focus a Dart: {err}");
+        use silica_protocols::shell::client::silica_shell_manager_v1::Event;
+        let message = match event {
+            Event::Focused { identifier } => app.shell.set_focused(identifier),
+            // Un comando del catalogo per la shell (es. faro.toggle).
+            Event::Command { id } => {
+                serde_json::to_vec(&serde_json::json!({ "method": "command", "args": id }))
+                    .unwrap_or_default()
             }
+            _ => return,
+        };
+        if let Some(engine) = &app.engine
+            && let Err(err) = engine.send_message(shell::CHANNEL, &message)
+        {
+            warn!("evento della shell a Dart: {err}");
         }
     }
 }

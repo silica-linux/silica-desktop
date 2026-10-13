@@ -248,9 +248,11 @@ impl GlassQuality {
 
 /// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola
 /// forma, come gocce (unione morbida delle distanze, k = 2 · MERGE_PT: due bordi a distanza
-/// g si toccano quando g < k / 2). PROVVISORIO: la fusione non è ancora misurata
-/// (plan/execution-plan.md, "Da misurare sul Mac per il Liquid Glass").
-pub const MERGE_PT: f32 = 16.0;
+/// g si toccano quando g < k / 2). Limite misurato: i pulsanti circolari di Spotlight stanno
+/// a 10 pt dal pannello e restano separati (spotlight.md), quindi a riposo la soglia è sotto
+/// i 10 pt. Il valore esatto non è misurato (plan/execution-plan.md, "Da misurare sul Mac
+/// per il Liquid Glass").
+pub const MERGE_PT: f32 = 8.0;
 /// Regioni che lo shader fonde insieme al più: oltre, gruppi separati.
 const MAX_SHAPES: usize = 8;
 

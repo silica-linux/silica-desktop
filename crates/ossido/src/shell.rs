@@ -170,6 +170,15 @@ impl State {
         self.announced_focus = Some(identifier);
     }
 
+    /// Inoltra un comando ai componenti della shell; quanti l'hanno ricevuto.
+    pub fn forward_to_shell(&mut self, id: &str) -> usize {
+        self.shell_managers.retain(|manager| manager.is_alive());
+        for manager in &self.shell_managers {
+            manager.command(id.to_owned());
+        }
+        self.shell_managers.len()
+    }
+
     /// La finestra con questo identificatore della lista: focus, e torna se era ridotta.
     pub fn activate_identifier(&mut self, identifier: &str) {
         let window = self
@@ -235,6 +244,11 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
                 Ok(pid) => info!("shell: avviato {command} (pid {pid})"),
                 Err(err) => warn!("shell: {err}"),
             },
+            silica_shell_manager_v1::Request::Execute { id } => {
+                if let Err(err) = state.execute_command(&id, serde_json::Value::Null) {
+                    warn!("shell: {id}: {err}");
+                }
+            }
             silica_shell_manager_v1::Request::Destroy => {}
             _ => {}
         }

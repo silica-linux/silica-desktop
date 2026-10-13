@@ -31,6 +31,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
 | `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |
+| `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `glass.list` | — | superfici con vetro (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`) |
 | `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
 | `window.focus` | `id?` | — (riporta anche una finestra ridotta) |

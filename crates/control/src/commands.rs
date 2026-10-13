@@ -33,6 +33,7 @@ pub const LAYER_LIST: &str = "layer.list";
 pub const PERF_FRAMES: &str = "perf.frames";
 pub const PERF_PROCESS: &str = "perf.process";
 pub const GLASS_LIST: &str = "glass.list";
+pub const FARO_TOGGLE: &str = "faro.toggle";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -178,6 +179,13 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Elenca i layer",
         description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
         shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: FARO_TOGGLE,
+        label: "Faro",
+        description: "Apre o chiude Faro, la ricerca delle app (componente della shell).",
+        shortcut: Some("Logo+space"),
         params: no_params,
     },
     CommandSpec {

@@ -1,6 +1,8 @@
 // Il canale silica/shell dell'embedder: le finestre aperte (da Ossido) e i comandi
 // activate e launch. Fuori da Silica il canale non risponde: niente finestre.
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -31,6 +33,8 @@ class ShellChannel {
           _update(call.arguments);
         case 'focused':
           focused.value = '${call.arguments ?? ''}';
+        case 'command':
+          _commands.add('${call.arguments ?? ''}');
       }
       return null;
     });
@@ -45,6 +49,11 @@ class ShellChannel {
 
   /// Le finestre aperte, aggiornate a ogni cambiamento.
   final ValueNotifier<List<Toplevel>> toplevels = ValueNotifier(const []);
+
+  final StreamController<String> _commands = StreamController.broadcast();
+
+  /// I comandi che Ossido inoltra alla shell (es. `faro.toggle`).
+  Stream<String> get commands => _commands.stream;
 
   /// L'identificatore della finestra con il focus (vuoto: nessuna).
   final ValueNotifier<String> focused = ValueNotifier('');
@@ -73,6 +82,9 @@ class ShellChannel {
   Future<bool> activate(String id) => _call('activate', {'id': id});
 
   Future<bool> launch(String command) => _call('launch', {'command': command});
+
+  /// Esegue un comando del catalogo di Ossido (es. `faro.toggle` dalla barra).
+  Future<bool> execute(String id) => _call('execute', {'id': id});
 
   Future<bool> _call(String method, Map<String, String> args) async {
     try {

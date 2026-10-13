@@ -81,8 +81,26 @@ impl State {
         let exclusive = layer.cached_state().keyboard_interactivity
             == KeyboardInteractivity::Exclusive
             && matches!(layer.layer(), Layer::Top | Layer::Overlay);
-        if first && exclusive {
+        // Un layer può chiedere la tastiera dopo il primo commit (Faro che si apre) e
+        // lasciarla (Faro che si chiude): conta il passaggio, non solo l'inizio.
+        layer
+            .user_data()
+            .insert_if_missing(|| WasExclusive(std::cell::Cell::new(false)));
+        let was = layer
+            .user_data()
+            .get::<WasExclusive>()
+            .is_some_and(|flag| flag.0.replace(exclusive));
+        if exclusive && (first || !was) {
             self.focus_layer(&layer);
+        } else if was && !exclusive {
+            let focused = self
+                .seat
+                .get_keyboard()
+                .and_then(|keyboard| keyboard.current_focus());
+            if focused.as_ref() == Some(layer.wl_surface()) {
+                let top = self.space.elements().last().cloned();
+                self.focus_window(top);
+            }
         }
     }
 
@@ -114,10 +132,16 @@ impl State {
     ) -> Option<(LayerSurface, Point<i32, Logical>)> {
         let map = layer_map_for_output(&self.output);
         let origin = self.space.output_geometry(&self.output)?.loc;
+        // Conta la regione d'input, non il rettangolo: un componente della shell nascosto
+        // (Faro chiuso) è trasparente e a schermo intero ma con la regione vuota.
         layers.iter().find_map(|level| {
-            let layer = map.layer_under(*level, pos - origin.to_f64())?;
-            let geometry = map.layer_geometry(layer)?;
-            Some((layer.clone(), geometry.loc + origin))
+            map.layers_on(*level).rev().find_map(|layer| {
+                let geometry = map.layer_geometry(layer)?;
+                let local = pos - (geometry.loc + origin).to_f64();
+                layer
+                    .surface_under(local, smithay::desktop::WindowSurfaceType::ALL)
+                    .map(|_| (layer.clone(), geometry.loc + origin))
+            })
         })
     }
 
@@ -170,3 +194,6 @@ impl State {
         zone
     }
 }
+
+/// Se il layer chiedeva la tastiera in esclusiva al commit precedente.
+struct WasExclusive(std::cell::Cell<bool>);

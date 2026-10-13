@@ -171,7 +171,8 @@ fn run(args: &[String]) -> Result<()> {
 }
 
 /// La shell completa: Ossido ed embedder in release, il bundle della shell (costruito se
-/// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock).
+/// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock,
+/// Faro).
 fn shell_components() -> Result<Vec<String>> {
     let root = root()?;
     status(cargo_command(&[

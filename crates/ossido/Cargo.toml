@@ -25,6 +25,7 @@ silica-protocols = { path = "../protocols", features = ["client"] }
 tempfile = "3"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [lints]
 workspace = true

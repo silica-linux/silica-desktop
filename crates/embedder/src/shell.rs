@@ -5,8 +5,10 @@
 //!
 //! Messaggi (JSON method codec):
 //! - da Dart: `list` → l'elenco; `focused` → l'identificatore con il focus;
-//!   `activate {id}`; `launch {command}` → `true` se inviato;
-//! - verso Dart: `toplevels [{id, title, app_id}]` e `focused id` a ogni cambiamento.
+//!   `activate {id}`; `launch {command}`; `execute {id}` (comando del catalogo) → `true`
+//!   se inviato;
+//! - verso Dart: `toplevels [{id, title, app_id}]` e `focused id` a ogni cambiamento,
+//!   `command id` quando Ossido inoltra un comando alla shell (es. `faro.toggle`).
 
 use serde_json::{Value, json};
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
@@ -144,6 +146,15 @@ impl ShellLink {
                     manager.activate(text("id"));
                     true
                 });
+                success(json!(sent))
+            }
+            Some("execute") => {
+                let id = text("id");
+                let sent = !id.is_empty()
+                    && self.manager.as_ref().is_some_and(|manager| {
+                        manager.execute(id);
+                        true
+                    });
                 success(json!(sent))
             }
             Some("launch") => {

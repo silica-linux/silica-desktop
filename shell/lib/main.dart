@@ -1,13 +1,15 @@
 // La shell di Silica: un componente per processo, scelto dal primo argomento di main
 // (silica-embedder --dart-arg dock). Oggi: dock (le app vere), dock-demo (segnaposto),
-// menubar, wallpaper.
+// menubar, wallpaper, faro.
 
 import 'package:flutter/widgets.dart';
 
 import 'dock/dock.dart';
 import 'dock/model.dart';
+import 'faro/faro.dart';
 import 'menubar/menubar.dart';
 import 'system/desktop_entries.dart';
+import 'system/shell_channel.dart';
 import 'wallpaper/wallpaper.dart';
 
 /// Segnaposto del Dock per i test e il confronto con le riprese: 12 app, separatore,
@@ -44,8 +46,12 @@ class ShellComponent extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget child = switch (component) {
       'dock-demo' => const Dock(items: placeholderItems),
-      'menubar' => MenuBar(entries: loadDesktopEntries()),
+      'menubar' => MenuBar(
+        entries: loadDesktopEntries(),
+        onSearch: () => ShellChannel.instance.execute('faro.toggle'),
+      ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
+      'faro' => Faro(entries: loadDesktopEntries()),
       _ => const LiveDock(),
     };
     return Directionality(textDirection: TextDirection.ltr, child: child);
