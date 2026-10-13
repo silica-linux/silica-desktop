@@ -1,13 +1,13 @@
 // La shell di Silica: un componente per processo, scelto dal primo argomento di main
-// (silica-embedder --dart-arg dock). Oggi: dock.
+// (silica-embedder --dart-arg dock). Oggi: dock (le app vere), dock-demo (segnaposto).
 
 import 'package:flutter/widgets.dart';
 
 import 'dock/dock.dart';
 import 'dock/model.dart';
 
-/// Le app del Dock finché non arrivano i file .desktop (M3.2): come nelle riprese, 12 app,
-/// separatore, cartella e cestino.
+/// Segnaposto del Dock per i test e il confronto con le riprese: 12 app, separatore,
+/// cartella e cestino.
 const List<Item> placeholderItems = [
   Item.app('File', running: true),
   Item.app('Navigatore', running: true),
@@ -39,7 +39,8 @@ class ShellComponent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget child = switch (component) {
-      _ => const Dock(items: placeholderItems),
+      'dock-demo' => const Dock(items: placeholderItems),
+      _ => const LiveDock(),
     };
     return Directionality(textDirection: TextDirection.ltr, child: child);
   }

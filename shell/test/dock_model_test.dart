@@ -34,10 +34,19 @@ void main() {
   test('ingrandimento: 68 pt sotto il puntatore, profilo della tabella', () {
     final rest = layout(items, width: width, height: height);
     final mail = rest.center(4);
-    final l = layout(items, width: width, height: height, pointerX: mail, amount: 1);
+    final l = layout(
+      items,
+      width: width,
+      height: height,
+      pointerX: mail,
+      amount: 1,
+    );
     expect(l.cells[4].$2, closeTo(68, 0.01));
     // A 2 celle (126 pt) dal puntatore f ≈ 0,499: 63 · (1 + 0,0794 · 0,499).
-    expect(l.cells[6].$2, closeTo(63 * (1 + (68 / 63 - 1) * profile(126)), 0.01));
+    expect(
+      l.cells[6].$2,
+      closeTo(63 * (1 + (68 / 63 - 1) * profile(126)), 0.01),
+    );
     // Il punto sotto il puntatore resta fermo.
     expect(l.center(4), closeTo(mail, 0.01));
     // Ogni lato cresce al massimo di ~9,66 pt (lista da 910,35 a 929,67).
@@ -51,20 +60,35 @@ void main() {
     // Come x 820 nelle riprese: nel margine del fondo, prima della prima cella.
     final rest = layout(items, width: width, height: height);
     final edge = rest.background.$1 + 3.5;
-    final l = layout(items, width: width, height: height, pointerX: edge, amount: 1);
+    final l = layout(
+      items,
+      width: width,
+      height: height,
+      pointerX: edge,
+      amount: 1,
+    );
     expect(l.cells.first.$1, closeTo(rest.cells.first.$1, 0.3));
   });
 
-  test('ingrandimento massimo: 132 pt e il bordo dell\'icona sale di ~7 pt', () {
-    final rest = layout(items, width: width, height: height);
-    final mail = rest.center(4);
-    final l = layout(items,
-        width: width, height: height, pointerX: mail, amount: 1, magnification: maxMagnification);
-    expect(l.cells[4].$2, closeTo(132, 0.01));
-    final (_, restTop, restSide) = iconRect(rest, 4, height);
-    final (_, top, side) = iconRect(l, 4, height);
-    expect((restTop + restSide) - (top + side), closeTo(7, 1));
-  });
+  test(
+    'ingrandimento massimo: 132 pt e il bordo dell\'icona sale di ~7 pt',
+    () {
+      final rest = layout(items, width: width, height: height);
+      final mail = rest.center(4);
+      final l = layout(
+        items,
+        width: width,
+        height: height,
+        pointerX: mail,
+        amount: 1,
+        magnification: maxMagnification,
+      );
+      expect(l.cells[4].$2, closeTo(132, 0.01));
+      final (_, restTop, restSide) = iconRect(rest, 4, height);
+      final (_, top, side) = iconRect(l, 4, height);
+      expect((restTop + restSide) - (top + side), closeTo(7, 1));
+    },
+  );
 
   test('entrata: ~60 ms a 68 pt, ~160 ms a 132 pt, curva misurata', () {
     expect(enterDuration(defaultMagnification).inMilliseconds, 60);
@@ -80,7 +104,13 @@ void main() {
     final x = rest.center(3);
     expect(inActiveZone(rest, x, top - 5, height), isTrue);
     expect(inActiveZone(rest, x, top - 6, height), isFalse);
-    expect(inActiveZone(rest, rest.background.$1 - 1, top + 10, height), isFalse);
-    expect(inActiveZone(rest, rest.background.$1 + 3.5, top + 10, height), isTrue);
+    expect(
+      inActiveZone(rest, rest.background.$1 - 1, top + 10, height),
+      isFalse,
+    );
+    expect(
+      inActiveZone(rest, rest.background.$1 + 3.5, top + 10, height),
+      isTrue,
+    );
   });
 }

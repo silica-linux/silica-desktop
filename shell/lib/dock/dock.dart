@@ -2,12 +2,59 @@
 // plan/reference/dock.md), fondo di Liquid Glass calcolato da Ossido, icone, separatore,
 // indicatori ed etichetta disegnati qui.
 
+import 'dart:io';
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../system/desktop_entries.dart';
+import '../system/shell_channel.dart';
+import 'apps.dart';
 import 'icons.dart';
 import 'model.dart';
+
+/// Il Dock con le app vere: installate (.desktop), fissate e aperte (da Ossido).
+class LiveDock extends StatefulWidget {
+  const LiveDock({super.key});
+
+  @override
+  State<LiveDock> createState() => _LiveDockState();
+}
+
+class _LiveDockState extends State<LiveDock> {
+  late final Map<String, DesktopEntry> _entries = loadDesktopEntries();
+  late final List<String> _pinned = pinnedIds(_entries);
+
+  @override
+  void initState() {
+    super.initState();
+    ShellChannel.instance.toplevels.addListener(_changed);
+    ShellChannel.instance.refresh();
+  }
+
+  @override
+  void dispose() {
+    ShellChannel.instance.toplevels.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) => Dock(
+    items: dockItems(_entries, _pinned, ShellChannel.instance.toplevels.value),
+    onActivate: (item) {
+      // Un'app aperta torna in primo piano; altrimenti si avvia.
+      if (item.windows.isNotEmpty) {
+        ShellChannel.instance.activate(item.windows.first);
+      } else if (item.command case final command?) {
+        ShellChannel.instance.launch(command);
+      }
+    },
+  );
+}
 
 /// Colori dell'aspetto chiaro (dock.md).
 const Color separatorColor = Color(0xFF484950);
@@ -29,10 +76,18 @@ const double labelPadding = 15.5;
 const double labelFontSize = 14;
 
 class Dock extends StatefulWidget {
-  const Dock({super.key, required this.items, this.magnification = defaultMagnification});
+  const Dock({
+    super.key,
+    required this.items,
+    this.magnification = defaultMagnification,
+    this.onActivate,
+  });
 
   final List<Item> items;
   final double magnification;
+
+  /// Clic su un'app.
+  final void Function(Item item)? onActivate;
 
   @override
   State<Dock> createState() => _DockState();
@@ -88,45 +143,81 @@ class _DockState extends State<Dock> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final size = constraints.biggest;
-      final l = layout(
-        widget.items,
-        width: size.width,
-        height: size.height,
-        pointerX: _pointerX,
-        amount: _amount,
-        magnification: widget.magnification,
-      );
-      final (bx, by, bw, bh) = l.background;
-      final hovered = _inside && _pointerX != null ? itemAt(l, widget.items, _pointerX!) : null;
-      return MouseRegion(
-        onHover: (event) => _hover(event.localPosition, size),
-        onExit: (_) => _setInside(false),
-        child: Stack(
-          children: [
-            Positioned(
-              left: bx,
-              top: by,
-              width: bw,
-              height: bh,
-              child: const LiquidGlass(
-                radius: backgroundRadius,
-                material: GlassMaterial.clear,
-                interactive: false,
-                child: SizedBox.expand(),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        final l = layout(
+          widget.items,
+          width: size.width,
+          height: size.height,
+          pointerX: _pointerX,
+          amount: _amount,
+          magnification: widget.magnification,
+        );
+        final (bx, by, bw, bh) = l.background;
+        final hovered = _inside && _pointerX != null
+            ? itemAt(l, widget.items, _pointerX!)
+            : null;
+        return MouseRegion(
+          onHover: (event) => _hover(event.localPosition, size),
+          onExit: (_) => _setInside(false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (details) {
+              final index = itemAt(l, widget.items, details.localPosition.dx);
+              if (index != null) widget.onActivate?.call(widget.items[index]);
+            },
+            child: Stack(
+              children: [
+                Positioned(
+                  left: bx,
+                  top: by,
+                  width: bw,
+                  height: bh,
+                  child: const LiquidGlass(
+                    radius: backgroundRadius,
+                    material: GlassMaterial.clear,
+                    interactive: false,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _DockPainter(widget.items, l, size.height),
+                  ),
+                ),
+                for (var i = 0; i < widget.items.length; i++)
+                  if (widget.items[i].iconPath case final path?)
+                    _icon(l, i, size.height, path),
+                if (hovered != null) _label(l, hovered, size.height),
+              ],
             ),
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _DockPainter(widget.items, l, size.height),
+          ),
+        );
+      },
+    );
+  }
+
+  /// L'icona di un'app dal tema del sistema.
+  Widget _icon(Layout l, int index, double height, String path) {
+    final (x, y, side) = iconRect(l, index, height);
+    final file = File(path);
+    return Positioned(
+      left: x,
+      top: y,
+      width: side,
+      height: side,
+      child: IgnorePointer(
+        child: path.endsWith('.svg')
+            ? SvgPicture.file(file, width: side, height: side)
+            : Image.file(
+                file,
+                width: side,
+                height: side,
+                filterQuality: FilterQuality.medium,
               ),
-            ),
-            if (hovered != null) _label(l, hovered, size.height),
-          ],
-        ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _label(Layout l, int index, double height) {
@@ -175,7 +266,9 @@ class _DockPainter extends CustomPainter {
         continue;
       }
       final (ix, iy, side) = iconRect(l, i, height);
-      paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
+      if (item.iconPath == null) {
+        paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
+      }
       if (item.running) {
         canvas.drawCircle(
           Offset(l.center(i), by + bh - indicatorAbove),

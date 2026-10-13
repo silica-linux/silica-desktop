@@ -82,8 +82,23 @@ double profile(double distance) {
 /// Curva dell'entrata e dell'uscita dalla zona attiva (uguali entro 0,01: qui la media
 /// delle due), 3 cicli a ingrandimento massimo: avanzamento ogni 10 ms su ~160 ms.
 const List<double> enterCurve = [
-  0, 0.001, 0.017, 0.067, 0.112, 0.206, 0.294, 0.386, 0.481, 0.578, 0.672, 0.759, 0.837,
-  0.902, 0.955, 0.988, 1.0,
+  0,
+  0.001,
+  0.017,
+  0.067,
+  0.112,
+  0.206,
+  0.294,
+  0.386,
+  0.481,
+  0.578,
+  0.672,
+  0.759,
+  0.837,
+  0.902,
+  0.955,
+  0.988,
+  1.0,
 ];
 
 /// L'avanzamento dell'entrata a una frazione `t` (0–1) della durata.
@@ -96,7 +111,9 @@ double enterProgress(double t) {
 /// Durata dell'entrata: ~60 ms a 68 pt, ~160 ms a 132 pt; cresce con l'ampiezza (con due
 /// soli punti si interpola in linea retta).
 Duration enterDuration(double magnification) {
-  final span = (magnification - defaultMagnification) / (maxMagnification - defaultMagnification);
+  final span =
+      (magnification - defaultMagnification) /
+      (maxMagnification - defaultMagnification);
   final ms = 60 + (160 - 60) * span.clamp(0.0, 1.0);
   return Duration(microseconds: (ms * 1000).round());
 }
@@ -105,17 +122,36 @@ Duration enterDuration(double magnification) {
 enum ItemKind { app, separator }
 
 class Item {
-  const Item.app(this.label, {this.running = false}) : kind = ItemKind.app;
+  const Item.app(
+    this.label, {
+    this.running = false,
+    this.iconPath,
+    this.command,
+    this.windows = const [],
+  }) : kind = ItemKind.app;
   const Item.separator()
-      : kind = ItemKind.separator,
-        label = '',
-        running = false;
+    : kind = ItemKind.separator,
+      label = '',
+      running = false,
+      iconPath = null,
+      command = null,
+      windows = const [];
 
   final ItemKind kind;
   final String label;
   final bool running;
 
-  double get restWidth => kind == ItemKind.separator ? separatorCell : cellPitch;
+  /// Il file dell'icona (SVG o PNG); null: segnaposto disegnato in codice.
+  final String? iconPath;
+
+  /// Il comando per avviarla (Exec senza codici di campo), se è un'app.
+  final String? command;
+
+  /// Le finestre aperte dell'app (identificatori della lista di Ossido).
+  final List<String> windows;
+
+  double get restWidth =>
+      kind == ItemKind.separator ? separatorCell : cellPitch;
 }
 
 /// La disposizione del Dock in un momento: celle, fondo, icone.
@@ -170,7 +206,10 @@ Layout layout(
     final extra = items[i].restWidth * (scales[i] - 1);
     if (extra == 0 || pointerX == null) continue;
     final cellLeft = restCenters[i] - items[i].restWidth / 2;
-    final fraction = ((pointerX - cellLeft) / items[i].restWidth).clamp(0.0, 1.0);
+    final fraction = ((pointerX - cellLeft) / items[i].restWidth).clamp(
+      0.0,
+      1.0,
+    );
     leftGrowth += extra * fraction;
   }
   final cells = <(double, double)>[];
@@ -183,11 +222,12 @@ Layout layout(
   final first = cells.first.$1;
   final last = cells.last.$1 + cells.last.$2;
   final top = height - bottomGap - backgroundHeight;
-  return Layout._(
-    cells,
-    scales,
-    (first - sidePadding, top, last - first + 2 * sidePadding, backgroundHeight),
-  );
+  return Layout._(cells, scales, (
+    first - sidePadding,
+    top,
+    last - first + 2 * sidePadding,
+    backgroundHeight,
+  ));
 }
 
 /// Il quadrato dell'icona della cella `i`: sinistra, cima, lato.

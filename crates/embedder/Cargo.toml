@@ -15,6 +15,7 @@ silica-protocols = { path = "../protocols", features = ["client"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 khronos-egl = { version = "6", default-features = false, features = ["1_5", "dynamic"] }
 wayland-egl = "0.32"
 wayland-backend = { version = "0.3", features = ["client_system"] }

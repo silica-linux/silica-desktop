@@ -38,8 +38,5 @@ void paintIcon(Canvas canvas, Rect rect, String label, int index) {
     ),
     textDirection: TextDirection.ltr,
   )..layout();
-  text.paint(
-    canvas,
-    rect.center - Offset(text.width / 2, text.height / 2),
-  );
+  text.paint(canvas, rect.center - Offset(text.width / 2, text.height / 2));
 }

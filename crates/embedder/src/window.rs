@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
+use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
@@ -40,6 +41,12 @@ use tracing::{info, warn};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
+use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::{
+    self, ExtForeignToplevelHandleV1,
+};
+use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_list_v1::{
+    self, ExtForeignToplevelListV1,
+};
 
 use crate::{LayerKeyboard, LayerKind, Options, Renderer};
 
@@ -70,6 +77,7 @@ use crate::ffi::{
 };
 use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
+use crate::shell::{self, ShellLink};
 use crate::text_input::{self, EditKey, TextInput};
 
 /// Esito di un tasto mandato al framework, con l'azione di editing da fare se ignorato.
@@ -152,6 +160,8 @@ struct App {
     text_input: TextInput,
     /// Regioni di vetro dei widget `Glass` (`silica/glass`).
     glass: Glass,
+    /// Finestre e comandi per i componenti della shell (`silica/shell`).
+    shell: ShellLink,
     qh: QueueHandle<App>,
     key_results: channel::Sender<KeyResult>,
     engine: Option<Engine>,
@@ -407,6 +417,14 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=1, ())
                 .ok(),
         ),
+        shell: ShellLink::new(
+            globals
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=1, ())
+                .ok(),
+            globals
+                .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
+                .ok(),
+        ),
         qh: qh.clone(),
         key_results,
         engine: Some(engine),
@@ -441,6 +459,7 @@ impl App {
     fn handle_message(&mut self, message: PlatformMessage) {
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
+            shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
             glass::CHANNEL => {
                 let (reply, changed) =
                     self.glass
@@ -1026,3 +1045,41 @@ delegate_layer!(App);
 delegate_registry!(App);
 wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaGlassV1);
+wayland_client::delegate_noop!(App: ignore SilicaShellManagerV1);
+
+impl wayland_client::Dispatch<ExtForeignToplevelListV1, ()> for App {
+    fn event(
+        app: &mut Self,
+        _: &ExtForeignToplevelListV1,
+        event: ext_foreign_toplevel_list_v1::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let ext_foreign_toplevel_list_v1::Event::Toplevel { toplevel } = event {
+            app.shell.add(toplevel);
+        }
+    }
+
+    wayland_client::event_created_child!(App, ExtForeignToplevelListV1, [
+        ext_foreign_toplevel_list_v1::EVT_TOPLEVEL_OPCODE => (ExtForeignToplevelHandleV1, ()),
+    ]);
+}
+
+impl wayland_client::Dispatch<ExtForeignToplevelHandleV1, ()> for App {
+    fn event(
+        app: &mut Self,
+        handle: &ExtForeignToplevelHandleV1,
+        event: ext_foreign_toplevel_handle_v1::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if app.shell.event(handle, event)
+            && let Some(engine) = &app.engine
+            && let Err(err) = engine.send_message(shell::CHANNEL, &app.shell.toplevels_message())
+        {
+            warn!("elenco delle finestre a Dart: {err}");
+        }
+    }
+}
