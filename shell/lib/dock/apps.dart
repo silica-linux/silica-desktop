@@ -11,6 +11,18 @@ import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 import 'model.dart';
 
+/// Salva le app fissate in ~/.config/silica/dock.json ("Mantieni nel Dock" e "Rimuovi").
+void savePinned(List<String> ids, {Map<String, String>? env}) {
+  final home = (env ?? Platform.environment)['HOME'] ?? '';
+  final config = File('$home/.config/silica/dock.json');
+  try {
+    config.parent.createSync(recursive: true);
+    config.writeAsStringSync(jsonEncode({'pinned': ids}));
+  } on FileSystemException {
+    // Senza configurazione scrivibile la scelta vale fino alla fine della sessione.
+  }
+}
+
 /// App fissate quando manca la configurazione: le prime installate di questo elenco.
 const List<List<String>> defaultPinned = [
   ['org.gnome.Nautilus'],
@@ -51,13 +63,19 @@ List<String> pinnedIds(
   ];
 }
 
-Item _appItem(DesktopEntry entry, List<Toplevel> windows) => Item.app(
+Item _appItem(
+  DesktopEntry entry,
+  List<Toplevel> windows, {
+  bool pinned = false,
+}) => Item.app(
   entry.name,
   running: windows.isNotEmpty,
   iconPath: findIcon(entry.icon),
   layered: silicaIconFor(entry),
   command: entry.exec,
   windows: [for (final w in windows) w.id],
+  id: entry.id,
+  pinned: pinned,
 );
 
 /// Gli elementi del Dock per queste app e queste finestre.
@@ -75,7 +93,7 @@ List<Item> dockItems(
   for (final id in pinned) {
     final entry = entries[id];
     if (entry == null) continue;
-    items.add(_appItem(entry, windowsOf(entry)));
+    items.add(_appItem(entry, windowsOf(entry), pinned: true));
     shown.add(id);
   }
   // App aperte e non fissate, nell'ordine in cui sono comparse.

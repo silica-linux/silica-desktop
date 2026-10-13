@@ -195,8 +195,8 @@ impl State {
             return;
         };
         // Come un clic sull'app nel Dock (dock.md, D-03): tutte le finestre dell'app sullo
-        // schermo vengono davanti nel loro ordine; se sono tutte ridotte torna solo l'ultima
-        // ridotta.
+        // schermo vengono davanti nel loro ordine, con quella chiesta in cima; se sono tutte
+        // ridotte torna solo l'ultima ridotta.
         if self.space.elements().any(|w| *w == window)
             && let Some(app) = crate::panorama::window_app(&window)
         {
@@ -209,7 +209,8 @@ impl State {
             for w in &same {
                 self.space.raise_element(w, false);
             }
-            self.focus_window(same.last().cloned());
+            // La finestra chiesta in cima (il Dock passa quella dell'app usata per ultima).
+            self.focus_window(Some(window));
             return;
         }
         if self.minimized.iter().any(|(w, _)| *w == window)

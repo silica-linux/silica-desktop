@@ -337,7 +337,7 @@ fn activating_a_window_brings_all_the_windows_of_its_app() {
         .unwrap();
     assert_eq!(titles(&ossido), ["altra", "terza", "prima"]);
     // Il figlio della shell attiva "prima": vengono davanti tutte e due le finestre di "uno",
-    // nel loro ordine (terza sopra prima).
+    // con "prima" (quella chiesta) in cima.
     run_child(&ossido.wayland, true);
-    assert_eq!(titles(&ossido), ["terza", "prima", "altra"]);
+    assert_eq!(titles(&ossido), ["prima", "terza", "altra"]);
 }

@@ -132,6 +132,8 @@ class Item {
     this.layered,
     this.command,
     this.windows = const [],
+    this.id,
+    this.pinned = false,
   }) : kind = ItemKind.app;
   const Item.separator()
     : kind = ItemKind.separator,
@@ -140,7 +142,9 @@ class Item {
       iconPath = null,
       layered = null,
       command = null,
-      windows = const [];
+      windows = const [],
+      id = null,
+      pinned = false;
 
   final ItemKind kind;
   final String label;
@@ -157,6 +161,12 @@ class Item {
 
   /// Le finestre aperte dell'app (identificatori della lista di Ossido).
   final List<String> windows;
+
+  /// L'id della voce .desktop (null per cartelle e cestino).
+  final String? id;
+
+  /// Fissata nel Dock (resta anche chiusa).
+  final bool pinned;
 
   /// L'icona da disegnare; null: segnaposto con l'iniziale.
   IconSource? get icon => switch ((layered, iconPath)) {
