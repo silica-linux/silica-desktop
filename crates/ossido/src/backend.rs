@@ -89,6 +89,7 @@ pub fn init_headless(
     event_loop
         .handle()
         .insert_source(Timer::from_duration(HEADLESS_FRAME), |_, _, data| {
+            data.state.advance_spaces(std::time::Instant::now());
             data.state.send_frames();
             TimeoutAction::ToDuration(HEADLESS_FRAME)
         })?;
@@ -166,6 +167,8 @@ impl State {
     /// Disegna l'output corrente fuori schermo e lo restituisce in RGBA.
     pub fn screenshot(&mut self) -> Result<Capture, String> {
         let glass_quality = self.glass_quality();
+        self.advance_spaces(Instant::now());
+        let space_shift = self.space_shift();
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
@@ -176,6 +179,7 @@ impl State {
                     closing: &self.closing,
                     now: Instant::now(),
                     glass_quality,
+                    space_shift,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -193,6 +197,7 @@ impl State {
                     closing: &self.closing,
                     now: Instant::now(),
                     glass_quality,
+                    space_shift,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -218,6 +223,8 @@ impl State {
         let speed = self.animation_speed;
         let glass_quality = self.glass_quality();
         self.closing.retain(|closing| !closing.finished(now, speed));
+        self.advance_spaces(now);
+        let space_shift = self.space_shift();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
@@ -231,6 +238,7 @@ impl State {
             closing: &self.closing,
             now,
             glass_quality,
+            space_shift,
         };
         let elements = output_elements(
             backend.graphics.renderer(),

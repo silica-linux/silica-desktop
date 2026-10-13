@@ -91,6 +91,8 @@ pub struct State {
     pub clear_color: [f32; 4],
     /// Finestre ridotte, con la posizione a cui tornano.
     pub minimized: Vec<crate::windows::Minimized>,
+    /// Gli spazi di lavoro e lo scorrimento in corso (`workspaces.rs`).
+    pub workspaces: crate::workspaces::Workspaces,
     /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
     pub titlebar_hover: Option<Window>,
     /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
@@ -238,6 +240,7 @@ impl State {
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
+            workspaces: crate::workspaces::Workspaces::default(),
             titlebar_hover: None,
             titlebar_press: None,
             moving: None,

@@ -19,6 +19,7 @@ mod shell;
 pub mod state;
 mod system;
 mod windows;
+pub mod workspaces;
 
 use std::io::Write;
 
@@ -129,6 +130,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
 
     event_loop.run(None, &mut ossido, |ossido| {
         ossido.state.space.refresh();
+        ossido.state.forget_dead_windows();
         ossido.state.popups.cleanup();
         if let Err(err) = ossido.display.flush_clients() {
             warn!("flush dei client fallito: {err}");

@@ -30,7 +30,13 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `ui.glass_quality` | `quality` (`auto`, `full`, `frosted`, `opaque`) | `quality` in uso |
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
-| `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |
+| `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen`, `space` |
+| `space.list` | — | spazi: `index`, `active`, `windows` (id dal basso verso l'alto) |
+| `space.next`, `space.previous` | — | `switched`: falso oltre l'ultimo o prima del primo (nessun rimbalzo); ⌃→ e ⌃← |
+| `space.goto` | `index` | `switched` |
+| `space.add` | — | `index` dello spazio nuovo (al più 16) |
+| `space.remove` | `index` | — ; le finestre passano allo spazio prima (o al primo) |
+| `window.move_to_space` | `id?`, `index` | — |
 | `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |
 | `controlcenter.toggle` | — | `forwarded`: apre o chiude il Centro di controllo (icona nella barra) |
@@ -52,7 +58,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `input.pointer_move` | `x`, `y` | — |
 | `input.pointer_button` | `button?`, `pressed` | — |
 | `input.click` | `x`, `y`, `button?` | — |
-| `input.key` | `key` (nome xkb o carattere), `pressed?` | — |
+| `input.key` | `key` (nome xkb o carattere), `pressed?` | — ; come un tasto vero, anche le scorciatoie del catalogo (⌃→ cambia spazio) |
 | `input.type` | `text` | — |
 | `perf.frames` | `reset?` | per superficie: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |

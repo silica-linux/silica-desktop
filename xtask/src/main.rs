@@ -213,7 +213,7 @@ fn shell_components() -> Result<Vec<String>> {
     let bundle = bundle.display();
     let components = [
         format!(
-            "--layer background --anchor top,bottom,left,right --size 1280x800 --namespace wallpaper --dart-arg wallpaper {bundle}"
+            "--layer background --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --namespace wallpaper --dart-arg wallpaper {bundle}"
         ),
         format!(
             "--layer top --anchor top,left,right --size 1280x30 --exclusive-zone 30 --namespace menubar --dart-arg menubar {bundle}"

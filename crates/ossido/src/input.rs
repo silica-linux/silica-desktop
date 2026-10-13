@@ -4,7 +4,7 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
 };
-use smithay::input::keyboard::{FilterResult, xkb};
+use smithay::input::keyboard::{FilterResult, Keycode, xkb};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::shell::wlr_layer::Layer;
@@ -111,49 +111,54 @@ impl State {
         pointer.frame(self);
     }
 
+    /// Un tasto, vero o sintetico (`input.key`): prima le scorciatoie del catalogo, che
+    /// eseguono il loro comando e non arrivano all'app; il resto va alla superficie con il
+    /// focus.
+    pub fn handle_key(&mut self, code: Keycode, state: KeyState, time: u32) {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let pressed = state == KeyState::Pressed;
+        let shortcuts = self.shortcuts.clone();
+        let command = keyboard.input::<&'static str, _>(
+            self,
+            code,
+            state,
+            SERIAL_COUNTER.next_serial(),
+            time,
+            |_, modifiers, keysym| {
+                let key = xkb::keysym_get_name(
+                    keysym
+                        .raw_latin_sym_or_raw_current_sym()
+                        .unwrap_or(keysym.modified_sym()),
+                );
+                match shortcuts.iter().find(|(shortcut, _)| {
+                    pressed
+                        && shortcut.matches(
+                            modifiers.logo,
+                            modifiers.ctrl,
+                            modifiers.alt,
+                            modifiers.shift,
+                            &key,
+                        )
+                }) {
+                    Some((_, id)) => FilterResult::Intercept(*id),
+                    None => FilterResult::Forward,
+                }
+            },
+        );
+        if let Some(id) = command {
+            let response = self.execute_command(id, serde_json::Value::Null);
+            if let Err(err) = response {
+                warn!("scorciatoia {id}: {err}");
+            }
+        }
+    }
+
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         match event {
             InputEvent::Keyboard { event } => {
-                let serial = SERIAL_COUNTER.next_serial();
-                let time = Event::time_msec(&event);
-                let Some(keyboard) = self.seat.get_keyboard() else {
-                    return;
-                };
-                let pressed = event.state() == KeyState::Pressed;
-                let shortcuts = self.shortcuts.clone();
-                let command = keyboard.input::<&'static str, _>(
-                    self,
-                    event.key_code(),
-                    event.state(),
-                    serial,
-                    time,
-                    |_, modifiers, keysym| {
-                        let key = xkb::keysym_get_name(
-                            keysym
-                                .raw_latin_sym_or_raw_current_sym()
-                                .unwrap_or(keysym.modified_sym()),
-                        );
-                        match shortcuts.iter().find(|(shortcut, _)| {
-                            pressed
-                                && shortcut.matches(
-                                    modifiers.logo,
-                                    modifiers.ctrl,
-                                    modifiers.alt,
-                                    modifiers.shift,
-                                    &key,
-                                )
-                        }) {
-                            Some((_, id)) => FilterResult::Intercept(*id),
-                            None => FilterResult::Forward,
-                        }
-                    },
-                );
-                if let Some(id) = command {
-                    let response = self.execute_command(id, serde_json::Value::Null);
-                    if let Err(err) = response {
-                        warn!("scorciatoia {id}: {err}");
-                    }
-                }
+                self.handle_key(event.key_code(), event.state(), Event::time_msec(&event));
             }
             InputEvent::PointerMotionAbsolute { event } => {
                 let Some(geometry) = self.space.output_geometry(&self.output) else {

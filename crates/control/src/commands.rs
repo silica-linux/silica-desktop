@@ -37,6 +37,13 @@ pub const FARO_TOGGLE: &str = "faro.toggle";
 pub const NOTIFICATIONS_TOGGLE: &str = "notifications.toggle";
 pub const CONTROLCENTER_TOGGLE: &str = "controlcenter.toggle";
 pub const SYSTEM_STATUS: &str = "system.status";
+pub const SPACE_LIST: &str = "space.list";
+pub const SPACE_NEXT: &str = "space.next";
+pub const SPACE_PREVIOUS: &str = "space.previous";
+pub const SPACE_GOTO: &str = "space.goto";
+pub const SPACE_ADD: &str = "space.add";
+pub const SPACE_REMOVE: &str = "space.remove";
+pub const WINDOW_MOVE_TO_SPACE: &str = "window.move_to_space";
 pub const SYSTEM_WIFI: &str = "system.wifi";
 pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
 pub const SYSTEM_VOLUME: &str = "system.volume";
@@ -79,6 +86,15 @@ impl CommandSpec {
 
 fn no_params() -> Value {
     json!({"type": "object", "properties": {}, "additionalProperties": false})
+}
+
+fn index_param() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"index": {"type": "integer", "minimum": 0}},
+        "required": ["index"],
+        "additionalProperties": false
+    })
 }
 
 fn enabled_param() -> Value {
@@ -237,6 +253,65 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Apre o chiude il Centro di controllo (componente della shell; icona nella barra).",
         shortcut: None,
         params: no_params,
+    },
+    CommandSpec {
+        id: SPACE_LIST,
+        label: "Elenca gli spazi",
+        description: "Gli spazi di lavoro: quale è attivo e gli id delle finestre di ciascuno.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SPACE_NEXT,
+        label: "Spazio successivo",
+        description: "Passa allo spazio a destra (oltre l'ultimo non fa niente).",
+        shortcut: Some("Ctrl+Right"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SPACE_PREVIOUS,
+        label: "Spazio precedente",
+        description: "Passa allo spazio a sinistra (prima del primo non fa niente).",
+        shortcut: Some("Ctrl+Left"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SPACE_GOTO,
+        label: "Vai allo spazio",
+        description: "Passa allo spazio `index` (da 0).",
+        shortcut: None,
+        params: index_param,
+    },
+    CommandSpec {
+        id: SPACE_ADD,
+        label: "Nuovo spazio",
+        description: "Aggiunge uno spazio vuoto in fondo; restituisce il suo indice.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SPACE_REMOVE,
+        label: "Togli lo spazio",
+        description: "Toglie lo spazio `index`; le sue finestre passano a quello prima.",
+        shortcut: None,
+        params: index_param,
+    },
+    CommandSpec {
+        id: WINDOW_MOVE_TO_SPACE,
+        label: "Sposta nello spazio",
+        description: "Sposta la finestra `id` (o quella con il focus) nello spazio `index`.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "minimum": 0},
+                    "index": {"type": "integer", "minimum": 0}
+                },
+                "required": ["index"],
+                "additionalProperties": false
+            })
+        },
     },
     CommandSpec {
         id: SYSTEM_STATUS,
@@ -701,6 +776,9 @@ pub struct WindowInfo {
     /// A schermo intero.
     #[serde(default)]
     pub fullscreen: bool,
+    /// Lo spazio di lavoro della finestra (da 0).
+    #[serde(default)]
+    pub space: usize,
 }
 
 /// Una scorciatoia da tastiera: modificatori più il nome del keysym xkb.
@@ -806,6 +884,31 @@ mod tests {
 #[serde(deny_unknown_fields)]
 pub struct AnimationScale {
     pub scale: f64,
+}
+
+/// Parametri di [`SPACE_GOTO`] e [`SPACE_REMOVE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndexParams {
+    pub index: usize,
+}
+
+/// Parametri di [`WINDOW_MOVE_TO_SPACE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveToSpaceParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
+    pub index: usize,
+}
+
+/// Uno spazio in [`SPACE_LIST`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceInfo {
+    pub index: usize,
+    pub active: bool,
+    /// Id delle finestre, dal basso verso l'alto.
+    pub windows: Vec<u64>,
 }
 
 /// Parametri di [`SYSTEM_WIFI`], [`SYSTEM_BLUETOOTH`], [`SYSTEM_MUTE`], [`SYSTEM_DND`].

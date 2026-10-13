@@ -21,12 +21,16 @@ use silica_control::commands::{
     SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_DOWN_FINE, SYSTEM_VOLUME_UP,
     SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
 };
+use silica_control::commands::{
+    IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
+    SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
+};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
-use smithay::input::keyboard::{FilterResult, Keycode};
+use smithay::input::keyboard::Keycode;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::SERIAL_COUNTER;
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 use tracing::{info, warn};
@@ -120,6 +124,42 @@ impl State {
             LAYER_LIST => to_value(self.layer_list()),
             GLASS_LIST => to_value(self.glass_list()),
             // Comandi dei componenti della shell: Ossido li inoltra.
+            SPACE_LIST => to_value(self.space_list()),
+            SPACE_NEXT | SPACE_PREVIOUS => {
+                let active = self.workspaces.active;
+                let to = if id == SPACE_NEXT {
+                    active.saturating_add(1)
+                } else {
+                    // Prima del primo spazio non si fa niente (nessun rimbalzo).
+                    match active.checked_sub(1) {
+                        Some(to) => to,
+                        None => return Ok(json!({ "switched": false })),
+                    }
+                };
+                Ok(json!({ "switched": self.switch_space(to, std::time::Instant::now()) }))
+            }
+            SPACE_GOTO => {
+                let IndexParams { index } = parse_required(params)?;
+                if index >= self.workspaces.count() {
+                    return Err(format!("spazio {index} assente"));
+                }
+                Ok(json!({ "switched": self.switch_space(index, std::time::Instant::now()) }))
+            }
+            SPACE_ADD => Ok(json!({ "index": self.add_space()? })),
+            SPACE_REMOVE => {
+                let IndexParams { index } = parse_required(params)?;
+                self.remove_space(index)?;
+                Ok(Value::Null)
+            }
+            WINDOW_MOVE_TO_SPACE => {
+                let MoveToSpaceParams { id, index } = parse_required(params)?;
+                let window = match id.and_then(|id| self.stored_window(id)) {
+                    Some(window) => window,
+                    None => self.target_window(id)?,
+                };
+                self.move_window_to_space(&window, index)?;
+                Ok(Value::Null)
+            }
             SYSTEM_STATUS => self
                 .system
                 .status()
@@ -172,6 +212,12 @@ impl State {
             }
             WINDOW_FOCUS => {
                 let target: WindowTarget = parse(params)?;
+                // Una finestra di un altro spazio: si passa a quello spazio.
+                if let Some(id) = target.id
+                    && let Some(space) = self.stored_window_space(id)
+                {
+                    self.switch_space(space, std::time::Instant::now());
+                }
                 let window = match target.id.and_then(|id| self.minimized_window(id)) {
                     Some(window) => {
                         self.restore_window(&window);
@@ -292,19 +338,10 @@ impl State {
     /// Un tasto sintetico verso la finestra con il focus, con Maiusc attorno se serve.
     /// Passa dallo stesso filtro dei tasti veri, quindi anche le scorciatoie funzionano.
     fn synthetic_key(&mut self, code: u32, shift: bool, state: KeyState) {
-        let Some(keyboard) = self.seat.get_keyboard() else {
-            return;
-        };
         let time = self.now_msec();
+        // Come un tasto vero: anche le scorciatoie del catalogo.
         let press = |state: &mut Self, code: u32, key_state: KeyState| {
-            keyboard.input::<(), _>(
-                state,
-                Keycode::new(code),
-                key_state,
-                SERIAL_COUNTER.next_serial(),
-                time,
-                |_, _, _| FilterResult::Forward,
-            );
+            state.handle_key(Keycode::new(code), key_state, time);
         };
         if shift && state == KeyState::Pressed {
             press(self, crate::keys::SHIFT_LEFT, KeyState::Pressed);
@@ -408,6 +445,56 @@ impl State {
         }
     }
 
+    /// Gli spazi con le loro finestre (`space.list`).
+    fn space_list(&self) -> Vec<SpaceInfo> {
+        (0..self.workspaces.count())
+            .map(|index| {
+                let active = index == self.workspaces.active;
+                let windows = if active {
+                    self.space
+                        .elements()
+                        .filter(|w| self.window_space(w) == Some(index))
+                        .filter_map(Self::window_id)
+                        .collect()
+                } else {
+                    self.workspaces
+                        .stored
+                        .get(index)
+                        .map(|placed| {
+                            placed
+                                .iter()
+                                .filter_map(|(w, _)| Self::window_id(w))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                SpaceInfo {
+                    index,
+                    active,
+                    windows,
+                }
+            })
+            .collect()
+    }
+
+    /// Una finestra di uno spazio non attivo.
+    fn stored_window(&self, id: u64) -> Option<Window> {
+        self.workspaces
+            .stored
+            .iter()
+            .flatten()
+            .find(|(w, _)| Self::window_id(w) == Some(id))
+            .map(|(w, _)| w.clone())
+    }
+
+    /// Lo spazio non attivo che contiene la finestra `id`.
+    fn stored_window_space(&self, id: u64) -> Option<usize> {
+        self.workspaces
+            .stored
+            .iter()
+            .position(|placed| placed.iter().any(|(w, _)| Self::window_id(w) == Some(id)))
+    }
+
     fn focused_window(&self) -> Option<Window> {
         let focus = self.seat.get_keyboard()?.current_focus()?;
         self.space
@@ -445,6 +532,14 @@ impl State {
         let mut windows: Vec<(&Window, bool)> =
             self.space.elements().rev().map(|w| (w, false)).collect();
         windows.extend(self.minimized.iter().map(|(w, _)| (w, true)));
+        // Poi le finestre degli altri spazi, ciascuna con la sua posizione nello spazio.
+        let stored: Vec<(&Window, Point<i32, Logical>)> = self
+            .workspaces
+            .stored
+            .iter()
+            .flat_map(|placed| placed.iter().rev().map(|(w, l)| (w, *l)))
+            .collect();
+        windows.extend(stored.iter().map(|(w, _)| (*w, false)));
         windows
             .into_iter()
             .filter_map(|(window, minimized)| {
@@ -455,8 +550,14 @@ impl State {
                         .find(|(w, _)| w == window)
                         .map(|(_, location)| *location)
                         .unwrap_or_default()
+                } else if let Some(location) = self.space.element_location(window) {
+                    location
                 } else {
-                    self.space.element_location(window).unwrap_or_default()
+                    stored
+                        .iter()
+                        .find(|(w, _)| *w == window)
+                        .map(|(_, location)| *location)
+                        .unwrap_or_default()
                 };
                 let size = window.geometry().size;
                 let (title, app_id) = window
@@ -483,6 +584,7 @@ impl State {
                     focused: focused.as_ref() == Some(window),
                     minimized,
                     fullscreen: crate::windows::is_fullscreen(window),
+                    space: self.window_space(window).unwrap_or(self.workspaces.active),
                 })
             })
             .collect()

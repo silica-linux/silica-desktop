@@ -14,12 +14,14 @@ use ossido_render::glass::{
 use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
 use ossido_render::title::Title;
 use ossido_render::titlebar::{Titlebar, TitlebarState};
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Renderer, Texture};
 use smithay::desktop::{LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
@@ -45,6 +47,14 @@ render_elements! {
     Tone=ossido_render::backdrop::ToneElement,
     /// Texture: titoli delle barre, istantanee delle finestre che si chiudono.
     Texture=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
+    /// La fascia nera fra due spazi che scorrono.
+    Solid=SolidColorRenderElement,
+}
+
+/// Gli strati che appartengono allo spazio e scorrono con lui: lo sfondo e la barra dei
+/// menu (nel riferimento il Dock e i pannelli della shell restano fermi).
+fn moves_with_space(layer: &LayerSurface, level: Layer) -> bool {
+    matches!(level, Layer::Background | Layer::Bottom) || layer.namespace() == "menubar"
 }
 
 /// Quello che serve al frame oltre allo spazio.
@@ -57,6 +67,8 @@ pub struct RenderContext<'a> {
     pub closing: &'a [Closing],
     pub now: Instant,
     pub glass_quality: GlassQuality,
+    /// Cambio di spazio in corso: sfondo e barra dei menu scorrono con le finestre.
+    pub space_shift: Option<crate::workspaces::SpaceShift>,
 }
 
 /// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
@@ -73,6 +85,15 @@ pub struct Closing {
 impl Closing {
     pub fn finished(&self, now: Instant, speed: f64) -> bool {
         animation::progress(now - self.start, animation::CLOSE, speed) >= 1.0
+    }
+}
+
+/// Id stabile della fascia nera, nei dati dell'output.
+struct SpaceGapId(Id);
+
+impl Default for SpaceGapId {
+    fn default() -> Self {
+        Self(Id::new())
     }
 }
 
@@ -311,25 +332,36 @@ pub fn output_elements(
             let Some(geometry) = layer_map.layer_geometry(layer) else {
                 continue;
             };
-            let location = geometry.loc.to_physical_precise_round(scale);
-            elements.extend(
-                AsRenderElements::<GlesRenderer>::render_elements::<
-                    WaylandSurfaceRenderElement<GlesRenderer>,
-                >(
-                    layer as &LayerSurface,
-                    renderer,
-                    location,
-                    scale.into(),
-                    1.0,
-                )
-                .into_iter()
-                .map(OutputElement::Surface),
-            );
-            anchors.push(GlassAnchor {
-                index: elements.len(),
-                surface: layer.wl_surface().clone(),
-                origin: location,
-            });
+            // Nel cambio di spazio gli strati dello spazio si disegnano due volte: con la
+            // scrivania che esce e con quella che entra.
+            let offsets: Vec<f64> = match context.space_shift {
+                Some(shift) if moves_with_space(layer, level) => {
+                    vec![shift.outgoing, shift.incoming]
+                }
+                _ => vec![0.0],
+            };
+            for offset in offsets {
+                let location = (geometry.loc.to_f64() + Point::from((offset, 0.0)))
+                    .to_physical_precise_round(scale);
+                elements.extend(
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(
+                        layer as &LayerSurface,
+                        renderer,
+                        location,
+                        scale.into(),
+                        1.0,
+                    )
+                    .into_iter()
+                    .map(OutputElement::Surface),
+                );
+                anchors.push(GlassAnchor {
+                    index: elements.len(),
+                    surface: layer.wl_surface().clone(),
+                    origin: location,
+                });
+            }
         }
     };
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
@@ -394,6 +426,31 @@ pub fn output_elements(
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
     let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
+
+    // La fascia nera fra le due scrivanie, sotto tutto: le due scrivanie non la coprono.
+    // Prima del fondale della barra, che deve vederla dietro di sé.
+    if let Some(shift) = context.space_shift {
+        let gap = Rectangle::<f64, Logical>::new(
+            (shift.gap, 0.0).into(),
+            (
+                f64::from(crate::workspaces::SPACE_GAP),
+                f64::from(output_size.h) / scale,
+            )
+                .into(),
+        )
+        .to_physical_precise_round(scale);
+        elements.push(OutputElement::Solid(SolidColorRenderElement::new(
+            output
+                .user_data()
+                .get_or_insert(SpaceGapId::default)
+                .0
+                .clone(),
+            gap,
+            CommitCounter::default(),
+            [0.0, 0.0, 0.0, 1.0],
+            Kind::Unspecified,
+        )));
+    }
 
     // Con la barra dei menu, il gradiente che comprime le luci in cima allo sfondo.
     let has_menubar = layer_map
