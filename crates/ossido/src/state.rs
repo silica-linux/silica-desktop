@@ -107,6 +107,10 @@ pub struct State {
     pub titlebar_hover: Option<Window>,
     /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
     pub titlebar_press: Option<(Window, ossido_render::titlebar::Part)>,
+    /// Il puntatore è ancora sul pulsante premuto (uscendo l'azione si annulla).
+    pub titlebar_press_inside: bool,
+    /// Simboli dei pulsanti: quando il puntatore è entrato nel gruppo e quando ne è uscito.
+    pub buttons_hover: Option<ButtonsHover>,
     /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
     pub moving: Option<(Window, Point<f64, Logical>)>,
     /// Moltiplicatore delle durate delle animazioni; 0 le spegne (`--animation-scale`,
@@ -258,6 +262,8 @@ impl State {
             gesture: None,
             titlebar_hover: None,
             titlebar_press: None,
+            titlebar_press_inside: false,
+            buttons_hover: None,
             moving: None,
             animation_speed: 1.0,
             closing: Vec::new(),
@@ -319,4 +325,12 @@ pub struct ClientState {
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+}
+
+/// Il puntatore sul gruppo dei pulsanti di una finestra.
+#[derive(Clone)]
+pub struct ButtonsHover {
+    pub window: Window,
+    pub entered: std::time::Instant,
+    pub left: Option<std::time::Instant>,
 }

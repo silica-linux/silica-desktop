@@ -59,8 +59,10 @@ fn moves_with_space(layer: &LayerSurface, level: Layer) -> bool {
 
 /// Quello che serve al frame oltre allo spazio.
 pub struct RenderContext<'a> {
-    /// Finestra con il puntatore sui pulsanti della barra.
-    pub titlebar_hover: Option<&'a Window>,
+    /// I pulsanti della barra di una finestra: simboli e pulsante premuto.
+    pub buttons: Option<ButtonsView>,
+    /// ⌥ tenuto: il verde mostra "+".
+    pub alt: bool,
     pub clear_color: [f32; 4],
     /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
     pub animation_speed: f64,
@@ -73,6 +75,40 @@ pub struct RenderContext<'a> {
     pub panorama: Option<crate::panorama::PanoramaView>,
     /// Numero di spazi e spazio attivo, per la barra di Panorama.
     pub spaces: (usize, usize),
+}
+
+/// I pulsanti della barra di una finestra nel frame.
+#[derive(Clone)]
+pub struct ButtonsView {
+    pub window: Window,
+    pub symbols: f32,
+    pub pressed: Option<u8>,
+}
+
+/// Come disegnare i pulsanti di una finestra.
+#[derive(Clone, Copy, Default)]
+struct ButtonsLook {
+    symbols: f32,
+    pressed: Option<u8>,
+    alt: bool,
+}
+
+/// Riduzione e schermo intero non hanno senso: dialogo (ha un genitore) o finestra di
+/// dimensione fissa (minima uguale alla massima).
+fn buttons_disabled(window: &Window) -> bool {
+    let Some(toplevel) = window.toplevel() else {
+        return false;
+    };
+    if toplevel.parent().is_some() {
+        return true;
+    }
+    with_states(toplevel.wl_surface(), |states| {
+        let mut cached = states
+            .cached_state
+            .get::<smithay::wayland::shell::xdg::SurfaceCachedState>();
+        let current = cached.current();
+        !current.min_size.is_empty() && current.min_size == current.max_size
+    })
 }
 
 /// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
@@ -285,7 +321,7 @@ fn window_elements(
     scale: f64,
     offset: Point<i32, Logical>,
     factor: f64,
-    hovered: bool,
+    buttons: ButtonsLook,
 ) -> Vec<OutputElement> {
     let render_location = (location - window.geometry().loc - output_origin + offset)
         .to_physical_precise_round(scale);
@@ -333,7 +369,10 @@ fn window_elements(
         if let Some(titlebar) = window.user_data().get::<Titlebar>() {
             let state = TitlebarState {
                 active,
-                hovered,
+                symbols: buttons.symbols,
+                pressed: buttons.pressed,
+                alt: buttons.alt,
+                disabled: buttons_disabled(window),
                 scale,
             };
             elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
@@ -378,7 +417,7 @@ pub fn snapshot_window(
         scale,
         Point::default(),
         1.0,
-        false,
+        ButtonsLook::default(),
     );
     let bbox = elements
         .iter()
@@ -496,7 +535,7 @@ pub fn output_elements(
                 scale,
                 offset,
                 factor,
-                false,
+                ButtonsLook::default(),
             ));
         }
         for thumbnail in &panorama.thumbnails {
@@ -519,7 +558,7 @@ pub fn output_elements(
                     scale,
                     offset,
                     factor,
-                    false,
+                    ButtonsLook::default(),
                 ));
             }
             // Lo sfondo del desktop in piccolo.
@@ -630,7 +669,14 @@ pub fn output_elements(
             offset = shift;
             factor *= scale;
         }
-        let hovered = context.titlebar_hover == Some(window);
+        let buttons = match &context.buttons {
+            Some(view) if &view.window == window => ButtonsLook {
+                symbols: view.symbols,
+                pressed: view.pressed,
+                alt: context.alt,
+            },
+            _ => ButtonsLook::default(),
+        };
         let Some(at) = placed(space, window) else {
             continue;
         };
@@ -644,7 +690,7 @@ pub fn output_elements(
             scale,
             offset,
             factor,
-            hovered,
+            buttons,
         ));
         if let Some(toplevel) = window.toplevel()
             && let Some(location) = space.element_location(window)

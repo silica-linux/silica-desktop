@@ -173,11 +173,14 @@ impl State {
         let space_shift = self.space_shift();
         let panorama = self.panorama_view();
         let spaces = (self.workspaces.count(), self.workspaces.active);
+        let buttons = self.buttons_view();
+        let alt = self.alt_held();
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
                 let context = RenderContext {
-                    titlebar_hover: self.titlebar_hover.as_ref(),
+                    buttons: buttons.clone(),
+                    alt,
                     clear_color: self.clear_color,
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
@@ -197,7 +200,8 @@ impl State {
             }
             Backend::Headless(Headless::Gles(renderer)) => {
                 let context = RenderContext {
-                    titlebar_hover: self.titlebar_hover.as_ref(),
+                    buttons: buttons.clone(),
+                    alt,
                     clear_color: self.clear_color,
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
@@ -236,6 +240,8 @@ impl State {
         let space_shift = self.space_shift();
         let panorama = self.panorama_view();
         let spaces = (self.workspaces.count(), self.workspaces.active);
+        let buttons = self.buttons_view();
+        let alt = self.alt_held();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
@@ -243,7 +249,8 @@ impl State {
         let damage = Rectangle::from_size(size);
         let clear_color = self.clear_color;
         let context = RenderContext {
-            titlebar_hover: self.titlebar_hover.as_ref(),
+            buttons: buttons.clone(),
+            alt,
             clear_color,
             animation_speed: speed,
             closing: &self.closing,
@@ -307,4 +314,46 @@ impl State {
 fn is_software(renderer: &GlesRenderer) -> bool {
     smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
         .is_ok_and(|device| device.is_software())
+}
+
+impl State {
+    /// I pulsanti della barra da disegnare in questo frame (simboli in dissolvenza, premuto).
+    pub fn buttons_view(&self) -> Option<crate::render::ButtonsView> {
+        let now = Instant::now();
+        let ms = |t: Instant| now.saturating_duration_since(t).as_secs_f64() * 1000.0;
+        let speed = self.animation_speed;
+        let scaled = |t: Instant| {
+            if speed <= 0.0 {
+                f64::MAX
+            } else {
+                ms(t) / speed
+            }
+        };
+        let pressed = self
+            .titlebar_press
+            .as_ref()
+            .filter(|_| self.titlebar_press_inside);
+        let hover = self.buttons_hover.as_ref();
+        let window = hover.map(|h| &h.window).or(pressed.map(|(w, _)| w))?;
+        let symbols = match hover.filter(|h| &h.window == window) {
+            Some(h) => {
+                ossido_render::titlebar::symbols_opacity(scaled(h.entered), h.left.map(scaled))
+            }
+            None => 0.0,
+        };
+        Some(crate::render::ButtonsView {
+            window: window.clone(),
+            symbols,
+            pressed: pressed
+                .filter(|(w, _)| w == window)
+                .and_then(|(_, part)| part.button()),
+        })
+    }
+
+    /// ⌥ tenuto sulla tastiera.
+    pub fn alt_held(&self) -> bool {
+        self.seat
+            .get_keyboard()
+            .is_some_and(|keyboard| keyboard.modifier_state().alt)
+    }
 }

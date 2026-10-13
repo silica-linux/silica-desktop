@@ -48,6 +48,34 @@ impl State {
             }
             _ => None,
         };
+        // Simboli: compaiono all'ingresso, spariscono poco dopo l'uscita.
+        let now = std::time::Instant::now();
+        let same = matches!((&hover, &self.buttons_hover),
+            (Some(w), Some(h)) if *w == h.window && h.left.is_none());
+        if !same {
+            match &hover {
+                Some(window) => {
+                    self.buttons_hover = Some(crate::state::ButtonsHover {
+                        window: window.clone(),
+                        entered: now,
+                        left: None,
+                    });
+                }
+                None => {
+                    if let Some(h) = self.buttons_hover.as_mut()
+                        && h.left.is_none()
+                    {
+                        h.left = Some(now);
+                    }
+                }
+            }
+        }
+        self.titlebar_press_inside = match (&self.titlebar_press, &hit) {
+            (Some((pressed, part)), Some(Hit::Titlebar(window, over, _))) => {
+                pressed == window && part == over
+            }
+            _ => false,
+        };
         self.titlebar_hover = hover;
         // Sulla barra il puntatore non è su nessuna superficie del client.
         let under = match hit {
@@ -101,6 +129,7 @@ impl State {
                             self.moving = Some((window, local));
                         } else {
                             self.titlebar_press = Some((window, part));
+                            self.titlebar_press_inside = true;
                         }
                     }
                     Some(Hit::Content(window)) => self.focus_window(Some(window)),

@@ -137,16 +137,54 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
     client
         .call(INPUT_POINTER_MOVE, json!({"x": 5, "y": 395}))
         .unwrap();
-    let shot = shot(&ossido);
+    let inactive = shot(&ossido);
     for index in 0..3 {
         assert_near(
-            &shot,
+            &inactive,
             button(&first, index),
             [0xea, 0xeb, 0xec],
             6,
             "pulsante inattivo",
         );
     }
+
+    // Puntatore sul gruppo della finestra inattiva: colori attivi e simboli, resta inattiva.
+    let (mx, my) = button(&first, 1);
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": mx, "y": my}))
+        .unwrap();
+    assert_near(
+        &shot(&ossido),
+        (mx, my),
+        [0xc1, 0x44, 0x00],
+        14,
+        "simbolo di riduzione",
+    );
+    // Premuto sulla riduzione: il simbolo diventa più chiaro e saturo (`#ff5a00`).
+    client
+        .call(INPUT_POINTER_BUTTON, json!({"pressed": true}))
+        .unwrap();
+    assert_near(
+        &shot(&ossido),
+        (mx, my),
+        [0xff, 0x5a, 0x00],
+        14,
+        "riduzione premuta",
+    );
+    // Uscendo prima del rilascio l'azione si annulla.
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": mx + 60, "y": my + 60}))
+        .unwrap();
+    client
+        .call(INPUT_POINTER_BUTTON, json!({"pressed": false}))
+        .unwrap();
+    assert!(
+        !windows(&ossido)
+            .iter()
+            .find(|w| w.id == first.id)
+            .unwrap()
+            .minimized
+    );
 }
 
 #[test]
