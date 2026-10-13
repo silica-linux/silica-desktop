@@ -35,6 +35,19 @@ pub const PERF_PROCESS: &str = "perf.process";
 pub const GLASS_LIST: &str = "glass.list";
 pub const FARO_TOGGLE: &str = "faro.toggle";
 pub const NOTIFICATIONS_TOGGLE: &str = "notifications.toggle";
+pub const CONTROLCENTER_TOGGLE: &str = "controlcenter.toggle";
+pub const SYSTEM_STATUS: &str = "system.status";
+pub const SYSTEM_WIFI: &str = "system.wifi";
+pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
+pub const SYSTEM_VOLUME: &str = "system.volume";
+pub const SYSTEM_VOLUME_UP: &str = "system.volume_up";
+pub const SYSTEM_VOLUME_DOWN: &str = "system.volume_down";
+pub const SYSTEM_MUTE: &str = "system.mute";
+pub const SYSTEM_MUTE_TOGGLE: &str = "system.mute_toggle";
+pub const SYSTEM_BRIGHTNESS: &str = "system.brightness";
+pub const SYSTEM_BRIGHTNESS_UP: &str = "system.brightness_up";
+pub const SYSTEM_BRIGHTNESS_DOWN: &str = "system.brightness_down";
+pub const SYSTEM_DND: &str = "system.dnd";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -62,6 +75,24 @@ impl CommandSpec {
 
 fn no_params() -> Value {
     json!({"type": "object", "properties": {}, "additionalProperties": false})
+}
+
+fn enabled_param() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"enabled": {"type": "boolean"}},
+        "required": ["enabled"],
+        "additionalProperties": false
+    })
+}
+
+fn value_param() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"value": {"type": "number", "minimum": 0, "maximum": 1}},
+        "required": ["value"],
+        "additionalProperties": false
+    })
 }
 
 fn window_target() -> Value {
@@ -195,6 +226,97 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Apre o chiude il Centro notifiche (componente della shell; clic sull'orologio).",
         shortcut: None,
         params: no_params,
+    },
+    CommandSpec {
+        id: CONTROLCENTER_TOGGLE,
+        label: "Centro di controllo",
+        description: "Apre o chiude il Centro di controllo (componente della shell; icona nella barra).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_STATUS,
+        label: "Stato del sistema",
+        description: "Wi-Fi, Bluetooth, batteria, luminosità, volume e Non disturbare, da silica-daemon (chiavi di dev.frascella.Silica.System1).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_WIFI,
+        label: "Wi-Fi",
+        description: "Accende o spegne il Wi-Fi.",
+        shortcut: None,
+        params: enabled_param,
+    },
+    CommandSpec {
+        id: SYSTEM_BLUETOOTH,
+        label: "Bluetooth",
+        description: "Accende o spegne il Bluetooth.",
+        shortcut: None,
+        params: enabled_param,
+    },
+    CommandSpec {
+        id: SYSTEM_VOLUME,
+        label: "Volume",
+        description: "Volume dell'uscita predefinita, da 0 a 1.",
+        shortcut: None,
+        params: value_param,
+    },
+    CommandSpec {
+        id: SYSTEM_VOLUME_UP,
+        label: "Alza il volume",
+        description: "Alza il volume di un sedicesimo (toglie il muto).",
+        shortcut: Some("XF86AudioRaiseVolume"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_VOLUME_DOWN,
+        label: "Abbassa il volume",
+        description: "Abbassa il volume di un sedicesimo.",
+        shortcut: Some("XF86AudioLowerVolume"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_MUTE,
+        label: "Muto",
+        description: "Toglie o rimette l'audio dell'uscita predefinita.",
+        shortcut: None,
+        params: enabled_param,
+    },
+    CommandSpec {
+        id: SYSTEM_MUTE_TOGGLE,
+        label: "Muto sì/no",
+        description: "Inverte il muto dell'uscita predefinita.",
+        shortcut: Some("XF86AudioMute"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_BRIGHTNESS,
+        label: "Luminosità",
+        description: "Luminosità dello schermo, da 0 a 1 (mai spento del tutto).",
+        shortcut: None,
+        params: value_param,
+    },
+    CommandSpec {
+        id: SYSTEM_BRIGHTNESS_UP,
+        label: "Aumenta la luminosità",
+        description: "Aumenta la luminosità di un sedicesimo.",
+        shortcut: Some("XF86MonBrightnessUp"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_BRIGHTNESS_DOWN,
+        label: "Diminuisci la luminosità",
+        description: "Diminuisce la luminosità di un sedicesimo.",
+        shortcut: Some("XF86MonBrightnessDown"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_DND,
+        label: "Non disturbare",
+        description: "Con Non disturbare attivo le notifiche arrivano nel Centro senza banner.",
+        shortcut: None,
+        params: enabled_param,
     },
     CommandSpec {
         id: GLASS_LIST,
@@ -652,6 +774,20 @@ mod tests {
 #[serde(deny_unknown_fields)]
 pub struct AnimationScale {
     pub scale: f64,
+}
+
+/// Parametri di [`SYSTEM_WIFI`], [`SYSTEM_BLUETOOTH`], [`SYSTEM_MUTE`], [`SYSTEM_DND`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnabledParams {
+    pub enabled: bool,
+}
+
+/// Parametri di [`SYSTEM_VOLUME`] e [`SYSTEM_BRIGHTNESS`], da 0 a 1.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ValueParams {
+    pub value: f64,
 }
 
 /// Parametri di [`UI_GLASS_QUALITY`]: `auto`, `full`, `frosted`, `opaque`.

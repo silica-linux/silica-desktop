@@ -43,6 +43,8 @@ pub struct State {
     pub socket_name: OsString,
     /// Indirizzo del bus di sessione privato (`--session-bus`), passato ai client.
     pub session_bus: Option<String>,
+    /// I comandi `system.*` verso silica-daemon.
+    pub system: crate::system::SystemLink,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
     pub loop_signal: LoopSignal,
@@ -204,6 +206,7 @@ impl State {
             start_time: Instant::now(),
             socket_name,
             session_bus: None,
+            system: crate::system::SystemLink::disconnected(),
             display_handle: dh,
             loop_handle,
             loop_signal,

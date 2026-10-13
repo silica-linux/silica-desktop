@@ -33,6 +33,12 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen` |
 | `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |
+| `controlcenter.toggle` | — | `forwarded`: apre o chiude il Centro di controllo (icona nella barra) |
+| `system.status` | — | stato da silica-daemon (`docs/daemon.md`, System1): `wifi.*`, `bluetooth.*`, `battery.*`, `brightness`, `audio.*`, `dnd`; errore se il daemon non risponde |
+| `system.wifi`, `system.bluetooth`, `system.mute`, `system.dnd` | `enabled` | `queued`: la chiamata parte su un thread, senza attendere il daemon |
+| `system.volume`, `system.brightness` | `value` (0–1) | `queued` |
+| `system.volume_up`, `system.volume_down`, `system.mute_toggle` | — | `queued`; passi di 1/16, alzare toglie il muto (tasti volume e muto) |
+| `system.brightness_up`, `system.brightness_down` | — | `queued`; passi di 1/16 (tasti luminosità) |
 | `glass.list` | — | superfici con vetro (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`) |
 | `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
 | `window.focus` | `id?` | — (riporta anche una finestra ridotta) |

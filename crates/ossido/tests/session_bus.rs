@@ -8,8 +8,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use common::Headless;
-use serde_json::json;
-use silica_control::commands::APP_LAUNCH;
+use serde_json::{Value, json};
+use silica_control::commands::{APP_LAUNCH, SYSTEM_DND, SYSTEM_STATUS, SYSTEM_VOLUME};
 
 /// Attende che `path` esista e non sia vuoto.
 fn wait_for_file(path: &std::path::Path) -> String {
@@ -98,4 +98,42 @@ fn without_the_option_clients_keep_the_host_bus() {
     let seen = wait_for_file(&file);
     let host = std::env::var("DBUS_SESSION_BUS_ADDRESS").unwrap_or_default();
     assert_eq!(seen, format!("x{host}"));
+}
+
+#[test]
+fn system_commands_reach_the_daemon() {
+    // Serve silica-daemon accanto a Ossido (cargo test --workspace lo compila).
+    let daemon = std::path::Path::new(env!("CARGO_BIN_EXE_ossido")).with_file_name("silica-daemon");
+    if !daemon.is_file() {
+        eprintln!("silica-daemon non compilato: test saltato");
+        return;
+    }
+    let ossido = Headless::start_with("system", (320, 240), &["--session-bus"]);
+    let mut client = ossido.client();
+    // Solo Non disturbare: le altre azioni cambierebbero la macchina che esegue i test.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if client.call(SYSTEM_STATUS, Value::Null).is_ok() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "system.status mai disponibile");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let queued = client.call(SYSTEM_DND, json!({"enabled": true})).unwrap();
+    assert_eq!(queued["queued"], true);
+    loop {
+        let status = client.call(SYSTEM_STATUS, Value::Null).unwrap();
+        if status["dnd"] == true {
+            break;
+        }
+        assert!(Instant::now() < deadline, "dnd mai attivo: {status}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // Parametri sbagliati: errore, niente in coda.
+    assert!(
+        client
+            .call(SYSTEM_VOLUME, json!({"value": "alto"}))
+            .is_err()
+    );
+    assert!(client.call(SYSTEM_DND, Value::Null).is_err());
 }

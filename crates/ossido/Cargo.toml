@@ -14,6 +14,7 @@ png = "0.17"
 rustix = { version = "1", features = ["net"] }
 serde = "1"
 serde_json = "1"
+zbus = "5.19"
 silica-control = { path = "../control" }
 silica-protocols = { path = "../protocols", features = ["server"] }
 smithay = { version = "0.7", default-features = false, features = ["backend_winit", "renderer_gl", "renderer_pixman", "wayland_frontend", "desktop"] }

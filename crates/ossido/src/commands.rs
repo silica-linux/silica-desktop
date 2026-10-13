@@ -14,6 +14,11 @@ use silica_control::commands::{
     UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE,
     WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
 };
+use silica_control::commands::{
+    CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
+    SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_UP, SYSTEM_DND, SYSTEM_MUTE, SYSTEM_MUTE_TOGGLE,
+    SYSTEM_STATUS, SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_UP, SYSTEM_WIFI, ValueParams,
+};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -25,6 +30,7 @@ use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 use tracing::{info, warn};
 
 use crate::state::State;
+use crate::system::Call;
 
 /// Id stabile di una finestra, salvato nei suoi user data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +118,41 @@ impl State {
             LAYER_LIST => to_value(self.layer_list()),
             GLASS_LIST => to_value(self.glass_list()),
             // Comandi dei componenti della shell: Ossido li inoltra.
-            FARO_TOGGLE | NOTIFICATIONS_TOGGLE => {
+            SYSTEM_STATUS => self
+                .system
+                .status()
+                .ok_or_else(|| "silica-daemon non raggiungibile".to_owned()),
+            SYSTEM_WIFI | SYSTEM_BLUETOOTH | SYSTEM_MUTE | SYSTEM_DND => {
+                let EnabledParams { enabled } = parse_required(params)?;
+                let call = match id {
+                    SYSTEM_WIFI => Call::Wifi(enabled),
+                    SYSTEM_BLUETOOTH => Call::Bluetooth(enabled),
+                    SYSTEM_MUTE => Call::Muted(enabled),
+                    _ => Call::DoNotDisturb(enabled),
+                };
+                Ok(json!({ "queued": self.system.queue(call) }))
+            }
+            SYSTEM_VOLUME | SYSTEM_BRIGHTNESS => {
+                let ValueParams { value } = parse_required(params)?;
+                if !value.is_finite() {
+                    return Err("valore non finito".to_owned());
+                }
+                let value = value.clamp(0.0, 1.0);
+                let call = if id == SYSTEM_VOLUME {
+                    Call::Volume(value)
+                } else {
+                    Call::Brightness(value)
+                };
+                Ok(json!({ "queued": self.system.queue(call) }))
+            }
+            SYSTEM_VOLUME_UP | SYSTEM_VOLUME_DOWN => {
+                Ok(json!({ "queued": self.system.volume_step(id == SYSTEM_VOLUME_UP) }))
+            }
+            SYSTEM_MUTE_TOGGLE => Ok(json!({ "queued": self.system.mute_toggle() })),
+            SYSTEM_BRIGHTNESS_UP | SYSTEM_BRIGHTNESS_DOWN => Ok(json!({
+                "queued": self.system.brightness_step(id == SYSTEM_BRIGHTNESS_UP)
+            })),
+            FARO_TOGGLE | NOTIFICATIONS_TOGGLE | CONTROLCENTER_TOGGLE => {
                 let sent = self.forward_to_shell(id);
                 Ok(json!({ "forwarded": sent }))
             }

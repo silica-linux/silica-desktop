@@ -17,6 +17,7 @@ mod render;
 mod session_bus;
 mod shell;
 pub mod state;
+mod system;
 mod windows;
 
 use std::io::Write;
@@ -109,6 +110,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
+    ossido.state.system = system::SystemLink::start(ossido.state.session_bus.clone());
     if let Some(port) = options.control {
         let addr = control::listen(&event_loop.handle(), port)?;
         println!("OSSIDO_CONTROL={addr}");
