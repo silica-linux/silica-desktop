@@ -41,6 +41,8 @@ render_elements! {
     /// Elementi a pixel shader della finestra: barra del titolo e ombra.
     Shader=RescaleRenderElement<PixelShaderElement>,
     Glass=GlassElement,
+    /// Il gradiente sotto la barra dei menu, sopra lo sfondo del desktop.
+    Tone=ossido_render::backdrop::ToneElement,
     /// Texture: titoli delle barre, istantanee delle finestre che si chiudono.
     Texture=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
 }
@@ -390,7 +392,37 @@ pub fn output_elements(
     // Da qui in giù solo lo sfondo del desktop: è quello che vede il vetro smerigliato.
     let static_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
+    let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
+
+    // Con la barra dei menu, il gradiente che comprime le luci in cima allo sfondo.
+    let has_menubar = layer_map
+        .layers()
+        .any(|layer| layer.namespace() == "menubar");
+    if has_menubar && let Some(program) = &shaders.tone {
+        let backdrop = output
+            .user_data()
+            .get_or_insert(ossido_render::backdrop::Backdrop::default);
+        let behind = elements.get(background_start..).unwrap_or_default();
+        match backdrop.element(
+            renderer,
+            program,
+            behind,
+            output_size,
+            scale,
+            context.clear_color,
+        ) {
+            Ok(tone) => {
+                elements.insert(background_start, OutputElement::Tone(tone));
+                for anchor in &mut anchors {
+                    if anchor.index >= background_start {
+                        anchor.index += 1;
+                    }
+                }
+            }
+            Err(err) => warn!("fondale della barra saltato: {err:?}"),
+        }
+    }
 
     // Il vetro dallo sfondo verso il primo piano: un vetro più in alto vede quelli sotto.
     if let Some(programs) = &shaders.glass {

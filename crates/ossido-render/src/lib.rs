@@ -5,6 +5,7 @@
 //! accanto a ogni costante.
 
 pub mod animation;
+pub mod backdrop;
 pub mod cache;
 pub mod corners;
 pub mod glass;
@@ -25,6 +26,7 @@ pub struct Shaders {
     pub shadow: Option<GlesPixelProgram>,
     pub titlebar: Option<GlesPixelProgram>,
     pub glass: Option<glass::GlassPrograms>,
+    pub tone: Option<GlesTexProgram>,
 }
 
 /// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
@@ -55,11 +57,18 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
     let glass = blur
         .zip(material)
         .map(|(blur, material)| glass::GlassPrograms { blur, material });
+    let tone = compile_texture(
+        renderer,
+        "fondale della barra",
+        backdrop::SHADER,
+        &backdrop::UNIFORMS,
+    );
     let shaders = Shaders {
         corners,
         shadow,
         titlebar,
         glass,
+        tone,
     };
     renderer
         .egl_context()

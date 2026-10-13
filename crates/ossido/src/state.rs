@@ -67,6 +67,11 @@ pub struct State {
     /// Le finestre per la shell (`ext-foreign-toplevel-list`, solo ai suoi componenti).
     pub foreign_toplevel_list: smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
     pub shell_manager_state: crate::shell::ShellManagerState,
+    /// I componenti della shell collegati a `silica_shell_manager_v1`.
+    pub shell_managers:
+        Vec<silica_protocols::shell::server::silica_shell_manager_v1::SilicaShellManagerV1>,
+    /// L'ultima finestra con il focus annunciata alla shell.
+    pub announced_focus: Option<String>,
     pub seat: Seat<State>,
 
     /// Numero di finestre aperte finora, per disporle a cascata.
@@ -217,6 +222,8 @@ impl State {
             glass_manager_state,
             foreign_toplevel_list,
             shell_manager_state,
+            shell_managers: Vec::new(),
+            announced_focus: None,
             seat,
             mapped: 0,
             next_window_id: 0,

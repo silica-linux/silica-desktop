@@ -4,8 +4,9 @@
 //! chiamate rispondono `false` e l'elenco resta vuoto.
 //!
 //! Messaggi (JSON method codec):
-//! - da Dart: `list` → l'elenco; `activate {id}`; `launch {command}` → `true` se inviato;
-//! - verso Dart: `toplevels [{id, title, app_id}]` a ogni cambiamento.
+//! - da Dart: `list` → l'elenco; `focused` → l'identificatore con il focus;
+//!   `activate {id}`; `launch {command}` → `true` se inviato;
+//! - verso Dart: `toplevels [{id, title, app_id}]` e `focused id` a ogni cambiamento.
 
 use serde_json::{Value, json};
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
@@ -32,6 +33,8 @@ pub struct ShellLink {
     /// La lista delle finestre: tenuta viva perché Ossido continui ad annunciarle.
     _list: Option<ExtForeignToplevelListV1>,
     toplevels: Vec<Toplevel>,
+    /// La finestra con il focus (identificatore), vuoto se nessuna.
+    focused: String,
 }
 
 impl ShellLink {
@@ -44,7 +47,15 @@ impl ShellLink {
             manager,
             _list: list,
             toplevels: Vec::new(),
+            focused: String::new(),
         }
+    }
+
+    /// Il focus è cambiato: il messaggio `focused` per Dart.
+    pub fn set_focused(&mut self, identifier: String) -> Vec<u8> {
+        self.focused = identifier;
+        serde_json::to_vec(&json!({ "method": "focused", "args": self.focused }))
+            .unwrap_or_default()
     }
 
     /// Una finestra nuova: i dettagli arrivano con gli eventi del suo handle.
@@ -127,6 +138,7 @@ impl ShellLink {
         };
         match call.get("method").and_then(Value::as_str) {
             Some("list") => success(self.list()),
+            Some("focused") => success(json!(self.focused)),
             Some("activate") => {
                 let sent = self.manager.as_ref().is_some_and(|manager| {
                     manager.activate(text("id"));

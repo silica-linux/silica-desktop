@@ -26,7 +26,12 @@ class Toplevel {
 class ShellChannel {
   ShellChannel._() {
     channel.setMethodCallHandler((call) async {
-      if (call.method == 'toplevels') _update(call.arguments);
+      switch (call.method) {
+        case 'toplevels':
+          _update(call.arguments);
+        case 'focused':
+          focused.value = '${call.arguments ?? ''}';
+      }
       return null;
     });
   }
@@ -41,6 +46,13 @@ class ShellChannel {
   /// Le finestre aperte, aggiornate a ogni cambiamento.
   final ValueNotifier<List<Toplevel>> toplevels = ValueNotifier(const []);
 
+  /// L'identificatore della finestra con il focus (vuoto: nessuna).
+  final ValueNotifier<String> focused = ValueNotifier('');
+
+  /// La finestra con il focus, se è nell'elenco.
+  Toplevel? get focusedToplevel =>
+      toplevels.value.where((t) => t.id == focused.value).firstOrNull;
+
   void _update(Object? list) {
     toplevels.value = [
       if (list is List)
@@ -52,6 +64,7 @@ class ShellChannel {
   Future<void> refresh() async {
     try {
       _update(await channel.invokeMethod<Object?>('list'));
+      focused.value = await channel.invokeMethod<String>('focused') ?? '';
     } on MissingPluginException {
       // Fuori da Silica.
     }

@@ -10,8 +10,9 @@ use silica_protocols::shell::SHELL_ENV;
 use silica_protocols::shell::server::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use smithay::delegate_foreign_toplevel_list;
 use smithay::desktop::Window;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::foreign_toplevel_list::{
@@ -135,6 +136,40 @@ impl State {
             .retain(|(w, _)| w.toplevel() != Some(surface));
     }
 
+    /// L'identificatore della finestra di questa superficie, vuoto se non è una finestra.
+    fn identifier_of(&self, focus: Option<&WlSurface>) -> String {
+        focus
+            .and_then(|focus| {
+                self.space
+                    .elements()
+                    .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == focus))
+                    .and_then(|w| w.user_data().get::<ForeignToplevelHandle>())
+                    .map(ForeignToplevelHandle::identifier)
+            })
+            .unwrap_or_default()
+    }
+
+    /// L'identificatore della finestra con il focus, vuoto se nessuna.
+    pub fn focused_identifier(&self) -> String {
+        let focus = self.seat.get_keyboard().and_then(|k| k.current_focus());
+        self.identifier_of(focus.as_ref())
+    }
+
+    /// Manda la finestra con il focus ai componenti della shell (se è cambiata). Si chiama
+    /// dal callback del cambio di focus, con la superficie: rileggere il focus dalla
+    /// tastiera lì dentro ne riprenderebbe il lock.
+    pub fn announce_focus(&mut self, focus: Option<&WlSurface>) {
+        let identifier = self.identifier_of(focus);
+        if self.announced_focus.as_deref() == Some(identifier.as_str()) {
+            return;
+        }
+        self.shell_managers.retain(|manager| manager.is_alive());
+        for manager in &self.shell_managers {
+            manager.focused(identifier.clone());
+        }
+        self.announced_focus = Some(identifier);
+    }
+
     /// La finestra con questo identificatore della lista: focus, e torna se era ridotta.
     pub fn activate_identifier(&mut self, identifier: &str) {
         let window = self
@@ -165,14 +200,16 @@ delegate_foreign_toplevel_list!(State);
 
 impl GlobalDispatch<SilicaShellManagerV1, ShellGlobal> for State {
     fn bind(
-        _state: &mut Self,
+        state: &mut Self,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<SilicaShellManagerV1>,
         _global_data: &ShellGlobal,
         data_init: &mut DataInit<'_, Self>,
     ) {
-        data_init.init(resource, ());
+        let manager = data_init.init(resource, ());
+        manager.focused(state.focused_identifier());
+        state.shell_managers.push(manager);
     }
 
     fn can_view(client: Client, global_data: &ShellGlobal) -> bool {

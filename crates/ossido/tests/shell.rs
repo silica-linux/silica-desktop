@@ -17,9 +17,9 @@ use common::Headless;
 use common::client::TestWindow;
 use serde_json::Value;
 use silica_control::commands::{WINDOW_LIST, WindowInfo};
-use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
+use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
-use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop, event_created_child};
+use wayland_client::{Connection, Dispatch, QueueHandle, event_created_child};
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::{
     self, ExtForeignToplevelHandleV1,
 };
@@ -36,6 +36,8 @@ struct Shell {
     manager: Option<SilicaShellManagerV1>,
     /// (identificatore, titolo) delle finestre annunciate.
     toplevels: Vec<(String, String)>,
+    /// Gli identificatori annunciati con `focused`.
+    focused: Vec<String>,
 }
 
 impl Dispatch<WlRegistry, ()> for Shell {
@@ -102,7 +104,20 @@ impl Dispatch<ExtForeignToplevelHandleV1, ()> for Shell {
     }
 }
 
-delegate_noop!(Shell: ignore SilicaShellManagerV1);
+impl Dispatch<SilicaShellManagerV1, ()> for Shell {
+    fn event(
+        state: &mut Self,
+        _: &SilicaShellManagerV1,
+        event: silica_shell_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_shell_manager_v1::Event::Focused { identifier } = event {
+            state.focused.push(identifier);
+        }
+    }
+}
 
 /// Si collega, legge i global e le finestre; se è un componente della shell attiva la
 /// finestra "prima". Stampa i global trovati, uno per riga.
@@ -125,6 +140,14 @@ fn shell_client(socket: &str) {
     }
     for (_, title) in &shell.toplevels {
         println!("TOPLEVEL {title}");
+    }
+    for identifier in &shell.focused {
+        let title = shell
+            .toplevels
+            .iter()
+            .find(|(id, _)| id == identifier)
+            .map_or("", |(_, title)| title.as_str());
+        println!("FOCUSED {title}");
     }
 }
 
@@ -176,6 +199,10 @@ fn only_shell_components_see_the_window_list_and_can_activate() {
         shell.contains("TOPLEVEL prima") && shell.contains("TOPLEVEL seconda"),
         "{shell}"
     );
+
+    // Al collegamento il focus era su "seconda"; dopo l'attivazione su "prima".
+    let focused: Vec<&str> = shell.lines().filter(|l| l.starts_with("FOCUSED")).collect();
+    assert_eq!(focused, ["FOCUSED seconda", "FOCUSED prima"], "{shell}");
 
     // Il figlio della shell ha attivato "prima": ora ha il focus ed è in cima.
     let list: Vec<WindowInfo> =

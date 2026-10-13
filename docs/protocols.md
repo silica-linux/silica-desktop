@@ -38,3 +38,5 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
 - `silica_shell_manager_v1.activate(identifier)`: focus alla finestra (e la riporta se è
   ridotta).
 - `silica_shell_manager_v1.launch(command)`: avvia un'app come figlia di Ossido.
+- evento `silica_shell_manager_v1.focused(identifier)`: la finestra con il focus (vuoto se
+  nessuna), al collegamento e a ogni cambiamento.

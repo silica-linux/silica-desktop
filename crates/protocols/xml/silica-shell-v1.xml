@@ -24,6 +24,15 @@
       <arg name="identifier" type="string"/>
     </request>
 
+    <event name="focused">
+      <description summary="la finestra con il focus">
+        L'identificatore (ext_foreign_toplevel_handle_v1.identifier) della finestra che
+        ha il focus della tastiera, o una stringa vuota se nessuna finestra ce l'ha. Si
+        manda al collegamento e a ogni cambiamento.
+      </description>
+      <arg name="identifier" type="string"/>
+    </event>
+
     <request name="launch">
       <description summary="avvia un'app come client della sessione">
         Il comando (sintassi della shell POSIX, già senza i codici di campo di Exec)

@@ -208,6 +208,7 @@ impl SeatHandler for State {
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.display_handle.get_client(s.id()).ok());
         set_data_device_focus(&self.display_handle, seat, client);
+        self.announce_focus(focused);
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}

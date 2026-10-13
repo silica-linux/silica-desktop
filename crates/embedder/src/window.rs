@@ -1045,7 +1045,28 @@ delegate_layer!(App);
 delegate_registry!(App);
 wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaGlassV1);
-wayland_client::delegate_noop!(App: ignore SilicaShellManagerV1);
+impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
+    fn event(
+        app: &mut Self,
+        _: &SilicaShellManagerV1,
+        event: silica_protocols::shell::client::silica_shell_manager_v1::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_protocols::shell::client::silica_shell_manager_v1::Event::Focused {
+            identifier,
+        } = event
+        {
+            let message = app.shell.set_focused(identifier);
+            if let Some(engine) = &app.engine
+                && let Err(err) = engine.send_message(shell::CHANNEL, &message)
+            {
+                warn!("focus a Dart: {err}");
+            }
+        }
+    }
+}
 
 impl wayland_client::Dispatch<ExtForeignToplevelListV1, ()> for App {
     fn event(
