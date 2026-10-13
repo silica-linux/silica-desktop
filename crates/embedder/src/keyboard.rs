@@ -35,7 +35,21 @@ pub fn physical_key(evdev: u32) -> u64 {
     lookup(LINUX_TO_PHYSICAL, keycode).unwrap_or(GTK_PLANE | u64::from(keycode))
 }
 
+/// Super_L e Super_R: in Silica il tasto Logo è il ⌘ delle app.
+const SUPER_L: u32 = 0xffeb;
+const SUPER_R: u32 = 0xffec;
+/// `LogicalKeyboardKey.metaLeft` e `metaRight` di Flutter.
+const META_LEFT: u64 = 0x0002_0000_0106;
+const META_RIGHT: u64 = 0x0002_0000_0107;
+
 pub fn logical_key(keysym: u32) -> u64 {
+    // GTK li chiama "Super" (logico `superKey`), che Flutter non conta come meta: le
+    // scorciatoie ⌘ delle app (SingleActivator(meta: true)) non scatterebbero mai.
+    match keysym {
+        SUPER_L => return META_LEFT,
+        SUPER_R => return META_RIGHT,
+        _ => {}
+    }
     if let Some(key) = lookup(GTK_TO_LOGICAL, keysym).or_else(|| lookup(GTK_NUMPAD, keysym)) {
         return key;
     }
@@ -181,6 +195,16 @@ impl Keyboard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_logo_key_is_meta_for_flutter() {
+        // Senza, ⌘D, ⌘⌫ e le altre scorciatoie delle app non arrivavano mai (Mustache).
+        assert_eq!(logical_key(SUPER_L), META_LEFT);
+        assert_eq!(logical_key(SUPER_R), META_RIGHT);
+        // Il resto resta come in GTK.
+        assert_eq!(logical_key(0xffe7), META_LEFT);
+        assert_eq!(logical_key(u32::from(b'D')), u64::from(b'd'));
+    }
 
     const KEY_A: u32 = 30;
     const KEY_ESC: u32 = 1;
