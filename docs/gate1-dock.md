@@ -33,10 +33,10 @@ Condizioni:
 
 Esito delle condizioni (2026-10-13, sezione "Misure con la GPU su hardware nativo"):
 dmabuf in Ossido fatto; Impeller con la GPU perde lo 0,17% dei frame; il crash su
-llvmpipe è aggirato con il ripiego su Skia. Resta da fissare il limite di memoria
-(Dock con Impeller: 72 MiB di PSS).
-- Il limite di memoria della shell resta da fissare (oggi circa 110 MiB di PSS per il
-  Dock con la GPU in WSL, da rimisurare con la GPU nativa).
+llvmpipe è aggirato con il ripiego su Skia. Memoria: decisa il 2026-10-13, si accettano
+per ora ~226 MiB di PSS per la shell completa (sfondo, barra, Dock, Faro, un engine per
+componente con Impeller); un solo engine con più viste resta un'ottimizzazione possibile.
+- Il limite di memoria della shell: vedi l'esito qui sotto (accettati ~226 MiB per ora).
 
 ## Raccomandazione iniziale (2026-10-12, superata)
 
@@ -252,7 +252,7 @@ I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una 
 - `wp_presentation` per il ritmo dei frame (dmabuf in Ossido è fatto).
 - Impeller su Vulkan: renderer Vulkan nell'embedder.
 - La misura in una sessione reale (DRM/KMS, M6), non annidata in GNOME.
-- Il limite di memoria per la shell, che fissi tu.
+- Un solo engine con più viste per la shell, se la memoria diventa un problema.
 
 ## Ripetere le misure
 
