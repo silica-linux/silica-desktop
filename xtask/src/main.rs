@@ -162,6 +162,15 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: WAYLAND_DISPLAY={}", socket.display());
         command.env("WAYLAND_DISPLAY", socket);
     }
+    // Le icone: il clone di silica-icons accanto a questo repository (~/silica/silica-icons),
+    // salvo un SILICA_ICONS_DIR già impostato (docs/icons.md).
+    if std::env::var_os("SILICA_ICONS_DIR").is_none()
+        && let Some(icons) = root()?.parent().map(|dir| dir.join("silica-icons"))
+        && icons.is_dir()
+    {
+        eprintln!("xtask: SILICA_ICONS_DIR={}", icons.display());
+        command.env("SILICA_ICONS_DIR", icons);
+    }
     // In WSL2 Mesa sceglie llvmpipe per i client EGL: con /dev/dxg la GPU passa da d3d12.
     if Path::new("/dev/dxg").exists() && std::env::var_os("GALLIUM_DRIVER").is_none() {
         eprintln!("xtask: GALLIUM_DRIVER=d3d12");

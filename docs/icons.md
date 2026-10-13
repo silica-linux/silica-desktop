@@ -8,8 +8,8 @@ incluso in questo repository: la shell le legge da disco. Il formato è descritt
 
 In ordine, la prima che contiene `apps/<id>/icon.json` o `files/<id>/icon.json` vince:
 
-1. `$SILICA_ICONS_DIR`: per lo sviluppo, il clone del repo
-   (`SILICA_ICONS_DIR=~/Progetti/silica-icons`);
+1. `$SILICA_ICONS_DIR`: per lo sviluppo, il clone del repo. `cargo xtask run` lo imposta da
+   solo se `silica-icons` è clonato accanto a questo repository (`~/silica/silica-icons`);
 2. `silica/icons` nelle cartelle dei dati XDG: `~/.local/share/silica/icons`, poi
    `/usr/local/share/silica/icons` e `/usr/share/silica/icons`.
 
