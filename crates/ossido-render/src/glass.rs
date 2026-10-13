@@ -97,6 +97,17 @@ const EDGE: Edge = Edge {
     side_dark: 0.535,
 };
 
+/// Bordo dei moduli del Centro di controllo (Liquid Glass `regular`): più marcato di quello
+/// del Dock. Riga superiore `#bfc0c7`–`#c7c8cf` su un riempimento `#6a6b70`–`#6e6f73`
+/// (+86), sfumatura +18, +9, +4, +2 (decadimento ~1,4 pt), lati `#27282c` (nero con alfa
+/// ~0,63). `controlcenter.md`, "CC · bordo luminoso e riempimento".
+const REGULAR_EDGE: Edge = Edge {
+    rim: [86.0 / 255.0, 86.0 / 255.0, 88.0 / 255.0],
+    glow: 18.0 / 255.0,
+    glow_decay_pt: 1.4,
+    side_dark: 0.63,
+};
+
 /// Bordo delle notifiche: la riga di 1 pt è scura tutto intorno ed è **fuori** dalla
 /// cornice (il client allarga la regione di 1 pt per lato): sopra `#5e6064` e sotto
 /// `#636367` su un riempimento ~`#c0` (−98), ai lati `#393a3d` (nero con alfa ~0,70).
@@ -166,7 +177,7 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     ],
     offset: [30.6 / 255.0, 32.0 / 255.0, 30.3 / 255.0],
     lens: LIQUID_LENS,
-    edge: EDGE,
+    edge: REGULAR_EDGE,
     merge_pt: MERGE_PT,
 };
 
@@ -308,11 +319,11 @@ pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
 
 /// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola
 /// forma, come gocce (unione morbida delle distanze, k = 2 · MERGE_PT: due bordi a distanza
-/// g si toccano quando g < k / 2). Limite misurato: i pulsanti circolari di Spotlight stanno
-/// a 10 pt dal pannello e restano separati (spotlight.md), quindi a riposo la soglia è sotto
-/// i 10 pt. Il valore esatto non è misurato (plan/execution-plan.md, "Da misurare sul Mac
-/// per il Liquid Glass").
-pub const MERGE_PT: f32 = 8.0;
+/// g si toccano quando g < k / 2). Limiti misurati: i pulsanti circolari di Spotlight a
+/// 10 pt dal pannello restano separati (spotlight.md) e i moduli del Centro di controllo,
+/// i cui vetri distano 10 pt in orizzontale (il bordo laterale sporge di 1 pt), non hanno
+/// alcun ponte né rigonfiamento sul bordo (controlcenter.md): k ≤ 10, cioè al più 5. Il valore esatto non è misurato (plan/reference/RICHIESTE.md, G-02).
+pub const MERGE_PT: f32 = 5.0;
 /// Regioni che lo shader fonde insieme al più: oltre, gruppi separati.
 const MAX_SHAPES: usize = 8;
 

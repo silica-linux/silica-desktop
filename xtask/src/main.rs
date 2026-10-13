@@ -173,7 +173,7 @@ fn run(args: &[String]) -> Result<()> {
 
 /// La shell completa: Ossido ed embedder in release, il bundle della shell (costruito se
 /// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock,
-/// Faro, notifiche).
+/// Faro, notifiche, Centro di controllo).
 fn shell_components() -> Result<Vec<String>> {
     let root = root()?;
     status(cargo_command(&[
@@ -218,6 +218,9 @@ fn shell_components() -> Result<Vec<String>> {
         ),
         format!(
             "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace notifications --dart-arg notifications {bundle}"
+        ),
+        format!(
+            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace controlcenter --dart-arg controlcenter {bundle}"
         ),
     ];
     // Bus di sessione privato con silica-daemon (notifiche): annidato, quelli della

@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 void main() {
-  testWidgets('premuto il vetro si gonfia anche nel compositor, poi torna', (tester) async {
+  testWidgets('premuto il vetro si gonfia anche nel compositor, poi torna', (
+    tester,
+  ) async {
     final regions = <List<Object?>>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       GlassRegistry.channel,
@@ -30,8 +32,10 @@ void main() {
     await tester.pump();
     expect(width(), 100);
 
-    final gesture = await tester.startGesture(tester.getCenter(find.byType(LiquidGlass)),
-        kind: PointerDeviceKind.mouse);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(LiquidGlass)),
+      kind: PointerDeviceKind.mouse,
+    );
     await tester.pumpAndSettle();
     expect(width(), closeTo(100 * liquidPressScale, 0.5));
     final pressed = (regions.last.first! as Map)['radius'] as num;

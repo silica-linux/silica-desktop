@@ -48,4 +48,44 @@ void main() {
     await tester.pump();
     expect(calls.last.arguments, isEmpty);
   });
+
+  testWidgets(
+    'un antenato che cambia scala sposta il vetro anche senza ridisegnarlo',
+    (tester) async {
+      final sent = <Map<Object?, Object?>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        GlassRegistry.channel,
+        (call) async {
+          final regions = call.arguments as List<Object?>;
+          if (regions.isNotEmpty) {
+            sent.add(regions.first! as Map<Object?, Object?>);
+          }
+          return true;
+        },
+      );
+      Widget at(double scale) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: Transform.scale(
+            scale: scale,
+            // Il vetro non si ridisegna quando cambia solo la trasformazione.
+            child: const RepaintBoundary(
+              child: SizedBox(
+                width: 100,
+                height: 50,
+                child: Glass(radius: 25, child: SizedBox.expand()),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(at(1.5));
+      await tester.pump();
+      expect(sent.last['width'], 150);
+      await tester.pumpWidget(at(1));
+      await tester.pump();
+      expect(sent.last['width'], 100);
+      expect(sent.last['radius'], 25);
+    },
+  );
 }

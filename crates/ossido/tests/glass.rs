@@ -514,3 +514,60 @@ fn notification_glass_matches_the_isolated_banner() {
     );
     common::client::GLASS_VERSION.with(|v| v.set(2));
 }
+
+#[test]
+fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
+    // Come i moduli del Centro di controllo: regioni dello stesso materiale lontane fra
+    // loro, capsule e rettangoli arrotondati. La riga luminosa sta sulla prima riga di
+    // ciascuna regione, sopra e sotto, anche lontano dal centro del gruppo.
+    let ossido = Headless::start_with("glass-group-rim", SHOT, &["--background", "7a7b80"]);
+    let size = (292, 330);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "pila", size, &transparent(size));
+    // La griglia del Centro di controllo: moduli a 12 pt l'uno dall'altro, con il vetro
+    // largo 1 pt in più per lato (10 pt fra i vetri in orizzontale).
+    let regions = [
+        (0, 0, 142, 64, 32.0, Material::Regular),
+        (152, 0, 142, 140, 35.0, Material::Regular),
+        (0, 76, 142, 64, 32.0, Material::Regular),
+        (0, 152, 142, 64, 32.0, Material::Regular),
+        (0, 228, 294, 64, 28.0, Material::Regular),
+    ];
+    glass.set_glass(&regions).unwrap();
+    let shot = shot(&ossido, "glass-group-rim.png");
+    let brightest =
+        |x: u32, y0: u32, y1: u32| (y0..y1).max_by_key(|&y| rgb(&shot, x, y)[0]).unwrap();
+    for (x, y, w, h, _, _) in regions {
+        let column = 32 + x as u32 + w as u32 / 2;
+        let top = 32 + y as u32;
+        let bottom = top + h as u32 - 1;
+        assert_eq!(
+            brightest(column, top - 3, top + 3),
+            top,
+            "regione a y {y}: riga superiore"
+        );
+        assert_eq!(
+            brightest(column, bottom - 3, bottom + 4),
+            bottom,
+            "regione a y {y}: riga inferiore"
+        );
+        // A 12 pt i moduli non si toccano: la riga subito fuori è sfondo (nel
+        // riferimento `#6e6f73` sotto il Wi-Fi, nessun ponte verso il Bluetooth).
+        let outside = rgb(&shot, column, bottom + 1);
+        assert!(
+            outside
+                .iter()
+                .zip([0x7a_u8, 0x7b, 0x80])
+                .all(|(a, b)| a.abs_diff(b) <= 4),
+            "regione a y {y}: sotto il bordo {outside:?}"
+        );
+    }
+    // Fra il primo modulo e quello multimediale: sfondo subito a destra della riga scura.
+    let beside = rgb(&shot, 32 + 142, 32 + 32);
+    assert!(
+        beside
+            .iter()
+            .zip([0x7a_u8, 0x7b, 0x80])
+            .all(|(a, b)| a.abs_diff(b) <= 4),
+        "accanto al bordo laterale {beside:?}"
+    );
+}

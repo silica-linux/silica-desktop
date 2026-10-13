@@ -10,5 +10,9 @@ export 'src/liquid_glass.dart';
 const String uiFontFamily = 'Inter';
 
 /// Uno stile di testo in Inter, servito da questo pacchetto.
-TextStyle uiText({required double size, required Color color}) =>
-    TextStyle(fontFamily: uiFontFamily, package: 'silica_ui', fontSize: size, color: color);
+TextStyle uiText({required double size, required Color color}) => TextStyle(
+  fontFamily: uiFontFamily,
+  package: 'silica_ui',
+  fontSize: size,
+  color: color,
+);

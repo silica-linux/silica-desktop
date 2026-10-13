@@ -23,6 +23,7 @@ import '../menubar/menubar.dart' show barHeight;
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
+import '../system/system_status.dart';
 import 'model.dart';
 import 'service.dart';
 
@@ -111,10 +112,14 @@ class NotificationsLayer extends StatefulWidget {
   const NotificationsLayer({
     super.key,
     required this.source,
+    this.system,
     this.startOpen = false,
   });
 
   final NotificationsSource source;
+
+  /// Con Non disturbare attivo le notifiche vanno nel Centro senza banner.
+  final SystemSource? system;
   final bool startOpen;
 
   @override
@@ -184,7 +189,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   }
 
   void _post(ShellNotification n) {
-    if (_centerOpen) return;
+    if (_centerOpen || (widget.system?.value.doNotDisturb ?? false)) return;
     final replacing = _banner?.id == n.id && !_exit.isAnimating;
     setState(() {
       _banner = n;

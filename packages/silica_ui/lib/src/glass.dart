@@ -39,8 +39,8 @@ class Glass extends SingleChildRenderObjectWidget {
 /// Il render object di [Glass]: si registra finché è attaccato all'albero.
 class RenderGlass extends RenderProxyBox {
   RenderGlass({required double radius, required GlassMaterial material})
-      : _radius = radius,
-        _material = material;
+    : _radius = radius,
+      _material = material;
 
   double _radius;
   double get radius => _radius;
@@ -95,19 +95,35 @@ class RenderGlass extends RenderProxyBox {
 }
 
 /// Raccoglie le aree di vetro dopo ogni frame e le manda all'embedder quando cambiano.
+///
+/// Si controlla a ogni frame, non solo quando un [RenderGlass] si ridisegna: un antenato
+/// che cambia trasformazione o opacità (un pannello che si apre) può spostare il vetro
+/// senza ridisegnarlo, e il compositor resterebbe con la geometria vecchia.
 class GlassRegistry {
   GlassRegistry._();
 
   static final GlassRegistry instance = GlassRegistry._();
 
-  static const MethodChannel channel = MethodChannel('silica/glass', JSONMethodCodec());
+  static const MethodChannel channel = MethodChannel(
+    'silica/glass',
+    JSONMethodCodec(),
+  );
 
   final Set<RenderGlass> _glasses = {};
   List<Map<String, Object>> _sent = const [];
   bool _scheduled = false;
+  bool _everyFrame = false;
 
   void add(RenderGlass glass) {
     _glasses.add(glass);
+    if (!_everyFrame) {
+      _everyFrame = true;
+      // Dopo il disegno di ogni frame (i callback persistenti girano in ordine di
+      // registrazione, dopo quello del rendering).
+      SchedulerBinding.instance.addPersistentFrameCallback((_) {
+        if (_glasses.isNotEmpty || _sent.isNotEmpty) _send();
+      });
+    }
     schedule();
   }
 
@@ -119,9 +135,9 @@ class GlassRegistry {
   /// Le regioni attuali, nell'ordine di registrazione.
   @visibleForTesting
   List<Map<String, Object>> get regions => [
-        for (final glass in _glasses)
-          if (glass.attached && glass.hasSize) glass.region(),
-      ];
+    for (final glass in _glasses)
+      if (glass.attached && glass.hasSize) glass.region(),
+  ];
 
   void schedule() {
     if (_scheduled) return;
@@ -135,7 +151,8 @@ class GlassRegistry {
 
   Future<void> _send() async {
     final regions = this.regions;
-    if (listEquals(regions.map(_key).toList(), _sent.map(_key).toList())) return;
+    if (listEquals(regions.map(_key).toList(), _sent.map(_key).toList()))
+      return;
     _sent = regions;
     try {
       await channel.invokeMethod<Object?>('setRegions', regions);
@@ -144,7 +161,6 @@ class GlassRegistry {
     }
   }
 
-  static String _key(Map<String, Object> region) => region.entries
-      .map((entry) => '${entry.key}=${entry.value}')
-      .join(',');
+  static String _key(Map<String, Object> region) =>
+      region.entries.map((entry) => '${entry.key}=${entry.value}').join(',');
 }

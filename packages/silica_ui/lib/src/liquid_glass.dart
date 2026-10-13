@@ -15,12 +15,18 @@ import 'glass.dart';
 const double liquidPressScale = 1.08;
 
 /// Molla della pressione: rapida e quasi senza rimbalzo (provvisoria).
-const SpringDescription liquidPressSpring =
-    SpringDescription(mass: 1, stiffness: 600, damping: 40);
+const SpringDescription liquidPressSpring = SpringDescription(
+  mass: 1,
+  stiffness: 600,
+  damping: 40,
+);
 
 /// Molla del rilascio: un piccolo rimbalzo, come un liquido (provvisoria).
-const SpringDescription liquidReleaseSpring =
-    SpringDescription(mass: 1, stiffness: 350, damping: 18);
+const SpringDescription liquidReleaseSpring = SpringDescription(
+  mass: 1,
+  stiffness: 350,
+  damping: 18,
+);
 
 /// Un'area di Liquid Glass che reagisce al puntatore.
 class LiquidGlass extends StatefulWidget {
@@ -43,9 +49,11 @@ class LiquidGlass extends StatefulWidget {
   State<LiquidGlass> createState() => _LiquidGlassState();
 }
 
-class _LiquidGlassState extends State<LiquidGlass> with SingleTickerProviderStateMixin {
-  late final AnimationController _press = AnimationController.unbounded(vsync: this)
-    ..addListener(() => setState(() {}));
+class _LiquidGlassState extends State<LiquidGlass>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press = AnimationController.unbounded(
+    vsync: this,
+  )..addListener(() => setState(() {}));
   Offset? _pointer;
 
   @override
@@ -55,7 +63,9 @@ class _LiquidGlassState extends State<LiquidGlass> with SingleTickerProviderStat
   }
 
   void _springTo(double target, SpringDescription spring) {
-    _press.animateWith(SpringSimulation(spring, _press.value, target, _press.velocity));
+    _press.animateWith(
+      SpringSimulation(spring, _press.value, target, _press.velocity),
+    );
   }
 
   @override
@@ -70,7 +80,9 @@ class _LiquidGlassState extends State<LiquidGlass> with SingleTickerProviderStat
           if (widget.interactive && _pointer != null)
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(painter: _HighlightPainter(_pointer!, widget.radius)),
+                child: CustomPaint(
+                  painter: _HighlightPainter(_pointer!, widget.radius),
+                ),
               ),
             ),
         ],
@@ -88,7 +100,8 @@ class _LiquidGlassState extends State<LiquidGlass> with SingleTickerProviderStat
           _pointer = event.localPosition;
           _springTo(1, liquidPressSpring);
         },
-        onPointerMove: (event) => setState(() => _pointer = event.localPosition),
+        onPointerMove: (event) =>
+            setState(() => _pointer = event.localPosition),
         onPointerUp: (_) => _springTo(0, liquidReleaseSpring),
         onPointerCancel: (_) => _springTo(0, liquidReleaseSpring),
         child: Transform.scale(scale: scale, child: glass),
@@ -106,7 +119,10 @@ class _HighlightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final shape = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius));
+    final shape = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
     canvas.save();
     canvas.clipRRect(shape);
     final reach = size.shortestSide;
@@ -119,5 +135,6 @@ class _HighlightPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_HighlightPainter old) => old.pointer != pointer || old.radius != radius;
+  bool shouldRepaint(_HighlightPainter old) =>
+      old.pointer != pointer || old.radius != radius;
 }

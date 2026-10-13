@@ -74,6 +74,7 @@ class MenuBar extends StatefulWidget {
     this.entries,
     this.onSearch,
     this.onClock,
+    this.onControls,
     this.now,
   });
 
@@ -85,6 +86,9 @@ class MenuBar extends StatefulWidget {
 
   /// Clic sull'orologio: il Centro notifiche.
   final VoidCallback? onClock;
+
+  /// Clic sull'icona dei controlli: il Centro di controllo.
+  final VoidCallback? onControls;
 
   /// Orologio fisso (test).
   final DateTime? now;
@@ -190,7 +194,11 @@ class _MenuBarState extends State<MenuBar> {
                   child: const StatusIcon(kind: StatusKind.search, cell: 33),
                 ),
                 const SizedBox(width: statusGap),
-                const StatusIcon(kind: StatusKind.controls, cell: 26),
+                GestureDetector(
+                  onTap: widget.onControls,
+                  behavior: HitTestBehavior.opaque,
+                  child: const StatusIcon(kind: StatusKind.controls, cell: 26),
+                ),
                 const SizedBox(width: clockGap),
                 GestureDetector(
                   onTap: widget.onClock,

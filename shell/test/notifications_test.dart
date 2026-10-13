@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
+import 'package:silica_shell/system/system_status.dart';
 
 class FakeSource extends ChangeNotifier implements NotificationsSource {
   final Map<int, ShellNotification> items = {};
@@ -201,4 +202,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Notifiche'), findsNothing);
   });
+
+  testWidgets(
+    'con Non disturbare niente banner, la notifica resta nel Centro',
+    (tester) async {
+      final source = FakeSource();
+      final system = _Dnd();
+      tester.view.physicalSize = const Size(1280, 686);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: NotificationsLayer(source: source, system: system),
+        ),
+      );
+      source.post(note(5));
+      await tester.pumpAndSettle();
+      expect(find.byType(NotificationCard), findsNothing);
+      expect(source.items, contains(5));
+    },
+  );
+}
+
+class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {
+  _Dnd() : super(const SystemSnapshot(doNotDisturb: true));
+
+  @override
+  Future<void> setWifi(bool enabled) async {}
+  @override
+  Future<void> setBluetooth(bool powered) async {}
+  @override
+  Future<void> setBrightness(double v) async {}
+  @override
+  Future<void> setVolume(double v) async {}
+  @override
+  Future<void> setMuted(bool muted) async {}
+  @override
+  Future<void> setDoNotDisturb(bool enabled) async {}
 }
