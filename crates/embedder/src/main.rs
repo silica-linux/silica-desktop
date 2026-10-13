@@ -126,7 +126,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             other if other.starts_with("--") => {
                 return Err(format!("argomento sconosciuto: {other}"));
             }
-            other => bundle = Some(PathBuf::from(other)),
+            // Il primo argomento libero è il bundle; i successivi sono dell'app (i file da
+            // aprire dalla voce .desktop): arrivano a Dart come `--dart-arg`.
+            other if bundle.is_none() => bundle = Some(PathBuf::from(other)),
+            other => dart_args.push(other.to_owned()),
         }
     }
     let engine_dir = engine_dir.unwrap_or_else(silica_embedder::default_engine_dir);
@@ -148,4 +151,37 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         title,
         app_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> impl Iterator<Item = String> {
+        list.iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    #[test]
+    fn arguments_after_the_bundle_go_to_the_app() {
+        // Una voce .desktop senza codici di campo riceve i file in fondo: prima il bundle
+        // veniva sostituito dall'ultimo percorso e l'app non partiva (⌘N di Mustache).
+        let options = parse(args(&[
+            "--engine",
+            "/e",
+            "--dart-arg",
+            "--uno",
+            "/bundle/flutter_assets",
+            "/home/io",
+            "/home/io/nota.txt",
+        ]))
+        .unwrap();
+        assert_eq!(options.bundle, PathBuf::from("/bundle/flutter_assets"));
+        assert_eq!(
+            options.dart_args,
+            ["--uno", "/home/io", "/home/io/nota.txt"]
+        );
+    }
 }
