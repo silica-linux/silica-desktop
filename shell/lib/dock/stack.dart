@@ -115,10 +115,17 @@ String fileName(String path) {
   return parts.isEmpty ? path : parts.last;
 }
 
-/// L'icona di silica-icons per un file o una cartella.
-LayeredIcon? fileIcon(FileSystemEntity entry) => entry is Directory
-    ? findSilicaIcon('folder')
-    : fileIconFor(fileName(entry.path));
+/// L'icona di silica-icons per un file o una cartella: le cartelle speciali con il loro
+/// simbolo, i file con le regole di silica-icons (tipo MIME, estensione, file generico). Nel
+/// Dock niente badge (icon-format.md).
+IconSource? fileIcon(FileSystemEntity entry) {
+  if (entry is Directory) {
+    final folder = resolveFolderIcon(entry.path);
+    return folder == null ? null : FolderSource(folder);
+  }
+  final file = resolveFileIcon(entry.path);
+  return file == null ? null : FileSource(file);
+}
 
 /// La geometria del ventaglio per l'elemento `i` (dal basso): centro e lato, rispetto al
 /// centro dell'icona della pila in x e alla cima della zona del Dock in y; rotazione.
@@ -215,11 +222,7 @@ class FanStack extends StatelessWidget {
                         ? CustomPaint(painter: _OpenFolderPainter())
                         : icon == null
                         ? const SizedBox()
-                        : SilicaIcon(
-                            LayeredSource(icon),
-                            side: side * 0.92,
-                            dark: false,
-                          ),
+                        : SilicaIcon(icon, side: side * 0.92, dark: false),
                   ),
                 ],
               ),
@@ -393,7 +396,7 @@ class GridStack extends StatelessWidget {
               height: 80,
               child: icon == null
                   ? null
-                  : SilicaIcon(LayeredSource(icon), side: 64, dark: false),
+                  : SilicaIcon(icon, side: 64, dark: false),
             ),
             const SizedBox(height: 4),
             SizedBox(
