@@ -259,41 +259,9 @@ LayeredIcon? findSilicaIcon(String id, {Map<String, String>? env}) {
   return found;
 }
 
-/// Le app note e l'icona di Silica che fa la stessa cosa (id .desktop o nome dell'icona).
-const Map<String, String> knownApps = {
-  'org.gnome.Nautilus': 'mustache',
-  'org.gnome.Calculator': 'calculator',
-  'org.gnome.Calendar': 'calendar',
-  'org.gnome.clocks': 'clock',
-  'org.gnome.Settings': 'settings',
-  'gnome-control-center': 'settings',
-  'org.gnome.TextEditor': 'text-editor',
-  'org.gnome.gedit': 'text-editor',
-  'org.gnome.Ptyxis': 'terminal',
-  'org.gnome.Terminal': 'terminal',
-  'org.gnome.Console': 'terminal',
-  'org.gnome.Loupe': 'photo-viewer',
-  'org.gnome.eog': 'photo-viewer',
-  'org.gnome.Photos': 'photos',
-  'org.gnome.Shotwell': 'photos',
-  'org.gnome.DiskUtility': 'disks',
-  'gnome-disks': 'disks',
-  'org.gnome.font-viewer': 'fonts',
-  'yelp': 'help',
-  'org.gnome.Yelp': 'help',
-  'org.gnome.Software': 'store',
-  'snap-store_snap-store': 'store',
-  'org.gnome.seahorse.Application': 'password-manager',
-  'org.gnome.Geary': 'mail',
-  'org.gnome.Evolution': 'mail',
-  'org.gnome.Notes': 'notes',
-  'folder-download': 'folder',
-  'user-trash': 'trash-empty',
-  'user-trash-full': 'trash-full',
-};
-
-/// L'icona di Silica per un'app: `X-Silica-Icon` della voce, poi la tabella delle app note.
+/// L'icona di Silica di un'app: solo quella che la voce dichiara con `X-Silica-Icon` (le
+/// app di Silica); le altre restano con l'icona del loro tema.
 LayeredIcon? silicaIconFor(DesktopEntry entry, {Map<String, String>? env}) {
-  final id = entry.silicaIcon ?? knownApps[entry.id] ?? knownApps[entry.icon];
+  final id = entry.silicaIcon;
   return id == null ? null : findSilicaIcon(id, env: env);
 }

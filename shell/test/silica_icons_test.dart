@@ -147,7 +147,8 @@ void main() {
       'org.gnome.Calculator',
       '[Desktop Entry]\nType=Application\nName=Calcolatrice\nExec=gnome-calculator',
     )!;
-    expect(silicaIconFor(calc, env: env)?.id, 'calculator');
+    // Le icone delle app sono delle app di Silica: un'app di terzi tiene la sua.
+    expect(silicaIconFor(calc, env: env), isNull);
     final own = parseDesktopEntry(
       'org.silica.Notes',
       '[Desktop Entry]\nType=Application\nName=Note\nExec=notes\nX-Silica-Icon=notes',

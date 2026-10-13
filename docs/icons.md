@@ -17,9 +17,11 @@ Codice: `shell/lib/system/silica_icons.dart`.
 
 ## Quale icona spetta a un'app
 
-1. La chiave `X-Silica-Icon=<id>` nella voce `.desktop` dell'app.
-2. La tabella `knownApps`: le app GNOME più comuni e i luoghi del Dock (Download →
-   `folder`, Cestino → `trash-empty` o `trash-full`).
+1. La chiave `X-Silica-Icon=<id>` nella voce `.desktop` dell'app. Le icone delle app di
+   silica-icons sono **riservate alle app di Silica** (Mustache e le prossime): le app di
+   terzi, GNOME comprese, non le prendono mai, nemmeno se fanno la stessa cosa.
+2. I luoghi del Dock usano le icone dei file (Download → `folder`, Cestino → `trash-empty` o
+   `trash-full`).
 3. Altrimenti l'icona del tema freedesktop (`icon_lookup.dart`), ridotta al keyline 600
    su un fondo neutro con la stessa forma (`FlatSource`).
 4. Senza nessuna icona, la tessera con l'iniziale (`dock/icons.dart`).
