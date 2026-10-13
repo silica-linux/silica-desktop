@@ -94,3 +94,24 @@ DBUS_SESSION_BUS_ADDRESS=unix:path=… gdbus call --session -d dev.frascella.Sil
 Su Ubuntu il profilo AppArmor di `notify-send` blocca la sua chiamata `GetCapabilities`
 verso un server non confinato: `notify-send` mostra allora la notifica senza azioni. Le
 azioni si provano con i test (`cargo test -p silica-daemon`, su un `dbus-daemon` privato).
+
+## dev.frascella.Silica.System1
+
+Su `/dev/frascella/Silica/System1`: lo stato del sistema per il Centro di controllo e la barra
+dei menu.
+
+- `State() → a{sv}`: chiavi piatte. `wifi.available`, `wifi.enabled`, `wifi.ssid`,
+  `wifi.strength` (0–100), `wifi.wired`; `bluetooth.available`, `bluetooth.powered`;
+  `battery.present`, `battery.percent`, `battery.charging`; `brightness.available`,
+  `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`; `dnd`.
+- `SetWifiEnabled(b)`, `SetBluetoothPowered(b)`, `SetVolume(d)`, `SetMuted(b)`,
+  `SetBrightness(d)` (0–1, mai a zero), `SetDoNotDisturb(b)`. Una sorgente assente è
+  l'errore `org.freedesktop.DBus.Error.Failed`.
+- Segnale `Changed(a{sv})` con lo stato intero a ogni cambiamento.
+
+Sorgenti: NetworkManager (`WirelessEnabled`, connessione principale, intensità del punto
+d'accesso), BlueZ (il primo adattatore), UPower (`DisplayDevice`, solo se è una batteria) sul
+bus di sistema, riletti a ogni loro segnale; la retroilluminazione in `/sys/class/backlight`
+(scrittura con `SetBrightness` di logind, altrimenti nel file) e l'audio dell'uscita
+predefinita con `wpctl`, riletti ogni secondo. Se un servizio manca la sorgente è assente
+(`*.available = false`) e si riprova ogni 10 s.

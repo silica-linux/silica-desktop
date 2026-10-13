@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use futures_lite::{StreamExt, future};
-use silica_daemon::Daemon;
+use silica_daemon::{Daemon, SystemConfig, SystemService};
 
 const USAGE: &str = "uso: silica-daemon [--address INDIRIZZO] [--replace]
 
@@ -49,6 +49,22 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         None => zbus::connection::Builder::session()?,
     };
     let connection = builder.build().await?;
+    // Il bus di sistema serve al Centro di controllo; senza, quelle sorgenti sono assenti.
+    let system_bus = match zbus::Connection::system().await {
+        Ok(bus) => Some(bus),
+        Err(err) => {
+            eprintln!("silica-daemon: bus di sistema non disponibile: {err}");
+            None
+        }
+    };
+    let system = SystemService::serve(
+        connection.clone(),
+        SystemConfig {
+            system_bus,
+            ..SystemConfig::default()
+        },
+    )
+    .await?;
     let daemon = Daemon::serve(connection, replace).await?;
     eprintln!(
         "silica-daemon: notifiche su {}",
@@ -63,5 +79,5 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         while let Some(Ok(_)) = messages.next().await {}
         Err(zbus::Error::Failure("bus di sessione chiuso".to_owned()))
     };
-    future::or(daemon.run(), lost).await
+    future::or(future::or(daemon.run(), system.run()), lost).await
 }

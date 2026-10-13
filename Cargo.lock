@@ -3154,9 +3154,11 @@ name = "silica-daemon"
 version = "0.0.0"
 dependencies = [
  "async-io",
+ "async-process",
  "event-listener",
  "futures-lite",
  "serde",
+ "tracing",
  "zbus",
 ]
 
