@@ -46,6 +46,7 @@ pub const SPACE_REMOVE: &str = "space.remove";
 pub const WINDOW_MOVE_TO_SPACE: &str = "window.move_to_space";
 pub const PANORAMA_TOGGLE: &str = "panorama.toggle";
 pub const PANORAMA_STATE: &str = "panorama.state";
+pub const PANORAMA_SPACES_BAR: &str = "panorama.spaces_bar";
 pub const SYSTEM_WIFI: &str = "system.wifi";
 pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
 pub const SYSTEM_VOLUME: &str = "system.volume";
@@ -321,6 +322,13 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Mostra tutte le finestre dello spazio una accanto all'altra con la barra degli spazi in alto; se è aperto lo chiude.",
         shortcut: Some("Ctrl+Up"),
         params: no_params,
+    },
+    CommandSpec {
+        id: PANORAMA_SPACES_BAR,
+        label: "Barra degli spazi",
+        description: "Con Panorama aperto, espande (`enabled`) o richiude la barra degli spazi con le miniature, come il puntatore in alto.",
+        shortcut: None,
+        params: enabled_param,
     },
     CommandSpec {
         id: PANORAMA_STATE,
@@ -928,12 +936,25 @@ pub struct PanoramaWindow {
     pub height: f64,
 }
 
+/// Un rettangolo in punti logici.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PanoramaRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 /// Risposta di [`PANORAMA_STATE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PanoramaState {
     pub open: bool,
     pub progress: f64,
     pub windows: Vec<PanoramaWindow>,
+    /// Espansione della barra degli spazi (0 compatta, 1 espansa).
+    pub expansion: f64,
+    /// Le miniature degli spazi, quando si vedono.
+    pub thumbnails: Vec<PanoramaRect>,
 }
 
 /// Uno spazio in [`SPACE_LIST`].

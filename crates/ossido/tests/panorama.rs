@@ -11,11 +11,12 @@
 mod common;
 
 use common::client::TestWindow;
-use common::{Headless, pixel, screenshot};
+use common::{Headless, pixel, pixel_in, screenshot};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    INPUT_CLICK, INPUT_KEY, PANORAMA_STATE, PANORAMA_TOGGLE, PanoramaState, SPACE_LIST, SpaceInfo,
-    WINDOW_LIST, WindowInfo,
+    INPUT_CLICK, INPUT_KEY, INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, PANORAMA_SPACES_BAR,
+    PANORAMA_STATE, PANORAMA_TOGGLE, PanoramaState, SPACE_ADD, SPACE_LIST, SpaceInfo, WINDOW_LIST,
+    WindowInfo,
 };
 
 fn solid(size: (u32, u32), rgba: [u8; 4]) -> Vec<u8> {
@@ -99,9 +100,12 @@ fn windows_spread_out_and_a_click_picks_one() {
     let list = windows(&ossido);
     assert!(list.iter().find(|w| w.id == red_id).unwrap().focused);
 
-    // Esc chiude; il "+" aggiunge uno spazio.
+    // Esc chiude; il "+" aggiunge uno spazio. Andarci espande la barra e il "+" scende
+    // con lei (centro a y 101,5).
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
-    c.call(INPUT_CLICK, json!({"x": 320 - 26, "y": 20}))
+    c.call(INPUT_POINTER_MOVE, json!({"x": 320 - 26, "y": 20}))
+        .unwrap();
+    c.call(INPUT_CLICK, json!({"x": 320 - 26, "y": 101}))
         .unwrap();
     let spaces: Vec<SpaceInfo> =
         serde_json::from_value(c.call(SPACE_LIST, Value::Null).unwrap()).unwrap();
@@ -112,4 +116,83 @@ fn windows_spread_out_and_a_click_picks_one() {
     // Chiuso, la barra dei menu e le finestre tornano al loro posto.
     let shot = screenshot(&ossido);
     assert!(!close(pixel(&shot, 4, 4), [0x9e, 0x9f, 0xa5, 255]));
+}
+
+fn spaces(ossido: &Headless) -> Vec<SpaceInfo> {
+    serde_json::from_value(ossido.client().call(SPACE_LIST, Value::Null).unwrap()).unwrap()
+}
+
+#[test]
+fn a_window_dragged_onto_a_thumbnail_changes_space() {
+    // Uno schermo grande abbastanza da avere le finestre sotto la barra espansa (170 pt).
+    let ossido = Headless::start_with("panorama-drag", (1280, 800), &[]);
+    let size = (300, 300);
+    let _red = TestWindow::open_pixels(&ossido.wayland, "rossa", size, &solid(size, RED));
+    let _blue = TestWindow::open_pixels(&ossido.wayland, "blu", size, &solid(size, BLUE));
+    let mut c = ossido.client();
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    // Il puntatore in alto espande la barra: compaiono le miniature.
+    c.call(INPUT_POINTER_MOVE, json!({"x": 100, "y": 5}))
+        .unwrap();
+    let s = state(&ossido);
+    assert_eq!(s.expansion, 1.0);
+    assert_eq!(s.thumbnails.len(), 2);
+    // Sotto la barra espansa si richiude; il comando la riapre.
+    c.call(INPUT_POINTER_MOVE, json!({"x": 100, "y": 799}))
+        .unwrap();
+    assert_eq!(state(&ossido).expansion, 0.0);
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let s = state(&ossido);
+    assert_eq!(s.expansion, 1.0);
+    let shot = screenshot(&ossido);
+    // Anello blu attorno alla miniatura dello spazio corrente (1 pt di barra, poi 3 pt).
+    let t = s.thumbnails[0];
+    let ring = pixel_in(
+        &shot,
+        1280,
+        (t.x + t.width / 2.0) as u32,
+        (t.y - 2.5) as u32,
+    );
+    assert!(close(ring, [0x3b, 0x99, 0xfd, 255]), "{ring:?}");
+
+    let blue_id = windows(&ossido)
+        .iter()
+        .find(|w| w.title.as_deref() == Some("blu"))
+        .unwrap()
+        .id;
+    let blue = *s.windows.iter().find(|w| w.id == blue_id).unwrap();
+    let target = s.thumbnails[1];
+    c.call(
+        INPUT_POINTER_MOVE,
+        json!({"x": blue.x + blue.width / 2.0, "y": blue.y + blue.height / 2.0}),
+    )
+    .unwrap();
+    c.call(INPUT_POINTER_BUTTON, json!({"pressed": true}))
+        .unwrap();
+    // Verso l'alto: arrivata alla barra compatta la barra si espande.
+    c.call(INPUT_POINTER_MOVE, json!({"x": target.x, "y": 10}))
+        .unwrap();
+    c.call(
+        INPUT_POINTER_MOVE,
+        json!({"x": target.x + target.width / 2.0, "y": target.y + target.height / 2.0}),
+    )
+    .unwrap();
+    c.call(INPUT_POINTER_BUTTON, json!({"pressed": false}))
+        .unwrap();
+    // La blu è passata allo spazio 2; Panorama resta aperto con la sola rossa.
+    assert_eq!(spaces(&ossido)[1].windows, [blue_id]);
+    let s = state(&ossido);
+    assert!(s.open);
+    assert_eq!(s.windows.len(), 1);
+
+    // Un clic sulla miniatura dello spazio 2 ci passa e chiude Panorama.
+    c.call(
+        INPUT_CLICK,
+        json!({"x": target.x + target.width / 2.0, "y": target.y + target.height / 2.0}),
+    )
+    .unwrap();
+    assert!(!state(&ossido).open);
+    assert!(spaces(&ossido)[1].active);
 }

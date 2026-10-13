@@ -16,7 +16,7 @@
 use std::time::Instant;
 
 use ossido_render::sprite::{Canvas, Sprite, Weight, text_width};
-use silica_control::commands::{PanoramaState, PanoramaWindow};
+use silica_control::commands::{PanoramaRect, PanoramaState, PanoramaWindow};
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -51,6 +51,58 @@ pub const WINDOW_GAP: f64 = 16.0;
 const MARGIN_SIDE: f64 = 48.0;
 const MARGIN_TOP: f64 = 48.0;
 const MARGIN_BOTTOM: f64 = 24.0;
+
+/// Barra espansa (puntatore in alto): alta 170 pt con bordo `#5f6063` e ~40 pt d'ombra; il
+/// riempimento scende da `#9e9fa5` a `#a4a5ab` (y 114 in giù).
+pub const EXPANDED_HEIGHT: f64 = 170.0;
+const EXPANDED_SHADOW: f64 = 40.0;
+const EXPANDED_FILL_BOTTOM: [u8; 4] = [0xa4, 0xa5, 0xab, 0xff];
+const EXPANDED_FILL_FROM: f64 = 114.0;
+const EXPANDED_BORDER: [u8; 4] = [0x5f, 0x60, 0x63, 0xff];
+/// Miniature: 160 pt di larghezza (16:9 sullo schermo di riferimento), a 52 pt dal bordo,
+/// 32 pt fra l'una e l'altra; il gruppo lascia un posto vuoto a destra (con due spazi la
+/// seconda miniatura è al centro dello schermo).
+const THUMB_WIDTH: f64 = 160.0;
+const THUMB_TOP: f64 = 52.0;
+const THUMB_GAP: f64 = 32.0;
+/// Anello dello spazio corrente: 3 pt, 1 pt di barra fra anello e miniatura, sRGB `#3b99fd`.
+const RING_WIDTH: f64 = 3.0;
+const RING_GAP: f64 = 1.0;
+const RING_COLOR: [u8; 4] = [0x3b, 0x99, 0xfd, 0xff];
+/// Etichette sotto le miniature: corpo ~12 pt, linea di base 18 pt sotto la miniatura.
+const THUMB_LABEL_SIZE: f32 = 12.0;
+const THUMB_LABEL_BASELINE: f64 = 18.0;
+/// Il "+" scende con la barra: centro a y 20 compatta, 101,5 espansa.
+const PLUS_Y: f64 = 20.0;
+const PLUS_Y_EXPANDED: f64 = 101.5;
+/// Le miniature compaiono a metà espansione (nel video fra il 63 % e l'80 %).
+const THUMBS_FROM: f64 = 0.6;
+const THUMBS_FULL: f64 = 0.8;
+/// Oltre questa distanza dalla pressione il clic su una finestra diventa trascinamento.
+const DRAG_THRESHOLD: f64 = 4.0;
+/// La finestra trascinata sopra la barra si riduce a questa scala.
+const DRAG_OVER_BAR_SCALE: f64 = 0.25;
+
+/// Espansione della barra (ms, 0–1): altezza da 40 a 169 pt nel video, fotogramma per
+/// fotogramma. La chiusura non è misurata: stessa curva.
+pub const EXPAND_CURVE: &[(f64, f64)] = &[
+    (0.0, 0.0),
+    (13.0, 0.29),
+    (26.0, 0.37),
+    (53.0, 0.52),
+    (66.0, 0.59),
+    (80.0, 0.64),
+    (106.0, 0.74),
+    (120.0, 0.78),
+    (133.0, 0.81),
+    (146.0, 0.87),
+    (173.0, 0.91),
+    (200.0, 0.92),
+    (226.0, 0.95),
+    (280.0, 0.98),
+    (346.0, 0.99),
+    (440.0, 1.0),
+];
 
 /// Avanzamento dell'apertura (ms, 0–1): spostamento del Terminale nel video.
 pub const OPEN_CURVE: &[(f64, f64)] = &[
@@ -280,6 +332,17 @@ pub struct Placement {
     pub to: Rectangle<f64, Logical>,
 }
 
+/// Una finestra presa con il puntatore: clic se non si muove, trascinamento altrimenti.
+#[derive(Clone)]
+pub struct Drag {
+    pub window: Window,
+    /// Punto di presa dentro la cornice disposta, in proporzione (0–1).
+    pub grab: (f64, f64),
+    pub press: Point<f64, Logical>,
+    pub pointer: Point<f64, Logical>,
+    pub moved: bool,
+}
+
 pub struct Panorama {
     pub opening: bool,
     pub start: Instant,
@@ -287,6 +350,20 @@ pub struct Panorama {
     pub from: f64,
     pub progress: f64,
     pub placements: Vec<Placement>,
+    /// Barra degli spazi espansa (o in espansione), con la sua animazione.
+    pub expanded: bool,
+    pub expand_start: Instant,
+    pub expand_from: f64,
+    pub expansion: f64,
+    pub drag: Option<Drag>,
+}
+
+/// Una miniatura di spazio nel frame: dove sta e le finestre dello spazio (dal basso
+/// verso l'alto, alle loro posizioni sulla scrivania).
+#[derive(Clone)]
+pub struct Thumbnail {
+    pub rect: Rectangle<f64, Logical>,
+    pub windows: Vec<(Window, Point<i32, Logical>)>,
 }
 
 /// Quello che il frame deve sapere di Panorama.
@@ -294,6 +371,11 @@ pub struct Panorama {
 pub struct PanoramaView {
     pub progress: f64,
     pub placements: Vec<Placement>,
+    pub expansion: f64,
+    /// Le miniature, solo quando si vedono.
+    pub thumbnails: Vec<Thumbnail>,
+    /// La finestra trascinata e la sua cornice in questo momento.
+    pub drag: Option<(Window, Rectangle<f64, Logical>)>,
 }
 
 /// Una voce della barra degli spazi, in punti nell'output.
@@ -303,10 +385,14 @@ struct BarItem {
     rect: Rectangle<f64, Logical>,
 }
 
+fn space_label(index: usize) -> String {
+    format!("Spazio {}", index.saturating_add(1))
+}
+
 fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
     let mut items: Vec<BarItem> = (0..count)
         .map(|index| {
-            let label = format!("Spazio {}", index + 1);
+            let label = space_label(index);
             let w =
                 f64::from(text_width(&label, LABEL_SIZE, Weight::Regular)) + 2.0 * LABEL_PADDING;
             BarItem {
@@ -326,11 +412,42 @@ fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
     items
 }
 
-fn plus_rect(width: f64) -> Rectangle<f64, Logical> {
+/// Le miniature degli spazi nella barra espansa: `count` miniature più un posto vuoto,
+/// centrate; se non entrano si stringono tutte insieme.
+pub fn thumbnail_rects(count: usize, output: Size<f64, Logical>) -> Vec<Rectangle<f64, Logical>> {
+    if output.w <= 0.0 || output.h <= 0.0 {
+        return Vec::new();
+    }
+    let slots = count.saturating_add(1) as f64;
+    let natural = slots * THUMB_WIDTH + (slots - 1.0) * THUMB_GAP;
+    // Margine per il "+" a destra e simmetrico a sinistra.
+    let room = output.w - 4.0 * PLUS_RIGHT;
+    let shrink = (room / natural).clamp(0.05, 1.0);
+    let width = THUMB_WIDTH * shrink;
+    let gap = THUMB_GAP * shrink;
+    let height = width * output.h / output.w;
+    let x0 = (output.w - natural * shrink) / 2.0;
+    (0..count)
+        .map(|i| {
+            Rectangle::new(
+                (x0 + i as f64 * (width + gap), THUMB_TOP).into(),
+                (width, height).into(),
+            )
+        })
+        .collect()
+}
+
+fn plus_rect(width: f64, expansion: f64) -> Rectangle<f64, Logical> {
+    let y = PLUS_Y + (PLUS_Y_EXPANDED - PLUS_Y) * expansion;
     Rectangle::new(
-        (width - PLUS_RIGHT - 16.0, 20.0 - 16.0).into(),
+        (width - PLUS_RIGHT - 16.0, y - 16.0).into(),
         (32.0, 32.0).into(),
     )
+}
+
+/// Altezza della barra per un'espansione 0–1.
+pub fn bar_height(expansion: f64) -> f64 {
+    BAR_HEIGHT + (EXPANDED_HEIGHT - BAR_HEIGHT) * expansion.clamp(0.0, 1.0)
 }
 
 /// La cornice in questo momento dell'animazione.
@@ -350,9 +467,34 @@ pub fn interpolate(p: &Placement, progress: f64) -> Rectangle<f64, Logical> {
     )
 }
 
+/// La cornice della finestra trascinata: segue il puntatore dal punto di presa; sopra la
+/// barra si riduce.
+fn drag_rect(drag: &Drag, frame: Rectangle<f64, Logical>, bar: f64) -> Rectangle<f64, Logical> {
+    let scale = if drag.pointer.y < bar {
+        DRAG_OVER_BAR_SCALE
+    } else {
+        1.0
+    };
+    let size = frame.size.upscale(scale);
+    Rectangle::new(
+        (
+            drag.pointer.x - drag.grab.0 * size.w,
+            drag.pointer.y - drag.grab.1 * size.h,
+        )
+            .into(),
+        size,
+    )
+}
+
 impl State {
     pub fn panorama_open(&self) -> bool {
         self.panorama.as_ref().is_some_and(|p| p.opening)
+    }
+
+    fn output_size(&self) -> Size<f64, Logical> {
+        self.space
+            .output_geometry(&self.output)
+            .map_or_else(Size::default, |geo| geo.size.to_f64())
     }
 
     /// Apre Panorama, o lo chiude se è aperto.
@@ -364,9 +506,8 @@ impl State {
         }
     }
 
-    fn open_panorama(&mut self, now: Instant) {
-        self.settle_transition();
-        let from = self.panorama.as_ref().map_or(0.0, |p| p.progress);
+    /// Le finestre dello spazio con la cornice vera e quella disposta.
+    fn panorama_placements(&self) -> Vec<Placement> {
         let windows: Vec<Window> = self.space.elements().cloned().collect();
         let frames: Vec<Rectangle<f64, Logical>> = windows
             .iter()
@@ -376,7 +517,7 @@ impl State {
             })
             .collect();
         if frames.len() != windows.len() {
-            return;
+            return Vec::new();
         }
         let output = self
             .space
@@ -391,12 +532,18 @@ impl State {
             (output.size.w - 2.0 * MARGIN_SIDE, (bottom - top).max(1.0)).into(),
         );
         let targets = layout(&frames, area);
-        let placements = windows
+        windows
             .into_iter()
             .zip(frames)
             .zip(targets)
             .map(|((window, from), to)| Placement { window, from, to })
-            .collect();
+            .collect()
+    }
+
+    fn open_panorama(&mut self, now: Instant) {
+        self.settle_transition();
+        let from = self.panorama.as_ref().map_or(0.0, |p| p.progress);
+        let placements = self.panorama_placements();
         self.titlebar_hover = None;
         self.panorama = Some(Panorama {
             opening: true,
@@ -404,6 +551,11 @@ impl State {
             from,
             progress: from,
             placements,
+            expanded: false,
+            expand_start: now,
+            expand_from: 0.0,
+            expansion: 0.0,
+            drag: None,
         });
         if self.animation_speed <= 0.0 {
             self.advance_panorama(now);
@@ -419,6 +571,7 @@ impl State {
             panorama.opening = false;
             panorama.from = panorama.progress;
             panorama.start = now;
+            panorama.drag = None;
         }
         if let Some(window) = focus {
             self.focus_window(Some(window));
@@ -428,66 +581,219 @@ impl State {
         }
     }
 
-    /// Fa avanzare l'animazione (a ogni frame); chiusa del tutto, Panorama sparisce.
+    /// Espande o richiude la barra degli spazi.
+    pub fn expand_spaces_bar(&mut self, expanded: bool, now: Instant) {
+        let Some(panorama) = self.panorama.as_mut() else {
+            return;
+        };
+        if panorama.expanded == expanded || !panorama.opening {
+            return;
+        }
+        panorama.expanded = expanded;
+        panorama.expand_from = panorama.expansion;
+        panorama.expand_start = now;
+        if self.animation_speed <= 0.0 {
+            self.advance_panorama(now);
+        }
+    }
+
+    /// Fa avanzare le animazioni (a ogni frame); chiuso del tutto, Panorama sparisce.
     pub fn advance_panorama(&mut self, now: Instant) {
         let speed = self.animation_speed;
         let Some(panorama) = self.panorama.as_mut() else {
             return;
         };
-        let ms = now.saturating_duration_since(panorama.start).as_secs_f64() * 1000.0;
-        let ms = if speed <= 0.0 { f64::MAX } else { ms / speed };
+        let elapsed = |start: Instant| {
+            let ms = now.saturating_duration_since(start).as_secs_f64() * 1000.0;
+            if speed <= 0.0 { f64::MAX } else { ms / speed }
+        };
+        let ms = elapsed(panorama.start);
         panorama.progress = if panorama.opening {
             panorama.from + (1.0 - panorama.from) * curve_at(OPEN_CURVE, ms)
         } else {
             panorama.from * (1.0 - curve_at(CLOSE_CURVE, ms))
+        };
+        let step = curve_at(EXPAND_CURVE, elapsed(panorama.expand_start));
+        panorama.expansion = if panorama.expanded {
+            panorama.expand_from + (1.0 - panorama.expand_from) * step
+        } else {
+            panorama.expand_from * (1.0 - step)
         };
         if !panorama.opening && panorama.progress <= 0.0 {
             self.panorama = None;
         }
     }
 
+    /// Le finestre di ogni spazio alle loro posizioni (quelle dello spazio attivo dallo Space).
+    fn space_contents(&self) -> Vec<Vec<(Window, Point<i32, Logical>)>> {
+        (0..self.workspaces.count())
+            .map(|index| {
+                if index == self.workspaces.active {
+                    self.space
+                        .elements()
+                        .filter_map(|w| Some((w.clone(), self.space.element_location(w)?)))
+                        .collect()
+                } else {
+                    self.workspaces
+                        .stored
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_default()
+                }
+            })
+            .collect()
+    }
+
     pub fn panorama_view(&self) -> Option<PanoramaView> {
         let panorama = self.panorama.as_ref()?;
+        let thumbnails = if panorama.expansion >= THUMBS_FROM {
+            thumbnail_rects(self.workspaces.count(), self.output_size())
+                .into_iter()
+                .zip(self.space_contents())
+                .map(|(rect, windows)| Thumbnail { rect, windows })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let drag = panorama.drag.as_ref().filter(|d| d.moved).and_then(|drag| {
+            let placement = panorama
+                .placements
+                .iter()
+                .find(|p| p.window == drag.window)?;
+            Some((
+                drag.window.clone(),
+                drag_rect(drag, placement.to, bar_height(panorama.expansion)),
+            ))
+        });
         Some(PanoramaView {
             progress: panorama.progress,
             placements: panorama.placements.clone(),
+            expansion: panorama.expansion,
+            thumbnails,
+            drag,
         })
     }
 
-    /// Un clic con Panorama aperto: una voce della barra, il "+", una finestra o il vuoto.
-    pub fn panorama_click(&mut self, location: Point<f64, Logical>, now: Instant) {
-        if !self.panorama_open() {
+    /// Il puntatore si muove con Panorama aperto: in alto la barra si espande, sotto la barra
+    /// espansa (fuori dalla barra) si richiude; una finestra presa segue il puntatore.
+    pub fn panorama_pointer(&mut self, location: Point<f64, Logical>, now: Instant) {
+        let Some(panorama) = self.panorama.as_mut() else {
+            return;
+        };
+        if !panorama.opening {
             return;
         }
-        let width = self
-            .space
-            .output_geometry(&self.output)
-            .map_or(0.0, |geo| f64::from(geo.size.w));
-        if location.y < BAR_HEIGHT {
-            if plus_rect(width).contains(location) {
+        if let Some(drag) = panorama.drag.as_mut() {
+            drag.pointer = location;
+            let (dx, dy) = (location.x - drag.press.x, location.y - drag.press.y);
+            if dx.hypot(dy) > DRAG_THRESHOLD {
+                drag.moved = true;
+            }
+        }
+        let expanded = panorama.expanded;
+        if !expanded && location.y < BAR_HEIGHT {
+            self.expand_spaces_bar(true, now);
+        } else if expanded && location.y > EXPANDED_HEIGHT {
+            self.expand_spaces_bar(false, now);
+        }
+    }
+
+    /// Lo spazio della miniatura sotto il punto, con la barra espansa.
+    fn thumbnail_at(&self, location: Point<f64, Logical>) -> Option<usize> {
+        let panorama = self.panorama.as_ref()?;
+        if panorama.expansion < THUMBS_FROM {
+            return None;
+        }
+        thumbnail_rects(self.workspaces.count(), self.output_size())
+            .iter()
+            .position(|rect| rect.contains(location))
+    }
+
+    /// Pressione con Panorama aperto: una voce della barra, il "+", una miniatura, una
+    /// finestra (che si può trascinare) o il vuoto.
+    pub fn panorama_press_at(&mut self, location: Point<f64, Logical>, now: Instant) {
+        let Some(panorama) = self.panorama.as_ref() else {
+            return;
+        };
+        if !panorama.opening {
+            return;
+        }
+        let expansion = panorama.expansion;
+        let progress = panorama.progress;
+        let width = self.output_size().w;
+        if location.y < bar_height(expansion) {
+            if plus_rect(width, expansion).contains(location) {
                 // La barra si ridisegna da sola: la sua chiave è il numero di spazi.
                 if let Err(err) = self.add_space() {
                     tracing::info!("panorama: {err}");
                 }
                 return;
             }
-            let items = bar_items(self.workspaces.count(), width);
-            if let Some(item) = items.iter().find(|item| item.rect.contains(location)) {
-                let index = item.index;
+            let index = if expansion < THUMBS_FROM {
+                bar_items(self.workspaces.count(), width)
+                    .iter()
+                    .find(|item| item.rect.contains(location))
+                    .map(|item| item.index)
+            } else {
+                self.thumbnail_at(location)
+            };
+            if let Some(index) = index {
                 self.close_panorama(now, None);
                 self.switch_space(index, now);
             }
             return;
         }
-        let progress = self.panorama.as_ref().map_or(1.0, |p| p.progress);
-        let hit = self.panorama.as_ref().and_then(|p| {
-            p.placements
-                .iter()
-                .rev()
-                .find(|placement| interpolate(placement, progress).contains(location))
-                .map(|placement| placement.window.clone())
+        let hit = panorama.placements.iter().rev().find_map(|placement| {
+            let rect = interpolate(placement, progress);
+            rect.contains(location).then(|| {
+                let grab = (
+                    (location.x - rect.loc.x) / rect.size.w.max(1.0),
+                    (location.y - rect.loc.y) / rect.size.h.max(1.0),
+                );
+                (placement.window.clone(), grab)
+            })
         });
-        self.close_panorama(now, hit);
+        match hit {
+            Some((window, grab)) => {
+                if let Some(panorama) = self.panorama.as_mut() {
+                    panorama.drag = Some(Drag {
+                        window,
+                        grab,
+                        press: location,
+                        pointer: location,
+                        moved: false,
+                    });
+                }
+            }
+            None => self.close_panorama(now, None),
+        }
+    }
+
+    /// Rilascio: una finestra non mossa va in primo piano e Panorama si chiude; una
+    /// trascinata su una miniatura passa a quello spazio, altrove torna al suo posto.
+    pub fn panorama_release(&mut self, location: Point<f64, Logical>, now: Instant) {
+        let Some(drag) = self.panorama.as_mut().and_then(|p| p.drag.take()) else {
+            return;
+        };
+        if !drag.moved {
+            self.close_panorama(now, Some(drag.window));
+            return;
+        }
+        let Some(index) = self.thumbnail_at(location) else {
+            return;
+        };
+        if index == self.workspaces.active {
+            return;
+        }
+        if let Err(err) = self.move_window_to_space(&drag.window, index) {
+            tracing::info!("panorama: {err}");
+            return;
+        }
+        // Le finestre rimaste si ridispongono subito.
+        let placements = self.panorama_placements();
+        if let Some(panorama) = self.panorama.as_mut() {
+            panorama.placements = placements;
+        }
     }
 
     /// Per `panorama.state`.
@@ -497,7 +803,15 @@ impl State {
                 open: false,
                 progress: 0.0,
                 windows: Vec::new(),
+                expansion: 0.0,
+                thumbnails: Vec::new(),
             };
+        };
+        let rect = |r: Rectangle<f64, Logical>| PanoramaRect {
+            x: r.loc.x,
+            y: r.loc.y,
+            width: r.size.w,
+            height: r.size.h,
         };
         PanoramaState {
             open: panorama.opening,
@@ -515,59 +829,174 @@ impl State {
                     })
                 })
                 .collect(),
+            expansion: panorama.expansion,
+            thumbnails: if panorama.expansion >= THUMBS_FROM {
+                thumbnail_rects(self.workspaces.count(), self.output_size())
+                    .into_iter()
+                    .map(rect)
+                    .collect()
+            } else {
+                Vec::new()
+            },
         }
     }
 }
 
-/// Disegna la barra degli spazi compatta con l'ombra sotto, larga `width` punti.
-pub fn draw_bar(canvas: &mut Canvas, width: f64, count: usize, active: usize) {
-    let w = width as f32;
-    let bar = BAR_HEIGHT as f32;
-    canvas.fill_rounded([0.0, 0.0, w, bar], 0.0, BAR_FILL);
-    canvas.fill_rounded([0.0, bar, w, 1.0], 0.0, BAR_BORDER);
-    // Ombra: nero che sfuma a zero in BAR_SHADOW punti.
-    let rows = BAR_SHADOW as usize;
+fn mix(a: [u8; 4], b: [u8; 4], t: f64) -> [u8; 4] {
+    let t = t.clamp(0.0, 1.0);
+    let mut out = [0; 4];
+    for (o, (x, y)) in out.iter_mut().zip(a.iter().zip(b)) {
+        *o = (f64::from(*x) + (f64::from(y) - f64::from(*x)) * t).round() as u8;
+    }
+    out
+}
+
+fn faded(color: [u8; 4], alpha: f64) -> [u8; 4] {
+    let [r, g, b, a] = color;
+    [
+        r,
+        g,
+        b,
+        (f64::from(a) * alpha.clamp(0.0, 1.0)).round() as u8,
+    ]
+}
+
+/// Quello che serve per disegnare la barra.
+pub struct BarLook {
+    pub width: f64,
+    pub output: Size<f64, Logical>,
+    pub count: usize,
+    pub active: usize,
+    pub expansion: f64,
+    /// Colore delle miniature dietro lo sfondo (quello del desktop).
+    pub backdrop: [u8; 4],
+}
+
+impl BarLook {
+    /// Altezza dello sprite: barra, bordo e ombra.
+    fn sprite_height(&self) -> f64 {
+        let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * self.expansion;
+        bar_height(self.expansion) + 1.0 + shadow
+    }
+
+    /// Chiave della cache: cambia con quello che si vede (altezza al punto intero).
+    fn key(&self) -> String {
+        format!(
+            "{}:{}:{}:{:?}",
+            self.count,
+            self.active,
+            (self.expansion * 1000.0).round(),
+            self.backdrop
+        )
+    }
+}
+
+/// Disegna la barra degli spazi (compatta, espansa o a metà) con l'ombra sotto.
+pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
+    let e = look.expansion.clamp(0.0, 1.0);
+    let w = look.width as f32;
+    let height = bar_height(e);
+    // Riempimento: uniforme da compatta, con la sfumatura in basso da espansa.
+    let rows = height.ceil() as usize;
+    for row in 0..rows {
+        let y = row as f64;
+        let toward_bottom = (y / EXPANDED_FILL_FROM).min(1.0) * e;
+        let color = mix(BAR_FILL, EXPANDED_FILL_BOTTOM, toward_bottom);
+        let h = (height - y).min(1.0) as f32;
+        canvas.fill_rect([0.0, row as f32, w, h], color);
+    }
+    let bar = height as f32;
+    canvas.fill_rect([0.0, bar, w, 1.0], mix(BAR_BORDER, EXPANDED_BORDER, e));
+    // Ombra: nero che sfuma a zero.
+    let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * e;
+    let rows = shadow as usize;
     for row in 0..rows {
         let t = 1.0 - row as f32 / rows as f32;
         let alpha = (BAR_SHADOW_ALPHA * t * t * 255.0).round() as u8;
-        canvas.fill_rounded([0.0, bar + 1.0 + row as f32, w, 1.0], 0.0, [0, 0, 0, alpha]);
+        canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
-    for item in bar_items(count, width) {
-        let r = item.rect;
-        if item.index == active {
+    // Le voci compatte svaniscono all'inizio dell'espansione.
+    let compact = 1.0 - e / 0.3;
+    if compact > 0.0 {
+        for item in bar_items(look.count, look.width) {
+            let r = item.rect;
+            if item.index == look.active {
+                let rect = [
+                    r.loc.x as f32,
+                    r.loc.y as f32,
+                    r.size.w as f32,
+                    r.size.h as f32,
+                ];
+                canvas.fill_rounded(rect, CAPSULE_RADIUS, faded(CAPSULE_FILL, compact));
+                canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, faded(CAPSULE_BORDER, compact));
+            }
+            // Linea di base: maiuscole di ~10 pt centrate nella capsula.
+            let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 5.0) as f32;
+            canvas.text(
+                [(r.loc.x + LABEL_PADDING) as f32, baseline],
+                &item.label,
+                LABEL_SIZE,
+                Weight::Regular,
+                faded(LABEL_COLOR, compact),
+            );
+        }
+    }
+    // Le miniature: il fondo (lo sfondo del desktop ci si disegna sopra), l'anello e
+    // l'etichetta.
+    let shown = (e - THUMBS_FROM) / (THUMBS_FULL - THUMBS_FROM);
+    if shown > 0.0 {
+        for (index, r) in thumbnail_rects(look.count, look.output)
+            .into_iter()
+            .enumerate()
+        {
             let rect = [
                 r.loc.x as f32,
                 r.loc.y as f32,
                 r.size.w as f32,
                 r.size.h as f32,
             ];
-            canvas.fill_rounded(rect, CAPSULE_RADIUS, CAPSULE_FILL);
-            canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, CAPSULE_BORDER);
+            canvas.fill_rect(rect, faded(look.backdrop, shown));
+            if index == look.active {
+                let inset = (RING_GAP + RING_WIDTH / 2.0) as f32;
+                canvas.stroke_rounded(
+                    [
+                        rect[0] - inset,
+                        rect[1] - inset,
+                        rect[2] + 2.0 * inset,
+                        rect[3] + 2.0 * inset,
+                    ],
+                    inset + 1.0,
+                    RING_WIDTH as f32,
+                    faded(RING_COLOR, shown),
+                );
+            }
+            let label = space_label(index);
+            let text = f64::from(text_width(&label, THUMB_LABEL_SIZE, Weight::Regular));
+            canvas.text(
+                [
+                    (r.loc.x + (r.size.w - text) / 2.0) as f32,
+                    (r.loc.y + r.size.h + THUMB_LABEL_BASELINE) as f32,
+                ],
+                &label,
+                THUMB_LABEL_SIZE,
+                Weight::Regular,
+                faded(LABEL_COLOR, shown),
+            );
         }
-        // Linea di base: maiuscole di ~10 pt centrate nella capsula.
-        let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 5.0) as f32;
-        canvas.text(
-            [(r.loc.x + LABEL_PADDING) as f32, baseline],
-            &item.label,
-            LABEL_SIZE,
-            Weight::Regular,
-            LABEL_COLOR,
-        );
     }
-    let cx = (width - PLUS_RIGHT) as f32;
-    let cy = 20.0;
+    let plus = plus_rect(look.width, e);
+    let cx = (plus.loc.x + plus.size.w / 2.0) as f32;
+    let cy = (plus.loc.y + plus.size.h / 2.0) as f32;
     let half = (PLUS_SIZE / 2.0) as f32 - 1.0;
     canvas.line([cx - half, cy], [cx + half, cy], 2.0, PLUS_COLOR);
     canvas.line([cx, cy - half], [cx, cy + half], 2.0, PLUS_COLOR);
 }
 
-/// La barra degli spazi come elemento, già spostata in alto quanto serve all'animazione.
+/// La barra degli spazi come elemento, già spostata in alto quanto serve all'apertura.
 pub fn bar_element(
     renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
     sprite: &Sprite,
-    width: f64,
-    count: usize,
-    active: usize,
+    look: &BarLook,
     progress: f64,
     scale: f64,
 ) -> Option<
@@ -577,16 +1006,15 @@ pub fn bar_element(
 > {
     // Il bordo inferiore della barra scende da 0 a 40 pt sulla curva delle finestre;
     // l'ombra, che a riposo sta sotto, compare nel primo fotogramma.
-    let height = BAR_HEIGHT + 1.0 + BAR_SHADOW;
-    let y = -(1.0 - progress) * (BAR_HEIGHT + 1.0);
+    let y = -(1.0 - progress) * (bar_height(look.expansion) + 1.0);
     sprite.element(
         renderer,
-        &format!("{count}:{active}"),
-        Size::from((width, height)),
+        &look.key(),
+        Size::from((look.width, look.sprite_height())),
         Point::from((0.0, y)),
         scale,
         (progress * 4.0).clamp(0.0, 1.0) as f32,
-        |canvas| draw_bar(canvas, width, count, active),
+        |canvas| draw_bar(canvas, look),
     )
 }
 

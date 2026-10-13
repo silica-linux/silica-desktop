@@ -109,6 +109,24 @@ impl Canvas {
         self.shape(rect, radius, color, |d| (0.5 - d).clamp(0.0, 1.0));
     }
 
+    /// Riempie un rettangolo diritto (punti): copertura per area, senza distanze.
+    pub fn fill_rect(&mut self, rect: [f32; 4], color: [u8; 4]) {
+        let s = self.scale;
+        let (x0, y0) = (rect[0] * s, rect[1] * s);
+        let (x1, y1) = (x0 + rect[2] * s, y0 + rect[3] * s);
+        let cover = |a: f32, b: f32, i: u32| ((i as f32 + 1.0).min(b) - (i as f32).max(a)).max(0.0);
+        let first_x = x0.floor().max(0.0) as u32;
+        let last_x = (x1.ceil().max(0.0) as u32).min(self.width);
+        let first_y = y0.floor().max(0.0) as u32;
+        let last_y = (y1.ceil().max(0.0) as u32).min(self.height);
+        for y in first_y..last_y {
+            let cy = cover(y0, y1, y);
+            for x in first_x..last_x {
+                self.blend(x, y, color, cy * cover(x0, x1, x));
+            }
+        }
+    }
+
     /// Il contorno di `width` punti, centrato sul bordo del rettangolo.
     pub fn stroke_rounded(&mut self, rect: [f32; 4], radius: f32, width: f32, color: [u8; 4]) {
         let half = width * self.scale / 2.0;
@@ -282,6 +300,10 @@ mod tests {
         let at = |c: &Canvas, x: u32, y: u32| c.pixels[(y * c.width + x) as usize];
         assert_eq!(at(&canvas, 20, 10), [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(at(&canvas, 0, 0)[3], 0.0);
+        // Un rettangolo a mezzo pixel copre a metà il bordo.
+        canvas.fill_rect([0.0, 0.0, 2.5, 1.0], [0, 255, 0, 255]);
+        assert_eq!(at(&canvas, 1, 0), [0.0, 1.0, 0.0, 1.0]);
+        assert!((at(&canvas, 2, 0)[1] - 0.5).abs() < 1e-6);
         let width = canvas.text(
             [2.0, 15.0],
             "Spazio 1",

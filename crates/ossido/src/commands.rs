@@ -25,7 +25,7 @@ use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
-use silica_control::commands::{PANORAMA_STATE, PANORAMA_TOGGLE};
+use silica_control::commands::{PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -151,6 +151,14 @@ impl State {
                 Ok(json!({ "open": self.panorama_open() }))
             }
             PANORAMA_STATE => to_value(self.panorama_state()),
+            PANORAMA_SPACES_BAR => {
+                let EnabledParams { enabled } = parse_required(params)?;
+                if !self.panorama_open() {
+                    return Err("Panorama non è aperto".to_owned());
+                }
+                self.expand_spaces_bar(enabled, std::time::Instant::now());
+                Ok(Value::Null)
+            }
             SPACE_ADD => Ok(json!({ "index": self.add_space()? })),
             SPACE_REMOVE => {
                 let IndexParams { index } = parse_required(params)?;

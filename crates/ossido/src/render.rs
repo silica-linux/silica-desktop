@@ -171,13 +171,41 @@ fn scale_rect(
     Rectangle::new(loc, rect.size.upscale(factor))
 }
 
+/// Dove sta una finestra dello Space: posizione e geometria.
+fn placed(
+    space: &Space<Window>,
+    window: &Window,
+) -> Option<(Point<i32, Logical>, Rectangle<i32, Logical>)> {
+    Some((
+        space.element_location(window)?,
+        space.element_geometry(window)?,
+    ))
+}
+
+/// La cornice di una finestra in punti, dalla sua geometria.
+fn frame_rect(window: &Window, geometry: Rectangle<i32, Logical>) -> Rectangle<f64, Logical> {
+    decorations::frame_of(window, geometry).to_f64()
+}
+
+/// Spostamento e scala che portano la cornice `from` su `to` (scala attorno al centro).
+fn fit(from: Rectangle<f64, Logical>, to: Rectangle<f64, Logical>) -> (Point<i32, Logical>, f64) {
+    let center = |r: Rectangle<f64, Logical>| r.loc + r.size.downscale(2.0).to_point();
+    let offset = (center(to) - center(from)).to_i32_round();
+    let factor = if from.size.w > 0.0 {
+        to.size.w / from.size.w
+    } else {
+        1.0
+    };
+    (offset, factor)
+}
+
 /// Gli elementi di una finestra, dal primo piano allo sfondo (superfici, barra, ombra),
 /// spostati di `offset` e scalati di `factor` attorno al centro della cornice.
 #[allow(clippy::too_many_arguments)]
 fn window_elements(
     renderer: &mut GlesRenderer,
     shaders: &ossido_render::Shaders,
-    space: &Space<Window>,
+    (location, geometry): (Point<i32, Logical>, Rectangle<i32, Logical>),
     window: &Window,
     output_origin: Point<i32, Logical>,
     output_size: Size<i32, Physical>,
@@ -186,12 +214,6 @@ fn window_elements(
     factor: f64,
     hovered: bool,
 ) -> Vec<OutputElement> {
-    let (Some(location), Some(geometry)) = (
-        space.element_location(window),
-        space.element_geometry(window),
-    ) else {
-        return Vec::new();
-    };
     let render_location = (location - window.geometry().loc - output_origin + offset)
         .to_physical_precise_round(scale);
     let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
@@ -276,7 +298,7 @@ pub fn snapshot_window(
     let elements = window_elements(
         renderer,
         &shaders,
-        space,
+        placed(space, window)?,
         window,
         output_origin,
         output_size,
@@ -380,21 +402,87 @@ pub fn output_elements(
         }
     };
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
-    // La barra degli spazi di Panorama scende sopra la barra dei menu che svanisce.
+    // Panorama: la finestra trascinata, le miniature degli spazi e la barra degli spazi, che
+    // scende sopra la barra dei menu che svanisce.
     if let Some(panorama) = &context.panorama {
-        let width = f64::from(output_size.w) / scale;
+        let output_logical = output_size.to_f64().to_logical(scale);
+        if let Some((window, rect)) = &panorama.drag
+            && let Some(at) = placed(space, window)
+        {
+            let (offset, factor) = fit(frame_rect(window, at.1), *rect);
+            elements.extend(window_elements(
+                renderer,
+                &shaders,
+                at,
+                window,
+                output_origin,
+                output_size,
+                scale,
+                offset,
+                factor,
+                false,
+            ));
+        }
+        for thumbnail in &panorama.thumbnails {
+            let s = thumbnail.rect.size.w / output_logical.w.max(1.0);
+            for (window, location) in thumbnail.windows.iter().rev() {
+                let geometry = Rectangle::new(*location, window.geometry().size);
+                let frame = frame_rect(window, geometry);
+                let target = Rectangle::new(
+                    thumbnail.rect.loc + (frame.loc - output_origin.to_f64()).upscale(s),
+                    frame.size.upscale(s),
+                );
+                let (offset, factor) = fit(frame, target);
+                elements.extend(window_elements(
+                    renderer,
+                    &shaders,
+                    (*location, geometry),
+                    window,
+                    output_origin,
+                    output_size,
+                    scale,
+                    offset,
+                    factor,
+                    false,
+                ));
+            }
+            // Lo sfondo del desktop in piccolo.
+            for layer in layer_map.layers_on(Layer::Background).rev() {
+                let Some(geometry) = layer_map.layer_geometry(layer) else {
+                    continue;
+                };
+                let location = (thumbnail.rect.loc + geometry.loc.to_f64().upscale(s))
+                    .to_physical_precise_round(scale);
+                elements.extend(
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(
+                        layer as &LayerSurface,
+                        renderer,
+                        location,
+                        (scale * s).into(),
+                        1.0,
+                    )
+                    .into_iter()
+                    .map(OutputElement::Surface),
+                );
+            }
+        }
         let sprite = output
             .user_data()
             .get_or_insert(ossido_render::sprite::Sprite::default);
-        if let Some(bar) = crate::panorama::bar_element(
-            renderer,
-            sprite,
-            width,
-            context.spaces.0,
-            context.spaces.1,
-            panorama.progress,
-            scale,
-        ) {
+        let to_u8 = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let look = crate::panorama::BarLook {
+            width: output_logical.w,
+            output: output_logical,
+            count: context.spaces.0,
+            active: context.spaces.1,
+            expansion: panorama.expansion,
+            backdrop: context.clear_color.map(to_u8),
+        };
+        if let Some(bar) =
+            crate::panorama::bar_element(renderer, sprite, &look, panorama.progress, scale)
+        {
             elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
                 bar,
                 Point::default(),
@@ -433,6 +521,15 @@ pub fn output_elements(
     }
 
     for window in space.elements().rev() {
+        // La finestra trascinata in Panorama è già in cima.
+        if context
+            .panorama
+            .as_ref()
+            .and_then(|p| p.drag.as_ref())
+            .is_some_and(|(dragged, _)| dragged == window)
+        {
+            continue;
+        }
         let mut factor = open_scale(window, context);
         let mut offset = Point::<i32, Logical>::default();
         // In Panorama la cornice va dalla sua posizione a quella disposta.
@@ -441,15 +538,18 @@ pub fn output_elements(
             && placement.from.size.w > 0.0
         {
             let now = crate::panorama::interpolate(placement, panorama.progress);
-            let center = |r: Rectangle<f64, Logical>| r.loc + r.size.downscale(2.0).to_point();
-            offset = (center(now) - center(placement.from)).to_i32_round();
-            factor *= now.size.w / placement.from.size.w;
+            let (shift, scale) = fit(placement.from, now);
+            offset = shift;
+            factor *= scale;
         }
         let hovered = context.titlebar_hover == Some(window);
+        let Some(at) = placed(space, window) else {
+            continue;
+        };
         elements.extend(window_elements(
             renderer,
             &shaders,
-            space,
+            at,
             window,
             output_origin,
             output_size,

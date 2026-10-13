@@ -33,6 +33,9 @@ impl State {
             .is_some();
         // In Panorama le finestre non ricevono il puntatore (sono disegnate altrove).
         let in_panorama = self.panorama.is_some() && !self.over_dock_layer(location);
+        if self.panorama.is_some() {
+            self.panorama_pointer(location, std::time::Instant::now());
+        }
         let hit = if over_layer || in_panorama {
             None
         } else {
@@ -74,11 +77,12 @@ impl State {
         if state == ButtonState::Pressed && self.panorama_open() && !self.over_dock_layer(location)
         {
             self.panorama_press = true;
-            self.panorama_click(location, std::time::Instant::now());
+            self.panorama_press_at(location, std::time::Instant::now());
             return;
         }
         if state == ButtonState::Released && self.panorama_press {
             self.panorama_press = false;
+            self.panorama_release(location, std::time::Instant::now());
             return;
         }
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
