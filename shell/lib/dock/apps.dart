@@ -114,6 +114,7 @@ List<Item> dockItems(
     const Item.separator(),
     Item.app(
       'Download',
+      folder: downloadDir(home),
       iconPath: findIcon('folder-download'),
       layered: findSilicaIcon('folder'),
       command: 'xdg-open "$home/Download" || xdg-open "$home/Downloads"',
@@ -146,6 +147,30 @@ Item _windowItem(
     iconPath: entry == null ? null : findIcon(entry.icon),
     layered: entry == null ? null : silicaIconFor(entry),
   );
+}
+
+/// La cartella dei download: quella di xdg-user-dirs, altrimenti ~/Download o ~/Downloads.
+String downloadDir(String home) {
+  try {
+    final dirs = File('$home/.config/user-dirs.dirs');
+    if (dirs.existsSync()) {
+      for (final line in dirs.readAsLinesSync()) {
+        if (line.startsWith('XDG_DOWNLOAD_DIR=')) {
+          final value = line
+              .substring('XDG_DOWNLOAD_DIR='.length)
+              .replaceAll('"', '')
+              .replaceAll(r'$HOME', home);
+          if (Directory(value).existsSync()) return value;
+        }
+      }
+    }
+  } on FileSystemException {
+    // Si prova con i nomi soliti.
+  }
+  for (final name in ['Download', 'Downloads', 'Scaricati']) {
+    if (Directory('$home/$name').existsSync()) return '$home/$name';
+  }
+  return '$home/Download';
 }
 
 /// Il cestino dell'utente contiene qualcosa (specifica freedesktop Trash).

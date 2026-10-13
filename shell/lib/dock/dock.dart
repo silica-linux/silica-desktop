@@ -3,10 +3,12 @@
 // indicatori ed etichetta disegnati qui.
 
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:math' as math;
+import 'dart:io' show FileSystemEntity, Platform;
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show KeyDownEvent, LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -16,8 +18,10 @@ import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/shell_icon.dart';
+import '../system/silica_icons.dart';
 import 'apps.dart';
 import 'icons.dart';
+import 'stack.dart';
 import 'trash_alert.dart';
 import 'model.dart';
 
@@ -210,6 +214,8 @@ class _LiveDockState extends State<LiveDock> {
     ),
     onActivate: _activate,
     menuFor: _menu,
+    onOpenPath: (path) =>
+        ShellChannel.instance.launch('xdg-open ${shellQuote(path)}'),
     alert: _confirmEmpty
         ? TrashAlert(
             onEmpty: () async {
@@ -298,6 +304,9 @@ class _Ghost {
   Duration elapsed = Duration.zero;
 }
 
+/// Un argomento per `sh -c`, fra apici singoli.
+String shellQuote(String text) => "'${text.replaceAll("'", r"'\''")}'";
+
 /// Finestre ridotte nel Dock (D-08): miniatura 57 × 47 nella cella da 63, icona dell'app da
 /// 18 pt che sporge 4 pt sotto la miniatura.
 const double minimizedThumbWidth = 57;
@@ -331,6 +340,7 @@ class Dock extends StatefulWidget {
     this.menuFor,
     this.onReorder,
     this.alert,
+    this.onOpenPath,
   });
 
   final List<Item> items;
@@ -341,6 +351,9 @@ class Dock extends StatefulWidget {
 
   /// Un avviso modale sopra lo schermo (Svuota il Cestino), grande [trashAlertSize].
   final Widget? alert;
+
+  /// Un file della pila aperta, o la cartella intera ("Apri la cartella").
+  final ValueChanged<String>? onOpenPath;
 
   /// Il menu di un elemento (clic destro, pressione lunga); null o vuoto: niente menu.
   final List<MenuEntry> Function(Item item)? menuFor;
@@ -386,9 +399,23 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   });
 
+  /// La pila aperta (D-06): l'elemento, i file, la vista e l'animazione (0 chiusa, 1 aperta).
+  int? _stackIndex;
+  List<FileSystemEntity> _stackEntries = const [];
+  StackView _stackView = StackView.fan;
+  bool _stackClosing = false;
+  late final AnimationController _stackAnim = AnimationController(
+    vsync: this,
+    duration: stackOpen,
+  )..addListener(() => setState(() {}));
+  final FocusNode _stackFocus = FocusNode();
+
   /// L'altezza di partenza della superficie e lo schermo (per centrare l'avviso).
   double? _baseHeight;
   Size? _screen;
+
+  /// Dove sta la pila aperta nella superficie, per la regione d'input e i clic.
+  Rect? _stackRect;
 
   /// Quello che si è chiesto al layer per ultimo (regione d'input, altezza, tastiera).
   String _layerState = '';
@@ -415,6 +442,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _labelTimer?.cancel();
     _longPress?.cancel();
     _ghostTicker.dispose();
+    _stackAnim.dispose();
+    _stackFocus.dispose();
     super.dispose();
   }
 
@@ -541,6 +570,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   void _pointerDown(PointerDownEvent e, Layout l, Size size) {
     final p = e.localPosition;
+    // Con la pila aperta un clic fuori da lei e dalla sua icona la chiude.
+    if (_stackIndex != null &&
+        !(_stackRect?.contains(p) ?? false) &&
+        itemAt(l, widget.items, p.dx) != _stackIndex) {
+      _closeStack();
+      return;
+    }
     if (_menuIndex != null) {
       if (_menuContains(p)) {
         _menuKey.currentState?.pointerDown(p);
@@ -612,6 +648,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// Regione d'input, altezza della superficie e tastiera: solo quando cambiano.
   void _syncLayer(Rect dock, Rect? menu, Rect? alert, Size size) {
+    // La pila aperta occupa la superficie alta quanto lo schermo, come l'avviso.
+    alert ??= _stackIndex != null ? _stackRect ?? Rect.zero : null;
     _baseHeight ??= size.height;
     final base = _baseHeight ?? size.height;
     // Con un menu la superficie arriva fin sopra il menu, con l'avviso a tutto lo schermo;
@@ -661,8 +699,49 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
 
+  void _openStack(int index) {
+    final folder = widget.items[index].folder;
+    if (folder == null) return;
+    final entries = stackEntries(folder);
+    setState(() {
+      _stackIndex = index;
+      _stackEntries = entries;
+      _stackView = automaticView(entries.length);
+      _stackClosing = false;
+    });
+    _showLabel(null);
+    _stackAnim.duration = stackOpen;
+    _stackAnim.forward(from: 0);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _stackFocus.requestFocus(),
+    );
+  }
+
+  Future<void> _closeStack() async {
+    if (_stackIndex == null || _stackClosing) return;
+    _stackClosing = true;
+    _stackAnim.duration = _stackView == StackView.fan ? fanClose : gridClose;
+    await _stackAnim.reverse();
+    if (mounted) {
+      setState(() {
+        _stackIndex = null;
+        _stackClosing = false;
+      });
+    }
+  }
+
+  /// Un file della pila: la pila si chiude subito, poi il file si apre.
+  void _openFromStack(String path) {
+    _closeStack();
+    widget.onOpenPath?.call(path);
+  }
+
   void _activate(int index) {
     final item = widget.items[index];
+    if (item.folder != null && widget.onOpenPath != null) {
+      _stackIndex == index ? _closeStack() : _openStack(index);
+      return;
+    }
     if (!item.running && item.command != null) {
       _bounces.putIfAbsent(_key(item), DateTime.now);
       if (!_bounceTicker.isActive) _bounceTicker.start();
@@ -813,6 +892,63 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                 trashAlertSize.width,
                 trashAlertSize.height,
               );
+        // La pila: serve lo schermo intero sopra il Dock.
+        final stackIndex = _stackIndex;
+        if (stackIndex != null && screen == null) {
+          LayerControl.outputSize().then((value) {
+            if (mounted)
+              setState(() => _screen = value ?? const Size(1280, 800));
+          });
+        }
+        final zoneTop = by - activeZoneAbove;
+        Widget? stackWidget;
+        if (stackIndex != null && stackIndex < l.cells.length) {
+          final iconX = l.center(stackIndex);
+          final item = widget.items[stackIndex];
+          final progress = Curves.easeOut.transform(_stackAnim.value);
+          if (_stackView == StackView.fan) {
+            final count = math.min(_stackEntries.length, fanMax) + 1;
+            final top = fanSlot(count - 1);
+            _stackRect = Rect.fromLTRB(
+              iconX - 420,
+              zoneTop + top.center.dy - top.side,
+              iconX + fanShift.last + 120,
+              zoneTop,
+            );
+            stackWidget = Positioned.fill(
+              child: FanStack(
+                entries: _stackEntries,
+                anchor: Offset(iconX, zoneTop),
+                progress: progress,
+                onOpen: (e) => _openFromStack(e.path),
+                onOpenFolder: () => _openFromStack(item.folder ?? ''),
+              ),
+            );
+          } else {
+            final panel = gridPanelSize(_stackEntries.length, zoneTop - 40);
+            final double left = (iconX - panel.width / 2)
+                .clamp(8.0, math.max(8.0, size.width - panel.width - 8))
+                .toDouble();
+            final rect = Rect.fromLTWH(
+              left,
+              by - gridTipAboveDock - gridTipHeight - panel.height,
+              panel.width,
+              panel.height,
+            );
+            _stackRect = rect;
+            stackWidget = GridStack(
+              title: item.label,
+              entries: _stackEntries,
+              rect: rect,
+              tipX: iconX - left,
+              progress: progress,
+              onOpen: (e) => _openFromStack(e.path),
+              onOpenFolder: () => _openFromStack(item.folder ?? ''),
+            );
+          }
+        } else {
+          _stackRect = null;
+        }
         _syncLayer(dockRect, menuRect, alertRect, size);
         return Listener(
           behavior: HitTestBehavior.translucent,
@@ -875,6 +1011,23 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     hovered,
                     size.height,
                     _labelAnim.value.clamp(0.0, 1.0),
+                  ),
+                if (stackWidget != null &&
+                    (_screen == null || size.height >= _screen!.height - 1))
+                  Focus(
+                    focusNode: _stackFocus,
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.escape) {
+                        _closeStack();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [stackWidget],
+                    ),
                   ),
                 if (alertRect != null && alert != null && alertRect.top >= 0)
                   Positioned.fromRect(rect: alertRect, child: alert),
@@ -1035,7 +1188,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     bool sliding,
   ) {
     final (x, y, side) = iconRect(l, index, height);
-    final icon = ShellIcon(source, side: side);
+    // Con la pila aperta l'icona della cartella diventa il pulsante che la chiude (D-06).
+    final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
+    final icon = closer != null
+        ? ShellIcon(LayeredSource(closer), side: side)
+        : ShellIcon(source, side: side);
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,

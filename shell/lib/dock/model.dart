@@ -135,6 +135,7 @@ class Item {
     this.windows = const [],
     this.id,
     this.pinned = false,
+    this.folder,
   }) : kind = ItemKind.app,
        minimizedWindow = null,
        thumbnail = null;
@@ -152,6 +153,7 @@ class Item {
        windows = const [],
        id = null,
        pinned = false,
+       folder = null,
        minimizedWindow = window;
   const Item.separator()
     : kind = ItemKind.separator,
@@ -163,6 +165,7 @@ class Item {
       windows = const [],
       id = null,
       pinned = false,
+      folder = null,
       minimizedWindow = null,
       thumbnail = null;
 
@@ -187,6 +190,9 @@ class Item {
 
   /// Fissata nel Dock (resta anche chiusa).
   final bool pinned;
+
+  /// Una cartella mostrata come pila (D-06): il suo percorso.
+  final String? folder;
 
   /// La finestra ridotta che questo elemento rappresenta (null per app e cartelle).
   final String? minimizedWindow;
