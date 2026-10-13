@@ -138,7 +138,12 @@ impl State {
         };
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
-        let panorama_open = self.panorama_open();
+        // Esc chiude la vista aperta: si esegue il suo stesso comando.
+        let close_view = self.panorama_mode().map(|mode| match mode {
+            crate::panorama::Mode::Panorama => silica_control::commands::PANORAMA_TOGGLE,
+            crate::panorama::Mode::App => silica_control::commands::PANORAMA_APP,
+            crate::panorama::Mode::Desktop => silica_control::commands::DESKTOP_SHOW,
+        });
         let command = keyboard.input::<&'static str, _>(
             self,
             code,
@@ -151,9 +156,11 @@ impl State {
                         .raw_latin_sym_or_raw_current_sym()
                         .unwrap_or(keysym.modified_sym()),
                 );
-                // Esc chiude Panorama.
-                if pressed && panorama_open && key == "Escape" {
-                    return FilterResult::Intercept(silica_control::commands::PANORAMA_TOGGLE);
+                if pressed
+                    && key == "Escape"
+                    && let Some(id) = close_view
+                {
+                    return FilterResult::Intercept(id);
                 }
                 match shortcuts.iter().find(|(shortcut, _)| {
                     pressed

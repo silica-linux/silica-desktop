@@ -47,6 +47,8 @@ pub const WINDOW_MOVE_TO_SPACE: &str = "window.move_to_space";
 pub const PANORAMA_TOGGLE: &str = "panorama.toggle";
 pub const PANORAMA_STATE: &str = "panorama.state";
 pub const PANORAMA_SPACES_BAR: &str = "panorama.spaces_bar";
+pub const PANORAMA_APP: &str = "panorama.app";
+pub const DESKTOP_SHOW: &str = "desktop.show";
 pub const SYSTEM_WIFI: &str = "system.wifi";
 pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
 pub const SYSTEM_VOLUME: &str = "system.volume";
@@ -321,6 +323,20 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Panorama",
         description: "Mostra tutte le finestre dello spazio una accanto all'altra con la barra degli spazi in alto; se è aperto lo chiude.",
         shortcut: Some("Ctrl+Up"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: PANORAMA_APP,
+        label: "Finestre dell'app",
+        description: "Mostra le finestre dell'app in primo piano al centro, con il titolo sotto; se è già aperto lo chiude.",
+        shortcut: Some("Ctrl+Down"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: DESKTOP_SHOW,
+        label: "Mostra la scrivania",
+        description: "Sposta le finestre fuori dallo schermo per mostrare la scrivania; di nuovo (o un clic) le rimette al loro posto.",
+        shortcut: Some("F11"),
         params: no_params,
     },
     CommandSpec {
@@ -948,6 +964,9 @@ pub struct PanoramaRect {
 /// Risposta di [`PANORAMA_STATE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PanoramaState {
+    /// `panorama`, `app` (App Exposé) o `desktop` (Mostra scrivania); assente se chiuso.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     pub open: bool,
     pub progress: f64,
     pub windows: Vec<PanoramaWindow>,

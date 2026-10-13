@@ -22,10 +22,12 @@ use silica_control::commands::{
     SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
 };
 use silica_control::commands::{
+    DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
+};
+use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
-use silica_control::commands::{PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -151,6 +153,15 @@ impl State {
                 Ok(json!({ "open": self.panorama_open() }))
             }
             PANORAMA_STATE => to_value(self.panorama_state()),
+            PANORAMA_APP | DESKTOP_SHOW => {
+                let mode = if id == PANORAMA_APP {
+                    crate::panorama::Mode::App
+                } else {
+                    crate::panorama::Mode::Desktop
+                };
+                self.toggle_view(mode, std::time::Instant::now());
+                Ok(json!({ "open": self.panorama_mode() == Some(mode) }))
+            }
             PANORAMA_SPACES_BAR => {
                 let EnabledParams { enabled } = parse_required(params)?;
                 if !self.panorama_open() {
@@ -509,7 +520,7 @@ impl State {
             .position(|placed| placed.iter().any(|(w, _)| Self::window_id(w) == Some(id)))
     }
 
-    fn focused_window(&self) -> Option<Window> {
+    pub(crate) fn focused_window(&self) -> Option<Window> {
         let focus = self.seat.get_keyboard()?.current_focus()?;
         self.space
             .elements()

@@ -196,3 +196,53 @@ fn a_window_dragged_onto_a_thumbnail_changes_space() {
     assert!(!state(&ossido).open);
     assert!(spaces(&ossido)[1].active);
 }
+
+#[test]
+fn app_windows_and_the_desktop() {
+    let ossido = Headless::start_with("panorama-app", (1280, 800), &[]);
+    let size = (300, 200);
+    let _red = TestWindow::open_pixels(&ossido.wayland, "rossa", size, &solid(size, RED));
+    let _blue = TestWindow::open_pixels(&ossido.wayland, "blu", size, &solid(size, BLUE));
+    let mut c = ossido.client();
+    let list = windows(&ossido);
+    let focused = list.iter().find(|w| w.focused).unwrap().clone();
+    let other = list.iter().find(|w| !w.focused).unwrap().clone();
+
+    // App Exposé (⌃↓): solo la finestra dell'app in primo piano (le finestre di prova non
+    // hanno app_id), centrata, in scala al più 0,947; l'altra non si vede.
+    c.call(INPUT_KEY, json!({"key": "Control_L", "pressed": true}))
+        .unwrap();
+    c.call(INPUT_KEY, json!({"key": "Down"})).unwrap();
+    c.call(INPUT_KEY, json!({"key": "Control_L", "pressed": false}))
+        .unwrap();
+    let s = state(&ossido);
+    assert_eq!(s.mode.as_deref(), Some("app"));
+    assert_eq!(s.windows.len(), 1);
+    let w = s.windows[0];
+    assert_eq!(w.id, focused.id);
+    assert!((w.x + w.width / 2.0 - 640.0).abs() < 1.0, "{w:?}");
+    let shot = screenshot(&ossido);
+    let at = |w: &WindowInfo| ((w.x + w.width / 2) as u32, (w.y + w.height / 2) as u32);
+    let hidden = pixel_in(&shot, 1280, at(&other).0, at(&other).1);
+    assert!(!close(hidden, [255, 0, 0, 255]) && !close(hidden, [0, 0, 255, 255]));
+    // Esc chiude.
+    c.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
+    assert!(state(&ossido).mode.is_none());
+
+    // Mostra scrivania: le finestre escono quasi del tutto; il centro dello schermo è libero.
+    assert_eq!(
+        c.call(silica_control::commands::DESKTOP_SHOW, Value::Null)
+            .unwrap(),
+        json!({"open": true})
+    );
+    let s = state(&ossido);
+    assert_eq!(s.mode.as_deref(), Some("desktop"));
+    for w in &s.windows {
+        let inside_x = (w.x + w.width).min(1280.0) - w.x.max(0.0);
+        let inside_y = (w.y + w.height).min(800.0) - w.y.max(0.0);
+        assert!(inside_x <= 24.0 + 1e-6 || inside_y <= 24.0 + 1e-6, "{w:?}");
+    }
+    // Un clic le rimette a posto.
+    c.call(INPUT_CLICK, json!({"x": 640, "y": 400})).unwrap();
+    assert!(state(&ossido).mode.is_none());
+}

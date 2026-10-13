@@ -101,6 +101,79 @@ impl Default for SpaceGapId {
     }
 }
 
+/// La sfumatura in alto di App Exposé, nei dati dell'output.
+#[derive(Default)]
+struct AppShade(ossido_render::sprite::Sprite);
+
+/// L'etichetta di App Exposé di una finestra, nei suoi dati.
+#[derive(Default)]
+struct AppLabel(ossido_render::sprite::Sprite);
+
+/// I titoli delle finestre di App Exposé, sotto le cornici disposte.
+fn app_labels(
+    renderer: &mut GlesRenderer,
+    elements: &mut Vec<OutputElement>,
+    panorama: &crate::panorama::PanoramaView,
+    scale: f64,
+) {
+    use ossido_render::sprite::{Weight, text_width};
+    let size = crate::panorama::APP_LABEL_SIZE;
+    for placement in &panorama.placements {
+        let title = window_title(&placement.window);
+        if title.is_empty() {
+            continue;
+        }
+        let rect = crate::panorama::interpolate(placement, panorama.progress);
+        let width = f64::from(text_width(&title, size, Weight::Regular)).ceil() + 4.0;
+        let height = f64::from(size) + 8.0;
+        // Maiuscole (~9 pt) che cominciano 14 pt sotto la cornice.
+        let baseline = f64::from(size) * 0.75 + 2.0;
+        let location = Point::from((
+            rect.loc.x + (rect.size.w - width) / 2.0,
+            rect.loc.y + rect.size.h + crate::panorama::APP_LABEL_GAP + 9.0 - baseline,
+        ));
+        placement
+            .window
+            .user_data()
+            .insert_if_missing(AppLabel::default);
+        let Some(label) = placement.window.user_data().get::<AppLabel>() else {
+            continue;
+        };
+        let element = label.0.element(
+            renderer,
+            &title,
+            Size::from((width, height)),
+            location,
+            scale,
+            panorama.progress as f32,
+            |canvas| {
+                // Bianco con un'ombra scura sotto.
+                canvas.text(
+                    [2.0, baseline as f32 + 1.0],
+                    &title,
+                    size,
+                    Weight::Regular,
+                    [0, 0, 0, 90],
+                );
+                canvas.text(
+                    [2.0, baseline as f32],
+                    &title,
+                    size,
+                    Weight::Regular,
+                    [0xfe, 0xfe, 0xfe, 0xff],
+                );
+            },
+        );
+        if let Some(element) = element {
+            elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
+                element,
+                Point::default(),
+                1.0,
+            )));
+        }
+    }
+}
+
 /// Quando la finestra ha mostrato il primo buffer: l'apertura parte da lì.
 #[derive(Default)]
 struct Opened(Cell<Option<Instant>>);
@@ -371,7 +444,10 @@ pub fn output_elements(
                 _ => vec![0.0],
             };
             let alpha = match &context.panorama {
-                Some(panorama) if layer.namespace() == "menubar" => {
+                Some(panorama)
+                    if layer.namespace() == "menubar"
+                        && panorama.mode != crate::panorama::Mode::Desktop =>
+                {
                     (1.0 - panorama.progress).clamp(0.0, 1.0) as f32
                 }
                 _ => 1.0,
@@ -468,6 +544,9 @@ pub fn output_elements(
                 );
             }
         }
+        if panorama.mode == crate::panorama::Mode::App {
+            app_labels(renderer, &mut elements, panorama, scale);
+        }
         let sprite = output
             .user_data()
             .get_or_insert(ossido_render::sprite::Sprite::default);
@@ -480,8 +559,9 @@ pub fn output_elements(
             expansion: panorama.expansion,
             backdrop: context.clear_color.map(to_u8),
         };
-        if let Some(bar) =
-            crate::panorama::bar_element(renderer, sprite, &look, panorama.progress, scale)
+        if panorama.mode == crate::panorama::Mode::Panorama
+            && let Some(bar) =
+                crate::panorama::bar_element(renderer, sprite, &look, panorama.progress, scale)
         {
             elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
                 bar,
@@ -527,6 +607,14 @@ pub fn output_elements(
             .as_ref()
             .and_then(|p| p.drag.as_ref())
             .is_some_and(|(dragged, _)| dragged == window)
+        {
+            continue;
+        }
+        // App Exposé: le finestre delle altre app spariscono.
+        if let Some(panorama) = &context.panorama
+            && panorama.mode == crate::panorama::Mode::App
+            && panorama.progress > 0.0
+            && !panorama.placements.iter().any(|p| &p.window == window)
         {
             continue;
         }
@@ -576,6 +664,44 @@ pub fn output_elements(
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
     let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
+
+    // App Exposé: in alto lo sfondo si scurisce (sopra lo sfondo, sotto le finestre).
+    if let Some(panorama) = &context.panorama
+        && panorama.mode == crate::panorama::Mode::App
+    {
+        let width = f64::from(output_size.w) / scale;
+        let shade = output.user_data().get_or_insert(AppShade::default);
+        if let Some(element) = shade.0.element(
+            renderer,
+            "shade",
+            Size::from((width, crate::panorama::APP_SHADE_HEIGHT)),
+            Point::default(),
+            scale,
+            panorama.progress as f32,
+            |canvas| {
+                let rows = crate::panorama::APP_SHADE_HEIGHT as usize;
+                for row in 0..rows {
+                    let t = 1.0 - row as f32 / rows as f32;
+                    let alpha = (crate::panorama::APP_SHADE_ALPHA * t * 255.0).round() as u8;
+                    canvas.fill_rect([0.0, row as f32, width as f32, 1.0], [0, 0, 0, alpha]);
+                }
+            },
+        ) {
+            elements.insert(
+                background_start,
+                OutputElement::Texture(RescaleRenderElement::from_element(
+                    element,
+                    Point::default(),
+                    1.0,
+                )),
+            );
+            for anchor in &mut anchors {
+                if anchor.index >= background_start {
+                    anchor.index += 1;
+                }
+            }
+        }
+    }
 
     // La fascia nera fra le due scrivanie, sotto tutto: le due scrivanie non la coprono.
     // Prima del fondale della barra, che deve vederla dietro di sé.

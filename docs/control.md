@@ -38,7 +38,9 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `space.remove` | `index` | — ; le finestre passano allo spazio prima (o al primo) |
 | `window.move_to_space` | `id?`, `index` | — |
 | `panorama.toggle` | — | `open`: apre o chiude Panorama (⌃↑; Esc chiude). Aperto, un clic su una finestra la porta in primo piano, sul vuoto chiude, su uno spazio della barra ci passa, sul "+" aggiunge uno spazio |
-| `panorama.state` | — | `open`, `progress` (0–1), `windows`: `id`, `x`, `y`, `width`, `height` delle cornici disposte; `expansion` della barra degli spazi (0–1), `thumbnails`: rettangoli delle miniature quando si vedono |
+| `panorama.state` | — | `mode` (`panorama`, `app`, `desktop`; assente se chiuso), `open`, `progress` (0–1), `windows`: `id`, `x`, `y`, `width`, `height` delle cornici disposte; `expansion` della barra degli spazi (0–1), `thumbnails`: rettangoli delle miniature quando si vedono |
+| `panorama.app` | — | `open`: App Exposé, le finestre dell'app in primo piano al centro con il titolo sotto (⌃↓; Esc chiude) |
+| `desktop.show` | — | `open`: Mostra scrivania, le finestre escono verso il bordo più vicino (F11; di nuovo o un clic le rimette a posto) |
 | `panorama.spaces_bar` | `enabled` | — ; espande o richiude la barra degli spazi (come il puntatore in alto). Con la barra espansa una finestra trascinata su una miniatura passa a quello spazio; un clic su una miniatura ci va |
 | `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
 | `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |

@@ -142,6 +142,62 @@ pub const CLOSE_CURVE: &[(f64, f64)] = &[
     (319.0, 1.0),
 ];
 
+/// App Exposé, apertura (ms, 0–1): bordo superiore della finestra da y 300 a 388 nel video.
+pub const APP_OPEN_CURVE: &[(f64, f64)] = &[
+    (0.0, 0.0),
+    (6.0, 0.05),
+    (20.0, 0.27),
+    (33.0, 0.39),
+    (60.0, 0.50),
+    (73.0, 0.68),
+    (86.0, 0.75),
+    (113.0, 0.81),
+    (126.0, 0.85),
+    (140.0, 0.91),
+    (166.0, 0.93),
+    (180.0, 0.95),
+    (193.0, 0.98),
+    (233.0, 0.99),
+    (273.0, 1.0),
+];
+
+/// App Exposé, chiusura (ms, 0–1): da y 388 a 300 dopo Esc.
+pub const APP_CLOSE_CURVE: &[(f64, f64)] = &[
+    (0.0, 0.0),
+    (13.0, 0.045),
+    (26.0, 0.26),
+    (40.0, 0.39),
+    (53.0, 0.50),
+    (80.0, 0.67),
+    (93.0, 0.74),
+    (120.0, 0.84),
+    (133.0, 0.875),
+    (160.0, 0.93),
+    (173.0, 0.94),
+    (200.0, 0.955),
+    (213.0, 0.966),
+    (253.0, 0.977),
+    (266.0, 0.989),
+    (320.0, 1.0),
+];
+
+/// App Exposé: le finestre dell'app al centro, sotto ciascuna il titolo. Con una finestra
+/// 900 × 600 sullo schermo di riferimento la scala è 0,947 e il centro sta a y 671,5: area da
+/// 48 pt dall'alto a 61 pt sopra il Dock (posto per l'etichetta). La regola con più finestre
+/// non è misurata.
+const APP_MARGIN_TOP: f64 = 48.0;
+const APP_MARGIN_BOTTOM: f64 = 61.0;
+const APP_MAX_SCALE: f64 = 0.947;
+/// Etichetta: corpo ~12 pt, bianca, maiuscole a 14 pt sotto la finestra.
+pub const APP_LABEL_SIZE: f32 = 12.0;
+pub const APP_LABEL_GAP: f64 = 14.0;
+/// In alto lo sfondo si scurisce: da `#6f7075` a y 0 a `#7a7b80` a y 102.
+pub const APP_SHADE_HEIGHT: f64 = 102.0;
+pub const APP_SHADE_ALPHA: f32 = 0.09;
+/// Mostra scrivania (non misurato, PA-31): le finestre escono verso il bordo più vicino e ne
+/// resta visibile una striscia.
+const DESKTOP_PEEK: f64 = 24.0;
+
 /// Valore di una tabella (tempo, avanzamento) all'istante `ms`, interpolato.
 pub fn curve_at(table: &[(f64, f64)], ms: f64) -> f64 {
     let mut previous = (0.0, 0.0);
@@ -257,6 +313,15 @@ fn grid(
     frames: &[Rectangle<f64, Logical>],
     area: Rectangle<f64, Logical>,
 ) -> Vec<Rectangle<f64, Logical>> {
+    grid_scaled(frames, area, 1.0)
+}
+
+/// Come [`grid`], con la scala al più `max_scale`.
+fn grid_scaled(
+    frames: &[Rectangle<f64, Logical>],
+    area: Rectangle<f64, Logical>,
+    max_scale: f64,
+) -> Vec<Rectangle<f64, Logical>> {
     let n = frames.len();
     let at = |i: usize| frames.get(i).copied().unwrap_or_default();
     let mut by_y: Vec<usize> = (0..n).collect();
@@ -289,7 +354,7 @@ fn grid(
             .map(|row| row.iter().map(|&i| at(i).size.h).fold(0.0, f64::max))
             .sum::<f64>();
         let height_scale = (area.size.h - WINDOW_GAP * (rows - 1) as f64) / heights.max(1.0);
-        let scale = 1.0_f64.min(width_scale).min(height_scale).max(0.05);
+        let scale = max_scale.min(width_scale).min(height_scale).max(0.05);
         if best.as_ref().is_none_or(|(s, _)| scale > *s + 1e-6) {
             best = Some((scale, grouped));
         }
@@ -324,6 +389,43 @@ fn grid(
     out
 }
 
+/// L'app di una finestra (`app_id` di xdg-toplevel).
+pub fn window_app(window: &Window) -> Option<String> {
+    let toplevel = window.toplevel()?;
+    smithay::wayland::compositor::with_states(toplevel.wl_surface(), |states| {
+        states
+            .data_map
+            .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+            .and_then(|data| data.lock().ok())
+            .and_then(|data| data.app_id.clone())
+    })
+}
+
+/// Mostra scrivania: la cornice spinta oltre il bordo dello schermo più vicino al suo
+/// centro, con una striscia di `DESKTOP_PEEK` punti ancora dentro.
+fn out_of_screen(
+    frame: Rectangle<f64, Logical>,
+    output: Rectangle<f64, Logical>,
+) -> Rectangle<f64, Logical> {
+    let (cx, cy) = center(&frame);
+    let left = cx - output.loc.x;
+    let right = output.loc.x + output.size.w - cx;
+    let top = cy - output.loc.y;
+    let bottom = output.loc.y + output.size.h - cy;
+    let nearest = left.min(right).min(top).min(bottom);
+    let mut out = frame;
+    if nearest == left {
+        out.loc.x = output.loc.x + DESKTOP_PEEK - frame.size.w;
+    } else if nearest == right {
+        out.loc.x = output.loc.x + output.size.w - DESKTOP_PEEK;
+    } else if nearest == top {
+        out.loc.y = output.loc.y + DESKTOP_PEEK - frame.size.h;
+    } else {
+        out.loc.y = output.loc.y + output.size.h - DESKTOP_PEEK;
+    }
+    out
+}
+
 /// Una finestra in Panorama: la cornice vera e quella disposta.
 #[derive(Clone)]
 pub struct Placement {
@@ -343,7 +445,29 @@ pub struct Drag {
     pub moved: bool,
 }
 
+/// Le tre viste che spostano le finestre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Tutte le finestre dello spazio, con la barra degli spazi.
+    Panorama,
+    /// Le finestre di un'app (App Exposé).
+    App,
+    /// Le finestre fuori dallo schermo: si vede la scrivania.
+    Desktop,
+}
+
+impl Mode {
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Panorama => "panorama",
+            Mode::App => "app",
+            Mode::Desktop => "desktop",
+        }
+    }
+}
+
 pub struct Panorama {
+    pub mode: Mode,
     pub opening: bool,
     pub start: Instant,
     /// Avanzamento da cui riparte la fase (un Esc a metà apertura non salta).
@@ -369,6 +493,7 @@ pub struct Thumbnail {
 /// Quello che il frame deve sapere di Panorama.
 #[derive(Clone)]
 pub struct PanoramaView {
+    pub mode: Mode,
     pub progress: f64,
     pub placements: Vec<Placement>,
     pub expansion: f64,
@@ -497,18 +622,36 @@ impl State {
             .map_or_else(Size::default, |geo| geo.size.to_f64())
     }
 
+    /// La vista aperta (non in chiusura).
+    pub fn panorama_mode(&self) -> Option<Mode> {
+        self.panorama.as_ref().filter(|p| p.opening).map(|p| p.mode)
+    }
+
     /// Apre Panorama, o lo chiude se è aperto.
     pub fn toggle_panorama(&mut self, now: Instant) {
-        if self.panorama_open() {
+        self.toggle_view(Mode::Panorama, now);
+    }
+
+    /// Apre una vista; se è già aperta la chiude, se ne è aperta un'altra passa a questa.
+    pub fn toggle_view(&mut self, mode: Mode, now: Instant) {
+        if self.panorama_mode() == Some(mode) {
             self.close_panorama(now, None);
         } else {
-            self.open_panorama(now);
+            self.open_view(mode, now);
         }
     }
 
-    /// Le finestre dello spazio con la cornice vera e quella disposta.
-    fn panorama_placements(&self) -> Vec<Placement> {
-        let windows: Vec<Window> = self.space.elements().cloned().collect();
+    /// Le finestre dello spazio (per App Exposé solo quelle dell'app in primo piano) con la
+    /// cornice vera e quella disposta.
+    fn panorama_placements(&self, mode: Mode) -> Vec<Placement> {
+        let mut windows: Vec<Window> = self.space.elements().cloned().collect();
+        if mode == Mode::App {
+            let Some(focused) = self.focused_window() else {
+                return Vec::new();
+            };
+            let app = window_app(&focused);
+            windows.retain(|w| *w == focused || (app.is_some() && window_app(w) == app));
+        }
         let frames: Vec<Rectangle<f64, Logical>> = windows
             .iter()
             .filter_map(|w| {
@@ -525,13 +668,31 @@ impl State {
             .unwrap_or_default()
             .to_f64();
         let usable = self.usable_area().to_f64();
-        let top = output.loc.y + BAR_HEIGHT + MARGIN_TOP;
-        let bottom = usable.loc.y + usable.size.h - MARGIN_BOTTOM;
-        let area = Rectangle::new(
-            (output.loc.x + MARGIN_SIDE, top).into(),
-            (output.size.w - 2.0 * MARGIN_SIDE, (bottom - top).max(1.0)).into(),
-        );
-        let targets = layout(&frames, area);
+        let targets = match mode {
+            Mode::Panorama => {
+                let top = output.loc.y + BAR_HEIGHT + MARGIN_TOP;
+                let bottom = usable.loc.y + usable.size.h - MARGIN_BOTTOM;
+                let area = Rectangle::new(
+                    (output.loc.x + MARGIN_SIDE, top).into(),
+                    (output.size.w - 2.0 * MARGIN_SIDE, (bottom - top).max(1.0)).into(),
+                );
+                layout(&frames, area)
+            }
+            Mode::App => {
+                let top = output.loc.y + APP_MARGIN_TOP;
+                let bottom = usable.loc.y + usable.size.h - APP_MARGIN_BOTTOM;
+                let area = Rectangle::new(
+                    (output.loc.x + MARGIN_SIDE, top).into(),
+                    (output.size.w - 2.0 * MARGIN_SIDE, (bottom - top).max(1.0)).into(),
+                );
+                if frames.is_empty() {
+                    Vec::new()
+                } else {
+                    grid_scaled(&frames, area, APP_MAX_SCALE)
+                }
+            }
+            Mode::Desktop => frames.iter().map(|f| out_of_screen(*f, output)).collect(),
+        };
         windows
             .into_iter()
             .zip(frames)
@@ -540,12 +701,18 @@ impl State {
             .collect()
     }
 
-    fn open_panorama(&mut self, now: Instant) {
+    fn open_view(&mut self, mode: Mode, now: Instant) {
         self.settle_transition();
-        let from = self.panorama.as_ref().map_or(0.0, |p| p.progress);
-        let placements = self.panorama_placements();
+        // Da un'altra vista si riparte da zero (le finestre tornano al loro posto di colpo).
+        let from = self
+            .panorama
+            .as_ref()
+            .filter(|p| p.mode == mode)
+            .map_or(0.0, |p| p.progress);
+        let placements = self.panorama_placements(mode);
         self.titlebar_hover = None;
         self.panorama = Some(Panorama {
+            mode,
             opening: true,
             start: now,
             from,
@@ -586,7 +753,7 @@ impl State {
         let Some(panorama) = self.panorama.as_mut() else {
             return;
         };
-        if panorama.expanded == expanded || !panorama.opening {
+        if panorama.expanded == expanded || !panorama.opening || panorama.mode != Mode::Panorama {
             return;
         }
         panorama.expanded = expanded;
@@ -608,10 +775,14 @@ impl State {
             if speed <= 0.0 { f64::MAX } else { ms / speed }
         };
         let ms = elapsed(panorama.start);
+        let (open, close) = match panorama.mode {
+            Mode::App => (APP_OPEN_CURVE, APP_CLOSE_CURVE),
+            Mode::Panorama | Mode::Desktop => (OPEN_CURVE, CLOSE_CURVE),
+        };
         panorama.progress = if panorama.opening {
-            panorama.from + (1.0 - panorama.from) * curve_at(OPEN_CURVE, ms)
+            panorama.from + (1.0 - panorama.from) * curve_at(open, ms)
         } else {
-            panorama.from * (1.0 - curve_at(CLOSE_CURVE, ms))
+            panorama.from * (1.0 - curve_at(close, ms))
         };
         let step = curve_at(EXPAND_CURVE, elapsed(panorama.expand_start));
         panorama.expansion = if panorama.expanded {
@@ -666,6 +837,7 @@ impl State {
             ))
         });
         Some(PanoramaView {
+            mode: panorama.mode,
             progress: panorama.progress,
             placements: panorama.placements.clone(),
             expansion: panorama.expansion,
@@ -681,6 +853,9 @@ impl State {
             return;
         };
         if !panorama.opening {
+            return;
+        }
+        if panorama.mode != Mode::Panorama {
             return;
         }
         if let Some(drag) = panorama.drag.as_mut() {
@@ -721,7 +896,12 @@ impl State {
         let expansion = panorama.expansion;
         let progress = panorama.progress;
         let width = self.output_size().w;
-        if location.y < bar_height(expansion) {
+        // Con la scrivania in vista un clic rimette le finestre al loro posto.
+        if panorama.mode == Mode::Desktop {
+            self.close_panorama(now, None);
+            return;
+        }
+        if panorama.mode == Mode::Panorama && location.y < bar_height(expansion) {
             if plus_rect(width, expansion).contains(location) {
                 // La barra si ridisegna da sola: la sua chiave è il numero di spazi.
                 if let Err(err) = self.add_space() {
@@ -779,6 +959,13 @@ impl State {
             self.close_panorama(now, Some(drag.window));
             return;
         }
+        if self
+            .panorama
+            .as_ref()
+            .is_none_or(|p| p.mode != Mode::Panorama)
+        {
+            return;
+        }
         let Some(index) = self.thumbnail_at(location) else {
             return;
         };
@@ -790,7 +977,7 @@ impl State {
             return;
         }
         // Le finestre rimaste si ridispongono subito.
-        let placements = self.panorama_placements();
+        let placements = self.panorama_placements(Mode::Panorama);
         if let Some(panorama) = self.panorama.as_mut() {
             panorama.placements = placements;
         }
@@ -800,6 +987,7 @@ impl State {
     pub fn panorama_state(&self) -> PanoramaState {
         let Some(panorama) = self.panorama.as_ref() else {
             return PanoramaState {
+                mode: None,
                 open: false,
                 progress: 0.0,
                 windows: Vec::new(),
@@ -814,6 +1002,7 @@ impl State {
             height: r.size.h,
         };
         PanoramaState {
+            mode: Some(panorama.mode.name().to_owned()),
             open: panorama.opening,
             progress: panorama.progress,
             windows: panorama
