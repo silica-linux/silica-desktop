@@ -12,7 +12,7 @@ dependencies:
   silica_ui:
     git:
       url: https://github.com/silica-linux/silica-ui.git
-      ref: v0.2.0
+      ref: v0.3.2
 
 dev_dependencies:
   flutter_test:

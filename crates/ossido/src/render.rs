@@ -445,6 +445,14 @@ pub fn snapshot_window(
     }
 }
 
+/// L'indice di un vetro dopo che un elemento è stato inserito in `at`, davanti allo sfondo:
+/// si sposta solo il vetro degli strati di sfondo (indice oltre `at`). Quello di uno strato
+/// che finisce proprio dove comincia lo sfondo (nessuna finestra in mezzo, come la barra dei
+/// menu su un desktop vuoto) resta davanti all'elemento inserito.
+fn after_insert(index: usize, at: usize) -> usize {
+    if index > at { index + 1 } else { index }
+}
+
 /// Gli elementi dell'output, dal primo piano allo sfondo.
 pub fn output_elements(
     renderer: &mut GlesRenderer,
@@ -742,9 +750,7 @@ pub fn output_elements(
                 )),
             );
             for anchor in &mut anchors {
-                if anchor.index >= background_start {
-                    anchor.index += 1;
-                }
+                anchor.index = after_insert(anchor.index, background_start);
             }
         }
     }
@@ -794,9 +800,7 @@ pub fn output_elements(
             Ok(tone) => {
                 elements.insert(background_start, OutputElement::Tone(tone));
                 for anchor in &mut anchors {
-                    if anchor.index >= background_start {
-                        anchor.index += 1;
-                    }
+                    anchor.index = after_insert(anchor.index, background_start);
                 }
             }
             Err(err) => warn!("fondale della barra saltato: {err:?}"),
@@ -862,4 +866,18 @@ pub fn output_elements(
         }
     }
     elements
+}
+
+#[cfg(test)]
+mod tests {
+    use super::after_insert;
+
+    #[test]
+    fn glass_ending_where_the_background_starts_stays_in_front() {
+        // Barra dei menu senza finestre: il suo vetro va in 1 e il fondale si inserisce in 1.
+        assert_eq!(after_insert(1, 1), 1);
+        // Il vetro di uno strato di sfondo, dietro il fondale, scala di uno.
+        assert_eq!(after_insert(3, 1), 4);
+        assert_eq!(after_insert(0, 1), 0);
+    }
 }

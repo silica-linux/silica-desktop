@@ -24,6 +24,7 @@ pub const WINDOW_MINIMIZE: &str = "window.minimize";
 pub const WINDOW_FULLSCREEN: &str = "window.fullscreen";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
+pub const APP_QUIT: &str = "app.quit";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
 pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
@@ -526,6 +527,13 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Chiede alla finestra di chiudersi.",
         shortcut: Some("Logo+W"),
         params: window_target,
+    },
+    CommandSpec {
+        id: APP_QUIT,
+        label: "Esci dall'app",
+        description: "Chiede a tutte le finestre dell'app in primo piano (stesso app_id) di chiudersi.",
+        shortcut: Some("Logo+Q"),
+        params: no_params,
     },
     CommandSpec {
         id: WINDOW_MINIMIZE,

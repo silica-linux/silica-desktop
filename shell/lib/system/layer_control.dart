@@ -26,6 +26,10 @@ class LayerControl {
               ],
       });
 
+  /// Dimensione della superficie in punti; 0 segue gli ancoraggi (la larghezza della barra).
+  static Future<void> size(double width, double height) =>
+      _call('setSize', {'width': width, 'height': height});
+
   static Future<void> _call(String method, Map<String, Object?> args) async {
     try {
       await channel.invokeMethod<Object?>(method, args);

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/menubar/menubar.dart';
@@ -100,4 +101,54 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'alla pressione su Finestra si apre il menu; la scelta esegue il comando',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final executed = <String>[];
+      final layer = <String>[];
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+          if (call.method == 'execute') {
+            executed.add('${(call.arguments as Map)['id']}');
+          }
+          return null;
+        })
+        ..setMockMethodCallHandler(
+          const MethodChannel('silica/layer', JSONMethodCodec()),
+          (call) async {
+            layer.add(call.method);
+            return true;
+          },
+        );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+        ),
+      );
+      await tester.pump();
+      final finestra = tester.getRect(find.text('Finestra'));
+      await tester.tapAt(finestra.center);
+      await tester.pump();
+      expect(find.text('Riduci'), findsOneWidget);
+      // La superficie si allunga e la tastiera passa al menu.
+      expect(
+        layer,
+        containsAll(['setSize', 'setInputRegion', 'setKeyboardInteractivity']),
+      );
+      // Il corpo del menu 5 pt a sinistra della casella (che ha ~10,75 pt prima del testo).
+      final riduci = tester.getTopLeft(find.text('Riduci'));
+      expect(riduci.dx, closeTo(finestra.left - itemPadding - 5 + 17, 1));
+      await tester.tapAt(tester.getCenter(find.text('Riduci')));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(executed, ['window.minimize']);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Riduci'), findsNothing);
+    },
+  );
 }

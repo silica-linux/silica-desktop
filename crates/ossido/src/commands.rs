@@ -14,6 +14,7 @@ use silica_control::commands::{
     UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE,
     WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
 };
+use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
     SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_DOWN_FINE, SYSTEM_BRIGHTNESS_UP,
@@ -24,7 +25,6 @@ use silica_control::commands::{
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
 };
-use silica_control::commands::{GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
@@ -283,6 +283,27 @@ impl State {
                 let toplevel = window.toplevel().ok_or("finestra senza toplevel")?;
                 toplevel.send_close();
                 Ok(Value::Null)
+            }
+            APP_QUIT => {
+                let window = self.target_window(None)?;
+                let app = crate::panorama::window_app(&window);
+                let mut windows: Vec<Window> = vec![window];
+                if let Some(app) = app {
+                    windows = self
+                        .space
+                        .elements()
+                        .chain(self.minimized.iter().map(|(w, _)| w))
+                        .chain(self.workspaces.stored.iter().flatten().map(|(w, _)| w))
+                        .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
+                        .cloned()
+                        .collect();
+                }
+                for window in &windows {
+                    if let Some(toplevel) = window.toplevel() {
+                        toplevel.send_close();
+                    }
+                }
+                Ok(json!({ "closed": windows.len() }))
             }
             WINDOW_MOVE => {
                 let WindowMove { id, x, y } = parse_required(params)?;
@@ -556,10 +577,22 @@ impl State {
 
     pub(crate) fn focused_window(&self) -> Option<Window> {
         let focus = self.seat.get_keyboard()?.current_focus()?;
-        self.space
+        if let Some(window) = self
+            .space
             .elements()
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == &focus))
-            .cloned()
+        {
+            return Some(window.clone());
+        }
+        // Con la tastiera a un componente della shell (un menu della barra aperto) l'app attiva
+        // resta quella in cima: i comandi dei menu agiscono su di lei.
+        let on_layer = smithay::desktop::layer_map_for_output(&self.output)
+            .layers()
+            .any(|layer| layer.wl_surface() == &focus);
+        if on_layer {
+            return self.space.elements().last().cloned();
+        }
+        None
     }
 
     /// Dà il focus a una finestra (o a nessuna) e la porta in cima.

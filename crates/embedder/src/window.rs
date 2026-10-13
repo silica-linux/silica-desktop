@@ -567,7 +567,9 @@ impl App {
     /// Il canale `silica/layer`: un componente della shell nascosto non deve prendere
     /// puntatore né tastiera (Faro chiuso resta in esecuzione, trasparente).
     /// - `setKeyboardInteractivity {mode: none|exclusive|on-demand}`;
-    /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: tutta la superficie).
+    /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: tutta la superficie);
+    /// - `setSize {width, height}` in punti, 0 per seguire gli ancoraggi (la barra dei menu si
+    ///   allunga finché un menu è aperto).
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -586,6 +588,21 @@ impl App {
                         true
                     }
                     Shell::Window(_) => false,
+                }
+            }
+            Some("setSize") => {
+                let value = |key: &str| {
+                    args.get(key)
+                        .and_then(serde_json::Value::as_f64)
+                        .filter(|v| v.is_finite())
+                        .map(|v| v.round().clamp(0.0, 16384.0) as u32)
+                };
+                match (&self.surface, value("width"), value("height")) {
+                    (Shell::Layer(layer), Some(w), Some(h)) => {
+                        layer.set_size(w, h);
+                        true
+                    }
+                    _ => false,
                 }
             }
             Some("setInputRegion") => match args.get("rects").and_then(serde_json::Value::as_array)
