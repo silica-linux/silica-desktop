@@ -59,3 +59,60 @@ mod tests {
         assert_eq!(keys.find("NonEsiste"), None);
     }
 }
+
+/// Un tasto che diventa il tasto Logo (Super sinistro) prima di tutto il resto: con Ossido
+/// annidato in GNOME o in KDE le combinazioni con Super le prende il desktop di sotto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogoKey {
+    None,
+    RightCtrl,
+    RightAlt,
+}
+
+/// Codici xkb (evdev + 8).
+const KEY_RIGHTCTRL: u32 = 97 + 8;
+const KEY_RIGHTALT: u32 = 100 + 8;
+const KEY_LEFTMETA: u32 = 125 + 8;
+
+impl LogoKey {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "none" => Some(Self::None),
+            "rightctrl" => Some(Self::RightCtrl),
+            "rightalt" => Some(Self::RightAlt),
+            _ => None,
+        }
+    }
+
+    pub fn remap(
+        self,
+        code: smithay::input::keyboard::Keycode,
+    ) -> smithay::input::keyboard::Keycode {
+        let from = match self {
+            Self::None => return code,
+            Self::RightCtrl => KEY_RIGHTCTRL,
+            Self::RightAlt => KEY_RIGHTALT,
+        };
+        if code.raw() == from {
+            KEY_LEFTMETA.into()
+        } else {
+            code
+        }
+    }
+}
+
+#[cfg(test)]
+mod logo_tests {
+    use super::*;
+
+    #[test]
+    fn the_logo_key_is_remapped_only_when_chosen() {
+        let ctrl_r = smithay::input::keyboard::Keycode::new(KEY_RIGHTCTRL);
+        assert_eq!(LogoKey::RightCtrl.remap(ctrl_r).raw(), KEY_LEFTMETA);
+        assert_eq!(LogoKey::None.remap(ctrl_r).raw(), KEY_RIGHTCTRL);
+        let a = smithay::input::keyboard::Keycode::new(38);
+        assert_eq!(LogoKey::RightCtrl.remap(a).raw(), 38);
+        assert_eq!(LogoKey::parse("rightalt"), Some(LogoKey::RightAlt));
+        assert_eq!(LogoKey::parse("x"), None);
+    }
+}

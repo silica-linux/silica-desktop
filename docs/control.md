@@ -91,5 +91,10 @@ silica-cli screenshot /tmp/silica.png
 silica-cli mcp            # server MCP su stdio, configurato in .mcp.json
 ```
 
+Annidato in GNOME (o in un altro desktop) le combinazioni con Super le prende il desktop di
+sotto: per questo con `--backend winit` il **Ctrl destro fa da tasto Logo** (Ctrl destro+Spazio
+apre Faro, Ctrl destro+Tab il selettore delle app). `--logo-key rightalt` usa l'Alt destro,
+`--logo-key none` lascia i tasti come sono (predefinito in headless).
+
 Via MCP i comandi sono tool con `_` al posto di `.` (`window_list`); `ui_screenshot`
 senza `path` restituisce l'immagine come contenuto `image`.

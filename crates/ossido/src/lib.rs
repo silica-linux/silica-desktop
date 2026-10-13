@@ -11,7 +11,7 @@ mod gestures;
 mod glass;
 mod handlers;
 mod input;
-mod keys;
+pub mod keys;
 mod layers;
 mod panorama;
 mod perf;
@@ -62,6 +62,9 @@ pub struct Options {
     pub glass: state::GlassSetting,
     /// Avvia un bus di sessione privato con `silica-daemon` (`--session-bus`).
     pub session_bus: bool,
+    /// Un tasto che fa da Logo (`--logo-key`): annidato in un altro desktop, le combinazioni
+    /// con Super le prende quel desktop. `None`: predefinito del backend (Ctrl destro annidato).
+    pub logo_key: Option<keys::LogoKey>,
 }
 
 impl Default for Options {
@@ -77,6 +80,7 @@ impl Default for Options {
             animation_scale: 1.0,
             glass: state::GlassSetting::Auto,
             session_bus: false,
+            logo_key: None,
         }
     }
 }
@@ -92,6 +96,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     ossido.state.clear_color = options.background;
     ossido.state.animation_speed = options.animation_scale;
     ossido.state.glass_setting = options.glass;
+    ossido.state.logo_key = options.logo_key.unwrap_or(match options.backend {
+        BackendKind::Winit => keys::LogoKey::RightCtrl,
+        BackendKind::Headless => keys::LogoKey::None,
+    });
     if options.scale != 1 {
         ossido.state.output.change_current_state(
             None,

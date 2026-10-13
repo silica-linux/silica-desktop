@@ -3,7 +3,8 @@
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
-//!     [--session-bus] [--spawn COMANDO]... [--spawn-shell COMANDO]...
+//!     [--session-bus] [--logo-key none|rightctrl|rightalt]
+//!     [--spawn COMANDO]... [--spawn-shell COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -96,6 +97,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 options.spawn.push(command);
             }
             "--session-bus" => options.session_bus = true,
+            "--logo-key" => {
+                let name = value()?;
+                options.logo_key = Some(
+                    ossido::keys::LogoKey::parse(&name)
+                        .ok_or(format!("--logo-key: {name} (none, rightctrl, rightalt)"))?,
+                );
+            }
             "--spawn-shell" => {
                 let command = value()?;
                 options.spawn_shell.push(command);

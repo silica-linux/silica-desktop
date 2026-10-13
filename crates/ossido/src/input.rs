@@ -134,6 +134,7 @@ impl State {
     /// eseguono il loro comando e non arrivano all'app; il resto va alla superficie con il
     /// focus.
     pub fn handle_key(&mut self, code: Keycode, state: KeyState, time: u32) {
+        let code = self.logo_key.remap(code);
         let Some(keyboard) = self.seat.get_keyboard() else {
             return;
         };

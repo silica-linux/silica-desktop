@@ -99,6 +99,8 @@ pub struct State {
     pub panorama_press: bool,
     /// Il selettore delle app è aperto: il rilascio del tasto Logo lo conferma.
     pub switcher_active: bool,
+    /// Il tasto che fa da Logo (`--logo-key`).
+    pub logo_key: crate::keys::LogoKey,
     /// Gesto del trackpad in corso (`gestures.rs`).
     pub gesture: Option<crate::gestures::Gesture>,
     /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
@@ -252,6 +254,7 @@ impl State {
             panorama: None,
             panorama_press: false,
             switcher_active: false,
+            logo_key: crate::keys::LogoKey::None,
             gesture: None,
             titlebar_hover: None,
             titlebar_press: None,
