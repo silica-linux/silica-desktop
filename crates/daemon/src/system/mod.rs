@@ -69,6 +69,8 @@ pub struct Audio {
     /// 0–1.
     pub volume: f64,
     pub muted: bool,
+    /// Il nome dell'uscita predefinita (`node.description` di PipeWire).
+    pub name: String,
 }
 
 /// Lo stato intero; `None` vuol dire sorgente assente.
@@ -116,6 +118,7 @@ impl SystemState {
         put("audio.available", Value::Bool(self.audio.is_some()));
         put("audio.volume", Value::F64(audio.volume));
         put("audio.muted", Value::Bool(audio.muted));
+        put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
         dict
     }

@@ -328,16 +328,41 @@ async fn read_battery(bus: &Connection) -> Result<Option<Battery>> {
 
 // --- Luminosità e audio ------------------------------------------------------------
 
+/// Ogni quante letture del volume si rilegge il nome dell'uscita (cambia di rado).
+const NAME_EVERY: u32 = 5;
+
 async fn poll(shared: &Shared) {
+    let mut tick: u32 = 0;
+    let mut name = String::new();
     loop {
         let brightness = read_backlight(&shared.config.backlight_dir).map(|b| b.fraction());
-        let audio = read_audio(&shared.config.wpctl).await;
+        let mut audio = read_audio(&shared.config.wpctl).await;
+        if let Some(audio) = &mut audio {
+            if (tick.is_multiple_of(NAME_EVERY) || name.is_empty())
+                && let Some(read) = read_audio_name(&shared.config.wpctl).await
+            {
+                name = read;
+            }
+            audio.name.clone_from(&name);
+        }
+        tick = tick.wrapping_add(1);
         shared.update(|s| {
             s.brightness = brightness;
             s.audio = audio;
         });
         Timer::after(shared.config.poll).await;
     }
+}
+
+/// Il volume appena riletto, con il nome dell'uscita già noto.
+fn keep_name(shared: &Shared, audio: Option<Audio>) {
+    shared.update(|s| {
+        let name = s.audio.as_ref().map(|a| a.name.clone()).unwrap_or_default();
+        s.audio = audio.map(|mut a| {
+            a.name = name;
+            a
+        });
+    });
 }
 
 struct Backlight {
@@ -424,6 +449,25 @@ async fn wpctl(program: &Path, args: &[&str]) -> Result<String> {
     .await
 }
 
+/// Il nome dell'uscita da `wpctl inspect`: `node.description = "…"`, altrimenti
+/// `node.nick`; al più 128 caratteri.
+fn parse_audio_name(text: &str) -> Option<String> {
+    let value = |key: &str| {
+        text.lines().find_map(|line| {
+            let (k, v) = line.trim_start_matches([' ', '*']).split_once(" = ")?;
+            (k.trim() == key).then(|| v.trim().trim_matches('"').to_owned())
+        })
+    };
+    value("node.description")
+        .or_else(|| value("node.nick"))
+        .filter(|name| !name.is_empty())
+        .map(|name| name.chars().take(128).collect())
+}
+
+async fn read_audio_name(program: &Path) -> Option<String> {
+    parse_audio_name(&wpctl(program, &["inspect", DEFAULT_SINK]).await.ok()?)
+}
+
 /// `Volume: 0.46` o `Volume: 0.46 [MUTED]`.
 fn parse_volume(text: &str) -> Option<Audio> {
     let mut words = text.split_whitespace();
@@ -434,6 +478,7 @@ fn parse_volume(text: &str) -> Option<Audio> {
     Some(Audio {
         volume: volume.clamp(0.0, 1.0),
         muted: text.contains("[MUTED]"),
+        name: String::new(),
     })
 }
 
@@ -448,8 +493,7 @@ pub(super) async fn set_volume(shared: &Shared, volume: f64) -> Result<()> {
         &["set-volume", DEFAULT_SINK, &format!("{volume:.3}")],
     )
     .await?;
-    let audio = read_audio(program).await;
-    shared.update(|s| s.audio = audio);
+    keep_name(shared, read_audio(program).await);
     Ok(())
 }
 
@@ -460,8 +504,7 @@ pub(super) async fn set_muted(shared: &Shared, muted: bool) -> Result<()> {
         &["set-mute", DEFAULT_SINK, if muted { "1" } else { "0" }],
     )
     .await?;
-    let audio = read_audio(program).await;
-    shared.update(|s| s.audio = audio);
+    keep_name(shared, read_audio(program).await);
     Ok(())
 }
 
@@ -471,20 +514,24 @@ mod tests {
 
     #[test]
     fn wpctl_output_is_parsed_defensively() {
+        let audio = |volume, muted| Audio {
+            volume,
+            muted,
+            name: String::new(),
+        };
+        assert_eq!(parse_volume("Volume: 0.46\n"), Some(audio(0.46, false)));
+        assert_eq!(parse_volume("Volume: 1.20 [MUTED]"), Some(audio(1.0, true)));
         assert_eq!(
-            parse_volume("Volume: 0.46\n"),
-            Some(Audio {
-                volume: 0.46,
-                muted: false
-            })
+            parse_audio_name(
+                "id 52, type PipeWire:Interface:Node\n  * node.description = \"Altoparlanti\"\n    node.nick = \"Speaker\""
+            ),
+            Some("Altoparlanti".to_owned())
         );
         assert_eq!(
-            parse_volume("Volume: 1.20 [MUTED]"),
-            Some(Audio {
-                volume: 1.0,
-                muted: true
-            })
+            parse_audio_name("    node.nick = \"Speaker\""),
+            Some("Speaker".to_owned())
         );
+        assert_eq!(parse_audio_name("niente"), None);
         assert_eq!(parse_volume("Volume: NaN"), None);
         assert_eq!(parse_volume("errore"), None);
         assert_eq!(parse_volume(""), None);

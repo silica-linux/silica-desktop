@@ -103,7 +103,8 @@ dei menu.
 - `State() → a{sv}`: chiavi piatte. `wifi.available`, `wifi.enabled`, `wifi.ssid`,
   `wifi.strength` (0–100), `wifi.wired`; `bluetooth.available`, `bluetooth.powered`;
   `battery.present`, `battery.percent`, `battery.charging`; `brightness.available`,
-  `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`; `dnd`.
+  `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`, `audio.name` (nome dell'uscita,
+  `node.description` di PipeWire); `dnd`.
 - `SetWifiEnabled(b)`, `SetBluetoothPowered(b)`, `SetVolume(d)`, `SetMuted(b)`,
   `SetBrightness(d)` (0–1, mai a zero), `SetDoNotDisturb(b)`. Una sorgente assente è
   l'errore `org.freedesktop.DBus.Error.Failed`.

@@ -42,6 +42,10 @@ pub const SYSTEM_BLUETOOTH: &str = "system.bluetooth";
 pub const SYSTEM_VOLUME: &str = "system.volume";
 pub const SYSTEM_VOLUME_UP: &str = "system.volume_up";
 pub const SYSTEM_VOLUME_DOWN: &str = "system.volume_down";
+pub const SYSTEM_VOLUME_UP_FINE: &str = "system.volume_up_fine";
+pub const SYSTEM_VOLUME_DOWN_FINE: &str = "system.volume_down_fine";
+pub const SYSTEM_BRIGHTNESS_UP_FINE: &str = "system.brightness_up_fine";
+pub const SYSTEM_BRIGHTNESS_DOWN_FINE: &str = "system.brightness_down_fine";
 pub const SYSTEM_MUTE: &str = "system.mute";
 pub const SYSTEM_MUTE_TOGGLE: &str = "system.mute_toggle";
 pub const SYSTEM_BRIGHTNESS: &str = "system.brightness";
@@ -277,6 +281,20 @@ pub const CATALOG: &[CommandSpec] = &[
         params: no_params,
     },
     CommandSpec {
+        id: SYSTEM_VOLUME_UP_FINE,
+        label: "Alza il volume di poco",
+        description: "Alza il volume di un quarto di passo (1/64).",
+        shortcut: Some("Alt+Shift+XF86AudioRaiseVolume"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_VOLUME_DOWN_FINE,
+        label: "Abbassa il volume di poco",
+        description: "Abbassa il volume di un quarto di passo (1/64).",
+        shortcut: Some("Alt+Shift+XF86AudioLowerVolume"),
+        params: no_params,
+    },
+    CommandSpec {
         id: SYSTEM_MUTE,
         label: "Muto",
         description: "Toglie o rimette l'audio dell'uscita predefinita.",
@@ -309,6 +327,20 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Diminuisci la luminosità",
         description: "Diminuisce la luminosità di un sedicesimo.",
         shortcut: Some("XF86MonBrightnessDown"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_BRIGHTNESS_UP_FINE,
+        label: "Aumenta la luminosità di poco",
+        description: "Aumenta la luminosità di un quarto di passo (1/64).",
+        shortcut: Some("Alt+Shift+XF86MonBrightnessUp"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_BRIGHTNESS_DOWN_FINE,
+        label: "Diminuisci la luminosità di poco",
+        description: "Diminuisce la luminosità di un quarto di passo (1/64).",
+        shortcut: Some("Alt+Shift+XF86MonBrightnessDown"),
         params: no_params,
     },
     CommandSpec {

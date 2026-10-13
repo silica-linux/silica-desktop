@@ -115,10 +115,10 @@ List<NotificationGroup> groupNotifications(Iterable<ShellNotification> all) {
   return [for (final e in groups.entries) NotificationGroup(e.key, e.value)];
 }
 
-/// Entrata del banner (notifications.md, "Animazione di comparsa"): scorre da destra
-/// entrando da fuori schermo, la distanza residua si riduce di ~0,82 a fotogramma
-/// (75 Hz), cioè una costante di tempo di ~65 ms, senza superamento.
-const double bannerEnterTau = 65;
+/// Entrata del banner (notifications.md, "Ciclo di vita del banner"): scorre da destra
+/// entrando da fuori schermo; la distanza residua si riduce di ~0,83 a fotogramma (75 Hz),
+/// costante di tempo ~71 ms, arrivo entro 1 pt in ~400 ms, senza superamento.
+const double bannerEnterTau = 71;
 
 /// Distanza di partenza: tutto il banner più il margine, fuori dallo schermo.
 const double bannerEnterDistance = 344 + 16;
@@ -135,9 +135,96 @@ double bannerEnterOffset(double ms) {
   return offset < 0.5 ? 0 : offset;
 }
 
-/// Tempo di permanenza di un banner (non misurato: plan/reference/RICHIESTE.md, N-01). Le
-/// notifiche critiche restano finché l'utente non le chiude.
+/// Mentre entra il banner compare in dissolvenza (~210 ms) ed è sfocato, a fuoco in ~215 ms.
+const double bannerFadeInMs = 210;
+const double bannerFocusMs = 215;
+
+/// Sfocatura massima (σ in pt) del banner che entra o esce: il contorno del contenuto
+/// sparisce quasi del tutto nel primo fotogramma (gradiente massimo 4 su 118).
+const double bannerBlurSigma = 8;
+
+/// Opacità e sfocatura dell'entrata `ms` dopo l'inizio.
+double bannerEnterOpacity(double ms) => (ms / bannerFadeInMs).clamp(0.0, 1.0);
+double bannerEnterBlur(double ms) =>
+    bannerBlurSigma * (1 - (ms / bannerFocusMs).clamp(0.0, 1.0));
+
+/// Dalla comparsa all'inizio dell'uscita: ~5,0 s. Le notifiche critiche restano finché
+/// l'utente non le chiude.
 const Duration bannerDuration = Duration(seconds: 5);
 
-/// Uscita del banner (non misurata, N-01): verso destra.
-const Duration bannerExitDuration = Duration(milliseconds: 250);
+/// Con il puntatore sopra il banner non scade; dopo che il puntatore esce, ~1,1 s.
+const Duration bannerLinger = Duration(milliseconds: 1100);
+
+/// Uscita: verso destra, ~180–190 ms, con dissolvenza fino a metà e sfocatura crescente.
+const Duration bannerExitDuration = Duration(milliseconds: 190);
+
+/// Spostamenti misurati dell'uscita a passi di ~13,3 ms (bordo sinistro − 2200, pt).
+const List<double> bannerExitSteps = [
+  0,
+  37,
+  66,
+  104,
+  141,
+  175,
+  207,
+  234,
+  264,
+  287,
+  305,
+  321,
+  335,
+  346,
+  356,
+];
+
+/// Spostamento a destra `ms` dopo l'inizio dell'uscita (interpolazione delle misure).
+double bannerExitOffset(double ms) {
+  final step = ms / (1000 / 75);
+  if (step <= 0) return 0;
+  final i = step.floor();
+  if (i >= bannerExitSteps.length - 1) return bannerEnterDistance;
+  return bannerExitSteps[i] +
+      (bannerExitSteps[i + 1] - bannerExitSteps[i]) * (step - i);
+}
+
+double bannerExitOpacity(double ms) =>
+    1 - 0.5 * (ms / bannerExitDuration.inMilliseconds).clamp(0.0, 1.0);
+double bannerExitBlur(double ms) =>
+    bannerBlurSigma * (ms / bannerExitDuration.inMilliseconds).clamp(0.0, 1.0);
+
+/// Apertura del Centro notifiche: scorre da destra, quasi tutto in ~35 ms e poi una coda
+/// lunga fino a ~235 ms (bordo dei contenuti 2545 → 2198 → 2158): somma di due
+/// esponenziali, una rapida e una lenta.
+const double centerDistance = 387;
+const Duration centerOpenDuration = Duration(milliseconds: 235);
+
+double centerOpenOffset(double ms) {
+  if (ms <= 0) return centerDistance;
+  final x = 347 * math.exp(-ms / 12) + 40 * math.exp(-ms / 70);
+  return ms >= centerOpenDuration.inMilliseconds || x < 0.5 ? 0 : x;
+}
+
+/// Chiusura (~300 ms, uguale con Esc, clic sull'orologio o clic fuori): un leggero
+/// spostamento lento, poi un'uscita rapida e una coda.
+const Duration centerCloseDuration = Duration(milliseconds: 300);
+const List<(double, double)> centerCloseSteps = [
+  (0, 0),
+  (60, 10),
+  (120, 37),
+  (135, 104),
+  (150, 357),
+  (200, 380),
+  (300, centerDistance),
+];
+
+double centerCloseOffset(double ms) {
+  if (ms <= 0) return 0;
+  for (var i = 1; i < centerCloseSteps.length; i++) {
+    final (t1, x1) = centerCloseSteps[i];
+    if (ms <= t1) {
+      final (t0, x0) = centerCloseSteps[i - 1];
+      return x0 + (x1 - x0) * (ms - t0) / (t1 - t0);
+    }
+  }
+  return centerDistance;
+}

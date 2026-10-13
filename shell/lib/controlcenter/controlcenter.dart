@@ -25,6 +25,7 @@ import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
+import 'hud.dart';
 
 const double stackWidth = 292;
 const double columnWidth = 140;
@@ -268,7 +269,19 @@ class _ControlCenterState extends State<ControlCenter>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(child: _center(context)),
+      // L'HUD del volume e della luminosità: non con il Centro aperto.
+      Positioned.fill(
+        child: IgnorePointer(
+          child: SystemHud(system: widget.system, suppressed: _open),
+        ),
+      ),
+    ],
+  );
+
+  Widget _center(BuildContext context) {
     final ms =
         _anim.value * (_open ? openDuration : closeDuration).inMilliseconds;
     final opacity = _open

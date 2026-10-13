@@ -211,6 +211,7 @@ case "$1" in
     if [ "$(cat "$S.mute" 2>/dev/null)" = 1 ]; then echo "Volume: $v [MUTED]"; else echo "Volume: $v"; fi ;;
   set-volume) echo "$3" > "$S" ;;
   set-mute) echo "$3" > "$S.mute" ;;
+  inspect) echo '  * node.description = "Altoparlanti di prova"' ;;
   *) exit 1 ;;
 esac
 "#,
@@ -317,6 +318,8 @@ fn reads_and_changes_the_system() {
             assert!(get::<bool>(&state, "bluetooth.powered"));
             assert!((get::<f64>(&state, "brightness") - 0.5).abs() < 1e-9);
             assert!((get::<f64>(&state, "audio.volume") - 0.5).abs() < 1e-9);
+            let state = wait_for(&proxy, |s| !get::<String>(s, "audio.name").is_empty()).await;
+            assert_eq!(get::<String>(&state, "audio.name"), "Altoparlanti di prova");
 
             proxy.set_wifi_enabled(false).await.unwrap();
             wait_for(&proxy, |s| !get::<bool>(s, "wifi.enabled")).await;

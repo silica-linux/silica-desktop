@@ -24,6 +24,7 @@ import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/system_status.dart';
+import 'banner.dart';
 import 'model.dart';
 import 'service.dart';
 
@@ -67,6 +68,17 @@ const double headerGapBelow = 7.5;
 /// Spazio fra le carte nel Centro (non misurato: come il passo delle carte impilate).
 const double cardGap = 8;
 
+/// Gruppo espanso (sessione 8, N-03): carte a passo 64 (6 pt fra l'una e l'altra),
+/// intestazione con il titolo a 19 pt e i controlli da 20 pt; lo scambio di forma fra i
+/// due controlli e l'espansione durano ~150–200 ms.
+const double expandedGap = 6;
+const double groupHeaderHeight = 28;
+const double groupTitleSize = 19;
+const double groupPillHeight = 20;
+const double groupCollapseWidth = 102;
+const double groupClearWidth = 65;
+const Duration groupMorph = Duration(milliseconds: 180);
+
 /// Carte impilate sotto un gruppo chiuso: strisce di 7 pt a passo 8, rientrate di ~19 e
 /// ~29 pt per lato.
 const double stackStep = 8;
@@ -82,6 +94,15 @@ const Color buttonText = Color(0xFF2F2F31);
 const double buttonHeight = 22;
 const double actionsInset = 12;
 
+/// Pulsanti che compaiono al passaggio del puntatore sul banner (sessione 8, N-02).
+const double closeSize = 21;
+const Offset closeCenter = Offset(4, 6);
+const Size detailsSize = Size(65, 21);
+const double detailsInset = 9;
+
+/// Spazio fra il testo accorciato e la capsula (non misurato).
+const double detailsGap = 8;
+
 /// Lo scrim del Centro scurisce lo sfondo di ~×0,75 fra gli elementi e sfuma in ~60 pt.
 const Color scrimColor = Color(0x40000000);
 const double scrimBlur = 44;
@@ -91,9 +112,6 @@ const double scrimBlur = 44;
 const Color shadowColor = Color(0x10000000);
 const double shadowSigma = 6;
 const Offset shadowOffset = Offset(0, 4);
-
-/// Apertura e chiusura del Centro (non misurate: RICHIESTE.md, N-03).
-const Duration centerFade = Duration(milliseconds: 200);
 
 TextStyle _style(double size, Color color, {FontWeight? weight}) => TextStyle(
   fontFamily: uiFontFamily,
@@ -126,18 +144,25 @@ class NotificationsLayer extends StatefulWidget {
   State<NotificationsLayer> createState() => _NotificationsLayerState();
 }
 
+class _BannerEntry {
+  _BannerEntry(this.notification);
+
+  final Key key = UniqueKey();
+  ShellNotification notification;
+  bool leaving = false;
+}
+
 class _NotificationsLayerState extends State<NotificationsLayer>
-    with TickerProviderStateMixin {
-  late final AnimationController _enter;
-  late final AnimationController _exit;
+    with SingleTickerProviderStateMixin {
+  /// Apertura e chiusura del Centro: il valore è il tempo trascorso, in proporzione alla
+  /// durata della fase in corso.
   late final AnimationController _center;
   final FocusNode _focus = FocusNode();
   StreamSubscription<ShellNotification>? _posted;
   StreamSubscription<String>? _commands;
-  ShellNotification? _banner;
-  Timer? _bannerTimer;
-  bool _hoverBanner = false;
-  double _drag = 0;
+
+  /// I banner sullo schermo: al più uno che entra o resta, gli altri escono.
+  final List<_BannerEntry> _banners = [];
   bool _centerOpen = false;
   final Set<String> _expanded = {};
 
@@ -147,13 +172,8 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   @override
   void initState() {
     super.initState();
-    void repaint() => setState(() {});
-    _enter = AnimationController(vsync: this, duration: bannerEnterDuration)
-      ..addListener(repaint);
-    _exit = AnimationController(vsync: this, duration: bannerExitDuration)
-      ..addListener(repaint);
-    _center = AnimationController(vsync: this, duration: centerFade)
-      ..addListener(repaint);
+    _center = AnimationController(vsync: this)
+      ..addListener(() => setState(() {}));
     widget.source.addListener(_changed);
     _posted = widget.source.posted.listen(_post);
     _commands = ShellChannel.instance.commands.listen((id) {
@@ -171,77 +191,69 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     widget.source.removeListener(_changed);
     _posted?.cancel();
     _commands?.cancel();
-    _bannerTimer?.cancel();
-    _enter.dispose();
-    _exit.dispose();
     _center.dispose();
     _focus.dispose();
     super.dispose();
   }
 
   void _changed() {
-    final banner = _banner;
-    // Chiusa altrove (dal Centro, dall'app, scaduta): il banner sparisce.
-    if (banner != null && !widget.source.notifications.containsKey(banner.id)) {
-      _hideBanner(animate: true);
+    // Chiusa altrove (dal Centro, dall'app, scaduta): il banner esce.
+    for (final banner in _banners) {
+      if (!widget.source.notifications.containsKey(banner.notification.id)) {
+        banner.leaving = true;
+      }
     }
     setState(() {});
   }
 
   void _post(ShellNotification n) {
     if (_centerOpen || (widget.system?.value.doNotDisturb ?? false)) return;
-    final replacing = _banner?.id == n.id && !_exit.isAnimating;
     setState(() {
-      _banner = n;
-      _drag = 0;
+      final same = _banners.where(
+        (b) => !b.leaving && b.notification.id == n.id,
+      );
+      if (same.isNotEmpty) {
+        // Sostituita dall'app (stesso id): il contenuto cambia sul posto.
+        same.first.notification = n;
+        return;
+      }
+      // Una notifica nuova sostituisce il banner corrente, che esce mentre lei entra.
+      for (final banner in _banners) {
+        banner.leaving = true;
+      }
+      _banners.add(_BannerEntry(n));
     });
-    _exit.value = 0;
-    if (!replacing) _enter.forward(from: 0);
-    _scheduleHide();
     _updateInput();
   }
 
-  void _scheduleHide() {
-    _bannerTimer?.cancel();
-    final banner = _banner;
-    if (banner == null || banner.critical || _hoverBanner) return;
-    _bannerTimer = Timer(bannerDuration, () => _hideBanner(animate: true));
-  }
-
-  Future<void> _hideBanner({required bool animate}) async {
-    _bannerTimer?.cancel();
-    final banner = _banner;
-    if (banner == null) return;
-    if (animate) {
-      await _exit.forward(from: 0);
-      // Nel frattempo può essere arrivato un altro banner.
-      if (_banner?.id != banner.id || _exit.value < 1) return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _banner = null;
-      _hoverBanner = false;
-    });
-    _exit.value = 0;
+  void _gone(_BannerEntry banner) {
+    setState(() => _banners.remove(banner));
     _updateInput();
   }
 
   void _toggleCenter() => _centerOpen ? _closeCenter() : _openCenter();
 
   void _openCenter() {
-    _hideBanner(animate: false);
-    setState(() => _centerOpen = true);
-    _center.forward(from: _center.value);
+    setState(() {
+      _banners.clear();
+      _centerOpen = true;
+    });
+    _center
+      ..duration = centerOpenDuration
+      ..forward(from: 0);
     _updateInput();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
   void _closeCenter() {
+    if (!_centerOpen) return;
     setState(() {
       _centerOpen = false;
       _expanded.clear();
     });
-    _center.reverse(from: _center.value);
+    _center
+      ..duration = centerCloseDuration
+      ..forward(from: 0);
     _updateInput();
   }
 
@@ -255,14 +267,14 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     }
     LayerControl.keyboard('none');
     final size = _size;
-    if (_banner == null || size == null) {
+    if (_banners.isEmpty || size == null) {
       LayerControl.inputRegion(const []);
       return;
     }
     // La colonna in alto a destra, con lo spazio per il pulsante di chiusura.
     final left = size.width - columnMargin - columnWidth - 8;
     LayerControl.inputRegion([
-      Rect.fromLTWH(left, barHeight, size.width - left, 200),
+      Rect.fromLTWH(left, barHeight, size.width - left, 260),
     ]);
   }
 
@@ -270,11 +282,24 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     if (n.hasDefault) widget.source.invoke(n.id, 'default');
   }
 
+  /// Spostamento a destra del Centro e opacità nella fase corrente; null se è chiuso.
+  (double, double)? _centerPose() {
+    final ms = _center.value * (_center.duration?.inMilliseconds ?? 0);
+    if (_centerOpen) {
+      final x = centerOpenOffset(_center.isCompleted ? 1e9 : ms);
+      return (x, 1 - x / centerDistance);
+    }
+    if (!_center.isAnimating) return null;
+    final x = centerCloseOffset(ms);
+    return (x, 1 - x / centerDistance);
+  }
+
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_centerOpen && _banner != null) _updateInput();
+      if (mounted && !_centerOpen && _banners.isNotEmpty) _updateInput();
     });
+    final pose = _centerPose();
     return LayoutBuilder(
       builder: (context, constraints) {
         _size = constraints.biggest;
@@ -283,63 +308,35 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            if (_centerOpen || _center.value > 0)
+            if (pose != null)
               Positioned.fill(
                 child: Opacity(
-                  opacity: _center.value,
-                  child: _centerView(left),
+                  opacity: pose.$2.clamp(0.0, 1.0),
+                  child: Transform.translate(
+                    offset: Offset(pose.$1, 0),
+                    child: _centerView(left),
+                  ),
                 ),
               ),
-            if (_banner != null && !_centerOpen) _bannerView(_banner!, left),
+            if (!_centerOpen)
+              for (final banner in _banners)
+                Positioned(
+                  key: banner.key,
+                  left: left,
+                  top: columnTop,
+                  width: columnWidth,
+                  child: BannerSlot(
+                    notification: banner.notification,
+                    leaving: banner.leaving,
+                    onGone: () => _gone(banner),
+                    onActivate: () => _activate(banner.notification),
+                    onDismiss: () =>
+                        widget.source.dismiss(banner.notification.id),
+                  ),
+                ),
           ],
         );
       },
-    );
-  }
-
-  Widget _bannerView(ShellNotification n, double left) {
-    final elapsed = _enter.value * bannerEnterDuration.inMilliseconds;
-    final enter = _enter.isAnimating || _enter.value < 1
-        ? bannerEnterOffset(elapsed)
-        : 0.0;
-    final exit = Curves.easeIn.transform(_exit.value) * bannerEnterDistance;
-    return Positioned(
-      left: left + enter + exit + _drag,
-      top: columnTop,
-      width: columnWidth,
-      child: MouseRegion(
-        onEnter: (_) {
-          setState(() => _hoverBanner = true);
-          _bannerTimer?.cancel();
-        },
-        onExit: (_) {
-          setState(() => _hoverBanner = false);
-          _scheduleHide();
-        },
-        child: GestureDetector(
-          onTap: () {
-            _activate(n);
-            _hideBanner(animate: true);
-          },
-          // Trascinato verso destra oltre metà larghezza va via (soglia non misurata).
-          onHorizontalDragUpdate: (d) => setState(
-            () => _drag = (_drag + d.delta.dx).clamp(0, columnWidth),
-          ),
-          onHorizontalDragEnd: (_) {
-            if (_drag > columnWidth / 4) {
-              _hideBanner(animate: true);
-            } else {
-              setState(() => _drag = 0);
-            }
-          },
-          child: NotificationCard(
-            notification: n,
-            shadow: true,
-            showClose: _hoverBanner,
-            onClose: () => widget.source.dismiss(n.id),
-          ),
-        ),
-      ),
     );
   }
 
@@ -409,12 +406,13 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     ),
   );
 
+  /// Stato vuoto: un testo bianco in semibold, centrato sulla colonna.
   Widget _empty() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 24),
     child: Center(
       child: Text(
         'Nessuna notifica',
-        style: _style(fontSize, const Color(0xB3FFFFFF)),
+        style: _style(fontSize, headerColor, weight: FontWeight.w600),
       ),
     ),
   );
@@ -453,27 +451,14 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     }
     return [
       if (group.items.length > 1)
-        SizedBox(
-          height: headerHeight,
-          child: Row(
-            children: [
-              const SizedBox(width: 1),
-              Expanded(
-                child: Text(
-                  group.latest.appName,
-                  overflow: TextOverflow.ellipsis,
-                  style: _style(fontSize, headerColor, weight: FontWeight.w600),
-                ),
-              ),
-              GestureDetector(
-                onTap: () => setState(() => _expanded.remove(group.key)),
-                child: Text(
-                  'Riduci',
-                  style: _style(fontSize, const Color(0xB3FFFFFF)),
-                ),
-              ),
-            ],
-          ),
+        _GroupHeader(
+          title: group.latest.appName,
+          onCollapse: () => setState(() => _expanded.remove(group.key)),
+          onClear: () {
+            for (final n in group.items) {
+              widget.source.dismiss(n.id);
+            }
+          },
         ),
       for (final n in group.items) ...[
         _CenterCard(
@@ -481,10 +466,95 @@ class _NotificationsLayerState extends State<NotificationsLayer>
           source: widget.source,
           onTap: () => _activate(n),
         ),
-        const SizedBox(height: cardGap),
+        const SizedBox(height: expandedGap),
       ],
     ];
   }
+}
+
+/// L'intestazione di un gruppo espanso: il nome dell'app a sinistra (19 pt), a destra la
+/// capsula per ridurre il gruppo (102 × 20) e il cerchio per cancellarlo (20 × 20). Con il
+/// puntatore sul cerchio le due forme si scambiano la larghezza: il cerchio diventa la
+/// capsula "Cancella" (65 × 20) e la capsula un cerchio con la freccia in su.
+class _GroupHeader extends StatefulWidget {
+  const _GroupHeader({
+    required this.title,
+    required this.onCollapse,
+    required this.onClear,
+  });
+
+  final String title;
+  final VoidCallback onCollapse;
+  final VoidCallback onClear;
+
+  @override
+  State<_GroupHeader> createState() => _GroupHeaderState();
+}
+
+class _GroupHeaderState extends State<_GroupHeader> {
+  bool _clearHover = false;
+
+  Widget _pill({
+    required double width,
+    required String label,
+    required VoidCallback onTap,
+  }) => GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: groupMorph,
+      curve: Curves.easeOut,
+      width: width,
+      height: groupPillHeight,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Color(0xFFB4B5B9),
+        borderRadius: BorderRadius.all(Radius.circular(groupPillHeight / 2)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: _style(
+          smallSize,
+          const Color(0xFF3A3B3E),
+          weight: FontWeight.w600,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: groupHeaderHeight,
+    child: Row(
+      children: [
+        const SizedBox(width: 1),
+        Expanded(
+          child: Text(
+            widget.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _style(groupTitleSize, headerColor, weight: FontWeight.w700),
+          ),
+        ),
+        _pill(
+          width: _clearHover ? groupPillHeight : groupCollapseWidth,
+          label: _clearHover ? '↑' : 'Riduci',
+          onTap: widget.onCollapse,
+        ),
+        const SizedBox(width: 8),
+        MouseRegion(
+          onEnter: (_) => setState(() => _clearHover = true),
+          onExit: (_) => setState(() => _clearHover = false),
+          child: _pill(
+            width: _clearHover ? groupClearWidth : groupPillHeight,
+            label: _clearHover ? 'Cancella' : '×',
+            onTap: widget.onClear,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Una carta del Centro: con l'ora, le azioni e il pulsante di chiusura al passaggio.
@@ -540,6 +610,8 @@ class NotificationCard extends StatelessWidget {
     this.showClose = false,
     this.onClose,
     this.onAction,
+    this.showDetails = false,
+    this.onDetails,
   });
 
   final ShellNotification notification;
@@ -550,6 +622,11 @@ class NotificationCard extends StatelessWidget {
   final bool showClose;
   final VoidCallback? onClose;
   final ValueChanged<String>? onAction;
+
+  /// La capsula "Dettagli" a destra (banner al passaggio del puntatore): il testo si
+  /// accorcia per lasciarle spazio.
+  final bool showDetails;
+  final VoidCallback? onDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -585,13 +662,36 @@ class NotificationCard extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         card,
+        // La × al passaggio del puntatore: cerchio di 21 pt centrato 4 pt a destra e 6 pt
+        // sotto l'angolo in alto a sinistra della carta.
         if (showClose)
           Positioned(
-            left: -6,
-            top: -6,
+            left: closeCenter.dx - closeSize / 2,
+            top: closeCenter.dy - closeSize / 2,
             child: GestureDetector(
               onTap: onClose,
-              child: const CloseCircle(size: 20),
+              child: const CloseCircle(size: closeSize),
+            ),
+          ),
+        if (showDetails)
+          Positioned(
+            right: detailsInset,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: onDetails,
+                child: Container(
+                  width: detailsSize.width,
+                  height: detailsSize.height,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: buttonFill,
+                    borderRadius: BorderRadius.all(Radius.circular(10.5)),
+                  ),
+                  child: Text('Dettagli', style: _style(smallSize, buttonText)),
+                ),
+              ),
             ),
           ),
       ],
@@ -602,10 +702,12 @@ class NotificationCard extends StatelessWidget {
     final title = _style(fontSize, textColor, weight: FontWeight.w600);
     final body = _style(fontSize, textColor);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         iconLeft,
         paddingTop,
-        paddingRight,
+        showDetails
+            ? detailsInset + detailsSize.width + detailsGap
+            : paddingRight,
         paddingBottom,
       ),
       child: Row(

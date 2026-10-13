@@ -16,8 +16,10 @@ use silica_control::commands::{
 };
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
-    SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_UP, SYSTEM_DND, SYSTEM_MUTE, SYSTEM_MUTE_TOGGLE,
-    SYSTEM_STATUS, SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_UP, SYSTEM_WIFI, ValueParams,
+    SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_DOWN_FINE, SYSTEM_BRIGHTNESS_UP,
+    SYSTEM_BRIGHTNESS_UP_FINE, SYSTEM_DND, SYSTEM_MUTE, SYSTEM_MUTE_TOGGLE, SYSTEM_STATUS,
+    SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_DOWN_FINE, SYSTEM_VOLUME_UP,
+    SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -145,12 +147,24 @@ impl State {
                 };
                 Ok(json!({ "queued": self.system.queue(call) }))
             }
-            SYSTEM_VOLUME_UP | SYSTEM_VOLUME_DOWN => {
-                Ok(json!({ "queued": self.system.volume_step(id == SYSTEM_VOLUME_UP) }))
-            }
+            SYSTEM_VOLUME_UP
+            | SYSTEM_VOLUME_DOWN
+            | SYSTEM_VOLUME_UP_FINE
+            | SYSTEM_VOLUME_DOWN_FINE => Ok(json!({
+                "queued": self.system.volume_step(
+                    matches!(id, SYSTEM_VOLUME_UP | SYSTEM_VOLUME_UP_FINE),
+                    matches!(id, SYSTEM_VOLUME_UP_FINE | SYSTEM_VOLUME_DOWN_FINE),
+                )
+            })),
             SYSTEM_MUTE_TOGGLE => Ok(json!({ "queued": self.system.mute_toggle() })),
-            SYSTEM_BRIGHTNESS_UP | SYSTEM_BRIGHTNESS_DOWN => Ok(json!({
-                "queued": self.system.brightness_step(id == SYSTEM_BRIGHTNESS_UP)
+            SYSTEM_BRIGHTNESS_UP
+            | SYSTEM_BRIGHTNESS_DOWN
+            | SYSTEM_BRIGHTNESS_UP_FINE
+            | SYSTEM_BRIGHTNESS_DOWN_FINE => Ok(json!({
+                "queued": self.system.brightness_step(
+                    matches!(id, SYSTEM_BRIGHTNESS_UP | SYSTEM_BRIGHTNESS_UP_FINE),
+                    matches!(id, SYSTEM_BRIGHTNESS_UP_FINE | SYSTEM_BRIGHTNESS_DOWN_FINE),
+                )
             })),
             FARO_TOGGLE | NOTIFICATIONS_TOGGLE | CONTROLCENTER_TOGGLE => {
                 let sent = self.forward_to_shell(id);

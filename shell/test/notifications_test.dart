@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -223,6 +225,108 @@ void main() {
       expect(source.items, contains(5));
     },
   );
+
+  test('uscita e Centro seguono le misure della sessione 8', () {
+    // Uscita: spostamenti a passi di 13,3 ms.
+    expect(bannerExitOffset(0), 0);
+    expect(bannerExitOffset(1000 / 75 * 4), 141);
+    expect(bannerExitOffset(1000), bannerEnterDistance);
+    expect(bannerExitOpacity(190), 0.5);
+    // Entrata: sfocata e trasparente all'inizio, a fuoco e piena dopo ~215 ms.
+    expect(bannerEnterBlur(0), bannerBlurSigma);
+    expect(bannerEnterBlur(215), 0);
+    expect(bannerEnterOpacity(210), 1);
+    // Centro: bordo dei contenuti a ~2198 dopo 35 ms (2158 a fine corsa, 2545 all'inizio).
+    expect(centerOpenOffset(0), centerDistance);
+    expect(centerOpenOffset(35), closeTo(2198 - 2158, 5));
+    expect(centerOpenOffset(300), 0);
+    expect(centerCloseOffset(120), 37);
+    expect(centerCloseOffset(150), 357);
+    expect(centerCloseOffset(400), centerDistance);
+  });
+
+  testWidgets(
+    'una notifica nuova sostituisce il banner: il vecchio esce mentre entra',
+    (tester) async {
+      final source = FakeSource();
+      await pumpLayer(tester, source);
+      source.post(note(1));
+      await tester.pump();
+      await tester.pump(bannerEnterDuration);
+      source.post(note(2));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      // Per un momento ci sono entrambi.
+      expect(find.text('Titolo 1'), findsOneWidget);
+      expect(find.text('Titolo 2'), findsOneWidget);
+      await tester.pump(bannerExitDuration);
+      await tester.pump();
+      expect(find.text('Titolo 1'), findsNothing);
+      expect(find.text('Titolo 2'), findsOneWidget);
+    },
+  );
+
+  testWidgets('sotto il puntatore il banner resta, poi esce ~1,1 s dopo', (
+    tester,
+  ) async {
+    final source = FakeSource();
+    await pumpLayer(tester, source);
+    source.post(
+      note(3, actions: [('default', 'Apri'), ('snooze', 'Posticipa')]),
+    );
+    await tester.pump();
+    await tester.pump(bannerEnterDuration);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.text('Titolo 3')));
+    await tester.pump();
+    // Al passaggio: la × e la capsula Dettagli.
+    expect(find.byType(CloseCircle), findsOneWidget);
+    expect(find.text('Dettagli'), findsOneWidget);
+    await tester.pump(bannerDuration * 2);
+    expect(find.text('Titolo 3'), findsOneWidget);
+
+    // Dettagli mostra le azioni nel banner.
+    await tester.tap(find.text('Dettagli'));
+    await tester.pump();
+    expect(find.text('Posticipa'), findsOneWidget);
+
+    await mouse.moveTo(const Offset(10, 600));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1000));
+    expect(find.text('Titolo 3'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(find.text('Titolo 3'), findsNothing);
+  });
+
+  testWidgets('trascinato verso destra esce comunque, senza aprire l\'app', (
+    tester,
+  ) async {
+    final source = FakeSource();
+    await pumpLayer(tester, source);
+    source.post(note(4, actions: [('default', 'Apri')]));
+    await tester.pump();
+    await tester.pump(bannerEnterDuration);
+    final start = tester.getTopLeft(find.byType(NotificationCard));
+    final drag = await tester.startGesture(
+      tester.getCenter(find.text('Titolo 4')),
+    );
+    await drag.moveBy(const Offset(20, 0));
+    await drag.moveBy(const Offset(15, 0));
+    await tester.pump();
+    // Segue il puntatore 1:1 (oltre la soglia del riconoscitore).
+    expect(
+      tester.getTopLeft(find.byType(NotificationCard)).dx - start.dx,
+      greaterThan(14),
+    );
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Titolo 4'), findsNothing);
+    expect(source.calls, isEmpty);
+    expect(source.items, contains(4));
+  });
 }
 
 class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {

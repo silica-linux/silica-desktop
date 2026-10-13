@@ -32,6 +32,7 @@ class SystemSnapshot {
     this.audioAvailable = false,
     this.volume = 0,
     this.muted = false,
+    this.audioName = '',
     this.doNotDisturb = false,
   });
 
@@ -50,6 +51,9 @@ class SystemSnapshot {
   final bool audioAvailable;
   final double volume;
   final bool muted;
+
+  /// Il nome dell'uscita audio predefinita (titolo dell'HUD del volume).
+  final String audioName;
   final bool doNotDisturb;
 
   static SystemSnapshot fromDict(Map<Object?, Object?> d) {
@@ -75,6 +79,7 @@ class SystemSnapshot {
       audioAvailable: flag('audio.available'),
       volume: number('audio.volume').clamp(0, 1),
       muted: flag('audio.muted'),
+      audioName: d['audio.name'] is String ? d['audio.name'] as String : '',
       doNotDisturb: flag('dnd'),
     );
   }
@@ -102,6 +107,7 @@ class SystemSnapshot {
     audioAvailable: audioAvailable,
     volume: volume ?? this.volume,
     muted: muted ?? this.muted,
+    audioName: audioName,
     doNotDisturb: doNotDisturb ?? this.doNotDisturb,
   );
 }

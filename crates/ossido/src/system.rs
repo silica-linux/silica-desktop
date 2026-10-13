@@ -22,8 +22,12 @@ const PATH: &str = "/dev/frascella/Silica/System1";
 const INTERFACE: &str = "dev.frascella.Silica.System1";
 const RETRY: Duration = Duration::from_secs(2);
 
-/// Passo dei tasti di volume e luminosità: 16 tacche fra 0 e il massimo.
+/// Passo dei tasti di volume e luminosità: 16 tacche fra 0 e il massimo (misurato: 16
+/// pressioni da 0 al massimo).
 pub const STEP: f64 = 1.0 / 16.0;
+
+/// Con ⌥⇧ il passo è un quarto (misurato: 50 → 52, 53, 55, 56, 58).
+pub const FINE_STEP: f64 = STEP / 4.0;
 
 /// Una chiamata al daemon.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,12 +116,12 @@ impl SystemLink {
         self.status()?.get(key)?.as_bool()
     }
 
-    /// Volume più o meno un passo; alzarlo toglie il muto.
-    pub fn volume_step(&self, up: bool) -> bool {
+    /// Volume più o meno un passo (o un quarto con `fine`); alzarlo toglie il muto.
+    pub fn volume_step(&self, up: bool, fine: bool) -> bool {
         let Some(volume) = self.number("audio.volume") else {
             return false;
         };
-        let target = step(volume, up);
+        let target = step_by(volume, up, if fine { FINE_STEP } else { STEP });
         if up && self.flag("audio.muted") == Some(true) {
             self.queue(Call::Muted(false));
         }
@@ -131,19 +135,26 @@ impl SystemLink {
         }
     }
 
-    pub fn brightness_step(&self, up: bool) -> bool {
+    pub fn brightness_step(&self, up: bool, fine: bool) -> bool {
+        let size = if fine { FINE_STEP } else { STEP };
         match self.number("brightness") {
-            Some(value) => self.queue(Call::Brightness(step(value, up))),
+            Some(value) => self.queue(Call::Brightness(step_by(value, up, size))),
             None => false,
         }
     }
 }
 
 /// Un passo di 1/16 verso l'alto o il basso, agganciato alle tacche.
-pub fn step(value: f64, up: bool) -> f64 {
-    let notch = (value / STEP).round();
+#[cfg(test)]
+fn step(value: f64, up: bool) -> f64 {
+    step_by(value, up, STEP)
+}
+
+/// Un passo di `size` agganciato alle sue tacche.
+pub fn step_by(value: f64, up: bool, size: f64) -> f64 {
+    let notch = (value / size).round();
     let next = if up { notch + 1.0 } else { notch - 1.0 };
-    (next * STEP).clamp(0.0, 1.0)
+    (next * size).clamp(0.0, 1.0)
 }
 
 fn connect(address: Option<&str>) -> zbus::Result<Connection> {
@@ -234,5 +245,7 @@ mod tests {
         assert_eq!(step(0.46, true), 0.5);
         assert_eq!(step(1.0, true), 1.0);
         assert_eq!(step(0.0, false), 0.0);
+        // Un quarto di passo con ⌥⇧: 50 → 51,6 (il riferimento arrotonda a 52).
+        assert_eq!(step_by(0.5, true, FINE_STEP), 0.515625);
     }
 }
