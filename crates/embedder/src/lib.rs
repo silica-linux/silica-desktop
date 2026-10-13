@@ -10,6 +10,7 @@
 //!   attivo (`flutter/textinput`).
 
 mod codec;
+pub mod dbus;
 mod ffi;
 mod glass;
 mod keyboard;

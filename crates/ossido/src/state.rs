@@ -41,6 +41,8 @@ pub struct Ossido {
 pub struct State {
     pub start_time: Instant,
     pub socket_name: OsString,
+    /// Indirizzo del bus di sessione privato (`--session-bus`), passato ai client.
+    pub session_bus: Option<String>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
     pub loop_signal: LoopSignal,
@@ -201,6 +203,7 @@ impl State {
         Ok(Self {
             start_time: Instant::now(),
             socket_name,
+            session_bus: None,
             display_handle: dh,
             loop_handle,
             loop_signal,

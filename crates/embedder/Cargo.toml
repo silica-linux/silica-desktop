@@ -8,6 +8,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+async-channel = "2"
+async-executor = "1"
+async-io = "2"
+async-lock = "3"
+futures-lite = "2"
 libloading = "0.8"
 smithay-client-toolkit = { version = "0.19", default-features = false, features = ["calloop", "xkbcommon"] }
 serde_json = "1"
@@ -19,6 +24,7 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 khronos-egl = { version = "6", default-features = false, features = ["1_5", "dynamic"] }
 wayland-egl = "0.32"
 wayland-backend = { version = "0.3", features = ["client_system"] }
+zbus = "5.19"
 
 [dev-dependencies]
 ossido = { path = "../ossido" }

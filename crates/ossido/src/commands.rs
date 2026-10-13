@@ -279,6 +279,9 @@ impl State {
             .arg("-c")
             .arg(command)
             .env("WAYLAND_DISPLAY", &self.socket_name);
+        if let Some(address) = &self.session_bus {
+            process.env("DBUS_SESSION_BUS_ADDRESS", address);
+        }
         if shell {
             process.env(silica_protocols::shell::SHELL_ENV, "1");
         } else {

@@ -3,7 +3,7 @@
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
-//!     [--spawn COMANDO]... [--spawn-shell COMANDO]...
+//!     [--session-bus] [--spawn COMANDO]... [--spawn-shell COMANDO]...
 //! ```
 
 use std::process::ExitCode;
@@ -95,6 +95,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 let command = value()?;
                 options.spawn.push(command);
             }
+            "--session-bus" => options.session_bus = true,
             "--spawn-shell" => {
                 let command = value()?;
                 options.spawn_shell.push(command);

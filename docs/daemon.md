@@ -11,8 +11,39 @@ silica-daemon [--address INDIRIZZO] [--replace]
 Si collega al bus di sessione (`DBUS_SESSION_BUS_ADDRESS`, o `--address`) e prende i nomi
 `org.freedesktop.Notifications` e `dev.frascella.Silica`. Se un altro server delle notifiche
 li ha già (annidato in GNOME), esce con un errore; `--replace` li prende se il proprietario
-lo consente. Annidato, Ossido avvia un bus di sessione privato per la shell e le sue app
-(M4.2).
+lo consente.
+
+## Bus di sessione privato
+
+`ossido --session-bus` (lo passa `cargo xtask run --shell`) avvia un `dbus-daemon` suo e
+`silica-daemon` su quel bus, stampa `DBUS_SESSION_BUS_ADDRESS=…` su stdout e passa
+l'indirizzo a tutti i client che lancia (`--spawn`, `--spawn-shell`, `app.launch`).
+Annidato in GNOME, i nomi della sessione ospite restano suoi; il bus di sistema è quello
+della macchina.
+
+`silica-daemon` si cerca accanto all'eseguibile di Ossido, poi nel `PATH`; se manca, Ossido
+avvisa e continua senza notifiche. Il bus muore con Ossido anche se Ossido viene ucciso
+(`dbus-daemon` gira sotto una shell che termina quando si chiude lo stdin collegato a
+Ossido) e `silica-daemon` esce quando perde il bus.
+
+## Il canale silica/dbus
+
+L'embedder dà a Dart D-Bus con valori JSON (`crates/embedder/src/dbus`, lato Dart
+`shell/lib/system/dbus.dart`), su un thread a parte. Codec `JSONMethodCodec`:
+
+- `call {bus?, destination, path, interface?, method, signature?, args?}` → la lista degli
+  argomenti della risposta. `bus` è `session` (predefinito) o `system`. Gli argomenti si
+  convertono secondo `signature` (`"su"`, `"a{sv}"`…); dentro un variante il tipo si
+  deduce dal JSON (interi `i` o `x`, decimali `d`, liste di stringhe `as`, oggetti
+  `a{sv}`). Strutture → liste, dizionari → mappe. Un errore D-Bus diventa un
+  `PlatformException` con il nome dell'errore come codice; dopo 25 s
+  `org.freedesktop.DBus.Error.Timeout`.
+- `subscribe {bus?, sender?, path?, interface?, member?}` → un id; i segnali arrivano come
+  chiamata `signal {id, sender, path, interface, member, args}` (al massimo 256
+  iscrizioni). `unsubscribe {id}` → `true` se c'era.
+
+In Dart: `DBus.instance.call(...)`, `getProperty`, `getAll` e `signals(...)` (uno stream:
+l'iscrizione si chiude quando lo si cancella).
 
 ## org.freedesktop.Notifications
 

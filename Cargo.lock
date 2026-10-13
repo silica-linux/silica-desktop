@@ -3174,6 +3174,11 @@ dependencies = [
 name = "silica-embedder"
 version = "0.0.0"
 dependencies = [
+ "async-channel",
+ "async-executor",
+ "async-io",
+ "async-lock",
+ "futures-lite",
  "khronos-egl",
  "libloading",
  "ossido",
@@ -3188,6 +3193,7 @@ dependencies = [
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
+ "zbus",
 ]
 
 [[package]]

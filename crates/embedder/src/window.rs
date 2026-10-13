@@ -71,9 +71,10 @@ impl Shell {
         }
     }
 }
+use crate::dbus;
 use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
-    PointerPhase, Task, VsyncBaton,
+    PointerPhase, ResponseHandle, Task, VsyncBaton,
 };
 use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
@@ -167,6 +168,8 @@ struct App {
     shell: ShellLink,
     /// Per le regioni d'input (`silica/layer`).
     compositor: CompositorState,
+    /// Il canale `silica/dbus`, su un thread a parte.
+    dbus: Option<dbus::Bridge<ResponseHandle>>,
     qh: QueueHandle<App>,
     key_results: channel::Sender<KeyResult>,
     engine: Option<Engine>,
@@ -342,6 +345,20 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .map_err(|e| format!("canale dei messaggi: {e}"))?;
+    let (dbus_sender, dbus_channel) = channel::channel::<dbus::Event<ResponseHandle>>();
+    event_loop
+        .handle()
+        .insert_source(dbus_channel, |event, _, app: &mut App| {
+            if let Event::Msg(event) = event {
+                app.handle_dbus(event);
+            }
+        })
+        .map_err(|e| format!("canale D-Bus: {e}"))?;
+    let dbus = dbus::Bridge::start(dbus::Addresses::default(), move |event| {
+        let _ = dbus_sender.send(event);
+    })
+    .map_err(|err| warn!("silica/dbus non disponibile: {err}"))
+    .ok();
     let (vsync_sender, vsync_channel) = channel::channel::<VsyncBaton>();
     let vsync_qh = qh.clone();
     event_loop
@@ -431,6 +448,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 .ok(),
         ),
         compositor,
+        dbus,
         qh: qh.clone(),
         key_results,
         engine: Some(engine),
@@ -463,6 +481,15 @@ impl App {
     /// Risponde a un messaggio del framework. Ogni messaggio con handle riceve una
     /// risposta, vuota se il canale non è gestito.
     fn handle_message(&mut self, message: PlatformMessage) {
+        // silica/dbus risponde più tardi, dal suo thread (`handle_dbus`).
+        if message.channel == dbus::CHANNEL
+            && let Some(bridge) = &self.dbus
+        {
+            if let Some(handle) = message.response {
+                bridge.handle(&message.data, handle);
+            }
+            return;
+        }
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
@@ -490,6 +517,18 @@ impl App {
             && let Err(err) = engine.respond(handle, &reply)
         {
             warn!("risposta su {}: {err}", message.channel);
+        }
+    }
+
+    /// Un esito del thread D-Bus: la risposta a una chiamata o un segnale per Dart.
+    fn handle_dbus(&mut self, event: dbus::Event<ResponseHandle>) {
+        let Some(engine) = &self.engine else { return };
+        let result = match event {
+            dbus::Event::Reply(handle, reply) => engine.respond(handle, &reply),
+            dbus::Event::Signal(message) => engine.send_message(dbus::CHANNEL, &message),
+        };
+        if let Err(err) = result {
+            warn!("silica/dbus: {err}");
         }
     }
 

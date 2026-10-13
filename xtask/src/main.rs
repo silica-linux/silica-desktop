@@ -4,7 +4,8 @@
 //! - `layers`: verifica le dipendenze vietate tra i livelli.
 //! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
 //! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`); con `--shell` anche
-//!   la shell completa (sfondo, barra dei menu, Dock, Faro), in release.
+//!   la shell completa (sfondo, barra dei menu, Dock, Faro) e il bus di sessione privato
+//!   con `silica-daemon`, in release.
 //! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
 
@@ -182,6 +183,8 @@ fn shell_components() -> Result<Vec<String>> {
         "ossido",
         "--package",
         "silica-embedder",
+        "--package",
+        "silica-daemon",
     ]))?;
     let engine = flutter::release_engine_dir()?;
     if !engine.join("libflutter_engine.so").exists() {
@@ -214,9 +217,14 @@ fn shell_components() -> Result<Vec<String>> {
             "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro --dart-arg faro {bundle}"
         ),
     ];
-    Ok(components
-        .iter()
-        .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")])
+    // Bus di sessione privato con silica-daemon (notifiche): annidato, quelli della
+    // sessione ospite sono già presi.
+    Ok(std::iter::once("--session-bus".to_owned())
+        .chain(
+            components
+                .iter()
+                .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")]),
+        )
         .collect())
 }
 

@@ -1,0 +1,331 @@
+//! Il canale `silica/dbus`: D-Bus per Dart (bus di sessione e di sistema).
+//!
+//! La shell legge i servizi (le notifiche di `silica-daemon`, NetworkManager, UPower,
+//! BlueZ) senza binding generati: Dart chiama metodi e si iscrive ai segnali con valori
+//! JSON, e qui li si converte secondo la firma (`json.rs`). Codec `JSONMethodCodec`.
+//!
+//! - `call {bus?, destination, path, interface?, method, signature?, args?}` → la lista
+//!   degli argomenti della risposta; un errore D-Bus diventa un `PlatformException` con il
+//!   nome dell'errore come codice.
+//! - `subscribe {bus?, sender?, path?, interface?, member?}` → un id; poi i segnali arrivano
+//!   a Dart come chiamata `signal {id, sender, path, interface, member, args}`.
+//! - `unsubscribe {id}` → `true` se l'iscrizione c'era.
+//!
+//! `bus` è `session` (predefinito) o `system`. Le chiamate girano su un thread a parte:
+//! una risposta lenta non ferma l'interfaccia.
+
+pub mod json;
+
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use async_executor::{LocalExecutor, Task};
+use async_lock::OnceCell;
+use futures_lite::{StreamExt, future};
+use serde_json::{Value as Json, json};
+use tracing::warn;
+use zbus::message::Type as MessageType;
+use zbus::zvariant::{Signature, Structure, StructureBuilder};
+use zbus::{Connection, MatchRule, Message, MessageStream};
+
+pub const CHANNEL: &str = "silica/dbus";
+
+/// Oltre questo tempo una chiamata fallisce con `org.freedesktop.DBus.Error.Timeout`.
+const CALL_TIMEOUT: Duration = Duration::from_secs(25);
+/// Iscrizioni contemporanee massime per motore.
+const MAX_SUBSCRIPTIONS: usize = 256;
+/// Segnali in coda per iscrizione prima che zbus scarti i più vecchi.
+const SIGNAL_QUEUE: usize = 64;
+
+/// Cosa il thread D-Bus restituisce al thread di piattaforma.
+pub enum Event<T> {
+    /// La risposta (già codificata) a una chiamata da Dart.
+    Reply(T, Vec<u8>),
+    /// Un messaggio `signal` da mandare a Dart sul canale.
+    Signal(Vec<u8>),
+}
+
+/// Indirizzi dei bus; `None` usa quelli dell'ambiente.
+#[derive(Clone, Debug, Default)]
+pub struct Addresses {
+    pub session: Option<String>,
+    pub system: Option<String>,
+}
+
+/// Il ponte: le chiamate da Dart entrano con `handle`, gli esiti escono da `sink`.
+pub struct Bridge<T> {
+    requests: async_channel::Sender<(T, Vec<u8>)>,
+    _thread: JoinHandle<()>,
+}
+
+impl<T: Send + 'static> Bridge<T> {
+    pub fn start(
+        addresses: Addresses,
+        sink: impl Fn(Event<T>) + Send + 'static,
+    ) -> Result<Self, String> {
+        let (requests, receiver) = async_channel::unbounded();
+        let thread = std::thread::Builder::new()
+            .name("silica-dbus".to_owned())
+            .spawn(move || {
+                let executor = Rc::new(LocalExecutor::new());
+                let worker = Rc::new(Worker {
+                    addresses,
+                    session: OnceCell::new(),
+                    system: OnceCell::new(),
+                    sink: Box::new(sink),
+                    subscriptions: RefCell::new(HashMap::new()),
+                    next_id: Cell::new(0),
+                });
+                future::block_on(executor.run(worker.serve(receiver, executor.clone())));
+            })
+            .map_err(|e| format!("thread D-Bus: {e}"))?;
+        Ok(Self {
+            requests,
+            _thread: thread,
+        })
+    }
+
+    /// Una chiamata da Dart; la risposta arriva più tardi come `Event::Reply(token, …)`.
+    pub fn handle(&self, data: &[u8], token: T) {
+        if self.requests.try_send((token, data.to_vec())).is_err() {
+            warn!("silica/dbus: il thread D-Bus non risponde");
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Bus {
+    Session,
+    System,
+}
+
+struct Worker<T> {
+    addresses: Addresses,
+    session: OnceCell<Connection>,
+    system: OnceCell<Connection>,
+    sink: Box<dyn Fn(Event<T>)>,
+    subscriptions: RefCell<HashMap<u64, Task<()>>>,
+    next_id: Cell<u64>,
+}
+
+type CallResult = Result<Json, (String, String)>;
+
+impl<T: 'static> Worker<T> {
+    async fn serve(
+        self: Rc<Self>,
+        requests: async_channel::Receiver<(T, Vec<u8>)>,
+        executor: Rc<LocalExecutor<'static>>,
+    ) {
+        while let Ok((token, data)) = requests.recv().await {
+            let Ok(call) = serde_json::from_slice::<Json>(&data) else {
+                self.reply(token, Err(invalid("messaggio non JSON")));
+                continue;
+            };
+            let args = call.get("args").cloned().unwrap_or(Json::Null);
+            match call.get("method").and_then(Json::as_str) {
+                Some("call") => {
+                    let worker = self.clone();
+                    executor
+                        .spawn(async move {
+                            let result = worker.call(&args).await;
+                            worker.reply(token, result);
+                        })
+                        .detach();
+                }
+                Some("subscribe") => {
+                    if self.subscriptions.borrow().len() >= MAX_SUBSCRIPTIONS {
+                        self.reply(token, Err(failed("troppe iscrizioni")));
+                        continue;
+                    }
+                    let id = self.next_id.get().wrapping_add(1);
+                    self.next_id.set(id);
+                    let worker = self.clone();
+                    let task = executor.spawn(async move {
+                        worker.subscribe(id, &args, token).await;
+                    });
+                    self.subscriptions.borrow_mut().insert(id, task);
+                }
+                Some("unsubscribe") => {
+                    let id = args.get("id").and_then(Json::as_u64).unwrap_or(0);
+                    // Lasciare il task lo ferma e chiude la regola sul bus.
+                    let removed = self.subscriptions.borrow_mut().remove(&id).is_some();
+                    self.reply(token, Ok(json!(removed)));
+                }
+                // Metodo sconosciuto: risposta vuota, che Dart legge come non implementato.
+                _ => (self.sink)(Event::Reply(token, Vec::new())),
+            }
+        }
+    }
+
+    fn reply(&self, token: T, result: CallResult) {
+        let envelope = match result {
+            Ok(value) => json!([value]),
+            Err((code, message)) => json!([code, message, null]),
+        };
+        (self.sink)(Event::Reply(
+            token,
+            serde_json::to_vec(&envelope).unwrap_or_default(),
+        ));
+    }
+
+    async fn connection(&self, args: &Json) -> Result<&Connection, (String, String)> {
+        let bus = match args.get("bus").and_then(Json::as_str) {
+            None | Some("session") => Bus::Session,
+            Some("system") => Bus::System,
+            Some(other) => return Err(invalid(&format!("bus sconosciuto: {other}"))),
+        };
+        let (cell, address) = match bus {
+            Bus::Session => (&self.session, &self.addresses.session),
+            Bus::System => (&self.system, &self.addresses.system),
+        };
+        cell.get_or_try_init(|| async {
+            let builder = match (address, bus) {
+                (Some(address), _) => zbus::connection::Builder::address(address.as_str()),
+                (None, Bus::Session) => zbus::connection::Builder::session(),
+                (None, Bus::System) => zbus::connection::Builder::system(),
+            };
+            builder?.build().await
+        })
+        .await
+        .map_err(|e| dbus_error(&e))
+    }
+
+    async fn call(&self, args: &Json) -> CallResult {
+        let text = |name: &str| args.get(name).and_then(Json::as_str);
+        let required = |name: &str| text(name).ok_or_else(|| invalid(&format!("manca «{name}»")));
+        let destination = required("destination")?;
+        let path = required("path")?;
+        let method = required("method")?;
+        let interface = text("interface");
+        let signature = text("signature").unwrap_or("");
+        let values = match args.get("args") {
+            None | Some(Json::Null) => Vec::new(),
+            Some(Json::Array(items)) => json::to_args(signature, items).map_err(|e| invalid(&e))?,
+            Some(_) => return Err(invalid("«args» deve essere una lista")),
+        };
+        let connection = self.connection(args).await?;
+        let call = async {
+            let reply = if values.is_empty() {
+                connection
+                    .call_method(Some(destination), path, interface, method, &())
+                    .await
+            } else {
+                let mut body = StructureBuilder::new();
+                for value in values {
+                    body = body.append_field(value);
+                }
+                let body = body.build().map_err(|e| invalid(&e.to_string()))?;
+                connection
+                    .call_method(Some(destination), path, interface, method, &body)
+                    .await
+            };
+            reply.map_err(|e| dbus_error(&e))
+        };
+        let timeout = async {
+            async_io::Timer::after(CALL_TIMEOUT).await;
+            Err((
+                "org.freedesktop.DBus.Error.Timeout".to_owned(),
+                format!("{method}: nessuna risposta"),
+            ))
+        };
+        let reply = future::or(call, timeout).await?;
+        Ok(Json::Array(reply_args(&reply)?))
+    }
+
+    async fn subscribe(&self, id: u64, args: &Json, token: T) {
+        let stream = match self.signal_stream(args).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                self.reply(token, Err(err));
+                self.subscriptions.borrow_mut().remove(&id);
+                return;
+            }
+        };
+        self.reply(token, Ok(json!(id)));
+        let mut stream = stream;
+        while let Some(message) = stream.next().await {
+            let Ok(message) = message else { continue };
+            let header = message.header();
+            let args = reply_args(&message).unwrap_or_default();
+            let signal = json!({
+                "method": "signal",
+                "args": {
+                    "id": id,
+                    "sender": header.sender().map(|s| s.to_string()),
+                    "path": header.path().map(|p| p.to_string()),
+                    "interface": header.interface().map(|i| i.to_string()),
+                    "member": header.member().map(|m| m.to_string()),
+                    "args": args,
+                }
+            });
+            if let Ok(bytes) = serde_json::to_vec(&signal) {
+                (self.sink)(Event::Signal(bytes));
+            }
+        }
+    }
+
+    async fn signal_stream(&self, args: &Json) -> Result<MessageStream, (String, String)> {
+        let text = |name: &str| args.get(name).and_then(Json::as_str);
+        let bad = |e: zbus::Error| invalid(&e.to_string());
+        let mut rule = MatchRule::builder().msg_type(MessageType::Signal);
+        if let Some(sender) = text("sender") {
+            rule = rule.sender(sender).map_err(bad)?;
+        }
+        if let Some(path) = text("path") {
+            rule = rule.path(path).map_err(bad)?;
+        }
+        if let Some(interface) = text("interface") {
+            rule = rule.interface(interface).map_err(bad)?;
+        }
+        if let Some(member) = text("member") {
+            rule = rule.member(member).map_err(bad)?;
+        }
+        let rule = rule.build().to_owned();
+        let connection = self.connection(args).await?;
+        MessageStream::for_match_rule(rule, connection, Some(SIGNAL_QUEUE))
+            .await
+            .map_err(|e| dbus_error(&e))
+    }
+}
+
+/// Gli argomenti di un messaggio, in JSON.
+fn reply_args(message: &Message) -> Result<Vec<Json>, (String, String)> {
+    let body = message.body();
+    let signature = body.signature();
+    if matches!(signature, Signature::Unit) {
+        return Ok(Vec::new());
+    }
+    // Gli argomenti di un messaggio si leggono come i campi di una struttura.
+    let fields = format!("({})", signature.to_string_no_parens());
+    let (structure, _): (Structure<'_>, usize) = body
+        .data()
+        .deserialize_for_dynamic_signature(fields.as_str())
+        .map_err(|e| failed(&format!("risposta illeggibile: {e}")))?;
+    Ok(structure.fields().iter().map(json::to_json).collect())
+}
+
+fn dbus_error(error: &zbus::Error) -> (String, String) {
+    match error {
+        zbus::Error::MethodError(name, description, _) => {
+            (name.to_string(), description.clone().unwrap_or_default())
+        }
+        other => failed(&other.to_string()),
+    }
+}
+
+fn invalid(message: &str) -> (String, String) {
+    (
+        "org.freedesktop.DBus.Error.InvalidArgs".to_owned(),
+        message.to_owned(),
+    )
+}
+
+fn failed(message: &str) -> (String, String) {
+    (
+        "org.freedesktop.DBus.Error.Failed".to_owned(),
+        message.to_owned(),
+    )
+}

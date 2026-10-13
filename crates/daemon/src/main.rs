@@ -2,6 +2,7 @@
 
 use std::process::ExitCode;
 
+use futures_lite::{StreamExt, future};
 use silica_daemon::Daemon;
 
 const USAGE: &str = "uso: silica-daemon [--address INDIRIZZO] [--replace]
@@ -56,5 +57,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
             .unique_name()
             .map_or("?".to_owned(), |n| n.to_string())
     );
-    daemon.run().await
+    // Il bus privato di Ossido si chiude con Ossido: allora il daemon esce.
+    let lost = async {
+        let mut messages = zbus::MessageStream::from(daemon.connection());
+        while let Some(Ok(_)) = messages.next().await {}
+        Err(zbus::Error::Failure("bus di sessione chiuso".to_owned()))
+    };
+    future::or(daemon.run(), lost).await
 }

@@ -14,6 +14,7 @@ mod keys;
 mod layers;
 mod perf;
 mod render;
+mod session_bus;
 mod shell;
 pub mod state;
 mod windows;
@@ -55,6 +56,8 @@ pub struct Options {
     pub animation_scale: f64,
     /// Qualità del vetro (`--glass auto|full|frosted|opaque`).
     pub glass: state::GlassSetting,
+    /// Avvia un bus di sessione privato con `silica-daemon` (`--session-bus`).
+    pub session_bus: bool,
 }
 
 impl Default for Options {
@@ -69,6 +72,7 @@ impl Default for Options {
             background: state::CLEAR_COLOR,
             animation_scale: 1.0,
             glass: state::GlassSetting::Auto,
+            session_bus: false,
         }
     }
 }
@@ -96,6 +100,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     // Le righe su stdout sono l'interfaccia per script e test: una per variabile.
     let socket = ossido.state.socket_name.clone();
     println!("WAYLAND_DISPLAY={}", socket.to_string_lossy());
+    // Vive fino alla fine di `run`: chiude il bus e il daemon all'uscita.
+    let _session_bus = if options.session_bus {
+        let bus = session_bus::SessionBus::start()?;
+        println!("DBUS_SESSION_BUS_ADDRESS={}", bus.address);
+        ossido.state.session_bus = Some(bus.address.clone());
+        Some(bus)
+    } else {
+        None
+    };
     if let Some(port) = options.control {
         let addr = control::listen(&event_loop.handle(), port)?;
         println!("OSSIDO_CONTROL={addr}");
