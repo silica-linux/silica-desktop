@@ -246,3 +246,44 @@ fn app_windows_and_the_desktop() {
     c.call(INPUT_CLICK, json!({"x": 640, "y": 400})).unwrap();
     assert!(state(&ossido).mode.is_none());
 }
+
+#[test]
+fn trackpad_gestures_run_their_commands() {
+    let ossido = Headless::start("panorama-gestures");
+    let size = (100, 60);
+    let _red = TestWindow::open_pixels(&ossido.wayland, "rossa", size, &solid(size, RED));
+    let mut c = ossido.client();
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    let gesture = |c: &mut silica_control::Client, params: Value| {
+        c.call(silica_control::commands::INPUT_GESTURE, params)
+            .unwrap()["command"]
+            .clone()
+    };
+    // Tre dita a sinistra, a pezzi: lo spazio a destra.
+    let begin = json!({"kind": "swipe", "fingers": 3, "phase": "begin"});
+    assert_eq!(gesture(&mut c, begin), Value::Null);
+    for _ in 0..4 {
+        gesture(
+            &mut c,
+            json!({"kind": "swipe", "fingers": 3, "phase": "update", "dx": -40}),
+        );
+    }
+    let end = json!({"kind": "swipe", "fingers": 3, "phase": "end"});
+    assert_eq!(gesture(&mut c, end), json!("space.next"));
+    assert!(spaces(&ossido)[1].active);
+    // In alto Panorama, in basso si chiude; troppo corto non fa niente.
+    let up = json!({"kind": "swipe", "fingers": 3, "dy": -150});
+    assert_eq!(gesture(&mut c, up), json!("panorama.toggle"));
+    assert_eq!(state(&ossido).mode.as_deref(), Some("panorama"));
+    let down = json!({"kind": "swipe", "fingers": 4, "dy": 150});
+    assert_eq!(gesture(&mut c, down), json!("panorama.toggle"));
+    assert!(state(&ossido).mode.is_none());
+    let short = json!({"kind": "swipe", "fingers": 3, "dx": 20});
+    assert_eq!(gesture(&mut c, short), Value::Null);
+    // Pollice e tre dita allargando: la scrivania; un gesto annullato non conta.
+    let cancelled = json!({"kind": "pinch", "fingers": 4, "scale": 2.0, "cancelled": true});
+    assert_eq!(gesture(&mut c, cancelled), Value::Null);
+    let spread = json!({"kind": "pinch", "fingers": 4, "scale": 2.0});
+    assert_eq!(gesture(&mut c, spread), json!("desktop.show"));
+    assert_eq!(state(&ossido).mode.as_deref(), Some("desktop"));
+}

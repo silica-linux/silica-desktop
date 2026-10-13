@@ -24,6 +24,7 @@ use silica_control::commands::{
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
 };
+use silica_control::commands::{GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
@@ -332,6 +333,28 @@ impl State {
                     self.synthetic_key(code, shift, *state);
                 }
                 Ok(Value::Null)
+            }
+            INPUT_GESTURE => {
+                let p: GestureParams = parse_required(params)?;
+                let kind = match p.kind.as_str() {
+                    "swipe" => crate::gestures::GestureKind::Swipe,
+                    "pinch" => crate::gestures::GestureKind::Pinch,
+                    other => return Err(format!("gesto sconosciuto: {other}")),
+                };
+                let phase = p.phase.as_deref();
+                if matches!(phase, None | Some("begin")) {
+                    self.gesture_begin(kind, p.fingers);
+                }
+                match phase {
+                    None | Some("update") => self.gesture_update(p.dx, p.dy, p.scale),
+                    Some("begin" | "end") => {}
+                    Some(other) => return Err(format!("fase sconosciuta: {other}")),
+                }
+                if matches!(phase, None | Some("end")) {
+                    let command = self.gesture_end(p.cancelled);
+                    return Ok(json!({ "command": command }));
+                }
+                Ok(json!({ "command": null }))
             }
             INPUT_TYPE => {
                 let TypeText { text } = parse_required(params)?;

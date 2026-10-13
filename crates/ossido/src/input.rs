@@ -1,7 +1,8 @@
 //! Input: tastiera e puntatore verso le finestre.
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
+    GestureEndEvent, GesturePinchUpdateEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
 };
 use smithay::input::keyboard::{FilterResult, Keycode, xkb};
@@ -244,6 +245,25 @@ impl State {
                 }
                 pointer.axis(self, frame);
                 pointer.frame(self);
+            }
+            InputEvent::GestureSwipeBegin { event } => {
+                self.gesture_begin(crate::gestures::GestureKind::Swipe, event.fingers());
+            }
+            InputEvent::GestureSwipeUpdate { event } => {
+                let delta = event.delta();
+                self.gesture_update(delta.x, delta.y, None);
+            }
+            InputEvent::GestureSwipeEnd { event } => {
+                self.gesture_end(event.cancelled());
+            }
+            InputEvent::GesturePinchBegin { event } => {
+                self.gesture_begin(crate::gestures::GestureKind::Pinch, event.fingers());
+            }
+            InputEvent::GesturePinchUpdate { event } => {
+                self.gesture_update(0.0, 0.0, Some(event.scale()));
+            }
+            InputEvent::GesturePinchEnd { event } => {
+                self.gesture_end(event.cancelled());
             }
             _ => {}
         }

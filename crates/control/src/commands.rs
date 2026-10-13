@@ -29,6 +29,7 @@ pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
 pub const INPUT_KEY: &str = "input.key";
 pub const INPUT_TYPE: &str = "input.type";
+pub const INPUT_GESTURE: &str = "input.gesture";
 pub const LAYER_LIST: &str = "layer.list";
 pub const PERF_FRAMES: &str = "perf.frames";
 pub const PERF_PROCESS: &str = "perf.process";
@@ -638,6 +639,28 @@ pub const CATALOG: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: INPUT_GESTURE,
+        label: "Gesto del trackpad",
+        description: "Un gesto a più dita: `kind` swipe o pinch, `fingers`, `phase` begin, update o end (senza phase il gesto intero in una chiamata), `dx` e `dy` (scorrimento, punti), `scale` (pizzico, assoluta), `cancelled`. Alla fine restituisce `command`, il comando eseguito: tre o quattro dita a sinistra o a destra cambiano spazio, in alto Panorama, in basso le finestre dell'app; pollice e tre dita allargando la scrivania, stringendo il launcher.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "kind": {"enum": ["swipe", "pinch"]},
+                    "fingers": {"type": "integer", "minimum": 1, "maximum": 10},
+                    "phase": {"enum": ["begin", "update", "end"]},
+                    "dx": {"type": "number"},
+                    "dy": {"type": "number"},
+                    "scale": {"type": "number"},
+                    "cancelled": {"type": "boolean"}
+                },
+                "required": ["kind", "fingers"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
         id: INPUT_TYPE,
         label: "Scrivi testo",
         description: "Scrive un testo tasto per tasto nella finestra con il focus.",
@@ -1014,6 +1037,24 @@ pub struct PanoramaState {
     pub expansion: f64,
     /// Le miniature degli spazi, quando si vedono.
     pub thumbnails: Vec<PanoramaRect>,
+}
+
+/// Parametri di [`INPUT_GESTURE`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GestureParams {
+    pub kind: String,
+    pub fingers: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default)]
+    pub dx: f64,
+    #[serde(default)]
+    pub dy: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    #[serde(default)]
+    pub cancelled: bool,
 }
 
 /// Uno spazio in [`SPACE_LIST`].

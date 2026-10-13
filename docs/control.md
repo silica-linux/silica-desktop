@@ -31,6 +31,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `engine.commands` | — | il catalogo |
 | `engine.execute` | `id`, `params?` | il risultato del comando |
 | `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen`, `space` |
+| `input.gesture` | `kind` (`swipe`, `pinch`), `fingers`, `phase?` (`begin`, `update`, `end`; senza: tutto il gesto), `dx`, `dy`, `scale`, `cancelled` | `command` eseguito alla fine (null se nessuno). Provvisorio (PA-20…22): 3–4 dita ←/→ spazio, ↑ Panorama, ↓ finestre dell'app o chiude la vista; pollice e tre dita: allargando la scrivania, stringendo il launcher |
 | `space.list` | — | spazi: `index`, `active`, `windows` (id dal basso verso l'alto) |
 | `space.next`, `space.previous` | — | `switched`: falso oltre l'ultimo o prima del primo (nessun rimbalzo); ⌃→ e ⌃← |
 | `space.goto` | `index` | `switched` |
