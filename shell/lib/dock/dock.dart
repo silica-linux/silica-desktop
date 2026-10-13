@@ -379,6 +379,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   /// Il menu aperto: l'elemento, le voci, se è nato da una pressione lunga.
   int? _menuIndex;
   List<MenuEntry> _menuEntries = const [];
+
+  /// I sottomenu aperti (fuori dal rettangolo del menu principale), per la regione d'input.
+  List<Rect> _submenuRects = const [];
   bool _menuByLongPress = false;
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _longPress;
@@ -433,6 +436,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   // Animazione dell'entrata o dell'uscita: da dove parte e quando.
   double _from = 0;
   Duration? _start;
+
+  @override
+  void initState() {
+    super.initState();
+    // Lo schermo serve già al primo menu (la superficie lo copre per prendere il clic fuori).
+    LayerControl.outputSize().then((size) {
+      if (mounted && size != null && _screen == null) {
+        setState(() => _screen = size);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -562,6 +576,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     setState(() {
       _menuIndex = null;
       _menuEntries = const [];
+      _submenuRects = const [];
       _pressed = null;
     });
   }
@@ -648,27 +663,38 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// Regione d'input, altezza della superficie e tastiera: solo quando cambiano.
   void _syncLayer(Rect dock, Rect? menu, Rect? alert, Size size) {
+    final stack = _stackIndex != null;
     // La pila aperta occupa la superficie alta quanto lo schermo, come l'avviso.
-    alert ??= _stackIndex != null ? _stackRect ?? Rect.zero : null;
+    alert ??= stack ? _stackRect ?? Rect.zero : null;
     _baseHeight ??= size.height;
     final base = _baseHeight ?? size.height;
-    // Con un menu la superficie arriva fin sopra il menu, con l'avviso a tutto lo schermo;
-    // senza, torna all'altezza di partenza.
-    final height = alert != null
-        ? _screen?.height ?? size.height
+    final screen = _screen?.height;
+    // Con un menu o la pila la superficie copre lo schermo e prende tutto il puntatore: un
+    // clic fuori (sulla scrivania, su una finestra) li chiude invece di passare sotto.
+    final catchAll = (menu != null || stack) && screen != null;
+    // Con l'avviso a tutto lo schermo; fuori da Silica, con un menu fin sopra il menu; senza,
+    // torna all'altezza di partenza.
+    final height = alert != null || catchAll
+        ? screen ?? size.height
         : menu != null
         ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
         : base;
-    final key = '$dock $menu $alert $height';
+    final submenus = menu == null ? const <Rect>[] : _submenuRects;
+    final key = '$dock $menu $submenus $alert $height $catchAll';
     if (key == _layerState) return;
     _layerState = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (height != size.height) LayerControl.size(0, height);
-      LayerControl.inputRegion([
-        dock,
-        if (menu != null) menu.inflate(4),
-        if (alert != null) alert,
-      ]);
+      LayerControl.inputRegion(
+        catchAll
+            ? [Offset.zero & Size(size.width, height)]
+            : [
+                dock,
+                if (menu != null) menu.inflate(4),
+                for (final r in submenus) r.inflate(4),
+                if (alert != null) alert,
+              ],
+      );
       LayerControl.keyboard(
         menu == null && alert == null ? 'none' : 'exclusive',
       );
@@ -1040,6 +1066,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                       tip: tip,
                       handlesPointer: false,
                       onDismissed: _closeMenu,
+                      onRectsChanged: (rects) => setState(
+                        () => _submenuRects = rects.skip(1).toList(),
+                      ),
                     ),
                   ),
               ],

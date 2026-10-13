@@ -4,6 +4,7 @@
 // stato e orologio in bianco al 90 %.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -384,6 +385,18 @@ class _MenuBarState extends State<MenuBar> {
                       onDismissed: _closeMenu,
                       onNext: () => _neighbour(1),
                       onPrevious: () => _neighbour(-1),
+                      // Con un sottomenu aperto la regione d'input lo comprende.
+                      onRectsChanged: (rects) {
+                        final bottom = rects.fold(
+                          barHeight,
+                          (double b, r) => math.max(b, r.bottom),
+                        );
+                        LayerControl.size(0, bottom + menuShadowRoom);
+                        LayerControl.inputRegion([
+                          Rect.fromLTWH(0, 0, _width, barHeight),
+                          for (final r in rects) r.inflate(2),
+                        ]);
+                      },
                     ),
                   ),
               ],

@@ -5,6 +5,7 @@ import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/main.dart';
+import 'package:silica_shell/system/layer_control.dart';
 
 void main() {
   testWidgets(
@@ -104,6 +105,119 @@ void main() {
     await tester.pump(const Duration(milliseconds: 150));
     expect(log, ['attiva Terminale', 'menu Note']);
   });
+
+  testWidgets('il sottomenu aperto entra nella regione d\'input', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final regions = <List<Rect>>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      LayerControl.channel,
+      (call) async {
+        if (call.method == 'setInputRegion') {
+          final rects = (call.arguments as Map)['rects'] as List?;
+          regions.add([
+            for (final r in rects ?? const [])
+              Rect.fromLTWH(
+                (r[0] as num).toDouble(),
+                (r[1] as num).toDouble(),
+                (r[2] as num).toDouble(),
+                (r[3] as num).toDouble(),
+              ),
+          ]);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        LayerControl.channel,
+        null,
+      ),
+    );
+    final log = <String>[];
+    const items = [Item.app('Note', command: 'note')];
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: items,
+          menuFor: (item) => [
+            MenuAction(
+              'Opzioni',
+              submenu: [
+                MenuAction(
+                  'Rimuovi dal Dock',
+                  onSelected: () => log.add('via'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    final rest = layout(items, width: 1280, height: 300);
+    final icon = Offset(rest.center(0), 300 - bottomGap - backgroundHeight / 2);
+    await tester.tapAt(icon, buttons: kSecondaryButton);
+    await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: icon);
+    await mouse.moveTo(tester.getCenter(find.text('Opzioni')));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+    await tester.pump();
+    final item = tester.getCenter(find.text('Rimuovi dal Dock'));
+    expect(regions.last.any((r) => r.contains(item)), isTrue);
+  });
+
+  testWidgets(
+    'con il menu aperto la Dock prende il puntatore su tutto lo schermo',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final regions = <List<Object?>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        LayerControl.channel,
+        (call) async {
+          if (call.method == 'outputSize')
+            return {'width': 1280, 'height': 800};
+          if (call.method == 'setInputRegion') {
+            regions.add((call.arguments as Map)['rects'] as List<Object?>);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          LayerControl.channel,
+          null,
+        ),
+      );
+      const items = [Item.app('Note', command: 'note')];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(items: items, menuFor: (item) => [MenuAction('Apri')]),
+        ),
+      );
+      await tester.pump();
+      final rest = layout(items, width: 1280, height: 300);
+      final icon = Offset(
+        rest.center(0),
+        300 - bottomGap - backgroundHeight / 2,
+      );
+      await tester.tapAt(icon, buttons: kSecondaryButton);
+      await tester.pump();
+      await tester.pump();
+      // Un solo rettangolo, alto quanto lo schermo: il clic sulla scrivania chiude il menu.
+      expect(regions.last, [
+        [0, 0, 1280, 800],
+      ]);
+    },
+  );
 
   testWidgets(
     'trascinare riordina; in alto compare "Rimuovi" e l\'icona si toglie',
