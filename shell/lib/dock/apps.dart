@@ -25,7 +25,7 @@ void savePinned(List<String> ids, {Map<String, String>? env}) {
 
 /// App fissate quando manca la configurazione: le prime installate di questo elenco.
 const List<List<String>> defaultPinned = [
-  ['org.gnome.Nautilus'],
+  ['dev.frascella.Mustache', 'org.gnome.Nautilus'],
   [
     'firefox_firefox',
     'firefox',

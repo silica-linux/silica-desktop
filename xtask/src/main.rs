@@ -12,6 +12,7 @@
 mod bench;
 mod bench_glass;
 mod flutter;
+mod install;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -61,8 +62,12 @@ fn main() -> ExitCode {
             (Some(app), Some("--release")) => flutter::bundle_release(app),
             _ => Err("uso: cargo xtask bundle <shell | demo | percorso di un'app> [--release]".to_owned()),
         },
+        Some("install-app") => match args.get(1) {
+            Some(app) => install::install_app(app),
+            None => Err("uso: cargo xtask install-app <percorso di un'app>".to_owned()),
+        },
         _ => Err(
-            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle> [argomenti]"
+            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app> [argomenti]"
                 .to_owned(),
         ),
     };
