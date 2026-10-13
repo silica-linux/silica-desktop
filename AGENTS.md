@@ -84,7 +84,7 @@ Asset:
 - Licenze ammesse: originale del progetto, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Da preferire
   la grafica generata in codice.
 - Icone delle app, dei file e di sistema: repo `silica-linux/silica-icons`, licenza
-  CC BY-SA 4.0; cursori: repo `silica-linux/silica-cursors`, stessa licenza.
+  CC BY-SA 4.0. I cursori sono rimandati: il repo `silica-linux/silica-cursors` è archiviato.
 - Sfondi delle versioni: foto proprie o di fotografi con cessione scritta dei diritti,
   oppure Wikimedia Commons con licenza compatibile.
 
@@ -113,8 +113,8 @@ Gli altri repository di `silica-linux`:
 | Repository | Cosa | Licenza |
 | --- | --- | --- |
 | `silica-ui` (pubblico) | pacchetto Dart `silica_ui`: Inter, vetro, Liquid Glass. API stabile, versioni con tag `vX.Y.Z`; la shell e le app lo prendono dal tag | MIT OR Apache-2.0 |
-| `silica-icons` | icone delle app e dei file (a livelli), 303 simboli di sistema | CC BY-SA 4.0 |
-| `silica-cursors` | cursori | CC BY-SA 4.0 |
+| `silica-icons` | icone delle app e dei file (a livelli), 313 simboli di sistema in tre pesi | CC BY-SA 4.0 |
+| `silica-cursors` | cursori, archiviato: da rifare più avanti | CC BY-SA 4.0 |
 | `silica-reference` | osservazioni di macOS 27, clonato in `plan/reference/` (privato) | — |
 | un repository per app | `mustache` (pubblico, il gestore dei file), poi Impostazioni, Terminale, …: dipendono da `silica-ui`; si costruiscono con `cargo xtask bundle <percorso>` e si lanciano con l'embedder (`--title`, `--app-id`) | MIT OR Apache-2.0 |
 
