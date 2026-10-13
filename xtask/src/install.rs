@@ -71,9 +71,67 @@ pub fn install_app(app: &str) -> Result<()> {
 
 /// `$XDG_DATA_HOME/applications`, o `~/.local/share/applications`.
 fn applications_dir() -> Result<PathBuf> {
+    Ok(data_home()?.join("applications"))
+}
+
+/// `$XDG_DATA_HOME`, o `~/.local/share`.
+fn data_home() -> Result<PathBuf> {
     if let Some(data) = std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {
-        return Ok(Path::new(&data).join("applications"));
+        return Ok(PathBuf::from(data));
     }
     let home = std::env::var_os("HOME").ok_or("HOME assente")?;
-    Ok(Path::new(&home).join(".local/share/applications"))
+    Ok(Path::new(&home).join(".local/share"))
+}
+
+/// `$XDG_CONFIG_HOME`, o `~/.config`.
+fn config_home() -> Result<PathBuf> {
+    if let Some(config) = std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(config));
+    }
+    let home = std::env::var_os("HOME").ok_or("HOME assente")?;
+    Ok(Path::new(&home).join(".config"))
+}
+
+/// `cargo xtask install-portal`: il backend dei portali di Silica per l'utente. Il file
+/// `.portal` dice a xdg-desktop-portal che c'è un backend FileChooser (`UseIn=Silica`), la
+/// configurazione `silica-portals.conf` lo sceglie quando `XDG_CURRENT_DESKTOP=Silica`, il
+/// servizio D-Bus avvia `silica-portal` alla prima richiesta. I dialoghi sono di Mustache
+/// (installato con `install-app`).
+pub fn install_portal() -> Result<()> {
+    let root = root()?;
+    let binary = root.join("target/release/silica-portal");
+    if !binary.exists() {
+        status(cargo_command(&[
+            "build",
+            "--release",
+            "--package",
+            "silica-portal",
+        ]))?;
+    }
+    let data = root.join("crates/portal/data");
+    let read =
+        |name: &str| std::fs::read_to_string(data.join(name)).map_err(|e| format!("{name}: {e}"));
+    let files = [
+        (
+            data_home()?.join("xdg-desktop-portal/portals/silica.portal"),
+            read("silica.portal")?,
+        ),
+        (
+            config_home()?.join("xdg-desktop-portal/silica-portals.conf"),
+            read("silica-portals.conf")?,
+        ),
+        (
+            data_home()?.join("dbus-1/services/org.freedesktop.impl.portal.desktop.silica.service"),
+            read("org.freedesktop.impl.portal.desktop.silica.service.in")?
+                .replace("@PORTAL@", &binary.display().to_string()),
+        ),
+    ];
+    for (path, text) in files {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("xtask: installato {}", path.display());
+    }
+    Ok(())
 }

@@ -66,8 +66,9 @@ fn main() -> ExitCode {
             Some(app) => install::install_app(app),
             None => Err("uso: cargo xtask install-app <percorso di un'app>".to_owned()),
         },
+        Some("install-portal") => install::install_portal(),
         _ => Err(
-            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app> [argomenti]"
+            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app|install-portal> [argomenti]"
                 .to_owned(),
         ),
     };
