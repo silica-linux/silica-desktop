@@ -445,6 +445,7 @@ pub fn output_elements(
                         Material::Regular => REGULAR_LIGHT,
                         Material::Notification => NOTIFICATION_LIGHT,
                     },
+                    opacity: region.opacity as f32,
                     scale,
                 })
                 .collect();

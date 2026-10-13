@@ -13,7 +13,7 @@
     proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="2">
+  <interface name="silica_glass_manager_v1" version="3">
     <description summary="crea l'oggetto vetro di una superficie"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="2">
+  <interface name="silica_glass_v1" version="3">
     <description summary="regioni di vetro di una superficie">
       Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
       corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
@@ -61,7 +61,7 @@
 
     <enum name="error">
       <entry name="invalid_region" value="0"
-             summary="dimensione negativa o nulla, raggio negativo o materiale sconosciuto"/>
+             summary="dimensione negativa o nulla, raggio negativo, materiale sconosciuto o opacità fuori da 0–1"/>
       <entry name="too_many_regions" value="1" summary="oltre 64 regioni in attesa"/>
     </enum>
 
@@ -79,6 +79,20 @@
       <arg name="height" type="int"/>
       <arg name="radius" type="fixed"/>
       <arg name="material" type="uint" enum="material"/>
+    </request>
+
+    <request name="add_translucent_region" since="3">
+      <description summary="aggiunge una regione con un'opacità">
+        Come add_region, con il vetro composto con opacità opacity (0–1): un pannello che
+        compare o scompare in dissolvenza porta con sé il suo vetro.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="radius" type="fixed"/>
+      <arg name="material" type="uint" enum="material"/>
+      <arg name="opacity" type="fixed"/>
     </request>
   </interface>
 </protocol>

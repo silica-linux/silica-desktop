@@ -174,7 +174,7 @@ pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
 
 thread_local! {
     /// Versione di silica-glass-v1 che le finestre di questo thread (un test) chiedono.
-    pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(2) };
+    pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(3) };
 }
 
 impl TestWindow {
@@ -296,6 +296,29 @@ impl TestWindow {
         glass.clear();
         for &(x, y, w, h, radius, material) in regions {
             glass.add_region(x, y, w, h, radius, material);
+        }
+        self.surface.commit();
+        self.queue
+            .roundtrip(&mut self.app)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Come `set_glass`, con un'opacità per regione (`add_translucent_region`, versione 3).
+    #[allow(dead_code)]
+    pub fn set_translucent_glass(&mut self, regions: &[(Region, f64)]) -> Result<(), String> {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .glass
+            .clone()
+            .expect("silica_glass_manager_v1 assente");
+        let glass = self
+            .glass
+            .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
+        glass.clear();
+        for &((x, y, w, h, radius, material), opacity) in regions {
+            glass.add_translucent_region(x, y, w, h, radius, material, opacity);
         }
         self.surface.commit();
         self.queue

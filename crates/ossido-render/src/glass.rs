@@ -337,8 +337,21 @@ pub struct PhysicalRegion {
     pub rect: Rectangle<i32, Physical>,
     pub radius: f64,
     pub material: MaterialParams,
+    /// Opacità della composizione (0–1): non cambia lo sfondo sfocato, solo il disegno.
+    pub opacity: f32,
     /// Pixel fisici per punto.
     pub scale: f64,
+}
+
+impl PhysicalRegion {
+    /// Stessa forma e stesso materiale: lo sfondo sfocato si può riusare anche se
+    /// l'opacità è cambiata (una dissolvenza non rifà la sfocatura a ogni frame).
+    fn same_shape(&self, other: &Self) -> bool {
+        self.rect == other.rect
+            && self.radius == other.radius
+            && self.material == other.material
+            && self.scale == other.scale
+    }
 }
 
 /// Lo stato degli elementi dietro il vetro: se non cambia, la texture si riusa.
@@ -430,9 +443,22 @@ impl GlassCache {
         let reuse = state.as_ref().is_some_and(|cached| {
             cached.quality == quality
                 && cached.signature == signature
-                && cached.regions == regions
+                && cached.regions.len() == regions.len()
+                && cached
+                    .regions
+                    .iter()
+                    .zip(regions)
+                    .all(|(a, b)| a.same_shape(b))
                 && cached.bbox == bbox
         });
+        // Solo l'opacità è cambiata: stesse texture, elementi nuovi da ridisegnare.
+        if reuse
+            && let Some(cached) = state.as_mut()
+            && cached.regions != regions
+        {
+            cached.regions = regions.to_vec();
+            cached.commit.increment();
+        }
         if !reuse {
             let sharp = render_to_texture(renderer, behind, bbox, scale, clear_color)?;
             let mut textures: Vec<(MaterialParams, GlesTexture)> = Vec::new();
@@ -520,9 +546,9 @@ fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
     for region in regions {
         match groups.iter_mut().find(|group| {
             group.len() < MAX_SHAPES
-                && group
-                    .first()
-                    .is_some_and(|first| first.material == region.material)
+                && group.first().is_some_and(|first| {
+                    first.material == region.material && first.opacity == region.opacity
+                })
         }) {
             Some(group) => group.push(*region),
             None => groups.push(vec![*region]),
@@ -801,7 +827,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
             damage,
             opaque_regions,
             Transform::Normal,
-            1.0,
+            first.opacity.clamp(0.0, 1.0),
             Some(&self.program),
             &uniforms,
         )

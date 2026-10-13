@@ -571,3 +571,32 @@ fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
         "accanto al bordo laterale {beside:?}"
     );
 }
+
+#[test]
+fn translucent_glass_fades_with_its_panel() {
+    // A metà opacità il vetro delle notifiche sul grigio sta a metà fra lo sfondo (#7a7b80)
+    // e il riempimento pieno (#c0c1c6): un pannello in dissolvenza porta con sé il vetro.
+    let ossido = Headless::start_with("glass-translucent", SHOT, &["--background", "7a7b80"]);
+    let size = (344, 91);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
+    glass
+        .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 0.5)])
+        .unwrap();
+    let fill = rgb(&shot(&ossido, "glass-translucent.png"), 32 + 172, 32 + 45);
+    for (got, want) in fill.iter().zip([157_u8, 158, 163]) {
+        assert!(got.abs_diff(want) <= 4, "metà opacità: {fill:?}");
+    }
+    // Trasparente del tutto: resta lo sfondo.
+    glass
+        .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 0.0)])
+        .unwrap();
+    let fill = rgb(&shot(&ossido, "glass-translucent-0.png"), 32 + 172, 32 + 45);
+    assert_eq!(fill, [0x7a, 0x7b, 0x80]);
+    // Fuori da 0–1: il client viene disconnesso, Ossido continua.
+    assert!(
+        glass
+            .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 1.5)])
+            .is_err()
+    );
+    let _alive = TestWindow::open(&ossido.wayland, "dopo");
+}

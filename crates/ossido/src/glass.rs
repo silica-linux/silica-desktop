@@ -35,6 +35,8 @@ pub struct GlassRegion {
     pub height: i32,
     pub radius: f64,
     pub material: Material,
+    /// Opacità con cui si compone il vetro (dalla versione 3; 1 con `add_region`).
+    pub opacity: f64,
 }
 
 /// Lo stato doppio del vetro di una superficie.
@@ -73,7 +75,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(2, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(3, ());
         Self
     }
 }
@@ -155,7 +157,20 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                 height,
                 radius,
                 material,
+            }
+            | silica_glass_v1::Request::AddTranslucentRegion {
+                x,
+                y,
+                width,
+                height,
+                radius,
+                material,
+                ..
             } => {
+                let opacity = match request {
+                    silica_glass_v1::Request::AddTranslucentRegion { opacity, .. } => opacity,
+                    _ => 1.0,
+                };
                 let material = match material {
                     WEnum::Value(silica_glass_v1::Material::Clear) => Some(Material::Clear),
                     WEnum::Value(silica_glass_v1::Material::Thick) => Some(Material::Thick),
@@ -168,11 +183,17 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                     }
                     _ => None,
                 };
-                let valid = width > 0 && height > 0 && radius.is_finite() && radius >= 0.0;
+                let valid = width > 0
+                    && height > 0
+                    && radius.is_finite()
+                    && radius >= 0.0
+                    && (0.0..=1.0).contains(&opacity);
                 let Some(material) = material.filter(|_| valid) else {
                     glass.post_error(
                         silica_glass_v1::Error::InvalidRegion,
-                        format!("regione non valida: {width}x{height}, raggio {radius}"),
+                        format!(
+                            "regione non valida: {width}x{height}, raggio {radius}, opacità {opacity}"
+                        ),
                     );
                     return;
                 };
@@ -188,6 +209,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                             height,
                             radius,
                             material,
+                            opacity,
                         });
                     }
                 });

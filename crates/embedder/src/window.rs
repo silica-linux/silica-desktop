@@ -443,7 +443,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         text_input: TextInput::default(),
         glass: Glass::new(
             globals
-                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=2, ())
+                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=3, ())
                 .ok(),
         ),
         shell: ShellLink::new(

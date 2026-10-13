@@ -39,7 +39,7 @@ gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
 | `system.volume`, `system.brightness` | `value` (0–1) | `queued` |
 | `system.volume_up`, `system.volume_down`, `system.mute_toggle` | — | `queued`; passi di 1/16, alzare toglie il muto (tasti volume e muto) |
 | `system.brightness_up`, `system.brightness_down` | — | `queued`; passi di 1/16 (tasti luminosità) |
-| `glass.list` | — | superfici con vetro (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`) |
+| `glass.list` | — | superfici con vetro (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`, `opacity`) |
 | `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
 | `window.focus` | `id?` | — (riporta anche una finestra ridotta) |
 | `window.close` | `id?` | — |

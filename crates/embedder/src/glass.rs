@@ -23,6 +23,8 @@ pub struct Region {
     pub height: i32,
     pub radius: f64,
     pub material: Material,
+    /// 0–1: il vetro si compone con questa opacità (silica-glass-v1 versione 3).
+    pub opacity: f64,
 }
 
 impl Region {
@@ -46,6 +48,12 @@ impl Region {
             Some("notification") => Material::Notification,
             _ => Material::Clear,
         };
+        // Opacità da antenati in dissolvenza; senza, piena.
+        let opacity = value
+            .get("opacity")
+            .and_then(Value::as_f64)
+            .filter(|o| o.is_finite())
+            .map_or(1.0, |o| o.clamp(0.0, 1.0));
         let region = Self {
             x: int("x")?,
             y: int("y")?,
@@ -53,6 +61,7 @@ impl Region {
             height: int("height")?,
             radius,
             material,
+            opacity,
         };
         (region.width > 0 && region.height > 0).then_some(region)
     }
@@ -134,19 +143,34 @@ impl Glass {
         // Un Ossido con la versione 1 del protocollo non conosce il vetro delle notifiche:
         // il più vicino è quello spesso.
         let notification = object.version() >= 2;
+        let translucent = object.version() >= 3;
         for region in &regions {
             let material = match region.material {
                 Material::Notification if !notification => Material::Thick,
                 material => material,
             };
-            object.add_region(
-                region.x,
-                region.y,
-                region.width,
-                region.height,
-                region.radius,
-                material,
-            );
+            if translucent && region.opacity < 1.0 {
+                object.add_translucent_region(
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                    region.radius,
+                    material,
+                    region.opacity,
+                );
+            } else if region.opacity >= 0.5 || translucent {
+                // Un Ossido senza la versione 3 compone il vetro pieno: meglio niente vetro
+                // per una regione quasi invisibile.
+                object.add_region(
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                    region.radius,
+                    material,
+                );
+            }
         }
         self.current = regions;
         true
@@ -178,5 +202,18 @@ mod tests {
         let many = Value::Array(vec![json!({"x": 0, "y": 0, "width": 1, "height": 1}); 100]);
         assert_eq!(parse_regions(&many).len(), MAX_REGIONS);
         assert!(parse_regions(&json!(null)).is_empty());
+    }
+
+    #[test]
+    fn opacity_defaults_to_full_and_is_clamped() {
+        let regions = parse_regions(&json!([
+            {"x": 0, "y": 0, "width": 10, "height": 10},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": 0.25},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": 7},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": -1},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": "metà"}
+        ]));
+        let opacities: Vec<f64> = regions.iter().map(|r| r.opacity).collect();
+        assert_eq!(opacities, [1.0, 0.25, 1.0, 0.0, 1.0]);
     }
 }

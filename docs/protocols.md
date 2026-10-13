@@ -28,6 +28,11 @@ sopra testo e icone.
   materiale sconosciuto), `too_many_regions` (oltre 64). Il client viene disconnesso;
   Ossido continua.
 
+- Dalla versione 3: `add_translucent_region(…, opacity)`, la stessa regione composta con
+  un'opacità 0–1. Un pannello che compare o scompare in dissolvenza porta con sé il vetro;
+  l'opacità non rifà la sfocatura (cambia solo il disegno). Fuori da 0–1 è
+  `invalid_region`. `silica_ui` la ricava dagli antenati `Opacity` del widget.
+
 Le regioni correnti si leggono con `glass.list` (`docs/control.md`).
 
 ## silica-shell-v1 e l'elenco delle finestre
