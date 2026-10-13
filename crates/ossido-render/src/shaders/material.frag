@@ -60,6 +60,25 @@ float rounded_distance(vec2 p, vec4 rect, float r) {
     return max(d.x, d.y) - max(r, 0.0);
 }
 
+// Punta rivolta in basso nel rettangolo: base sul lato superiore, vertice al centro del lato
+// inferiore (distanza da un triangolo isoscele). Il vertice è arrotondato (~3,5 pt: in misc.md
+// la punta è larga ~5 pt a 1 pt dalla cima). Il
+// triangolo continua dentro il corpo, alto il doppio con gli stessi lati: sulla base la
+// forma è abbastanza spessa perché il bordo del corpo non si veda attraverso la punta.
+float tip_distance(vec2 p, vec4 rect) {
+    float round_px = 3.5 * scale_px;
+    float apex = rect.y + rect.w - round_px;
+    vec2 q = vec2(rect.z, 2.0 * (rect.w - round_px));
+    vec2 local = vec2(abs(p.x - rect.x - rect.z * 0.5), apex - p.y);
+    // Triangolo con il vertice nell'origine, aperto verso l'alto in `local` (iquilezles).
+    vec2 a = local - q * clamp(dot(local, q) / dot(q, q), 0.0, 1.0);
+    vec2 b = local - q * vec2(clamp(local.x / q.x, 0.0, 1.0), 1.0);
+    float s = -sign(q.y);
+    vec2 d = min(vec2(dot(a, a), s * (local.x * q.y - local.y * q.x)),
+                 vec2(dot(b, b), s * (local.y - q.y)));
+    return -sqrt(d.x) * sign(d.y) - round_px;
+}
+
 // Minimo morbido (polinomiale): il ponte fra due forme vicine.
 float smooth_min(float a, float b, float k) {
     if (k <= 0.0) {
@@ -78,7 +97,9 @@ float union_distance(vec2 p, float min_radius) {
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
-        d = smooth_min(d, rounded_distance(p, rect, max(r, min_radius)), merge);
+        float shape = r < 0.0 ? tip_distance(p, rect)
+                              : rounded_distance(p, rect, max(r, min_radius));
+        d = smooth_min(d, shape, merge);
     }
     return d;
 }

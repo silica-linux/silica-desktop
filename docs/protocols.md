@@ -33,6 +33,16 @@ sopra testo e icone.
   l'opacità non rifà la sfocatura (cambia solo il disegno). Fuori da 0–1 è
   `invalid_region`. `silica_ui` la ricava dagli antenati `Opacity` del widget.
 
+- Dalla versione 4: `separate()` chiude il gruppo corrente. Le regioni seguenti non si
+  fondono con quelle di prima, anche sovrapposte, e si disegnano sopra (un sottomenu sul
+  suo menu: in `menubar.md` sono due pannelli, ognuno con il suo bordo e l'ombra del
+  sottomenu sul menu). `clear` riporta al primo gruppo. `add_tip(x, y, width, height,
+  material, opacity)`: una punta rivolta in basso, con la base sul lato superiore del
+  rettangolo e il vertice arrotondato al centro del lato inferiore, che si fonde con il
+  corpo del suo gruppo in una sola forma: il bordo corre continuo dal corpo alla punta
+  (la punta dei menu del Dock, `misc.md`). `silica_ui` li manda con `Glass.group` e
+  `Glass.tip`; un embedder legato a una versione precedente ignora gruppi e punte.
+
 Le regioni correnti si leggono con `glass.list` (`docs/control.md`).
 
 ## silica-shell-v1 e l'elenco delle finestre

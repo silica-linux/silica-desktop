@@ -34,7 +34,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
 
 use crate::decorations;
-use crate::glass::{Material, current_regions};
+use crate::glass::{Material, Shape, current_regions};
 
 render_elements! {
     pub OutputElement<=GlesRenderer>;
@@ -830,6 +830,8 @@ pub fn output_elements(
                     },
                     opacity: region.opacity as f32 * anchor.opacity,
                     scale,
+                    tip: region.shape == Shape::Tip,
+                    group: region.group,
                 })
                 .collect();
             if regions.is_empty() {
@@ -856,8 +858,10 @@ pub fn output_elements(
             });
             match glass {
                 Some(Ok(glass)) => {
+                    // Le regioni dichiarate dopo stanno sopra (un sottomenu sul suo menu):
+                    // nella lista, dal primo piano in giù, vengono prima.
                     let glass: Vec<OutputElement> =
-                        glass.into_iter().map(OutputElement::Glass).collect();
+                        glass.into_iter().rev().map(OutputElement::Glass).collect();
                     elements.splice(index..index, glass);
                 }
                 Some(Err(err)) => warn!("vetro saltato in questo frame: {err:?}"),

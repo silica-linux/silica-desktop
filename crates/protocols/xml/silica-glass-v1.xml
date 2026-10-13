@@ -13,7 +13,7 @@
     proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="3">
+  <interface name="silica_glass_manager_v1" version="4">
     <description summary="crea l'oggetto vetro di una superficie"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="3">
+  <interface name="silica_glass_v1" version="4">
     <description summary="regioni di vetro di una superficie">
       Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
       corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
@@ -91,6 +91,29 @@
       <arg name="width" type="int"/>
       <arg name="height" type="int"/>
       <arg name="radius" type="fixed"/>
+      <arg name="material" type="uint" enum="material"/>
+      <arg name="opacity" type="fixed"/>
+    </request>
+
+    <request name="separate" since="4">
+      <description summary="le regioni seguenti formano un gruppo a sé">
+        Le regioni aggiunte dopo questa richiesta non si fondono con quelle aggiunte prima,
+        anche se vicine o sovrapposte, e si disegnano sopra di loro: un sottomenu sopra il
+        suo menu. clear riporta al primo gruppo.
+      </description>
+    </request>
+
+    <request name="add_tip" since="4">
+      <description summary="aggiunge una punta rivolta in basso">
+        Un triangolo isoscele nel rettangolo dato, con la base sul lato superiore e il
+        vertice al centro del lato inferiore. Si fonde con le regioni dello stesso gruppo e
+        materiale (la punta di un menu che indica un'icona del Dock): il bordo del vetro
+        corre senza interruzioni dal corpo alla punta.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
       <arg name="material" type="uint" enum="material"/>
       <arg name="opacity" type="fixed"/>
     </request>

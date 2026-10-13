@@ -26,6 +26,17 @@ pub enum Material {
     Notification,
 }
 
+/// La forma di una regione.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shape {
+    /// Rettangolo con angoli ad arco di cerchio.
+    Rounded,
+    /// Punta rivolta in basso (`add_tip`, versione 4): base sul lato superiore, vertice al
+    /// centro del lato inferiore.
+    Tip,
+}
+
 /// Una regione di vetro, in pixel logici relativi alla superficie.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct GlassRegion {
@@ -37,12 +48,18 @@ pub struct GlassRegion {
     pub material: Material,
     /// Opacità con cui si compone il vetro (dalla versione 3; 1 con `add_region`).
     pub opacity: f64,
+    pub shape: Shape,
+    /// Le regioni si fondono solo nello stesso gruppo; un gruppo dopo si disegna sopra
+    /// (`separate`, versione 4).
+    pub group: u32,
 }
 
 /// Lo stato doppio del vetro di una superficie.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GlassState {
     pub regions: Vec<GlassRegion>,
+    /// Il gruppo delle prossime regioni.
+    pub group: u32,
 }
 
 impl Cacheable for GlassState {
@@ -75,7 +92,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(3, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(4, ());
         Self
     }
 }
@@ -149,27 +166,52 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
             });
         };
         match request {
-            silica_glass_v1::Request::Clear => pending(&mut |state| state.regions.clear()),
-            silica_glass_v1::Request::AddRegion {
-                x,
-                y,
-                width,
-                height,
-                radius,
-                material,
-            }
-            | silica_glass_v1::Request::AddTranslucentRegion {
-                x,
-                y,
-                width,
-                height,
-                radius,
-                material,
-                ..
-            } => {
-                let opacity = match request {
-                    silica_glass_v1::Request::AddTranslucentRegion { opacity, .. } => opacity,
-                    _ => 1.0,
+            silica_glass_v1::Request::Clear => pending(&mut |state| {
+                state.regions.clear();
+                state.group = 0;
+            }),
+            silica_glass_v1::Request::Separate => pending(&mut |state| {
+                state.group = state.group.saturating_add(1);
+            }),
+            silica_glass_v1::Request::AddRegion { .. }
+            | silica_glass_v1::Request::AddTranslucentRegion { .. }
+            | silica_glass_v1::Request::AddTip { .. } => {
+                let (x, y, width, height, radius, material, opacity, shape) = match request {
+                    silica_glass_v1::Request::AddRegion {
+                        x,
+                        y,
+                        width,
+                        height,
+                        radius,
+                        material,
+                    } => (x, y, width, height, radius, material, 1.0, Shape::Rounded),
+                    silica_glass_v1::Request::AddTranslucentRegion {
+                        x,
+                        y,
+                        width,
+                        height,
+                        radius,
+                        material,
+                        opacity,
+                    } => (
+                        x,
+                        y,
+                        width,
+                        height,
+                        radius,
+                        material,
+                        opacity,
+                        Shape::Rounded,
+                    ),
+                    silica_glass_v1::Request::AddTip {
+                        x,
+                        y,
+                        width,
+                        height,
+                        material,
+                        opacity,
+                    } => (x, y, width, height, 0.0, material, opacity, Shape::Tip),
+                    _ => return,
                 };
                 let material = match material {
                     WEnum::Value(silica_glass_v1::Material::Clear) => Some(Material::Clear),
@@ -210,6 +252,8 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                             radius,
                             material,
                             opacity,
+                            shape,
+                            group: state.group,
                         });
                     }
                 });

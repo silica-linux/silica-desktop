@@ -174,7 +174,7 @@ pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
 
 thread_local! {
     /// Versione di silica-glass-v1 che le finestre di questo thread (un test) chiedono.
-    pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(3) };
+    pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(4) };
     /// L'app_id delle finestre che questo thread apre (nessuno se vuoto).
     pub static APP_ID: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
@@ -326,6 +326,31 @@ impl TestWindow {
         for &((x, y, w, h, radius, material), opacity) in regions {
             glass.add_translucent_region(x, y, w, h, radius, material, opacity);
         }
+        self.surface.commit();
+        self.queue
+            .roundtrip(&mut self.app)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Richieste di vetro libere (versione 4: `separate`, `add_tip`) dopo un `clear`, poi
+    /// il commit.
+    #[allow(dead_code)]
+    pub fn set_glass_with(
+        &mut self,
+        requests: impl FnOnce(&silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1),
+    ) -> Result<(), String> {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .glass
+            .clone()
+            .expect("silica_glass_manager_v1 assente");
+        let glass = self
+            .glass
+            .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
+        glass.clear();
+        requests(glass);
         self.surface.commit();
         self.queue
             .roundtrip(&mut self.app)

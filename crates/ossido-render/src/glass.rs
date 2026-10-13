@@ -341,6 +341,10 @@ pub struct PhysicalRegion {
     pub opacity: f32,
     /// Pixel fisici per punto.
     pub scale: f64,
+    /// Una punta rivolta in basso invece di un rettangolo (`add_tip`).
+    pub tip: bool,
+    /// Le regioni si fondono solo nello stesso gruppo.
+    pub group: u32,
 }
 
 impl PhysicalRegion {
@@ -351,6 +355,8 @@ impl PhysicalRegion {
             && self.radius == other.radius
             && self.material == other.material
             && self.scale == other.scale
+            && self.tip == other.tip
+            && self.group == other.group
     }
 }
 
@@ -539,15 +545,17 @@ impl GlassCache {
     }
 }
 
-/// Le regioni raggruppate per materiale (nell'ordine in cui compaiono), al più
-/// `MAX_SHAPES` per gruppo: le regioni di un gruppo si fondono fra loro.
+/// Le regioni raggruppate per materiale e gruppo del client (nell'ordine in cui compaiono),
+/// al più `MAX_SHAPES` per gruppo: le regioni di un gruppo si fondono fra loro.
 fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
     let mut groups: Vec<Vec<PhysicalRegion>> = Vec::new();
     for region in regions {
         match groups.iter_mut().find(|group| {
             group.len() < MAX_SHAPES
                 && group.first().is_some_and(|first| {
-                    first.material == region.material && first.opacity == region.opacity
+                    first.material == region.material
+                        && first.opacity == region.opacity
+                        && first.group == region.group
                 })
         }) {
             Some(group) => group.push(*region),
@@ -771,8 +779,9 @@ impl RenderElement<GlesRenderer> for GlassElement {
             {
                 slot.copy_from_slice(&values);
             }
+            // Raggio negativo: una punta (lo shader la riconosce dal segno).
             if let Some(slot) = radii.get_mut(i) {
-                *slot = shape.radius as f32;
+                *slot = if shape.tip { -1.0 } else { shape.radius as f32 };
             }
         }
         let uniforms = [

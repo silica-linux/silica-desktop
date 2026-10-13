@@ -474,6 +474,78 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
 }
 
 #[test]
+fn separate_groups_overlap_without_merging() {
+    let ossido = Headless::start_with("glass-groups", SHOT, &["--background", "7a7b80"]);
+    let size = (400, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "gruppi", size, &transparent(size));
+    let background = [0x7a_u8, 0x7b, 0x80];
+    let differs = |shot: &[u8], x: u32, y: u32| {
+        rgb(shot, x, y)
+            .iter()
+            .zip(background)
+            .any(|(got, bg)| got.abs_diff(bg) > 6)
+    };
+    // Le capsule a 4 pt che si fondono (sopra), ma in due gruppi: lo spazio resta fondo,
+    // come un sottomenu accanto al suo menu.
+    glass
+        .set_glass_with(|g| {
+            g.add_region(0, 20, 100, 60, 30.0, Material::Regular);
+            g.separate();
+            g.add_region(104, 20, 100, 60, 30.0, Material::Regular);
+        })
+        .unwrap();
+    let split = shot(&ossido, "glass-groups.png");
+    assert!(!differs(&split, 134, 82), "i gruppi separati si fondono");
+    let list = glass_list(&ossido);
+    let groups: Vec<u64> = list[0]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["group"].as_u64().unwrap())
+        .collect();
+    assert_eq!(groups, [0, 1]);
+}
+
+#[test]
+fn a_tip_joins_its_body_in_one_shape() {
+    let ossido = Headless::start_with("glass-tip", SHOT, &["--background", "7a7b80"]);
+    let size = (300, 120);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "punta", size, &transparent(size));
+    // Il menu del Dock: corpo spesso e una punta di 8 × 10 sotto, al centro x 100.
+    glass
+        .set_glass_with(|g| {
+            g.add_region(40, 10, 200, 60, 12.0, Material::Thick);
+            g.add_tip(96, 70, 8, 10, Material::Thick, 1.0);
+        })
+        .unwrap();
+    let image = shot(&ossido, "glass-tip.png");
+    let background = [0x7a_u8, 0x7b, 0x80];
+    let is_glass = |x: u32, y: u32| {
+        rgb(&image, 32 + x, 32 + y)
+            .iter()
+            .zip(background)
+            .any(|(got, bg)| got.abs_diff(bg) > 6)
+    };
+    // Sotto il corpo, al centro della punta: vetro fino quasi al vertice.
+    assert!(is_glass(100, 72) && is_glass(100, 77), "la punta manca");
+    // Accanto alla punta: fondo.
+    assert!(
+        !is_glass(85, 76) && !is_glass(115, 76),
+        "la punta è troppo larga"
+    );
+    // Sotto il vertice: fondo.
+    assert!(!is_glass(100, 83), "la punta scende troppo");
+    // Nessun bordo del corpo attraverso la punta: sulla base, lo stesso colore dell'interno.
+    let base = rgb(&image, 32 + 100, 32 + 70);
+    let inside = rgb(&image, 32 + 100, 32 + 60);
+    assert!(
+        base.iter().zip(inside).all(|(a, b)| a.abs_diff(b) <= 8),
+        "il bordo del corpo attraversa la punta: {base:?} contro {inside:?}"
+    );
+    assert_eq!(glass_list(&ossido)[0]["regions"][1]["shape"], "tip");
+}
+
+#[test]
 fn notification_glass_matches_the_isolated_banner() {
     // Il banner isolato sul grigio di riferimento: #bfc0c5 in alto, #c2c3c8 in basso
     // (notifications.md, "Banner · materiale su grigio").

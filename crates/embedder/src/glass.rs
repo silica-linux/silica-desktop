@@ -25,6 +25,11 @@ pub struct Region {
     pub material: Material,
     /// 0–1: il vetro si compone con questa opacità (silica-glass-v1 versione 3).
     pub opacity: f64,
+    /// Una punta rivolta in basso invece di un rettangolo (versione 4, `add_tip`).
+    pub tip: bool,
+    /// Le regioni si fondono solo nello stesso gruppo; un gruppo più alto sta sopra
+    /// (versione 4, `separate`).
+    pub group: u32,
 }
 
 impl Region {
@@ -62,6 +67,11 @@ impl Region {
             radius,
             material,
             opacity,
+            tip: value.get("shape").and_then(Value::as_str) == Some("tip"),
+            group: value
+                .get("group")
+                .and_then(Value::as_u64)
+                .map_or(0, |g| u32::try_from(g).unwrap_or(u32::MAX)),
         };
         (region.width > 0 && region.height > 0).then_some(region)
     }
@@ -71,10 +81,14 @@ impl Region {
 pub fn parse_regions(args: &Value) -> Vec<Region> {
     args.as_array()
         .map(|list| {
-            list.iter()
+            let mut regions: Vec<Region> = list
+                .iter()
                 .filter_map(Region::from_json)
                 .take(MAX_REGIONS)
-                .collect()
+                .collect();
+            // Per gruppo (stabile): `separate` divide le regioni in ordine.
+            regions.sort_by_key(|r| r.group);
+            regions
         })
         .unwrap_or_default()
 }
@@ -144,12 +158,31 @@ impl Glass {
         // il più vicino è quello spesso.
         let notification = object.version() >= 2;
         let translucent = object.version() >= 3;
+        let groups = object.version() >= 4;
+        let mut group = regions.first().map_or(0, |r| r.group);
         for region in &regions {
+            if region.tip && !groups {
+                // Un Ossido senza la versione 4 non sa disegnare la punta.
+                continue;
+            }
+            if groups && region.group != group {
+                object.separate();
+                group = region.group;
+            }
             let material = match region.material {
                 Material::Notification if !notification => Material::Thick,
                 material => material,
             };
-            if translucent && region.opacity < 1.0 {
+            if region.tip {
+                object.add_tip(
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                    material,
+                    region.opacity,
+                );
+            } else if translucent && region.opacity < 1.0 {
                 object.add_translucent_region(
                     region.x,
                     region.y,
@@ -215,5 +248,16 @@ mod tests {
         ]));
         let opacities: Vec<f64> = regions.iter().map(|r| r.opacity).collect();
         assert_eq!(opacities, [1.0, 0.25, 1.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn tips_and_groups_are_parsed_and_groups_sorted() {
+        let regions = parse_regions(&json!([
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": 1},
+            {"x": 0, "y": 0, "width": 22, "height": 8, "shape": "tip"},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": "uno"}
+        ]));
+        let summary: Vec<(u32, bool)> = regions.iter().map(|r| (r.group, r.tip)).collect();
+        assert_eq!(summary, [(0, true), (0, false), (1, false)]);
     }
 }
