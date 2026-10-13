@@ -3,6 +3,10 @@
 
 import 'dart:io';
 
+import 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
+
+export 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
+
 /// Un'app avviabile.
 class DesktopEntry {
   const DesktopEntry({
@@ -103,16 +107,6 @@ DesktopEntry? parseDesktopEntry(
         .where((c) => c.isNotEmpty)
         .toList(),
   );
-}
-
-/// Le cartelle dei dati XDG, dalla più importante.
-List<String> xdgDataDirs(Map<String, String> env) {
-  final home = env['HOME'] ?? '';
-  final dataHome = env['XDG_DATA_HOME'] ?? '$home/.local/share';
-  final dataDirs = (env['XDG_DATA_DIRS'] ?? '/usr/local/share:/usr/share')
-      .split(':')
-      .where((d) => d.isNotEmpty);
-  return [dataHome, ...dataDirs];
 }
 
 /// Tutte le app installate, per id.

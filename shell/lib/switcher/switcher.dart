@@ -23,7 +23,6 @@ import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
-import '../system/shell_icon.dart';
 import '../system/silica_icons.dart';
 
 const double iconSide = 104;
@@ -294,7 +293,7 @@ class SwitcherPanel extends StatelessWidget {
         width: side,
         height: side,
         child: switch (app.icon) {
-          final source? => ShellIcon(source, side: side, dark: false),
+          final source? => SilicaIcon(source, side: side, dark: false),
           null => DecoratedBox(
             decoration: BoxDecoration(
               color: const Color(0xFFDDDDE2),

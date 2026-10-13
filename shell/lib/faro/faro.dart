@@ -17,7 +17,6 @@ import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
-import '../system/shell_icon.dart';
 import '../system/silica_icons.dart';
 import 'launcher.dart';
 import 'search.dart';
@@ -472,7 +471,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 height: 38,
                 child: icon == null
                     ? null
-                    : Center(child: ShellIcon(icon, side: rowIconSide)),
+                    : Center(child: SilicaIcon(icon, side: rowIconSide)),
               ),
               const SizedBox(width: 15),
               Expanded(

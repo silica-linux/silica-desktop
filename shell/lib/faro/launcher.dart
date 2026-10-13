@@ -24,7 +24,6 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
-import '../system/shell_icon.dart';
 import '../system/silica_icons.dart';
 import 'search.dart';
 
@@ -500,7 +499,7 @@ class LauncherState extends State<Launcher>
               top: (launcherHeader - previewSide) / 2,
               width: previewSide,
               height: previewSide,
-              child: ShellIcon(preview, side: previewSide, dark: false),
+              child: SilicaIcon(preview, side: previewSide, dark: false),
             ),
           // "…": tre punti 4 × 3 a passo 7, l'ultimo a 23 pt dal bordo destro.
           Positioned(
@@ -641,7 +640,7 @@ class LauncherState extends State<Launcher>
               height: gridIcon,
               child: icon == null
                   ? const SizedBox()
-                  : ShellIcon(icon, side: gridIcon, dark: false),
+                  : SilicaIcon(icon, side: gridIcon, dark: false),
             ),
             Positioned(
               left: (cellWidth - gridLabelWidth) / 2,

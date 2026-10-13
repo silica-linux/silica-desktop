@@ -17,8 +17,6 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
-import '../system/shell_icon.dart';
-import '../system/silica_icons.dart';
 import 'apps.dart';
 import 'icons.dart';
 import 'stack.dart';
@@ -1091,7 +1089,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           top: at.dy,
           width: drag.side,
           height: drag.side,
-          child: ShellIcon(source, side: drag.side),
+          child: SilicaIcon(source, side: drag.side),
         ),
       if (drag.remove)
         _capsule('Rimuovi', at.dx + drag.side / 2, at.dy - labelGap, 1),
@@ -1115,7 +1113,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   top: ghost.at.dy,
                   width: ghost.side,
                   height: ghost.side,
-                  child: ShellIcon(source, side: ghost.side),
+                  child: SilicaIcon(source, side: ghost.side),
                 ),
               _capsule(
                 'Rimuovi',
@@ -1200,7 +1198,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               top: thumbHeight - badge + minimizedBadgeBelow * k,
               width: badge,
               height: badge,
-              child: ShellIcon(source, side: badge),
+              child: SilicaIcon(source, side: badge),
             ),
         ],
       ),
@@ -1220,8 +1218,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     // Con la pila aperta l'icona della cartella diventa il pulsante che la chiude (D-06).
     final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
     final icon = closer != null
-        ? ShellIcon(LayeredSource(closer), side: side)
-        : ShellIcon(source, side: side);
+        ? SilicaIcon(LayeredSource(closer), side: side)
+        : SilicaIcon(source, side: side);
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,

@@ -5,6 +5,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';

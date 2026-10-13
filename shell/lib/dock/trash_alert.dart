@@ -11,8 +11,6 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
-import '../system/shell_icon.dart';
-import '../system/silica_icons.dart';
 
 const Size trashAlertSize = Size(292, 268);
 
@@ -97,7 +95,7 @@ class TrashAlert extends StatelessWidget {
                 height: trashAlertIcon,
                 child: icon == null
                     ? const SizedBox()
-                    : ShellIcon(
+                    : SilicaIcon(
                         LayeredSource(icon),
                         side: trashAlertIcon,
                         dark: false,

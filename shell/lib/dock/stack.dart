@@ -19,8 +19,6 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
-import '../system/shell_icon.dart';
-import '../system/silica_icons.dart';
 
 const int fanMax = 15;
 const double fanPitch = 64.6;
@@ -253,7 +251,7 @@ class FanStack extends StatelessWidget {
                         ? CustomPaint(painter: _OpenFolderPainter())
                         : icon == null
                         ? const SizedBox()
-                        : ShellIcon(
+                        : SilicaIcon(
                             LayeredSource(icon),
                             side: side * 0.92,
                             dark: false,
@@ -431,7 +429,7 @@ class GridStack extends StatelessWidget {
               height: 80,
               child: icon == null
                   ? null
-                  : ShellIcon(LayeredSource(icon), side: 64, dark: false),
+                  : SilicaIcon(LayeredSource(icon), side: 64, dark: false),
             ),
             const SizedBox(height: 4),
             SizedBox(

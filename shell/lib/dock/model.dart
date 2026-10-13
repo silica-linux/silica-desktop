@@ -4,8 +4,7 @@
 // con il bordo inferiore sul bordo dello schermo).
 
 import 'dart:ui' as ui;
-import '../system/shell_icon.dart';
-import '../system/silica_icons.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 /// Passo fra le celle delle app: 63 pt (AX).
 const double cellPitch = 63;
