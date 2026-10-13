@@ -81,7 +81,7 @@ impl Shell {
 use crate::dbus;
 use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
-    PointerPhase, ResponseHandle, Task, VsyncBaton,
+    PointerPhase, ResponseHandle, Task, VsyncBaton, VulkanSurface,
 };
 use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
@@ -292,11 +292,28 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut engine_args = options.engine_args.clone();
+    // Vulkan con Impeller; se Vulkan non c'è (o non presenta su questa superficie) si
+    // ripiega su OpenGL ES con Impeller.
+    let vulkan = match options.renderer {
+        Renderer::Vulkan => match VulkanSurface::new(&conn, surface.wl_surface(), options.size) {
+            Ok(vulkan) => {
+                info!("renderer Vulkan: {}", vulkan.renderer());
+                engine_args.push("--enable-impeller".to_owned());
+                Some(vulkan)
+            }
+            Err(err) => {
+                warn!("Vulkan non disponibile ({err}): uso OpenGL ES con Impeller");
+                None
+            }
+        },
+        _ => None,
+    };
     let gl = match options.renderer {
-        Renderer::Gl | Renderer::Impeller => {
+        Renderer::Vulkan if vulkan.is_some() => None,
+        Renderer::Gl | Renderer::Impeller | Renderer::Vulkan => {
             let gl = GlSurface::new(&conn, surface.wl_surface(), options.size)?;
             info!("renderer OpenGL ES: {}", gl.renderer());
-            if options.renderer == Renderer::Impeller {
+            if options.renderer != Renderer::Gl {
                 if crate::is_software_gl(gl.renderer()) {
                     warn!("Impeller su un driver GL software va in crash: uso Skia");
                 } else {
@@ -321,7 +338,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         Renderer::Software => None,
     };
-    let gl_mode = gl.is_some();
+    let gl_mode = gl.is_some() || vulkan.is_some();
 
     let (width, height) = options.size;
     let pool = SlotPool::new((width * height * 4) as usize, &shm)?;
@@ -412,6 +429,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             let _ = message_sender.send(message);
         }),
         gl,
+        vulkan,
         vsync: Some(Box::new(move |baton| {
             let _ = vsync_sender.send(baton);
         })),

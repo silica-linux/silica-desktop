@@ -22,8 +22,10 @@
 )]
 mod bindings;
 mod gl;
+mod vulkan;
 
 pub use gl::GlSurface;
+pub use vulkan::VulkanSurface;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
@@ -39,7 +41,8 @@ use bindings::{
     FlutterPlatformMessage, FlutterPlatformMessageResponseHandle, FlutterPointerDeviceKind,
     FlutterPointerEvent as RawPointerEvent, FlutterPointerPhase, FlutterPointerSignalKind,
     FlutterProjectArgs, FlutterRendererConfig, FlutterRendererType, FlutterSoftwareRendererConfig,
-    FlutterTask, FlutterTaskRunnerDescription, FlutterWindowMetricsEvent,
+    FlutterTask, FlutterTaskRunnerDescription, FlutterVulkanImage, FlutterVulkanRendererConfig,
+    FlutterWindowMetricsEvent,
 };
 
 #[derive(Debug)]
@@ -144,6 +147,9 @@ pub struct Callbacks {
     pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
     /// Con una superficie EGL l'engine disegna con OpenGL ES, altrimenti in software.
     pub gl: Option<GlSurface>,
+    /// Con una swapchain Vulkan l'engine disegna con Impeller su Vulkan (ha la precedenza
+    /// su `gl`).
+    pub vulkan: Option<VulkanSurface>,
     /// Il ritmo dei frame lo dà l'embedder (frame callback del compositor); senza, l'engine
     /// usa un suo timer a 60 Hz, scollegato dal compositor.
     pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
@@ -384,6 +390,64 @@ unsafe extern "C" fn gl_proc_resolver(user_data: *mut c_void, name: *const c_cha
     }
 }
 
+/// La superficie Vulkan dei callback, se l'engine usa il renderer Vulkan.
+///
+/// # Safety
+/// Come [`callbacks`].
+unsafe fn vulkan_surface<'a>(user_data: *mut c_void) -> Option<&'a VulkanSurface> {
+    // SAFETY: garantito dal chiamante.
+    unsafe { callbacks(user_data) }.vulkan.as_ref()
+}
+
+unsafe extern "C" fn vulkan_proc_address(
+    user_data: *mut c_void,
+    instance: *mut c_void,
+    name: *const c_char,
+) -> *mut c_void {
+    if name.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    let Some(vulkan) = (unsafe { vulkan_surface(user_data) }) else {
+        return ptr::null_mut();
+    };
+    // SAFETY: l'engine passa il nome della funzione come stringa C terminata da NUL.
+    vulkan.proc_address(instance, unsafe { CStr::from_ptr(name) })
+}
+
+unsafe extern "C" fn vulkan_next_image(
+    user_data: *mut c_void,
+    info: *const FlutterFrameInfo,
+) -> FlutterVulkanImage {
+    let mut image = FlutterVulkanImage {
+        struct_size: size_of::<FlutterVulkanImage>(),
+        ..Default::default()
+    };
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    let Some(vulkan) = (unsafe { vulkan_surface(user_data) }) else {
+        return image;
+    };
+    let size = if info.is_null() {
+        (0, 0)
+    } else {
+        // SAFETY: l'engine passa un FlutterFrameInfo valido per la durata della chiamata.
+        let size = unsafe { (*info).size };
+        (size.width, size.height)
+    };
+    let (handle, format) = vulkan.next_image(size);
+    image.image = handle;
+    image.format = format;
+    image
+}
+
+unsafe extern "C" fn vulkan_present(
+    user_data: *mut c_void,
+    _image: *const FlutterVulkanImage,
+) -> bool {
+    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    unsafe { vulkan_surface(user_data) }.is_some_and(VulkanSurface::present)
+}
+
 unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
     // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
@@ -528,7 +592,26 @@ impl Engine {
             ..Default::default()
         });
         let mut renderer = FlutterRendererConfig::default();
-        if callbacks.gl.is_some() {
+        if let Some(vulkan) = &callbacks.vulkan {
+            let (instance, physical, device, family, queue) = vulkan.handles();
+            renderer.type_ = FlutterRendererType::kVulkan;
+            renderer.__bindgen_anon_1.vulkan = FlutterVulkanRendererConfig {
+                struct_size: size_of::<FlutterVulkanRendererConfig>(),
+                version: ash_api_version_1_1(),
+                instance,
+                physical_device: physical,
+                device,
+                queue_family_index: family,
+                queue,
+                enabled_instance_extension_count: vulkan.instance_extensions().len(),
+                enabled_instance_extensions: vulkan.instance_extensions().as_ptr().cast_mut(),
+                enabled_device_extension_count: vulkan.device_extensions().len(),
+                enabled_device_extensions: vulkan.device_extensions().as_ptr().cast_mut(),
+                get_instance_proc_address_callback: Some(vulkan_proc_address),
+                get_next_image_callback: Some(vulkan_next_image),
+                present_image_callback: Some(vulkan_present),
+            };
+        } else if callbacks.gl.is_some() {
             renderer.type_ = FlutterRendererType::kOpenGL;
             renderer.__bindgen_anon_1.open_gl = FlutterOpenGLRendererConfig {
                 struct_size: size_of::<FlutterOpenGLRendererConfig>(),
@@ -709,9 +792,14 @@ impl Engine {
         })
     }
 
-    /// Se la superficie EGL ha già presentato un frame; `true` senza OpenGL.
+    /// Se la superficie EGL o Vulkan ha già presentato un frame; `true` in software.
     pub fn gl_presented(&self) -> bool {
         self._callbacks.gl.as_ref().is_none_or(GlSurface::presented)
+            && self
+                ._callbacks
+                .vulkan
+                .as_ref()
+                .is_none_or(VulkanSurface::presented)
     }
 
     /// Chiede un frame anche se il framework non ne ha in programma.
@@ -884,4 +972,9 @@ impl Drop for Engine {
             }
         }
     }
+}
+
+/// `VK_API_VERSION_1_1`, la versione con cui sono creati istanza e dispositivo.
+fn ash_api_version_1_1() -> u32 {
+    ash::vk::API_VERSION_1_1
 }

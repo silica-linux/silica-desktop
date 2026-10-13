@@ -67,6 +67,9 @@ pub enum Renderer {
     /// OpenGL ES con Impeller, il renderer della shell (gate 1). Su un driver GL software
     /// (llvmpipe) Impeller va in crash nell'engine: lì si ripiega su Skia.
     Impeller,
+    /// Vulkan con Impeller (swapchain sulla superficie Wayland). Senza Vulkan si ripiega su
+    /// OpenGL ES con Impeller.
+    Vulkan,
 }
 
 /// Driver GL che rasterizzano sulla CPU, dal `GL_RENDERER` di Mesa.

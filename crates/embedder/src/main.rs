@@ -1,7 +1,7 @@
 //! Avvio dell'embedder:
 //!
 //! ```text
-//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl|impeller] [--aot LIBAPP]
+//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
 //!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITOLO] [--app-id ID] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
@@ -119,6 +119,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     "software" => Renderer::Software,
                     "gl" => Renderer::Gl,
                     "impeller" => Renderer::Impeller,
+                    "vulkan" => Renderer::Vulkan,
                     other => return Err(format!("renderer sconosciuto: {other}")),
                 };
             }

@@ -247,10 +247,34 @@ I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una 
 - **Ritmo dei frame.** L'embedder segue i frame callback del compositor
   (`vsync_callback`), come fa iced; prima l'engine andava con un suo timer a 60 Hz.
 
+## Impeller su Vulkan (2026-10-13)
+
+`--renderer vulkan`: l'embedder crea istanza e dispositivo Vulkan (`ash`), una swapchain
+`VK_KHR_wayland_surface` sulla superficie dell'app con alfa premoltiplicata, presentazione
+MAILBOX o IMMEDIATE (il ritmo resta il vsync dell'engine), e dà tutto all'engine con
+`FlutterVulkanRendererConfig` e `--enable-impeller`. Preferisce la GPU integrata
+(`SILICA_VULKAN_GPU=discrete` per la discreta); senza Vulkan ripiega su OpenGL ES con Impeller.
+È il renderer della shell in `cargo xtask run --shell`.
+
+Perché: con Impeller su OpenGL ES questo driver non dà il multisampling e i tracciati
+(glifi, contorni) restano senza antialiasing; su Vulkan sì, con la stessa qualità di Skia.
+
+Misura: Ossido annidato in GNOME (XPS 15, Iris Xe, Mesa), Dock della shell 1600 × 1000, il
+puntatore avanti e indietro sul Dock per ~6 s (`perf.frames`, `perf.process`), due ripetizioni:
+
+| Renderer | Frame | p50 | p95 | p99 | Max | Lenti | PSS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Skia (GL) | 431 | 16,7 | 20,1 | 31,6 | 43,7 | 7 | 75 MiB |
+| Impeller (GL) | 423 | 16,7 | 19,0 | 20,7 | 29,5 | 1 | 80 MiB |
+| Impeller (Vulkan) | 427–429 | 16,7 | 19,0–19,4 | 20,0–20,6 | 23–29 | 0–1 | 78 MiB |
+
+Una prima ripetizione con Impeller su GL ha avuto un intoppo di 3 s (102 frame), non
+ripetuto. Vulkan è pari o meglio su tutto e ha l'antialiasing.
+
 ## Cosa resta aperto
 
 - `wp_presentation` per il ritmo dei frame (dmabuf in Ossido è fatto).
-- Impeller su Vulkan: renderer Vulkan nell'embedder.
+- Impeller su Vulkan in una sessione reale (DRM/KMS) e sulla GPU discreta.
 - La misura in una sessione reale (DRM/KMS, M6), non annidata in GNOME.
 - Un solo engine con più viste per la shell, se la memoria diventa un problema.
 

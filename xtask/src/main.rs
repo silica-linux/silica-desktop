@@ -206,7 +206,7 @@ fn shell_components() -> Result<Vec<String>> {
         flutter::bundle_release("shell")?;
     }
     let embedder = format!(
-        "{} --engine {} --renderer impeller",
+        "{} --engine {} --renderer vulkan",
         root.join("target/release/silica-embedder").display(),
         engine.display()
     );
