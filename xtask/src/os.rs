@@ -747,6 +747,8 @@ fn deploy(args: &[String]) -> Result<()> {
     write_executable(&share.join("bin/silica-app"), &silica_app_script())?;
     write_executable(&share.join("session.sh"), &session_script())?;
 
+    prepare_guest_bus(&share)?;
+
     eprintln!("xtask: restarting the session in the guest");
     restart_session()?;
     std::thread::sleep(Duration::from_secs(3));
@@ -770,6 +772,62 @@ pub(crate) fn sibling(name: &str) -> Option<PathBuf> {
     let next = root().ok()?.parent().map(|dir| dir.join(name));
     let home = std::env::var_os("HOME").map(|home| Path::new(&home).join("silica").join(name));
     next.into_iter().chain(home).find(|dir| dir.is_dir())
+}
+
+/// The D-Bus services of the image that the share replaces: (bus name, binary in the share).
+const DEV_SERVICES: [(&str, &str); 2] = [
+    ("dev.frascella.Silica", "silica-daemon"),
+    ("dev.frascella.Mail", "silica-mail-engine"),
+];
+
+/// The user-level activation file that points `name` at the share's binary. The image ships
+/// /usr/share/dbus-1/services/<name>.service with the packaged binary: without this override,
+/// activating the name while the dev daemon does not own it (a session restart) starts an old
+/// daemon from /usr/libexec/silica.
+fn dev_service_file(name: &str, binary: &str) -> String {
+    format!("[D-BUS Service]\nName={name}\nExec={GUEST_SHARE}/bin/{binary}\n")
+}
+
+/// Makes the guest's bus activate the share's services instead of the packaged ones, and stops
+/// the packaged daemons that are already running. Everything runs inside the guest (over ssh):
+/// the PIDs are the guest's, never the host's.
+fn prepare_guest_bus(share: &Path) -> Result<()> {
+    let home = format!("/var/home/{GUEST_USER}");
+    let dir = format!("{home}/.local/share/dbus-1/services");
+    let mut script = format!(
+        "install -d -o {GUEST_USER} -g {GUEST_USER} {home}/.local {home}/.local/share {home}/.local/share/dbus-1 {dir}\n"
+    );
+    let mut stale = Vec::new();
+    for (name, binary) in DEV_SERVICES {
+        let file = format!("{dir}/{name}.service");
+        if share.join("bin").join(binary).exists() {
+            script.push_str(&format!(
+                "printf '%s' '{}' > {file} && chown {GUEST_USER}:{GUEST_USER} {file}\n",
+                dev_service_file(name, binary)
+            ));
+            stale.push(format!("/usr/libexec/silica/{binary}"));
+        } else {
+            // Nothing to point at: an override left by an earlier deploy would be dangling.
+            script.push_str(&format!("rm -f {file}\n"));
+        }
+    }
+    script.push_str(&format!(
+        "restorecon -R {home}/.local/share/dbus-1 2>/dev/null || true\n"
+    ));
+    // The user's bus survives the session: tell it to read the new files.
+    script.push_str(&format!(
+        "uid=$(id -u {GUEST_USER}); \
+         runuser -u {GUEST_USER} -- env XDG_RUNTIME_DIR=/run/user/$uid \
+         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
+         busctl --user call org.freedesktop.DBus / org.freedesktop.DBus ReloadConfig || true\n"
+    ));
+    // Packaged daemons still running (exact command line, in the guest's process table).
+    for path in stale {
+        script.push_str(&format!(
+            "pids=$(pgrep -x -f '{path}' || true); [ -z \"$pids\" ] || kill $pids || true\n"
+        ));
+    }
+    ssh_output(&script).map(|_| ())
 }
 
 /// Restarts the automatic login session: greetd runs `initial_session` only once per boot
@@ -985,6 +1043,16 @@ mod tests {
                 .iter()
                 .any(|(name, _)| name == "ssh.authorized_keys.root")
         );
+    }
+
+    #[test]
+    fn dev_services_override_the_packaged_ones() {
+        let file = dev_service_file("dev.frascella.Silica", "silica-daemon");
+        assert_eq!(
+            file,
+            "[D-BUS Service]\nName=dev.frascella.Silica\nExec=/run/silica-dev/bin/silica-daemon\n"
+        );
+        assert!(!file.contains("/usr/libexec"));
     }
 
     #[test]
