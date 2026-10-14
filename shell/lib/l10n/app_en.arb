@@ -929,5 +929,69 @@
   "dockSettingsEllipsis": "Dock settings…",
   "@dockSettingsEllipsis": {
     "description": "Dock separator menu: opens Settings"
+  },
+  "dockShowApps": "Show Apps",
+  "@dockShowApps": {
+    "description": "Menu of the Dock's launcher item: opens the launcher"
+  },
+  "dockNewSmartFolder": "New Smart Folder",
+  "@dockNewSmartFolder": {
+    "description": "File manager's Dock menu"
+  },
+  "dockFind": "Find…",
+  "@dockFind": {
+    "description": "File manager's Dock menu"
+  },
+  "dockGoToFolder": "Go to Folder…",
+  "@dockGoToFolder": {
+    "description": "File manager's Dock menu"
+  },
+  "dockConnectToServer": "Connect to Server…",
+  "@dockConnectToServer": {
+    "description": "File manager's Dock menu"
+  },
+  "dockHide": "Hide",
+  "@dockHide": {
+    "description": "Dock app menu: hides the app's windows"
+  },
+  "placeApplications": "Applications",
+  "@placeApplications": {
+    "description": "A place in the file manager's Dock menu"
+  },
+  "placeDocuments": "Documents",
+  "@placeDocuments": {
+    "description": "A place in the file manager's Dock menu"
+  },
+  "placeDownloads": "Downloads",
+  "@placeDownloads": {
+    "description": "A place in the file manager's Dock menu"
+  },
+  "placeRecents": "Recents",
+  "@placeRecents": {
+    "description": "A place in the file manager's Dock menu"
+  },
+  "placeDesktop": "Desktop",
+  "@placeDesktop": {
+    "description": "A place in the file manager's Dock menu"
+  },
+  "dockHideOthers": "Hide Others",
+  "@dockHideOthers": {
+    "description": "Dock app menu, with Option held"
+  },
+  "dockForceQuit": "Force Quit",
+  "@dockForceQuit": {
+    "description": "Dock app menu, with Option held"
+  },
+  "dockOpenAtLogin": "Open at Login",
+  "@dockOpenAtLogin": {
+    "description": "Dock app options: start the app at login"
+  },
+  "dockShowInFileManager": "Show in Mustache",
+  "@dockShowInFileManager": {
+    "description": "Dock app options: shows the app's entry in the file manager"
+  },
+  "dockAssignTo": "Assign to desktop",
+  "@dockAssignTo": {
+    "description": "Dock app options (not available yet)"
   }
 }

@@ -16,7 +16,8 @@ import 'dart:io'
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart' show KeyDownEvent, LogicalKeyboardKey;
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyDownEvent, KeyEvent, LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -28,7 +29,9 @@ import '../system/layer_control.dart';
 import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
 import 'apps.dart';
+import 'autostart.dart';
 import 'options.dart';
+import 'recent_documents.dart';
 import 'icons.dart';
 import 'stack.dart';
 import 'stack_settings.dart';
@@ -181,6 +184,8 @@ class _LiveDockState extends State<LiveDock> {
     ShellChannel.instance.refresh();
     _options.value.addListener(_optionsChanged);
     _applyOptions();
+    // Login items: Silica has no other runner; once per session.
+    runAutostartOnce();
   }
 
   void _optionsChanged() {
@@ -343,7 +348,22 @@ class _LiveDockState extends State<LiveDock> {
         minimized.lastWhere(item.windows.contains),
       );
     } else if (item.windows.isNotEmpty) {
-      ShellChannel.instance.activate(_latest(item));
+      // D-03 (a): all the app's windows come to the front keeping their relative order
+      // (raised from the least recent, the most recent last); minimized ones stay in the
+      // Dock (e′).
+      final visible = [
+        for (final id in item.windows)
+          if (!minimized.contains(id)) id,
+      ];
+      int age(String id) {
+        final i = _recent.indexOf(id);
+        return i < 0 ? _recent.length : i;
+      }
+
+      visible.sort((a, b) => age(b).compareTo(age(a)));
+      for (final id in visible) {
+        ShellChannel.instance.activate(id);
+      }
     } else if (item.command case final command?) {
       ShellChannel.instance.launch(command);
     }
@@ -392,19 +412,12 @@ class _LiveDockState extends State<LiveDock> {
     }
     if (item.kind == ItemKind.separator) return _separatorMenu();
     if (item.folder case final folder?) return _folderMenu(item, folder);
+    // The launcher item (DOCK-02): Remove from Dock — Show Apps, nothing else.
     if (item.action case final action?) {
       return [
-        MenuAction(
-          l.options,
-          submenu: [
-            MenuAction(
-              l.removeFromDock,
-              onSelected: () => _setPinned(item, false),
-            ),
-          ],
-        ),
+        MenuAction(l.removeFromDock, onSelected: () => _setPinned(item, false)),
         const MenuDivider(),
-        MenuAction(l.open, onSelected: () => shell.execute(action)),
+        MenuAction(l.dockShowApps, onSelected: () => shell.execute(action)),
       ];
     }
     if (item.fixed) return _fileManagerMenu(item);
@@ -423,75 +436,151 @@ class _LiveDockState extends State<LiveDock> {
         ],
       ];
     }
+    // The menu of an app (D-04): its recent documents, its windows (the front one
+    // checked), Options, then Show All Windows, Hide, Quit; with Option held Hide becomes Hide
+    // Others and Quit becomes Force Quit. A closed app: Options, Open.
+    final entry = item.id == null ? null : _entries[item.id];
+    final alt = HardwareKeyboard.instance.isAltPressed;
+    final front = shell.focused.value;
+    final opener = item.openFiles;
+    final documents = entry == null || opener == null
+        ? const <RecentDocument>[]
+        : recentDocuments(entry);
+    final appId =
+        toplevels
+            .where((t) => item.windows.contains(t.id))
+            .firstOrNull
+            ?.appId ??
+        item.id;
     return [
-      for (final id in item.windows)
+      for (final document in documents)
         MenuAction(
-          toplevels.where((t) => t.id == id).firstOrNull?.title ?? item.label,
-          onSelected: () => shell.activate(id),
-        ),
-      if (item.windows.isNotEmpty) const MenuDivider(),
-      MenuAction(
-        l.options,
-        submenu: [
-          if (item.pinned)
-            MenuAction(
-              l.removeFromDock,
-              onSelected: () => _setPinned(item, false),
-            )
-          else
-            MenuAction(l.keepInDock, onSelected: () => _setPinned(item, true)),
-        ],
-      ),
-      const MenuDivider(),
-      if (item.running) ...[
-        if (item.windows.isNotEmpty)
-          MenuAction(
-            l.showAllWindows,
-            onSelected: () {
-              shell.activate(_latest(item));
-              shell.execute('panorama.app');
-            },
-          ),
-        MenuAction(
-          l.quit,
+          fileName(document.path),
           onSelected: () {
-            if (item.windows.isEmpty) {
-              // Running without windows (#142): quit it by its app id.
-              shell.execute('app.quit', {'app_id': item.id});
-            } else {
-              shell.activate(_latest(item));
-              shell.execute('app.quit');
+            if (execWithFiles(opener!, [document.path]) case final command?) {
+              shell.launch(command);
             }
           },
         ),
-      ] else
-        MenuAction(l.open, onSelected: () => _activate(item)),
-    ];
-  }
-
-  /// The file manager's menu (#141): its windows, then New Window; it can be neither
-  /// removed nor quit. Provisional: the reference's file manager menu is not measured.
-  List<MenuEntry> _fileManagerMenu(Item item) {
-    final shell = ShellChannel.instance;
-    final l = l10nOf(context);
-    final toplevels = shell.toplevels.value;
-    return [
+      if (documents.isNotEmpty) const MenuDivider(),
       for (final id in item.windows)
         MenuAction(
           toplevels.where((t) => t.id == id).firstOrNull?.title ?? item.label,
+          checked: id == front,
           onSelected: () => shell.activate(id),
         ),
       if (item.windows.isNotEmpty) const MenuDivider(),
-      if (item.command case final command?)
-        MenuAction(l.newWindow, onSelected: () => shell.launch(command)),
-      if (item.running)
+      MenuAction(l.options, submenu: _appOptions(item, entry)),
+      const MenuDivider(),
+      if (item.running) ...[
         MenuAction(
           l.showAllWindows,
+          enabled: item.windows.isNotEmpty,
           onSelected: () {
             shell.activate(_latest(item));
             shell.execute('panorama.app');
           },
         ),
+        // App hiding is not in Ossido yet (#143).
+        MenuAction(alt ? l.dockHideOthers : l.dockHide, enabled: false),
+        if (alt)
+          MenuAction(
+            l.dockForceQuit,
+            onSelected: () =>
+                shell.execute('app.force_quit', {'app_id': appId}),
+          )
+        else
+          MenuAction(
+            l.quit,
+            onSelected: () {
+              if (item.windows.isEmpty) {
+                // Running without windows (#142): quit it by its app id.
+                shell.execute('app.quit', {'app_id': item.id});
+              } else {
+                shell.activate(_latest(item));
+                shell.execute('app.quit');
+              }
+            },
+          ),
+      ] else
+        MenuAction(l.open, onSelected: () => _activate(item)),
+    ];
+  }
+
+  /// Options of an app (D-04): Keep in Dock / Remove from Dock, Open at Login, Show in the
+  /// file manager, Assign To (not in Ossido yet, #144).
+  List<MenuEntry> _appOptions(Item item, DesktopEntry? entry) {
+    final l = l10nOf(context);
+    final id = item.id;
+    final desktopFile = id == null ? null : desktopFilePath(id);
+    return [
+      if (item.pinned)
+        MenuAction(l.removeFromDock, onSelected: () => _setPinned(item, false))
+      else
+        MenuAction(l.keepInDock, onSelected: () => _setPinned(item, true)),
+      if (id != null && entry != null)
+        MenuAction(
+          l.dockOpenAtLogin,
+          checked: opensAtLogin(id),
+          onSelected: () => setOpensAtLogin(
+            id,
+            entry.exec,
+            entry.name,
+            on: !opensAtLogin(id),
+          ),
+        ),
+      if (desktopFile != null)
+        MenuAction(
+          l.dockShowInFileManager,
+          onSelected: () => _openPath(File(desktopFile).parent.path),
+        ),
+      const MenuDivider(),
+      MenuAction(l.dockAssignTo, enabled: false),
+    ];
+  }
+
+  /// The file manager's menu (#141, DOCK-02): its windows (the front one checked) — New
+  /// Window, New Smart Folder, Find — Go to Folder, Connect to Server — six places — Show All
+  /// Windows, Hide. No Remove and no Quit: it always runs. What Mustache or Ossido can't do
+  /// yet is shown disabled (mustache#11, silica-desktop#143).
+  List<MenuEntry> _fileManagerMenu(Item item) {
+    final shell = ShellChannel.instance;
+    final l = l10nOf(context);
+    final toplevels = shell.toplevels.value;
+    final front = shell.focused.value;
+    final home = Platform.environment['HOME'] ?? '/';
+    return [
+      for (final id in item.windows)
+        MenuAction(
+          toplevels.where((t) => t.id == id).firstOrNull?.title ?? item.label,
+          checked: id == front,
+          onSelected: () => shell.activate(id),
+        ),
+      if (item.windows.isNotEmpty) const MenuDivider(),
+      if (item.command case final command?)
+        MenuAction(l.newWindow, onSelected: () => shell.launch(command)),
+      MenuAction(l.dockNewSmartFolder, enabled: false),
+      MenuAction(l.dockFind, enabled: false),
+      const MenuDivider(),
+      MenuAction(l.dockGoToFolder, enabled: false),
+      MenuAction(l.dockConnectToServer, enabled: false),
+      const MenuDivider(),
+      for (final (label, path) in fileManagerPlaces(home, l))
+        MenuAction(
+          label,
+          enabled: path != null,
+          onSelected: path == null ? null : () => _openPath(path),
+        ),
+      const MenuDivider(),
+      MenuAction(
+        l.showAllWindows,
+        enabled: item.windows.isNotEmpty,
+        onSelected: () {
+          shell.activate(_latest(item));
+          shell.execute('panorama.app');
+        },
+      ),
+      MenuAction(l.dockHide, enabled: false),
     ];
   }
 
@@ -878,6 +967,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
     _fileDrags = SilicaDrag.events.listen(_fileDrag);
     // The screen is needed by the first menu already (the surface covers it to catch the click outside).
     LayerControl.outputSize().then((size) {
@@ -928,6 +1018,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _stackFocus.dispose();
     _shown.dispose();
     _revealTimer?.cancel();
+    HardwareKeyboard.instance.removeHandler(_onKey);
     super.dispose();
   }
 
@@ -1041,6 +1132,23 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _pressed = index;
     });
     _showLabel(null);
+  }
+
+  /// With the menu open the Dock has the keyboard: Option swaps the alternate items (D-04:
+  /// Hide → Hide Others, Quit → Force Quit) in place.
+  bool _altHeld = false;
+
+  bool _onKey(KeyEvent event) {
+    final alt = HardwareKeyboard.instance.isAltPressed;
+    if (alt != _altHeld) {
+      _altHeld = alt;
+      final index = _menuIndex;
+      if (index != null && index < widget.items.length) {
+        final entries = widget.menuFor?.call(widget.items[index]) ?? const [];
+        if (entries.isNotEmpty) setState(() => _menuEntries = entries);
+      }
+    }
+    return false;
   }
 
   void _closeMenu() {

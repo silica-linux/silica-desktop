@@ -682,4 +682,52 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dockSettingsEllipsis => 'Dock settings…';
+
+  @override
+  String get dockShowApps => 'Show Apps';
+
+  @override
+  String get dockNewSmartFolder => 'New Smart Folder';
+
+  @override
+  String get dockFind => 'Find…';
+
+  @override
+  String get dockGoToFolder => 'Go to Folder…';
+
+  @override
+  String get dockConnectToServer => 'Connect to Server…';
+
+  @override
+  String get dockHide => 'Hide';
+
+  @override
+  String get placeApplications => 'Applications';
+
+  @override
+  String get placeDocuments => 'Documents';
+
+  @override
+  String get placeDownloads => 'Downloads';
+
+  @override
+  String get placeRecents => 'Recents';
+
+  @override
+  String get placeDesktop => 'Desktop';
+
+  @override
+  String get dockHideOthers => 'Hide Others';
+
+  @override
+  String get dockForceQuit => 'Force Quit';
+
+  @override
+  String get dockOpenAtLogin => 'Open at Login';
+
+  @override
+  String get dockShowInFileManager => 'Show in Mustache';
+
+  @override
+  String get dockAssignTo => 'Assign to desktop';
 }

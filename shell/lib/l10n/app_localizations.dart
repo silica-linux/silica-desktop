@@ -1315,6 +1315,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dock settings…'**
   String get dockSettingsEllipsis;
+
+  /// Menu of the Dock's launcher item: opens the launcher
+  ///
+  /// In en, this message translates to:
+  /// **'Show Apps'**
+  String get dockShowApps;
+
+  /// File manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'New Smart Folder'**
+  String get dockNewSmartFolder;
+
+  /// File manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Find…'**
+  String get dockFind;
+
+  /// File manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Go to Folder…'**
+  String get dockGoToFolder;
+
+  /// File manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to Server…'**
+  String get dockConnectToServer;
+
+  /// Dock app menu: hides the app's windows
+  ///
+  /// In en, this message translates to:
+  /// **'Hide'**
+  String get dockHide;
+
+  /// A place in the file manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Applications'**
+  String get placeApplications;
+
+  /// A place in the file manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get placeDocuments;
+
+  /// A place in the file manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get placeDownloads;
+
+  /// A place in the file manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Recents'**
+  String get placeRecents;
+
+  /// A place in the file manager's Dock menu
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get placeDesktop;
+
+  /// Dock app menu, with Option held
+  ///
+  /// In en, this message translates to:
+  /// **'Hide Others'**
+  String get dockHideOthers;
+
+  /// Dock app menu, with Option held
+  ///
+  /// In en, this message translates to:
+  /// **'Force Quit'**
+  String get dockForceQuit;
+
+  /// Dock app options: start the app at login
+  ///
+  /// In en, this message translates to:
+  /// **'Open at Login'**
+  String get dockOpenAtLogin;
+
+  /// Dock app options: shows the app's entry in the file manager
+  ///
+  /// In en, this message translates to:
+  /// **'Show in Mustache'**
+  String get dockShowInFileManager;
+
+  /// Dock app options (not available yet)
+  ///
+  /// In en, this message translates to:
+  /// **'Assign to desktop'**
+  String get dockAssignTo;
 }
 
 class _AppLocalizationsDelegate

@@ -682,4 +682,52 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get dockSettingsEllipsis => 'Impostazioni del Dock…';
+
+  @override
+  String get dockShowApps => 'Mostra le app';
+
+  @override
+  String get dockNewSmartFolder => 'Nuova cartella smart';
+
+  @override
+  String get dockFind => 'Trova…';
+
+  @override
+  String get dockGoToFolder => 'Vai alla cartella…';
+
+  @override
+  String get dockConnectToServer => 'Connetti al server…';
+
+  @override
+  String get dockHide => 'Nascondi';
+
+  @override
+  String get placeApplications => 'Applicazioni';
+
+  @override
+  String get placeDocuments => 'Documenti';
+
+  @override
+  String get placeDownloads => 'Download';
+
+  @override
+  String get placeRecents => 'Recenti';
+
+  @override
+  String get placeDesktop => 'Scrivania';
+
+  @override
+  String get dockHideOthers => 'Nascondi le altre';
+
+  @override
+  String get dockForceQuit => 'Forza l\'uscita';
+
+  @override
+  String get dockOpenAtLogin => 'Apri all\'accesso';
+
+  @override
+  String get dockShowInFileManager => 'Mostra in Mustache';
+
+  @override
+  String get dockAssignTo => 'Assegna alla scrivania';
 }

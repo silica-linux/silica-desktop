@@ -202,5 +202,21 @@
   "dockMinimizeEffect": "Effetto di riduzione",
   "dockEffectGenie": "Effetto genio",
   "dockEffectScale": "Effetto scala",
-  "dockSettingsEllipsis": "Impostazioni del Dock…"
+  "dockSettingsEllipsis": "Impostazioni del Dock…",
+  "dockShowApps": "Mostra le app",
+  "dockNewSmartFolder": "Nuova cartella smart",
+  "dockFind": "Trova…",
+  "dockGoToFolder": "Vai alla cartella…",
+  "dockConnectToServer": "Connetti al server…",
+  "dockHide": "Nascondi",
+  "placeApplications": "Applicazioni",
+  "placeDocuments": "Documenti",
+  "placeDownloads": "Download",
+  "placeRecents": "Recenti",
+  "placeDesktop": "Scrivania",
+  "dockHideOthers": "Nascondi le altre",
+  "dockForceQuit": "Forza l'uscita",
+  "dockOpenAtLogin": "Apri all'accesso",
+  "dockShowInFileManager": "Mostra in Mustache",
+  "dockAssignTo": "Assegna alla scrivania"
 }

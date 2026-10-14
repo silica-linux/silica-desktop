@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/l10n/app_localizations.dart';
 import 'package:silica_shell/dock/apps.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/trash_alert.dart';
@@ -262,5 +264,36 @@ void main() {
     File(a.path).writeAsStringSync('2');
     await moveToTrash([a.path], env: {'HOME': home.path});
     expect(File('$trash/files/a b.txt 2').readAsStringSync(), '2');
+  });
+
+  test('the file manager menu places: six, sorted, from user-dirs', () {
+    final home = Directory.systemTemp.createTempSync('places');
+    addTearDown(() => home.deleteSync(recursive: true));
+    Directory('${home.path}/Docs').createSync();
+    Directory('${home.path}/Downloads').createSync();
+    Directory('${home.path}/Desktop').createSync();
+    Directory('${home.path}/.config').createSync();
+    File(
+      '${home.path}/.config/user-dirs.dirs',
+    ).writeAsStringSync('XDG_DOCUMENTS_DIR="\$HOME/Docs"\n');
+    final places = fileManagerPlaces(
+      home.path,
+      lookupAppLocalizations(const Locale('en')),
+      env: {'HOME': home.path},
+    );
+    final user = home.path.split('/').last;
+    final labels = [for (final (label, _) in places) label];
+    expect(labels.length, 6);
+    expect(
+      labels,
+      [...labels]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase())),
+    );
+    final byLabel = {for (final (label, path) in places) label: path};
+    expect(byLabel['Documents'], '${home.path}/Docs');
+    expect(byLabel['Downloads'], '${home.path}/Downloads');
+    expect(byLabel['Desktop'], '${home.path}/Desktop');
+    expect(byLabel[user], home.path);
+    // Mustache has no Recents view yet: shown disabled.
+    expect(byLabel['Recents'], isNull);
   });
 }

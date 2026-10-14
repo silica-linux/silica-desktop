@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/app_localizations.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/shell_channel.dart';
@@ -130,6 +131,16 @@ String trashFilesDir({Map<String, String>? env}) {
       ? '${e['HOME'] ?? ''}/.local/share'
       : data;
   return '$base/Trash/files';
+}
+
+/// The .desktop file of app `id` (the first data folder that has it), for "Show in" the
+/// file manager.
+String? desktopFilePath(String id, {Map<String, String>? env}) {
+  for (final dir in xdgDataDirs(env ?? Platform.environment)) {
+    final file = File('$dir/applications/$id.desktop');
+    if (file.existsSync()) return file.path;
+  }
+  return null;
 }
 
 /// The Settings app ("Dock settings…" in the separator menu).
@@ -302,6 +313,69 @@ Item _windowItem(
     iconPath: entry == null ? null : findIcon(entry.icon),
     layered: entry == null ? null : silicaIconFor(entry),
   );
+}
+
+/// A user folder from xdg-user-dirs (`XDG_<key>_DIR`), else the first of `fallbacks` that
+/// exists in the home folder; null when there is none.
+String? userDirectory(
+  String key,
+  String home,
+  List<String> fallbacks, {
+  Map<String, String>? env,
+}) {
+  try {
+    final config =
+        (env ?? Platform.environment)['XDG_CONFIG_HOME'] ?? '$home/.config';
+    final dirs = File('$config/user-dirs.dirs');
+    if (dirs.existsSync()) {
+      for (final line in dirs.readAsLinesSync()) {
+        if (line.startsWith('XDG_${key}_DIR=')) {
+          final value = line
+              .substring('XDG_${key}_DIR='.length)
+              .replaceAll('"', '')
+              .replaceAll(r'$HOME', home);
+          if (value != home && Directory(value).existsSync()) return value;
+        }
+      }
+    }
+  } on FileSystemException {
+    // Try the usual names.
+  }
+  for (final name in fallbacks) {
+    if (Directory('$home/$name').existsSync()) return '$home/$name';
+  }
+  return null;
+}
+
+/// The places of the file manager's Dock menu (DOCK-02), sorted by their localized name:
+/// applications, documents, downloads, home (the user name), recents, desktop. A null path
+/// is a place Mustache can't show yet (Recents, mustache#11).
+List<(String, String?)> fileManagerPlaces(
+  String home,
+  AppLocalizations l, {
+  Map<String, String>? env,
+}) {
+  final user = home.split('/').where((p) => p.isNotEmpty).lastOrNull ?? home;
+  // /Applications on Silica OS (silica-os#3), else the installed entries.
+  final apps = Directory('/Applications').existsSync()
+      ? '/Applications'
+      : '/usr/share/applications';
+  final places = <(String, String?)>[
+    (l.placeApplications, apps),
+    (
+      l.placeDocuments,
+      userDirectory('DOCUMENTS', home, ['Documents', 'Documenti'], env: env),
+    ),
+    (l.placeDownloads, downloadDir(home, env: env)),
+    (user, home),
+    (l.placeRecents, null),
+    (
+      l.placeDesktop,
+      userDirectory('DESKTOP', home, ['Desktop', 'Scrivania'], env: env),
+    ),
+  ];
+  places.sort((a, b) => a.$1.toLowerCase().compareTo(b.$1.toLowerCase()));
+  return places;
 }
 
 /// The downloads folder: the xdg-user-dirs one, otherwise ~/Download or ~/Downloads.
