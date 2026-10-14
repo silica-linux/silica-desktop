@@ -169,6 +169,8 @@ class _MenuBarState extends State<MenuBar> {
           _appName,
           (id) => ShellChannel.instance.execute(id),
           texts: l10nOf(context),
+          openUrl: (url) =>
+              ShellChannel.instance.launch('xdg-open ${shellQuote(url)}'),
         );
 
   /// The battery menu: charge, power source, Battery Settings (not measured on the
@@ -609,6 +611,7 @@ class _MenuBarState extends State<MenuBar> {
               children: [
                 _item(_appName, bold, key: _keyFor('app')),
                 for (final menu in genericMenus)
+                  if (_entries(menu).isNotEmpty)
                   _item(
                     menuTitle(l10nOf(context), menu),
                     regular,

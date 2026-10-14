@@ -1,6 +1,7 @@
 // The bar menus until the global app menu arrives (M7): the app menu and the menus with
 // actions Ossido can do by itself (catalog commands). The logo menu is in logo_menu.dart.
-// Menus without actions (Edit, Help) do not open.
+// Menus without actions (Edit, until apps publish their own menus: #24, #25) are not shown,
+// so no title in the bar is dead. Help opens Silica's documentation.
 
 import 'package:silica_ui/silica_ui.dart';
 
@@ -16,12 +17,16 @@ String menuTitle(AppLocalizations l, String id) => switch (id) {
   _ => id,
 };
 
-/// The items of a bar menu (by id); `run` runs an Ossido command.
+/// Where Help › Silica Help leads.
+const String silicaHelpUrl = 'https://github.com/silica-linux/silica-desktop#readme';
+
+/// The items of a bar menu (by id); `run` runs an Ossido command, `openUrl` opens a link.
 List<MenuEntry> barMenu(
   String name,
   String app,
   void Function(String id) run, {
   AppLocalizations? texts,
+  void Function(String url)? openUrl,
 }) {
   final l = texts ?? englishTexts;
   return switch (name) {
@@ -74,6 +79,13 @@ List<MenuEntry> barMenu(
         l.previousSpace,
         shortcut: '⌃←',
         onSelected: () => run('space.previous'),
+      ),
+    ],
+    'help' => [
+      MenuAction(
+        l.silicaHelp,
+        enabled: openUrl != null,
+        onSelected: () => openUrl?.call(silicaHelpUrl),
       ),
     ],
     _ => const [],

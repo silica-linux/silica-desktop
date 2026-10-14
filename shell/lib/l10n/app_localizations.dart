@@ -1075,6 +1075,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Battery Settings…'**
   String get batteryMenuSettings;
+
+  /// Help menu: opens Silica's documentation
+  ///
+  /// In en, this message translates to:
+  /// **'Silica Help'**
+  String get silicaHelp;
 }
 
 class _AppLocalizationsDelegate

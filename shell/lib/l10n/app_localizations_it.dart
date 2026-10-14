@@ -557,4 +557,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get batteryMenuSettings => 'Impostazioni Batteria…';
+
+  @override
+  String get silicaHelp => 'Aiuto di Silica';
 }

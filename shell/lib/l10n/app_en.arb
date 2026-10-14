@@ -759,5 +759,9 @@
   "batteryMenuSettings": "Battery Settings…",
   "@batteryMenuSettings": {
     "description": "Battery status menu: opens Settings"
+  },
+  "silicaHelp": "Silica Help",
+  "@silicaHelp": {
+    "description": "Help menu: opens Silica's documentation"
   }
 }

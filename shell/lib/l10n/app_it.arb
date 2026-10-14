@@ -162,5 +162,6 @@
   "batteryMenuCharge": "Carica al {percent} %",
   "batteryMenuOnBattery": "Alimentazione: batteria",
   "batteryMenuPowerAdapter": "Alimentazione: alimentatore",
-  "batteryMenuSettings": "Impostazioni Batteria…"
+  "batteryMenuSettings": "Impostazioni Batteria…",
+  "silicaHelp": "Aiuto di Silica"
 }

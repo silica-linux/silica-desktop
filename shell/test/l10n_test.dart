@@ -45,7 +45,8 @@ void main() {
       italian(MenuBar(now: DateTime(2026, 10, 12, 22, 34))),
     );
     await tester.pump();
-    expect(find.text('Modifica'), findsOneWidget);
+    // Edit is hidden while it has no items (no dead menus); Help is there.
+    expect(find.text('Aiuto'), findsOneWidget);
     expect(find.text('Finestra'), findsOneWidget);
     expect(find.text('Lun 12 ott  22:34'), findsOneWidget);
   });
