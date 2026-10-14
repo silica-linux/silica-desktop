@@ -22,6 +22,7 @@ import '../dock/stack.dart' show fileIcon;
 import '../l10n/l10n.dart';
 import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
+import '../system/open_app.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
@@ -617,7 +618,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   }
 
   void _launch(DesktopEntry entry) {
-    ShellChannel.instance.launch(entry.exec);
+    openApp(entry);
     _recents.add(entry.id);
     _hide();
   }
