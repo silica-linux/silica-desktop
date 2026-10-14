@@ -1,0 +1,209 @@
+//! The owner of the desktop surface (`desktop-icons:<app id>`, #147) is the frontmost app
+//! whenever no other app is, as the Finder on macOS: at the start of the session and after
+//! the last window of the frontmost app closes. A window in use is never displaced.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+mod common;
+
+use std::os::unix::net::UnixStream;
+use std::process::Command;
+
+use common::Headless;
+use common::client::{APP_ID, TestWindow};
+use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
+use wayland_client::protocol::wl_compositor::WlCompositor;
+use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_surface::WlSurface;
+use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop};
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::{self, ZwlrLayerShellV1};
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
+    self, Anchor, ZwlrLayerSurfaceV1,
+};
+
+const CHILD_SOCKET: &str = "SILICA_TEST_FRONT_SOCKET";
+const DESKTOP_APP: &str = "dev.test.Desktop";
+const OTHER_APP: &str = "dev.test.Other";
+
+#[derive(Default)]
+struct Client {
+    compositor: Option<WlCompositor>,
+    layer_shell: Option<ZwlrLayerShellV1>,
+    manager: Option<SilicaShellManagerV1>,
+    frontmost: Option<String>,
+}
+
+impl Dispatch<WlRegistry, ()> for Client {
+    fn event(
+        client: &mut Self,
+        registry: &WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name, interface, ..
+        } = event
+        {
+            match interface.as_str() {
+                "wl_compositor" => client.compositor = Some(registry.bind(name, 4, qh, ())),
+                "zwlr_layer_shell_v1" => {
+                    client.layer_shell = Some(registry.bind(name, 1, qh, ()));
+                }
+                "silica_shell_manager_v1" => {
+                    client.manager = Some(registry.bind(name, 4, qh, ()));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl Dispatch<SilicaShellManagerV1, ()> for Client {
+    fn event(
+        client: &mut Self,
+        _: &SilicaShellManagerV1,
+        event: silica_shell_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_shell_manager_v1::Event::Broadcast { topic, value } = event
+            && topic == "app.frontmost"
+        {
+            client.frontmost = Some(value);
+        }
+    }
+}
+
+impl Dispatch<ZwlrLayerSurfaceV1, ()> for Client {
+    fn event(
+        _: &mut Self,
+        surface: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zwlr_layer_surface_v1::Event::Configure { serial, .. } = event {
+            surface.ack_configure(serial);
+        }
+    }
+}
+
+delegate_noop!(Client: ignore WlCompositor);
+delegate_noop!(Client: ignore WlSurface);
+delegate_noop!(Client: ignore ZwlrLayerShellV1);
+
+/// The child process (a shell component): prints the `app.frontmost` it was told on
+/// connection. Runs only when the parent test launches it.
+#[test]
+fn front_child() {
+    let Ok(socket) = std::env::var(CHILD_SOCKET) else {
+        return;
+    };
+    let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
+    let mut queue = conn.new_event_queue();
+    let qh = queue.handle();
+    let mut client = Client::default();
+    conn.display().get_registry(&qh, ());
+    queue.roundtrip(&mut client).unwrap();
+    queue.roundtrip(&mut client).unwrap();
+    println!("FRONTMOST {}", client.frontmost.as_deref().unwrap_or("-"));
+}
+
+/// What a shell component connecting now is told is the frontmost app (`-` if never told).
+fn frontmost(ossido: &Headless) -> String {
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "front_child",
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
+        .env(CHILD_SOCKET, &ossido.wayland)
+        .env("SILICA_SHELL", "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find_map(|line| line.split_once("FRONTMOST ").map(|(_, value)| value))
+        .unwrap_or_else(|| {
+            panic!(
+                "the child printed no state: {stdout}{}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })
+        .to_owned()
+}
+
+/// A desktop surface of `app` on the bottom layer; it stays mapped while this value lives.
+struct Desktop {
+    _conn: Connection,
+    _layer: ZwlrLayerSurfaceV1,
+    _surface: WlSurface,
+}
+
+impl Desktop {
+    fn map(ossido: &Headless, app: &str) -> Self {
+        let conn = Connection::from_socket(UnixStream::connect(&ossido.wayland).unwrap()).unwrap();
+        let mut queue = conn.new_event_queue();
+        let qh = queue.handle();
+        let mut client = Client::default();
+        conn.display().get_registry(&qh, ());
+        queue.roundtrip(&mut client).unwrap();
+        let surface = client.compositor.as_ref().unwrap().create_surface(&qh, ());
+        let layer = client.layer_shell.as_ref().unwrap().get_layer_surface(
+            &surface,
+            None,
+            zwlr_layer_shell_v1::Layer::Bottom,
+            format!("desktop-icons:{app}"),
+            &qh,
+            (),
+        );
+        layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        Self {
+            _conn: conn,
+            _layer: layer,
+            _surface: surface,
+        }
+    }
+}
+
+#[test]
+fn the_desktop_owner_is_frontmost_when_the_desktop_maps() {
+    let ossido = Headless::start("front-map");
+    assert_ne!(frontmost(&ossido), DESKTOP_APP);
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    assert_eq!(frontmost(&ossido), DESKTOP_APP);
+}
+
+#[test]
+fn the_desktop_does_not_take_the_front_from_a_window_in_use() {
+    let ossido = Headless::start("front-no-steal");
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let _window = TestWindow::open(&ossido.wayland, "in use");
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    assert_ne!(frontmost(&ossido), DESKTOP_APP);
+}
+
+#[test]
+fn closing_the_last_window_falls_back_to_the_desktop_owner() {
+    let ossido = Headless::start("front-close");
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let mut window = TestWindow::open(&ossido.wayland, "closing");
+    assert_ne!(frontmost(&ossido), DESKTOP_APP);
+    window.destroy_toplevel();
+    assert_eq!(frontmost(&ossido), DESKTOP_APP);
+}

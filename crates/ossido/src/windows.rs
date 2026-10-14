@@ -188,6 +188,7 @@ impl State {
         self.announce_minimized(window, true);
         let next = self.space.elements().last().cloned();
         self.focus_window(next);
+        self.desktop_owner_fallback(None);
         Ok(())
     }
 

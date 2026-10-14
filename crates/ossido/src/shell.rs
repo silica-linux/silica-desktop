@@ -166,6 +166,8 @@ impl State {
         {
             self.set_windowless_front(None);
         }
+        // Nothing else in front: the desktop's owner (#147).
+        self.desktop_owner_fallback(window.as_ref());
     }
 
     /// The window leaves the shell's list but stays alive (hidden by its app, #142).
