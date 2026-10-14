@@ -195,9 +195,36 @@ void main() {
     final panel = tester.widget<Container>(
       find.byKey(const ValueKey('uscita forzata')),
     );
+    // Misurati (K-06): fondo #272727, riga scelta #0059d1, pulsante #007aff, nomi #dedede.
+    expect((panel.decoration! as BoxDecoration).color, const Color(0xFF272727));
     expect(
-      (panel.decoration! as BoxDecoration).color,
-      ForceQuitColors.dark.fill,
+      tester
+          .widget<Container>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('app org.prova.Nota')),
+                  matching: find.byType(Container),
+                )
+                .first,
+          )
+          .color,
+      const Color(0xFF0059D1),
+    );
+    final button = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('termina')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      (button.decoration! as BoxDecoration).color,
+      const Color(0xFF007AFF),
+    );
+    expect(
+      tester.widget<Text>(find.textContaining('non risponde')).style?.color,
+      const Color(0xFFDEDEDE),
     );
     expect(
       tester.widget<Text>(find.text('Termina le app')).style?.color,
@@ -216,9 +243,23 @@ void main() {
     await tester.pumpWidget(dark(const ScreenshotLayer()));
     await send(tester, 'screenshot.toolbar');
     await tester.pump();
+    // Misurati su grigio (K-06): glifi e "Opzioni" #c7c8cd, glifo scelto #dbdde2.
     expect(
-      tester.widget<Text>(find.textContaining('Salva in:')).style?.color,
-      ShotBarColors.dark.glyph,
+      tester.widget<Text>(find.textContaining('Opzioni')).style?.color,
+      const Color(0xFFC7C8CD),
+    );
+    expect(ShotBarColors.dark.chosenGlyph, const Color(0xFFDBDDE2));
+    final chosen = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('schermo intero')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      (chosen.decoration! as BoxDecoration).color,
+      ShotBarColors.dark.chosen,
     );
   });
 }

@@ -2,14 +2,18 @@
 // di ⇧⌘4 (con Spazio: una finestra) e la barra di ⇧⌘5.
 //
 // - Miniatura: in basso a destra a 12 pt dai bordi, 264 × 152 (l'immagine 256 × 144 con una
-//   cornice bianca di 4 pt) e un'ombra morbida di ~20 pt; si assesta in ~400 ms, resta ~5,1 s,
-//   poi esce a destra in ~250 ms. Il file va sulla Scrivania quando la miniatura sparisce; un
-//   clic lo salva subito e lo apre.
+//   cornice bianca di 4 pt), angoli di raggio ~4 e un'ombra nera morbida e simmetrica (≥ 26 pt);
+//   compare già al suo posto in dissolvenza (~400 ms, rallentando), resta ~5,1 s, poi esce a
+//   destra in ~220 ms accelerando (K-05). Il file va sulla Scrivania quando la miniatura
+//   sparisce; un clic lo salva subito e lo apre.
 // - Mirino: una croce sottile nera di ~20 pt con un disco grigio traslucido al centro e, in
 //   basso a destra, le coordinate in punti su due righe. Trascinando si sceglie la regione;
-//   Spazio passa alla finestra sotto il puntatore (una macchina fotografica); Esc annulla.
+//   Spazio passa alla finestra sotto il puntatore (una macchina fotografica) e la vela di azzurro
+//   (`#88bae7` al 51 %) sul suo rettangolo, angoli compresi e ombra esclusa; sopra la scrivania
+//   si vela tutto lo schermo (K-05). Esc annulla.
 // - Barra: vetro ~545 × 52, 4 pt sopra la zona del Dock: Chiudi, schermo intero, finestra,
-//   selezione, Opzioni (dove salvare) e Acquisisci (blu). La registrazione non c'è.
+//   selezione, Opzioni (menu sopra il pulsante: dove salvare, ritardo, miniatura) e Acquisisci
+//   (blu). La registrazione non c'è.
 //
 // Ossido cattura (`screenshot.screen`, `screenshot.region`, `screenshot.window_at`), scrive un
 // PNG temporaneo e lo annuncia con broadcast "screenshot" = "<percorso> <l> <a>".
@@ -31,7 +35,11 @@ const double thumbnailBorder = 4;
 const double thumbnailMargin = 12;
 const Duration thumbnailSettle = Duration(milliseconds: 400);
 const Duration thumbnailHold = Duration(milliseconds: 5100);
-const Duration thumbnailLeave = Duration(milliseconds: 250);
+const Duration thumbnailLeave = Duration(milliseconds: 220);
+const double thumbnailRadius = 4;
+
+/// La velatura della modalità finestra: `#88bae7` (sRGB) con opacità ~0,51 (K-05).
+const Color windowVeil = Color(0x8288BAE7);
 
 const Size toolbarSize = Size(545, 52);
 
@@ -82,9 +90,13 @@ enum _Mode { none, selection, window, toolbar }
 
 enum ToolbarChoice { screen, window, selection }
 
-/// I colori della barra (sul vetro normale). Lo scuro non è osservato (screenshot-ui.md,
-/// "Non osservato"): *stimato* come i testi chiari sul vetro scuro (glifi e testo `#ebebeb`,
-/// i fondi neri traslucidi diventano bianchi traslucidi).
+/// I colori della barra (sul vetro). Scuro misurato su grigio `#7a7b80` (K-06): glifi e
+/// "Opzioni" `#c7c8cd`, separatori e pillola della modalità scelta `#8f9095` (bianco ~15 %),
+/// glifo scelto `#dbdde2`, premuta pillola −5 livelli e glifo `#c3c4c9`, filo scuro di 1 pt
+/// in cima `#595a5e` (nero ~28 %). Chiaro: misurato solo sotto la velatura della scrivania
+/// (K-05); pillola e separatori ricavati togliendo la velatura (out = 0,514 · C + 0,486 · fondo:
+/// fondo ~`#ddd8dd`, pillola ~`#b4afb4`, nero ~19 %), glifi quasi neri; la pillola premuta in
+/// chiaro è *stimata*.
 @immutable
 class ShotBarColors {
   const ShotBarColors({
@@ -93,6 +105,10 @@ class ShotBarColors {
     required this.closeGlyph,
     required this.line,
     required this.chosen,
+    required this.chosenGlyph,
+    required this.chosenPressed,
+    required this.chosenPressedGlyph,
+    required this.topLine,
   });
 
   final Color glyph;
@@ -100,21 +116,35 @@ class ShotBarColors {
   final Color closeGlyph;
   final Color line;
   final Color chosen;
+  final Color chosenGlyph;
+  final Color chosenPressed;
+  final Color chosenPressedGlyph;
+
+  /// Il filo in cima alla barra (null: nessuno).
+  final Color? topLine;
 
   static const ShotBarColors light = ShotBarColors(
     glyph: Color(0xFF1D1D1F),
     closeFill: Color(0x33000000),
     closeGlyph: Color(0xFF3C3C3E),
-    line: Color(0x33000000),
-    chosen: Color(0x22000000),
+    line: Color(0x30000000),
+    chosen: Color(0x30000000),
+    chosenGlyph: Color(0xFF1D1D1F),
+    chosenPressed: Color(0x3A000000),
+    chosenPressedGlyph: Color(0xFF3C3C3E),
+    topLine: null,
   );
 
   static const ShotBarColors dark = ShotBarColors(
-    glyph: Color(0xFFEBEBEB),
+    glyph: Color(0xFFC7C8CD),
     closeFill: Color(0x33FFFFFF),
-    closeGlyph: Color(0xFFC7C7C9),
-    line: Color(0x33FFFFFF),
+    closeGlyph: Color(0xFFC7C8CD),
+    line: Color(0x26FFFFFF),
     chosen: Color(0x26FFFFFF),
+    chosenGlyph: Color(0xFFDBDDE2),
+    chosenPressed: Color(0x1EFFFFFF),
+    chosenPressedGlyph: Color(0xFFC3C4C9),
+    topLine: Color(0x47000000),
   );
 
   static ShotBarColors of(BuildContext context) =>
@@ -124,7 +154,11 @@ class ShotBarColors {
 }
 
 class ScreenshotLayer extends StatefulWidget {
-  const ScreenshotLayer({super.key, this.folder, this.now});
+  const ScreenshotLayer({super.key, this.folder, this.now, this.windowAt});
+
+  /// Il rettangolo della finestra sotto un punto (cornice senza ombra), per la velatura della
+  /// modalità finestra; null o nessuna finestra: si vela tutto lo schermo (la scrivania).
+  final Rect? Function(Offset point)? windowAt;
 
   /// Dove salvare (test); null: la Scrivania.
   final String? folder;
@@ -158,6 +192,11 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   )..addListener(() => setState(() {}));
   Timer? _hold;
   String _lastAnnounced = '';
+
+  /// Il menu "Opzioni" della barra: aperto, il ritardo dello scatto e la miniatura.
+  bool _optionsOpen = false;
+  Duration _delay = Duration.zero;
+  bool _showThumbnail = true;
 
   @override
   void initState() {
@@ -196,6 +235,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     setState(() {
       _mode = _Mode.none;
       _dragStart = null;
+      _optionsOpen = false;
     });
     _syncLayer();
   }
@@ -220,7 +260,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Future<void> _capture(String id, [Map<String, Object?>? params]) async {
     _cancel();
     await SchedulerBinding.instance.endOfFrame;
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await Future<void>.delayed(const Duration(milliseconds: 60) + _delay);
     await ShellChannel.instance.execute(id, params);
   }
 
@@ -292,6 +332,13 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final previous = _shot;
     if (previous != null) _save(previous);
     _hold?.cancel();
+    if (!_showThumbnail) {
+      // Senza miniatura il file va subito al suo posto.
+      _save(_Shot(path, Size(width, height)));
+      if (previous != null) setState(() => _shot = null);
+      _syncLayer();
+      return;
+    }
     setState(() => _shot = _Shot(path, Size(width, height)));
     _leave.value = 0;
     _settle.forward(from: 0);
@@ -376,7 +423,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       final children = <Widget>[];
       if (_shot case final shot?) {
         final rect = _thumbRect(box.biggest);
-        // Si assesta (da 1,04 a 1, in dissolvenza), poi esce a destra.
+        // Compare al suo posto in dissolvenza (rallentando), poi esce a destra accelerando.
         final settle = Curves.easeOut.transform(_settle.value);
         final dx =
             Curves.easeIn.transform(_leave.value) *
@@ -386,19 +433,21 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             rect: rect.shift(Offset(dx, 0)),
             child: Opacity(
               opacity: settle,
-              child: Transform.scale(
-                scale: 1.04 - 0.04 * settle,
-                child: GestureDetector(
-                  key: const ValueKey('miniatura'),
-                  onTap: _openShot,
-                  child: Container(
-                    padding: const EdgeInsets.all(thumbnailBorder),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFFFFFF),
-                      boxShadow: [
-                        BoxShadow(color: Color(0x40000000), blurRadius: 20),
-                      ],
-                    ),
+              child: GestureDetector(
+                key: const ValueKey('miniatura'),
+                onTap: _openShot,
+                child: Container(
+                  padding: const EdgeInsets.all(thumbnailBorder),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFFFF),
+                    borderRadius: BorderRadius.circular(thumbnailRadius),
+                    // −10 livelli al bordo, −5 a ~12 pt, −2 a ~25: nera, uguale su tre lati.
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x2E000000), blurRadius: 26),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(1),
                     child: Image.file(
                       File(shot.path),
                       fit: BoxFit.fill,
@@ -457,6 +506,16 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             if (_pointer case final p? when _mode == _Mode.selection)
               ..._crosshair(p),
             if (_pointer case final p? when _mode == _Mode.window)
+              Positioned.fromRect(
+                rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
+                child: const IgnorePointer(
+                  child: ColoredBox(
+                    key: ValueKey('velatura'),
+                    color: windowVeil,
+                  ),
+                ),
+              ),
+            if (_pointer case final p? when _mode == _Mode.window)
               Positioned(
                 left: p.dx - 14,
                 top: p.dy - 11,
@@ -512,14 +571,14 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     Widget mode(ToolbarChoice choice, _Glyph glyph, String key) => _ToolButton(
       key: ValueKey(key),
       chosen: _choice == choice,
-      chosenColor: c.chosen,
+      colors: c,
       onTap: () => setState(() => _choice = choice),
-      child: CustomPaint(
+      child: (color) => CustomPaint(
         size: const Size(26, 20),
-        painter: _ModePainter(glyph, c.glyph),
+        painter: _ModePainter(glyph, color),
       ),
     );
-    return Positioned(
+    final bar = Positioned(
       left: left,
       top: top,
       width: toolbarSize.width,
@@ -528,84 +587,142 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         radius: 18,
         material: GlassMaterial.regular,
         interactive: false,
-        child: Row(
-          children: [
-            const SizedBox(width: 12),
-            GestureDetector(
-              key: const ValueKey('chiudi la barra'),
-              onTap: _cancel,
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: c.closeFill,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text('×', style: uiText(size: 13, color: c.closeGlyph)),
-              ),
-            ),
-            const SizedBox(width: 14),
-            mode(ToolbarChoice.screen, _Glyph.screen, 'schermo intero'),
-            mode(ToolbarChoice.window, _Glyph.window, 'finestra'),
-            mode(ToolbarChoice.selection, _Glyph.selection, 'selezione'),
-            const SizedBox(width: 10),
-            Container(width: 1, height: 28, color: c.line),
-            const SizedBox(width: 10),
-            _ToolButton(
-              key: const ValueKey('opzioni'),
-              width: 120,
-              onTap: _toggleFolder,
-              child: Text(
-                'Salva in: ${_folderLabel()}',
-                style: uiText(size: 12, color: c.glyph),
-              ),
-            ),
-            const Spacer(),
-            GestureDetector(
-              key: const ValueKey('acquisisci'),
-              onTap: _acquire,
-              child: Container(
-                width: 92,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A84FF),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Acquisisci',
-                  style: uiText(
-                    size: 13,
-                    color: const Color(0xFFFFFFFF),
-                  ).copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
+        child: Container(
+          key: const ValueKey('barra delle istantanee'),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: c.topLine == null
+                ? null
+                : Border(top: BorderSide(color: c.topLine!)),
+          ),
+          child: _toolbarRow(c, mode),
         ),
+      ),
+    );
+    if (!_optionsOpen) return bar;
+    // Il menu "Opzioni" si apre sopra il pulsante, con il bordo sinistro sul pulsante e il
+    // fondo 16 pt sotto la cima della barra (K-05).
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          bar,
+          Positioned.fill(
+            child: MenuHost(
+              key: const ValueKey('menu opzioni'),
+              entries: _optionsMenu(),
+              anchor: Offset(left + _optionsLeft, top + 16),
+              upwards: true,
+              onDismissed: () => setState(() => _optionsOpen = false),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// "Opzioni": dove salvare, a giro fra Scrivania, Immagini e Documenti.
-  void _toggleFolder() {
+  /// Dal bordo sinistro della barra al pulsante "Opzioni".
+  static const double _optionsLeft = 12 + 18 + 14 + 3 * 44 + 10 + 1 + 10;
+
+  /// Le voci del menu "Opzioni": dove salvare, il ritardo, la miniatura (testi nostri).
+  List<MenuEntry> _optionsMenu() {
     final home = Platform.environment['HOME'] ?? '/tmp';
-    final choices = [
+    final folders = <String>{
       widget.folder ?? screenshotFolder(),
-      for (final name in ['Immagini', 'Pictures', 'Documenti', 'Documents'])
+      for (final name in ['Documenti', 'Documents', 'Immagini', 'Pictures'])
         if (Directory('$home/$name').existsSync()) '$home/$name',
+    };
+    final current = _folderChoice ?? widget.folder ?? screenshotFolder();
+    String label(String path) {
+      final parts = path.split('/').where((p) => p.isNotEmpty);
+      return parts.isEmpty ? path : parts.last;
+    }
+
+    return [
+      const MenuSection('Salva in'),
+      for (final folder in folders)
+        MenuAction(
+          label(folder),
+          checked: folder == current,
+          onSelected: () => setState(() => _folderChoice = folder),
+        ),
+      const MenuDivider(),
+      const MenuSection('Ritardo'),
+      for (final (seconds, text) in const [
+        (0, 'Nessuno'),
+        (5, '5 secondi'),
+        (10, '10 secondi'),
+      ])
+        MenuAction(
+          text,
+          checked: _delay.inSeconds == seconds,
+          onSelected: () => setState(() => _delay = Duration(seconds: seconds)),
+        ),
+      const MenuDivider(),
+      const MenuSection('Opzioni'),
+      MenuAction(
+        'Miniatura dopo lo scatto',
+        checked: _showThumbnail,
+        onSelected: () => setState(() => _showThumbnail = !_showThumbnail),
+      ),
     ];
-    final current = choices.indexOf(_folderChoice ?? choices.first);
-    setState(() => _folderChoice = choices[(current + 1) % choices.length]);
   }
 
-  String _folderLabel() {
-    final path = _folderChoice ?? widget.folder ?? screenshotFolder();
-    final parts = path.split('/').where((p) => p.isNotEmpty);
-    return parts.isEmpty ? path : parts.last;
-  }
+  Widget _toolbarRow(
+    ShotBarColors c,
+    Widget Function(ToolbarChoice, _Glyph, String) mode,
+  ) => Row(
+    children: [
+      const SizedBox(width: 12),
+      GestureDetector(
+        key: const ValueKey('chiudi la barra'),
+        onTap: _cancel,
+        child: Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(color: c.closeFill, shape: BoxShape.circle),
+          alignment: Alignment.center,
+          child: Text('×', style: uiText(size: 13, color: c.closeGlyph)),
+        ),
+      ),
+      const SizedBox(width: 14),
+      mode(ToolbarChoice.screen, _Glyph.screen, 'schermo intero'),
+      mode(ToolbarChoice.window, _Glyph.window, 'finestra'),
+      mode(ToolbarChoice.selection, _Glyph.selection, 'selezione'),
+      const SizedBox(width: 10),
+      Container(width: 1, height: 28, color: c.line),
+      const SizedBox(width: 10),
+      _ToolButton(
+        key: const ValueKey('opzioni'),
+        width: 76,
+        colors: c,
+        onTap: () => setState(() => _optionsOpen = !_optionsOpen),
+        child: (color) =>
+            Text('Opzioni ⌄', style: uiText(size: 12, color: color)),
+      ),
+      const Spacer(),
+      GestureDetector(
+        key: const ValueKey('acquisisci'),
+        onTap: _acquire,
+        child: Container(
+          width: 92,
+          height: 32,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A84FF),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'Acquisisci',
+            style: uiText(
+              size: 13,
+              color: const Color(0xFFFFFFFF),
+            ).copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ),
+      const SizedBox(width: 10),
+    ],
+  );
 }
 
 class _Shot {
@@ -617,38 +734,63 @@ class _Shot {
   String? saved;
 }
 
-class _ToolButton extends StatelessWidget {
+/// Un pulsante della barra: la pillola della modalità scelta (più scura premuta, K-06) e il
+/// glifo nel colore dello stato. Il puntatore sopra una modalità non scelta non cambia niente.
+class _ToolButton extends StatefulWidget {
   const _ToolButton({
     super.key,
     required this.child,
     required this.onTap,
+    required this.colors,
     this.chosen = false,
-    this.chosenColor = const Color(0x22000000),
     this.width = 44,
   });
 
-  final Color chosenColor;
-
-  final Widget child;
+  final Widget Function(Color color) child;
   final VoidCallback onTap;
+  final ShotBarColors colors;
   final bool chosen;
   final double width;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: onTap,
-    child: Container(
-      width: width,
-      height: 40,
-      decoration: BoxDecoration(
-        color: chosen ? chosenColor : null,
-        borderRadius: BorderRadius.circular(10),
+  State<_ToolButton> createState() => _ToolButtonState();
+}
+
+class _ToolButtonState extends State<_ToolButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colors;
+    final pressedChosen = widget.chosen && _pressed;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: Container(
+        width: widget.width,
+        height: 40,
+        decoration: BoxDecoration(
+          color: !widget.chosen
+              ? null
+              : pressedChosen
+              ? c.chosenPressed
+              : c.chosen,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: widget.child(
+          !widget.chosen
+              ? c.glyph
+              : pressedChosen
+              ? c.chosenPressedGlyph
+              : c.chosenGlyph,
+        ),
       ),
-      alignment: Alignment.center,
-      child: child,
-    ),
-  );
+    );
+  }
 }
 
 enum _Glyph { screen, window, selection }

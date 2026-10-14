@@ -23,14 +23,20 @@ const double forceQuitRow = 22;
 const Rect forceQuitButton = Rect.fromLTWH(240, 265, 115, 30);
 const Color forceQuitBlue = Color(0xFF0A62E0);
 
-/// I colori del pannello. Lo scuro non è osservato (screenshot-ui.md, "Non osservato"): è
-/// *stimato* dalle finestre scure (windows.md: fondo `#272728`, titolo `#e9e9e9`, riduzione
-/// disattivata `#4d4d4d`), dall'elenco di Mustache (selezione `#0059d1`, testo `#dfdfe0`) e
-/// dai dialoghi scuri (pulsante disattivato `#2f2f30` / `#626263`).
+/// I colori del pannello. Scuro misurato (screenshot-ui.md › K-06): fondo `#272727` con la
+/// barra `#2f2f2f`, filo di 1 pt `#060606` fuori e `#3d3d3d` dentro, titolo `#9e9e9e` (finestra
+/// non chiave), testi e nomi `#dedede`, elenco sul fondo del pannello con filo `#353535`, riga
+/// scelta sRGB `#0059d1`, pulsante sRGB `#007aff`, ombra scura di ~50 pt. Restano *stimati*
+/// in scuro il pulsante disattivato (mai visto: c'è sempre una riga scelta) e la riduzione
+/// disattivata (windows.md `#4d4d4d`).
 @immutable
 class ForceQuitColors {
   const ForceQuitColors({
     required this.fill,
+    required this.bar,
+    required this.borderOuter,
+    required this.borderInner,
+    required this.button,
     required this.title,
     required this.text,
     required this.help,
@@ -44,6 +50,14 @@ class ForceQuitColors {
   });
 
   final Color fill;
+
+  /// La fascia della barra del titolo (in chiaro uguale al fondo).
+  final Color bar;
+
+  /// Il filo attorno al pannello, fuori e dentro (null: nessuno).
+  final Color? borderOuter;
+  final Color? borderInner;
+  final Color button;
   final Color title;
   final Color text;
   final Color help;
@@ -57,6 +71,10 @@ class ForceQuitColors {
 
   static const ForceQuitColors light = ForceQuitColors(
     fill: Color(0xFFF6F6F6),
+    bar: Color(0xFFF6F6F6),
+    borderOuter: null,
+    borderInner: null,
+    button: forceQuitBlue,
     title: Color(0xFF595959),
     text: Color(0xFF1D1D1F),
     help: Color(0xFF3C3C43),
@@ -70,17 +88,22 @@ class ForceQuitColors {
   );
 
   static const ForceQuitColors dark = ForceQuitColors(
-    fill: Color(0xFF272728),
-    title: Color(0xFFE9E9E9),
-    text: Color(0xFFDFDFE0),
-    help: Color(0xFF9E9E9E),
-    list: Color(0xFF1E1E1E),
-    listBorder: Color(0xFF3C3C3D),
+    fill: Color(0xFF272727),
+    bar: Color(0xFF2F2F2F),
+    borderOuter: Color(0xFF060606),
+    borderInner: Color(0xFF3D3D3D),
+    button: Color(0xFF007AFF),
+    title: Color(0xFF9E9E9E),
+    text: Color(0xFFDEDEDE),
+    help: Color(0xFFDEDEDE),
+    list: Color(0xFF272727),
+    listBorder: Color(0xFF353535),
     chosen: Color(0xFF0059D1),
     disabledButton: Color(0xFF2F2F30),
     disabledButtonText: Color(0xFF626263),
     minimize: Color(0xFF4D4D4D),
-    shadow: Color(0x80000000),
+    // Sotto: −69 livelli a 1 pt, −50 a 13, −30 a 25, −14 a 37, −5 a 49 (su `#7a7b80`).
+    shadow: Color(0xE6000000),
   );
 
   static ForceQuitColors of(BuildContext context) =>
@@ -211,12 +234,49 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
           decoration: BoxDecoration(
             color: c.fill,
             borderRadius: BorderRadius.circular(16),
+            border: c.borderOuter == null
+                ? null
+                : Border.all(color: c.borderOuter!),
             boxShadow: [
-              BoxShadow(color: c.shadow, blurRadius: 40, offset: Offset(0, 18)),
+              c.borderOuter == null
+                  ? BoxShadow(
+                      color: c.shadow,
+                      blurRadius: 40,
+                      offset: const Offset(0, 18),
+                    )
+                  : BoxShadow(
+                      color: c.shadow,
+                      blurRadius: 37,
+                      offset: const Offset(0, 10),
+                    ),
             ],
           ),
           child: Stack(
             children: [
+              // La barra del titolo (in scuro più chiara del fondo) e il filo interno.
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 52,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(15),
+                  ),
+                  child: ColoredBox(color: c.bar),
+                ),
+              ),
+              if (c.borderInner case final inner?)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: inner),
+                      ),
+                    ),
+                  ),
+                ),
               // I pulsanti della finestra: chiudi, riduci disattivato, schermo intero.
               for (final (x, color) in [
                 (26.0, const Color(0xFFFF5F57)),
@@ -291,7 +351,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                   onTap: _chosen == null ? null : _quit,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: _chosen == null ? c.disabledButton : forceQuitBlue,
+                      color: _chosen == null ? c.disabledButton : c.button,
                       borderRadius: BorderRadius.circular(15),
                     ),
                     alignment: Alignment.center,

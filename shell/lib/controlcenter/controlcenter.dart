@@ -898,8 +898,30 @@ class _Media extends StatefulWidget {
   State<_Media> createState() => _MediaState();
 }
 
+/// Il modulo multimediale (controlcenter.md › "Modulo multimediale in riproduzione", CC-04):
+/// copertina 40 × 40 a (14, 14) con raggio ~8 e un'ombra leggera; titolo `#f0f0f1` semibold e
+/// sotto "artista" `#b7b8bd` (una riga ciascuno) da (14, 64); tre pulsanti 30 × 30 con il centro
+/// a y 111 e x 30 / 70 / 110. Glifi: attivi `#b7b8bd` (bianco ~52 % sul fondo `#696a6f`),
+/// disattivati `#9d9ea3` (~35 %); col puntatore sul modulo tutto si schiarisce di ~7 livelli e il
+/// glifo sotto il puntatore va a `#bebfc4`; premuto diventa bianco `#f7f7f8`, senza pillola.
+const double mediaButtonSide = 30;
+const List<double> mediaButtonCenters = [30, 70, 110];
+const double mediaArtRadius = 8;
+const Color mediaTitle = Color(0xE6FFFFFF);
+const Color mediaSubtitle = Color(0x85FFFFFF);
+const double mediaGlyphActive = 0.52;
+const double mediaGlyphDisabled = 0.35;
+const double mediaGlyphHover = 0.55;
+const double mediaGlyphPressed = 0.96;
+
+/// Il modulo sotto il puntatore: +7 livelli sul fondo (`#6a6b70` → `#717277`).
+const Color mediaHover = Color(0x0CFFFFFF);
+
 class _MediaState extends State<_Media> {
   final MediaPlayers _players = MediaPlayers.instance;
+  bool _hover = false;
+  String? _hovered;
+  String? _pressed;
 
   @override
   void initState() {
@@ -921,11 +943,23 @@ class _MediaState extends State<_Media> {
     final file = url.startsWith('file://')
         ? File(Uri.parse(url).toFilePath())
         : null;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: file != null && file.existsSync()
-          ? Image.file(file, fit: BoxFit.cover)
-          : const ColoredBox(color: Color(0xFF7E7F84)),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(mediaArtRadius),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(mediaArtRadius),
+        child: file != null && file.existsSync()
+            ? Image.file(file, fit: BoxFit.cover)
+            : const ColoredBox(color: Color(0xFF7E7F84)),
+      ),
     );
   }
 
@@ -933,93 +967,144 @@ class _MediaState extends State<_Media> {
     required String key,
     required _Transport transport,
     required double centerX,
-    required double opacity,
+    required bool enabled,
     VoidCallback? onTap,
-  }) => Positioned(
-    left: centerX - 18,
-    top: 111 - 15,
-    width: 36,
-    height: 30,
-    child: GestureDetector(
-      key: ValueKey(key),
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Center(
-        child: CustomPaint(
-          size: transport == _Transport.play || transport == _Transport.pause
-              ? const Size(17, 20)
-              : const Size(22, 12),
-          painter: _TransportPainter(
-            transport,
-            const Color(0xFFFFFFFF).withValues(alpha: opacity),
+  }) {
+    final alpha = !enabled
+        ? mediaGlyphDisabled
+        : _pressed == key
+        ? mediaGlyphPressed
+        : _hovered == key
+        ? mediaGlyphHover
+        : mediaGlyphActive;
+    return Positioned(
+      left: centerX - mediaButtonSide / 2,
+      top: 111 - mediaButtonSide / 2,
+      width: mediaButtonSide,
+      height: mediaButtonSide,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = key),
+        onExit: (_) => setState(() {
+          if (_hovered == key) _hovered = null;
+        }),
+        child: GestureDetector(
+          key: ValueKey(key),
+          behavior: HitTestBehavior.opaque,
+          onTapDown: enabled ? (_) => setState(() => _pressed = key) : null,
+          onTapCancel: () => setState(() => _pressed = null),
+          onTapUp: (_) => setState(() => _pressed = null),
+          onTap: enabled ? onTap : null,
+          child: Center(
+            child: CustomPaint(
+              size: switch (transport) {
+                _Transport.play => const Size(17, 20),
+                _Transport.pause => const Size(15, 20),
+                _ => const Size(22, 13),
+              },
+              painter: _TransportPainter(
+                transport,
+                const Color(0xFFFFFFFF).withValues(alpha: alpha),
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final now = _players.now;
     final active = now != null;
-    return Stack(
-      children: [
-        Positioned(left: 14, top: 14, width: 40, height: 40, child: _art(now)),
-        Positioned(
-          left: 15,
-          right: 12,
-          top: 64,
-          child: active
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      now.title.isEmpty ? 'Senza titolo' : now.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _text(titleSize, weight: FontWeight.w600),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Stack(
+        children: [
+          if (_hover)
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  key: ValueKey('media sotto il puntatore'),
+                  decoration: BoxDecoration(
+                    color: mediaHover,
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(mediaRadius),
                     ),
-                    if (now.artist.isNotEmpty)
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            left: 14,
+            top: 14,
+            width: 40,
+            height: 40,
+            child: _art(now),
+          ),
+          Positioned(
+            left: 14,
+            right: 12,
+            top: 64,
+            child: active
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        now.artist,
+                        now.title.isEmpty ? 'Senza titolo' : now.title,
                         maxLines: 1,
+                        softWrap: false,
                         overflow: TextOverflow.ellipsis,
                         style: _text(
-                          subtitleSize,
-                        ).copyWith(color: const Color(0xB3FFFFFF)),
+                          titleSize,
+                          weight: FontWeight.w600,
+                        ).copyWith(color: mediaTitle),
                       ),
-                  ],
-                )
-              : Text(
-                  'Nessuna\nriproduzione',
-                  style: _text(
-                    titleSize,
-                    weight: FontWeight.w600,
-                  ).copyWith(height: 15 / titleSize),
-                ),
-        ),
-        _button(
-          key: 'precedente',
-          transport: _Transport.previous,
-          centerX: 28.5,
-          opacity: active && now.canPrevious ? 1 : 0.33,
-          onTap: active ? _players.previous : null,
-        ),
-        _button(
-          key: 'riproduci',
-          transport: active && now.playing ? _Transport.pause : _Transport.play,
-          centerX: 71,
-          opacity: active ? 1 : 0.51,
-          onTap: active ? _players.playPause : null,
-        ),
-        _button(
-          key: 'successivo',
-          transport: _Transport.next,
-          centerX: 110.5,
-          opacity: active && now.canNext ? 1 : 0.33,
-          onTap: active ? _players.next : null,
-        ),
-      ],
+                      if (now.artist.isNotEmpty)
+                        Text(
+                          now.artist,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: _text(
+                            subtitleSize,
+                          ).copyWith(color: mediaSubtitle),
+                        ),
+                    ],
+                  )
+                : Text(
+                    'Nessuna\nriproduzione',
+                    style: _text(
+                      titleSize,
+                      weight: FontWeight.w600,
+                    ).copyWith(height: 15 / titleSize),
+                  ),
+          ),
+          _button(
+            key: 'precedente',
+            transport: _Transport.previous,
+            centerX: mediaButtonCenters[0],
+            enabled: active && now.canPrevious,
+            onTap: active ? _players.previous : null,
+          ),
+          _button(
+            key: 'riproduci',
+            transport: active && now.playing
+                ? _Transport.pause
+                : _Transport.play,
+            centerX: mediaButtonCenters[1],
+            enabled: active,
+            onTap: active ? _players.playPause : null,
+          ),
+          _button(
+            key: 'successivo',
+            transport: _Transport.next,
+            centerX: mediaButtonCenters[2],
+            enabled: active && now.canNext,
+            onTap: active ? _players.next : null,
+          ),
+        ],
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/screenshot/screenshot.dart';
+import 'package:silica_ui/silica_ui.dart' show MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 
 void main() {
@@ -36,7 +37,11 @@ void main() {
         (_) {},
       );
 
-  Future<void> pumpLayer(WidgetTester tester, {String? folder}) async {
+  Future<void> pumpLayer(
+    WidgetTester tester, {
+    String? folder,
+    Rect? Function(Offset)? windowAt,
+  }) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -46,6 +51,7 @@ void main() {
         child: ScreenshotLayer(
           folder: folder,
           now: () => DateTime(2026, 10, 14, 4, 12, 33),
+          windowAt: windowAt,
         ),
       ),
     );
@@ -82,6 +88,21 @@ void main() {
     expect(thumb.size, const Size(264, 152));
     expect(thumb.right, 1280 - 12);
     expect(thumb.bottom, 800 - 12);
+    // Angoli di raggio ~4, nessuna scala all'entrata (K-05).
+    final frame = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('miniatura')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      (frame.decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(thumbnailRadius),
+    );
+    expect(find.byType(Transform), findsNothing);
+    expect(thumbnailLeave, const Duration(milliseconds: 220));
     // Resta ~5,1 s, poi esce in ~250 ms e il file va sulla Scrivania.
     await tester.pump(const Duration(seconds: 5));
     expect(temp.existsSync(), isTrue);
@@ -177,5 +198,84 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(executed, ['screenshot.screen']);
+  });
+
+  testWidgets(
+    'Spazio: velatura azzurra sul rettangolo della finestra, o su tutto',
+    (tester) async {
+      const window = Rect.fromLTWH(200, 150, 500, 350);
+      await pumpLayer(
+        tester,
+        windowAt: (p) => window.contains(p) ? window : null,
+      );
+      await send(tester, 'command', 'screenshot.selection');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(400, 300));
+      await mouse.moveTo(const Offset(400, 300));
+      await tester.pump();
+      final veil = find.byKey(const ValueKey('velatura'));
+      expect(tester.getRect(veil), window);
+      expect(tester.widget<ColoredBox>(veil).color, const Color(0x8288BAE7));
+      // Sulla scrivania: tutto lo schermo.
+      await mouse.moveTo(const Offset(1000, 700));
+      await tester.pump();
+      expect(tester.getRect(veil), const Rect.fromLTWH(0, 0, 1280, 800));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets('Opzioni: il menu sopra il pulsante; ritardo e miniatura', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('opzioni');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    await pumpLayer(tester, folder: dir.path);
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    final button = tester.getRect(find.byKey(const ValueKey('opzioni')));
+    await tester.tap(find.byKey(const ValueKey('opzioni')));
+    await tester.pump();
+    final menu = tester.getRect(find.byType(MenuPanel));
+    // Sopra il pulsante, con il bordo sinistro sul pulsante.
+    expect(menu.bottom, lessThan(button.bottom));
+    expect(menu.left, closeTo(button.left, 1));
+    expect(find.text('Ritardo'), findsOneWidget);
+    await tester.tap(find.text('5 secondi'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    // Con il ritardo lo scatto arriva 5 s dopo.
+    await tester.tap(find.byKey(const ValueKey('acquisisci')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(executed, isEmpty);
+    await tester.pump(const Duration(seconds: 5));
+    expect(executed, ['screenshot.screen']);
+
+    // Senza miniatura il file va subito nella cartella.
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('opzioni')));
+    await tester.pump();
+    await tester.tap(find.text('Miniatura dopo lo scatto'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    final temp = File('${dir.path}/tmp.png')..writeAsBytesSync([0]);
+    await send(tester, 'broadcast', {
+      'topic': 'screenshot',
+      'value': '${temp.path} 2560 1440',
+    });
+    await tester.pump();
+    expect(find.byKey(const ValueKey('miniatura')), findsNothing);
+    expect(temp.existsSync(), isFalse);
+    expect(
+      File(
+        '${dir.path}/Schermata del 2026-10-14 alle 04.12.33.png',
+      ).existsSync(),
+      isTrue,
+    );
   });
 }

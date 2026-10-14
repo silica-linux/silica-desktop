@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -288,6 +289,59 @@ void main() {
         findsNothing,
       );
       expect(broadcasts, contains('statusmenu='));
+    },
+  );
+
+  testWidgets(
+    'modulo multimediale: pulsanti 30 × 30 a passo 40, glifi e passaggio (CC-04)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(system: FakeSystem(laptop)),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      final previous = tester.getRect(find.byKey(const ValueKey('precedente')));
+      final play = tester.getRect(find.byKey(const ValueKey('riproduci')));
+      final next = tester.getRect(find.byKey(const ValueKey('successivo')));
+      expect(previous.size, const Size(30, 30));
+      expect(play.center.dx - previous.center.dx, 40);
+      expect(next.center.dx - play.center.dx, 40);
+      // Senza lettori tutto è disattivato: bianco ~35 % (`#9d9ea3` sul fondo).
+      final painter =
+          tester
+                  .widget<CustomPaint>(
+                    find
+                        .descendant(
+                          of: find.byKey(const ValueKey('riproduci')),
+                          matching: find.byType(CustomPaint),
+                        )
+                        .first,
+                  )
+                  .painter!
+              as dynamic;
+      expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
+      // Il puntatore sul modulo lo schiarisce (+7 livelli).
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(play.center);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('media sotto il puntatore')),
+        findsOneWidget,
+      );
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('media sotto il puntatore')),
+        findsNothing,
+      );
+      await mouse.removePointer();
     },
   );
 }
