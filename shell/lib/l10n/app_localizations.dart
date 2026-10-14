@@ -949,6 +949,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'untitled folder'**
   String get desktopUntitledFolder;
+
+  /// Control Center Display detail: warmer colors at night
+  ///
+  /// In en, this message translates to:
+  /// **'Night Light'**
+  String get ccNightLight;
 }
 
 class _AppLocalizationsDelegate

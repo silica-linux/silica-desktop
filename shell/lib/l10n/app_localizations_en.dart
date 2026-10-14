@@ -484,4 +484,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get desktopUntitledFolder => 'untitled folder';
+
+  @override
+  String get ccNightLight => 'Night Light';
 }

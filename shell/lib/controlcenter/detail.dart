@@ -500,24 +500,113 @@ DetailContent soundDetail({
   return DetailContent(pieces);
 }
 
-/// Display: brightness.
+/// Display tiles (SH-CC-15): 40 pt circles (`#8f9094`) centered in 138 pt tiles at 9 and
+/// 161 from the panel edge, label and subtitle centered under them; the separator 15 pt
+/// under the subtitles.
+const double displayTileCircle = 40;
+const double displayTileWidth = 138;
+const List<double> displayTileLefts = [9, 161];
+
+/// Display: brightness, then the Dark Mode and Night Light tiles.
 DetailContent displayDetail({
   required AppLocalizations l,
   required SystemSnapshot s,
   required ValueChanged<double> onBrightness,
   required Widget Function(double?) track,
-}) => DetailContent([
-  (43, _header(l.ccDisplay)),
-  (
-    16,
-    _detailSlider(
-      value: s.brightnessAvailable ? s.brightness : null,
-      onChanged: onBrightness,
-      track: track,
+  required bool dark,
+  required VoidCallback onDark,
+}) {
+  Widget tile(
+    double left,
+    GlyphKind glyph,
+    String label,
+    String subtitle,
+    bool active,
+    VoidCallback? onTap,
+  ) => Positioned(
+    left: left,
+    width: displayTileWidth,
+    top: 0,
+    bottom: 0,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: displayTileCircle,
+            height: displayTileCircle,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: active ? const Color(0xFFFFFFFF) : detailCircleOff,
+            ),
+            child: Center(
+              child: Glyph(
+                glyph,
+                color: active ? detailBlue : const Color(0xFFFFFFFF),
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 1,
+            style: detailText(
+              11,
+              weight: FontWeight.w600,
+              color: onTap == null ? detailSection : null,
+            ),
+          ),
+          Text(
+            subtitle,
+            maxLines: 1,
+            style: detailText(10, color: detailSection),
+          ),
+        ],
+      ),
     ),
-  ),
-  (13, const SizedBox()),
-]);
+  );
+  return DetailContent([
+    (43, _header(l.ccDisplay)),
+    (
+      16,
+      _detailSlider(
+        value: s.brightnessAvailable ? s.brightness : null,
+        onChanged: onBrightness,
+        track: track,
+      ),
+    ),
+    (14, const SizedBox()),
+    (
+      69,
+      Stack(
+        children: [
+          tile(
+            displayTileLefts[0],
+            GlyphKind.contrast,
+            l.ccDarkMode,
+            dark ? l.ccOn : l.ccOff,
+            dark,
+            onDark,
+          ),
+          // Night Light is not there yet: shown disabled.
+          tile(
+            displayTileLefts[1],
+            GlyphKind.sunSmall,
+            l.ccNightLight,
+            l.ccOff,
+            false,
+            null,
+          ),
+        ],
+      ),
+    ),
+    (11, const SizedBox()),
+    (1, _separator()),
+    (10, const SizedBox()),
+  ]);
+}
 
 /// The glyph of a Bluetooth device from its freedesktop icon name.
 GlyphKind deviceGlyph(String icon) => switch (icon) {

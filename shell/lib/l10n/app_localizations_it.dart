@@ -484,4 +484,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get desktopUntitledFolder => 'cartella senza titolo';
+
+  @override
+  String get ccNightLight => 'Luce notturna';
 }

@@ -733,6 +733,8 @@ class _ControlCenterState extends State<ControlCenter>
         s: s,
         onBrightness: system.setBrightness,
         track: track,
+        dark: MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
+        onDark: () => ShellChannel.instance.execute('system.dark_toggle'),
       ),
       'bluetooth' => bluetoothDetail(
         s: s,

@@ -650,5 +650,9 @@
   "desktopUntitledFolder": "untitled folder",
   "@desktopUntitledFolder": {
     "description": "Name of a folder created from the desktop context menu"
+  },
+  "ccNightLight": "Night Light",
+  "@ccNightLight": {
+    "description": "Control Center Display detail: warmer colors at night"
   }
 }
