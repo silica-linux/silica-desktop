@@ -1,7 +1,12 @@
 //! `dev.frascella.Silica.System1` with fake services: NetworkManager, UPower and BlueZ on a
 //! private "system" bus, `wpctl` and the backlight in a temporary directory.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -350,11 +355,21 @@ trait System {
     fn set_muted(&self, muted: bool) -> zbus::Result<()>;
     fn set_brightness(&self, brightness: f64) -> zbus::Result<()>;
     fn set_dark(&self, dark: bool) -> zbus::Result<()>;
+    fn set_appearance_mode(&self, mode: &str) -> zbus::Result<()>;
+    fn suspend(&self) -> zbus::Result<()>;
+    fn set_focus(&self, id: &str) -> zbus::Result<()>;
     fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
     fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
     fn set_audio_output(&self, id: u32) -> zbus::Result<()>;
     fn set_do_not_disturb(&self, enabled: bool) -> zbus::Result<()>;
+    fn report_compositor(&self, json: &str) -> zbus::Result<()>;
+    fn outputs(&self) -> zbus::Result<String>;
+    fn configure_output(&self, json: &str) -> zbus::Result<String>;
+    fn set_night_light(
+        &self,
+        settings: HashMap<&str, zbus::zvariant::Value<'_>>,
+    ) -> zbus::Result<()>;
     #[zbus(signal)]
     fn changed(&self, state: HashMap<String, OwnedValue>) -> zbus::Result<()>;
 }
@@ -405,6 +420,13 @@ fn reads_and_changes_the_system() {
                 wpctl,
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
             },
         )
         .await
@@ -483,7 +505,24 @@ fn reads_and_changes_the_system() {
             assert_eq!(get::<u64>(&state, "brightness.requests"), 2);
 
             proxy.set_do_not_disturb(true).await.unwrap();
-            wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
+            let state = wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
+            assert_eq!(get::<String>(&state, "focus"), "dnd");
+
+            // A Focus mode of focus.json: banners off like Do Not Disturb, its apps allowed.
+            std::fs::write(
+                dir.join("focus.json"),
+                r#"{"modes": [{"id": "work", "name": "Work", "allowedApps": ["mail"]}]}"#,
+            )
+            .unwrap();
+            proxy.set_focus("work").await.unwrap();
+            let state = wait_for(&proxy, |s| get::<String>(s, "focus") == "work").await;
+            assert!(get::<bool>(&state, "dnd"));
+            assert_eq!(get::<Vec<String>>(&state, "focus.allowedApps"), ["mail"]);
+            assert!(proxy.set_focus("nope").await.is_err());
+            proxy.set_focus("").await.unwrap();
+            let state = wait_for(&proxy, |s| get::<String>(s, "focus").is_empty()).await;
+            assert!(!get::<bool>(&state, "dnd"));
+            proxy.set_do_not_disturb(true).await.unwrap();
 
             // The dark appearance: in the state and in the file, for the next start.
             proxy.set_dark(true).await.unwrap();
@@ -543,6 +582,13 @@ fn missing_sources_are_absent_not_errors() {
                 wpctl: dir.join("no-wpctl"),
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
             },
         )
         .await
@@ -569,6 +615,322 @@ fn missing_sources_are_absent_not_errors() {
             assert!(proxy.set_wifi_enabled(true).await.is_err());
             assert!(proxy.set_brightness(0.5).await.is_err());
             assert!(proxy.set_volume(0.5).await.is_err());
+
+            // Ossido's report joins the state: known keys only.
+            proxy
+                .report_compositor(r#"{"input.touchpad": true, "input.mouse": false, "evil": 1}"#)
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| s.contains_key("input.touchpad")).await;
+            assert!(get::<bool>(&state, "input.touchpad"));
+            assert!(!get::<bool>(&state, "input.mouse"));
+            assert!(!state.contains_key("evil"));
+            assert!(proxy.report_compositor("[1]").await.is_err());
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Ossido's actions socket: answers `output.*` and records the requests.
+fn fake_ossido(socket: &Path) -> std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> {
+    use std::io::Write;
+    let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            log.lock().unwrap().push(request.clone());
+            let result = match request["command"].as_str().unwrap() {
+                "output.list" => serde_json::json!([{"connector": "Virtual-1", "scale": 1.0}]),
+                "output.configure" => request["params"].clone(),
+                _ => serde_json::json!({"applied": true}),
+            };
+            let reply = serde_json::json!({"id": request["id"], "ok": true, "result": result});
+            stream.write_all(format!("{reply}\n").as_bytes()).unwrap();
+        }
+    });
+    seen
+}
+
+#[test]
+fn displays_and_night_light_go_through_ossido() {
+    let session = Bus::start();
+    let dir = temp_dir("displays");
+    let socket = dir.join("ossido.sock");
+    let seen = fake_ossido(&socket);
+    zbus::block_on(async {
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: None,
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
+                actions_socket: Some(socket.clone()),
+                place: None,
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let list: serde_json::Value =
+                serde_json::from_str(&proxy.outputs().await.unwrap()).unwrap();
+            assert_eq!(list[0]["connector"], "Virtual-1");
+            let configured = proxy
+                .configure_output(r#"{"connector": "Virtual-1", "scale": 2}"#)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&configured).unwrap()["scale"],
+                2
+            );
+            assert!(proxy.configure_output("[]").await.is_err());
+            assert!(proxy.configure_output("nope").await.is_err());
+
+            // The night light, on at once with no schedule: Ossido gets its temperature.
+            let state = wait_for(&proxy, |s| s.contains_key("nightlight.enabled")).await;
+            assert!(!get::<bool>(&state, "nightlight.enabled"));
+            proxy
+                .set_night_light(HashMap::from([
+                    ("enabled", true.into()),
+                    ("schedule", "off".into()),
+                    ("temperature", 3000u32.into()),
+                ]))
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| get::<bool>(s, "nightlight.active")).await;
+            assert_eq!(get::<u32>(&state, "nightlight.temperature"), 3000);
+            let sent = |kelvin: u64| {
+                seen.lock().unwrap().iter().any(|r| {
+                    r["command"] == "output.color_temperature" && r["params"]["kelvin"] == kelvin
+                })
+            };
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !sent(3000) && Instant::now() < deadline {
+                async_io::Timer::after(Duration::from_millis(20)).await;
+            }
+            assert!(sent(3000));
+            let saved: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("nightlight.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved["temperature"], 3000);
+            // Invalid settings change nothing.
+            assert!(
+                proxy
+                    .set_night_light(HashMap::from([("temperature", 100u32.into())]))
+                    .await
+                    .is_err()
+            );
+            // Edited in the file: off again, neutral.
+            std::fs::write(
+                dir.join("nightlight.json"),
+                r#"{"enabled": false, "temperature": 3000}"#,
+            )
+            .unwrap();
+            wait_for(&proxy, |s| !get::<bool>(s, "nightlight.active")).await;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !sent(6500) && Instant::now() < deadline {
+                async_io::Timer::after(Duration::from_millis(20)).await;
+            }
+            assert!(sent(6500));
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn automatic_appearance_follows_the_sun() {
+    let session = Bus::start();
+    let dir = temp_dir("appearance");
+    // A file from before the modes: dark.
+    std::fs::write(dir.join("appearance.json"), r#"{"dark": true}"#).unwrap();
+    let place = silica_daemon::sun::Place {
+        lat: 41.9,
+        lon: 12.48,
+    };
+    zbus::block_on(async {
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: None,
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: Some(place),
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let state = proxy.state().await.unwrap();
+            assert_eq!(get::<String>(&state, "appearance.mode"), "dark");
+            assert!(get::<bool>(&state, "appearance.dark"));
+
+            proxy.set_appearance_mode("auto").await.unwrap();
+            let night =
+                silica_daemon::sun::is_night(Some(place), silica_daemon::sun::unix_now(), 0);
+            let state = wait_for(&proxy, |s| get::<String>(s, "appearance.mode") == "auto").await;
+            assert_eq!(get::<bool>(&state, "appearance.dark"), night);
+            let saved: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("appearance.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved["mode"], "auto");
+            assert!(proxy.set_appearance_mode("sepia").await.is_err());
+
+            // SetDark fixes the mode again.
+            proxy.set_dark(!night).await.unwrap();
+            let state = proxy.state().await.unwrap();
+            assert_eq!(
+                get::<String>(&state, "appearance.mode"),
+                if night { "light" } else { "dark" }
+            );
+            // Written by Settings into the file: picked up by the next check.
+            std::fs::write(
+                dir.join("appearance.json"),
+                r#"{"mode": "light", "dark": false}"#,
+            )
+            .unwrap();
+            wait_for(&proxy, |s| {
+                get::<String>(s, "appearance.mode") == "light" && !get::<bool>(s, "appearance.dark")
+            })
+            .await;
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// logind: records inhibitors and suspends; never touches the machine.
+struct FakeLogind {
+    calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[interface(name = "org.freedesktop.login1.Manager")]
+impl FakeLogind {
+    fn inhibit(&self, what: &str, _who: &str, _why: &str, mode: &str) -> zbus::zvariant::OwnedFd {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("inhibit {what} {mode}"));
+        let file = std::fs::File::open("/dev/null").unwrap();
+        zbus::zvariant::OwnedFd::from(std::os::fd::OwnedFd::from(file))
+    }
+    fn suspend(&self, interactive: bool) {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("suspend {interactive}"));
+    }
+}
+
+#[test]
+fn energy_inhibits_idle_sleep_and_suspends_through_logind() {
+    let session = Bus::start();
+    let system = Bus::start();
+    let dir = temp_dir("power");
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    zbus::block_on(async {
+        let logind = system.connect().await;
+        logind
+            .object_server()
+            .at(
+                "/org/freedesktop/login1",
+                FakeLogind {
+                    calls: calls.clone(),
+                },
+            )
+            .await
+            .unwrap();
+        logind.request_name("org.freedesktop.login1").await.unwrap();
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: Some(system.connect().await),
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| s.contains_key("power.preventSleep")).await;
+            assert!(!get::<bool>(&state, "power.inhibited"));
+            std::fs::write(dir.join("power.json"), r#"{"preventSleep": true}"#).unwrap();
+            wait_for(&proxy, |s| get::<bool>(s, "power.inhibited")).await;
+            assert_eq!(*calls.lock().unwrap(), ["inhibit idle block"]);
+            std::fs::write(dir.join("power.json"), r#"{"preventSleep": false}"#).unwrap();
+            wait_for(&proxy, |s| !get::<bool>(s, "power.inhibited")).await;
+            proxy.suspend().await.unwrap();
+            assert_eq!(calls.lock().unwrap().last().unwrap(), "suspend false");
         };
         future::or(test, async {
             let result = service.run().await;

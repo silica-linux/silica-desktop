@@ -51,6 +51,11 @@ CHOSEN = {
     "trash-empty": "A",
     "file-transfer": "A",
     "screen-capture": "A",
+    "alert-crystal": "A",
+    "alert-woodblock": "A",
+    "alert-drop": "A",
+    "alert-pebble": "A",
+    "volume-feedback": "A",
 }
 
 
@@ -611,6 +616,47 @@ def screen_capture_c(rng):
     return mix(total, (mirror_up, 0.0, 1.0), (bounce, 0.004, 1.0), (ring, 0.002, 0.08), (travel, 0.01, 0.1), (down, 0.09, 1.0))
 
 
+# --- Alerts and feedback ------------------------------------------------------------------
+
+
+def alert_crystal(rng):
+    """Two small glass bowls struck together, a fifth apart (E6 and B6)."""
+    total = 0.9
+    low = unit(strike(mallet(0.0005), glass(1319, 0.8)))
+    high = unit(strike(mallet(0.0005), glass(1976, 0.6)))
+    return mix(total, (low, 0.0, 1.0), (high, 0.012, 0.55))
+
+
+def alert_woodblock(rng):
+    """Two quick knocks on a tuned wooden bar (A5), the second softer."""
+    total = 0.35
+    bar = modes_from(880, TUNED_BAR, [1.0, 0.22, 0.06], 0.16, 2400)
+    knock = unit(strike(mallet(0.0011), bar))
+    return mix(total, (knock, 0.0, 1.0), (knock, 0.11, 0.6))
+
+
+def alert_drop(rng):
+    """A water-drop like resonance: a damped sine whose pitch rises fast, as a bubble's does."""
+    t = times(0.22)
+    f = 900 * (1 + 0.9 * (1 - np.exp(-t / 0.035)))
+    phase = 2 * np.pi * np.cumsum(f) / RATE
+    body = np.sin(phase) * np.exp(-t / 0.05)
+    tick = unit(burst(rng, 0.004, 0.0015, 2000, 9000))
+    return mix(0.25, (body, 0.0, 1.0), (tick, 0.0, 0.15))
+
+
+def alert_pebble(rng):
+    """A pebble on a small steel dish: ring modes with a short, bright decay."""
+    dish = modes_from(2093, ring_ratios(5), [1.0, 0.5, 0.25, 0.1, 0.05], 0.35, 6000, split=0.003)
+    return unit(strike(mallet(0.0003), dish))
+
+
+def volume_feedback(rng):
+    """The volume keys' feedback: one soft, short tap on a tuned bar (E6)."""
+    bar = modes_from(1319, TUNED_BAR, [1.0, 0.12, 0.03], 0.16, 2600)
+    return unit(strike(mallet(0.003), bar))
+
+
 SOUNDS = {
     "trash-move": {
         "A": (trash_move_a, "Airy sheet: a passing whoosh with slight flutter, a soft paper rustle landing on a plastic bin bottom."),
@@ -631,6 +677,21 @@ SOUNDS = {
         "A": (file_transfer_a, "Two-note glass chime (D6 then G6, a fourth up) from small glass bowl modes."),
         "B": (file_transfer_b, "Airy rising swish ending on a faint glass tink."),
         "C": (file_transfer_c, "Two-note soft woody pop from tuned-bar modes (G5 then D6)."),
+    },
+    "alert-crystal": {
+        "A": (alert_crystal, "Alert: two small glass bowls struck together, a fifth apart (E6, B6)."),
+    },
+    "alert-woodblock": {
+        "A": (alert_woodblock, "Alert: two quick knocks on a tuned wooden bar (A5), the second softer."),
+    },
+    "alert-drop": {
+        "A": (alert_drop, "Alert: a bubble-like resonance whose pitch rises quickly, with a faint tick."),
+    },
+    "alert-pebble": {
+        "A": (alert_pebble, "Alert: a pebble on a small steel dish, bright and short."),
+    },
+    "volume-feedback": {
+        "A": (volume_feedback, "Volume keys: one soft, short tap on a tuned bar (E6)."),
     },
     "screen-capture": {
         "A": (screen_capture_a, "Shutter double click, 60 ms apart: filtered transients, a tiny steel blade body, light housing."),

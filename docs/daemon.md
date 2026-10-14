@@ -120,6 +120,58 @@ bar.
   only: a new network asks for a password), `AudioOutputs() → a(usb)` (PipeWire id, name,
   default; from `wpctl status`), `SetAudioOutput(u)`.
 - Signal `Changed(a{sv})` with the whole state on every change.
+- What Ossido knows and apps need, reported by Ossido with `ReportCompositor(s json)` (a JSON
+  object; only these keys are kept, the rest is ignored) and part of `State`/`Changed` from
+  then on: `input.touchpad` and `input.mouse` (b: a touchpad / another pointer is connected;
+  Settings shows its Trackpad pane only with a touchpad). Ossido sends the whole report again
+  whenever the daemon (re)appears. `displays` (s): the JSON of `output.list`, sent again on
+  every change (a display plugged in, a new mode, scale or rotation), so `Changed` tells apps.
+
+### Focus
+
+- `SetFocus(s id)`: turns on a Focus mode, `dnd` (Do Not Disturb) or the `id` of a mode in
+  `$XDG_CONFIG_HOME/silica/focus.json`; an empty id turns Focus off; an unknown id is
+  `InvalidArgs`. Any mode silences banners like Do Not Disturb (`dnd` follows it, and
+  `SetDoNotDisturb` sets the mode to `dnd` or none). The active id is saved as `active` in the
+  file (not restored at start yet).
+- State keys `focus` (the active id, empty when off), `focus.name`, `focus.symbol`,
+  `focus.allowedApps` and `focus.allowedPeople` (`as`): the shell lets the allowed apps'
+  notifications through (not done in the shell yet).
+
+`focus.json`, written by Settings: `{"modes": [{"id", "name", "symbol", "allowedApps",
+"allowedPeople"}], "active"}` (at most 32 modes; the id `dnd` is reserved). Schedules are not
+handled yet.
+
+### Energy
+
+- `Suspend()`: logind's `Suspend(false)`; Ossido calls it when `sleepMinutes` of `power.json`
+  is up (`docs/control.md`). Without the system bus: `Failed`.
+- `preventSleep` of `$XDG_CONFIG_HOME/silica/power.json` (read again every 30 s): while it is
+  on the daemon holds logind's `idle` inhibitor (mode `block`), so logind's own idle action
+  does not suspend either; a sleep the user asks for still happens. State keys
+  `power.preventSleep` and `power.inhibited` (the inhibitor is held).
+
+### Displays and night light
+
+- `Outputs() → s`: the displays as JSON (Ossido's `output.list`, `docs/control.md`).
+- `ConfigureOutput(s json) → s`: changes a display, `{connector?, mode?: {width, height,
+  refresh?}, scale?, transform?}`; returns the display after the change. Applied at once and
+  saved by Ossido in `displays.json` for that display (a confirmation with a revert timer is
+  up to Settings). Not a JSON object: `InvalidArgs`; refused by Ossido or no Ossido: `Failed`.
+- `SetNightLight(a{sv})`: any of `enabled` (b), `temperature` (u, 1900–6500 K, default 3400),
+  `schedule` (`off`: on while enabled; `sunset`: from sunset to sunrise; `custom`: from `from`
+  to `to`), `from` and `to` (`HH:MM`, local time, the window may cross midnight). An invalid
+  value is `InvalidArgs` and changes nothing. Saved in `$XDG_CONFIG_HOME/silica/nightlight.json`
+  (same keys), which is read again at every check, so Settings may also write it directly.
+- State keys `nightlight.enabled`, `nightlight.temperature`, `nightlight.schedule`,
+  `nightlight.from`, `nightlight.to` and `nightlight.active` (b: the displays are warm now).
+
+The schedule is checked every 30 s and at once after a change; the temperature goes to Ossido
+(`output.color_temperature` on its actions socket) when it changes. Sunset and sunrise come
+from the time zone's coordinates (tzdata's `zone1970.tab` for the zone of `/etc/localtime`),
+with NOAA's solar equations (`crates/daemon/src/sun.rs`); without a known place or in polar day
+and night the night is 19:00–07:00. The local time comes from `date +%z`. No location service
+is used.
 
 Sources: NetworkManager (`WirelessEnabled`, primary connection, access point strength),
 BlueZ (the first adapter), UPower (`DisplayDevice`, only if it is a battery) on the system
@@ -130,8 +182,16 @@ output with `wpctl`, read again every second. If a service is missing the source
 
 ## Light and dark appearance
 
-- `System1` has the `appearance.dark` key and the `SetDark(b)` method, which saves the choice
-  in `$XDG_CONFIG_HOME/silica/appearance.json` (`{"dark": true}`) for the next start.
+- `System1` has the `appearance.dark` and `appearance.mode` keys and the `SetDark(b)` and
+  `SetAppearanceMode(s)` methods, which save the choice in
+  `$XDG_CONFIG_HOME/silica/appearance.json` (`{"mode": "auto", "dark": true}`) for the next
+  start. The mode is `light`, `dark` or `auto`; `SetDark` sets it to `light` or `dark`, any
+  other mode is `InvalidArgs`. A file without `mode` (older) means `dark` or `light` from
+  `dark`.
+- In `auto` the daemon turns `appearance.dark` on at sunset and off at sunrise, checked every
+  30 s (the same sun as the night light: the time zone's coordinates, 19:00–07:00 without them),
+  emits `Changed` and keeps `dark` in the file up to date. The file is read again at every
+  check, so Settings may also write `mode` there directly.
 - `silica-portal` offers `org.freedesktop.impl.portal.Settings` with
   `org.freedesktop.appearance` › `color-scheme` (1 dark, 2 light): it reads it from the daemon
   and follows its `Changed` (without the daemon, from the file), and emits `SettingChanged`.
@@ -180,9 +240,26 @@ for apps and the shell.
   `InvalidArgs`, a name with no file `FileNotFound`. At most 4 sounds play at once (more are
   dropped, not an error); without `pw-play` nothing plays and nothing fails.
 - `UiSoundsEnabled() → b` and `SetUiSoundsEnabled(b)`: "Play user interface sound effects", on
-  by default, saved as `{"ui_sounds": false}` in `$XDG_CONFIG_HOME/silica/sound.json`. The file
-  is read again on each sound, so a change made elsewhere applies at once. Signal
-  `UiSoundsChanged(b)`.
+  by default, saved as `uiSounds` in `$XDG_CONFIG_HOME/silica/sound.json` (the other keys of
+  the file stay; the older `ui_sounds` is still read). The file is read again on each sound,
+  so a change made elsewhere applies at once. Signal `UiSoundsChanged(b)`.
+- `PlayAlert(s name)`: plays the alert sound at the alert volume (`pw-play --volume`). Empty
+  `name`: the chosen one (`alert` in `sound.json`, default `alert-crystal`); otherwise an
+  `alert-*` name, for Settings' preview (anything else is `InvalidArgs`). Alerts play even
+  with the interface sounds off; with `alertVolume` 0 nothing plays.
+- `AlertSounds() → as`: the `alert-*` sounds found, sorted (the choices of the Alert sound
+  pop-up).
+- `PlayVolumeFeedback() → b`: plays `volume-feedback` when `volumeFeedback` is on (off by
+  default); true if it played. For the volume keys.
+
+`sound.json`, written by Settings:
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `uiSounds` | boolean | true |
+| `alert` | string, an `alert-*` sound | `alert-crystal` |
+| `alertVolume` | number 0–1, relative to the output volume | 1 |
+| `volumeFeedback` | boolean | false |
 
 Where the sounds are looked for, first match wins: `$SILICA_SOUNDS_DIR`, then
 `$XDG_DATA_HOME/silica/sounds`, then `silica/sounds` in each of `$XDG_DATA_DIRS`. The sounds
@@ -197,10 +274,95 @@ points `SILICA_SOUNDS_DIR` there, `cargo xtask os deploy` copies them into the s
 | `trash-empty` | the Trash emptied |
 | `file-transfer` | a copy or move finished (drag and drop, paste, a drop on a Dock folder) |
 | `screen-capture` | a screenshot taken (⇧⌘3, ⇧⌘4, ⇧⌘5, also to the clipboard); provisional, not measured |
+| `alert-crystal`, `alert-woodblock`, `alert-drop`, `alert-pebble` | alerts (`PlayAlert`) |
+| `volume-feedback` | the volume keys with `volumeFeedback` on (`PlayVolumeFeedback`) |
 
 ```
 gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \
   -m dev.frascella.Silica.Sound1.PlaySound trash-empty
+```
+
+## Authentication (polkit agent)
+
+The session's polkit authentication agent (`crates/daemon/src/auth.rs`): when an app asks for
+something that polkit allows only after a password (`auth_admin_keep`: the time zone and
+automatic time with `timedatectl`, the computer name with `hostnamectl`, the language and
+region with `localectl`), polkit calls this agent and the shell shows the system
+authentication dialog. Without an agent those calls fail with "Interactive authentication
+required".
+
+- At start the daemon registers `org.freedesktop.PolicyKit1.AuthenticationAgent` at
+  `/dev/frascella/Silica/PolkitAgent` on the **system** bus with
+  `RegisterAuthenticationAgent` for its logind session (`unix-session`, the id from
+  `XDG_SESSION_ID` or logind's `GetSessionByPID`), with the session's `LANG` as locale. If it
+  fails (polkit not running, another agent already registered for the session, as nested in
+  GNOME) it tries again every 30 s; when polkit restarts it registers again.
+- `BeginAuthentication` is accepted only from the owner of `org.freedesktop.PolicyKit1`. The
+  users offered are polkit's `unix-user` identities (groups arrive expanded) with their names
+  from `/etc/passwd`; the user running the session comes first when polkit accepts them. The
+  app that asked is the first ancestor of `polkit.subject-pid` that is not a command-line
+  wrapper (`timedatectl`, `sh`, `pkexec`…), by executable name. At most 8 requests wait at
+  once.
+- The password is checked by polkit's helper, which runs PAM and reports to polkit itself:
+  through `/run/polkit/agent-helper.socket` when it exists (polkit ≥ 126, socket-activated:
+  the user name and the cookie on the first two lines), otherwise by running
+  `polkit-agent-helper-1 USER` (setuid; the cookie on stdin). The conversation is the helper's:
+  `PAM_PROMPT_ECHO_OFF` gets the password, `PAM_PROMPT_ECHO_ON` the user name, then
+  `SUCCESS` or `FAILURE`. A second secret prompt (a one-time code) counts as a failure. The
+  password is never logged or kept.
+- Cancelled by the user: polkit gets `org.freedesktop.PolicyKit1.Error.Cancelled`.
+  `CancelAuthentication` from polkit closes the dialog.
+
+### dev.frascella.Silica.Authentication1
+
+On `/dev/frascella/Silica/Authentication1` (session bus), for the shell's dialog and for apps
+that want to know whether a password can be asked:
+
+- `Pending() → a(ussssa(ss)s)`: the waiting requests, oldest first: id, action id, polkit's
+  message (in the session's language), icon name, app (executable name, may be empty), users
+  (login name, full name), default user.
+- `Respond(u id, s user, s password) → b`: true if the password is right (the request then
+  closes with `success`), false to try again. `user` must be one of the request's users,
+  otherwise `InvalidArgs`; a check already running or a helper that cannot be reached is
+  `Failed`. It returns when PAM answers (a few seconds after a wrong password).
+- `Cancel(u id)`: the user dismissed the dialog.
+- Property `Registered` (b, with `PropertiesChanged`): the agent is registered with polkit.
+- Signals `Requested(request)` (same tuple as `Pending`) and `Closed(u id, s outcome)`
+  (`success` or `cancelled`).
+
+The dialog is drawn by the shell in the switcher layer (`shell/lib/auth/auth_dialog.dart`): a
+system alert above every window with the app's icon (from its desktop entry, a padlock if
+unknown), a title naming the app, polkit's message, the user name and password fields and
+Allow / Cancel. A wrong password shakes it and clears the field; Escape cancels.
+
+```
+pkexec true      # or: timedatectl set-timezone Europe/Rome
+```
+
+### Without a password: a polkit rule for administrators
+
+An image may also let the administrators of an active local session change these settings
+without a password (the agent stays the general fix). Install it as
+`/etc/polkit-1/rules.d/50-silica-settings.rules`:
+
+```js
+// Administrators at the machine change the time, the computer name and the language
+// without typing their password.
+polkit.addRule(function (action, subject) {
+    var actions = [
+        "org.freedesktop.timedate1.set-timezone",
+        "org.freedesktop.timedate1.set-ntp",
+        "org.freedesktop.timedate1.set-time",
+        "org.freedesktop.hostname1.set-hostname",
+        "org.freedesktop.hostname1.set-static-hostname",
+        "org.freedesktop.locale1.set-locale",
+        "org.freedesktop.locale1.set-keyboard",
+    ];
+    if (actions.indexOf(action.id) >= 0 && subject.active && subject.local &&
+        subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});
 ```
 
 ## Replacement

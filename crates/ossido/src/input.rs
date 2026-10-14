@@ -265,6 +265,8 @@ impl State {
         };
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
+        // The input source shortcut belongs to the apps while there is only one source.
+        let one_source = self.keyboard_config.layouts.len() < 2;
         // Esc closes the open view: its own command is run.
         let switcher = self.switcher_active;
         let logo_released = std::cell::Cell::new(false);
@@ -309,8 +311,9 @@ impl State {
                 {
                     return FilterResult::Intercept(id);
                 }
-                match shortcuts.iter().find(|(shortcut, _)| {
+                match shortcuts.iter().find(|(shortcut, id)| {
                     pressed
+                        && !(one_source && *id == silica_control::commands::KEYBOARD_NEXT_SOURCE)
                         && shortcut.matches(
                             modifiers.logo,
                             modifiers.ctrl,
@@ -349,6 +352,12 @@ impl State {
     }
 
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        if !matches!(
+            event,
+            InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }
+        ) {
+            self.user_activity();
+        }
         match event {
             InputEvent::Keyboard { event } => {
                 self.handle_key(event.key_code(), event.state(), Event::time_msec(&event));
@@ -377,11 +386,19 @@ impl State {
             }
             InputEvent::PointerAxis { event } => {
                 let source = event.source();
+                // Scroll speed (input.json): wheels are mice, fingers are touchpads.
+                let factor = match source {
+                    AxisSource::Finger | AxisSource::Continuous => {
+                        self.input_config.touchpad.scroll_speed
+                    }
+                    _ => self.input_config.mouse.scroll_speed,
+                };
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 for axis in [Axis::Horizontal, Axis::Vertical] {
-                    let v120 = event.amount_v120(axis);
+                    let v120 = event.amount_v120(axis).map(|v| v * factor);
                     let amount = event
                         .amount(axis)
+                        .map(|a| a * factor)
                         .unwrap_or_else(|| v120.unwrap_or(0.0) * 15.0 / 120.0);
                     if amount != 0.0 {
                         frame = frame.value(axis, amount);

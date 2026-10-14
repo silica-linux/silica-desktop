@@ -4,11 +4,13 @@ mod app_frames;
 pub mod backend;
 mod capture;
 pub mod commands;
+mod config;
 mod control;
 #[cfg(feature = "drm")]
 mod cursor;
 mod cursor_theme;
 mod decorations;
+mod displays;
 mod dmabuf;
 #[cfg(feature = "drm")]
 mod drm;
@@ -16,6 +18,7 @@ mod egl;
 mod gestures;
 mod glass;
 mod handlers;
+mod idle;
 mod input;
 mod keep;
 pub mod keys;
@@ -146,12 +149,32 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // The user's settings (keyboard.json, …), applied now and whenever Settings changes them.
+    if let Some(dir) = config::config_dir() {
+        match config::watch(&event_loop.handle(), &dir) {
+            Ok(()) => {
+                ossido.state.config_dir = Some(dir);
+                ossido.state.apply_all_config();
+            }
+            Err(err) => warn!("settings folder: {err}"),
+        }
+    }
+
+    // Energy: the idle times of power.json.
+    event_loop.handle().insert_source(
+        smithay::reexports::calloop::timer::Timer::from_duration(idle::CHECK),
+        |_, _, ossido| {
+            ossido.state.idle_check();
+            smithay::reexports::calloop::timer::TimeoutAction::ToDuration(idle::CHECK)
+        },
+    )?;
+
     // The lines on stdout are the interface for scripts and tests: one per variable.
     let socket = ossido.state.socket_name.clone();
     println!("WAYLAND_DISPLAY={}", socket.to_string_lossy());
     // Lives until the end of `run`: closes the bus and the daemon on exit.
     let _session_bus = if options.session_bus {
-        let bus = session_bus::SessionBus::start()?;
+        let bus = session_bus::SessionBus::start(&socket)?;
         println!("DBUS_SESSION_BUS_ADDRESS={}", bus.address);
         ossido.state.session_bus = Some(bus.address.clone());
         Some(bus)

@@ -98,6 +98,13 @@ pub const SYSTEM_KEYBOARD_BRIGHTNESS_DOWN: &str = "system.keyboard_brightness_do
 pub const SYSTEM_DND: &str = "system.dnd";
 pub const SYSTEM_DARK: &str = "system.dark";
 pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
+pub const KEYBOARD_STATE: &str = "keyboard.state";
+pub const KEYBOARD_NEXT_SOURCE: &str = "keyboard.next_source";
+pub const INPUT_STATE: &str = "input.state";
+pub const IDLE_STATE: &str = "idle.state";
+pub const OUTPUT_LIST: &str = "output.list";
+pub const OUTPUT_CONFIGURE: &str = "output.configure";
+pub const OUTPUT_COLOR_TEMPERATURE: &str = "output.color_temperature";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -995,6 +1002,81 @@ pub const CATALOG: &[CommandSpec] = &[
                 "type": "object",
                 "properties": {"pid": {"type": "integer", "minimum": 1}},
                 "required": ["pid"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: KEYBOARD_STATE,
+        label: "Keyboard settings",
+        description: "The keyboard settings in use (from keyboard.json): repeat delay and rate, input sources and the active one.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: KEYBOARD_NEXT_SOURCE,
+        label: "Next input source",
+        description: "Switches to the next input source of keyboard.json (the shortcut works only with two or more).",
+        shortcut: Some("Ctrl+space"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: INPUT_STATE,
+        label: "Pointer settings",
+        description: "The mouse and touchpad settings in use (from input.json) and the kinds of pointer connected.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: IDLE_STATE,
+        label: "Idle state",
+        description: "Seconds since the last input, whether the display is off, and the idle times of power.json.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: OUTPUT_LIST,
+        label: "List displays",
+        description: "The connected displays: connector, identity, make, model, serial, modes, current mode, scale, rotation, enabled.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: OUTPUT_CONFIGURE,
+        label: "Configure a display",
+        description: "Changes the mode, scale or rotation of a display at once and saves it in displays.json for that display.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "connector": {"type": "string"},
+                    "mode": {
+                        "type": "object",
+                        "properties": {
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                            "refresh": {"type": "number"}
+                        },
+                        "required": ["width", "height"]
+                    },
+                    "scale": {"type": "number", "minimum": 1, "maximum": 4},
+                    "transform": {"type": "string", "enum": ["normal", "90", "180", "270", "flipped", "flipped-90", "flipped-180", "flipped-270"]}
+                },
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: OUTPUT_COLOR_TEMPERATURE,
+        label: "Night light temperature",
+        description: "The colour temperature of every display in kelvin (1000–6500; 6500 is neutral), through the gamma ramp. silica-daemon drives it with the night light schedule.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"kelvin": {"type": "integer", "minimum": 1000, "maximum": 6500}},
+                "required": ["kelvin"],
                 "additionalProperties": false
             })
         },

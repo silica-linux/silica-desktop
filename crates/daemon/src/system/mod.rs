@@ -9,8 +9,11 @@
 
 mod backends;
 mod details;
+pub mod display;
+pub mod focus;
 
 pub use details::{Network, Output, parse_outputs};
+pub use display::NightLight;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,6 +42,20 @@ pub struct SystemConfig {
     pub poll: Duration,
     /// Where the appearance (light or dark) is saved; `None`: only in memory.
     pub appearance_file: Option<PathBuf>,
+    /// Where the night light is saved (`nightlight.json`); `None`: only in memory.
+    pub nightlight_file: Option<PathBuf>,
+    /// The Focus modes (`focus.json`).
+    pub focus_file: Option<PathBuf>,
+    /// Settings › Energy (`power.json`): `preventSleep` holds logind's idle inhibitor.
+    pub power_file: Option<PathBuf>,
+    /// Ossido's actions socket; `None`: the one of `WAYLAND_DISPLAY`.
+    pub actions_socket: Option<PathBuf>,
+    /// Where the sun is computed from; `None` at start is filled from the time zone.
+    pub place: Option<crate::sun::Place>,
+    /// The local UTC offset in seconds; `None`: from `date +%z` at every check.
+    pub utc_offset: Option<i64>,
+    /// How often the schedules (night light) are checked.
+    pub schedule_tick: Duration,
 }
 
 /// `$XDG_CONFIG_HOME/silica/appearance.json` (usually `~/.config`).
@@ -47,6 +64,31 @@ pub fn default_appearance_file() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     Some(config.join("silica").join("appearance.json"))
+}
+
+/// The appearance modes: fixed light or dark, or `auto` (dark from sunset to sunrise).
+pub const APPEARANCE_MODES: &[&str] = &["light", "dark", "auto"];
+
+/// The saved mode: `"mode"` in `appearance.json`, otherwise from `"dark"` (files written
+/// before the mode existed).
+pub fn read_appearance_mode(file: &std::path::Path) -> String {
+    let json = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let mode = json
+        .as_ref()
+        .and_then(|j| j.get("mode"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|m| APPEARANCE_MODES.contains(m));
+    match mode {
+        Some(mode) => mode.to_owned(),
+        None if read_appearance(file) => "dark".to_owned(),
+        None => "light".to_owned(),
+    }
+}
+
+fn write_appearance(file: &std::path::Path, mode: &str, dark: bool) -> Result<(), String> {
+    display::write_json(file, &serde_json::json!({ "mode": mode, "dark": dark }))
 }
 
 /// The saved appearance: `{"dark": true}`; without the file or unreadable, light.
@@ -66,6 +108,13 @@ impl Default for SystemConfig {
             wpctl: PathBuf::from("wpctl"),
             poll: Duration::from_secs(1),
             appearance_file: default_appearance_file(),
+            nightlight_file: display::config_file("nightlight.json"),
+            power_file: display::config_file("power.json"),
+            focus_file: display::config_file("focus.json"),
+            actions_socket: None,
+            place: crate::sun::local_place(),
+            utc_offset: None,
+            schedule_tick: Duration::from_secs(30),
         }
     }
 }
@@ -105,6 +154,39 @@ pub struct PrivacyUse {
     pub in_use: bool,
 }
 
+/// A value Ossido reports (`ReportCompositor`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Reported {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+/// The keys Ossido may report, and only these: pointer kinds, outputs.
+pub const REPORTED_KEYS: &[&str] = &["input.touchpad", "input.mouse", "displays"];
+
+/// The report's JSON object: the known keys with a boolean, number or string value; the rest
+/// is ignored. `None` if it is not a JSON object.
+pub fn parse_report(json: &str) -> Option<std::collections::BTreeMap<String, Reported>> {
+    let serde_json::Value::Object(map) = serde_json::from_str(json).ok()? else {
+        return None;
+    };
+    Some(
+        map.into_iter()
+            .filter(|(key, _)| REPORTED_KEYS.contains(&key.as_str()))
+            .filter_map(|(key, value)| {
+                let value = match value {
+                    serde_json::Value::Bool(b) => Reported::Bool(b),
+                    serde_json::Value::Number(n) => Reported::Number(n.as_f64()?),
+                    serde_json::Value::String(s) if s.len() <= 65536 => Reported::Text(s),
+                    _ => return None,
+                };
+                Some((key, value))
+            })
+            .collect(),
+    )
+}
+
 /// The whole state; `None` means an absent source.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SystemState {
@@ -119,14 +201,26 @@ pub struct SystemState {
     pub brightness_requests: u64,
     pub audio: Option<Audio>,
     pub do_not_disturb: bool,
+    /// The active Focus mode (`dnd` for Do Not Disturb), if any.
+    pub focus: Option<focus::FocusMode>,
     /// Dark appearance (the whole system: Ossido, shell, apps through the Settings portal).
     pub dark: bool,
+    /// `light`, `dark` or `auto` (follows the sun).
+    pub appearance_mode: String,
     /// The apps recording now or recently, the ones in use first (the privacy pill).
     pub privacy: Vec<PrivacyUse>,
     /// The keyboard backlight, 0–1; `None` without a backlit keyboard.
     pub keyboard_brightness: Option<f64>,
     /// How many times Silica set it (`SetKeyboardBrightness`): the HUD appears only then.
     pub keyboard_requests: u64,
+    /// What Ossido reported (`input.touchpad`, `input.mouse`, …).
+    pub compositor: std::collections::BTreeMap<String, Reported>,
+    /// The night light's settings and whether it is warming the displays now.
+    pub night_light: NightLight,
+    pub night_light_active: bool,
+    /// `preventSleep` of `power.json`, and whether logind's idle inhibitor is held for it.
+    pub prevent_sleep: bool,
+    pub sleep_inhibited: bool,
 }
 
 impl SystemState {
@@ -165,7 +259,14 @@ impl SystemState {
         put("audio.muted", Value::Bool(audio.muted));
         put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
+        let mode = self.focus.clone().unwrap_or_default();
+        put("focus", Value::from(mode.id));
+        put("focus.name", Value::from(mode.name));
+        put("focus.symbol", Value::from(mode.symbol));
+        put("focus.allowedApps", Value::from(mode.allowed_apps));
+        put("focus.allowedPeople", Value::from(mode.allowed_people));
         put("appearance.dark", Value::Bool(self.dark));
+        put("appearance.mode", Value::from(self.appearance_mode.clone()));
         // "app<US>kind<US>1|0" per app: a flat list the shell splits.
         let privacy: Vec<String> = self
             .privacy
@@ -182,6 +283,22 @@ impl SystemState {
             Value::F64(self.keyboard_brightness.unwrap_or(0.0)),
         );
         put("keyboard.requests", Value::U64(self.keyboard_requests));
+        let light = &self.night_light;
+        put("nightlight.enabled", Value::Bool(light.enabled));
+        put("nightlight.temperature", Value::U32(light.temperature));
+        put("nightlight.schedule", Value::from(light.schedule.clone()));
+        put("nightlight.from", Value::from(light.from.clone()));
+        put("nightlight.to", Value::from(light.to.clone()));
+        put("nightlight.active", Value::Bool(self.night_light_active));
+        put("power.preventSleep", Value::Bool(self.prevent_sleep));
+        put("power.inhibited", Value::Bool(self.sleep_inhibited));
+        for (key, value) in &self.compositor {
+            match value {
+                Reported::Bool(b) => put(key, Value::Bool(*b)),
+                Reported::Number(n) => put(key, Value::F64(*n)),
+                Reported::Text(s) => put(key, Value::from(s.as_str())),
+            }
+        }
         dict
     }
 }
@@ -191,6 +308,10 @@ struct Shared {
     state: Arc<Mutex<SystemState>>,
     /// Wakes the loop that emits `Changed`.
     changed: Arc<Event>,
+    /// Wakes the schedules (a setting changed).
+    schedule: Arc<Event>,
+    /// logind's idle inhibitor while `preventSleep` is on: closing it releases it.
+    inhibitor: Arc<Mutex<Option<zbus::zvariant::OwnedFd>>>,
     config: SystemConfig,
 }
 
@@ -227,9 +348,15 @@ impl SystemService {
         let shared = Shared {
             state: Arc::new(Mutex::new(SystemState {
                 dark,
+                appearance_mode: config
+                    .appearance_file
+                    .as_deref()
+                    .map_or_else(|| "light".to_owned(), read_appearance_mode),
                 ..SystemState::default()
             })),
             changed: Arc::new(Event::new()),
+            schedule: Arc::new(Event::new()),
+            inhibitor: Arc::new(Mutex::new(None)),
             config,
         };
         connection
@@ -265,9 +392,27 @@ impl SystemService {
                 listener.await;
             }
         };
+        let schedules = async {
+            let mut last = None;
+            let mut first = true;
+            loop {
+                let listener = self.shared.schedule.listen();
+                display::night_light_tick(&self.shared, &mut last, first).await;
+                appearance_tick(&self.shared).await;
+                power_tick(&self.shared).await;
+                first = false;
+                future::or(
+                    async {
+                        async_io::Timer::after(self.shared.config.schedule_tick).await;
+                    },
+                    listener,
+                )
+                .await;
+            }
+        };
         future::or(
             async {
-                sources.await;
+                future::zip(sources, schedules).await;
                 future::pending::<zbus::Result<()>>().await
             },
             emit,
@@ -278,6 +423,101 @@ impl SystemService {
 
 struct System {
     shared: Shared,
+}
+
+/// `preventSleep`: holds logind's `idle` inhibitor while it is on (the idle action of logind
+/// does not suspend; a sleep the user asks for still happens), releases it when it goes off.
+async fn power_tick(shared: &Shared) {
+    let prevent = shared.config.power_file.as_deref().is_some_and(|file| {
+        std::fs::read_to_string(file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|json| {
+                json.get("preventSleep")
+                    .and_then(serde_json::Value::as_bool)
+            })
+            .unwrap_or(false)
+    });
+    let held = shared
+        .inhibitor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    if prevent && !held {
+        if let Some(bus) = &shared.config.system_bus {
+            let reply = bus
+                .call_method(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    Some("org.freedesktop.login1.Manager"),
+                    "Inhibit",
+                    &(
+                        "idle",
+                        "Silica",
+                        "Settings: prevent automatic sleep",
+                        "block",
+                    ),
+                )
+                .await;
+            match reply.and_then(|r| r.body().deserialize::<zbus::zvariant::OwnedFd>()) {
+                Ok(fd) => {
+                    *shared.inhibitor.lock().unwrap_or_else(|e| e.into_inner()) = Some(fd);
+                }
+                Err(err) => tracing::warn!("logind inhibitor: {err}"),
+            }
+        }
+    } else if !prevent && held {
+        *shared.inhibitor.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    let inhibited = shared
+        .inhibitor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    shared.update(|state| {
+        state.prevent_sleep = prevent;
+        state.sleep_inhibited = inhibited;
+    });
+}
+
+/// Whether it is night now at the configured place.
+async fn night_now(shared: &Shared) -> bool {
+    let offset = match shared.config.utc_offset {
+        Some(offset) => offset,
+        None => crate::sun::local_offset().await,
+    };
+    crate::sun::is_night(shared.config.place, crate::sun::unix_now(), offset)
+}
+
+/// The automatic appearance: the mode is read again from its file (Settings may write it),
+/// and in `auto` the dark appearance follows the sun; a change is saved for the portal.
+async fn appearance_tick(shared: &Shared) {
+    let file = shared.config.appearance_file.clone();
+    let mode = match &file {
+        Some(file) => read_appearance_mode(file),
+        None => shared.state().appearance_mode.clone(),
+    };
+    let dark = match mode.as_str() {
+        "auto" => night_now(shared).await,
+        "dark" => true,
+        _ => false,
+    };
+    let changed = {
+        let state = shared.state();
+        state.dark != dark || state.appearance_mode != mode
+    };
+    if !changed {
+        return;
+    }
+    if let Some(file) = &file
+        && let Err(err) = write_appearance(file, &mode, dark)
+    {
+        tracing::warn!("appearance: {err}");
+    }
+    shared.update(|state| {
+        state.dark = dark;
+        state.appearance_mode = mode;
+    });
 }
 
 fn failed(error: impl std::fmt::Display) -> zbus::fdo::Error {
@@ -404,19 +644,169 @@ impl System {
 
     /// Do Not Disturb: the shell does not show banners.
     fn set_do_not_disturb(&self, enabled: bool) {
-        self.shared.update(|state| state.do_not_disturb = enabled);
+        self.shared.update(|state| {
+            state.do_not_disturb = enabled;
+            state.focus = enabled.then(focus::FocusMode::do_not_disturb);
+        });
     }
 
     /// Dark or light appearance, for the whole system; it is saved (`appearance.json`).
+    /// Also fixes the mode to `light` or `dark` (it leaves `auto`).
     fn set_dark(&self, dark: bool) -> zbus::fdo::Result<()> {
+        let mode = if dark { "dark" } else { "light" };
         if let Some(file) = &self.shared.config.appearance_file {
-            if let Some(dir) = file.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| failed(e.to_string()))?;
-            }
-            std::fs::write(file, format!("{{\"dark\": {dark}}}\n"))
-                .map_err(|e| failed(e.to_string()))?;
+            write_appearance(file, mode, dark).map_err(failed)?;
         }
-        self.shared.update(|state| state.dark = dark);
+        self.shared.update(|state| {
+            state.dark = dark;
+            state.appearance_mode = mode.to_owned();
+        });
+        Ok(())
+    }
+
+    /// `light`, `dark` or `auto`: in `auto` the daemon turns the dark appearance on at sunset
+    /// and off at sunrise (the time zone's coordinates; 19:00–07:00 without them). Saved in
+    /// `appearance.json` (`mode`).
+    async fn set_appearance_mode(&self, mode: &str) -> zbus::fdo::Result<()> {
+        if !APPEARANCE_MODES.contains(&mode) {
+            return Err(zbus::fdo::Error::InvalidArgs(format!(
+                "appearance mode: light, dark or auto, not {mode:?}"
+            )));
+        }
+        let dark = match mode {
+            "dark" => true,
+            "light" => false,
+            _ => night_now(&self.shared).await,
+        };
+        if let Some(file) = &self.shared.config.appearance_file {
+            write_appearance(file, mode, dark).map_err(failed)?;
+        }
+        self.shared.update(|state| {
+            state.dark = dark;
+            state.appearance_mode = mode.to_owned();
+        });
+        Ok(())
+    }
+
+    /// The displays, from Ossido (`output.list`): a JSON array.
+    async fn outputs(&self) -> zbus::fdo::Result<String> {
+        display::ossido(
+            &self.shared,
+            silica_control::commands::OUTPUT_LIST,
+            serde_json::json!({}),
+        )
+        .await
+        .map(|list| list.to_string())
+        .map_err(failed)
+    }
+
+    /// Changes a display (`output.configure`: `{connector?, mode?, scale?, transform?}` as JSON)
+    /// and returns it as JSON. Ossido saves the choice for that display.
+    async fn configure_output(&self, json: &str) -> zbus::fdo::Result<String> {
+        let params: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
+        if !params.is_object() {
+            return Err(zbus::fdo::Error::InvalidArgs("not a JSON object".into()));
+        }
+        display::ossido(
+            &self.shared,
+            silica_control::commands::OUTPUT_CONFIGURE,
+            params,
+        )
+        .await
+        .map(|output| output.to_string())
+        .map_err(failed)
+    }
+
+    /// The night light: any of `enabled` (b), `temperature` (u, 1900–6500 K), `schedule`
+    /// (`off`, `sunset`, `custom`), `from` and `to` (`HH:MM`). Saved in `nightlight.json`.
+    fn set_night_light(&self, settings: HashMap<String, OwnedValue>) -> zbus::fdo::Result<()> {
+        let mut json = serde_json::Map::new();
+        for (key, value) in &settings {
+            let value = match &**value {
+                Value::Bool(b) => serde_json::Value::from(*b),
+                Value::U32(n) => serde_json::Value::from(*n),
+                Value::I32(n) => serde_json::Value::from(*n),
+                Value::U64(n) => serde_json::Value::from(*n),
+                Value::I64(n) => serde_json::Value::from(*n),
+                Value::F64(n) => serde_json::Value::from(n.round() as i64),
+                Value::Str(s) => serde_json::Value::from(s.as_str()),
+                _ => serde_json::Value::Null,
+            };
+            json.insert(key.clone(), value);
+        }
+        let mut light = match &self.shared.config.nightlight_file {
+            Some(file) => display::read_night_light(file),
+            None => self.shared.state().night_light.clone(),
+        };
+        if !light.merge(&serde_json::Value::Object(json)) {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "night light: enabled, temperature 1900–6500, schedule off|sunset|custom, from/to HH:MM"
+                    .into(),
+            ));
+        }
+        if let Some(file) = &self.shared.config.nightlight_file {
+            display::write_json(file, &light.to_json()).map_err(failed)?;
+        }
+        self.shared.update(|state| state.night_light = light);
+        self.shared.schedule.notify(usize::MAX);
+        Ok(())
+    }
+
+    /// Turns a Focus mode on (`id` of `focus.json`, or `dnd`), or off with an empty id. Any
+    /// mode silences banners like Do Not Disturb (`dnd` follows it); the shell lets through the
+    /// mode's allowed apps. Saved as `active` in `focus.json`.
+    fn set_focus(&self, id: &str) -> zbus::fdo::Result<()> {
+        let modes = self
+            .shared
+            .config
+            .focus_file
+            .as_deref()
+            .map(focus::read_modes)
+            .unwrap_or_default();
+        let mode =
+            if id.is_empty() {
+                None
+            } else {
+                Some(focus::find(&modes, id).ok_or_else(|| {
+                    zbus::fdo::Error::InvalidArgs(format!("no Focus mode {id:?}"))
+                })?)
+            };
+        if let Some(file) = &self.shared.config.focus_file {
+            focus::save_active(file, id).map_err(failed)?;
+        }
+        self.shared.update(|state| {
+            state.do_not_disturb = mode.is_some();
+            state.focus = mode;
+        });
+        Ok(())
+    }
+
+    /// Sleeps now (logind's `Suspend`): Ossido asks when the idle time of `power.json` is up.
+    async fn suspend(&self) -> zbus::fdo::Result<()> {
+        let bus = self
+            .shared
+            .config
+            .system_bus
+            .as_ref()
+            .ok_or_else(|| failed("no system bus"))?;
+        bus.call_method(
+            Some("org.freedesktop.login1"),
+            "/org/freedesktop/login1",
+            Some("org.freedesktop.login1.Manager"),
+            "Suspend",
+            &(false,),
+        )
+        .await
+        .map(|_| ())
+        .map_err(failed)
+    }
+
+    /// Ossido's report (a JSON object of the keys in `REPORTED_KEYS`): they join the state.
+    fn report_compositor(&self, json: &str) -> zbus::fdo::Result<()> {
+        let report = parse_report(json)
+            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("not a JSON object".into()))?;
+        self.shared.update(|state| state.compositor = report);
         Ok(())
     }
 

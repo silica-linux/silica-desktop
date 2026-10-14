@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 async-io = "2"
 async-process = "2"
+blocking = "1"
 event-listener = "5"
 futures-lite = "2"
 serde = { version = "1", features = ["derive"] }

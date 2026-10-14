@@ -930,4 +930,29 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get faroActionSessionQuit => 'Esci dalla sessione';
+
+  @override
+  String get authTitle =>
+      'Una modifica al sistema richiede il permesso di un amministratore.';
+
+  @override
+  String authTitleApp(String app) {
+    return '$app richiede il permesso di un amministratore.';
+  }
+
+  @override
+  String get authPrompt => 'Inserisci la password per consentirlo.';
+
+  @override
+  String get authUnavailable =>
+      'Non è stato possibile verificare la password: riprova.';
+
+  @override
+  String get authUserName => 'Nome utente';
+
+  @override
+  String get authPassword => 'Password';
+
+  @override
+  String get authAllow => 'Consenti';
 }

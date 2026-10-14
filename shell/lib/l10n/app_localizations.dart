@@ -1795,6 +1795,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Quit the session'**
   String get faroActionSessionQuit;
+
+  /// Authentication dialog title when the app is unknown
+  ///
+  /// In en, this message translates to:
+  /// **'A system change needs an administrator’s permission.'**
+  String get authTitle;
+
+  /// Authentication dialog title with the app that asked
+  ///
+  /// In en, this message translates to:
+  /// **'{app} needs an administrator’s permission.'**
+  String authTitleApp(String app);
+
+  /// Authentication dialog: what to do
+  ///
+  /// In en, this message translates to:
+  /// **'Type the password to allow it.'**
+  String get authPrompt;
+
+  /// Authentication dialog: the check failed for another reason
+  ///
+  /// In en, this message translates to:
+  /// **'The password could not be checked: try again.'**
+  String get authUnavailable;
+
+  /// Authentication dialog: user field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'User name'**
+  String get authUserName;
+
+  /// Authentication dialog: password field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get authPassword;
+
+  /// Authentication dialog: confirm button
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get authAllow;
 }
 
 class _AppLocalizationsDelegate

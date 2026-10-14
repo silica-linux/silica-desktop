@@ -96,7 +96,8 @@ fn without_the_option_clients_keep_the_host_bus() {
         )
         .unwrap();
     let seen = wait_for_file(&file);
-    let host = std::env::var("DBUS_SESSION_BUS_ADDRESS").unwrap_or_default();
+    // The bus Ossido was started with (the test harness gives it one that does not exist).
+    let host = format!("unix:path={}", ossido.dir.join("no-bus").display());
     assert_eq!(seen, format!("x{host}"));
 }
 

@@ -113,6 +113,20 @@ pub struct State {
     pub shortcuts: Vec<(Shortcut, &'static str)>,
     /// Keycodes for the synthetic keys (`input.key`, `input.type`).
     pub keys: crate::keys::KeyLookup,
+    /// The user's settings folder (`config.rs`), watched; `None` without a home.
+    pub config_dir: Option<std::path::PathBuf>,
+    /// The keyboard settings applied (`keyboard.json`).
+    pub keyboard_config: crate::config::KeyboardConfig,
+    /// The night light's colour temperature in kelvin (6500: off), `output.color_temperature`.
+    pub color_temperature: u32,
+    /// Energy (`power.json`, `idle.rs`): the last input, whether the display is off, whether
+    /// this idle period already asked for sleep.
+    pub power_config: crate::config::PowerConfig,
+    pub last_activity: Instant,
+    pub display_off: bool,
+    pub idle_slept: bool,
+    /// The mouse and touchpad settings applied (`input.json`).
+    pub input_config: crate::config::InputConfig,
     /// Frame pace, startup and memory of the clients (`perf.*`).
     pub perf: crate::perf::Perf,
     /// Desktop color until there is a wallpaper (`--background`).
@@ -342,6 +356,14 @@ impl State {
             next_window_id: 0,
             shortcuts: crate::commands::shortcuts(),
             keys: crate::keys::KeyLookup::new()?,
+            config_dir: None,
+            keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
+            input_config: crate::config::InputConfig::default(),
+            power_config: crate::config::PowerConfig::default(),
+            last_activity: Instant::now(),
+            display_off: false,
+            idle_slept: false,
+            color_temperature: crate::displays::NEUTRAL_KELVIN,
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
@@ -490,7 +512,7 @@ pub struct ButtonsHover {
 const KEY_REPEAT_DELAY_MS: i32 = 375;
 const KEY_REPEAT_RATE: i32 = 11;
 
-fn key_repeat() -> (i32, i32) {
+pub fn key_repeat() -> (i32, i32) {
     parse_key_repeat(std::env::var("OSSIDO_KEY_REPEAT").ok().as_deref())
 }
 
