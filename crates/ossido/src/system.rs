@@ -40,6 +40,10 @@ pub enum Call {
     KeyboardBrightness(f64),
     DoNotDisturb(bool),
     Dark(bool),
+    /// What Ossido knows that apps need (pointer kinds, outputs): the whole report as JSON.
+    Report(String),
+    /// Sleep (logind, through the daemon).
+    Suspend,
 }
 
 impl Call {
@@ -53,6 +57,10 @@ impl Call {
             Call::KeyboardBrightness(v) => set(connection, "SetKeyboardBrightness", v),
             Call::DoNotDisturb(on) => set(connection, "SetDoNotDisturb", on),
             Call::Dark(on) => set(connection, "SetDark", on),
+            Call::Report(ref json) => set(connection, "ReportCompositor", json.as_str()),
+            Call::Suspend => connection
+                .call_method(Some(DESTINATION), PATH, Some(INTERFACE), "Suspend", &())
+                .map(|_| ()),
         }
     }
 }
@@ -70,6 +78,8 @@ where
 pub struct SystemLink {
     calls: Sender<Call>,
     cache: Arc<Mutex<Option<Json>>>,
+    /// The compositor report (`report`), sent again whenever the daemon (re)appears.
+    report: Arc<Mutex<Map<String, Json>>>,
 }
 
 impl SystemLink {
@@ -78,11 +88,13 @@ impl SystemLink {
     pub fn start(address: Option<String>) -> Self {
         let cache = Arc::new(Mutex::new(None));
         let (calls, receiver) = mpsc::channel();
+        let report = Arc::new(Mutex::new(Map::new()));
         let listener_cache = cache.clone();
+        let listener_report = report.clone();
         let listener_address = address.clone();
         let spawned = std::thread::Builder::new()
             .name("ossido-system".to_owned())
-            .spawn(move || listen(listener_address, &listener_cache))
+            .spawn(move || listen(listener_address, &listener_cache, &listener_report))
             .and_then(|_| {
                 std::thread::Builder::new()
                     .name("ossido-system-calls".to_owned())
@@ -91,7 +103,11 @@ impl SystemLink {
         if let Err(err) = spawned {
             warn!("system.* thread: {err}");
         }
-        Self { calls, cache }
+        Self {
+            calls,
+            cache,
+            report,
+        }
     }
 
     /// Before the loop starts: no thread, every command fails.
@@ -100,7 +116,30 @@ impl SystemLink {
         Self {
             calls,
             cache: Arc::new(Mutex::new(None)),
+            report: Arc::new(Mutex::new(Map::new())),
         }
+    }
+
+    /// The compositor report as it stands.
+    pub fn reported(&self) -> Map<String, Json> {
+        self.report
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Sets one key of the compositor report (`ReportCompositor` in silica-daemon); sent only
+    /// when it changes.
+    pub fn report(&self, key: &str, value: Json) -> bool {
+        let json = {
+            let mut report = self.report.lock().unwrap_or_else(|e| e.into_inner());
+            if report.get(key) == Some(&value) {
+                return true;
+            }
+            report.insert(key.to_owned(), value);
+            Json::Object(report.clone()).to_string()
+        };
+        self.queue(Call::Report(json))
     }
 
     /// The last known state, if the daemon answered at least once.
@@ -190,7 +229,7 @@ fn connect(address: Option<&str>) -> zbus::Result<Connection> {
 
 /// The cached state: `State` at the start, then every `Changed`. If the daemon or the bus
 /// disappear it retries.
-fn listen(address: Option<String>, cache: &Mutex<Option<Json>>) {
+fn listen(address: Option<String>, cache: &Mutex<Option<Json>>, report: &Mutex<Map<String, Json>>) {
     let store = |state: Option<Json>| {
         *cache.lock().unwrap_or_else(|e| e.into_inner()) = state;
     };
@@ -207,6 +246,12 @@ fn listen(address: Option<String>, cache: &Mutex<Option<Json>>) {
             let reply =
                 connection.call_method(Some(DESTINATION), PATH, Some(INTERFACE), "State", &())?;
             store(Some(to_json(&reply.body().deserialize()?)));
+            // The daemon is there: it gets the whole report (it may have started after it was
+            // first sent, or restarted).
+            let current = report.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if !current.is_empty() {
+                Call::Report(Json::Object(current).to_string()).send(&connection)?;
+            }
             for message in signals {
                 let message = message?;
                 let state: HashMap<String, OwnedValue> = message.body().deserialize()?;

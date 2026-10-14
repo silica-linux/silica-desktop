@@ -86,14 +86,95 @@ pub fn default_settings_file() -> Option<PathBuf> {
     Some(config.join("silica").join("sound.json"))
 }
 
-/// The saved setting: `{"ui_sounds": false}` turns the sounds off; anything else (no file,
-/// unreadable, another value) leaves them on.
-pub fn read_ui_sounds(file: &Path) -> bool {
+/// The alert played when `sound.json` names none (or one that is not an alert).
+pub const DEFAULT_ALERT: &str = "alert-crystal";
+/// The volume keys' feedback sound.
+pub const VOLUME_FEEDBACK: &str = "volume-feedback";
+
+/// `sound.json`: Settings › Sound.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SoundSettings {
+    /// "Play user interface sound effects" (`uiSounds`; `ui_sounds` in older files).
+    pub ui_sounds: bool,
+    /// The alert sound's name (`alert`, an `alert-*` sound).
+    pub alert: String,
+    /// The alert volume, 0–1, relative to the output volume (`alertVolume`).
+    pub alert_volume: f64,
+    /// "Play feedback when volume is changed" (`volumeFeedback`).
+    pub volume_feedback: bool,
+}
+
+impl Default for SoundSettings {
+    fn default() -> Self {
+        Self {
+            ui_sounds: true,
+            alert: DEFAULT_ALERT.to_owned(),
+            alert_volume: 1.0,
+            volume_feedback: false,
+        }
+    }
+}
+
+impl SoundSettings {
+    pub fn from_json(json: &Value) -> Self {
+        let defaults = SoundSettings::default();
+        let flag = |keys: &[&str], default: bool| {
+            keys.iter()
+                .find_map(|key| json.get(*key).and_then(Value::as_bool))
+                .unwrap_or(default)
+        };
+        Self {
+            ui_sounds: flag(&["uiSounds", "ui_sounds"], defaults.ui_sounds),
+            alert: json
+                .get("alert")
+                .and_then(Value::as_str)
+                .filter(|name| is_alert(name))
+                .map_or(defaults.alert, str::to_owned),
+            alert_volume: json
+                .get("alertVolume")
+                .and_then(Value::as_f64)
+                .filter(|v| v.is_finite())
+                .map_or(defaults.alert_volume, |v| v.clamp(0.0, 1.0)),
+            volume_feedback: flag(&["volumeFeedback"], defaults.volume_feedback),
+        }
+    }
+}
+
+/// The settings in `file`; the defaults without it or when it is unreadable.
+pub fn read_settings(file: &Path) -> SoundSettings {
     std::fs::read_to_string(file)
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|json| json.get("ui_sounds").and_then(Value::as_bool))
-        .unwrap_or(true)
+        .map(|json| SoundSettings::from_json(&json))
+        .unwrap_or_default()
+}
+
+/// The saved setting: `{"uiSounds": false}` (or the older `ui_sounds`) turns the sounds off;
+/// anything else (no file, unreadable, another value) leaves them on.
+pub fn read_ui_sounds(file: &Path) -> bool {
+    read_settings(file).ui_sounds
+}
+
+/// An alert sound's name: `alert-…`.
+pub fn is_alert(name: &str) -> bool {
+    name.starts_with("alert-") && valid_name(name)
+}
+
+/// The alert sounds found in the sound directories, sorted.
+pub fn alert_sounds(dirs: &[PathBuf]) -> Vec<String> {
+    let mut names: Vec<String> = dirs
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name().into_string().ok()?;
+            let (stem, ext) = name.rsplit_once('.')?;
+            (EXTENSIONS.contains(&ext) && is_alert(stem)).then(|| stem.to_owned())
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// A sound name: 1–64 characters among `a-z`, `0-9` and `-`, not starting with `-`. Nothing
@@ -147,9 +228,20 @@ impl Sound {
         }
     }
 
+    /// All of `sound.json`, read again each time.
+    fn settings(&self) -> SoundSettings {
+        match &self.config.settings_file {
+            Some(file) if file.exists() => read_settings(file),
+            _ => SoundSettings {
+                ui_sounds: self.enabled.load(Ordering::Relaxed),
+                ..SoundSettings::default()
+            },
+        }
+    }
+
     /// Starts the player on `file` and lets it finish on its own; false if it could not start
     /// or too many are already playing.
-    fn play(&self, file: &Path) -> bool {
+    fn play(&self, file: &Path, volume: Option<f64>) -> bool {
         let playing = Arc::clone(&self.playing);
         if playing
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
@@ -159,7 +251,11 @@ impl Sound {
         {
             return false;
         }
-        let child = Command::new(&self.config.player)
+        let mut command = Command::new(&self.config.player);
+        if let Some(volume) = volume {
+            command.arg(format!("--volume={volume:.3}"));
+        }
+        let child = command
             .arg(file)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -206,8 +302,49 @@ impl Sound {
         let Some(file) = find_sound(&self.config.dirs, name) else {
             return Err(fdo::Error::FileNotFound(format!("no sound {name}")));
         };
-        self.play(&file);
+        self.play(&file, None);
         Ok(())
+    }
+
+    /// Plays an alert at the alert volume: `name` (an `alert-*` sound, for Settings' preview)
+    /// or, empty, the chosen one. Alerts play even with the interface sounds off; at volume 0
+    /// nothing plays.
+    fn play_alert(&self, name: &str) -> fdo::Result<()> {
+        let settings = self.settings();
+        let name = if name.is_empty() {
+            settings.alert.as_str()
+        } else {
+            name
+        };
+        if !is_alert(name) {
+            return Err(fdo::Error::InvalidArgs(format!(
+                "not an alert sound: {name:?}"
+            )));
+        }
+        if settings.alert_volume <= 0.0 {
+            return Ok(());
+        }
+        let file = find_sound(&self.config.dirs, name)
+            .or_else(|| find_sound(&self.config.dirs, DEFAULT_ALERT))
+            .ok_or_else(|| fdo::Error::FileNotFound(format!("no sound {name}")))?;
+        self.play(&file, Some(settings.alert_volume));
+        Ok(())
+    }
+
+    /// The alert sounds to choose from (Settings › Sound › Alert sound).
+    fn alert_sounds(&self) -> Vec<String> {
+        alert_sounds(&self.config.dirs)
+    }
+
+    /// The volume keys' feedback, if "Play feedback when volume is changed" is on.
+    fn play_volume_feedback(&self) -> bool {
+        if !self.settings().volume_feedback {
+            return false;
+        }
+        match find_sound(&self.config.dirs, VOLUME_FEEDBACK) {
+            Some(file) => self.play(&file, None),
+            None => false,
+        }
     }
 
     /// "Play user interface sound effects".
@@ -223,7 +360,17 @@ impl Sound {
     ) -> fdo::Result<()> {
         self.enabled.store(enabled, Ordering::Relaxed);
         if let Some(file) = &self.config.settings_file {
-            let text = json!({ "ui_sounds": enabled }).to_string();
+            // The other keys of the file (the alert, its volume) stay.
+            let mut json = std::fs::read_to_string(file)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                .filter(Value::is_object)
+                .unwrap_or_else(|| json!({}));
+            if let Some(map) = json.as_object_mut() {
+                map.remove("ui_sounds");
+                map.insert("uiSounds".to_owned(), Value::Bool(enabled));
+            }
+            let text = json.to_string();
             let written = file
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)
@@ -284,6 +431,24 @@ mod tests {
         let system = sound_dirs(None, Some(PathBuf::from("/d")), None, None);
         assert_eq!(system[0], PathBuf::from("/d/silica/sounds"));
         assert_eq!(system[2], PathBuf::from("/usr/share/silica/sounds"));
+    }
+
+    #[test]
+    fn sound_json_keys() {
+        let settings = SoundSettings::from_json(&json!({
+            "uiSounds": false, "alert": "alert-drop", "alertVolume": 1.7, "volumeFeedback": true
+        }));
+        assert!(!settings.ui_sounds);
+        assert_eq!(settings.alert, "alert-drop");
+        assert_eq!(settings.alert_volume, 1.0);
+        assert!(settings.volume_feedback);
+        // Older files and bad values.
+        let old = SoundSettings::from_json(&json!({"ui_sounds": false, "alert": "trash-move"}));
+        assert!(!old.ui_sounds);
+        assert_eq!(old.alert, DEFAULT_ALERT);
+        assert!(is_alert("alert-crystal"));
+        assert!(!is_alert("alert-../x"));
+        assert!(!is_alert("trash-move"));
     }
 
     #[test]

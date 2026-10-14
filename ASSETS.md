@@ -37,6 +37,11 @@ generated in code are preferred.
 | `data/sounds/trash-drag.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
 | `data/sounds/trash-empty.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
 | `data/sounds/trash-move.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
+| `data/sounds/alert-crystal.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
+| `data/sounds/alert-drop.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
+| `data/sounds/alert-pebble.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
+| `data/sounds/alert-woodblock.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
+| `data/sounds/volume-feedback.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
 | `tools/sounds/candidates/file-transfer-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/file-transfer-B.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/file-transfer-B1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
@@ -72,3 +77,8 @@ generated in code are preferred.
 | `tools/sounds/candidates/trash-move-B3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-B4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-C.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/alert-crystal-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/alert-drop-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/alert-pebble-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/alert-woodblock-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/volume-feedback-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |

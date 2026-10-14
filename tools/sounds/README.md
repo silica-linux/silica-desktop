@@ -68,6 +68,14 @@ inspection only and are not committed.
 | `trash-empty` | the Trash emptied | **A** crisp crumple: crackling bursts with a band falling 4.3 → 2.6 kHz as the ball compacts, ~0.65 s. **B** tight and quick, ending with the ball dropping softly into the bin, ~0.6 s. **C** soft, tissue-like: longer grains, darker band, few crackles, ~0.75 s. |
 | `file-transfer` | a copy or move finished | **A** a two-note glass chime, D6 then G6 (a fourth up), from glass bowl modes with a soft mallet, ~0.7 s. **B** an airy rising swish ending on a faint glass tink, ~0.4 s. **C** a two-note soft woody pop from tuned-bar modes, G5 then D6, ~0.3 s. |
 | `screen-capture` | a screenshot taken | **A** a shutter double click 60 ms apart: band-passed noise transients through a tiny steel blade (plate modes) and a damped housing, with the blades' friction between them. **B** a leaf shutter: tighter (35 ms) and brighter. **C** a reflex-camera style: a heavier first click with a bounce and a spring ring, the return 90 ms later. |
+| `alert-crystal` | the default alert sound | **A** two small glass bowls struck together, a fifth apart (E6, B6), ~0.7 s. |
+| `alert-woodblock` | an alert sound | **A** two quick knocks on a tuned wooden bar (A5), the second softer, ~0.25 s. |
+| `alert-drop` | an alert sound | **A** a bubble-like resonance whose pitch rises quickly (900 → 1700 Hz), with a faint tick, ~0.23 s. |
+| `alert-pebble` | an alert sound | **A** a pebble on a small steel dish: ring modes with a short, bright decay, ~0.3 s. |
+| `volume-feedback` | the volume keys, when the feedback is on | **A** one soft, short tap on a tuned bar (E6); quiet on purpose. |
+
+The `alert-*` sounds are the choices of Settings › Sound › Alert sound (silica-daemon's
+`Sound1.PlayAlert`, `docs/daemon.md`); each has one candidate for now.
 
 ## Refinements of B (B1–B4)
 
@@ -96,10 +104,5 @@ B was preferred for every sound. B1–B4 stay close to its character and try imp
   them about 3 dB nearer the others (about −26.5 LUFS against −29.4 for B). Gaps and
   bodies: **B1** 35 ms, mid body; **B2** 45 ms, warmer; **B3** 30 ms, small and bright;
   **B4** 55 ms, audible blade travel and spring.
-
-## Alerts
-
-The system has no alert sounds yet (silica-daemon plays only the names above); alert tones
-will be designed the same way when an alert list exists.
 
 The timing and level of each sound are set by ear, not measured from a reference.

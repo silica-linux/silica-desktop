@@ -14,9 +14,10 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::commands::{
-    CONTROLCENTER_TOGGLE, FARO_TOGGLE, LAUNCHER_TOGGLE, NOTIFICATIONS_TOGGLE, PANORAMA_TOGGLE,
-    SCREENSHOT_SCREEN, SCREENSHOT_SCREEN_CLIPBOARD, SCREENSHOT_SELECTION,
-    SCREENSHOT_SELECTION_CLIPBOARD, SCREENSHOT_TOOLBAR,
+    CONTROLCENTER_TOGGLE, FARO_TOGGLE, LAUNCHER_TOGGLE, NOTIFICATIONS_TOGGLE,
+    OUTPUT_COLOR_TEMPERATURE, OUTPUT_CONFIGURE, OUTPUT_LIST, PANORAMA_TOGGLE, SCREENSHOT_SCREEN,
+    SCREENSHOT_SCREEN_CLIPBOARD, SCREENSHOT_SELECTION, SCREENSHOT_SELECTION_CLIPBOARD,
+    SCREENSHOT_TOOLBAR,
 };
 use crate::{Error, Request, Response};
 
@@ -33,6 +34,10 @@ pub const ACTIONS: &[&str] = &[
     PANORAMA_TOGGLE,
     NOTIFICATIONS_TOGGLE,
     CONTROLCENTER_TOGGLE,
+    // For silica-daemon's System1, which gives apps (Settings) the displays and the night light.
+    OUTPUT_LIST,
+    OUTPUT_CONFIGURE,
+    OUTPUT_COLOR_TEMPERATURE,
 ];
 
 /// Whether the actions socket runs `command`.
@@ -54,17 +59,27 @@ pub fn socket_path(display: &str) -> Option<PathBuf> {
 
 /// Runs `command` through the actions socket of the compositor in `WAYLAND_DISPLAY`.
 pub fn run(command: &str) -> Result<Value, Error> {
+    run_with(command, Value::Object(Default::default()))
+}
+
+/// Like `run`, with parameters.
+pub fn run_with(command: &str, params: Value) -> Result<Value, Error> {
     let display = std::env::var("WAYLAND_DISPLAY")
         .map_err(|_| Error::Protocol("WAYLAND_DISPLAY is not set".into()))?;
     let path = socket_path(&display)
         .ok_or_else(|| Error::Protocol("XDG_RUNTIME_DIR is not set".into()))?;
-    let stream = UnixStream::connect(&path)?;
+    run_at(&path, command, params)
+}
+
+/// Runs `command` with `params` through the actions socket at `path`.
+pub fn run_at(path: &std::path::Path, command: &str, params: Value) -> Result<Value, Error> {
+    let stream = UnixStream::connect(path)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut writer = stream.try_clone()?;
     let request = Request {
         id: 1,
         command: command.to_owned(),
-        params: Value::Object(Default::default()),
+        params,
     };
     let mut line = serde_json::to_vec(&request)?;
     line.push(b'\n');

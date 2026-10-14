@@ -47,6 +47,8 @@ pub struct DrmBackend {
     /// The `dev_t` of the GPU, to recognise its udev events.
     device_id: u64,
     libinput: Libinput,
+    /// The pointer devices, to apply `input.json` again when it changes.
+    devices: Vec<smithay::reexports::input::Device>,
     surface: Option<OutputSurface>,
     /// A frame is queued for scanout and waits for its vblank.
     pending: bool,
@@ -249,6 +251,7 @@ pub fn init_drm(
         gbm,
         device_id,
         libinput: libinput.clone(),
+        devices: Vec::new(),
         surface,
         pending: false,
         cursor: None,
@@ -287,8 +290,15 @@ pub fn init_drm(
         }
     })?;
     handle.insert_source(LibinputInputBackend::new(libinput), |event, _, data| {
-        if let InputEvent::DeviceAdded { device } = &event {
-            info!("input device: {}", device.name());
+        match &event {
+            InputEvent::DeviceAdded { device } => {
+                info!("input device: {}", device.name());
+                data.state.input_device_added(device.clone());
+            }
+            InputEvent::DeviceRemoved { device } => {
+                data.state.input_device_removed(device);
+            }
+            _ => {}
         }
         data.state.process_input_event(event);
     })?;
@@ -300,7 +310,133 @@ pub fn init_drm(
     Ok(Ossido { state, display })
 }
 
+/// The make, model and serial from the connector's EDID.
+fn edid(
+    device: &impl ControlDevice,
+    handle: connector::Handle,
+) -> Option<(String, String, String)> {
+    let properties = device.get_properties(handle).ok()?;
+    for (property, value) in &properties {
+        let Ok(info) = device.get_property(*property) else {
+            continue;
+        };
+        if info.name().to_bytes() == b"EDID" {
+            let blob = device.get_property_blob(*value).ok()?;
+            return crate::displays::edid_identity(&blob);
+        }
+    }
+    None
+}
+
+/// Whether a libinput device is a touchpad (it can tap) or another pointer (a mouse).
+fn is_touchpad(device: &smithay::reexports::input::Device) -> bool {
+    device.config_tap_finger_count() > 0
+}
+
+fn is_pointer(device: &smithay::reexports::input::Device) -> bool {
+    device.has_capability(smithay::reexports::input::DeviceCapability::Pointer)
+}
+
+/// Applies `input.json` to one device; a setting left out goes back to libinput's default.
+fn configure_device(
+    device: &mut smithay::reexports::input::Device,
+    config: &crate::config::InputConfig,
+) {
+    use smithay::reexports::input::ClickMethod as Click;
+    let touchpad = is_touchpad(device);
+    let settings = if touchpad {
+        &config.touchpad
+    } else {
+        &config.mouse
+    };
+    if device.config_accel_is_available() {
+        let speed = settings
+            .speed
+            .unwrap_or_else(|| device.config_accel_default_speed());
+        let _ = device.config_accel_set_speed(speed);
+    }
+    if device.config_scroll_has_natural_scroll() {
+        let natural = settings
+            .natural_scroll
+            .unwrap_or_else(|| device.config_scroll_default_natural_scroll_enabled());
+        let _ = device.config_scroll_set_natural_scroll_enabled(natural);
+    }
+    if device.config_left_handed_is_available() {
+        let left = settings
+            .left_handed
+            .unwrap_or_else(|| device.config_left_handed_default());
+        let _ = device.config_left_handed_set(left);
+    }
+    if touchpad {
+        let tap = settings
+            .tap_to_click
+            .unwrap_or_else(|| device.config_tap_default_enabled());
+        let _ = device.config_tap_set_enabled(tap);
+        let method = match settings.click_method {
+            Some(crate::config::ClickMethod::TwoFinger) => Some(Click::Clickfinger),
+            Some(_) => Some(Click::ButtonAreas),
+            None => device.config_click_default_method(),
+        };
+        if let Some(method) = method
+            && device.config_click_methods().contains(&method)
+        {
+            let _ = device.config_click_set_method(method);
+        }
+        if device.config_dwt_is_available() {
+            let dwt = settings
+                .disable_while_typing
+                .unwrap_or_else(|| device.config_dwt_default_enabled());
+            let _ = device.config_dwt_set_enabled(dwt);
+        }
+    }
+}
+
 impl State {
+    /// A device appeared (at start or plugged in): `input.json` applies to it at once.
+    fn input_device_added(&mut self, mut device: smithay::reexports::input::Device) {
+        if !is_pointer(&device) {
+            return;
+        }
+        configure_device(&mut device, &self.input_config);
+        if let Some(backend) = self.drm_backend() {
+            backend.devices.push(device);
+        }
+        self.report_input_devices();
+    }
+
+    fn input_device_removed(&mut self, device: &smithay::reexports::input::Device) {
+        if let Some(backend) = self.drm_backend() {
+            backend.devices.retain(|d| d != device);
+        }
+        self.report_input_devices();
+    }
+
+    /// `input.json` changed: every pointer device again.
+    pub fn configure_input_devices(&mut self) {
+        let config = self.input_config.clone();
+        if let Some(backend) = self.drm_backend() {
+            for device in &mut backend.devices {
+                configure_device(device, &config);
+            }
+        }
+    }
+
+    /// Tells silica-daemon which kinds of pointer are connected (Settings shows its Trackpad
+    /// pane only with a touchpad).
+    fn report_input_devices(&mut self) {
+        let (touchpad, mouse) = match self.drm_backend() {
+            Some(backend) => (
+                backend.devices.iter().any(is_touchpad),
+                backend.devices.iter().any(|d| !is_touchpad(d)),
+            ),
+            None => (false, false),
+        };
+        self.system
+            .report("input.touchpad", serde_json::Value::Bool(touchpad));
+        self.system
+            .report("input.mouse", serde_json::Value::Bool(mouse));
+    }
+
     fn drm_backend(&mut self) -> Option<&mut DrmBackend> {
         match &mut self.backend {
             Backend::Drm(backend) => Some(backend),
@@ -371,11 +507,9 @@ impl State {
             return;
         };
         let choice = choose(&backend.drm);
-        let current = backend
-            .surface
-            .as_ref()
-            .map(|s| (s.connector, s.crtc, s.mode));
-        if choice.as_ref().map(|c| (c.connector, c.crtc, c.mode)) == current {
+        let current = backend.surface.as_ref().map(|s| (s.connector, s.crtc));
+        // The same display: it keeps the mode chosen in Settings.
+        if choice.as_ref().map(|c| (c.connector, c.crtc)) == current {
             return;
         }
         backend.surface = None;
@@ -405,6 +539,156 @@ impl State {
             Ok(surface) => backend.surface = Some(surface),
             Err(err) => warn!("{err}"),
         }
+        // A display plugged in: its saved mode, scale and rotation, and the night light.
+        self.apply_displays_config();
+        let _ = self.drm_apply_gamma();
+    }
+
+    /// Every connected connector, the driven one enabled.
+    pub fn drm_outputs(&mut self) -> Option<Vec<crate::displays::OutputInfo>> {
+        let scale = self.output.current_scale().fractional_scale();
+        let transform = self.output.current_transform();
+        let backend = self.drm_backend()?;
+        let device = backend.drm.device_fd();
+        let resources = device.resource_handles().ok()?;
+        let driven = backend.surface.as_ref().map(|s| (s.connector, s.mode));
+        let mut list = Vec::new();
+        for &handle in resources.connectors() {
+            let Ok(info) = device.get_connector(handle, false) else {
+                continue;
+            };
+            if info.state() != connector::State::Connected {
+                continue;
+            }
+            let preferred = preferred_mode(info.modes());
+            let modes: Vec<crate::displays::ModeInfo> = info
+                .modes()
+                .iter()
+                .map(|m| crate::displays::mode_info(Mode::from(*m), Some(*m) == preferred))
+                .collect();
+            let (make, model, serial) = edid(device, handle).unwrap_or_default();
+            let enabled = driven.is_some_and(|(c, _)| c == handle);
+            let current = driven
+                .filter(|(c, _)| *c == handle)
+                .map(|(_, m)| crate::displays::mode_info(Mode::from(m), Some(m) == preferred));
+            let (w, h) = info.size().unwrap_or((0, 0));
+            list.push(crate::displays::OutputInfo {
+                connector: format!("{}-{}", info.interface().as_str(), info.interface_id()),
+                make,
+                model,
+                serial,
+                modes,
+                current,
+                scale: if enabled { scale } else { 1.0 },
+                transform: if enabled {
+                    transform
+                } else {
+                    Transform::Normal
+                },
+                enabled,
+                primary: enabled,
+                size_mm: (
+                    i32::try_from(w).unwrap_or_default(),
+                    i32::try_from(h).unwrap_or_default(),
+                ),
+            });
+        }
+        Some(list)
+    }
+
+    /// The display in use switches to its mode number `index` (in the connector's list).
+    pub fn drm_set_mode(&mut self, index: usize) -> Result<(), String> {
+        let output = self.output.clone();
+        let Some(backend) = self.drm_backend() else {
+            return Err("no display".into());
+        };
+        let Some(surface) = &backend.surface else {
+            return Err("no display in use".into());
+        };
+        let (handle, crtc) = (surface.connector, surface.crtc);
+        let info = backend
+            .drm
+            .device_fd()
+            .get_connector(handle, false)
+            .map_err(|e| format!("connector: {e}"))?;
+        let mode = *info.modes().get(index).ok_or("no such mode")?;
+        let choice = Choice {
+            connector: handle,
+            crtc,
+            mode,
+            name: format!("{}-{}", info.interface().as_str(), info.interface_id()),
+            size_mm: (0, 0),
+        };
+        backend.surface = None;
+        backend.pending = false;
+        let smithay_mode = Mode::from(mode);
+        output.change_current_state(Some(smithay_mode), None, None, None);
+        let created = create_surface(
+            &mut backend.drm,
+            &backend.gbm,
+            &backend.renderer,
+            &output,
+            &choice,
+        );
+        backend.surface = Some(created?);
+        info!(
+            "display {}: {}x{} @ {} mHz",
+            choice.name, smithay_mode.size.w, smithay_mode.size.h, smithay_mode.refresh
+        );
+        self.output_resized();
+        let _ = self.drm_apply_gamma();
+        Ok(())
+    }
+
+    /// Display power: off sets DPMS off on the CRTC (and `render_drm` stops drawing); on draws a
+    /// full frame again, which re-enables it.
+    pub fn drm_display_power(&mut self, on: bool) {
+        let output = self.output.clone();
+        let Some(backend) = self.drm_backend() else {
+            return;
+        };
+        let Some(surface) = &mut backend.surface else {
+            return;
+        };
+        if on {
+            surface.gbm.reset_buffers();
+            surface.damage_tracker = OutputDamageTracker::from_output(&output);
+            backend.pending = false;
+            self.render_drm();
+        } else if let Err(err) = surface.gbm.surface().clear() {
+            warn!("display off: {err}");
+        }
+    }
+
+    /// The output's scale or rotation changed: the damage tracker follows it.
+    pub fn drm_output_changed(&mut self) {
+        let output = self.output.clone();
+        if let Some(backend) = self.drm_backend()
+            && let Some(surface) = &mut backend.surface
+        {
+            surface.damage_tracker = OutputDamageTracker::from_output(&output);
+        }
+    }
+
+    /// The colour temperature on the CRTC's gamma ramp; `None` without a display, false if the
+    /// driver has no gamma.
+    pub fn drm_apply_gamma(&mut self) -> Option<bool> {
+        let kelvin = self.color_temperature;
+        let backend = self.drm_backend()?;
+        let crtc = backend.surface.as_ref()?.crtc;
+        let device = backend.drm.device_fd();
+        let size = device.get_crtc(crtc).ok()?.gamma_length() as usize;
+        if !(2..=4096).contains(&size) {
+            return Some(false);
+        }
+        let (red, green, blue) = crate::displays::gamma_ramp(kelvin, size);
+        match device.set_gamma(crtc, &red, &green, &blue) {
+            Ok(()) => Some(true),
+            Err(err) => {
+                warn!("gamma: {err}");
+                Some(false)
+            }
+        }
     }
 
     /// Switches to another virtual terminal.
@@ -420,8 +704,12 @@ impl State {
     /// vblank or the session is not active.
     pub fn render_drm(&mut self) {
         let now = Instant::now();
+        let display_off = self.display_off;
         let ready = self.drm_backend().is_some_and(|backend| {
-            !backend.pending && backend.surface.is_some() && backend.session.is_active()
+            !display_off
+                && !backend.pending
+                && backend.surface.is_some()
+                && backend.session.is_active()
         });
         if !ready {
             // Clients still get their frame callbacks, at the idle rate.

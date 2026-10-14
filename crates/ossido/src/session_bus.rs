@@ -28,11 +28,14 @@ pub struct SessionBus {
     daemon: Option<Child>,
     /// `silica-portal` (FileChooser and Settings), if found.
     portal: Option<Child>,
+    /// Ossido's Wayland display, for the services (clipboard, actions socket).
+    wayland: std::ffi::OsString,
 }
 
 impl SessionBus {
-    /// Starts the bus and, if found, `silica-daemon`.
-    pub fn start() -> Result<Self, String> {
+    /// Starts the bus and, if found, `silica-daemon`; the services get `wayland` as their
+    /// `WAYLAND_DISPLAY`.
+    pub fn start(wayland: &std::ffi::OsStr) -> Result<Self, String> {
         let mut watchdog = Command::new("sh")
             .arg("-c")
             .arg(WATCHDOG)
@@ -59,6 +62,7 @@ impl SessionBus {
             _guard: guard,
             daemon: None,
             portal: None,
+            wayland: wayland.to_owned(),
         };
         bus.daemon = bus.spawn("silica-daemon");
         bus.portal = bus.spawn("silica-portal");
@@ -71,6 +75,7 @@ impl SessionBus {
         match Command::new(&program)
             .args(["--address", &self.address])
             .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
+            .env("WAYLAND_DISPLAY", &self.wayland)
             .stdin(Stdio::null())
             .spawn()
         {

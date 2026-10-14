@@ -75,6 +75,13 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `input.type` | `text` | — |
 | `perf.frames` | `reset?` | per surface: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
+| `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
+| `input.state` | — | the pointer settings in use (`mouse`, `touchpad`: `speed`, `naturalScroll`, `scrollSpeed`, `leftHanded`, `secondaryClick`, `tapToClick`, `disableWhileTyping`) and `devices` (`mouse`, `touchpad`: connected) |
+| `idle.state` | — | `idleSeconds` since the last input, `displayOff`, and `displayOffMinutes`, `sleepMinutes`, `preventSleep` from `power.json` |
+| `output.list` | — | the connected displays: `connector`, `identity` (EDID make, model and serial; the connector without EDID), `make`, `model`, `serial`, `modes` and `current` (`width`, `height`, `refresh` in Hz, `preferred`), `scale`, `transform`, `enabled`, `primary`, `widthMm`, `heightMm` |
+| `output.configure` | `connector?`, `mode?` (`width`, `height`, `refresh?`), `scale?` (1–4, quarter steps), `transform?` (`normal`, `90`, `180`, `270`, `flipped`, `flipped-90`…) | the display after the change; applied at once and saved in `displays.json` for that display. Without `connector`: the display in use. The real session drives one display: the others are listed but not configurable yet; nested and headless cannot change mode |
+| `output.color_temperature` | `kelvin` (1000–6500) | `kelvin`, `applied`: the night light on every display through the CRTC gamma ramp (6500 is neutral; `applied` false where there is no gamma: nested, headless, some virtual GPUs). silica-daemon drives it with the schedule |
+| `keyboard.next_source` | — | `switched`, `active`: the next input source (⌃Space; with a single source the shortcut goes to the app) |
 | `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
 The `perf.frames` measurements are the compositor's, the same for every toolkit: a frame is
@@ -84,6 +91,105 @@ launch with `app.launch` (or `--spawn`) to the first buffer of the process or of
 descendants.
 
 Without `id`, the window commands act on the focused one.
+
+## Settings files
+
+Ossido applies the user's settings from `$XDG_CONFIG_HOME/silica` (usually `~/.config/silica`;
+`crates/ossido/src/config.rs`), written by Settings. The folder is watched (inotify): a file
+written in place or renamed over is applied at once, a removed one brings back the defaults.
+A malformed file is ignored as a whole; a value out of range is ignored alone. Settings keeps the
+keys it does not know.
+
+### keyboard.json
+
+```json
+{
+  "repeatDelay": 375,
+  "repeatRate": 11,
+  "layouts": ["us", "it", "de(nodeadkeys)"],
+  "model": "",
+  "options": "caps:escape"
+}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `repeatDelay` | integer, 100–3000 | ms before a held key repeats (default 375, or `OSSIDO_KEY_REPEAT`) |
+| `repeatRate` | integer, 0–100 | repeats per second; 0 turns repeat off (default 11) |
+| `layouts` | array of strings, at most 4 | the input sources: xkb layouts, a variant in parentheses; the first is active at start. Empty or absent: xkb's default (`XKB_DEFAULT_*`) |
+| `model` | string | xkb model (empty: default) |
+| `options` | string | xkb options, comma-separated (`caps:escape,compose:ralt`) |
+
+A change of repeat is sent to every bound keyboard (`wl_keyboard.repeat_info`); a change of
+`layouts`, `model` or `options` compiles a new keymap and sends it to the clients. A layout xkb
+does not know keeps the keymap in use. ⌃Space (`keyboard.next_source`) moves to the next
+source when there are two or more.
+
+### displays.json
+
+```json
+{
+  "outputs": {
+    "DEL DELL U2720Q ABC123": {
+      "mode": {"width": 2560, "height": 1440, "refresh": 59.95},
+      "scale": 1.5,
+      "transform": "normal"
+    }
+  }
+}
+```
+
+Written by Ossido on `output.configure` (keeping the other keys of the file), read at start,
+when the file changes and when a display is plugged in. The key is the display's identity
+(`output.list` › `identity`), so a display gets its choice back on any connector. A mode is
+matched by size and the closest refresh; a mode the display does not have is ignored.
+
+### power.json
+
+```json
+{"displayOffMinutes": 10, "sleepMinutes": 30, "preventSleep": false}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `displayOffMinutes` | number > 0 (decimals allowed) | after this idle time the display turns off; absent or 0: never |
+| `sleepMinutes` | number > 0 | after this idle time Ossido asks silica-daemon to suspend (`System1.Suspend`, logind); absent or 0: never |
+| `preventSleep` | boolean | never sleep on idle; silica-daemon also holds logind's `idle` inhibitor |
+
+Any input (real or the `input.*` commands) is activity: it wakes the display and restarts the
+count. In the real session the display goes off with DPMS (the CRTC is cleared and nothing is
+drawn until the next input); nested and headless only keep the state (`idle.state`). There is
+no `ext-idle-notify-v1` for clients yet (Smithay's implementation needs the event loop's data
+to be the compositor state).
+
+### input.json
+
+```json
+{
+  "mouse": {"speed": 0.0, "naturalScroll": false, "secondaryClick": "right", "scrollSpeed": 1.0},
+  "touchpad": {"speed": 0.0, "naturalScroll": true, "tapToClick": true,
+               "secondaryClick": "twoFinger", "disableWhileTyping": true, "scrollSpeed": 1.0},
+  "doubleClickMs": 500
+}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `*.speed` | number, -1–1 | pointer acceleration speed (libinput) |
+| `*.naturalScroll` | boolean | content follows the fingers / the wheel is reversed |
+| `*.scrollSpeed` | number, 0.1–10 | multiplies the scroll deltas (wheel for `mouse`, fingers for `touchpad`) |
+| `mouse.secondaryClick` | `right`, `left` | which button is the secondary click (`left`: left-handed) |
+| `touchpad.secondaryClick` | `twoFinger`, `bottomRight`, `bottomLeft` | click with two fingers (clickfinger) or in a bottom corner (button areas; `bottomLeft` is left-handed) |
+| `touchpad.tapToClick` | boolean | a tap is a click |
+| `touchpad.disableWhileTyping` | boolean | the touchpad ignores the palm while typing |
+| `doubleClickMs` | integer | for the toolkits (silica-ui reads it); Ossido ignores it |
+
+A device is a touchpad when libinput can tap with it, otherwise a mouse. Every key left out
+gives the device libinput's default. The settings apply to every pointer device at once and
+to each one plugged in later (real session only: nested and headless have no libinput
+devices). `input.state` shows the settings in use and whether a mouse or a touchpad is
+connected; the same `input.mouse` and `input.touchpad` reach apps through silica-daemon's
+`System1` state (`docs/daemon.md`).
 
 ## CLI and MCP
 
@@ -125,7 +231,10 @@ protocol is the same JSON lines as the control channel, and only the commands in
 - `launcher.toggle`, `faro.toggle`;
 - `screenshot.toolbar`, `screenshot.screen`, `screenshot.selection`,
   `screenshot.screen_clipboard`, `screenshot.selection_clipboard`;
-- `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`.
+- `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`;
+- `output.list`, `output.configure`, `output.color_temperature`: for silica-daemon, which gives
+  apps the displays and runs the night light (`System1`, `docs/daemon.md`). Ossido passes its
+  `WAYLAND_DISPLAY` to the services it starts, so they find the socket.
 
 Anything else is refused. The client is `silica-action <action>`, which finds the socket
 through `WAYLAND_DISPLAY`. `shell/linux/*.desktop.in` are the shell's own applications:
