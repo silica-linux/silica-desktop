@@ -53,6 +53,18 @@ class _LiveDockState extends State<LiveDock> {
   );
   late final List<String> _pinned = pinnedIds(_entries);
 
+  /// The folders right of the separator (dock.json `folders`), the downloads one by default.
+  late final List<String> _folders = () {
+    final saved = readDockConfig()['folders'];
+    if (saved is List) return [for (final f in saved) '$f'];
+    return [downloadDir(Platform.environment['HOME'] ?? '')];
+  }();
+
+  void _setFolders(void Function(List<String> folders) change) {
+    setState(() => change(_folders));
+    saveDockOption('folders', _folders);
+  }
+
   /// Dock options (dock.json), reloaded when Settings changes them.
   final DockOptionsWatcher _options = DockOptionsWatcher();
 
@@ -139,7 +151,11 @@ class _LiveDockState extends State<LiveDock> {
         l.options,
         submenu: [
           MenuAction(
-            l.showInEnclosingFolder,
+            l.removeFromDock,
+            onSelected: () => _setFolders((f) => f.remove(folder)),
+          ),
+          MenuAction(
+            l.dockShowInFileManager,
             onSelected: () => _openPath(File(folder).parent.path),
           ),
         ],
@@ -616,6 +632,7 @@ class _LiveDockState extends State<LiveDock> {
       trashLabel: l10nOf(context).trash,
       appsLabel: l10nOf(context).dockApps,
       registered: AppRegistry.instance.apps.value,
+      folders: _folders,
     ),
     magnification: _magnify ? defaultMagnification : 1,
     autohide: _o.autohide,
@@ -623,6 +640,20 @@ class _LiveDockState extends State<LiveDock> {
     launcher: _launcher.value.value,
     onActivate: _activate,
     onDropFiles: _dropFiles,
+    onAddFolders: (paths, index) => _setFolders((f) {
+      final at = index.clamp(0, f.length);
+      for (final path in paths.reversed) {
+        f.remove(path);
+        f.insert(at.clamp(0, f.length), path);
+      }
+    }),
+    onSpringLoad: (item) {
+      // Spring-loading (MU-40): the app's windows, to drop into one of them.
+      if (item.windows.isNotEmpty) {
+        ShellChannel.instance.activate(_latest(item));
+        ShellChannel.instance.execute('panorama.app');
+      }
+    },
     menuFor: _menu,
     onOpenPath: _openPath,
     stackSettingsFor: _stackOf,
@@ -685,6 +716,9 @@ const double dragInsideAbove = 20;
 const Duration autohideDelay = Duration(milliseconds: 190);
 const Duration autohideReveal = Duration(milliseconds: 190);
 const Duration autohideHide = Duration(milliseconds: 175);
+
+/// Spring-loading on an app (MU-40): ~830 ms of a file held over it.
+const Duration springLoadDelay = Duration(milliseconds: 830);
 
 /// The empty slot where the dragged icon would fall.
 const Item gapItem = Item.app('');
@@ -805,6 +839,8 @@ class Dock extends StatefulWidget {
     this.autohide = false,
     this.indicators = true,
     this.launcher = const {},
+    this.onAddFolders,
+    this.onSpringLoad,
     this.onActivate,
     this.onDropFiles,
     this.menuFor,
@@ -826,6 +862,13 @@ class Dock extends StatefulWidget {
 
   /// What the apps ask of their icons (badge, progress, attention), by item id.
   final Map<String, LauncherState> launcher;
+
+  /// Folders dragged in from another app, dropped right of the separator not over an item:
+  /// added at that position among the folders (D-05, MU-40).
+  final void Function(List<String> paths, int folderIndex)? onAddFolders;
+
+  /// A file held over an app for ~830 ms (MU-40): it flashes twice, then this.
+  final void Function(Item item)? onSpringLoad;
 
   /// Click on an app.
   final void Function(Item item)? onActivate;
@@ -966,21 +1009,73 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             if (_pressed == _dropIndex) _pressed = target;
             _dropIndex = target;
           });
+          _springTimer?.cancel();
+          _springTimer = null;
+          final item = target == null ? null : widget.items[target];
+          if (item != null && item.openFiles != null) {
+            _springTimer = Timer(springLoadDelay, () => _springLoad(target!));
+          }
         }
       case SilicaDragLeave():
         _endFileDrag();
-      case SilicaDrop(:final paths):
+      case SilicaDrop(:final paths, :final position):
         final index = _dropIndex;
         _endFileDrag();
         if (index != null && index < widget.items.length && paths.isNotEmpty) {
           widget.onDropFiles?.call(widget.items[index], paths);
+        } else if (paths.isNotEmpty &&
+            paths.every(FileSystemEntity.isDirectorySync)) {
+          // Folders right of the separator: added to the Dock where they were dropped.
+          final local = box.globalToLocal(position);
+          final current = layout(
+            widget.items,
+            width: size.width,
+            height: size.height,
+          );
+          final separator = widget.items.indexWhere(
+            (i) => i.kind == ItemKind.separator,
+          );
+          final inZone = inActiveZone(current, local.dx, local.dy, size.height);
+          if (separator >= 0 &&
+              inZone &&
+              local.dx > current.center(separator)) {
+            var before = 0;
+            for (var i = separator + 1; i < widget.items.length; i++) {
+              if (widget.items[i].folder != null &&
+                  current.center(i) < local.dx) {
+                before++;
+              }
+            }
+            widget.onAddFolders?.call(paths, before);
+          }
         }
       case SilicaDragFinished():
         break;
     }
   }
 
+  /// Spring-loading (MU-40): the app flashes twice (pressed, released, pressed, released),
+  /// then its windows open so the file can be dropped into one.
+  Timer? _springTimer;
+
+  Future<void> _springLoad(int index) async {
+    _springTimer = null;
+    if (!mounted || _dropIndex != index || index >= widget.items.length) return;
+    final item = widget.items[index];
+    for (var i = 0; i < 2; i++) {
+      setState(() => _pressed = null);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!mounted || _dropIndex != index) return;
+      setState(() => _pressed = index);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!mounted || _dropIndex != index) return;
+    }
+    widget.onSpringLoad?.call(item);
+  }
+
   void _endFileDrag() {
+    _springTimer?.cancel();
+    _springTimer = null;
     setState(() {
       if (_pressed == _dropIndex) _pressed = null;
       _dropIndex = null;
@@ -1044,6 +1139,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _shown.dispose();
     _revealTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _springTimer?.cancel();
     super.dispose();
   }
 

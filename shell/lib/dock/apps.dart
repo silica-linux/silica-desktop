@@ -200,6 +200,7 @@ List<Item> dockItems(
   String trashLabel = 'Trash',
   String appsLabel = 'Apps',
   Set<String> registered = const {},
+  List<String>? folders,
 }) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
@@ -272,18 +273,20 @@ List<Item> dockItems(
   }
   final home = Platform.environment['HOME'] ?? '';
   final trashFull = trashHasFiles(home);
+  final downloads = downloadDir(home);
   return [
     ...items,
     const Item.separator(),
-    Item.app(
-      // The folder's own name, as on disk.
-      downloadDir(home).split('/').where((p) => p.isNotEmpty).lastOrNull ??
-          'Downloads',
-      folder: downloadDir(home),
-      iconPath: findIcon('folder-download'),
-      layered: findSilicaIcon('folder'),
-      command: 'xdg-open "$home/Download" || xdg-open "$home/Downloads"',
-    ),
+    // The folders right of the separator (dock.json `folders`; the downloads one by default).
+    for (final folder in folders ?? [downloads])
+      Item.app(
+        // The folder's own name, as on disk.
+        folder.split('/').where((p) => p.isNotEmpty).lastOrNull ?? folder,
+        folder: folder,
+        iconPath: findIcon(folder == downloads ? 'folder-download' : 'folder'),
+        layered: findSilicaIcon('folder'),
+        command: openPathCommand(entries, folder),
+      ),
     // The minimized windows, from the first minimized, before the Trash (D-08).
     for (final id in minimized)
       if (toplevels.where((t) => t.id == id).firstOrNull case final window?)

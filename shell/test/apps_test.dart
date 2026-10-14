@@ -266,6 +266,26 @@ void main() {
     expect(File('$trash/files/a b.txt 2').readAsStringSync(), '2');
   });
 
+  test('folders right of the separator come from the configuration', () {
+    final dir = Directory.systemTemp.createTempSync('folders');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final items = dockItems(
+      const {},
+      const [],
+      const [],
+      folders: ['${dir.path}/Projects', '${dir.path}/Music'],
+    );
+    final folders = [
+      for (final i in items)
+        if (i.folder != null) i.label,
+    ];
+    expect(folders, ['Projects', 'Music']);
+    final separator = items.indexWhere((i) => i.kind == ItemKind.separator);
+    expect(items[separator + 1].label, 'Projects');
+    // Opened without xdg-open (not on Silica OS).
+    expect(items[separator + 1].command, contains('gio open'));
+  });
+
   test('the file manager menu places: six, sorted, from user-dirs', () {
     final home = Directory.systemTemp.createTempSync('places');
     addTearDown(() => home.deleteSync(recursive: true));
