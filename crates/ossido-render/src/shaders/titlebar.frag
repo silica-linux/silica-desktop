@@ -27,7 +27,8 @@ uniform float symbols;
 uniform float pressed;
 // 1 = ⌥ held: "+" on the green one.
 uniform float alt;
-// 1 = minimize and full screen disabled (gray discs without a symbol).
+// 1 = full screen disabled (fixed-size window), 2 = minimize and full screen disabled (dialog):
+// gray discs without a symbol.
 uniform float disabled;
 // 0 = full-size content: no background or row, only the buttons over the app.
 uniform float bar;
@@ -150,26 +151,30 @@ void main() {
         zoom_c = grey_c; zoom_t = grey_t; zoom_b = grey_b;
         zoom_o = grey_o; zoom_ot = grey_ot; zoom_ob = grey_ob;
     }
-    bool off = disabled > 0.5;
+    bool zoom_off = disabled > 0.5;
+    bool min_off = disabled > 1.5;
     // Pressed: the disc gets lighter (measured pressed center minus hover).
     vec3 no_shift = vec3(0.0);
     vec3 close_p = is_dark ? vec3(14.0, 31.0, 19.0) / 255.0 : vec3(6.0, 35.0, 28.0) / 255.0;
     vec3 min_p = is_dark ? vec3(2.0, 50.0, 18.0) / 255.0 : vec3(0.0, 45.0, 28.0) / 255.0;
     vec3 zoom_p = is_dark ? vec3(4.0, 8.0, 10.0) / 255.0 : vec3(1.0, 6.0, -9.0) / 255.0;
     vec3 close_s = pressed == 0.0 ? close_p : no_shift;
-    vec3 min_s = pressed == 1.0 && !off ? min_p : no_shift;
-    vec3 zoom_s = pressed == 2.0 && !off ? zoom_p : no_shift;
+    vec3 min_s = pressed == 1.0 && !min_off ? min_p : no_shift;
+    vec3 zoom_s = pressed == 2.0 && !zoom_off ? zoom_p : no_shift;
 
     vec2 c1 = vec2(26.0, button_y);
     vec2 c2 = vec2(49.0, button_y);
     vec2 c3 = vec2(72.0, button_y);
     color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s),
                  color);
-    if (off) {
+    if (min_off) {
         color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
-        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
     } else {
         color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s), color);
+    }
+    if (zoom_off) {
+        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
+    } else {
         color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s), color);
     }
 
@@ -186,8 +191,10 @@ void main() {
             zoom_y = pressed == 2.0 ? vec3(0.231, 0.588, 0.000) : vec3(0.212, 0.533, 0.000);
         }
         color = over(vec4(close_y, 1.0) * symbol_close(p - c1) * symbols, color);
-        if (!off) {
+        if (!min_off) {
             color = over(vec4(min_y, 1.0) * symbol_minimize(p - c2) * symbols, color);
+        }
+        if (!zoom_off) {
             float zoom = alt > 0.5 ? symbol_plus(p - c3) : symbol_zoom(p - c3);
             color = over(vec4(zoom_y, 1.0) * zoom * symbols, color);
         }

@@ -105,22 +105,29 @@ struct ButtonsLook {
     alt: bool,
 }
 
-/// Minimize and full screen make no sense: a dialog (it has a parent) or a fixed-size window
-/// (minimum equal to maximum).
-fn buttons_disabled(window: &Window) -> bool {
+/// The buttons that make no sense: minimize and full screen for a dialog (it has a parent),
+/// full screen only for a fixed-size window (minimum equal to maximum; the Calculator keeps
+/// minimize, calculator.md).
+pub fn buttons_disabled(window: &Window) -> ossido_render::titlebar::Disabled {
+    use ossido_render::titlebar::Disabled;
     let Some(toplevel) = window.toplevel() else {
-        return false;
+        return Disabled::None;
     };
     if toplevel.parent().is_some() {
-        return true;
+        return Disabled::MinimizeAndZoom;
     }
-    with_states(toplevel.wl_surface(), |states| {
+    let fixed = with_states(toplevel.wl_surface(), |states| {
         let mut cached = states
             .cached_state
             .get::<smithay::wayland::shell::xdg::SurfaceCachedState>();
         let current = cached.current();
         !current.min_size.is_empty() && current.min_size == current.max_size
-    })
+    });
+    if fixed {
+        Disabled::Zoom
+    } else {
+        Disabled::None
+    }
 }
 
 /// A closed window fading out: the snapshot of its last look.

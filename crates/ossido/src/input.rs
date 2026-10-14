@@ -140,7 +140,9 @@ impl State {
                         } else {
                             self.titlebar_press = Some((window.clone(), part));
                             self.titlebar_press_inside = true;
-                            if part == Part::Zoom {
+                            if part == Part::Zoom
+                                && !crate::render::buttons_disabled(&window).zoom()
+                            {
                                 self.arm_window_menu(&window);
                             }
                         }

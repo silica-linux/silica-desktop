@@ -45,6 +45,35 @@ pub const UNIFORMS: [(&str, UniformType); 14] = [
 ];
 
 /// Bar state that changes the drawing.
+/// Which window buttons are not available (grey discs without a symbol, no action).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Disabled {
+    #[default]
+    None,
+    /// A fixed-size window (minimum equal to maximum): full screen only.
+    Zoom,
+    /// A dialog (it has a parent): minimize and full screen.
+    MinimizeAndZoom,
+}
+
+impl Disabled {
+    pub fn minimize(self) -> bool {
+        self == Self::MinimizeAndZoom
+    }
+
+    pub fn zoom(self) -> bool {
+        self != Self::None
+    }
+
+    fn uniform(self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Zoom => 1.0,
+            Self::MinimizeAndZoom => 2.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TitlebarState {
     pub active: bool,
@@ -56,8 +85,9 @@ pub struct TitlebarState {
     pub pressed: Option<u8>,
     /// ⌥ held: the green one shows "+" (zoom) instead of full screen.
     pub alt: bool,
-    /// Minimize and full screen not available (fixed-size window or dialog).
-    pub disabled: bool,
+    /// Buttons not available: full screen for a fixed-size window, minimize and full screen
+    /// for a dialog.
+    pub disabled: Disabled,
     pub scale: f64,
     /// The bar background: false with full-size content (`silica-window-v1`), where only
     /// the buttons above the app remain.
@@ -143,7 +173,7 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
             UniformValue::_1f(state.pressed.map_or(-1.0, f32::from)),
         ),
         Uniform::new("alt", UniformValue::_1f(flag(state.alt))),
-        Uniform::new("disabled", UniformValue::_1f(flag(state.disabled))),
+        Uniform::new("disabled", UniformValue::_1f(state.disabled.uniform())),
         Uniform::new("bar", UniformValue::_1f(flag(state.bar))),
         Uniform::new("button_y", UniformValue::_1f(state.button_y)),
         Uniform::new("dark", UniformValue::_1f(flag(state.dark))),

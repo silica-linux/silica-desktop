@@ -514,6 +514,16 @@ impl TestWindow {
     /// Full-size content (`silica-window-v1`) with a toolbar `toolbar` tall (0: back to
     /// Ossido's bar), then the commit.
     #[allow(dead_code)]
+    pub fn set_fixed_size(&mut self, (w, h): (i32, i32)) {
+        self._toplevel.set_min_size(w, h);
+        self._toplevel.set_max_size(w, h);
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Asks for full-size content (no title bar from Ossido; the buttons stay over the app
+    /// toolbar), then the commit.
+    #[allow(dead_code)]
     pub fn set_full_size_content(&mut self, toolbar: u32) {
         let qh = self.queue.handle();
         let manager = self

@@ -199,6 +199,12 @@ impl State {
     }
 
     pub fn titlebar_action(&mut self, window: &Window, part: Part) {
+        let disabled = crate::render::buttons_disabled(window);
+        if (part == Part::Minimize && disabled.minimize())
+            || (part == Part::Zoom && disabled.zoom())
+        {
+            return;
+        }
         let result = match part {
             Part::Close => {
                 if let Some(toplevel) = window.toplevel() {

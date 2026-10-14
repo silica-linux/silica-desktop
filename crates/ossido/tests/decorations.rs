@@ -225,6 +225,37 @@ fn titlebar_buttons_close_minimize_and_fullscreen() {
 }
 
 #[test]
+fn a_fixed_size_window_keeps_minimize_and_disables_full_screen() {
+    let ossido = start("decor-fixed");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "fixed", (240, 140));
+    window.set_fixed_size((240, 140));
+    let info = windows(&ossido).remove(0);
+    let shot = shot(&ossido);
+    // Minimize stays yellow; full screen is a gray disc (calculator.md).
+    assert_near(&shot, button(&info, 1), [0xfc, 0xc9, 0x3b], 8, "minimize");
+    let zoom = pixel_in(
+        &shot,
+        SIZE.0,
+        button(&info, 2).0 as u32,
+        button(&info, 2).1 as u32,
+    );
+    assert!(
+        zoom[0].abs_diff(zoom[1]) < 12 && zoom[1].abs_diff(zoom[2]) < 12,
+        "full screen should be gray: {zoom:?}"
+    );
+    // The green button does nothing; minimize still works.
+    let mut client = ossido.client();
+    let (x, y) = button(&info, 2);
+    client.call(INPUT_CLICK, json!({"x": x, "y": y})).unwrap();
+    window.decoration_mode();
+    window.commit_frames(1, std::time::Duration::ZERO);
+    assert!(!windows(&ossido)[0].fullscreen);
+    let (x, y) = button(&info, 1);
+    client.call(INPUT_CLICK, json!({"x": x, "y": y})).unwrap();
+    assert!(windows(&ossido)[0].minimized);
+}
+
+#[test]
 fn dragging_the_titlebar_moves_the_window() {
     let ossido = start("decor-drag");
     let _window = TestWindow::open_decorated(&ossido.wayland, "drag", (240, 140));
