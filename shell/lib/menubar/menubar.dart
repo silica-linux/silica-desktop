@@ -18,6 +18,7 @@ import '../dock/dock.dart' show shellQuote;
 import '../faro/launcher.dart' show RecentApps;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
+import '../system/open_app.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
@@ -240,7 +241,7 @@ class _MenuBarState extends State<MenuBar> {
   }
 
   void _launch(DesktopEntry entry) {
-    ShellChannel.instance.launch(entry.exec);
+    openApp(entry);
     RecentApps().add(entry.id);
   }
 
