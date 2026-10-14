@@ -36,7 +36,17 @@ impl Headless {
     }
 
     /// Like `start`, with another output size and more arguments for Ossido.
-    pub fn start_with(name: &str, (width, height): (u32, u32), extra: &[&str]) -> Self {
+    pub fn start_with(name: &str, size: (u32, u32), extra: &[&str]) -> Self {
+        Self::start_with_env(name, size, extra, &[])
+    }
+
+    /// Like `start_with`, with environment variables for Ossido.
+    pub fn start_with_env(
+        name: &str,
+        (width, height): (u32, u32),
+        extra: &[&str],
+        env: &[(&str, &str)],
+    ) -> Self {
         let dir = std::env::temp_dir().join(format!("ossido-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -63,6 +73,7 @@ impl Headless {
                 format!("unix:path={}", dir.join("no-bus").display()),
             )
             .env("RUST_LOG", "warn")
+            .envs(env.iter().copied())
             .env_remove("WAYLAND_DISPLAY")
             .stdout(Stdio::piped())
             .spawn()

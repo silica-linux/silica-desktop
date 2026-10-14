@@ -26,6 +26,18 @@ use crate::state::State;
 /// measured value).
 pub const FIT_GRACE: Duration = Duration::from_millis(500);
 
+/// [`FIT_GRACE`], or `OSSIDO_LAYER_FIT_GRACE_MS` when set (tests on a loaded machine take
+/// their screenshots later than 500 ms after a commit: they raise it).
+fn fit_grace() -> Duration {
+    static GRACE: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *GRACE.get_or_init(|| {
+        std::env::var("OSSIDO_LAYER_FIT_GRACE_MS")
+            .ok()
+            .and_then(|ms| ms.parse::<u64>().ok())
+            .map_or(FIT_GRACE, Duration::from_millis)
+    })
+}
+
 /// Where a layer is drawn, and with which glass.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Drawn {
@@ -99,7 +111,7 @@ pub fn drawn_layer(
     }
     state
         .unfit_since
-        .is_some_and(|since| since.elapsed() >= FIT_GRACE)
+        .is_some_and(|since| since.elapsed() >= fit_grace())
         .then_some(Drawn {
             loc: geometry.loc,
             glass: None,
