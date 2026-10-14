@@ -8,9 +8,13 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::state::State;
 
-/// Dove era la finestra prima dello schermo intero, nei suoi dati.
+/// Dove era la finestra prima dello schermo intero, nei suoi dati: la geometria e la cornice
+/// (con la barra), per tornare e per l'animazione dell'uscita.
 #[derive(Default)]
-struct BeforeFullscreen(Cell<Option<Rectangle<i32, Logical>>>);
+struct BeforeFullscreen(
+    Cell<Option<Rectangle<i32, Logical>>>,
+    Cell<Option<Rectangle<f64, Logical>>>,
+);
 
 pub fn is_fullscreen(window: &Window) -> bool {
     window.toplevel().is_some_and(|toplevel| {
@@ -115,8 +119,13 @@ impl State {
             .user_data()
             .get::<BeforeFullscreen>()
             .ok_or("stato della finestra assente")?;
+        let output = self
+            .space
+            .output_geometry(&self.output)
+            .ok_or("output senza geometria")?;
         if is_fullscreen(window) {
             let previous = before.0.take();
+            let frame = before.1.take();
             toplevel.with_pending_state(|state| {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
                 state.size = previous.map(|rect| rect.size);
@@ -125,16 +134,18 @@ impl State {
             if let Some(previous) = previous {
                 self.space.map_element(window.clone(), previous.loc, true);
             }
+            if let Some(frame) = frame {
+                self.start_morph(window, output.to_f64(), frame, false);
+            }
         } else {
-            let output = self
-                .space
-                .output_geometry(&self.output)
-                .ok_or("output senza geometria")?;
             let current = self
                 .space
                 .element_geometry(window)
                 .ok_or("finestra non sullo schermo")?;
+            let frame = crate::decorations::frame_of(window, current).to_f64();
             before.0.set(Some(current));
+            before.1.set(Some(frame));
+            self.start_morph(window, frame, output.to_f64(), true);
             toplevel.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Fullscreen);
                 state.size = Some(output.size);
@@ -143,6 +154,31 @@ impl State {
             self.space.map_element(window.clone(), output.loc, true);
         }
         Ok(())
+    }
+
+    /// L'animazione dello schermo intero: la cornice va da `from` a `to` (spenta con le
+    /// animazioni a 0).
+    fn start_morph(
+        &mut self,
+        window: &Window,
+        from: Rectangle<f64, Logical>,
+        to: Rectangle<f64, Logical>,
+        entering: bool,
+    ) {
+        if self.animation_speed <= 0.0 {
+            return;
+        }
+        window
+            .user_data()
+            .insert_if_missing(crate::render::FullscreenMorph::default);
+        if let Some(morph) = window.user_data().get::<crate::render::FullscreenMorph>() {
+            morph.0.set(Some(crate::render::Morph {
+                from,
+                to,
+                start: std::time::Instant::now(),
+                entering,
+            }));
+        }
     }
 
     /// Una finestra ridotta con quell'id.

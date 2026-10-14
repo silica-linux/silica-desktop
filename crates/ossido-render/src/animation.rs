@@ -106,6 +106,45 @@ pub fn genie_restore(ms: f64) -> GenieShape {
     }
 }
 
+/// Schermo intero, entrata (`windows.md`, "Schermo intero", 1000 → 1520 ms del file): il
+/// rettangolo della finestra va dalla cornice allo schermo. Frazione misurata sul bordo destro
+/// (il sinistro coincide fino a ~200 ms, poi tocca il bordo dello schermo): 0,06 a 53 ms, 0,12 a
+/// 67, 0,22 a 80, 0,417 a 107, 0,56 a 133, 0,66 a 160, 0,80 a 213, 0,91 a 293, 0,95 a 347, 0,98
+/// a 413, 1 a 520: parte accelerando (potenza 1,5 da 40 a 107 ms), poi rallenta come
+/// 1 − e^(−t/100).
+pub const FULLSCREEN_ENTER: Duration = Duration::from_millis(520);
+
+/// Schermo intero, uscita (4988 → 5441 ms del file): altezza 1300 → 600 pt, veloce all'inizio e
+/// lenta alla fine; frazione 0,24 a 67 ms, 0,43 a 94, 0,56 a 120, 0,74 a 174, 0,84 a 227, 0,92
+/// a 280, 0,96 a 334, 0,99 a 400: 1 − e^(−(t − 40)/90), normalizzata a 1 a 453 ms.
+pub const FULLSCREEN_EXIT: Duration = Duration::from_millis(453);
+
+/// Frazione del rettangolo dopo `ms` di entrata nello schermo intero.
+pub fn fullscreen_enter(ms: f64) -> f64 {
+    const KNEE: f64 = 107.0;
+    const AT_KNEE: f64 = 0.417;
+    if ms <= 40.0 {
+        return 0.0;
+    }
+    if ms < KNEE {
+        return AT_KNEE * ((ms - 40.0) / (KNEE - 40.0)).powf(1.5);
+    }
+    let end = FULLSCREEN_ENTER.as_secs_f64() * 1000.0;
+    let tail = |t: f64| (-(t - KNEE) / 100.0).exp();
+    let norm = 1.0 - tail(end);
+    (AT_KNEE + (1.0 - AT_KNEE) * (1.0 - tail(ms)) / norm).min(1.0)
+}
+
+/// Frazione del rettangolo dopo `ms` di uscita dallo schermo intero.
+pub fn fullscreen_exit(ms: f64) -> f64 {
+    if ms <= 40.0 {
+        return 0.0;
+    }
+    let end = FULLSCREEN_EXIT.as_secs_f64() * 1000.0;
+    let curve = |t: f64| 1.0 - (-(t - 40.0) / 90.0).exp();
+    (curve(ms) / curve(end)).min(1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +188,41 @@ mod tests {
         // Bordo superiore: 0,124 a 267 ms, 0,045 a 307.
         assert!((genie_restore(267.0).top - 0.124).abs() < 0.03);
         assert!((genie_restore(307.0).top - 0.045).abs() < 0.03);
+    }
+
+    #[test]
+    fn fullscreen_follows_the_measured_frames() {
+        for (ms, measured) in [
+            (67.0, 0.123),
+            (80.0, 0.217),
+            (107.0, 0.417),
+            (133.0, 0.561),
+            (160.0, 0.663),
+            (213.0, 0.797),
+            (293.0, 0.909),
+            (413.0, 0.984),
+        ] {
+            let model = fullscreen_enter(ms);
+            assert!(
+                (model - measured).abs() <= 0.05,
+                "entrata {ms} ms: {model} contro {measured}"
+            );
+        }
+        assert_eq!(fullscreen_enter(520.0), 1.0);
+        for (ms, measured) in [
+            (67.0, 0.24),
+            (120.0, 0.563),
+            (200.0, 0.799),
+            (307.0, 0.94),
+            (400.0, 0.991),
+        ] {
+            let model = fullscreen_exit(ms);
+            assert!(
+                (model - measured).abs() <= 0.05,
+                "uscita {ms} ms: {model} contro {measured}"
+            );
+        }
+        assert_eq!(fullscreen_exit(453.0), 1.0);
     }
 
     #[test]

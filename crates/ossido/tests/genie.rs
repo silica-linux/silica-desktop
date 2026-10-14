@@ -1,4 +1,4 @@
-//! Riduzione nel Dock a genio e ripristino (`plan/reference/windows.md`,
+//! Riduzione nel Dock a genio, ripristino e schermo intero (`plan/reference/windows.md`,
 //! "Animazioni"), rallentati con `ui.animation_scale` per leggerli negli screenshot.
 
 #![allow(
@@ -16,7 +16,7 @@ use common::client::TestWindow;
 use common::{Headless, pixel_in};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    UI_ANIMATION_SCALE, WINDOW_FOCUS, WINDOW_LIST, WINDOW_MINIMIZE, WindowInfo,
+    UI_ANIMATION_SCALE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WindowInfo,
 };
 
 const SIZE: (u32, u32) = (640, 400);
@@ -212,4 +212,63 @@ fn closing_a_window_while_it_comes_out_of_the_dock_does_not_crash() {
     set_speed(&ossido, 0.0);
     let _ = after;
     assert_eq!(red_count(&shot(&ossido, "chiusa-fine")), 0);
+}
+
+#[test]
+fn fullscreen_grows_the_window_to_the_screen() {
+    let ossido = start("genie-schermo-intero");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "intero", (240, 140));
+    let info = windows(&ossido).remove(0);
+    let width = 240;
+    // ×20: l'entrata dura 10,4 s; a ~2,6 s (130 ms) il rettangolo è a ~0,55.
+    set_speed(&ossido, 20.0);
+    ossido
+        .client()
+        .call(WINDOW_FULLSCREEN, json!({ "id": info.id }))
+        .unwrap();
+    let start = shot(&ossido, "intero-inizio");
+    let row = info.y + 70;
+    // (Cambiare velocità ricalcola anche l'apertura: la finestra può essere ancora al 98 %.)
+    let (a, b) = red_span(&start, row).expect("finestra all'inizio");
+    assert!(
+        (b - a + 1 - width).abs() <= 6,
+        "all'inizio è com'era: {}",
+        b - a + 1
+    );
+    std::thread::sleep(Duration::from_millis(2600));
+    let middle = shot(&ossido, "intero-meta");
+    let widest = (0..SIZE.1 as i32)
+        .filter_map(|y| red_span(&middle, y))
+        .map(|(a, b)| b - a + 1)
+        .max()
+        .expect("finestra a metà");
+    assert!(
+        widest > width + 60 && widest < SIZE.0 as i32,
+        "a metà la finestra cresce verso lo schermo: {widest}"
+    );
+
+    // Finita l'entrata, l'uscita lenta (×20: 9 s): a ~2,4 s (120 ms, frazione ~0,56) la
+    // cornice sta fra lo schermo e la cornice di prima.
+    set_speed(&ossido, 0.0);
+    shot(&ossido, "intero-fatto");
+    set_speed(&ossido, 20.0);
+    ossido
+        .client()
+        .call(WINDOW_FULLSCREEN, json!({ "id": info.id }))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(2400));
+    let leaving = shot(&ossido, "intero-uscita");
+    let widest = (0..SIZE.1 as i32)
+        .filter_map(|y| red_span(&leaving, y))
+        .map(|(a, b)| b - a + 1)
+        .max()
+        .expect("finestra in uscita");
+    assert!(
+        widest > width + 20 && widest < SIZE.0 as i32 - 20,
+        "in uscita la finestra torna alla sua cornice: {widest}"
+    );
+    // Alla fine è di nuovo com'era.
+    set_speed(&ossido, 0.0);
+    let (a, b) = red_span(&shot(&ossido, "intero-tornata"), row).expect("finestra tornata");
+    assert_eq!(b - a + 1, width);
 }

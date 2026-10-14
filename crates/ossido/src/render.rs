@@ -184,6 +184,69 @@ impl Genie {
     }
 }
 
+/// Lo schermo intero che entra o esce: il rettangolo della cornice va da `from` a `to`, nei
+/// dati della finestra.
+#[derive(Default)]
+pub struct FullscreenMorph(pub std::cell::Cell<Option<Morph>>);
+
+#[derive(Clone, Copy)]
+pub struct Morph {
+    pub from: Rectangle<f64, Logical>,
+    pub to: Rectangle<f64, Logical>,
+    pub start: Instant,
+    pub entering: bool,
+}
+
+impl Morph {
+    fn duration(&self) -> std::time::Duration {
+        if self.entering {
+            animation::FULLSCREEN_ENTER
+        } else {
+            animation::FULLSCREEN_EXIT
+        }
+    }
+
+    /// Il rettangolo all'istante `now`; None a animazione finita.
+    pub fn rect(&self, now: Instant, speed: f64) -> Option<Rectangle<f64, Logical>> {
+        let duration = self.duration();
+        let progress =
+            animation::progress(now.saturating_duration_since(self.start), duration, speed);
+        if progress >= 1.0 {
+            return None;
+        }
+        let ms = progress * duration.as_secs_f64() * 1000.0;
+        let f = if self.entering {
+            animation::fullscreen_enter(ms)
+        } else {
+            animation::fullscreen_exit(ms)
+        };
+        let lerp = |a: f64, b: f64| a + (b - a) * f;
+        Some(Rectangle::new(
+            (
+                lerp(self.from.loc.x, self.to.loc.x),
+                lerp(self.from.loc.y, self.to.loc.y),
+            )
+                .into(),
+            (
+                lerp(self.from.size.w, self.to.size.w),
+                lerp(self.from.size.h, self.to.size.h),
+            )
+                .into(),
+        ))
+    }
+}
+
+/// Il rettangolo dello schermo intero in corso per una finestra (e toglie quello finito).
+fn morph_rect(window: &Window, context: &RenderContext<'_>) -> Option<Rectangle<f64, Logical>> {
+    let morph = window.user_data().get::<FullscreenMorph>()?;
+    let current = morph.0.get()?;
+    let rect = current.rect(context.now, context.animation_speed);
+    if rect.is_none() {
+        morph.0.set(None);
+    }
+    rect
+}
+
 /// Id stabile della fascia nera, nei dati dell'output.
 struct SpaceGapId(Id);
 
@@ -796,6 +859,14 @@ pub fn output_elements(
         }
         let mut factor = open_scale(window, context);
         let mut offset = Point::<i32, Logical>::default();
+        // Schermo intero in corso: la cornice di adesso va sul rettangolo dell'animazione.
+        if let Some(rect) = morph_rect(window, context)
+            && let Some(geometry) = space.element_geometry(window)
+        {
+            let (shift, scale) = fit(frame_rect(window, geometry), rect);
+            offset = shift;
+            factor *= scale;
+        }
         // In Panorama la cornice va dalla sua posizione a quella disposta.
         if let Some(panorama) = &context.panorama
             && let Some(placement) = panorama.placements.iter().find(|p| &p.window == window)
