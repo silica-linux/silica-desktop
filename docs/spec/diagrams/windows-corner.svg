@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300" font-family="Inter, sans-serif" font-size="12">
+  <title>Window top-left corner (superellipse r 33.5, n 4.5) and window buttons, drawn at 4× (4 units = 1 pt)</title>
+  <rect width="600" height="300" fill="#ffffff"/>
+  <g transform="translate(20 20) scale(4)">
+    <!-- corner mask from the measured missing-pixel table: x offset at each row -->
+    <path d="M16,0 L16,0 L60,0 L60,60 L0,60 L0,24 L0.03,23 L0.06,22 L0.10,21 L0.14,20 L0.18,19 L0.23,18 L0.30,17 L0.37,16 L0.47,15 L0.59,14 L0.72,13 L0.85,12 L0.95,11 L1.37,10 L1.73,9 L2.14,8 L2.73,7 L3.47,6 L4.28,5 L5.26,4 L6.42,3 L7.90,2 L10.05,1 L16,0 Z"
+      fill="#e5e5e7" stroke="#555" stroke-width="0.15"/>
+    <circle cx="26" cy="26" r="7" fill="#f87d77" stroke="#dd4d47" stroke-width="0.25"/>
+    <circle cx="49" cy="26" r="7" fill="#fcc93b" stroke="#d08d0b" stroke-width="0.25"/>
+    <line x1="0" y1="52" x2="60" y2="52" stroke="#1d5fb4" stroke-width="0.15" stroke-dasharray="0.6 0.6"/>
+  </g>
+  <g fill="#333">
+    <text x="290" y="40">curve starts 24 pt from the corner</text>
+    <text x="290" y="58">first row cut by 16 pt</text>
+    <text x="290" y="76">fit: superellipse r 33.5, n 4.5</text>
+    <text x="290" y="120">buttons: ⌀14, pitch 23</text>
+    <text x="290" y="138">first centre (26, 26) with a toolbar,</text>
+    <text x="290" y="156">(16, 16) with only a title bar</text>
+    <text x="290" y="200" fill="#1d5fb4">toolbar bottom, y 52</text>
+  </g>
+</svg>
