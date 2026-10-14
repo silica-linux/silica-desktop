@@ -157,10 +157,15 @@ void main() {
 
     // Un tocco a metà della traccia del Suono.
     final sound = tester.getTopLeft(find.text('Suono'));
+    // La traccia del Suono è più corta di 44 pt: il cerchio delle uscite sta a destra.
     await tester.tapAt(
-      Offset(sound.dx - 16 + trackLeft + trackLength / 2, sound.dy - 10 + 42),
+      Offset(
+        sound.dx - 16 + trackLeft + (trackLength - outputsShift) / 2,
+        sound.dy - 10 + 42,
+      ),
     );
     expect(system.calls.last, 'volume 0.50');
+    expect(find.byKey(const ValueKey('uscite audio')), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();

@@ -17,6 +17,7 @@
 // niente e non prende né puntatore né tastiera (silica/layer).
 
 import 'dart:async';
+import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +25,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/layer_control.dart';
+import '../system/media.dart';
 import '../system/shell_channel.dart';
 import '../system/system_status.dart';
 import 'detail.dart';
@@ -132,11 +134,20 @@ double tableAt(List<(double, double)> table, double ms) {
 }
 
 /// Valore di un cursore per un punto a `dx` dal bordo sinistro della traccia.
-double sliderValue(double dx) =>
-    ((dx - 10) / (trackLength - 20)).clamp(0.0, 1.0);
+double sliderValue(double dx, {double length = trackLength}) =>
+    ((dx - 10) / (length - 20)).clamp(0.0, 1.0);
 
 /// Fine del riempimento di un cursore, dal bordo sinistro della traccia.
-double sliderFill(double value) => 10 + value.clamp(0, 1) * (trackLength - 20);
+double sliderFill(double value, {double length = trackLength}) =>
+    10 + value.clamp(0, 1) * (length - 20);
+
+/// Il cerchio delle uscite audio nel modulo Suono (cc-gray-light): 26 × 26 con il centro a
+/// +265,5 dal bordo del modulo; la traccia si accorcia di 44 pt e il glifo del volume alto si
+/// sposta con lei. Fondo bianco al 24 % (`#8f9094` sul grigio dei moduli).
+const double outputsShift = 44;
+const double outputsCenter = 265.5;
+const double outputsSide = 26;
+const Color outputsFill = Color(0x3DFFFFFF);
 
 /// Un modulo: rettangolo relativo alla pila e raggio.
 @immutable
@@ -626,6 +637,7 @@ class _ControlCenterState extends State<ControlCenter>
       ),
       _ => _SliderModule(
         onOpen: () => _openDetail('sound'),
+        onOutputs: () => _openDetail('sound'),
         title: 'Suono',
         value: s.muted ? 0 : s.volume,
         enabled: s.audioAvailable,
@@ -752,45 +764,204 @@ class _CapsuleState extends State<_Capsule> {
   }
 }
 
-/// Il modulo multimediale senza riproduzione: la copertina vuota 40 × 40 a 14 pt dal bordo
-/// e il testo in basso a sinistra (a 15 pt), passo di 15 pt.
-class _Media extends StatelessWidget {
+/// Il modulo multimediale (cc-gray-light): la copertina 40 × 40 a 14 pt dal bordo, il testo
+/// da x 15 (maiuscole della prima riga a y 68), i pulsanti di trasporto con i centri a x
+/// 28,5 / 71 / 110,5 e y 111 (⏮ e ⏭ 22 × 12, ▶ 17 × 20). Senza riproduzione i pulsanti sono
+/// attenuati (bianco al 33 e al 51 %); con un lettore MPRIS mostra titolo e artista e li
+/// comanda.
+class _Media extends StatefulWidget {
   const _Media();
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned(
-        left: 14,
-        top: 14,
-        width: 40,
-        height: 40,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFF7E7F84),
-            borderRadius: BorderRadius.circular(10),
+  State<_Media> createState() => _MediaState();
+}
+
+class _MediaState extends State<_Media> {
+  final MediaPlayers _players = MediaPlayers.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _players.start();
+    _players.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    _players.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  Widget _art(NowPlaying? now) {
+    final url = now?.artUrl ?? '';
+    final file = url.startsWith('file://')
+        ? File(Uri.parse(url).toFilePath())
+        : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: file != null && file.existsSync()
+          ? Image.file(file, fit: BoxFit.cover)
+          : const ColoredBox(color: Color(0xFF7E7F84)),
+    );
+  }
+
+  Widget _button({
+    required String key,
+    required _Transport transport,
+    required double centerX,
+    required double opacity,
+    VoidCallback? onTap,
+  }) => Positioned(
+    left: centerX - 18,
+    top: 111 - 15,
+    width: 36,
+    height: 30,
+    child: GestureDetector(
+      key: ValueKey(key),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Center(
+        child: CustomPaint(
+          size: transport == _Transport.play || transport == _Transport.pause
+              ? const Size(17, 20)
+              : const Size(22, 12),
+          painter: _TransportPainter(
+            transport,
+            const Color(0xFFFFFFFF).withValues(alpha: opacity),
           ),
         ),
       ),
-      Positioned(
-        left: 15,
-        right: 12,
-        top: 64,
-        child: Text(
-          'Nessuna\nriproduzione',
-          style: _text(
-            titleSize,
-            weight: FontWeight.w600,
-          ).copyWith(height: 15 / titleSize),
-        ),
-      ),
-    ],
+    ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    final now = _players.now;
+    final active = now != null;
+    return Stack(
+      children: [
+        Positioned(left: 14, top: 14, width: 40, height: 40, child: _art(now)),
+        Positioned(
+          left: 15,
+          right: 12,
+          top: 64,
+          child: active
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      now.title.isEmpty ? 'Senza titolo' : now.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _text(titleSize, weight: FontWeight.w600),
+                    ),
+                    if (now.artist.isNotEmpty)
+                      Text(
+                        now.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _text(
+                          subtitleSize,
+                        ).copyWith(color: const Color(0xB3FFFFFF)),
+                      ),
+                  ],
+                )
+              : Text(
+                  'Nessuna\nriproduzione',
+                  style: _text(
+                    titleSize,
+                    weight: FontWeight.w600,
+                  ).copyWith(height: 15 / titleSize),
+                ),
+        ),
+        _button(
+          key: 'precedente',
+          transport: _Transport.previous,
+          centerX: 28.5,
+          opacity: active && now.canPrevious ? 1 : 0.33,
+          onTap: active ? _players.previous : null,
+        ),
+        _button(
+          key: 'riproduci',
+          transport: active && now.playing ? _Transport.pause : _Transport.play,
+          centerX: 71,
+          opacity: active ? 1 : 0.51,
+          onTap: active ? _players.playPause : null,
+        ),
+        _button(
+          key: 'successivo',
+          transport: _Transport.next,
+          centerX: 110.5,
+          opacity: active && now.canNext ? 1 : 0.33,
+          onTap: active ? _players.next : null,
+        ),
+      ],
+    );
+  }
+}
+
+enum _Transport { previous, play, pause, next }
+
+/// I glifi del trasporto: due triangoli affiancati (⏮ verso sinistra, ⏭ verso destra), un
+/// triangolo (▶) o due barre (pausa).
+class _TransportPainter extends CustomPainter {
+  const _TransportPainter(this.kind, this.color);
+  final _Transport kind;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final w = size.width;
+    final h = size.height;
+    switch (kind) {
+      case _Transport.play:
+        canvas.drawPath(
+          Path()
+            ..moveTo(0, 0)
+            ..lineTo(w, h / 2)
+            ..lineTo(0, h)
+            ..close(),
+          paint,
+        );
+      case _Transport.pause:
+        canvas
+          ..drawRRect(
+            RRect.fromLTRBR(1, 0, w * 0.38, h, const Radius.circular(1.5)),
+            paint,
+          )
+          ..drawRRect(
+            RRect.fromLTRBR(w * 0.62, 0, w - 1, h, const Radius.circular(1.5)),
+            paint,
+          );
+      case _Transport.previous || _Transport.next:
+        final half = w / 2;
+        for (final start in [0.0, half]) {
+          final path = kind == _Transport.next
+              ? (Path()
+                  ..moveTo(start, 0)
+                  ..lineTo(start + half, h / 2)
+                  ..lineTo(start, h))
+              : (Path()
+                  ..moveTo(start + half, 0)
+                  ..lineTo(start, h / 2)
+                  ..lineTo(start + half, h));
+          canvas.drawPath(path..close(), paint);
+        }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TransportPainter old) =>
+      old.kind != kind || old.color != color;
 }
 
 class _SliderModule extends StatelessWidget {
   const _SliderModule({
     this.onOpen,
+    this.onOutputs,
     required this.title,
     required this.value,
     required this.enabled,
@@ -809,8 +980,15 @@ class _SliderModule extends StatelessWidget {
   /// Il titolo apre il dettaglio.
   final VoidCallback? onOpen;
 
+  /// Il cerchio delle uscite audio (solo Suono): apre il dettaglio con le uscite.
+  final VoidCallback? onOutputs;
+
+  /// Con il cerchio delle uscite la traccia è più corta.
+  double get _length =>
+      onOutputs == null ? trackLength : trackLength - outputsShift;
+
   void _set(Offset local) {
-    if (enabled) onChanged(sliderValue(local.dx - trackLeft));
+    if (enabled) onChanged(sliderValue(local.dx - trackLeft, length: _length));
   }
 
   @override
@@ -820,6 +998,9 @@ class _SliderModule extends StatelessWidget {
       // Sopra la traccia (il titolo): il dettaglio; sulla traccia: il valore.
       if (onOpen != null && d.localPosition.dy < trackCenter - 10) {
         onOpen!();
+      } else if (onOutputs != null &&
+          (d.localPosition.dx - outputsCenter).abs() <= outputsSide / 2 + 4) {
+        onOutputs!();
       } else {
         _set(d.localPosition);
       }
@@ -842,12 +1023,29 @@ class _SliderModule extends StatelessWidget {
         Positioned(
           left: trackLeft,
           top: trackCenter - trackHeight / 2,
-          width: trackLength,
+          width: _length,
           height: trackHeight,
-          child: CustomPaint(painter: _Track(enabled ? value : null)),
+          child: CustomPaint(
+            painter: _Track(enabled ? value : null, length: _length),
+          ),
         ),
+        if (onOutputs != null)
+          Positioned(
+            key: const ValueKey('uscite audio'),
+            left: outputsCenter - outputsSide / 2,
+            top: trackCenter - outputsSide / 2,
+            width: outputsSide,
+            height: outputsSide,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                color: outputsFill,
+                shape: BoxShape.circle,
+              ),
+              child: CustomPaint(painter: _OutputsGlyph()),
+            ),
+          ),
         Positioned(
-          left: 260,
+          left: 260 - (onOutputs == null ? 0 : outputsShift),
           top: trackCenter - 8.5,
           width: 17,
           height: 17,
@@ -859,10 +1057,11 @@ class _SliderModule extends StatelessWidget {
 }
 
 class _Track extends CustomPainter {
-  const _Track(this.value);
+  const _Track(this.value, {this.length = trackLength});
 
   /// Null: cursore non regolabile (solo la traccia, come nel riferimento).
   final double? value;
+  final double length;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -875,7 +1074,7 @@ class _Track extends CustomPainter {
     if (v == null) return;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, sliderFill(v), size.height),
+        Rect.fromLTWH(0, 0, sliderFill(v, length: length), size.height),
         radius,
       ),
       Paint()..color = const Color(0xFFFFFFFF),
@@ -883,7 +1082,42 @@ class _Track extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_Track old) => old.value != value;
+  bool shouldRepaint(_Track old) => old.value != value || old.length != length;
+}
+
+/// Il glifo del cerchio delle uscite audio: un paio di cuffie, bianco, ~13 pt.
+class _OutputsGlyph extends CustomPainter {
+  const _OutputsGlyph();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final paint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: c + const Offset(0, 0.5), radius: 5.5),
+      3.3,
+      2.82,
+      false,
+      paint,
+    );
+    final fill = Paint()..color = const Color(0xFFFFFFFF);
+    for (final dx in [-5.5, 5.5]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: c + Offset(dx, 3.5), width: 3, height: 6),
+          const Radius.circular(1.2),
+        ),
+        fill,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OutputsGlyph old) => false;
 }
 
 class _StackShadow extends CustomPainter {
