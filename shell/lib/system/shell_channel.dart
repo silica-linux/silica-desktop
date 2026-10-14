@@ -53,6 +53,8 @@ class ShellChannel {
               '${args['topic'] ?? ''}': '${args['value'] ?? ''}',
             };
           }
+        case 'transientDismissed':
+          _transientDismissed.add(null);
         case 'windowMenu':
           final args = call.arguments;
           if (args is Map) {
@@ -99,6 +101,12 @@ class ShellChannel {
   /// Long press on the green button of a window: the arrangement popover, with the tip at
   /// `tip` (screen coordinates).
   Stream<({String id, ui.Offset tip})> get windowMenus => _windowMenus.stream;
+
+  final StreamController<void> _transientDismissed =
+      StreamController.broadcast();
+
+  /// A press outside this component's open menu or panel ended it (#149).
+  Stream<void> get transientDismissed => _transientDismissed.stream;
 
   /// The identifier of the focused window (empty: none).
   final ValueNotifier<String> focused = ValueNotifier('');

@@ -135,6 +135,52 @@ void main() {
     );
   });
 
+  testWidgets(
+    'an open menu takes the pointer only on the bar and itself; a press outside ends it (#149)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final layer = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(ShellChannel.channel, (call) async => null)
+        ..setMockMethodCallHandler(
+          const MethodChannel('silica/layer', JSONMethodCodec()),
+          (call) async {
+            layer.add(call);
+            return true;
+          },
+        );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+        ),
+      );
+      await tester.pump();
+      await tester.tapAt(tester.getRect(find.text('Window')).center);
+      await tester.pump();
+      await tester.pump();
+      final transient = layer.lastWhere((c) => c.method == 'setTransient');
+      // A menu: the press outside stops there (provisional, INPUT-01).
+      expect((transient.arguments as Map)['press'], 'consume');
+      final region = layer.lastWhere((c) => c.method == 'setInputRegion');
+      final rects = (region.arguments as Map)['rects'] as List;
+      expect(rects.length, 2); // the bar and the menu, not the whole screen
+
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'silica/shell',
+        const JSONMethodCodec().encodeMethodCall(
+          const MethodCall('transientDismissed'),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Minimize'), findsNothing);
+      expect(layer.last.method, 'setSize');
+    },
+  );
+
   testWidgets('pressing Window opens the menu; the choice runs the command', (
     tester,
   ) async {

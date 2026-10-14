@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
-use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
+use silica_protocols::shell::client::silica_shell_manager_v1::{Outside, SilicaShellManagerV1};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
@@ -621,7 +621,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=5, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=6, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -1487,8 +1487,11 @@ impl App {
     /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: the whole surface);
     /// - `outputSize` → `{width, height}` of the screen in points (null if unknown);
     /// - `setSize {width, height}` in points, 0 to follow the anchors (the menu bar grows
-    ///   while a menu is open).
-    /// - `setExclusiveZone {zone}` in points (the Dock hiding itself gives its room back).
+    ///   while a menu is open);
+    /// - `setExclusiveZone {zone}` in points (the Dock hiding itself gives its room back);
+    /// - `setTransient {rects | null, press, scroll}` (`consume` | `pass_through`): a menu or
+    ///   panel is open; a press outside it arrives as `transientDismissed` on silica/shell
+    ///   (#149); `clearTransient` when the shell closes it itself.
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -1558,33 +1561,54 @@ impl App {
                     self.surface.wl_surface().set_input_region(None);
                     true
                 }
-                Some(rects) => match Region::new(&self.compositor) {
-                    Ok(region) => {
-                        for rect in rects {
-                            let value = |i: usize| {
-                                rect.get(i)
-                                    .and_then(serde_json::Value::as_f64)
-                                    .filter(|v| v.is_finite())
-                                    .map(|v| v.round().clamp(-16384.0, 16384.0) as i32)
-                            };
-                            if let (Some(x), Some(y), Some(w), Some(h)) =
-                                (value(0), value(1), value(2), value(3))
-                                && w > 0
-                                && h > 0
-                            {
-                                region.add(x, y, w, h);
-                            }
-                        }
+                Some(rects) => match self.region_from(rects) {
+                    Some(region) => {
                         self.surface
                             .wl_surface()
                             .set_input_region(Some(region.wl_region()));
                         true
                     }
-                    Err(err) => {
-                        warn!("input region: {err}");
-                        false
-                    }
+                    None => false,
                 },
+            },
+            // A menu or panel is open (#149): Ossido tells when a press outside ends it
+            // (`transientDismissed` on silica/shell), so the surface keeps a small input region.
+            Some("setTransient") => {
+                let outside = |key: &str| match args.get(key).and_then(serde_json::Value::as_str) {
+                    Some("pass_through") => Outside::PassThrough,
+                    _ => Outside::Consume,
+                };
+                let region = match args.get("rects").and_then(serde_json::Value::as_array) {
+                    Some(rects) => self.region_from(rects),
+                    None => None,
+                };
+                match self
+                    .shell
+                    .manager()
+                    .filter(|m| wayland_client::Proxy::version(*m) >= 6)
+                {
+                    Some(manager) => {
+                        manager.set_transient(
+                            self.surface.wl_surface(),
+                            region.as_ref().map(Region::wl_region),
+                            outside("press"),
+                            outside("scroll"),
+                        );
+                        true
+                    }
+                    None => false,
+                }
+            }
+            Some("clearTransient") => match self
+                .shell
+                .manager()
+                .filter(|m| wayland_client::Proxy::version(*m) >= 6)
+            {
+                Some(manager) => {
+                    manager.clear_transient(self.surface.wl_surface());
+                    true
+                }
+                None => false,
             },
             _ => return Vec::new(),
         };
@@ -1592,6 +1616,32 @@ impl App {
             self.surface.commit();
         }
         text_input::success(serde_json::json!(done))
+    }
+
+    /// A region from `[[x, y, w, h], …]` in surface points (empty rectangles skipped).
+    fn region_from(&self, rects: &[serde_json::Value]) -> Option<Region> {
+        let region = match Region::new(&self.compositor) {
+            Ok(region) => region,
+            Err(err) => {
+                warn!("input region: {err}");
+                return None;
+            }
+        };
+        for rect in rects {
+            let value = |i: usize| {
+                rect.get(i)
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|v| v.is_finite())
+                    .map(|v| v.round().clamp(-16384.0, 16384.0) as i32)
+            };
+            if let (Some(x), Some(y), Some(w), Some(h)) = (value(0), value(1), value(2), value(3))
+                && w > 0
+                && h > 0
+            {
+                region.add(x, y, w, h);
+            }
+        }
+        Some(region)
     }
 
     /// Sends a key to the framework through the two paths it expects (key data and
@@ -2454,6 +2504,12 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
             Event::Broadcast { topic, value } => serde_json::to_vec(&serde_json::json!({
                 "method": "broadcast",
                 "args": { "topic": topic, "value": value },
+            }))
+            .unwrap_or_default(),
+            // A press outside the open menu or panel ended it (#149).
+            Event::Dismissed { .. } => serde_json::to_vec(&serde_json::json!({
+                "method": "transientDismissed",
+                "args": null,
             }))
             .unwrap_or_default(),
             // Long press on the green button: the arrangement popover.

@@ -368,6 +368,54 @@ void main() {
     },
   );
 
+  testWidgets(
+    'open, the Center takes the pointer only on its panel; a press outside ends it (#149)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final layer = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('silica/layer', JSONMethodCodec()),
+        (call) async {
+          layer.add(call);
+          return true;
+        },
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(system: FakeSystem(laptop)),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      final transient = layer.lastWhere((c) => c.method == 'setTransient');
+      final args = transient.arguments as Map;
+      // A panel: the press outside goes through (provisional, INPUT-01).
+      expect(args['press'], 'pass_through');
+      final rect = (args['rects'] as List).single as List;
+      expect(rect[0], greaterThan(900)); // on the right, not the whole screen
+      final region = layer.lastWhere((c) => c.method == 'setInputRegion');
+      expect((region.arguments as Map)['rects'], isNotNull);
+
+      // Ossido: a press outside ended it.
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'silica/shell',
+        const JSONMethodCodec().encodeMethodCall(
+          const MethodCall('transientDismissed'),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Casa'), findsNothing);
+      // The bar's toggle that follows the same press does not open it again.
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      expect(find.text('Casa'), findsNothing);
+    },
+  );
+
   test('"until this evening" ends at 19:00, or at midnight once past it', () {
     expect(untilEvening(DateTime(2026, 10, 14, 15)), const Duration(hours: 4));
     expect(untilEvening(DateTime(2026, 10, 14, 20)), const Duration(hours: 4));

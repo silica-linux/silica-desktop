@@ -287,6 +287,9 @@ class _ControlCenterState extends State<ControlCenter>
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'controlcenter.toggle') _toggle();
     });
+    _dismissed = ShellChannel.instance.transientDismissed.listen(
+      (_) => _transientDismissed(),
+    );
     ShellChannel.instance.states.addListener(_statesChanged);
     if (widget.startOpen) {
       _show();
@@ -301,6 +304,7 @@ class _ControlCenterState extends State<ControlCenter>
     widget.system.removeListener(_changed);
     ShellChannel.instance.states.removeListener(_statesChanged);
     _commands?.cancel();
+    _dismissed?.cancel();
     _anim.dispose();
     _dndTimer?.cancel();
     _detailAnim.dispose();
@@ -312,7 +316,49 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _changed() => setState(() {});
 
-  void _toggle() => _open ? _hide() : _show();
+  // A press on the bar's icon while the Center is open: Ossido first ends the panel
+  // (transientDismissed, the press goes through), then the bar asks for the toggle, which
+  // must not open it again.
+  void _toggle() {
+    if (!_open && _dismissedAt != null) {
+      final since = DateTime.now().difference(_dismissedAt!);
+      if (since < const Duration(milliseconds: 400)) return;
+    }
+    _open ? _hide() : _show();
+  }
+
+  StreamSubscription<void>? _dismissed;
+  DateTime? _dismissedAt;
+
+  /// A press outside the open Center or status menu ended it (Ossido, #149).
+  void _transientDismissed() {
+    if (_wifiMenuRight != null) _closeWifiMenu();
+    if (_open) {
+      _dismissedAt = DateTime.now();
+      _hide();
+    }
+  }
+
+  /// The visible panel or status menu: the input region and the transient follow it, so
+  /// the windows below keep the pointer (#149).
+  Rect? _region;
+
+  void _setRegion(
+    Rect rect,
+    ({TransientOutside press, TransientOutside scroll}) policy,
+  ) {
+    if (rect == _region) return;
+    _region = rect;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || (!_open && _wifiMenuRight == null)) return;
+      final supported = await LayerControl.transient(
+        rects: [rect],
+        policy: policy,
+      );
+      if (!mounted || (!_open && _wifiMenuRight == null)) return;
+      LayerControl.inputRegion(supported ? [rect] : null);
+    });
+  }
 
   /// The status menu opened from the bar (Wi-Fi, Focus): the right edge of the icon.
   double? _wifiMenuRight;
@@ -354,7 +400,8 @@ class _ControlCenterState extends State<ControlCenter>
       _othersOpen = false;
       _detailData = const DetailData();
     });
-    LayerControl.inputRegion(null);
+    _region = null;
+    LayerControl.inputRegion(const []);
     LayerControl.keyboard('exclusive');
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _menuFocus.requestFocus(),
@@ -383,6 +430,8 @@ class _ControlCenterState extends State<ControlCenter>
     });
     if (announce) ShellChannel.instance.broadcast('statusmenu', '');
     if (!_open) {
+      _region = null;
+      LayerControl.clearTransient();
       LayerControl.keyboard('none');
       LayerControl.inputRegion(const []);
     }
@@ -399,6 +448,8 @@ class _ControlCenterState extends State<ControlCenter>
       detailWidth,
       content.height,
     );
+    // A status menu is a menu: a press outside closes it and stops there (provisional).
+    _setRegion(rect.inflate(2), TransientPolicy.menu);
     return Focus(
       focusNode: _menuFocus,
       onKeyEvent: (node, event) {
@@ -451,7 +502,8 @@ class _ControlCenterState extends State<ControlCenter>
     _closeWifiMenu();
     setState(() => _open = true);
     ShellChannel.instance.broadcast('controlcenter.open', '1');
-    LayerControl.inputRegion(null);
+    _region = null;
+    LayerControl.inputRegion(const []);
     LayerControl.keyboard('exclusive');
     _anim.duration = openDuration;
     _anim.forward(from: 0);
@@ -510,6 +562,8 @@ class _ControlCenterState extends State<ControlCenter>
     _moduleMenu = null;
     setState(() => _open = false);
     ShellChannel.instance.broadcast('controlcenter.open', '0');
+    _region = null;
+    LayerControl.clearTransient();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(const []);
     _anim.duration = closeDuration;
@@ -591,6 +645,17 @@ class _ControlCenterState extends State<ControlCenter>
         final left = constraints.maxWidth - rightMargin - stackWidth;
         final top = stackTop + (snapshot.privacy.isEmpty ? 0 : pillShift);
         final origin = Offset(left, top);
+        if (_open) {
+          _setRegion(
+            Rect.fromLTWH(
+              left - detailPad.dx,
+              top - detailPad.dy,
+              detailWidth,
+              totalHeight + detailPad.dy,
+            ),
+            TransientPolicy.panel,
+          );
+        }
         return Focus(
           focusNode: _focus,
           onKeyEvent: (node, event) {

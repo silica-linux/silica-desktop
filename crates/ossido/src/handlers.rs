@@ -279,8 +279,9 @@ impl XdgShellHandler for State {
         }
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
-        // Popup grabs come with the menus (M3); for now the popup stays open.
+    /// A popup with a grab (an app's menu): it closes on a press outside its app (#5, #149).
+    fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
+        self.grab_popup(PopupKind::from(surface));
     }
 }
 

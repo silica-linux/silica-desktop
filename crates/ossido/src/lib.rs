@@ -28,6 +28,7 @@ mod session_bus;
 mod shell;
 pub mod state;
 mod system;
+mod transient;
 mod window_appearance;
 mod windows;
 pub mod workspaces;

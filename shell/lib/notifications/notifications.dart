@@ -311,6 +311,11 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'notifications.toggle') _toggleCenter();
     });
+    _dismissed = ShellChannel.instance.transientDismissed.listen((_) {
+      if (!_centerOpen) return;
+      _dismissedAt = DateTime.now();
+      _closeCenter();
+    });
     if (widget.startOpen) {
       _openCenter();
     } else {
@@ -323,6 +328,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     widget.source.removeListener(_changed);
     _posted?.cancel();
     _commands?.cancel();
+    _dismissed?.cancel();
     _center.dispose();
     _focus.dispose();
     super.dispose();
@@ -367,7 +373,19 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     _updateInput();
   }
 
-  void _toggleCenter() => _centerOpen ? _closeCenter() : _openCenter();
+  // A press on the bar's clock while the Center is open: Ossido first ends the panel
+  // (transientDismissed, the press goes through), then the bar asks for the toggle, which
+  // must not open it again.
+  void _toggleCenter() {
+    if (!_centerOpen && _dismissedAt != null) {
+      final since = DateTime.now().difference(_dismissedAt!);
+      if (since < const Duration(milliseconds: 400)) return;
+    }
+    _centerOpen ? _closeCenter() : _openCenter();
+  }
+
+  StreamSubscription<void>? _dismissed;
+  DateTime? _dismissedAt;
 
   void _openCenter() {
     setState(() {
@@ -396,14 +414,35 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     _updateInput();
   }
 
-  /// The pointer is needed only where there is something: the banner, or the whole screen
-  /// with the Center open (a click outside closes it).
+  /// The pointer is needed only where there is something: the banner, or the Center's
+  /// column while it is open; a press outside it arrives from Ossido (#149), so the
+  /// windows below keep their hover. Without that support the Center covers the screen.
   void _updateInput() {
     if (_centerOpen) {
-      LayerControl.inputRegion(null);
       LayerControl.keyboard('exclusive');
+      final size = _size;
+      if (size == null) {
+        LayerControl.inputRegion(null);
+        return;
+      }
+      final left = size.width - columnMargin - columnWidth - 8;
+      final column = Rect.fromLTWH(
+        left,
+        barHeight,
+        size.width - left,
+        size.height - barHeight,
+      );
+      LayerControl.transient(
+        rects: [column],
+        policy: TransientPolicy.panel,
+      ).then((supported) {
+        if (mounted && _centerOpen) {
+          LayerControl.inputRegion(supported ? [column] : null);
+        }
+      });
       return;
     }
+    LayerControl.clearTransient();
     LayerControl.keyboard('none');
     final size = _size;
     if (_banners.isEmpty || size == null) {
