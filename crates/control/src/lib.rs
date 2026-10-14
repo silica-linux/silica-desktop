@@ -15,6 +15,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod apps;
 pub mod commands;
 pub mod mcp;
 
@@ -84,6 +85,14 @@ pub struct RegionParams {
 #[serde(deny_unknown_fields)]
 pub struct AppParams {
     pub app_id: String,
+}
+
+/// `app.quit`: the app to quit, or the frontmost one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuitParams {
+    #[serde(default)]
+    pub app_id: Option<String>,
 }
 
 /// A point of the screen in logical points (`screenshot.window_at`).

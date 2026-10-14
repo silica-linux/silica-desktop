@@ -355,10 +355,17 @@ impl State {
                 Ok(Value::Null)
             }
             APP_QUIT => {
+                let silica_control::QuitParams { app_id } = parse(params)?;
+                // A windowless app (Quit in its Dock menu) has no window to start from.
+                if let Some(app) = app_id.filter(|app| registered_app(app)) {
+                    let quitting = app.clone();
+                    std::thread::spawn(move || silica_control::apps::quit_all(&quitting));
+                    return Ok(json!({ "closed": 0, "quit": app }));
+                }
                 let window = self.target_window(None)?;
                 let app = crate::panorama::window_app(&window);
                 let mut windows: Vec<Window> = vec![window];
-                if let Some(app) = app {
+                if let Some(app) = &app {
                     windows = self
                         .space
                         .elements()
@@ -367,6 +374,14 @@ impl State {
                         .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
                         .cloned()
                         .collect();
+                }
+                // A Silica app keeps running when its windows close (#142): it is asked to
+                // quit over its registry socket, on a thread (an app that does not answer must
+                // not stall the compositor). Other apps end when their windows close.
+                if let Some(app) = app.filter(|app| registered_app(app)) {
+                    let quitting = app.clone();
+                    std::thread::spawn(move || silica_control::apps::quit_all(&quitting));
+                    return Ok(json!({ "closed": 0, "quit": app }));
                 }
                 for window in &windows {
                     if let Some(toplevel) = window.toplevel() {
@@ -823,4 +838,11 @@ impl State {
         }
         to_value(shot)
     }
+}
+
+/// Whether `app_id` has processes in the app registry (silica-control `apps`).
+fn registered_app(app_id: &str) -> bool {
+    silica_control::apps::valid_app_id(app_id)
+        && silica_control::apps::dir()
+            .is_some_and(|dir| !silica_control::apps::instances(&dir, Some(app_id)).is_empty())
 }

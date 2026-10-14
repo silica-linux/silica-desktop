@@ -4,6 +4,7 @@ use std::cell::Cell;
 
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::state::State;
@@ -201,6 +202,52 @@ impl State {
         // It comes out of the Dock as a genie; until the genie ends the window stays hidden.
         self.start_genie(&window, true);
         true
+    }
+
+    /// The app closed its last window but keeps running (#142): the window leaves the screen,
+    /// the shell's list and the focus, fading out like a closed window, and waits in `hidden`
+    /// with its position. A minimized window is hidden too, from the Dock.
+    pub fn hide_window(&mut self, surface: &WlSurface) {
+        let on_screen = self
+            .space
+            .elements()
+            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+            .cloned();
+        let entry = if let Some(window) = on_screen {
+            let location = self.space.element_location(&window).unwrap_or_default();
+            self.start_closing(&window);
+            self.space.unmap_elem(&window);
+            (window, location)
+        } else if let Some(index) = self
+            .minimized
+            .iter()
+            .position(|(w, _)| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+        {
+            let (window, location) = self.minimized.remove(index);
+            self.announce_minimized(&window, false);
+            (window, location)
+        } else {
+            return;
+        };
+        self.withdraw_toplevel(&entry.0);
+        self.hidden.push(entry);
+        let next = self.space.elements().last().cloned();
+        self.focus_window(next);
+    }
+
+    /// The app shows its hidden window again: back where it was, in the shell's list, focused.
+    pub fn show_window(&mut self, surface: &WlSurface) {
+        let Some(index) = self
+            .hidden
+            .iter()
+            .position(|(w, _)| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+        else {
+            return;
+        };
+        let (window, location) = self.hidden.remove(index);
+        self.space.map_element(window.clone(), location, true);
+        self.publish_toplevel(&window);
+        self.focus_window(Some(window));
     }
 
     /// Full screen on the output, or back to the previous geometry.

@@ -13,7 +13,7 @@
     the content, at the top left, vertically centered in the toolbar height.
   </description>
 
-  <interface name="silica_window_manager_v1" version="1">
+  <interface name="silica_window_manager_v1" version="2">
     <description summary="creates the window object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -33,7 +33,7 @@
     </request>
   </interface>
 
-  <interface name="silica_window_v1" version="1">
+  <interface name="silica_window_v1" version="2">
     <description summary="appearance of a window">
       The state is double-buffered: it becomes current on the next wl_surface.commit.
     </description>
@@ -49,6 +49,16 @@
         title bar. Values above 200 are clamped to 200.
       </description>
       <arg name="toolbar_height" type="uint"/>
+    </request>
+
+    <request name="set_hidden" since="2">
+      <description summary="hide or show the window without closing it">
+        A non-zero hidden takes the window off the screen, out of the window lists and out of
+        the focus, as if it were closed, but the app keeps its surface and its state: closing
+        an app's last window does not end the app (silica-desktop#142). Zero brings the window
+        back where it was, focused. Applied at once, not on the next commit.
+      </description>
+      <arg name="hidden" type="uint"/>
     </request>
   </interface>
 </protocol>

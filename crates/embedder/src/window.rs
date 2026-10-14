@@ -270,6 +270,14 @@ struct App {
     /// A frame callback asked for the vsync and not yet arrived.
     vsync_requested: bool,
     exit: bool,
+    /// The app lifecycle (silica-desktop#142, `app_lifecycle.rs`): the app id, whether the
+    /// app ends with its last window, since when its window is hidden, and this process in
+    /// the app registry with its socket.
+    app_id: String,
+    quit_with_last_window: bool,
+    hidden_since: Option<std::time::Instant>,
+    registration: Option<crate::app_lifecycle::Registration>,
+    registry_listener: Option<std::os::unix::net::UnixListener>,
 }
 
 pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
@@ -287,6 +295,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             options.bundle.display()
         )
         .into());
+    }
+
+    // Launched again while its window is hidden: the running process shows it (#142).
+    if options.layer.is_none()
+        && options.dart_args.is_empty()
+        && crate::app_lifecycle::forward(&options.app_id)
+    {
+        info!("{}: the running process shows its window", options.app_id);
+        return Ok(());
     }
 
     let conn = Connection::connect_to_env()?;
@@ -527,7 +544,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
         appearance_manager: globals
-            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=1, ())
+            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=2, ())
             .ok(),
         appearance: None,
         activated: None,
@@ -575,7 +592,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         vsync: None,
         vsync_requested: false,
         exit: false,
+        app_id: options.app_id.clone(),
+        quit_with_last_window: false,
+        hidden_since: None,
+        registration: None,
+        registry_listener: None,
     };
+    if options.layer.is_none() {
+        app.register(&event_loop.handle());
+    }
 
     // Appearance: light until the portal says otherwise, then on every change.
     // The system languages, before the first frame.
@@ -636,6 +661,7 @@ impl App {
             LAYER_CHANNEL => self.handle_layer_call(&message.data),
             WINDOW_CHANNEL => self.handle_window_call(&message.data),
             crate::drag::CHANNEL => self.handle_drag_call(&message.data),
+            crate::app_lifecycle::CHANNEL => self.handle_app_call(&message.data),
             crate::pty::CHANNEL => self.handle_pty_call(&message.data),
             glass::CHANNEL => {
                 let (reply, changed) =
@@ -758,6 +784,185 @@ impl App {
                 b"[null]".to_vec()
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// Joins the app registry: the socket in the loop, the idle check on a timer (#142).
+    fn register(&mut self, handle: &LoopHandle<'static, App>) {
+        use std::os::fd::AsFd;
+        let (registration, listener) = match crate::app_lifecycle::register(&self.app_id) {
+            Ok(registered) => registered,
+            Err(err) => {
+                warn!("app registry: {err}: the app ends with its last window");
+                return;
+            }
+        };
+        let fd = match listener.as_fd().try_clone_to_owned() {
+            Ok(fd) => fd,
+            Err(err) => {
+                warn!("app registry: {err}");
+                return;
+            }
+        };
+        let source = Generic::new(fd, Interest::READ, LoopMode::Level);
+        if let Err(err) = handle.insert_source(source, |_, _, app: &mut App| {
+            app.accept_registry_clients();
+            Ok(PostAction::Continue)
+        }) {
+            warn!("app registry: {err}");
+            return;
+        }
+        let period = crate::app_lifecycle::check_period(crate::app_lifecycle::idle_limit());
+        if let Err(err) =
+            handle.insert_source(Timer::from_duration(period), move |_, _, app: &mut App| {
+                app.check_windowless();
+                TimeoutAction::ToDuration(period)
+            })
+        {
+            warn!("app registry timer: {err}");
+        }
+        self.registration = Some(registration);
+        self.registry_listener = Some(listener);
+    }
+
+    fn accept_registry_clients(&mut self) {
+        loop {
+            let accepted = match &self.registry_listener {
+                Some(listener) => listener.accept(),
+                None => return,
+            };
+            let stream = match accepted {
+                Ok((stream, _)) => stream,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => return,
+                Err(err) => {
+                    warn!("app registry: {err}");
+                    return;
+                }
+            };
+            use crate::app_lifecycle::{Request, answer, read_request};
+            match read_request(&stream) {
+                Some(Request::Status) => {
+                    let status = if self.hidden_since.is_some() {
+                        "hidden"
+                    } else {
+                        "visible"
+                    };
+                    answer(&stream, status);
+                }
+                Some(Request::Reopen) => {
+                    self.reopen();
+                    answer(&stream, "ok");
+                }
+                Some(Request::Quit) => {
+                    answer(&stream, "ok");
+                    info!("{}: quit", self.app_id);
+                    self.exit = true;
+                }
+                None => answer(&stream, "?"),
+            }
+        }
+    }
+
+    /// The app's last window closes (#142): Ossido hides it and the app keeps running,
+    /// unless the app ends with its last window or the system cannot hide it.
+    fn close_last_window(&mut self) {
+        let hideable = self.registration.is_some()
+            && self
+                .appearance_manager
+                .as_ref()
+                .is_some_and(|manager| wayland_client::Proxy::version(manager) >= 2);
+        if self.quit_with_last_window || !hideable {
+            self.exit = true;
+            return;
+        }
+        let (Some(manager), Shell::Window(window)) = (&self.appearance_manager, &self.surface)
+        else {
+            self.exit = true;
+            return;
+        };
+        let object = self
+            .appearance
+            .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+        object.set_hidden(1);
+        self.hidden_since = Some(std::time::Instant::now());
+        self.activated = Some(false);
+        self.send_lifecycle(false);
+        self.send_app("lastWindowClosed", serde_json::json!({}));
+        info!("{}: last window closed, the app keeps running", self.app_id);
+    }
+
+    /// Shows the hidden window again (the Dock, a second launch); with the window on screen
+    /// the app only learns about it.
+    fn reopen(&mut self) {
+        let shown = self.hidden_since.take().is_some();
+        if shown {
+            if let Some(object) = &self.appearance {
+                object.set_hidden(0);
+            }
+            // The engine draws again: the vsync it was waiting for, then the frame callbacks.
+            if let Some(baton) = self.vsync.take() {
+                self.answer_vsync(baton);
+            }
+            if let Some(engine) = &self.engine
+                && let Err(err) = engine.schedule_frame()
+            {
+                warn!("{err}");
+            }
+        }
+        self.send_app("reopen", serde_json::json!({ "shown": shown }));
+    }
+
+    /// A windowless app idle for long, or with memory short, is ended (#142); the Dock keeps
+    /// showing it through the `.parked` marker.
+    fn check_windowless(&mut self) {
+        let Some(since) = self.hidden_since else {
+            return;
+        };
+        if crate::app_lifecycle::should_end(
+            since.elapsed(),
+            crate::app_lifecycle::idle_limit(),
+            crate::app_lifecycle::memory_pressure(),
+        ) {
+            if let Some(registration) = &self.registration {
+                registration.park();
+            }
+            info!("{}: windowless and idle, ended by the system", self.app_id);
+            self.exit = true;
+        }
+    }
+
+    /// The `silica/app` channel (JSONMethodCodec, see `app_lifecycle.rs`).
+    fn handle_app_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
+            return Vec::new();
+        };
+        match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("setQuitWhenLastWindowCloses") => {
+                self.quit_with_last_window = call
+                    .pointer("/args/value")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("quit") => {
+                self.exit = true;
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("isHidden") => {
+                crate::text_input::success(serde_json::json!(self.hidden_since.is_some()))
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn send_app(&self, method: &str, args: serde_json::Value) {
+        if let Some(engine) = &self.engine
+            && let Err(err) = engine.send_message(
+                crate::app_lifecycle::CHANNEL,
+                &crate::drag::call(method, args),
+            )
+        {
+            warn!("silica/app: {err}");
         }
     }
 
@@ -1224,6 +1429,11 @@ impl App {
     /// The engine wants the next vsync: it arrives with the compositor's frame callback.
     /// Before the first frame the compositor sends none, so it answers right away.
     fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
+        // A hidden window draws nothing: the engine waits until it comes back.
+        if self.hidden_since.is_some() {
+            self.vsync = Some(baton);
+            return;
+        }
         let presented =
             self.presented || (self.gl && self.engine.as_ref().is_some_and(Engine::gl_presented));
         if !presented || !self.configured {
@@ -1296,6 +1506,9 @@ impl App {
         self.surface.commit();
         self.buffer = Some(buffer);
         self.waiting_frame = true;
+        if !self.presented {
+            info!("first frame presented");
+        }
         self.presented = true;
     }
 }
@@ -1394,7 +1607,7 @@ impl LayerShellHandler for App {
 
 impl WindowHandler for App {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
-        self.exit = true;
+        self.close_last_window();
     }
 
     fn configure(

@@ -9,6 +9,7 @@
 //!   `FlutterKeyEvent`, and those the framework does not consume go to the active text
 //!   field (`flutter/textinput`).
 
+mod app_lifecycle;
 mod appearance;
 mod codec;
 pub mod dbus;

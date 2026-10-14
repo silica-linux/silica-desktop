@@ -54,7 +54,7 @@ pub struct WindowManagerState;
 
 impl WindowManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaWindowManagerV1, _>(1, ());
+        dh.create_global::<State, SilicaWindowManagerV1, _>(2, ());
         Self
     }
 }
@@ -110,7 +110,7 @@ impl Dispatch<SilicaWindowManagerV1, ()> for State {
 
 impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
     fn request(
-        _state: &mut Self,
+        state: &mut Self,
         _client: &Client,
         _window: &SilicaWindowV1,
         request: silica_window_v1::Request,
@@ -133,6 +133,13 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
         match request {
             silica_window_v1::Request::SetFullSizeContent { toolbar_height } => {
                 set(toolbar_height);
+            }
+            silica_window_v1::Request::SetHidden { hidden } => {
+                if hidden != 0 {
+                    state.hide_window(&surface);
+                } else {
+                    state.show_window(&surface);
+                }
             }
             silica_window_v1::Request::Destroy => {
                 set(0);

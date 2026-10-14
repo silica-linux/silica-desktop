@@ -270,9 +270,49 @@ fn demo_renders_reacts_to_clicks_and_closes() {
         .unwrap();
     session.expect_pixel(x + 150, y + 190, TAPPED);
 
-    // window.close: the embedder shuts the engine down and exits cleanly.
+    // window.close: as on the reference the app keeps running without windows (#142). The
+    // window leaves the list and the process stays, registered in the app registry.
     session.client().call(WINDOW_CLOSE, Value::Null).unwrap();
+    assert!(
+        wait_until(|| {
+            let list = session.client().call(WINDOW_LIST, Value::Null).unwrap();
+            let windows: Vec<WindowInfo> = serde_json::from_value(list).unwrap();
+            windows.iter().all(|w| w.app_id.as_deref() != Some(APP_ID))
+        }),
+        "the closed window is still listed"
+    );
     let mut embedder = session.embedder.take().unwrap();
+    assert!(
+        embedder.try_wait().unwrap().is_none(),
+        "the app ended with its window"
+    );
+    let registry = session.dir.join("silica-apps");
+    assert_eq!(
+        silica_control::apps::instances(&registry, Some(APP_ID)).len(),
+        1,
+        "the app is not in the registry"
+    );
+
+    // Launched again: the running process shows its window and the new one exits at once.
+    let mut second = spawn_embedder(&session.dir, &session.wayland, &size_args((300, 200)));
+    let mut second_status = None;
+    assert!(
+        wait_until(|| {
+            second_status = second.try_wait().unwrap();
+            second_status.is_some()
+        }),
+        "the second launch did not hand over"
+    );
+    assert!(second_status.unwrap().success());
+    let shown = session.window();
+    assert_eq!((shown.width, shown.height), (300, 200));
+    session.expect_pixel(x + 150, y + 190, TAPPED);
+
+    // app.quit with the app id (Quit in the Dock menu): it ends cleanly.
+    session
+        .client()
+        .call("app.quit", json!({ "app_id": APP_ID }))
+        .unwrap();
     let mut status = None;
     assert!(
         wait_until(|| {

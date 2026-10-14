@@ -103,6 +103,9 @@ pub struct State {
     pub clear_color: [f32; 4],
     /// Minimized windows, with the position they go back to.
     pub minimized: Vec<crate::windows::Minimized>,
+    /// Windows hidden by their app (its last window closed, the app still running, #142),
+    /// with the position they come back to.
+    pub hidden: Vec<crate::windows::Minimized>,
     /// The workspaces and the scroll in progress (`workspaces.rs`).
     pub workspaces: crate::workspaces::Workspaces,
     /// Panorama open or closing (`panorama.rs`).
@@ -297,6 +300,7 @@ impl State {
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
+            hidden: Vec::new(),
             workspaces: crate::workspaces::Workspaces::default(),
             panorama: None,
             panorama_press: false,

@@ -87,6 +87,22 @@ fn title_and_app_id(toplevel: &ToplevelSurface) -> (String, String) {
     })
 }
 
+/// The window's entry in the shell's list (ext-foreign-toplevel). A window hidden by its app
+/// leaves the list and comes back with a new entry, so the slot can be emptied.
+#[derive(Default)]
+pub struct ToplevelSlot(std::sync::Mutex<Option<ForeignToplevelHandle>>);
+
+/// The window's current entry in the shell's list, if it has one.
+pub fn toplevel_handle(window: &Window) -> Option<ForeignToplevelHandle> {
+    window
+        .user_data()
+        .get::<ToplevelSlot>()?
+        .0
+        .lock()
+        .ok()?
+        .clone()
+}
+
 impl State {
     /// A new window enters the shell's list.
     pub fn publish_toplevel(&mut self, window: &Window) {
@@ -97,7 +113,12 @@ impl State {
         let handle = self
             .foreign_toplevel_list
             .new_toplevel::<State>(title, app_id);
-        window.user_data().insert_if_missing(|| handle);
+        window.user_data().insert_if_missing(ToplevelSlot::default);
+        if let Some(slot) = window.user_data().get::<ToplevelSlot>()
+            && let Ok(mut slot) = slot.0.lock()
+        {
+            *slot = Some(handle);
+        }
     }
 
     /// Title or app id changed: the shell receives them.
@@ -110,7 +131,7 @@ impl State {
         else {
             return;
         };
-        let Some(handle) = window.user_data().get::<ForeignToplevelHandle>() else {
+        let Some(handle) = toplevel_handle(window) else {
             return;
         };
         let (title, app_id) = title_and_app_id(surface);
@@ -125,16 +146,26 @@ impl State {
             .space
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
+            .chain(self.hidden.iter().map(|(w, _)| w))
             .find(|w| w.toplevel() == Some(surface))
             .cloned();
-        if let Some(handle) = window
-            .as_ref()
-            .and_then(|w| w.user_data().get::<ForeignToplevelHandle>())
-        {
-            self.foreign_toplevel_list.remove_toplevel(handle);
+        if let Some(window) = &window {
+            self.withdraw_toplevel(window);
         }
         self.minimized
             .retain(|(w, _)| w.toplevel() != Some(surface));
+        self.hidden.retain(|(w, _)| w.toplevel() != Some(surface));
+    }
+
+    /// The window leaves the shell's list but stays alive (hidden by its app, #142).
+    pub fn withdraw_toplevel(&mut self, window: &Window) {
+        let handle = window
+            .user_data()
+            .get::<ToplevelSlot>()
+            .and_then(|slot| slot.0.lock().ok()?.take());
+        if let Some(handle) = handle {
+            self.foreign_toplevel_list.remove_toplevel(&handle);
+        }
     }
 
     /// The identifier of this surface's window, empty if it is not a window.
@@ -144,8 +175,8 @@ impl State {
                 self.space
                     .elements()
                     .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == focus))
-                    .and_then(|w| w.user_data().get::<ForeignToplevelHandle>())
-                    .map(ForeignToplevelHandle::identifier)
+                    .and_then(toplevel_handle)
+                    .map(|h| h.identifier())
             })
             .unwrap_or_default()
     }
@@ -182,11 +213,7 @@ impl State {
 
     /// Announces to the shell components that a window was minimized or restored.
     pub fn announce_minimized(&mut self, window: &Window, minimized: bool) {
-        let Some(identifier) = window
-            .user_data()
-            .get::<ForeignToplevelHandle>()
-            .map(ForeignToplevelHandle::identifier)
-        else {
+        let Some(identifier) = toplevel_handle(window).map(|h| h.identifier()) else {
             return;
         };
         self.shell_managers.retain(|manager| manager.is_alive());
@@ -220,11 +247,7 @@ impl State {
     /// Asks the shell components for the arrangement popover of the window, with the tip
     /// towards `point` (below the full-screen button). How many received it.
     pub fn announce_window_menu(&mut self, window: &Window, point: Point<i32, Logical>) -> usize {
-        let Some(identifier) = window
-            .user_data()
-            .get::<ForeignToplevelHandle>()
-            .map(ForeignToplevelHandle::identifier)
-        else {
+        let Some(identifier) = toplevel_handle(window).map(|h| h.identifier()) else {
             return 0;
         };
         self.shell_managers.retain(|manager| manager.is_alive());
@@ -242,11 +265,11 @@ impl State {
     /// returns its size (0 × 0 if there is none).
     fn write_thumbnail(&self, identifier: &str, fd: std::os::fd::OwnedFd) -> (u32, u32) {
         use std::io::{Seek, Write};
-        let Some(window) = self.minimized.iter().map(|(w, _)| w).find(|w| {
-            w.user_data()
-                .get::<ForeignToplevelHandle>()
-                .is_some_and(|handle| handle.identifier() == identifier)
-        }) else {
+        let Some(window) =
+            self.minimized.iter().map(|(w, _)| w).find(|w| {
+                toplevel_handle(w).is_some_and(|handle| handle.identifier() == identifier)
+            })
+        else {
             return (0, 0);
         };
         let Some(thumbnail) = window.user_data().get::<crate::backend::Thumbnail>() else {
@@ -278,11 +301,7 @@ impl State {
             .space
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
-            .find(|w| {
-                w.user_data()
-                    .get::<ForeignToplevelHandle>()
-                    .is_some_and(|handle| handle.identifier() == identifier)
-            })
+            .find(|w| toplevel_handle(w).is_some_and(|handle| handle.identifier() == identifier))
             .cloned();
         let Some(window) = window else {
             return;
@@ -332,7 +351,7 @@ impl GlobalDispatch<SilicaShellManagerV1, ShellGlobal> for State {
         manager.focused(state.focused_identifier());
         if manager.version() >= 2 {
             for (window, _) in &state.minimized {
-                if let Some(handle) = window.user_data().get::<ForeignToplevelHandle>() {
+                if let Some(handle) = toplevel_handle(window) {
                     manager.minimized(handle.identifier(), 1);
                 }
             }

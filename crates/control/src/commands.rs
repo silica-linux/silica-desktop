@@ -614,9 +614,15 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: APP_QUIT,
         label: "Quit app",
-        description: "Asks every window of the frontmost app (same app_id) to close.",
+        description: "Quits the frontmost app, or the app `app_id`: a Silica app over its registry socket (it keeps running when its windows close), any other app by closing all its windows (same app_id).",
         shortcut: Some("Logo+Q"),
-        params: no_params,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"app_id": {"type": "string"}},
+                "additionalProperties": false
+            })
+        },
     },
     CommandSpec {
         id: APP_FORCE_QUIT_PANEL,

@@ -17,6 +17,7 @@ libloading = "0.8"
 rustix = { version = "1", features = ["fs", "process", "pty", "std", "termios"] }
 smithay-client-toolkit = { version = "0.19", default-features = false, features = ["calloop", "xkbcommon"] }
 serde_json = "1"
+silica-control = { path = "../control" }
 silica-protocols = { path = "../protocols", features = ["client"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
