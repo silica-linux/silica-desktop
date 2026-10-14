@@ -177,7 +177,7 @@ void main() {
         ValueKey('icona ${dir.path}/documento con un nome molto lungo 1.txt'),
       ),
     );
-    expect(icon.width, gridIcon);
+    expect(icon.width, gridIconCanvas);
   });
 
   testWidgets('vista Elenco: un menu con i file, Opzioni e Apri', (

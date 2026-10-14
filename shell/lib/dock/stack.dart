@@ -56,6 +56,11 @@ const double gridCell = 128;
 const double gridIcon = 92;
 const double gridIconTop = 10;
 
+/// La tela dell'icona nella cella (silica-icons 0.2: il lato di un file è la tela): 100 pt da
+/// y 6, così la cartella (0,922 × 0,734 della tela, cima a 132/1024) torna 92 × 74 a 19 pt.
+const double gridIconCanvas = 100;
+const double gridCanvasTop = 6;
+
 /// L'etichetta: una riga, maiuscole da y 109 (base a ~118), larga al più ~104.
 const double gridLabelBaseline = 118;
 const double gridLabelWidth = 104;
@@ -292,7 +297,7 @@ class FanStack extends StatelessWidget {
                         ? CustomPaint(painter: _OpenFolderPainter())
                         : icon == null
                         ? const SizedBox()
-                        : SilicaIcon(icon, side: side * 0.92, dark: false),
+                        : SilicaIcon(icon, side: side, dark: false),
                   ),
                 ],
               ),
@@ -478,13 +483,13 @@ class GridStack extends StatelessWidget {
           children: [
             Positioned(
               key: ValueKey('icona ${entry.path}'),
-              left: (gridCell - gridIcon) / 2,
-              top: gridIconTop,
-              width: gridIcon,
-              height: gridIcon,
+              left: (gridCell - gridIconCanvas) / 2,
+              top: gridCanvasTop,
+              width: gridIconCanvas,
+              height: gridIconCanvas,
               child: icon == null
                   ? const SizedBox.shrink()
-                  : SilicaIcon(icon, side: gridIcon, dark: false),
+                  : SilicaIcon(icon, side: gridIconCanvas, dark: false),
             ),
             Positioned(
               left: (gridCell - gridLabelWidth) / 2,
@@ -584,7 +589,12 @@ class PileIcon extends StatelessWidget {
               top: bottom - front - 4 * unit * i,
               width: front * scales[i],
               height: front * scales[i],
-              child: SilicaIcon(sources[i], side: front * scales[i]),
+              // Misurata con il foglio sul corpo delle app (d06-icon-pila-10).
+              child: SilicaIcon(
+                sources[i],
+                side: front * scales[i],
+                besideApps: true,
+              ),
             ),
         ],
       ),

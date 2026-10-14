@@ -152,6 +152,7 @@ class TrashAlert extends StatelessWidget {
                         LayeredSource(icon),
                         side: trashAlertIcon,
                         dark: false,
+                        besideApps: true,
                       ),
               ),
               Positioned(

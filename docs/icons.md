@@ -69,8 +69,12 @@ ogni cartella della vista:
    simbolo, quindi va passato il lato reale della cella (16, 32, 64, 128…), non una tela
    grande poi ridotta.
 
-Le icone dei file e delle cartelle sono a filo del corpo (keyline documento 648 × 824 e
-cartella 824 × 648): accanto alle app hanno lo stesso ingombro.
+Per le icone dei file, delle cartelle, dei volumi e del Cestino il lato è la **tela intera**
+(silica-icons 0.2: foglio 684 × 904 a (170, 60), cartella 944 × 760 a (40, 132), volumi
+944 × 583, Cestino 656 × 824 con la base a 924), misurata sul Finder; le fasce `min_size`
+si confrontano con quel lato. Nel Dock, accanto alle app, un luogo usa invece la tela delle
+app (`SilicaIcon(…, besideApps: true)`, silica_ui ≥ 0.17): lato = corpo, tela 1024/824 del
+lato.
 
 ## Limiti degli SVG
 

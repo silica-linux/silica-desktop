@@ -1441,7 +1441,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           top: at.dy,
           width: drag.side,
           height: drag.side,
-          child: SilicaIcon(source, side: drag.side),
+          child: SilicaIcon(source, side: drag.side, besideApps: true),
         ),
       if (drag.remove)
         _capsule('Rimuovi', at.dx + drag.side / 2, at.dy - labelGap, 1),
@@ -1465,7 +1465,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   top: ghost.at.dy,
                   width: ghost.side,
                   height: ghost.side,
-                  child: SilicaIcon(source, side: ghost.side),
+                  child: SilicaIcon(source, side: ghost.side, besideApps: true),
                 ),
               _capsule(
                 'Rimuovi',
@@ -1574,10 +1574,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
     final pile = closer == null ? _pileOf(item) : null;
     final icon = closer != null
-        ? SilicaIcon(LayeredSource(closer), side: side)
+        ? SilicaIcon(LayeredSource(closer), side: side, besideApps: true)
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
-        : SilicaIcon(source, side: side);
+        : SilicaIcon(source, side: side, besideApps: true);
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,
