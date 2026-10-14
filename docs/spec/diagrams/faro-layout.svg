@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 340" font-family="Inter, sans-serif" font-size="10">
+  <title>Faro: empty capsule and panel with results (scale 1:2)</title>
+  <rect width="400" height="340" fill="#ffffff"/>
+  <!-- empty capsule 640x57 -> 320x28.5 -->
+  <text x="20" y="16">Empty: 640 × 57 pt capsule, top at 30 % of the screen</text>
+  <rect x="20" y="24" width="320" height="28.5" rx="14.25" fill="#c8c9ce" stroke="#505154" stroke-width="0.5"/>
+  <circle cx="37" cy="38" r="5" fill="none" stroke="#494a4f" stroke-width="1.2"/>
+  <text x="50" y="42" font-size="12" fill="#494a4f">Search</text>
+  <!-- results panel 640 x 467 -> 320 x 233.5 -->
+  <text x="20" y="80">With results: header 56, separator inset 20, filters 47, rows 57</text>
+  <g transform="translate(20,88)">
+    <rect x="0" y="0" width="320" height="233.5" rx="14.25" fill="#c8c9ce" stroke="#505154" stroke-width="0.5"/>
+    <text x="30" y="18" font-size="12" fill="#16171c">term</text>
+    <rect x="57" y="6" width="40" height="16" rx="3.5" fill="#a2a3a8"/>
+    <text x="59" y="18" font-size="12" fill="#232429">inal — Open</text>
+    <line x1="10" y1="28" x2="310" y2="28" stroke="#afb0b5" stroke-width="0.5"/>
+    <rect x="10" y="33" width="28" height="13" rx="4" fill="#d9dadf"/>
+    <rect x="42" y="33" width="54" height="13" rx="4" fill="#d9dadf"/>
+    <rect x="100" y="33" width="42" height="13" rx="4" fill="#d9dadf"/>
+    <!-- selected row inset 8, height 57 -> 28.5, radius 16.5 -->
+    <rect x="5" y="52" width="301.5" height="28.5" rx="8.25" fill="#afb0b5"/>
+    <rect x="9" y="56.5" width="19" height="19" rx="4" fill="#8a8b90"/>
+    <text x="35" y="70" fill="#000003">Selected result</text>
+    <rect x="270" y="60" width="32" height="9" rx="2.75" fill="#d2d3d8"/>
+    <text x="276" y="67" font-size="7">Tab</text>
+    <rect x="9" y="85" width="19" height="19" rx="4" fill="#8a8b90"/>
+    <text x="35" y="93" fill="#16171c">Title</text>
+    <text x="35" y="103" font-size="8" fill="#88898e">Subtitle</text>
+    <rect x="9" y="113.5" width="19" height="19" rx="4" fill="#8a8b90"/>
+    <rect x="314" y="70" width="5.5" height="45" rx="2.75" fill="#808080"/>
+  </g>
+</svg>
