@@ -8,8 +8,9 @@ import 'dbus.dart';
 
 /// The sounds the shell plays.
 abstract final class UiSound {
-  /// Items dropped on the Dock's Trash.
-  static const String trashDrag = 'trash-drag';
+  /// Items moved to the Trash, by a drop on the Dock's Trash too (one Trash sound; the old
+  /// `trash-drag` name stays in the daemon only as an alias).
+  static const String trashMove = 'trash-move';
 
   /// The Trash emptied.
   static const String trashEmpty = 'trash-empty';

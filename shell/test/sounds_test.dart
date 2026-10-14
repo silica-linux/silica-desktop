@@ -41,7 +41,7 @@ void main() {
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(DBus.channel, null),
     );
-    await playUiSound(UiSound.trashDrag);
+    await playUiSound(UiSound.trashMove);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(DBus.channel, null);
     await playUiSound(UiSound.fileTransfer);

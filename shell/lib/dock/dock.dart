@@ -449,9 +449,8 @@ class _LiveDockState extends State<LiveDock> {
   /// stack they move into the folder, on an app they open with it.
   Future<void> _dropFiles(Item item, List<String> paths) async {
     if (item.trash) {
-      // The sound on release, as the items go in (MU-40, FILE-SOUNDS).
-      unawaited(playUiSound(UiSound.trashDrag));
-      await moveToTrash(paths);
+      // The Trash sound comes once the items are in (FILE-SOUNDS), not at the release.
+      await trashDropped(paths);
     } else if (item.folder case final folder?) {
       try {
         final moved = await Process.run('mv', ['--', ...paths, folder]);
@@ -707,9 +706,9 @@ class _LiveDockState extends State<LiveDock> {
             onEmpty: () async {
               setState(() => _confirmEmpty = false);
               await emptyTrash();
-              // Once emptied (MU-42: the sound follows the emptying).
-              unawaited(playUiSound(UiSound.trashEmpty));
               if (mounted) setState(() {});
+              // ~0.2 s after the Trash icon turns empty (FILE-SOUNDS).
+              unawaited(soundTrashEmptied());
             },
             onCancel: () => setState(() => _confirmEmpty = false),
           )
