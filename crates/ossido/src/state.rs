@@ -68,6 +68,7 @@ pub struct State {
     pub dmabuf_global: Option<DmabufGlobal>,
     pub xdg_decoration_state: XdgDecorationState,
     pub glass_manager_state: crate::glass::GlassManagerState,
+    pub window_manager_state: crate::window_appearance::WindowManagerState,
     /// Le finestre per la shell (`ext-foreign-toplevel-list`, solo ai suoi componenti).
     pub foreign_toplevel_list: smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
     pub shell_manager_state: crate::shell::ShellManagerState,
@@ -113,6 +114,9 @@ pub struct State {
     pub buttons_hover: Option<ButtonsHover>,
     /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
     pub moving: Option<(Window, Point<f64, Logical>)>,
+    /// Il serial dell'ultima pressione di un pulsante del mouse, finché non viene rilasciato:
+    /// `xdg_toplevel.move` vale solo con questo serial.
+    pub press_serial: Option<smithay::utils::Serial>,
     /// Moltiplicatore delle durate delle animazioni; 0 le spegne (`--animation-scale`,
     /// `ui.animation_scale`).
     pub animation_speed: f64,
@@ -177,6 +181,7 @@ impl State {
         let viewporter_state = ViewporterState::new::<State>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
         let glass_manager_state = crate::glass::GlassManagerState::new(&dh);
+        let window_manager_state = crate::window_appearance::WindowManagerState::new(&dh);
         let foreign_toplevel_list = crate::shell::toplevel_list(&dh);
         let shell_manager_state = crate::shell::ShellManagerState::new(&dh);
         let mut seat_state = SeatState::new();
@@ -242,6 +247,7 @@ impl State {
             dmabuf_global: None,
             xdg_decoration_state,
             glass_manager_state,
+            window_manager_state,
             foreign_toplevel_list,
             shell_manager_state,
             shell_managers: Vec::new(),
@@ -265,6 +271,7 @@ impl State {
             titlebar_press_inside: false,
             buttons_hover: None,
             moving: None,
+            press_serial: None,
             animation_speed: 1.0,
             closing: Vec::new(),
             glass_setting: GlassSetting::Auto,

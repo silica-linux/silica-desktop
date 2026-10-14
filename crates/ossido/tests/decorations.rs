@@ -247,3 +247,100 @@ fn dragging_the_titlebar_moves_the_window() {
     let moved = windows(&ossido).remove(0);
     assert_eq!((moved.x, moved.y), (info.x + 40, info.y + 30));
 }
+
+#[test]
+fn full_size_content_keeps_only_the_buttons_over_the_app() {
+    let ossido = start("decor-full-size");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "tutta", (240, 140));
+    let before = windows(&ossido).remove(0);
+    // L'app disegna una barra degli strumenti alta 52: Ossido toglie la sua barra.
+    window.set_full_size_content(52);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let info = windows(&ossido).remove(0);
+    let image = shot(&ossido);
+    // Sopra il contenuto non c'è più la barra bianca: il fondo grigio.
+    assert_near(
+        &image,
+        (info.x + 150, info.y - 26),
+        [0x7a, 0x7b, 0x80],
+        6,
+        "niente barra sopra il contenuto",
+    );
+    // I pulsanti stanno sopra il contenuto, centrati nella barra dell'app (y 26).
+    let on_content = |i: i32| (info.x + 26 + 23 * i, info.y + 26);
+    assert_near(&image, on_content(0), [0xf8, 0x7d, 0x77], 8, "chiusura");
+    assert_near(
+        &image,
+        on_content(2),
+        [0x85, 0xd6, 0x60],
+        8,
+        "schermo intero",
+    );
+    // Il resto della fascia è dell'app (rosso).
+    assert_near(
+        &image,
+        (info.x + 150, info.y + 26),
+        [255, 0, 0],
+        0,
+        "barra dell'app",
+    );
+    // Il clic sul rosso chiude; altrove arriva all'app.
+    let mut client = ossido.client();
+    client
+        .call(INPUT_CLICK, json!({"x": info.x + 26, "y": info.y + 26}))
+        .unwrap();
+    assert!(window.close_requested());
+    // 0: di nuovo la barra di Ossido.
+    window.set_full_size_content(0);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let image = shot(&ossido);
+    let info = windows(&ossido).remove(0);
+    assert_near(
+        &image,
+        (info.x + 150, info.y - 26),
+        [255, 255, 255],
+        1,
+        "la barra torna",
+    );
+    let _ = before;
+}
+
+/// L'app sposta la finestra dalla sua barra degli strumenti (`xdg_toplevel.move`): solo con il
+/// pulsante ancora premuto, e il rilascio la lascia dove è.
+#[test]
+fn the_app_moves_its_window_from_the_toolbar() {
+    let ossido = start("decor-app-move");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "sposta", (240, 140));
+    window.set_full_size_content(52);
+    let info = windows(&ossido).remove(0);
+    let mut client = ossido.client();
+    let (x, y) = (info.x + 150, info.y + 26);
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": x, "y": y}))
+        .unwrap();
+    client
+        .call(
+            INPUT_POINTER_BUTTON,
+            json!({"button": "left", "pressed": true}),
+        )
+        .unwrap();
+    window.start_move();
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": x + 60, "y": y + 40}))
+        .unwrap();
+    client
+        .call(
+            INPUT_POINTER_BUTTON,
+            json!({"button": "left", "pressed": false}),
+        )
+        .unwrap();
+    let moved = windows(&ossido).remove(0);
+    assert_eq!((moved.x, moved.y), (info.x + 60, info.y + 40));
+    // Dopo il rilascio la richiesta non vale più: la finestra non segue il puntatore.
+    window.start_move();
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": x + 200, "y": y + 100}))
+        .unwrap();
+    let still = windows(&ossido).remove(0);
+    assert_eq!((still.x, still.y), (moved.x, moved.y));
+}

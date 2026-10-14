@@ -22,7 +22,7 @@ const BACKGROUND: [f32; 3] = [1.0, 1.0, 1.0];
 const SEPARATOR_INACTIVE: [f32; 4] = [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 1.0];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
-pub const UNIFORMS: [(&str, UniformType); 11] = [
+pub const UNIFORMS: [(&str, UniformType); 13] = [
     ("frame_height", UniformType::_1f),
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -34,6 +34,8 @@ pub const UNIFORMS: [(&str, UniformType); 11] = [
     ("pressed", UniformType::_1f),
     ("alt", UniformType::_1f),
     ("disabled", UniformType::_1f),
+    ("bar", UniformType::_1f),
+    ("button_y", UniformType::_1f),
 ];
 
 /// Stato della barra che cambia il disegno.
@@ -51,6 +53,12 @@ pub struct TitlebarState {
     /// Riduzione e schermo intero non disponibili (finestra di dimensione fissa o dialogo).
     pub disabled: bool,
     pub scale: f64,
+    /// Il fondo della barra: falso con il contenuto a tutta finestra (`silica-window-v1`), dove
+    /// restano solo i pulsanti sopra l'app.
+    pub bar: bool,
+    /// Il centro verticale dei pulsanti (26 nella barra di Ossido; metà della barra degli
+    /// strumenti dell'app con il contenuto a tutta finestra).
+    pub button_y: f32,
 }
 
 /// Simboli dei pulsanti nel tempo (windows.md, "Altri stati"): all'ingresso del puntatore
@@ -78,7 +86,10 @@ impl Titlebar {
         frame: Rectangle<i32, Logical>,
         state: TitlebarState,
     ) -> PixelShaderElement {
-        let area = Rectangle::new(frame.loc, Size::from((frame.size.w, HEIGHT)));
+        // Con il contenuto a tutta finestra la fascia arriva sotto i pulsanti, centrati più in
+        // basso se la barra dell'app è più alta.
+        let height = HEIGHT.max((state.button_y * 2.0).ceil() as i32);
+        let area = Rectangle::new(frame.loc, Size::from((frame.size.w, height)));
         self.cache.element(program, area, (frame.size, state), || {
             uniforms(frame.size, state)
         })
@@ -120,6 +131,8 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         ),
         Uniform::new("alt", UniformValue::_1f(flag(state.alt))),
         Uniform::new("disabled", UniformValue::_1f(flag(state.disabled))),
+        Uniform::new("bar", UniformValue::_1f(flag(state.bar))),
+        Uniform::new("button_y", UniformValue::_1f(state.button_y)),
     ]
 }
 

@@ -191,6 +191,23 @@ impl XdgShellHandler for State {
         self.update_toplevel(&surface);
     }
 
+    /// L'app sposta la finestra dalla sua barra degli strumenti (contenuto a tutta finestra):
+    /// come trascinare la barra di Ossido, solo con il pulsante ancora premuto.
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
+        if self.press_serial != Some(serial) || self.moving.is_some() {
+            return;
+        }
+        let Some(window) = self.window_for(surface.wl_surface()) else {
+            return;
+        };
+        let (Some(pointer), Some(frame)) = (self.seat.get_pointer(), self.window_frame(&window))
+        else {
+            return;
+        };
+        let grab = pointer.current_location() - frame.loc.to_f64();
+        self.moving = Some((window, grab));
+    }
+
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // I grab dei popup arrivano con i menu (M3); per ora il popup resta aperto.
     }

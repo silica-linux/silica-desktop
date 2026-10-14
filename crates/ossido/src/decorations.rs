@@ -25,13 +25,34 @@ pub fn is_server_side(window: &Window) -> bool {
         && !crate::windows::is_fullscreen(window)
 }
 
-/// Altezza della barra sopra il contenuto (0 senza decorazioni lato server).
+/// L'app ha chiesto il contenuto a tutta finestra (`silica-window-v1`): l'altezza della sua
+/// barra degli strumenti. Ossido allora non aggiunge la barra, disegna solo i pulsanti.
+pub fn full_size_toolbar(window: &Window) -> Option<u32> {
+    window
+        .toplevel()
+        .and_then(|toplevel| crate::window_appearance::full_size_toolbar(toplevel.wl_surface()))
+}
+
+/// Altezza della barra sopra il contenuto (0 senza decorazioni lato server o con il contenuto
+/// a tutta finestra).
 pub fn titlebar_height(window: &Window) -> i32 {
-    if is_server_side(window) {
+    if is_server_side(window) && full_size_toolbar(window).is_none() {
         titlebar::HEIGHT
     } else {
         0
     }
+}
+
+/// Il centro verticale dei pulsanti: 26 nella barra di Ossido, metà della barra degli strumenti
+/// dell'app con il contenuto a tutta finestra.
+pub fn button_center_y(window: &Window) -> f64 {
+    full_size_toolbar(window).map_or(titlebar::BUTTON_CENTERS[0].1, |h| f64::from(h) / 2.0)
+}
+
+/// Un punto della cornice nelle coordinate della barra di Ossido (dove i pulsanti hanno il
+/// centro a y 26), per riusare `part_at` e `over_buttons` anche a tutta finestra.
+pub fn to_titlebar_space(window: &Window, local: Point<f64, Logical>) -> Point<f64, Logical> {
+    local - Point::from((0.0, button_center_y(window) - titlebar::BUTTON_CENTERS[0].1))
 }
 
 /// La cornice dato il rettangolo del contenuto: la barra si aggiunge sopra.
@@ -93,9 +114,18 @@ impl State {
             {
                 let local = location - frame.loc.to_f64();
                 if frame.to_f64().contains(location)
-                    && let Some(part) = titlebar::part_at(local)
+                    && let Some(part) = titlebar::part_at(to_titlebar_space(window, local))
+                    // A tutta finestra il resto della fascia è dell'app (la sua barra degli
+                    // strumenti): solo i pulsanti sono di Ossido.
+                    && (full_size_toolbar(window).is_none() || part != Part::Bar)
                 {
-                    return Some(Hit::Titlebar(window.clone(), part, local));
+                    // Il punto nelle coordinate della barra: lì valgono `over_buttons` e
+                    // il trascinamento.
+                    return Some(Hit::Titlebar(
+                        window.clone(),
+                        part,
+                        to_titlebar_space(window, local),
+                    ));
                 }
             }
             let Some(render_location) = self

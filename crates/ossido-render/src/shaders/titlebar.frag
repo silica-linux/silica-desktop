@@ -29,6 +29,10 @@ uniform float pressed;
 uniform float alt;
 // 1 = riduzione e schermo intero disattivati (dischi grigi senza simbolo).
 uniform float disabled;
+// 0 = contenuto a tutta finestra: niente fondo né riga, solo i pulsanti sopra l'app.
+uniform float bar;
+// Centro verticale dei pulsanti.
+uniform float button_y;
 
 float shape_distance(vec2 p, vec4 rect) {
     vec2 half_size = rect.zw * 0.5;
@@ -101,8 +105,8 @@ float symbol_zoom(vec2 d) {
 void main() {
     vec2 p = v_coords * size;
     float shape = shape_distance(p, vec4(0.0, 0.0, size.x, frame_height));
-    vec4 color = vec4(background, 1.0);
-    if (separator.a > 0.0 && p.y > size.y - 1.0) {
+    vec4 color = bar > 0.5 ? vec4(background, 1.0) : vec4(0.0);
+    if (bar > 0.5 && separator.a > 0.0 && p.y > size.y - 1.0) {
         color = vec4(mix(background, separator.rgb, separator.a), 1.0);
     }
 
@@ -135,9 +139,9 @@ void main() {
     vec3 min_s = pressed == 1.0 && !off ? vec3(0.0, 0.176, 0.110) : no_shift;
     vec3 zoom_s = pressed == 2.0 && !off ? vec3(0.004, 0.024, -0.035) : no_shift;
 
-    vec2 c1 = vec2(26.0, 26.0);
-    vec2 c2 = vec2(49.0, 26.0);
-    vec2 c3 = vec2(72.0, 26.0);
+    vec2 c1 = vec2(26.0, button_y);
+    vec2 c2 = vec2(49.0, button_y);
+    vec2 c3 = vec2(72.0, button_y);
     color = over(button(p, c1, close_t, close_c, close_b, close_o,
                         lit ? close_o : ot, lit ? close_o : ob, close_s), color);
     if (off) {

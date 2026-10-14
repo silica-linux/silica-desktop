@@ -137,7 +137,11 @@ impl State {
                 },
             }
         }
+        if state == ButtonState::Pressed {
+            self.press_serial = Some(serial);
+        }
         if state == ButtonState::Released {
+            self.press_serial = None;
             self.moving = None;
             if let Some((window, part)) = self.titlebar_press.take()
                 && let Some(Hit::Titlebar(over, over_part, _)) = self.window_hit(location)

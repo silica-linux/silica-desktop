@@ -7,9 +7,13 @@ use std::path::Path;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
+use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
+use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
+use wayland_client::protocol::wl_pointer::{self, WlPointer};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::protocol::wl_shm::{self, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
@@ -35,6 +39,11 @@ struct App {
     wm_base: Option<XdgWmBase>,
     decorations: Option<ZxdgDecorationManagerV1>,
     glass: Option<SilicaGlassManagerV1>,
+    appearance: Option<SilicaWindowManagerV1>,
+    seat: Option<WlSeat>,
+    pointer: Option<WlPointer>,
+    /// Il serial dell'ultima pressione di un pulsante sulla finestra.
+    press_serial: Option<u32>,
     configured: bool,
     close_requested: bool,
     /// Modo delle decorazioni scelto da Ossido.
@@ -63,6 +72,10 @@ impl Dispatch<WlRegistry, ()> for App {
                 "silica_glass_manager_v1" => {
                     let version = GLASS_VERSION.with(std::cell::Cell::get).min(version);
                     state.glass = Some(registry.bind(name, version, qh, ()));
+                }
+                "wl_seat" => state.seat = Some(registry.bind(name, 1, qh, ())),
+                "silica_window_manager_v1" => {
+                    state.appearance = Some(registry.bind(name, 1, qh, ()));
                 }
                 "zxdg_decoration_manager_v1" => {
                     state.decorations = Some(registry.bind(name, 1, qh, ()));
@@ -116,6 +129,46 @@ impl Dispatch<WlShm, ()> for App {
     }
 }
 
+impl Dispatch<WlSeat, ()> for App {
+    fn event(
+        state: &mut Self,
+        seat: &WlSeat,
+        event: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_seat::Event::Capabilities {
+            capabilities: wayland_client::WEnum::Value(caps),
+        } = event
+            && caps.contains(wl_seat::Capability::Pointer)
+            && state.pointer.is_none()
+        {
+            state.pointer = Some(seat.get_pointer(qh, ()));
+        }
+    }
+}
+
+impl Dispatch<WlPointer, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_pointer::Event::Button {
+            serial,
+            state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
+            ..
+        } = event
+        {
+            state.press_serial = Some(serial);
+        }
+    }
+}
+
 delegate_noop!(App: ignore WlCompositor);
 delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore WlBuffer);
@@ -123,6 +176,8 @@ delegate_noop!(App: WlShmPool);
 delegate_noop!(App: ignore ZxdgDecorationManagerV1);
 delegate_noop!(App: ignore SilicaGlassManagerV1);
 delegate_noop!(App: ignore SilicaGlassV1);
+delegate_noop!(App: ignore SilicaWindowManagerV1);
+delegate_noop!(App: ignore SilicaWindowV1);
 
 impl Dispatch<ZxdgToplevelDecorationV1, ()> for App {
     fn event(
@@ -165,6 +220,7 @@ pub struct TestWindow {
     _toplevel: XdgToplevel,
     _decoration: Option<ZxdgToplevelDecorationV1>,
     glass: Option<SilicaGlassV1>,
+    appearance: Option<SilicaWindowV1>,
     buffer: WlBuffer,
 }
 
@@ -268,6 +324,7 @@ impl TestWindow {
             _toplevel: toplevel,
             _decoration: decoration,
             glass: None,
+            appearance: None,
             buffer,
         }
     }
@@ -356,6 +413,35 @@ impl TestWindow {
             .roundtrip(&mut self.app)
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    /// Contenuto a tutta finestra (`silica-window-v1`) con una barra degli strumenti alta
+    /// `toolbar` (0: torna alla barra di Ossido), poi il commit.
+    #[allow(dead_code)]
+    pub fn set_full_size_content(&mut self, toolbar: u32) {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .appearance
+            .clone()
+            .expect("silica_window_manager_v1 assente");
+        let window = self
+            .appearance
+            .get_or_insert_with(|| manager.get_window(&self.surface, &qh, ()));
+        window.set_full_size_content(toolbar);
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Chiede a Ossido di spostare la finestra (`xdg_toplevel.move`) con il serial dell'ultima
+    /// pressione ricevuta, come fa l'embedder dalla barra degli strumenti dell'app.
+    #[allow(dead_code)]
+    pub fn start_move(&mut self) {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let seat = self.app.seat.clone().expect("wl_seat assente");
+        let serial = self.app.press_serial.expect("nessuna pressione ricevuta");
+        self._toplevel._move(&seat, serial);
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// Distrugge il toplevel (la finestra si chiude) lasciando viva la superficie.

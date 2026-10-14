@@ -8,6 +8,8 @@ use std::time::Duration;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
+use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
+use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
@@ -89,6 +91,10 @@ use crate::shell::{self, ShellLink};
 
 /// Il canale per regione d'input e tastiera di un layer (componenti della shell).
 const LAYER_CHANNEL: &str = "silica/layer";
+
+/// Il canale dell'aspetto della finestra (`silica-window-v1`): contenuto a tutta finestra con la
+/// barra degli strumenti dell'app, e lo spostamento della finestra trascinandone la barra.
+const WINDOW_CHANNEL: &str = "silica/window";
 use crate::text_input::{self, EditKey, TextInput};
 
 /// Esito di un tasto mandato al framework, con l'azione di editing da fare se ignorato.
@@ -171,6 +177,12 @@ struct App {
     text_input: TextInput,
     /// Regioni di vetro dei widget `Glass` (`silica/glass`).
     glass: Glass,
+    /// `silica-window-v1`: il gestore e l'oggetto della finestra (creato alla prima richiesta).
+    appearance_manager: Option<SilicaWindowManagerV1>,
+    appearance: Option<SilicaWindowV1>,
+    /// Il seat del puntatore e il seriale dell'ultima pressione (per spostare la finestra).
+    seat: Option<wl_seat::WlSeat>,
+    press_serial: u32,
     /// Finestre e comandi per i componenti della shell (`silica/shell`).
     shell: ShellLink,
     /// Per le regioni d'input (`silica/layer`).
@@ -459,6 +471,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         keys: Keyboard::default(),
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
+        appearance_manager: globals
+            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=1, ())
+            .ok(),
+        appearance: None,
+        seat: None,
+        press_serial: 0,
         glass: Glass::new(
             globals
                 .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=4, ())
@@ -519,6 +537,7 @@ impl App {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
             LAYER_CHANNEL => self.handle_layer_call(&message.data),
+            WINDOW_CHANNEL => self.handle_window_call(&message.data),
             glass::CHANNEL => {
                 let (reply, changed) =
                     self.glass
@@ -543,6 +562,44 @@ impl App {
             && let Err(err) = engine.respond(handle, &reply)
         {
             warn!("risposta su {}: {err}", message.channel);
+        }
+    }
+
+    /// Il canale `silica/window` (JSONMethodCodec):
+    /// - `setFullSizeContent {toolbarHeight}`: contenuto a tutta finestra (0 torna alla barra di
+    ///   Ossido); risponde se Ossido lo offre;
+    /// - `startMove`: sposta la finestra con il puntatore (dalla barra degli strumenti dell'app).
+    fn handle_window_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
+            return Vec::new();
+        };
+        let Shell::Window(window) = &self.surface else {
+            return crate::text_input::success(serde_json::json!(false));
+        };
+        match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("setFullSizeContent") => {
+                let Some(manager) = &self.appearance_manager else {
+                    return crate::text_input::success(serde_json::json!(false));
+                };
+                let height = call
+                    .pointer("/args/toolbarHeight")
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|h| h.is_finite() && *h >= 0.0)
+                    .map_or(0, |h| h.round().min(200.0) as u32);
+                let object = self
+                    .appearance
+                    .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+                object.set_full_size_content(height);
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("startMove") => {
+                if let Some(seat) = &self.seat {
+                    window.move_(seat, self.press_serial);
+                }
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            _ => Vec::new(),
         }
     }
 
@@ -1025,6 +1082,9 @@ impl SeatHandler for App {
                 Err(err) => warn!("tastiera non disponibile: {err}"),
             }
         }
+        if capability == Capability::Pointer {
+            self.seat = Some(seat.clone());
+        }
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seat_state.get_pointer(qh, &seat) {
                 Ok(pointer) => self.pointer = Some(pointer),
@@ -1093,7 +1153,8 @@ impl PointerHandler for App {
                     };
                     self.send_pointer(phase, position, None);
                 }
-                PointerEventKind::Press { button, .. } => {
+                PointerEventKind::Press { button, serial, .. } => {
+                    self.press_serial = serial;
                     let was_up = self.buttons == 0;
                     self.buttons |= button_mask(button);
                     let phase = if was_up {
@@ -1238,6 +1299,8 @@ delegate_xdg_window!(App);
 delegate_layer!(App);
 delegate_registry!(App);
 wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
+wayland_client::delegate_noop!(App: ignore SilicaWindowManagerV1);
+wayland_client::delegate_noop!(App: ignore SilicaWindowV1);
 wayland_client::delegate_noop!(App: ignore SilicaGlassV1);
 impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
     fn event(

@@ -357,8 +357,11 @@ fn window_elements(
     if decorations::is_server_side(window)
         && let Some(program) = &shaders.titlebar
     {
+        let full_size = decorations::full_size_toolbar(window);
         window.user_data().insert_if_missing(Title::default);
-        if let Some(title) = window.user_data().get::<Title>()
+        // A tutta finestra il titolo lo scrive l'app nella sua barra.
+        if full_size.is_none()
+            && let Some(title) = window.user_data().get::<Title>()
             && let Some(text) = title.element(renderer, &window_title(window), frame, active, scale)
         {
             elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
@@ -374,12 +377,21 @@ fn window_elements(
                 alt: buttons.alt,
                 disabled: buttons_disabled(window),
                 scale,
+                bar: full_size.is_none(),
+                button_y: decorations::button_center_y(window) as f32,
             };
-            elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
+            let element = OutputElement::Shader(RescaleRenderElement::from_element(
                 titlebar.element(program, frame, state),
                 center,
                 factor,
-            )));
+            ));
+            // A tutta finestra i pulsanti stanno sopra il contenuto dell'app (la lista va dal
+            // primo piano in giù).
+            if full_size.is_some() {
+                elements.insert(0, element);
+            } else {
+                elements.push(element);
+            }
         }
     }
     if let Some(program) = &shaders.shadow {
