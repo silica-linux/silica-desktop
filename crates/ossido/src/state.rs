@@ -112,6 +112,10 @@ pub struct State {
     pub panorama: Option<crate::panorama::Panorama>,
     /// The click that opened or used Panorama: the release does not go to the client.
     pub panorama_press: bool,
+    /// Open menus, panels and grabbed popups (`transient.rs`, #149).
+    pub transients: Vec<crate::transient::Transient>,
+    /// A press outside a transient was consumed: its release does not go to the client.
+    pub transient_press: bool,
     /// The app switcher is open: releasing the Logo key confirms it.
     pub switcher_active: bool,
     /// The key acting as Logo (`--logo-key`).
@@ -290,6 +294,8 @@ impl State {
             foreign_toplevel_list,
             shell_manager_state,
             shell_managers: Vec::new(),
+            transients: Vec::new(),
+            transient_press: false,
             shell_states: std::collections::BTreeMap::new(),
             announced_focus: None,
             seat,

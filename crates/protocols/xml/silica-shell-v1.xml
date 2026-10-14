@@ -12,7 +12,7 @@
     what the shell asks of the compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="5">
+  <interface name="silica_shell_manager_v1" version="6">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -127,5 +127,47 @@
       <arg name="id" type="string"/>
       <arg name="params" type="string"/>
     </request>
+    <enum name="outside" since="6">
+      <description summary="what an input outside an open transient does">
+        Provisional defaults (until the reference's INPUT-01 measurement): presses outside a
+        menu are consumed, presses outside a panel (Faro, Control Center, Notification
+        Center) reach what is below. The pointer's hover always reaches the surfaces below.
+      </description>
+      <entry name="consume" value="0" summary="it closes the transient and does nothing else"/>
+      <entry name="pass_through" value="1" summary="it closes the transient and also reaches what is below"/>
+    </enum>
+
+    <request name="set_transient" since="6">
+      <description summary="a menu or panel of this surface is open">
+        While a transient is open the surface keeps an input region as small as the menu or
+        panel itself: the other windows keep receiving the pointer (hover, cursor shapes).
+        A button press outside the transient makes Ossido send dismissed; then, per press, the
+        press is consumed or delivered to what is under the pointer. Scrolling outside is
+        delivered or dropped per scroll, without dismissing. A press on the surface itself
+        (or its subsurfaces and popups) counts as inside, as does one inside region (surface
+        coordinates; null: only the surface itself). Setting it again replaces the previous
+        transient of the same surface. Keyboard routing stays with the layer surface's
+        keyboard interactivity, which the shell sets while the transient is open.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="region" type="object" interface="wl_region" allow-null="true"/>
+      <arg name="press" type="uint" enum="outside"/>
+      <arg name="scroll" type="uint" enum="outside"/>
+    </request>
+
+    <request name="clear_transient" since="6">
+      <description summary="the transient of this surface is closed">
+        The shell closed it itself (Esc, a choice, a toggle): no dismissed event follows.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <event name="dismissed" since="6">
+      <description summary="a press outside closed the transient">
+        The transient of this surface ended because of a press outside it; the shell closes
+        the menu or panel. Sent once; the transient is already cleared.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </event>
   </interface>
 </protocol>

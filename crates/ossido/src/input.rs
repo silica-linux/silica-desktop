@@ -117,6 +117,19 @@ impl State {
             self.panorama_release(location, std::time::Instant::now());
             return;
         }
+        // An open menu or panel (#149): a press outside it ends it; per transient the press
+        // stops there, and then its release too.
+        if state == ButtonState::Pressed
+            && !pointer.is_grabbed()
+            && self.press_on_transients(location)
+        {
+            self.transient_press = true;
+            return;
+        }
+        if state == ButtonState::Released && self.transient_press {
+            self.transient_press = false;
+            return;
+        }
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
             match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
                 // A click on a layer does not touch the windows; the focus only if it asks for it.
@@ -302,6 +315,10 @@ impl State {
                 let Some(pointer) = self.seat.get_pointer() else {
                     return;
                 };
+                // Scrolling outside an open transient that consumes it (#149).
+                if self.scroll_on_transients(pointer.current_location()) {
+                    return;
+                }
                 let source = event.source();
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 for axis in [Axis::Horizontal, Axis::Vertical] {

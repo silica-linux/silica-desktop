@@ -14,7 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Logical, Point, Rectangle};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::foreign_toplevel_list::{
     ForeignToplevelHandle, ForeignToplevelListHandler, ForeignToplevelListState,
@@ -52,7 +52,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            5,
+            6,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -410,6 +410,48 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
             silica_shell_manager_v1::Request::Thumbnail { identifier, fd } => {
                 let (width, height) = state.write_thumbnail(&identifier, fd);
                 manager.thumbnail(identifier, width, height);
+            }
+            silica_shell_manager_v1::Request::SetTransient {
+                surface,
+                region,
+                press,
+                scroll,
+            } => {
+                let origin = state.surface_origin(&surface);
+                let region = region
+                    .map(|region| {
+                        let attributes =
+                            smithay::wayland::compositor::get_region_attributes(&region);
+                        attributes
+                            .rects
+                            .into_iter()
+                            .filter(|(kind, _)| {
+                                matches!(kind, smithay::wayland::compositor::RectangleKind::Add)
+                            })
+                            .map(|(_, rect)| Rectangle::new(rect.loc + origin, rect.size))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let policy = |value: smithay::reexports::wayland_server::WEnum<
+                    silica_shell_manager_v1::Outside,
+                >| match value {
+                    smithay::reexports::wayland_server::WEnum::Value(value) => {
+                        crate::transient::OutsidePolicy::from_protocol(value)
+                    }
+                    smithay::reexports::wayland_server::WEnum::Unknown(_) => {
+                        crate::transient::OutsidePolicy::Consume
+                    }
+                };
+                state.set_shell_transient(
+                    manager.clone(),
+                    surface,
+                    region,
+                    policy(press),
+                    policy(scroll),
+                );
+            }
+            silica_shell_manager_v1::Request::ClearTransient { surface } => {
+                state.clear_shell_transient(&surface);
             }
             silica_shell_manager_v1::Request::Destroy => {}
             _ => {}
