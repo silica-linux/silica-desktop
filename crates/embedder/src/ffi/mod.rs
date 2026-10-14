@@ -22,6 +22,7 @@
 )]
 mod bindings;
 mod gl;
+pub mod pty;
 mod vulkan;
 
 pub use gl::GlSurface;

@@ -1800,6 +1800,7 @@ dependencies = [
  "libloading",
  "ossido",
  "png",
+ "rustix 1.1.5",
  "serde_json",
  "silica-control",
  "silica-protocols",

@@ -92,3 +92,22 @@ in silica_ui ≥ 0.16):
   over the window (accepted, copy preferred), `drop {x, y, uris}` with the data already read
   (on a thread: the source may be the window itself), `finished {action}` for those that left
   the window.
+
+## Pseudo-terminals (`silica/pty`)
+
+The embedder runs processes on pseudo-terminals for apps (the Terminal app), so apps need no
+native code (`crates/embedder/src/pty.rs`; the one unsafe step, making the slave the
+controlling terminal between fork and exec, is in `ffi/pty.rs`). JSONMethodCodec:
+
+- From the app: `spawn {command?: [argv…], cwd?, env?: {k: v}, rows, cols}` → `{id}` (without
+  `command`, the user's login shell from `$SHELL` or the passwd entry, as a login shell;
+  `TERM=xterm-256color`, `COLORTERM=truecolor`, then `env`; `cwd` defaults to `$HOME`);
+  `write {id, data: base64}`, `resize {id, rows, cols, pixelWidth?, pixelHeight?}`,
+  `signal {id, signal: "INT"|"TERM"|"HUP"|"KILL"}`, `close {id}` (SIGHUP, SIGKILL after 2 s,
+  reaped; no `exit` is sent) → null. Errors come back as a PlatformException with code `pty`.
+- To the app: `output {id, data: base64}`, coalesced, at most 64 KiB and one message per frame
+  per pty; `exit {id, code?, signal?}` after the last output.
+- Limits: 64 ptys per window, rows and columns 1–1000, 256 arguments and environment
+  variables of at most 4 KiB each. More than 1 MiB of output waiting for the app pauses
+  reading from the pty (backpressure); more than 4 MiB of input waiting refuses `write`.
+  Closing the window hangs up every pty.

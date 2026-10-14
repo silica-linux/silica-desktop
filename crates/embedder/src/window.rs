@@ -1,7 +1,7 @@
 //! The Wayland window hosting the engine, and the platform thread loop.
 
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,8 +16,12 @@ use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, 
 use smithay_client_toolkit::data_device_manager::data_source::{DataSourceHandler, DragSource};
 use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
-use smithay_client_toolkit::reexports::calloop::EventLoop;
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
+use smithay_client_toolkit::reexports::calloop::generic::Generic;
+use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::reexports::calloop::{
+    EventLoop, Interest, LoopHandle, Mode as LoopMode, PostAction, RegistrationToken,
+};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice;
 use smithay_client_toolkit::reexports::client::protocol::wl_data_device_manager::DndAction;
@@ -219,6 +223,12 @@ struct App {
     drag_out: Option<DragOut>,
     drag_in: bool,
     dropped: Option<DragOffer>,
+    /// Pseudo-terminals of the app (`silica/pty`), their sources in the loop and whether the
+    /// frame timer runs.
+    ptys: crate::pty::PtyHost,
+    pty_sources: BTreeMap<u32, RegistrationToken>,
+    pty_ticking: bool,
+    loop_handle: LoopHandle<'static, App>,
     drops: Option<channel::Sender<(f64, f64, Vec<u8>)>>,
     /// The pointer seat and the serial of the last press (to move the window).
     seat: Option<wl_seat::WlSeat>,
@@ -521,6 +531,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         drag_out: None,
         drag_in: false,
         dropped: None,
+        ptys: crate::pty::PtyHost::default(),
+        pty_sources: BTreeMap::new(),
+        pty_ticking: false,
+        loop_handle: event_loop.handle(),
         drops: None,
         seat: None,
         press_serial: 0,
@@ -617,6 +631,7 @@ impl App {
             LAYER_CHANNEL => self.handle_layer_call(&message.data),
             WINDOW_CHANNEL => self.handle_window_call(&message.data),
             crate::drag::CHANNEL => self.handle_drag_call(&message.data),
+            crate::pty::CHANNEL => self.handle_pty_call(&message.data),
             glass::CHANNEL => {
                 let (reply, changed) =
                     self.glass
@@ -715,6 +730,106 @@ impl App {
         {
             warn!("flutter/lifecycle: {err}");
         }
+    }
+
+    /// The `silica/pty` channel (see `pty.rs`).
+    fn handle_pty_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let reply = match crate::pty::parse_call(data) {
+            Ok(call) => self.ptys.handle(call),
+            Err(err) => Err(err),
+        };
+        let reply = match reply {
+            Ok(reply) => reply,
+            Err(err) => return crate::pty::error(&err),
+        };
+        if let Some(id) = reply.closed
+            && let Some(token) = self.pty_sources.remove(&id)
+        {
+            self.loop_handle.remove(token);
+        }
+        if let Some(id) = reply.spawned {
+            self.watch_pty(id);
+        }
+        self.start_pty_ticks();
+        crate::text_input::success(reply.value)
+    }
+
+    /// Reads the pty `id` when its master has data.
+    fn watch_pty(&mut self, id: u32) {
+        let fd = match self.ptys.master(id).map(|fd| fd.try_clone_to_owned()) {
+            Some(Ok(fd)) => fd,
+            Some(Err(err)) => {
+                warn!("pty {id}: {err}");
+                return;
+            }
+            None => return,
+        };
+        let source = Generic::new(fd, Interest::READ, LoopMode::Level);
+        let inserted = self
+            .loop_handle
+            .insert_source(source, move |_, _, app: &mut App| {
+                Ok(match app.ptys.readable(id) {
+                    crate::pty::Readable::Continue => PostAction::Continue,
+                    crate::pty::Readable::Pause => PostAction::Disable,
+                    crate::pty::Readable::Remove => {
+                        app.pty_sources.remove(&id);
+                        PostAction::Remove
+                    }
+                })
+            });
+        match inserted {
+            Ok(token) => {
+                self.pty_sources.insert(id, token);
+            }
+            Err(err) => warn!("pty {id}: {err}"),
+        }
+    }
+
+    /// One message per frame per pty: a timer at the frame period while there are ptys.
+    fn start_pty_ticks(&mut self) {
+        if self.pty_ticking {
+            return;
+        }
+        let timer = Timer::from_duration(Duration::from_nanos(FRAME_PERIOD_NANOS));
+        let inserted = self
+            .loop_handle
+            .insert_source(timer, |_, _, app: &mut App| {
+                if app.pty_tick() {
+                    TimeoutAction::ToDuration(Duration::from_nanos(FRAME_PERIOD_NANOS))
+                } else {
+                    app.pty_ticking = false;
+                    TimeoutAction::Drop
+                }
+            });
+        match inserted {
+            Ok(_) => self.pty_ticking = true,
+            Err(err) => warn!("pty timer: {err}"),
+        }
+    }
+
+    /// Sends the output and the exits of the frame; false when no pty is left.
+    fn pty_tick(&mut self) -> bool {
+        let tick = self.ptys.tick(std::time::Instant::now());
+        if let Some(engine) = &self.engine {
+            for message in &tick.messages {
+                if let Err(err) = engine.send_message(crate::pty::CHANNEL, message) {
+                    warn!("silica/pty: {err}");
+                }
+            }
+        }
+        for id in &tick.resume {
+            if let Some(token) = self.pty_sources.get(id)
+                && let Err(err) = self.loop_handle.enable(token)
+            {
+                warn!("pty {id}: {err}");
+            }
+        }
+        for id in &tick.gone {
+            if let Some(token) = self.pty_sources.remove(id) {
+                self.loop_handle.remove(token);
+            }
+        }
+        !tick.idle
     }
 
     /// The `silica/drag` channel (see `drag.rs`): `start` begins a drag.

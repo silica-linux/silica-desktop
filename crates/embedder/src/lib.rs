@@ -18,6 +18,7 @@ mod glass;
 mod keyboard;
 mod keymap;
 mod locale;
+mod pty;
 mod shell;
 mod text_input;
 mod window;
