@@ -66,7 +66,7 @@ List<MenuEntry> windowMenuEntries(ValueChanged<String> execute) => [
       width: 14,
       height: 11,
       child: CustomPaint(
-        painter: _TilePainter(
+        painter: TilePainter(
           const [Rect.fromLTWH(0, 0, 1, 1)],
           color,
           stroke: 1.2,
@@ -103,6 +103,11 @@ MenuCustom _row(List<String> commands, ValueChanged<String> execute) =>
       ),
     );
 
+/// Il glifo delle icone: chiaro `#1d1d1f`, scuro `#e1e1e1` (pixel più chiaro di
+/// wtl-press-zoom-long-dark). Il fondo sotto il puntatore in scuro è *stimato*.
+const Color tileGlyph = Color(0xFF1D1D1F);
+const Color tileGlyphDark = Color(0xFFE1E1E1);
+
 /// Un'icona della riga: scura, con un fondo leggero sotto il puntatore.
 class _TileButton extends StatefulWidget {
   const _TileButton({super.key, required this.glyph, required this.onPressed});
@@ -117,38 +122,47 @@ class _TileButtonState extends State<_TileButton> {
   bool _hover = false;
 
   @override
-  Widget build(BuildContext context) => MouseRegion(
-    onEnter: (_) => setState(() => _hover = true),
-    onExit: (_) => setState(() => _hover = false),
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onPressed,
-      child: Align(
-        alignment: const Alignment(0, -0.30),
-        child: Container(
-          width: windowMenuIcon.width + 10,
-          height: windowMenuIcon.height + 10,
-          decoration: BoxDecoration(
-            color: _hover ? const Color(0x14000000) : null,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          alignment: Alignment.center,
-          child: SizedBox.fromSize(
-            size: windowMenuIcon,
-            child: CustomPaint(
-              painter: _TilePainter(widget.glyph, const Color(0xFF1D1D1F)),
+  Widget build(BuildContext context) {
+    final dark =
+        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        child: Align(
+          alignment: const Alignment(0, -0.30),
+          child: Container(
+            width: windowMenuIcon.width + 10,
+            height: windowMenuIcon.height + 10,
+            decoration: BoxDecoration(
+              color: _hover
+                  ? (dark ? const Color(0x1FFFFFFF) : const Color(0x14000000))
+                  : null,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            alignment: Alignment.center,
+            child: SizedBox.fromSize(
+              size: windowMenuIcon,
+              child: CustomPaint(
+                painter: TilePainter(
+                  widget.glyph,
+                  dark ? tileGlyphDark : tileGlyph,
+                ),
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Il contorno dello schermo (raggio 4, tratto 1,5) con le parti piene: la finestra scelta
 /// nel colore del testo, le altre in grigio.
-class _TilePainter extends CustomPainter {
-  const _TilePainter(this.glyph, this.color, {this.stroke = 1.5});
+class TilePainter extends CustomPainter {
+  const TilePainter(this.glyph, this.color, {this.stroke = 1.5});
   final TileGlyph glyph;
   final Color color;
   final double stroke;
@@ -188,6 +202,6 @@ class _TilePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_TilePainter old) =>
+  bool shouldRepaint(TilePainter old) =>
       old.glyph != glyph || old.color != color || old.stroke != stroke;
 }

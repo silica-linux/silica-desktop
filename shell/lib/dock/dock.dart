@@ -468,6 +468,56 @@ const Color labelBodyBottom = Color(0xFFC1C2C8);
 const Color labelBorder = Color(0xFF3C3D41);
 const Color labelText = Color(0xFF1C1C1D);
 
+/// I colori del Dock disegnati dalla shell, chiaro e scuro (dock.md: separatore `#a9aaaf`,
+/// indicatore `#e5e6eb`, etichetta `#7f8086` con la prima riga `#8e8f96` e il testo `#f9f9f9`;
+/// il bordo `#3c3d41` è uguale). Il fondo dell'etichetta in basso, in scuro, è *stimato*
+/// uguale al corpo.
+@immutable
+class DockColors {
+  const DockColors({
+    required this.separator,
+    required this.indicator,
+    required this.labelTop,
+    required this.labelBody,
+    required this.labelBottom,
+    required this.labelBorder,
+    required this.labelText,
+  });
+
+  final Color separator;
+  final Color indicator;
+  final Color labelTop;
+  final Color labelBody;
+  final Color labelBottom;
+  final Color labelBorder;
+  final Color labelText;
+
+  static const DockColors light = DockColors(
+    separator: Color(0xFF484950),
+    indicator: Color(0xFF03040B),
+    labelTop: Color(0xFFD7D8DE),
+    labelBody: Color(0xFFBDBEC3),
+    labelBottom: Color(0xFFC1C2C8),
+    labelBorder: Color(0xFF3C3D41),
+    labelText: Color(0xFF1C1C1D),
+  );
+
+  static const DockColors dark = DockColors(
+    separator: Color(0xFFA9AAAF),
+    indicator: Color(0xFFE5E6EB),
+    labelTop: Color(0xFF8E8F96),
+    labelBody: Color(0xFF7F8086),
+    labelBottom: Color(0xFF7F8086),
+    labelBorder: Color(0xFF3C3D41),
+    labelText: Color(0xFFF9F9F9),
+  );
+
+  static DockColors of(BuildContext context) =>
+      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
+      ? dark
+      : light;
+}
+
 /// Etichetta: corpo alto 27 pt (y 1325–1351), punta larga ~7 pt e alta ~3 pt, con la cima
 /// ~13 pt sopra l'icona (icona da 1367, punta a 1354), margine orizzontale ~15,5 pt, testo
 /// di ~14 pt (dalle maiuscole di 10 pt in Inter).
@@ -1224,7 +1274,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                 ),
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _DockPainter(items, l, size.height),
+                    painter: _DockPainter(
+                      items,
+                      l,
+                      size.height,
+                      DockColors.of(context),
+                    ),
                   ),
                 ),
                 for (var i = 0; i < items.length; i++)
@@ -1343,7 +1398,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// Una capsula come l'etichetta, con la punta in (`centerX`, `tipY`).
   Widget _capsule(String text, double centerX, double tipY, double opacity) {
-    final style = uiText(size: labelFontSize, color: labelText);
+    final style = uiText(
+      size: labelFontSize,
+      color: DockColors.of(context).labelText,
+    );
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -1357,7 +1415,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       child: Opacity(
         opacity: opacity,
         child: CustomPaint(
-          painter: const _LabelPainter(),
+          painter: _LabelPainter(DockColors.of(context)),
           child: Padding(
             padding: const EdgeInsets.only(bottom: labelTip),
             child: Center(child: Text(text, style: style)),
@@ -1462,7 +1520,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     // Durante il rimbalzo l'etichetta sale con l'icona.
     final iconTopY = iconTop - _bounce(index);
     final tipY = iconTopY - labelGap;
-    final style = uiText(size: labelFontSize, color: labelText);
+    final style = uiText(
+      size: labelFontSize,
+      color: DockColors.of(context).labelText,
+    );
     final text = TextPainter(
       text: TextSpan(text: widget.items[index].label, style: style),
       textDirection: TextDirection.ltr,
@@ -1476,7 +1537,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       child: Opacity(
         opacity: opacity,
         child: CustomPaint(
-          painter: const _LabelPainter(),
+          painter: _LabelPainter(DockColors.of(context)),
           child: Padding(
             padding: const EdgeInsets.only(bottom: labelTip),
             child: Center(child: Text(widget.items[index].label, style: style)),
@@ -1488,11 +1549,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 }
 
 class _DockPainter extends CustomPainter {
-  _DockPainter(this.items, this.l, this.height);
+  _DockPainter(this.items, this.l, this.height, this.colors);
 
   final List<Item> items;
   final Layout l;
   final double height;
+  final DockColors colors;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1503,7 +1565,7 @@ class _DockPainter extends CustomPainter {
         final x = l.center(i).roundToDouble() - 0.5;
         canvas.drawRect(
           Rect.fromLTWH(x, by + (bh - separatorHeight) / 2, 1, separatorHeight),
-          Paint()..color = separatorColor,
+          Paint()..color = colors.separator,
         );
         continue;
       }
@@ -1516,7 +1578,7 @@ class _DockPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(l.center(i), by + bh - indicatorAbove),
           indicatorSize / 2,
-          Paint()..color = indicatorColor,
+          Paint()..color = colors.indicator,
         );
       }
     }
@@ -1527,7 +1589,8 @@ class _DockPainter extends CustomPainter {
 }
 
 class _LabelPainter extends CustomPainter {
-  const _LabelPainter();
+  const _LabelPainter(this.colors);
+  final DockColors colors;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1547,13 +1610,18 @@ class _LabelPainter extends CustomPainter {
     canvas.drawPath(
       shape,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           // La prima riga chiara (#d7d8de) e quella sotto ancora quasi uguale (215 nella
           // ripresa), poi il corpo.
-          colors: [labelBodyTop, labelBodyTop, labelBody, labelBodyBottom],
-          stops: [0, 0.07, 0.16, 1],
+          colors: [
+            colors.labelTop,
+            colors.labelTop,
+            colors.labelBody,
+            colors.labelBottom,
+          ],
+          stops: const [0, 0.07, 0.16, 1],
         ).createShader(Offset.zero & size),
     );
     canvas.drawPath(
@@ -1561,10 +1629,10 @@ class _LabelPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1
-        ..color = labelBorder,
+        ..color = colors.labelBorder,
     );
   }
 
   @override
-  bool shouldRepaint(_LabelPainter old) => false;
+  bool shouldRepaint(_LabelPainter old) => old.colors != colors;
 }

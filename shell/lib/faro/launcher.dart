@@ -114,6 +114,94 @@ String? completionFor(String query, List<DesktopEntry> results) {
 /// `#838488 → #747579` sopra `#c8c9ce`.
 const Color ringColor = Color(0x80404145);
 
+/// I colori di Faro e del launcher sopra il vetro spesso, chiaro e scuro (spotlight.md,
+/// launcher.md). In scuro il riempimento è `#717276`: i fondi misurati sopra di esso diventano
+/// bianco traslucido (riga scelta e gettone `#949599` → 25 %, capsule `#828387` → 12 %,
+/// completamento `#97989c` → 27 %, anello `#abacb0 → #98999d` → ~35 %); i testi sono pieni.
+/// L'ombra in scuro è ~1,7 volte più densa (a contatto −68 contro −39 sotto): l'opacità è
+/// *stimata* scalando quella chiara.
+@immutable
+class FaroColors {
+  const FaroColors({
+    required this.text,
+    required this.selectedText,
+    required this.placeholder,
+    required this.subtitle,
+    required this.selection,
+    required this.categoryFill,
+    required this.categoryText,
+    required this.tokenText,
+    required this.completionFill,
+    required this.completionText,
+    required this.ring,
+    required this.track,
+    required this.thumb,
+    required this.shadowScale,
+  });
+
+  final Color text;
+  final Color selectedText;
+  final Color placeholder;
+  final Color subtitle;
+
+  /// Riga scelta, separatori e gettone della categoria.
+  final Color selection;
+  final Color categoryFill;
+  final Color categoryText;
+  final Color tokenText;
+  final Color completionFill;
+  final Color completionText;
+  final Color ring;
+  final Color track;
+  final Color thumb;
+
+  /// Fattore sull'opacità delle ombre dei pannelli.
+  final double shadowScale;
+
+  static const FaroColors light = FaroColors(
+    text: launcherText,
+    selectedText: Color(0xFF000003),
+    placeholder: launcherPlaceholder,
+    subtitle: Color(0xFF88898E),
+    selection: launcherLine,
+    categoryFill: Color(0x4FFFFFFF),
+    categoryText: categoryTextColor,
+    tokenText: Color(0xFF0D0E13),
+    completionFill: Color(0x30000000),
+    completionText: Color(0xFF232429),
+    ring: ringColor,
+    track: scrollTrack,
+    thumb: scrollThumb,
+    shadowScale: 1,
+  );
+
+  static const FaroColors dark = FaroColors(
+    text: Color(0xFFFFFFFF),
+    selectedText: Color(0xFFFFFFFF),
+    placeholder: Color(0xFFEDEEF2),
+    subtitle: Color(0xFFB2B3B7),
+    selection: Color(0x41FFFFFF),
+    categoryFill: Color(0x1FFFFFFF),
+    categoryText: Color(0xFFFEFFFF),
+    tokenText: Color(0xFFFFFFFF),
+    completionFill: Color(0x45FFFFFF),
+    completionText: Color(0xFFFFFFFF),
+    ring: Color(0x58FFFFFF),
+    track: Color(0xFF141414),
+    thumb: Color(0xFF7C7C7C),
+    shadowScale: 1.7,
+  );
+
+  static FaroColors of(BuildContext context) =>
+      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
+      ? dark
+      : light;
+
+  /// L'ombra `color` con l'opacità di questo aspetto.
+  Color shadow(Color color) =>
+      color.withValues(alpha: (color.a * shadowScale).clamp(0.0, 1.0));
+}
+
 /// Le categorie del launcher e le categorie freedesktop che contengono, dalla prima.
 const List<(String, List<String>)> launcherCategories = [
   ('Produttività e finanza', ['Office', 'Finance', 'ProjectManagement']),
@@ -300,6 +388,8 @@ class LauncherState extends State<Launcher>
   /// Opacità della griglia dopo un cambio di categoria (vuoto di ~75 ms, poi ~155 ms).
   double _gridOpacity() => categoryFade(_fade.value);
 
+  FaroColors get _c => FaroColors.of(context);
+
   @override
   Widget build(BuildContext context) {
     final searching = _query.text.trim().isNotEmpty;
@@ -333,7 +423,7 @@ class LauncherState extends State<Launcher>
             right: launcherMargin,
             top: launcherHeader,
             height: 1,
-            child: const ColoredBox(color: launcherLine),
+            child: ColoredBox(color: _c.selection),
           ),
           if (browsing)
             Positioned(
@@ -365,7 +455,7 @@ class LauncherState extends State<Launcher>
               right: launcherMargin,
               top: areaTop - 1,
               height: 1,
-              child: const ColoredBox(color: launcherLine),
+              child: ColoredBox(color: _c.selection),
             ),
         ],
       ),
@@ -383,7 +473,7 @@ class LauncherState extends State<Launcher>
         : (TextPainter(
             text: TextSpan(
               text: _query.text,
-              style: uiText(size: 26, color: launcherText),
+              style: uiText(size: 26, color: _c.text),
             ),
             textDirection: TextDirection.ltr,
           )..layout()).width;
@@ -399,9 +489,7 @@ class LauncherState extends State<Launcher>
             height: 22,
             child: GestureDetector(
               onTap: widget.onBack,
-              child: const CustomPaint(
-                painter: AppsGlyphPainter(launcherPlaceholder),
-              ),
+              child: CustomPaint(painter: AppsGlyphPainter(_c.placeholder)),
             ),
           ),
           Positioned(
@@ -416,15 +504,15 @@ class LauncherState extends State<Launcher>
                     height: tokenHeight,
                     padding: const EdgeInsets.only(left: 6, right: 11),
                     alignment: Alignment.center,
-                    decoration: const BoxDecoration(
-                      color: tokenFill,
+                    decoration: BoxDecoration(
+                      color: _c.selection,
                       borderRadius: BorderRadius.all(
                         Radius.circular(tokenRadius),
                       ),
                     ),
                     child: Text(
                       token,
-                      style: uiText(size: 26, color: tokenText),
+                      style: uiText(size: 26, color: _c.tokenText),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -439,10 +527,7 @@ class LauncherState extends State<Launcher>
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
                               'Applicazioni',
-                              style: uiText(
-                                size: 26,
-                                color: launcherPlaceholder,
-                              ),
+                              style: uiText(size: 26, color: _c.placeholder),
                             ),
                           ),
                         ),
@@ -460,8 +545,8 @@ class LauncherState extends State<Launcher>
                                   right: 6,
                                 ),
                                 alignment: Alignment.center,
-                                decoration: const BoxDecoration(
-                                  color: completionFill,
+                                decoration: BoxDecoration(
+                                  color: _c.completionFill,
                                   borderRadius: BorderRadius.all(
                                     Radius.circular(completionRadius),
                                   ),
@@ -471,7 +556,7 @@ class LauncherState extends State<Launcher>
                                   maxLines: 1,
                                   style: uiText(
                                     size: 26,
-                                    color: completionText,
+                                    color: _c.completionText,
                                   ),
                                 ),
                               ),
@@ -481,8 +566,8 @@ class LauncherState extends State<Launcher>
                       EditableText(
                         controller: _query,
                         focusNode: _focus,
-                        style: uiText(size: 26, color: launcherText),
-                        cursorColor: launcherText,
+                        style: uiText(size: 26, color: _c.text),
+                        cursorColor: _c.text,
                         cursorWidth: 2,
                         cursorHeight: 31,
                         backgroundCursorColor: const Color(0x00000000),
@@ -507,7 +592,7 @@ class LauncherState extends State<Launcher>
             top: (launcherHeader - 3) / 2,
             width: 18,
             height: 3,
-            child: const CustomPaint(painter: _DotsPainter()),
+            child: CustomPaint(painter: _DotsPainter(_c.placeholder)),
           ),
         ],
       ),
@@ -536,14 +621,16 @@ class LauncherState extends State<Launcher>
               constraints: const BoxConstraints(minWidth: categoryMinWidth),
               padding: const EdgeInsets.symmetric(horizontal: categoryPadding),
               alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: categoryFill,
-                borderRadius: BorderRadius.all(Radius.circular(categoryRadius)),
+              decoration: BoxDecoration(
+                color: _c.categoryFill,
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(categoryRadius),
+                ),
               ),
               child: Text(
                 name,
                 maxLines: 1,
-                style: uiText(size: categoryText, color: categoryTextColor),
+                style: uiText(size: categoryText, color: _c.categoryText),
               ),
             ),
           ),
@@ -569,7 +656,7 @@ class LauncherState extends State<Launcher>
           top: layout.separatorY,
           width: gridColumns * cellWidth,
           height: 1,
-          child: const ColoredBox(color: launcherLine),
+          child: ColoredBox(color: _c.selection),
         ),
       for (final (i, entry) in apps.indexed)
         _cell(entry, layout.cell(i), ring: ringFirst && i == 0),
@@ -595,6 +682,8 @@ class LauncherState extends State<Launcher>
           bottom: scrollbarBottom,
           child: CustomPaint(
             painter: LauncherScrollbar(
+              track: _c.track,
+              thumbColor: _c.thumb,
               visible: areaHeight,
               content: contentHeight,
               offset: _scroll.hasClients ? _scroll.offset : 0,
@@ -626,7 +715,7 @@ class LauncherState extends State<Launcher>
                 height: gridIcon + 2 * ringWidth,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(color: ringColor, width: ringWidth),
+                    border: Border.all(color: _c.ring, width: ringWidth),
                     borderRadius: const BorderRadius.all(
                       Radius.circular(ringRadius),
                     ),
@@ -652,7 +741,7 @@ class LauncherState extends State<Launcher>
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: uiText(size: gridLabelSize, color: launcherText),
+                style: uiText(size: gridLabelSize, color: _c.text),
               ),
             ),
           ],
@@ -722,7 +811,12 @@ class LauncherScrollbar extends CustomPainter {
     required this.visible,
     required this.content,
     required this.offset,
+    this.track = scrollTrack,
+    this.thumbColor = scrollThumb,
   });
+
+  final Color track;
+  final Color thumbColor;
 
   final double visible;
   final double content;
@@ -742,19 +836,23 @@ class LauncherScrollbar extends CustomPainter {
     const radius = Radius.circular(scrollbarWidth / 2);
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = scrollTrack,
+      Paint()..color = track,
     );
     if (thumb(size.height) case final rect?) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, radius),
-        Paint()..color = scrollThumb,
+        Paint()..color = thumbColor,
       );
     }
   }
 
   @override
   bool shouldRepaint(LauncherScrollbar old) =>
-      old.visible != visible || old.content != content || old.offset != offset;
+      old.visible != visible ||
+      old.content != content ||
+      old.offset != offset ||
+      old.track != track ||
+      old.thumbColor != thumbColor;
 }
 
 class _NoBars extends ScrollBehavior {
@@ -769,11 +867,12 @@ class _NoBars extends ScrollBehavior {
 }
 
 class _DotsPainter extends CustomPainter {
-  const _DotsPainter();
+  const _DotsPainter(this.color);
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = launcherPlaceholder;
+    final paint = Paint()..color = color;
     for (var i = 0; i < 3; i++) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -786,7 +885,7 @@ class _DotsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DotsPainter old) => false;
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
 }
 
 /// Il glifo delle app: quattro quadrati arrotondati.

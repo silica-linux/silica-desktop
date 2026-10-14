@@ -82,6 +82,47 @@ enum _Mode { none, selection, window, toolbar }
 
 enum ToolbarChoice { screen, window, selection }
 
+/// I colori della barra (sul vetro normale). Lo scuro non è osservato (screenshot-ui.md,
+/// "Non osservato"): *stimato* come i testi chiari sul vetro scuro (glifi e testo `#ebebeb`,
+/// i fondi neri traslucidi diventano bianchi traslucidi).
+@immutable
+class ShotBarColors {
+  const ShotBarColors({
+    required this.glyph,
+    required this.closeFill,
+    required this.closeGlyph,
+    required this.line,
+    required this.chosen,
+  });
+
+  final Color glyph;
+  final Color closeFill;
+  final Color closeGlyph;
+  final Color line;
+  final Color chosen;
+
+  static const ShotBarColors light = ShotBarColors(
+    glyph: Color(0xFF1D1D1F),
+    closeFill: Color(0x33000000),
+    closeGlyph: Color(0xFF3C3C3E),
+    line: Color(0x33000000),
+    chosen: Color(0x22000000),
+  );
+
+  static const ShotBarColors dark = ShotBarColors(
+    glyph: Color(0xFFEBEBEB),
+    closeFill: Color(0x33FFFFFF),
+    closeGlyph: Color(0xFFC7C7C9),
+    line: Color(0x33FFFFFF),
+    chosen: Color(0x26FFFFFF),
+  );
+
+  static ShotBarColors of(BuildContext context) =>
+      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
+      ? dark
+      : light;
+}
+
 class ScreenshotLayer extends StatefulWidget {
   const ScreenshotLayer({super.key, this.folder, this.now});
 
@@ -467,13 +508,15 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Widget _toolbar(Size screen) {
     final left = (screen.width - toolbarSize.width) / 2;
     final top = screen.height - toolbarAboveDock - toolbarSize.height;
+    final c = ShotBarColors.of(context);
     Widget mode(ToolbarChoice choice, _Glyph glyph, String key) => _ToolButton(
       key: ValueKey(key),
       chosen: _choice == choice,
+      chosenColor: c.chosen,
       onTap: () => setState(() => _choice = choice),
       child: CustomPaint(
         size: const Size(26, 20),
-        painter: _ModePainter(glyph),
+        painter: _ModePainter(glyph, c.glyph),
       ),
     );
     return Positioned(
@@ -494,15 +537,12 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
               child: Container(
                 width: 18,
                 height: 18,
-                decoration: const BoxDecoration(
-                  color: Color(0x33000000),
+                decoration: BoxDecoration(
+                  color: c.closeFill,
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  '×',
-                  style: uiText(size: 13, color: const Color(0xFF3C3C3E)),
-                ),
+                child: Text('×', style: uiText(size: 13, color: c.closeGlyph)),
               ),
             ),
             const SizedBox(width: 14),
@@ -510,7 +550,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             mode(ToolbarChoice.window, _Glyph.window, 'finestra'),
             mode(ToolbarChoice.selection, _Glyph.selection, 'selezione'),
             const SizedBox(width: 10),
-            Container(width: 1, height: 28, color: const Color(0x33000000)),
+            Container(width: 1, height: 28, color: c.line),
             const SizedBox(width: 10),
             _ToolButton(
               key: const ValueKey('opzioni'),
@@ -518,7 +558,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
               onTap: _toggleFolder,
               child: Text(
                 'Salva in: ${_folderLabel()}',
-                style: uiText(size: 12, color: const Color(0xFF1D1D1F)),
+                style: uiText(size: 12, color: c.glyph),
               ),
             ),
             const Spacer(),
@@ -583,8 +623,11 @@ class _ToolButton extends StatelessWidget {
     required this.child,
     required this.onTap,
     this.chosen = false,
+    this.chosenColor = const Color(0x22000000),
     this.width = 44,
   });
+
+  final Color chosenColor;
 
   final Widget child;
   final VoidCallback onTap;
@@ -599,7 +642,7 @@ class _ToolButton extends StatelessWidget {
       width: width,
       height: 40,
       decoration: BoxDecoration(
-        color: chosen ? const Color(0x22000000) : null,
+        color: chosen ? chosenColor : null,
         borderRadius: BorderRadius.circular(10),
       ),
       alignment: Alignment.center,
@@ -613,13 +656,14 @@ enum _Glyph { screen, window, selection }
 /// Le icone delle modalità: lo schermo pieno, una finestra in uno schermo, una selezione
 /// tratteggiata.
 class _ModePainter extends CustomPainter {
-  const _ModePainter(this.glyph);
+  const _ModePainter(this.glyph, this.color);
   final _Glyph glyph;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final stroke = Paint()
-      ..color = const Color(0xFF1D1D1F)
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     final outer = RRect.fromRectAndRadius(
@@ -629,10 +673,7 @@ class _ModePainter extends CustomPainter {
     switch (glyph) {
       case _Glyph.screen:
         canvas.drawRRect(outer, stroke);
-        canvas.drawRRect(
-          outer.deflate(3),
-          Paint()..color = const Color(0xFF1D1D1F),
-        );
+        canvas.drawRRect(outer.deflate(3), Paint()..color = color);
       case _Glyph.window:
         canvas.drawRRect(outer, stroke);
         canvas.drawRRect(
@@ -640,7 +681,7 @@ class _ModePainter extends CustomPainter {
             Rect.fromLTWH(6, 5, size.width - 12, size.height - 10),
             const Radius.circular(2),
           ),
-          Paint()..color = const Color(0xFF1D1D1F),
+          Paint()..color = color,
         );
       case _Glyph.selection:
         const dash = 3.0;
@@ -655,7 +696,8 @@ class _ModePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ModePainter old) => old.glyph != glyph;
+  bool shouldRepaint(_ModePainter old) =>
+      old.glyph != glyph || old.color != color;
 }
 
 /// La croce sottile nera con il disco grigio traslucido al centro.

@@ -41,6 +41,10 @@ const double labelSize = 14;
 const Color selectionColor = Color(0xFF484950);
 const Color labelColor = Color(0xFF131314);
 
+/// In scuro (appswitcher.md): selezione `#a9aaaf`, etichetta `#f7f7f8`.
+const Color selectionColorDark = Color(0xFFA9AAAF);
+const Color labelColorDark = Color(0xFFF7F7F8);
+
 /// Larghezza della capsula per `count` app a grandezza piena.
 double panelWidth(int count) =>
     2 * sidePadding +
@@ -232,6 +236,8 @@ class SwitcherPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark =
+        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
     return LayoutBuilder(
       builder: (context, constraints) {
         // Troppe app per lo schermo: tutto si riduce insieme.
@@ -258,6 +264,7 @@ class SwitcherPanel extends StatelessWidget {
             ),
             for (var i = 0; i < apps.length; i++)
               ..._item(
+                dark,
                 i,
                 left + (sidePadding + i * iconPitch) * k,
                 top + topPadding * k,
@@ -269,7 +276,7 @@ class SwitcherPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _item(int index, double x, double y, double k) {
+  List<Widget> _item(bool dark, int index, double x, double y, double k) {
     final app = apps[index];
     final side = iconSide * k;
     final inset = (selectionSide - iconSide) / 2 * k;
@@ -282,7 +289,7 @@ class SwitcherPanel extends StatelessWidget {
           height: selectionSide * k,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: selectionColor,
+              color: dark ? selectionColorDark : selectionColor,
               borderRadius: BorderRadius.circular(selectionRadius * k),
             ),
           ),
@@ -318,7 +325,7 @@ class SwitcherPanel extends StatelessWidget {
               fontSize: labelSize * k,
               fontWeight: FontWeight.w600,
               height: 1,
-              color: labelColor,
+              color: dark ? labelColorDark : labelColor,
             ),
           ),
         ),

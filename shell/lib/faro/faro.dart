@@ -291,6 +291,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     return KeyEventResult.handled;
   }
 
+  FaroColors get _c => FaroColors.of(context);
+
   @override
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.expand();
@@ -380,6 +382,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       radius: panelRadius,
       blurRadius: 42,
       offset: const Offset(0, 20),
+      color: _c.shadow(const Color(0x40000000)),
       child: LiquidGlass(
         radius: panelRadius,
         material: GlassMaterial.thick,
@@ -391,7 +394,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
               Container(
                 height: 1,
                 margin: const EdgeInsets.symmetric(horizontal: 20),
-                color: selection,
+                color: _c.selection,
               ),
               SizedBox(
                 height: listHeight,
@@ -415,7 +418,10 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       child: Row(
         children: [
           const SizedBox(width: 23),
-          const CustomPaint(size: Size(23, 23), painter: _LensPainter()),
+          CustomPaint(
+            size: const Size(23, 23),
+            painter: _LensPainter(_c.placeholder),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Stack(
@@ -425,14 +431,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                   IgnorePointer(
                     child: Text(
                       'Cerca con Faro',
-                      style: uiText(size: 26, color: placeholderColor),
+                      style: uiText(size: 26, color: _c.placeholder),
                     ),
                   ),
                 EditableText(
                   controller: _query,
                   focusNode: _focus,
-                  style: uiText(size: 26, color: textColor),
-                  cursorColor: textColor,
+                  style: uiText(size: 26, color: _c.text),
+                  cursorColor: _c.text,
                   cursorWidth: 2,
                   cursorHeight: 31,
                   backgroundCursorColor: const Color(0x00000000),
@@ -460,7 +466,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: selected ? selection : null,
+            color: selected ? _c.selection : null,
             borderRadius: const BorderRadius.all(Radius.circular(16.5)),
           ),
           child: Row(
@@ -483,12 +489,12 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                       entry.name,
                       style: uiText(
                         size: 16.5,
-                        color: selected ? selectedTextColor : textColor,
+                        color: selected ? _c.selectedText : _c.text,
                       ),
                     ),
                     Text(
                       'Applicazione',
-                      style: uiText(size: 15, color: subtitleColor),
+                      style: uiText(size: 15, color: _c.subtitle),
                     ),
                   ],
                 ),
@@ -507,7 +513,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       radius: circle / 2,
       material: GlassMaterial.thick,
       interactive: true,
-      child: CustomPaint(painter: _CircleGlyphPainter(index)),
+      child: CustomPaint(painter: _CircleGlyphPainter(index, _c.placeholder)),
     ),
   );
 
@@ -540,7 +546,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                   child: OuterShadow(
                     radius: launcherRadius,
                     blurRadius: 36,
-                    color: const Color(0x5C000000),
+                    color: _c.shadow(const Color(0x5C000000)),
                     offset: const Offset(0, 17),
                     child: LiquidGlass(
                       radius: launcherRadius,
@@ -565,12 +571,13 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
 }
 
 class _LensPainter extends CustomPainter {
-  const _LensPainter();
+  const _LensPainter(this.color);
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = placeholderColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
@@ -587,20 +594,21 @@ class _LensPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LensPainter old) => false;
+  bool shouldRepaint(_LensPainter old) => old.color != color;
 }
 
 /// Glifi generici dei quattro pulsanti: app, file, azioni, appunti.
 class _CircleGlyphPainter extends CustomPainter {
-  const _CircleGlyphPainter(this.index);
+  const _CircleGlyphPainter(this.index, this.color);
 
   final int index;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final paint = Paint()
-      ..color = placeholderColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..strokeJoin = StrokeJoin.round;
@@ -671,7 +679,8 @@ class _CircleGlyphPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CircleGlyphPainter old) => old.index != index;
+  bool shouldRepaint(_CircleGlyphPainter old) =>
+      old.index != index || old.color != color;
 }
 
 /// L'ombra di un pannello di vetro disegnata solo fuori dal pannello: sotto il vetro, che

@@ -60,8 +60,14 @@ const double gridIconTop = 10;
 const double gridLabelBaseline = 118;
 const double gridLabelWidth = 104;
 const Color gridLabelText = Color(0xFF212122);
-TextStyle get gridLabelStyle =>
-    uiText(size: 12, color: gridLabelText).copyWith(height: 1);
+
+/// Il colore viene dal [DefaultTextStyle] della griglia (chiaro o scuro).
+TextStyle get gridLabelStyle => const TextStyle(
+  fontFamily: uiFontFamily,
+  package: 'silica_ui',
+  fontSize: 12,
+  height: 1,
+);
 
 /// La punta verso l'icona: base ~22, alta ~8 (misc.md). Come nei menu, il vertice arrotondato
 /// e l'unione morbida allargano la base di ~14 pt.
@@ -83,6 +89,17 @@ const Duration gridClose = Duration(milliseconds: 150);
 const Color stackText = Color(0xFF1E1E1F);
 const Color stackLabelFill = Color(0xFFBDBEC3);
 const Color stackLabelText = Color(0xFF1C1C1D);
+
+/// In scuro le pile non sono misurate (dock-stacks.md, "Non osservato"): *stimati* come le
+/// etichette del Dock in scuro (dock.md: corpo `#7f8086`, testo `#f9f9f9`) e testi bianchi
+/// sul vetro scuro.
+const Color gridLabelTextDark = Color(0xFFF9F9F9);
+const Color stackTextDark = Color(0xFFFFFFFF);
+const Color stackLabelFillDark = Color(0xFF7F8086);
+const Color stackLabelTextDark = Color(0xFFF9F9F9);
+
+bool _dark(BuildContext context) =>
+    MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
 
 enum StackView { fan, grid }
 
@@ -263,7 +280,10 @@ class FanStack extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Opacity(opacity: labels, child: _label(label)),
+                  Opacity(
+                    opacity: labels,
+                    child: _label(_dark(context), label),
+                  ),
                   const SizedBox(width: 6),
                   SizedBox(
                     width: side,
@@ -288,12 +308,12 @@ class FanStack extends StatelessWidget {
   }
 
   /// Etichetta larga quanto il testo (al più 360 pt), come quelle del Dock.
-  Widget _label(String text) => ConstrainedBox(
+  Widget _label(bool dark, String text) => ConstrainedBox(
     constraints: const BoxConstraints(maxWidth: 360),
     child: DecoratedBox(
-      decoration: const BoxDecoration(
-        color: stackLabelFill,
-        borderRadius: BorderRadius.all(Radius.circular(11)),
+      decoration: BoxDecoration(
+        color: dark ? stackLabelFillDark : stackLabelFill,
+        borderRadius: const BorderRadius.all(Radius.circular(11)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -301,7 +321,10 @@ class FanStack extends StatelessWidget {
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: uiText(size: 12, color: stackLabelText),
+          style: uiText(
+            size: 12,
+            color: dark ? stackLabelTextDark : stackLabelText,
+          ),
         ),
       ),
     ),
@@ -380,54 +403,59 @@ class GridStack extends StatelessWidget {
           (tipX / rect.width) * 2 - 1,
           1 + 2 * gridTipHeight / rect.height,
         ),
-        child: Opacity(
-          opacity: p,
-          child: OuterShadow(
-            radius: gridRadius,
-            blurRadius: 30,
-            offset: const Offset(0, 8),
-            child: LiquidGlass(
+        child: DefaultTextStyle.merge(
+          style: TextStyle(
+            color: _dark(context) ? gridLabelTextDark : gridLabelText,
+          ),
+          child: Opacity(
+            opacity: p,
+            child: OuterShadow(
               radius: gridRadius,
-              material: GlassMaterial.thick,
-              interactive: false,
-              tip: GlassTip(
-                x: tipX,
-                width: gridTipBase - 14,
-                height: gridTipHeight + 2,
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 9,
-                    child: Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily,
-                        package: 'silica_ui',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: stackText,
+              blurRadius: 30,
+              offset: const Offset(0, 8),
+              child: LiquidGlass(
+                radius: gridRadius,
+                material: GlassMaterial.thick,
+                interactive: false,
+                tip: GlassTip(
+                  x: tipX,
+                  width: gridTipBase - 14,
+                  height: gridTipHeight + 2,
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 9,
+                      child: Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily,
+                          package: 'silica_ui',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _dark(context) ? stackTextDark : stackText,
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: gridLeft,
-                    right: gridRight,
-                    top: gridTop,
-                    bottom: gridBottom,
-                    child: SingleChildScrollView(
-                      child: Wrap(
-                        children: [
-                          for (final entry in entries) _cell(entry),
-                          _openCell(columns),
-                        ],
+                    Positioned(
+                      left: gridLeft,
+                      right: gridRight,
+                      top: gridTop,
+                      bottom: gridBottom,
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          children: [
+                            for (final entry in entries) _cell(entry),
+                            _openCell(columns),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

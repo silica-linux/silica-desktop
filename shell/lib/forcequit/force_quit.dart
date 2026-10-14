@@ -23,6 +23,72 @@ const double forceQuitRow = 22;
 const Rect forceQuitButton = Rect.fromLTWH(240, 265, 115, 30);
 const Color forceQuitBlue = Color(0xFF0A62E0);
 
+/// I colori del pannello. Lo scuro non è osservato (screenshot-ui.md, "Non osservato"): è
+/// *stimato* dalle finestre scure (windows.md: fondo `#272728`, titolo `#e9e9e9`, riduzione
+/// disattivata `#4d4d4d`), dall'elenco di Mustache (selezione `#0059d1`, testo `#dfdfe0`) e
+/// dai dialoghi scuri (pulsante disattivato `#2f2f30` / `#626263`).
+@immutable
+class ForceQuitColors {
+  const ForceQuitColors({
+    required this.fill,
+    required this.title,
+    required this.text,
+    required this.help,
+    required this.list,
+    required this.listBorder,
+    required this.chosen,
+    required this.disabledButton,
+    required this.disabledButtonText,
+    required this.minimize,
+    required this.shadow,
+  });
+
+  final Color fill;
+  final Color title;
+  final Color text;
+  final Color help;
+  final Color list;
+  final Color listBorder;
+  final Color chosen;
+  final Color disabledButton;
+  final Color disabledButtonText;
+  final Color minimize;
+  final Color shadow;
+
+  static const ForceQuitColors light = ForceQuitColors(
+    fill: Color(0xFFF6F6F6),
+    title: Color(0xFF595959),
+    text: Color(0xFF1D1D1F),
+    help: Color(0xFF3C3C43),
+    list: Color(0xFFFFFFFF),
+    listBorder: Color(0xFFD9D9D9),
+    chosen: forceQuitBlue,
+    disabledButton: Color(0xFFB8C9E8),
+    disabledButtonText: Color(0xFFFFFFFF),
+    minimize: Color(0xFFDDDDDF),
+    shadow: Color(0x55000000),
+  );
+
+  static const ForceQuitColors dark = ForceQuitColors(
+    fill: Color(0xFF272728),
+    title: Color(0xFFE9E9E9),
+    text: Color(0xFFDFDFE0),
+    help: Color(0xFF9E9E9E),
+    list: Color(0xFF1E1E1E),
+    listBorder: Color(0xFF3C3C3D),
+    chosen: Color(0xFF0059D1),
+    disabledButton: Color(0xFF2F2F30),
+    disabledButtonText: Color(0xFF626263),
+    minimize: Color(0xFF4D4D4D),
+    shadow: Color(0x80000000),
+  );
+
+  static ForceQuitColors of(BuildContext context) =>
+      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
+      ? dark
+      : light;
+}
+
 /// Un'app aperta nell'elenco.
 class ForceQuitApp {
   const ForceQuitApp(this.appId, this.name, this.icon);
@@ -126,6 +192,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
   Widget build(BuildContext context) {
     if (!_open) return const SizedBox.shrink();
     final apps = _apps();
+    final c = ForceQuitColors.of(context);
     return Focus(
       focusNode: _focus,
       onKeyEvent: (node, event) {
@@ -142,23 +209,19 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
           width: forceQuitSize.width,
           height: forceQuitSize.height,
           decoration: BoxDecoration(
-            color: const Color(0xFFF6F6F6),
+            color: c.fill,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x55000000),
-                blurRadius: 40,
-                offset: Offset(0, 18),
-              ),
+            boxShadow: [
+              BoxShadow(color: c.shadow, blurRadius: 40, offset: Offset(0, 18)),
             ],
           ),
           child: Stack(
             children: [
               // I pulsanti della finestra: chiudi, riduci disattivato, schermo intero.
-              for (final (x, color) in const [
-                (26.0, Color(0xFFFF5F57)),
-                (49.0, Color(0xFFDDDDDF)),
-                (72.0, Color(0xFF28C840)),
+              for (final (x, color) in [
+                (26.0, const Color(0xFFFF5F57)),
+                (49.0, c.minimize),
+                (72.0, const Color(0xFF28C840)),
               ])
                 Positioned(
                   left: x - 7,
@@ -184,7 +247,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                   'Termina le app',
                   style: uiText(
                     size: 13,
-                    color: const Color(0xFF595959),
+                    color: c.title,
                   ).copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -195,20 +258,20 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                 child: Text(
                   'Se un\'app non risponde, sceglila nell\'elenco e fai clic su '
                   '«Termina».',
-                  style: uiText(size: 13, color: const Color(0xFF1D1D1F)),
+                  style: uiText(size: 13, color: c.text),
                 ),
               ),
               Positioned.fromRect(
                 rect: forceQuitList,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFFFF),
-                    border: Border.all(color: const Color(0xFFD9D9D9)),
+                    color: c.list,
+                    border: Border.all(color: c.listBorder),
                   ),
                   child: ListView(
                     padding: EdgeInsets.zero,
                     itemExtent: forceQuitRow,
-                    children: [for (final app in apps) _row(app)],
+                    children: [for (final app in apps) _row(c, app)],
                   ),
                 ),
               ),
@@ -218,7 +281,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                 top: 265,
                 child: Text(
                   'Questo pannello si apre anche con ⌘⌥Esc.',
-                  style: uiText(size: 10, color: const Color(0xFF3C3C43)),
+                  style: uiText(size: 10, color: c.help),
                 ),
               ),
               Positioned.fromRect(
@@ -228,9 +291,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                   onTap: _chosen == null ? null : _quit,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: _chosen == null
-                          ? const Color(0xFFB8C9E8)
-                          : forceQuitBlue,
+                      color: _chosen == null ? c.disabledButton : forceQuitBlue,
                       borderRadius: BorderRadius.circular(15),
                     ),
                     alignment: Alignment.center,
@@ -238,7 +299,9 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                       'Termina',
                       style: uiText(
                         size: 13,
-                        color: const Color(0xFFFFFFFF),
+                        color: _chosen == null
+                            ? c.disabledButtonText
+                            : const Color(0xFFFFFFFF),
                       ).copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -251,9 +314,9 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
     );
   }
 
-  Widget _row(ForceQuitApp app) {
+  Widget _row(ForceQuitColors c, ForceQuitApp app) {
     final chosen = app.appId == _chosen;
-    final text = chosen ? const Color(0xFFFFFFFF) : const Color(0xFF1D1D1F);
+    final text = chosen ? const Color(0xFFFFFFFF) : c.text;
     return GestureDetector(
       key: ValueKey('app ${app.appId}'),
       behavior: HitTestBehavior.opaque,
@@ -263,7 +326,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
         _quit();
       },
       child: Container(
-        color: chosen ? forceQuitBlue : null,
+        color: chosen ? c.chosen : null,
         child: Row(
           children: [
             const SizedBox(width: 8),

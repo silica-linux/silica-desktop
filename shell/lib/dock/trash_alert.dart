@@ -61,6 +61,11 @@ class TrashAlert extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // In scuro come gli avvisi di silica_ui (misc.md): testo `#ebebeb`, Annulla `#525253`
+    // con il testo `#e0e0e0`.
+    final dark =
+        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
+    final text = dark ? AlertColors.textDark : alertText;
     final icon = findSilicaIcon('trash-full');
     return Focus(
       autofocus: true,
@@ -113,7 +118,7 @@ class TrashAlert extends StatelessWidget {
                     package: 'silica_ui',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: alertText,
+                    color: text,
                     height: 16.7 / 13,
                   ),
                 ),
@@ -124,7 +129,7 @@ class TrashAlert extends StatelessWidget {
                 top: 157,
                 child: Text(
                   'Non si potrà annullare.',
-                  style: uiText(size: 13, color: alertText),
+                  style: uiText(size: 13, color: text),
                 ),
               ),
               _button(
@@ -139,8 +144,8 @@ class TrashAlert extends StatelessWidget {
                 trashAlertButtonsTop +
                     trashAlertButtonHeight +
                     trashAlertButtonGap,
-                alertCancel,
-                alertCancelText,
+                dark ? AlertColors.normalDark : alertCancel,
+                dark ? AlertColors.normalTextDark : alertCancelText,
                 onCancel,
               ),
             ],
