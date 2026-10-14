@@ -560,4 +560,93 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get silicaHelp => 'Silica Help';
+
+  @override
+  String get ccNearbySharing => 'Nearby Sharing';
+
+  @override
+  String get ccNotAvailableYet => 'Not available yet';
+
+  @override
+  String get ccStageView => 'Stage View';
+
+  @override
+  String get ccScreenMirroring => 'Screen Mirroring';
+
+  @override
+  String get ccEditControls => 'Edit Controls';
+
+  @override
+  String get ccDone => 'Done';
+
+  @override
+  String get ccSearchControls => 'Search Controls';
+
+  @override
+  String get ccAllControls => 'All Controls';
+
+  @override
+  String get ccCategoryConnectivity => 'Connectivity';
+
+  @override
+  String get ccCategoryDisplay => 'Display & Brightness';
+
+  @override
+  String get ccCategoryDesktop => 'Desktop & Windows';
+
+  @override
+  String get ccNowPlaying => 'Now Playing';
+
+  @override
+  String get ccGalleryHint =>
+      'Drag a control into Control Center to add it, or click it.';
+
+  @override
+  String get ccInCenter => 'In Control Center';
+
+  @override
+  String get ccSize => 'Size';
+
+  @override
+  String get ccSizeSmall => 'Small';
+
+  @override
+  String get ccSizeMedium => 'Medium';
+
+  @override
+  String get ccSizeLarge => 'Large';
+
+  @override
+  String get ccRemove => 'Remove';
+
+  @override
+  String get ccCopyToMenuBar => 'Copy to Menu Bar';
+
+  @override
+  String get ccWifiSettings => 'Wi-Fi Settings…';
+
+  @override
+  String get ccBluetoothSettings => 'Bluetooth Settings…';
+
+  @override
+  String get ccSoundSettings => 'Sound Settings…';
+
+  @override
+  String get ccDisplaySettings => 'Displays Settings…';
+
+  @override
+  String get ccFocusSettings => 'Focus Settings…';
+
+  @override
+  String get ccPrivacyWarning => 'Privacy Warning';
+
+  @override
+  String ccPrivacyRecent(String app) {
+    return '$app recently';
+  }
+
+  @override
+  String ccPrivacyNow(String app) {
+    return '$app';
+  }
 }

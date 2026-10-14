@@ -21,6 +21,7 @@ class NowPlaying {
     required this.player,
     this.title = '',
     this.artist = '',
+    this.album = '',
     this.artUrl = '',
     this.playing = false,
     this.canPrevious = false,
@@ -34,6 +35,12 @@ class NowPlaying {
   final String player;
   final String title;
   final String artist;
+
+  /// `xesam:album`, shown after the artist ("artist – album").
+  final String album;
+
+  /// The second line of the media module and detail: "artist – album", or either.
+  String get byline => [artist, album].where((s) => s.isNotEmpty).join(' – ');
 
   /// The cover (`mpris:artUrl`); only `file://` is drawn.
   final String artUrl;
@@ -75,6 +82,7 @@ class NowPlaying {
       readAt: DateTime.now(),
       title: text(meta['xesam:title']),
       artist: text(meta['xesam:artist']),
+      album: text(meta['xesam:album']),
       artUrl: text(meta['mpris:artUrl']),
       playing: props['PlaybackStatus'] == 'Playing',
       canPrevious: props['CanGoPrevious'] == true,
@@ -165,6 +173,7 @@ class MediaPlayers extends ChangeNotifier {
     if (old?.player == value?.player &&
         old?.title == value?.title &&
         old?.artist == value?.artist &&
+        old?.album == value?.album &&
         old?.artUrl == value?.artUrl &&
         old?.playing == value?.playing &&
         old?.canPrevious == value?.canPrevious &&

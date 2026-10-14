@@ -1,11 +1,17 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
 import 'package:silica_shell/controlcenter/detail.dart' show detailWidth;
+import 'package:silica_shell/controlcenter/edit.dart';
+import 'package:silica_shell/controlcenter/modules.dart';
+import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
+import 'package:silica_ui/silica_ui.dart' show LiquidGlass;
 
 class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   FakeSystem(super.value);
@@ -93,6 +99,14 @@ const SystemSnapshot laptop = SystemSnapshot(
   volume: 0.46,
 );
 
+/// Chooses a menu item: a click on it, then the blink and the fade.
+Future<void> choose(WidgetTester tester, String label) async {
+  await tester.tapAt(tester.getCenter(find.text(label)));
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 Future<void> sendCommand(WidgetTester tester, String id) =>
     tester.binding.defaultBinaryMessenger.handlePlatformMessage(
       'silica/shell',
@@ -100,29 +114,57 @@ Future<void> sendCommand(WidgetTester tester, String id) =>
       (_) {},
     );
 
+/// No arrangement file: the default modules, nothing saved.
+const Map<String, String> noConfig = {
+  "XDG_CONFIG_HOME": "/nonexistent/silica-test",
+};
+
 void main() {
   test(
     'the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch',
     () {
+      // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
+      // (Wi-Fi at 2254,42 without the privacy pill).
       final slots = layoutModules(laptop);
       expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
       expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
       expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-      // Dark Mode and Screen Capture at 0 and 76, Focus on the right (INV-A2).
-      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 152, 64, 64));
-      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 152, 64, 64));
-      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 152, 140, 64));
-      expect(slots['battery']!.rect, const Rect.fromLTWH(0, 228, 140, 64));
+      expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
+      expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
+      expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
+      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
+      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
+      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
       expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
       expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
       expect(slots['wifi']!.radius, 32);
+      expect(slots['staging']!.radius, 32);
+      expect(slots['media']!.radius, 35);
       expect(slots['display']!.radius, 28);
-
-      // A desktop without battery or backlight: Sound moves up.
+      // The battery is not in the default; Display is there without a backlight too
+      // (its track then shows no fill, controlcenter.md › sliders).
+      expect(slots.containsKey('battery'), isFalse);
       final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
-      expect(desktop.containsKey('battery'), isFalse);
-      expect(desktop.containsKey('display'), isFalse);
-      expect(desktop['sound']!.rect.top, 228);
+      expect(desktop['display']!.rect.top, 304);
+
+      // A user's arrangement: modules pack in order at the first free spot; the battery
+      // only shows on a machine with one.
+      final mine = layoutModules(laptop, const [
+        CcModule('dark', ModuleSize.small),
+        CcModule('wifi', ModuleSize.medium),
+        CcModule('battery', ModuleSize.medium),
+        CcModule('capture', ModuleSize.small),
+        CcModule('sound', ModuleSize.wide),
+      ]);
+      expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
+      expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
+      expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
+      expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
+      final noBattery = layoutModules(const SystemSnapshot(), const [
+        CcModule('battery', ModuleSize.medium),
+      ]);
+      expect(noBattery, isEmpty);
     },
   );
 
@@ -151,7 +193,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: ControlCenter(system: system),
+        child: ControlCenter(env: noConfig, system: system),
       ),
     );
     expect(find.text('Wi-Fi'), findsNothing);
@@ -159,7 +201,6 @@ void main() {
     await sendCommand(tester, 'controlcenter.toggle');
     await tester.pumpAndSettle();
     expect(find.text('Casa'), findsOneWidget);
-    expect(find.text('80% · charging'), findsOneWidget);
     // The stack: 14 pt from the right edge, the first module at y 42.
     final wifi = tester.getRect(
       find
@@ -206,7 +247,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ControlCenter(system: system),
+          child: ControlCenter(env: noConfig, system: system),
         ),
       );
       await sendCommand(tester, 'controlcenter.toggle');
@@ -248,7 +289,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: ControlCenter(system: system),
+        child: ControlCenter(env: noConfig, system: system),
       ),
     );
     await sendCommand(tester, 'controlcenter.toggle');
@@ -271,7 +312,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: ControlCenter(system: system),
+        child: ControlCenter(env: noConfig, system: system),
       ),
     );
     await sendCommand(tester, 'controlcenter.toggle');
@@ -302,7 +343,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ControlCenter(system: system),
+          child: ControlCenter(env: noConfig, system: system),
         ),
       );
       await sendCommand(tester, 'controlcenter.toggle');
@@ -353,7 +394,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ControlCenter(system: system),
+          child: ControlCenter(env: noConfig, system: system),
         ),
       );
       Future<void> announce(String value) =>
@@ -401,7 +442,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ControlCenter(system: FakeSystem(laptop)),
+          child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
         ),
       );
       await sendCommand(tester, 'controlcenter.toggle');
@@ -436,6 +477,199 @@ void main() {
       await tester.pump();
       expect(find.byKey(const ValueKey('media under pointer')), findsNothing);
       await mouse.removePointer();
+    },
+  );
+
+  testWidgets(
+    'Edit Controls: badges remove, the gallery adds, the arrangement is saved',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final dir = Directory.systemTemp.createTempSync('silica-cc-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final env = {'XDG_CONFIG_HOME': dir.path};
+      final system = FakeSystem(laptop);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(env: env, system: system),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+
+      // The button: 118 × 24, centred under the stack, 16 pt below Sound.
+      final button = tester.getRect(
+        find
+            .ancestor(
+              of: find.text('Edit Controls'),
+              matching: find.byType(Positioned),
+            )
+            .first,
+      );
+      expect(button.size, const Size(118, 24));
+      // Sound ends at 42 + 380 + 64.
+      expect(button.top, 42 + 380 + 64 + 16);
+      expect(button.center.dx, closeTo(1600 - 14 - 146, 0.5));
+
+      await tester.tap(find.text('Edit Controls'));
+      await tester.pumpAndSettle();
+      // Edit mode: a badge per module, the eight empty slots, the gallery with Done.
+      expect(find.byType(RemoveBadge), findsNWidgets(defaultModules.length));
+      expect(find.byType(EmptySlot), findsNWidgets(emptySlots));
+      expect(find.text('Done'), findsOneWidget);
+      // The battery is offered (this machine has one), not yet in the Center.
+      expect(find.text('Battery'), findsWidgets);
+
+      // The Wi-Fi badge removes Wi-Fi: Bluetooth moves up and the file is written.
+      final badges = find.byType(RemoveBadge);
+      await tester.tap(badges.first);
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(RemoveBadge),
+        findsNWidgets(defaultModules.length - 1),
+      );
+      final saved = loadModules(env: env);
+      expect(saved.map((m) => m.id), isNot(contains('wifi')));
+
+      // A click on a gallery control adds it at the end.
+      // The Battery category shows it at the top of the list.
+      await tester.tap(find.text('Battery').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Battery').last);
+      await tester.pumpAndSettle();
+      expect(
+        loadModules(env: env).last,
+        const CcModule('battery', ModuleSize.small),
+      );
+
+      // Done leaves edit mode, the Center stays open.
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.byType(RemoveBadge), findsNothing);
+      expect(find.text('Edit Controls'), findsOneWidget);
+    },
+  );
+
+  testWidgets('the module menu: size and remove; disabled modules do not act', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final dir = Directory.systemTemp.createTempSync('silica-cc-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final env = {'XDG_CONFIG_HOME': dir.path};
+    final system = FakeSystem(laptop);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ControlCenter(env: env, system: system),
+      ),
+    );
+    await sendCommand(tester, 'controlcenter.toggle');
+    await tester.pumpAndSettle();
+
+    // Nearby sharing has no backend yet: dimmed, says so, a click does nothing.
+    expect(find.text('Nearby Sharing'), findsOneWidget);
+    expect(find.text('Not available yet'), findsOneWidget);
+    await tester.tap(find.text('Nearby Sharing'), warnIfMissed: false);
+    await tester.pump();
+    expect(system.calls, isEmpty);
+
+    // A secondary click on Dark Mode: the menu with Size and Remove.
+    final dark = find.bySemanticsLabel('Dark Mode');
+    await tester.tapAt(tester.getCenter(dark), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Size'), findsOneWidget);
+    expect(find.text('Copy to Menu Bar'), findsOneWidget);
+    await choose(tester, 'Medium');
+    await tester.pumpAndSettle();
+    expect(
+      loadModules(env: env).firstWhere((m) => m.id == 'dark').size,
+      ModuleSize.medium,
+    );
+    // Medium: a capsule with the disc and the label.
+    expect(find.text('Dark Mode'), findsOneWidget);
+
+    await tester.tapAt(
+      tester.getCenter(find.text('Dark Mode')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await choose(tester, 'Remove');
+    expect(find.text('Dark Mode'), findsNothing);
+    expect(loadModules(env: env).map((m) => m.id), isNot(contains('dark')));
+  });
+
+  testWidgets(
+    'privacy pill: the stack moves down 28; the footers open Settings at their pane',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final launched = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        ShellChannel.channel,
+        (call) async {
+          if (call.method == 'launch') {
+            launched.add('${(call.arguments as Map)['command']}');
+          }
+          return true;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          ShellChannel.channel,
+          null,
+        ),
+      );
+      final system = FakeSystem(
+        laptop.copyWith(
+          privacy: const [
+            PrivacyUse(app: 'Firefox', kind: 'microphone', inUse: false),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(
+            env: noConfig,
+            system: system,
+            settingsApp: const DesktopEntry(
+              id: 'dev.frascella.Settings',
+              name: 'Settings',
+              exec: 'silica-app settings',
+            ),
+          ),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      expect(find.text('Firefox recently'), findsOneWidget);
+      // With the pill Wi-Fi sits at y 70, the pill at 40.
+      expect(tester.getTopLeft(find.text('Wi-Fi')).dy, greaterThan(70));
+      expect(
+        tester
+            .getRect(
+              find.ancestor(
+                of: find.text('Firefox recently'),
+                matching: find.byType(LiquidGlass),
+              ),
+            )
+            .top,
+        40,
+      );
+
+      // The Wi-Fi detail ends with its settings item, which opens Settings at Wi-Fi.
+      await tester.tap(find.text('Casa'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Wi-Fi Settings…'), findsOneWidget);
+      await tester.tap(find.text('Wi-Fi Settings…'));
+      await tester.pump();
+      expect(launched, ['silica-app settings --dart-arg wifi']);
     },
   );
 }

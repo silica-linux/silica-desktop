@@ -10,7 +10,7 @@
 //! Brightness and audio have no signals: they are reread every `poll`.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use futures_lite::{StreamExt, future};
@@ -337,10 +337,57 @@ async fn read_battery(bus: &Connection) -> Result<Option<Battery>> {
 /// Every how many volume readings the output name is reread (it rarely changes).
 const NAME_EVERY: u32 = 5;
 
+/// Who recorded, and when last: rechecked every [`PRIVACY_EVERY`] polls.
+const PRIVACY_EVERY: u32 = 2;
+
+/// How long an app counts as "recently" after it stops recording (provisional: the
+/// reference keeps the pill while the Control Center reopens, the exact time is not
+/// measured).
+const PRIVACY_RECENT: Duration = Duration::from_secs(10 * 60);
+
+/// At most this many apps in the pill.
+const PRIVACY_MAX: usize = 4;
+
+/// The privacy list from the apps recording now and the ones seen before.
+fn privacy_list(
+    seen: &mut Vec<(String, super::details::CaptureKind, Instant)>,
+    now_capturing: &[(String, super::details::CaptureKind)],
+    now: Instant,
+) -> Vec<super::PrivacyUse> {
+    for (app, kind) in now_capturing {
+        match seen.iter_mut().find(|(a, k, _)| a == app && k == kind) {
+            Some(entry) => entry.2 = now,
+            None => seen.push((app.clone(), *kind, now)),
+        }
+    }
+    seen.retain(|(_, _, last)| now.saturating_duration_since(*last) <= PRIVACY_RECENT);
+    seen.sort_by_key(|entry| std::cmp::Reverse(entry.2));
+    seen.truncate(PRIVACY_MAX * 2);
+    let mut list: Vec<super::PrivacyUse> = seen
+        .iter()
+        .map(|(app, kind, _)| super::PrivacyUse {
+            app: app.clone(),
+            kind: kind.name(),
+            in_use: now_capturing.iter().any(|(a, k)| a == app && k == kind),
+        })
+        .collect();
+    list.sort_by_key(|p| !p.in_use);
+    list.truncate(PRIVACY_MAX);
+    list
+}
+
 async fn poll(shared: &Shared) {
     let mut tick: u32 = 0;
     let mut name = String::new();
+    let mut seen = Vec::new();
     loop {
+        if tick.is_multiple_of(PRIVACY_EVERY) {
+            let capturing = super::details::capturing(&shared.config.wpctl)
+                .await
+                .unwrap_or_default();
+            let privacy = privacy_list(&mut seen, &capturing, Instant::now());
+            shared.update(|s| s.privacy = privacy);
+        }
         let brightness = read_backlight(&shared.config.backlight_dir).map(|b| b.fraction());
         let mut audio = read_audio(&shared.config.wpctl).await;
         if let Some(audio) = &mut audio {
@@ -515,7 +562,31 @@ pub(super) async fn set_muted(shared: &Shared, muted: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::details::CaptureKind;
     use super::*;
+
+    #[test]
+    fn privacy_keeps_recent_apps_and_puts_those_in_use_first() {
+        let start = Instant::now();
+        let mut seen = Vec::new();
+        let mic = |app: &str| (app.to_owned(), CaptureKind::Microphone);
+        let list = privacy_list(&mut seen, &[mic("Firefox")], start);
+        assert_eq!(list.len(), 1);
+        assert!(list[0].in_use);
+        assert_eq!(list[0].kind, "microphone");
+        // Firefox stops, Recorder starts: Recorder in use first, Firefox recently.
+        let later = start + Duration::from_secs(30);
+        let list = privacy_list(&mut seen, &[mic("Recorder")], later);
+        assert_eq!(
+            list.iter()
+                .map(|p| (p.app.as_str(), p.in_use))
+                .collect::<Vec<_>>(),
+            [("Recorder", true), ("Firefox", false)]
+        );
+        // Past the "recently" window only what records now is left.
+        let much_later = later + PRIVACY_RECENT + Duration::from_secs(1);
+        assert!(privacy_list(&mut seen, &[], much_later).is_empty());
+    }
 
     #[test]
     fn wpctl_output_is_parsed_defensively() {

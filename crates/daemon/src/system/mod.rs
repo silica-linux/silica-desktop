@@ -96,6 +96,15 @@ pub struct Audio {
     pub name: String,
 }
 
+/// An app that recorded with the microphone or the camera: now (`in_use`) or recently.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrivacyUse {
+    pub app: String,
+    /// `microphone` or `camera`.
+    pub kind: &'static str,
+    pub in_use: bool,
+}
+
 /// The whole state; `None` means an absent source.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SystemState {
@@ -112,6 +121,8 @@ pub struct SystemState {
     pub do_not_disturb: bool,
     /// Dark appearance (the whole system: Ossido, shell, apps through the Settings portal).
     pub dark: bool,
+    /// The apps recording now or recently, the ones in use first (the privacy pill).
+    pub privacy: Vec<PrivacyUse>,
 }
 
 impl SystemState {
@@ -151,6 +162,13 @@ impl SystemState {
         put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
         put("appearance.dark", Value::Bool(self.dark));
+        // "app<US>kind<US>1|0" per app: a flat list the shell splits.
+        let privacy: Vec<String> = self
+            .privacy
+            .iter()
+            .map(|p| format!("{}\u{1f}{}\u{1f}{}", p.app, p.kind, u8::from(p.in_use)))
+            .collect();
+        put("privacy", Value::from(privacy));
         dict
     }
 }

@@ -1081,6 +1081,174 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Silica Help'**
   String get silicaHelp;
+
+  /// Control Center module: sending files to nearby devices
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby Sharing'**
+  String get ccNearbySharing;
+
+  /// Control Center: a module Silica cannot drive yet
+  ///
+  /// In en, this message translates to:
+  /// **'Not available yet'**
+  String get ccNotAvailableYet;
+
+  /// Control Center tile: arranging windows in a stage with the others at the side
+  ///
+  /// In en, this message translates to:
+  /// **'Stage View'**
+  String get ccStageView;
+
+  /// Control Center tile: showing the screen on another display
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Mirroring'**
+  String get ccScreenMirroring;
+
+  /// Control Center button under the modules: rearranging them
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Controls'**
+  String get ccEditControls;
+
+  /// Control Center gallery: closes edit mode
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get ccDone;
+
+  /// Control Center gallery: search field placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'Search Controls'**
+  String get ccSearchControls;
+
+  /// Control Center gallery: category with every control
+  ///
+  /// In en, this message translates to:
+  /// **'All Controls'**
+  String get ccAllControls;
+
+  /// Control Center gallery category
+  ///
+  /// In en, this message translates to:
+  /// **'Connectivity'**
+  String get ccCategoryConnectivity;
+
+  /// Control Center gallery category
+  ///
+  /// In en, this message translates to:
+  /// **'Display & Brightness'**
+  String get ccCategoryDisplay;
+
+  /// Control Center gallery category
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop & Windows'**
+  String get ccCategoryDesktop;
+
+  /// Control Center module and gallery category: the media being played
+  ///
+  /// In en, this message translates to:
+  /// **'Now Playing'**
+  String get ccNowPlaying;
+
+  /// Control Center gallery footer
+  ///
+  /// In en, this message translates to:
+  /// **'Drag a control into Control Center to add it, or click it.'**
+  String get ccGalleryHint;
+
+  /// Control Center gallery: a control already added
+  ///
+  /// In en, this message translates to:
+  /// **'In Control Center'**
+  String get ccInCenter;
+
+  /// Control Center module menu: the size group
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get ccSize;
+
+  /// Control Center module menu: size
+  ///
+  /// In en, this message translates to:
+  /// **'Small'**
+  String get ccSizeSmall;
+
+  /// Control Center module menu: size
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get ccSizeMedium;
+
+  /// Control Center module menu: size
+  ///
+  /// In en, this message translates to:
+  /// **'Large'**
+  String get ccSizeLarge;
+
+  /// Control Center module menu and edit badge: removes the module
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get ccRemove;
+
+  /// Control Center module menu: also shows the control in the menu bar
+  ///
+  /// In en, this message translates to:
+  /// **'Copy to Menu Bar'**
+  String get ccCopyToMenuBar;
+
+  /// Control Center detail: opens Settings at Wi-Fi
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Settings…'**
+  String get ccWifiSettings;
+
+  /// Control Center detail: opens Settings at Bluetooth
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth Settings…'**
+  String get ccBluetoothSettings;
+
+  /// Control Center detail: opens Settings at Sound
+  ///
+  /// In en, this message translates to:
+  /// **'Sound Settings…'**
+  String get ccSoundSettings;
+
+  /// Control Center detail: opens Settings at Displays
+  ///
+  /// In en, this message translates to:
+  /// **'Displays Settings…'**
+  String get ccDisplaySettings;
+
+  /// Control Center detail: opens Settings at Focus
+  ///
+  /// In en, this message translates to:
+  /// **'Focus Settings…'**
+  String get ccFocusSettings;
+
+  /// Control Center Wi-Fi detail: the connected network is not secured
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Warning'**
+  String get ccPrivacyWarning;
+
+  /// Control Center privacy pill: an app used the camera, microphone or screen recently
+  ///
+  /// In en, this message translates to:
+  /// **'{app} recently'**
+  String ccPrivacyRecent(String app);
+
+  /// Control Center privacy pill: an app is using the camera, microphone or screen
+  ///
+  /// In en, this message translates to:
+  /// **'{app}'**
+  String ccPrivacyNow(String app);
 }
 
 class _AppLocalizationsDelegate

@@ -35,6 +35,7 @@ class SystemSnapshot {
     this.muted = false,
     this.audioName = '',
     this.doNotDisturb = false,
+    this.privacy = const [],
   });
 
   final bool wifiAvailable;
@@ -60,6 +61,10 @@ class SystemSnapshot {
   /// The name of the default audio output (title of the volume HUD).
   final String audioName;
   final bool doNotDisturb;
+
+  /// The apps recording with the microphone or the camera, now or recently (the Control
+  /// Center's privacy pill); the ones in use first.
+  final List<PrivacyUse> privacy;
 
   static SystemSnapshot fromDict(Map<Object?, Object?> d) {
     bool flag(String key) => d[key] == true;
@@ -87,6 +92,11 @@ class SystemSnapshot {
       muted: flag('audio.muted'),
       audioName: d['audio.name'] is String ? d['audio.name'] as String : '',
       doNotDisturb: flag('dnd'),
+      privacy: [
+        for (final item
+            in d['privacy'] is List ? d['privacy'] as List : const [])
+          if (item is String) ?PrivacyUse.parse(item),
+      ],
     );
   }
 
@@ -98,6 +108,7 @@ class SystemSnapshot {
     double? volume,
     bool? muted,
     bool? doNotDisturb,
+    List<PrivacyUse>? privacy,
   }) => SystemSnapshot(
     wifiAvailable: wifiAvailable,
     wifiEnabled: wifiEnabled ?? this.wifiEnabled,
@@ -117,7 +128,39 @@ class SystemSnapshot {
     muted: muted ?? this.muted,
     audioName: audioName,
     doNotDisturb: doNotDisturb ?? this.doNotDisturb,
+    privacy: privacy ?? this.privacy,
   );
+}
+
+/// An app that recorded: "app␟kind␟1" from the daemon (kind `microphone` or `camera`, 1 if
+/// it records now).
+@immutable
+class PrivacyUse {
+  const PrivacyUse({
+    required this.app,
+    required this.kind,
+    required this.inUse,
+  });
+
+  final String app;
+  final String kind;
+  final bool inUse;
+
+  static PrivacyUse? parse(String text) {
+    final parts = text.split('\u001f');
+    if (parts.length != 3 || parts[0].isEmpty) return null;
+    return PrivacyUse(app: parts[0], kind: parts[1], inUse: parts[2] == '1');
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrivacyUse &&
+      other.app == app &&
+      other.kind == kind &&
+      other.inUse == inUse;
+
+  @override
+  int get hashCode => Object.hash(app, kind, inUse);
 }
 
 /// A visible wireless network (Wi-Fi detail panel).

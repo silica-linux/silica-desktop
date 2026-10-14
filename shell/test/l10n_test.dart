@@ -64,7 +64,8 @@ void main() {
     await tester.pumpWidget(italian(ControlCenter(system: FakeSystem(laptop))));
     await command(tester, 'controlcenter.toggle');
     await tester.pumpAndSettle();
-    expect(find.text('80% · in carica'), findsOneWidget);
+    expect(find.text('Non ancora disponibile'), findsOneWidget);
+    expect(find.text('Modifica controlli'), findsOneWidget);
     expect(find.text('Focus'), findsOneWidget);
     expect(find.text('Suono'), findsOneWidget);
   });

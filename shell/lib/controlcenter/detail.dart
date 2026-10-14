@@ -7,8 +7,9 @@
 // (a single interpolated rectangle, slow-fast-slow curve, longer if the module is lower)
 // while the others fade out.
 //
-// Not done: the hotspot and privacy notice rows, the dark appearance and night light
-// tiles of Display (not there yet), the settings item at the bottom (no app).
+// The footer item opens the Settings app at the panel's pane. Not done: the personal hotspot
+// section (NetworkManager offers no nearby hotspots to Silica yet) and night light (Ossido
+// has no colour temperature yet: the tile shows disabled).
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -174,6 +175,56 @@ Widget _header(String title, {Widget? trailing}) => Stack(
       ),
   ],
 );
+
+/// The footer item that opens Settings at the panel's pane: a separator, then a 280 × 22
+/// row with the label (SH-CC-14…19). Without the Settings app there is no footer.
+List<_Piece> _settingsFooter(String label, VoidCallback? onTap) => [
+  if (onTap != null) ...[
+    (1, _separator()),
+    (5, const SizedBox()),
+    (22, _FooterItem(label: label, onTap: onTap)),
+    (5, const SizedBox()),
+  ],
+];
+
+class _FooterItem extends StatefulWidget {
+  const _FooterItem({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_FooterItem> createState() => _FooterItemState();
+}
+
+class _FooterItemState extends State<_FooterItem> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: widget.label,
+    child: MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: detailInset - 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            // Under the pointer the row lightens like the menu rows (provisional).
+            color: _hover ? const Color(0x1FFFFFFF) : null,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          alignment: Alignment.centerLeft,
+          child: Text(widget.label, style: detailText(13)),
+        ),
+      ),
+    ),
+  );
+}
 
 Widget _section(String title) => Padding(
   padding: const EdgeInsets.only(left: detailInset, top: 9),
@@ -362,6 +413,7 @@ DetailContent wifiDetail({
   required ValueChanged<bool> onSwitch,
   required ValueChanged<String> onConnect,
   required VoidCallback onToggleOthers,
+  VoidCallback? onSettings,
 }) {
   final pieces = <_Piece>[
     (
@@ -372,7 +424,38 @@ DetailContent wifiDetail({
       ),
     ),
   ];
-  if (!s.wifiEnabled) return DetailContent(pieces);
+  if (!s.wifiEnabled) {
+    return DetailContent([
+      ...pieces,
+      ..._settingsFooter(l.ccWifiSettings, onSettings),
+    ]);
+  }
+  // The privacy warning (SH-CC-14): under the header while the joined network is not
+  // secured; a click opens the Wi-Fi settings.
+  final insecure = networks.any((n) => n.active && !n.secure);
+  if (insecure) {
+    pieces.add((
+      24,
+      GestureDetector(
+        onTap: onSettings,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: detailInset),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l.ccPrivacyWarning,
+                  style: detailText(13, color: detailSection),
+                ),
+              ),
+              Text('⚠', style: detailText(13, color: detailSection)),
+            ],
+          ),
+        ),
+      ),
+    ));
+  }
   DetailRow row(WifiNetwork n) => DetailRow(
     glyph: GlyphKind.wifi,
     label: n.ssid,
@@ -427,6 +510,7 @@ DetailContent wifiDetail({
       pieces.add((detailRow, row(n)));
     }
   }
+  pieces.addAll(_settingsFooter(l.ccWifiSettings, onSettings));
   pieces.add((10, const SizedBox()));
   return DetailContent(pieces);
 }
@@ -467,6 +551,7 @@ DetailContent soundDetail({
   required ValueChanged<double> onVolume,
   required ValueChanged<int> onOutput,
   required Widget Function(double?) track,
+  VoidCallback? onSettings,
 }) {
   final pieces = <_Piece>[
     (38, _header(l.ccSound)),
@@ -496,6 +581,7 @@ DetailContent soundDetail({
     }
     pieces.add((5, const SizedBox()));
   }
+  pieces.addAll(_settingsFooter(l.ccSoundSettings, onSettings));
   pieces.add((10, const SizedBox()));
   return DetailContent(pieces);
 }
@@ -515,6 +601,7 @@ DetailContent displayDetail({
   required Widget Function(double?) track,
   required bool dark,
   required VoidCallback onDark,
+  VoidCallback? onSettings,
 }) {
   Widget tile(
     double left,
@@ -603,7 +690,8 @@ DetailContent displayDetail({
       ),
     ),
     (11, const SizedBox()),
-    (1, _separator()),
+    ..._settingsFooter(l.ccDisplaySettings, onSettings),
+    if (onSettings == null) (1, _separator()),
     (10, const SizedBox()),
   ]);
 }
@@ -619,10 +707,12 @@ GlyphKind deviceGlyph(String icon) => switch (icon) {
 /// Bluetooth (SH-CC-17): the switch in the header, one 32 pt row per paired device (the
 /// connected ones on the white disc); a click connects or disconnects.
 DetailContent bluetoothDetail({
+  required AppLocalizations l,
   required SystemSnapshot s,
   required List<BluetoothDevice> devices,
   required ValueChanged<bool> onSwitch,
   required void Function(BluetoothDevice device) onDevice,
+  VoidCallback? onSettings,
 }) {
   // Header 42 pt: the separator at +42, the first row at +48 (SH-CC-17).
   final pieces = <_Piece>[
@@ -634,7 +724,12 @@ DetailContent bluetoothDetail({
       ),
     ),
   ];
-  if (!s.bluetoothPowered || devices.isEmpty) return DetailContent(pieces);
+  if (!s.bluetoothPowered || devices.isEmpty) {
+    return DetailContent([
+      ...pieces,
+      ..._settingsFooter(l.ccBluetoothSettings, onSettings),
+    ]);
+  }
   pieces
     ..add((1, _separator()))
     ..add((5, const SizedBox()));
@@ -649,6 +744,8 @@ DetailContent bluetoothDetail({
       ),
     ));
   }
+  pieces.add((5, const SizedBox()));
+  pieces.addAll(_settingsFooter(l.ccBluetoothSettings, onSettings));
   pieces.add((10, const SizedBox()));
   return DetailContent(pieces);
 }
@@ -661,6 +758,7 @@ DetailContent focusDetail({
   required SystemSnapshot s,
   required ValueChanged<bool> onDoNotDisturb,
   required ValueChanged<Duration?> onFor,
+  VoidCallback? onSettings,
 }) {
   final on = s.doNotDisturb;
   final pieces = <_Piece>[
@@ -726,6 +824,8 @@ DetailContent focusDetail({
         ),
       ));
   }
+  pieces.add((5, const SizedBox()));
+  pieces.addAll(_settingsFooter(l.ccFocusSettings, onSettings));
   pieces.add((10, const SizedBox()));
   return DetailContent(pieces);
 }

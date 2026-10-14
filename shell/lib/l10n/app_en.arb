@@ -763,5 +763,127 @@
   "silicaHelp": "Silica Help",
   "@silicaHelp": {
     "description": "Help menu: opens Silica's documentation"
+  },
+  "ccNearbySharing": "Nearby Sharing",
+  "@ccNearbySharing": {
+    "description": "Control Center module: sending files to nearby devices"
+  },
+  "ccNotAvailableYet": "Not available yet",
+  "@ccNotAvailableYet": {
+    "description": "Control Center: a module Silica cannot drive yet"
+  },
+  "ccStageView": "Stage View",
+  "@ccStageView": {
+    "description": "Control Center tile: arranging windows in a stage with the others at the side"
+  },
+  "ccScreenMirroring": "Screen Mirroring",
+  "@ccScreenMirroring": {
+    "description": "Control Center tile: showing the screen on another display"
+  },
+  "ccEditControls": "Edit Controls",
+  "@ccEditControls": {
+    "description": "Control Center button under the modules: rearranging them"
+  },
+  "ccDone": "Done",
+  "@ccDone": {
+    "description": "Control Center gallery: closes edit mode"
+  },
+  "ccSearchControls": "Search Controls",
+  "@ccSearchControls": {
+    "description": "Control Center gallery: search field placeholder"
+  },
+  "ccAllControls": "All Controls",
+  "@ccAllControls": {
+    "description": "Control Center gallery: category with every control"
+  },
+  "ccCategoryConnectivity": "Connectivity",
+  "@ccCategoryConnectivity": {
+    "description": "Control Center gallery category"
+  },
+  "ccCategoryDisplay": "Display & Brightness",
+  "@ccCategoryDisplay": {
+    "description": "Control Center gallery category"
+  },
+  "ccCategoryDesktop": "Desktop & Windows",
+  "@ccCategoryDesktop": {
+    "description": "Control Center gallery category"
+  },
+  "ccNowPlaying": "Now Playing",
+  "@ccNowPlaying": {
+    "description": "Control Center module and gallery category: the media being played"
+  },
+  "ccGalleryHint": "Drag a control into Control Center to add it, or click it.",
+  "@ccGalleryHint": {
+    "description": "Control Center gallery footer"
+  },
+  "ccInCenter": "In Control Center",
+  "@ccInCenter": {
+    "description": "Control Center gallery: a control already added"
+  },
+  "ccSize": "Size",
+  "@ccSize": {
+    "description": "Control Center module menu: the size group"
+  },
+  "ccSizeSmall": "Small",
+  "@ccSizeSmall": {
+    "description": "Control Center module menu: size"
+  },
+  "ccSizeMedium": "Medium",
+  "@ccSizeMedium": {
+    "description": "Control Center module menu: size"
+  },
+  "ccSizeLarge": "Large",
+  "@ccSizeLarge": {
+    "description": "Control Center module menu: size"
+  },
+  "ccRemove": "Remove",
+  "@ccRemove": {
+    "description": "Control Center module menu and edit badge: removes the module"
+  },
+  "ccCopyToMenuBar": "Copy to Menu Bar",
+  "@ccCopyToMenuBar": {
+    "description": "Control Center module menu: also shows the control in the menu bar"
+  },
+  "ccWifiSettings": "Wi-Fi Settings…",
+  "@ccWifiSettings": {
+    "description": "Control Center detail: opens Settings at Wi-Fi"
+  },
+  "ccBluetoothSettings": "Bluetooth Settings…",
+  "@ccBluetoothSettings": {
+    "description": "Control Center detail: opens Settings at Bluetooth"
+  },
+  "ccSoundSettings": "Sound Settings…",
+  "@ccSoundSettings": {
+    "description": "Control Center detail: opens Settings at Sound"
+  },
+  "ccDisplaySettings": "Displays Settings…",
+  "@ccDisplaySettings": {
+    "description": "Control Center detail: opens Settings at Displays"
+  },
+  "ccFocusSettings": "Focus Settings…",
+  "@ccFocusSettings": {
+    "description": "Control Center detail: opens Settings at Focus"
+  },
+  "ccPrivacyWarning": "Privacy Warning",
+  "@ccPrivacyWarning": {
+    "description": "Control Center Wi-Fi detail: the connected network is not secured"
+  },
+  "ccPrivacyRecent": "{app} recently",
+  "@ccPrivacyRecent": {
+    "description": "Control Center privacy pill: an app used the camera, microphone or screen recently",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "ccPrivacyNow": "{app}",
+  "@ccPrivacyNow": {
+    "description": "Control Center privacy pill: an app is using the camera, microphone or screen",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
   }
 }

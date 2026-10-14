@@ -560,4 +560,93 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get silicaHelp => 'Aiuto di Silica';
+
+  @override
+  String get ccNearbySharing => 'Invio rapido';
+
+  @override
+  String get ccNotAvailableYet => 'Non ancora disponibile';
+
+  @override
+  String get ccStageView => 'Vista scena';
+
+  @override
+  String get ccScreenMirroring => 'Duplicazione schermo';
+
+  @override
+  String get ccEditControls => 'Modifica controlli';
+
+  @override
+  String get ccDone => 'Fine';
+
+  @override
+  String get ccSearchControls => 'Cerca nei controlli';
+
+  @override
+  String get ccAllControls => 'Tutti i controlli';
+
+  @override
+  String get ccCategoryConnectivity => 'Connettività';
+
+  @override
+  String get ccCategoryDisplay => 'Schermo e luminosità';
+
+  @override
+  String get ccCategoryDesktop => 'Scrivania e finestre';
+
+  @override
+  String get ccNowPlaying => 'In riproduzione';
+
+  @override
+  String get ccGalleryHint =>
+      'Trascina un controllo nel Centro di Controllo per aggiungerlo, oppure fai clic su di esso.';
+
+  @override
+  String get ccInCenter => 'Nel Centro di Controllo';
+
+  @override
+  String get ccSize => 'Dimensioni';
+
+  @override
+  String get ccSizeSmall => 'Piccolo';
+
+  @override
+  String get ccSizeMedium => 'Medio';
+
+  @override
+  String get ccSizeLarge => 'Grande';
+
+  @override
+  String get ccRemove => 'Rimuovi';
+
+  @override
+  String get ccCopyToMenuBar => 'Copia nella barra dei menu';
+
+  @override
+  String get ccWifiSettings => 'Impostazioni Wi-Fi…';
+
+  @override
+  String get ccBluetoothSettings => 'Impostazioni Bluetooth…';
+
+  @override
+  String get ccSoundSettings => 'Impostazioni Suono…';
+
+  @override
+  String get ccDisplaySettings => 'Impostazioni Schermi…';
+
+  @override
+  String get ccFocusSettings => 'Impostazioni Full immersion…';
+
+  @override
+  String get ccPrivacyWarning => 'Avviso sulla privacy';
+
+  @override
+  String ccPrivacyRecent(String app) {
+    return '$app di recente';
+  }
+
+  @override
+  String ccPrivacyNow(String app) {
+    return '$app';
+  }
 }

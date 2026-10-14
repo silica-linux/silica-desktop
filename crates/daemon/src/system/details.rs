@@ -363,6 +363,79 @@ pub(super) async fn audio_outputs(program: &Path) -> Result<Vec<Output>> {
     Ok(parse_outputs(&wpctl(program, &["status"]).await?))
 }
 
+/// What an app captures, for the Control Center's privacy pill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CaptureKind {
+    Microphone,
+    Camera,
+}
+
+impl CaptureKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            CaptureKind::Microphone => "microphone",
+            CaptureKind::Camera => "camera",
+        }
+    }
+}
+
+/// The streams recording right now, from `wpctl status`: in the Audio or Video section, a
+/// stream (`94. Firefox`) with a port reading from a source (` < `) that is `[active]`.
+/// The app's name, at most 64 characters, and what it records; each pair once.
+pub(super) fn parse_capturing(text: &str) -> Vec<(String, CaptureKind)> {
+    const MAX: usize = 16;
+    let mut found: Vec<(String, CaptureKind)> = Vec::new();
+    let mut kind = None;
+    let mut in_streams = false;
+    let mut stream: Option<String> = None;
+    for line in text.lines() {
+        if !line.starts_with([' ', '│', '├', '└']) && !line.trim().is_empty() {
+            kind = match line.trim() {
+                "Audio" => Some(CaptureKind::Microphone),
+                "Video" => Some(CaptureKind::Camera),
+                _ => None,
+            };
+            in_streams = false;
+            stream = None;
+            continue;
+        }
+        let body = line.trim_start_matches([' ', '│', '├', '└', '─']);
+        if body.ends_with(':') {
+            in_streams = body == "Streams:";
+            stream = None;
+            continue;
+        }
+        let (Some(kind), true) = (kind, in_streams) else {
+            continue;
+        };
+        let Some((id, rest)) = body.split_once(". ") else {
+            continue;
+        };
+        if id.trim().parse::<u32>().is_err() {
+            continue;
+        }
+        if rest.contains(" < ") || rest.contains(" > ") {
+            // A port of the current stream.
+            if rest.contains(" < ")
+                && rest.contains("[active]")
+                && let Some(name) = &stream
+                && !found.iter().any(|(n, k)| n == name && *k == kind)
+                && found.len() < MAX
+            {
+                found.push((name.clone(), kind));
+            }
+        } else {
+            let name = rest.trim();
+            stream = (!name.is_empty()).then(|| name.chars().take(64).collect());
+        }
+    }
+    found
+}
+
+pub(super) async fn capturing(program: &Path) -> Result<Vec<(String, CaptureKind)>> {
+    Ok(parse_capturing(&wpctl(program, &["status"]).await?))
+}
+
 pub(super) async fn set_audio_output(program: &Path, id: u32) -> Result<()> {
     let outputs = audio_outputs(program).await?;
     if !outputs.iter().any(|o| o.id == id) {
@@ -375,6 +448,43 @@ pub(super) async fn set_audio_output(program: &Path, id: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wpctl_status_gives_the_apps_recording() {
+        let text = "\
+Audio
+ ├─ Sources:
+ │  *   55. Digital Microphone [vol: 1.00]
+ │
+ └─ Streams:
+        91. speech-dispatcher-dummy
+             90. output_FL       > Speaker:playback_FL\t[init]
+        97. Firefox
+             98. input_FL        < Digital Microphone:capture_FL\t[active]
+             99. input_FR        < Digital Microphone:capture_FR\t[active]
+       101. Recorder
+            102. input_MONO      < Digital Microphone:capture_MONO\t[paused]
+
+Video
+ ├─ Sources:
+ │  *   45. Integrated_Webcam_HD (V4L2)
+ │
+ └─ Streams:
+       110. Cheese
+            111. input_0         < Integrated_Webcam_HD (V4L2):capture_1\t[active]
+
+Settings
+ └─ Default Configured Devices:
+";
+        assert_eq!(
+            parse_capturing(text),
+            [
+                ("Firefox".to_owned(), CaptureKind::Microphone),
+                ("Cheese".to_owned(), CaptureKind::Camera),
+            ]
+        );
+        assert!(parse_capturing("").is_empty());
+    }
 
     #[test]
     fn wpctl_status_gives_the_sinks() {

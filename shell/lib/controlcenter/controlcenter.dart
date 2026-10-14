@@ -9,11 +9,15 @@
 // (radius ~28) with a knobless slider. A wide soft shadow around the stack; opening and
 // closing with the opacities and the scale measured frame by frame.
 //
-// Modules with a real effect: Wi-Fi, Bluetooth, Do Not Disturb, Display, Sound (from
-// silica-daemon), the battery if there is one. Click on the icon disc: on or off; click on
-// the text (or on the slider title): the detail panel (`detail.dart`), where there is one;
-// with the pointer over a module with a detail the ">" arrow appears. Esc from the detail
-// goes back to the Center. There is no "Edit controls" nor the right-click menu yet.
+// Which modules, in which order and size: `modules.dart` (the reference's default, or the
+// user's arrangement from Edit Controls). Modules with a real effect: Wi-Fi, Bluetooth,
+// Focus, Dark Mode, Screen Capture, Display, Sound (from silica-daemon and Ossido), Now
+// playing (MPRIS), the battery if there is one. Nearby sharing, window staging and screen
+// mirroring are in the reference's grid but Silica has no backend for them yet: they show
+// disabled, saying so (#140 and the stage view and display issues). Click on the icon disc:
+// on or off; click on the text (or on the slider title): the detail panel (`detail.dart`),
+// where there is one; with the pointer over a module with a detail the ">" arrow appears.
+// Esc from the detail goes back to the Center.
 //
 // The component keeps running on a full-screen overlay layer: when closed it draws nothing
 // and takes neither pointer nor keyboard (silica/layer).
@@ -30,16 +34,27 @@ import '../l10n/l10n.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/shell_channel.dart';
+import '../system/desktop_entries.dart';
 import '../system/system_status.dart';
 import 'detail.dart';
 import 'glyphs.dart';
+import 'edit.dart';
 import 'hud.dart';
+import 'modules.dart';
 
 const double stackWidth = 292;
 const double columnWidth = 140;
 const double gap = 12;
 const double rightMargin = 14;
 const double stackTop = 42;
+
+/// The privacy pill: 24 pt tall at y 40, 6 pt above the first module, which moves down
+/// 28 pt (Wi-Fi at y 70).
+const double pillTop = 40;
+const double pillHeight = 24;
+const double pillShift = 28;
+const Color pillIcon = Color(0xFF6E7CFF);
+const Color pillText = Color(0xFFF0F0F1);
 const double rowHeight = 64;
 const double rowStep = rowHeight + gap;
 const double capsuleRadius = 32;
@@ -171,56 +186,24 @@ class ModuleSlot {
   int get hashCode => Object.hash(rect, radius);
 }
 
-/// The layout of the present modules, from the top (coordinates relative to the stack).
-Map<String, ModuleSlot> layoutModules(SystemSnapshot s) {
-  final slots = <String, ModuleSlot>{};
-  const right = columnWidth + gap;
-  slots['wifi'] = const ModuleSlot(
-    Rect.fromLTWH(0, 0, columnWidth, rowHeight),
-    capsuleRadius,
-  );
-  slots['bluetooth'] = const ModuleSlot(
-    Rect.fromLTWH(0, rowStep, columnWidth, rowHeight),
-    capsuleRadius,
-  );
-  slots['media'] = const ModuleSlot(
-    Rect.fromLTWH(right, 0, columnWidth, rowHeight * 2 + gap),
-    mediaRadius,
-  );
-  // The row of the reference's Dark Mode, Screen Capture and Focus (INV-A2 grid): two
-  // 64 pt round toggles at 0 and 76, the Focus capsule in the right column.
-  slots['dark'] = const ModuleSlot(
-    Rect.fromLTWH(0, rowStep * 2, rowHeight, rowHeight),
-    rowHeight / 2,
-  );
-  slots['capture'] = const ModuleSlot(
-    Rect.fromLTWH(rowStep, rowStep * 2, rowHeight, rowHeight),
-    rowHeight / 2,
-  );
-  slots['dnd'] = const ModuleSlot(
-    Rect.fromLTWH(right, rowStep * 2, columnWidth, rowHeight),
-    capsuleRadius,
-  );
-  var y = rowStep * 3;
-  if (s.batteryPresent) {
-    slots['battery'] = ModuleSlot(
-      Rect.fromLTWH(0, y, columnWidth, rowHeight),
-      capsuleRadius,
-    );
-    y += rowStep;
-  }
-  if (s.brightnessAvailable) {
-    slots['display'] = ModuleSlot(
-      Rect.fromLTWH(0, y, stackWidth, rowHeight),
-      sliderRadius,
-    );
-    y += rowStep;
-  }
-  slots['sound'] = ModuleSlot(
-    Rect.fromLTWH(0, y, stackWidth, rowHeight),
-    sliderRadius,
-  );
-  return slots;
+/// The layout of the present modules, from the top (coordinates relative to the stack):
+/// [modules] packed into the grid (modules.dart), each with its shape's radius.
+Map<String, ModuleSlot> layoutModules(
+  SystemSnapshot s, [
+  List<CcModule> modules = defaultModules,
+]) {
+  final present = presentModules(modules, s);
+  final frames = packModules(present);
+  return {
+    for (final m in present)
+      if (frames[m.id] case final rect?)
+        m.id: ModuleSlot(rect, switch (m.size) {
+          ModuleSize.small => rowHeight / 2,
+          ModuleSize.medium => capsuleRadius,
+          ModuleSize.large => mediaRadius,
+          ModuleSize.wide => sliderRadius,
+        }),
+  };
 }
 
 TextStyle _text(double size, {FontWeight? weight}) => TextStyle(
@@ -237,10 +220,18 @@ class ControlCenter extends StatefulWidget {
     super.key,
     required this.system,
     this.startOpen = false,
+    this.env,
+    this.settingsApp,
   });
 
   final SystemSource system;
   final bool startOpen;
+
+  /// The environment for the arrangement file (tests); null: the process environment.
+  final Map<String, String>? env;
+
+  /// The Settings app (tests); null: looked up among the installed apps.
+  final DesktopEntry? settingsApp;
 
   @override
   State<ControlCenter> createState() => _ControlCenterState();
@@ -284,6 +275,9 @@ class _ControlCenterState extends State<ControlCenter>
   StreamSubscription<String>? _commands;
   bool _open = false;
 
+  /// The arrangement: the user's, or the reference's default.
+  late List<CcModule> _modules = loadModules(env: widget.env);
+
   @override
   void initState() {
     super.initState();
@@ -310,6 +304,7 @@ class _ControlCenterState extends State<ControlCenter>
     _anim.dispose();
     _dndTimer?.cancel();
     _detailAnim.dispose();
+    _editAnim.dispose();
     _focus.dispose();
     _menuFocus.dispose();
     super.dispose();
@@ -500,7 +495,7 @@ class _ControlCenterState extends State<ControlCenter>
   double _detailProgress() {
     final key = _detail;
     if (key == null) return 0;
-    final slot = layoutModules(widget.system.value)[key];
+    final slot = layoutModules(widget.system.value, _modules)[key];
     final scale = detailTimeScale(slot == null ? 0 : slot.rect.top - detailTop);
     if (_detailClosing) {
       return 1 - detailProgress(_detailAnim.value / detailBackStretch, scale);
@@ -511,6 +506,8 @@ class _ControlCenterState extends State<ControlCenter>
   void _hide() {
     _detail = null;
     _detailClosing = false;
+    _editing = false;
+    _moduleMenu = null;
     setState(() => _open = false);
     ShellChannel.instance.broadcast('controlcenter.open', '0');
     LayerControl.keyboard('none');
@@ -520,18 +517,27 @@ class _ControlCenterState extends State<ControlCenter>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned.fill(child: _center(context)),
-      if (_wifiMenuRight case final right?)
-        Positioned.fill(child: _wifiMenu(widget.system.value, right)),
-      // The volume and brightness HUD: not with the Center open.
-      Positioned.fill(
-        child: IgnorePointer(
-          child: SystemHud(system: widget.system, suppressed: _open),
+  Widget build(BuildContext context) {
+    // Everything in one overlay entry: dragging controls in edit mode needs an Overlay
+    // (the shell's components have none), and the entry follows every rebuild.
+    _layer.markNeedsBuild();
+    return Overlay(initialEntries: [_layer]);
+  }
+
+  late final OverlayEntry _layer = OverlayEntry(
+    builder: (context) => Stack(
+      children: [
+        Positioned.fill(child: _center(context)),
+        if (_wifiMenuRight case final right?)
+          Positioned.fill(child: _wifiMenu(widget.system.value, right)),
+        // The volume and brightness HUD: not with the Center open.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: SystemHud(system: widget.system, suppressed: _open),
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 
   Widget _center(BuildContext context) {
@@ -547,7 +553,7 @@ class _ControlCenterState extends State<ControlCenter>
         ? 1 + (scaleAway - 1) * (1 - (ms / openScaleMs).clamp(0, 1))
         : 1 + (scaleAway - 1) * (ms / closeScaleMs).clamp(0, 1);
     final snapshot = widget.system.value;
-    final slots = layoutModules(snapshot);
+    final slots = layoutModules(snapshot, _modules);
     final height = slots.values
         .map((s) => s.rect.bottom)
         .reduce((a, b) => a > b ? a : b);
@@ -583,14 +589,18 @@ class _ControlCenterState extends State<ControlCenter>
     return LayoutBuilder(
       builder: (context, constraints) {
         final left = constraints.maxWidth - rightMargin - stackWidth;
-        final origin = Offset(left, stackTop);
+        final top = stackTop + (snapshot.privacy.isEmpty ? 0 : pillShift);
+        final origin = Offset(left, top);
         return Focus(
           focusNode: _focus,
           onKeyEvent: (node, event) {
             if (event is KeyDownEvent &&
                 event.logicalKey == LogicalKeyboardKey.escape) {
-              // From the detail back to the Center; from the Center it closes.
-              _detail != null && !_detailClosing ? _closeDetail() : _hide();
+              // From the detail back to the Center; from the Center (or edit mode, gallery
+              // included) it closes.
+              _detail != null && !_detailClosing && !_editing
+                  ? _closeDetail()
+                  : _hide();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -601,6 +611,13 @@ class _ControlCenterState extends State<ControlCenter>
                 child: GestureDetector(
                   onTap: _open ? _hide : null,
                   behavior: HitTestBehavior.opaque,
+                  // Edit mode dims the screen behind (~12 levels).
+                  child: _editing
+                      ? Opacity(
+                          opacity: opacity,
+                          child: const ColoredBox(color: editDim),
+                        )
+                      : null,
                 ),
               ),
               Positioned.fill(
@@ -619,11 +636,31 @@ class _ControlCenterState extends State<ControlCenter>
                   ),
                 ),
               ),
+              if (snapshot.privacy.firstOrNull case final use?)
+                Positioned(
+                  left: left,
+                  width: stackWidth,
+                  top: pillTop,
+                  height: pillHeight,
+                  child: Opacity(
+                    opacity: opacity * othersAlpha,
+                    // As tall as the band, as wide as its content, centred.
+                    child: Center(
+                      child: SizedBox(
+                        height: pillHeight,
+                        child: _PrivacyPill(
+                          use: use,
+                          onTap: _settingsAt('privacy'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 left: left - detailPad.dx,
-                top: stackTop - detailPad.dy,
+                top: top - detailPad.dy,
                 width: detailWidth,
-                height: totalHeight + detailPad.dy,
+                height: totalHeight + detailPad.dy + _belowStack,
                 child: Transform.scale(
                   scale: scale,
                   child: Opacity(
@@ -666,10 +703,57 @@ class _ControlCenterState extends State<ControlCenter>
                                   : othersAlpha,
                               child: IgnorePointer(
                                 ignoring: _detail != null,
-                                child: _module(key, snapshot),
+                                child: _arranged(key, value, snapshot),
                               ),
                             ),
                           ),
+                        // Edit Controls: centred 16 pt under the last module; in edit mode the
+                        // remove badges and the eight empty slots instead.
+                        if (_detail == null && !_editing)
+                          Positioned(
+                            left:
+                                (stackWidth - editButton.width) / 2 +
+                                detailPad.dx,
+                            top: height + editButtonGap + detailPad.dy,
+                            width: editButton.width,
+                            height: editButton.height,
+                            child: _EditButton(
+                              label: l10nOf(context).ccEditControls,
+                              onTap: _startEditing,
+                            ),
+                          ),
+                        if (_editing) ...[
+                          for (final MapEntry(:key, :value) in slots.entries)
+                            Positioned(
+                              left:
+                                  value.rect.left - badgeOutside + detailPad.dx,
+                              top: value.rect.top - badgeOutside + detailPad.dy,
+                              width: badgeSide,
+                              height: badgeSide,
+                              child: RemoveBadge(
+                                label:
+                                    '${l10nOf(context).ccRemove} ${_label(key)}',
+                                onTap: () => _removeModule(key),
+                              ),
+                            ),
+                          for (var i = 0; i < emptySlots; i++)
+                            Positioned(
+                              left: (i % 4) * pitch + detailPad.dx,
+                              top:
+                                  height +
+                                  gap +
+                                  (i ~/ 4) * pitch +
+                                  detailPad.dy,
+                              width: cell,
+                              height: cell,
+                              child: Opacity(
+                                opacity: slotsOpacity(
+                                  _editAnim.value * editTotalMs,
+                                ),
+                                child: EmptySlot(onDrop: _placeModule),
+                              ),
+                            ),
+                        ],
                         if (detail case (
                           final rect,
                           final radius,
@@ -700,6 +784,17 @@ class _ControlCenterState extends State<ControlCenter>
                   ),
                 ),
               ),
+              if (_editing) _gallery(constraints.biggest, opacity),
+              if (_moduleMenu case (final key, final at))
+                Positioned.fill(
+                  child: MenuHost(
+                    key: ValueKey('module menu $key $at'),
+                    entries: _moduleMenuEntries(key),
+                    anchor:
+                        at - Offset(menuSize(_moduleMenuEntries(key)).width, 0),
+                    onDismissed: () => setState(() => _moduleMenu = null),
+                  ),
+                ),
             ],
           ),
         );
@@ -707,9 +802,107 @@ class _ControlCenterState extends State<ControlCenter>
     );
   }
 
+  /// Room under the stack: the Edit Controls button, or the empty slots in edit mode.
+  double get _belowStack =>
+      _editing ? gap + cell + pitch : editButtonGap + editButton.height;
+
+  /// The gallery, centred on the screen (shorter screens: as tall as fits).
+  Widget _gallery(Size screen, double opacity) {
+    final height = gallerySize.height.clamp(0.0, screen.height - 80);
+    final present = {for (final m in _modules) m.id};
+    final available = {
+      for (final id in moduleSizes.keys)
+        if (id != 'battery' || widget.system.value.batteryPresent) id,
+    };
+    return Positioned(
+      left: (screen.width - gallerySize.width) / 2,
+      top: (screen.height - height) / 2,
+      width: gallerySize.width,
+      height: height,
+      child: Opacity(
+        opacity: opacity * galleryOpacity(_editAnim.value * editTotalMs),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(galleryRadius),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40000000),
+                blurRadius: 40,
+                offset: Offset(0, 16),
+              ),
+            ],
+          ),
+          child: ControlGallery(
+            present: present,
+            available: available,
+            preview: _preview,
+            label: _label,
+            onAdd: _placeModule,
+            onDone: _stopEditing,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A module in the stack: the secondary click opens its menu; in edit mode it can be
+  /// dragged to another place, and controls dropped on it go before it.
+  Widget _arranged(String key, ModuleSlot slot, SystemSnapshot s) {
+    final module = GestureDetector(
+      onSecondaryTapUp: (d) =>
+          setState(() => _moduleMenu = (key, d.globalPosition)),
+      child: _module(key, s),
+    );
+    if (!_editing) return module;
+    return DragTarget<String>(
+      onAcceptWithDetails: (d) => _placeModule(d.data, before: key),
+      builder: (context, candidates, _) => Draggable<String>(
+        data: key,
+        feedback: Opacity(
+          opacity: 0.85,
+          child: SizedBox.fromSize(
+            size: slot.rect.size,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFF6A6B70),
+                borderRadius: BorderRadius.circular(slot.radius),
+              ),
+              child: IgnorePointer(child: _module(key, s)),
+            ),
+          ),
+        ),
+        childWhenDragging: const SizedBox.expand(),
+        // In edit mode the modules don't act: they are dragged.
+        child: Opacity(
+          opacity: candidates.isEmpty ? 1 : 0.6,
+          child: IgnorePointer(child: module),
+        ),
+      ),
+    );
+  }
+
   /// The glass of a module: 1 pt more on the left and right.
   Rect _glassRect(Rect r) =>
       Rect.fromLTRB(r.left - 1, r.top, r.right + 1, r.bottom);
+
+  /// The Settings app, if installed (its first argument names the pane).
+  late final DesktopEntry? _settingsApp =
+      widget.settingsApp ??
+      loadDesktopEntries(locale: systemLanguage()).values
+          .where((e) => e.id.toLowerCase().endsWith('.settings'))
+          .firstOrNull;
+
+  /// Opens Settings at [pane] and closes the Center or the status menu; null without the
+  /// app (the footer item is not shown then).
+  VoidCallback? _settingsAt(String pane) {
+    final app = _settingsApp;
+    if (app == null) return null;
+    return () {
+      _closeWifiMenu();
+      if (_open) _hide();
+      ShellChannel.instance.launch('${app.exec} --dart-arg $pane');
+    };
+  }
 
   /// The content of the open detail.
   DetailContent? _detailContent(SystemSnapshot s) {
@@ -725,6 +918,7 @@ class _ControlCenterState extends State<ControlCenter>
         onSwitch: system.setWifi,
         onConnect: system.connectWifi,
         onToggleOthers: () => setState(() => _othersOpen = !_othersOpen),
+        onSettings: _settingsAt('wifi'),
       ),
       'sound' => soundDetail(
         l: l,
@@ -741,6 +935,7 @@ class _ControlCenterState extends State<ControlCenter>
             setState(() => _detailData = DetailData(outputs: outputs));
         },
         track: track,
+        onSettings: _settingsAt('sound'),
       ),
       'display' => displayDetail(
         l: l,
@@ -749,8 +944,10 @@ class _ControlCenterState extends State<ControlCenter>
         track: track,
         dark: MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
         onDark: () => ShellChannel.instance.execute('system.dark_toggle'),
+        onSettings: _settingsAt('displays'),
       ),
       'bluetooth' => bluetoothDetail(
+        l: l,
         s: s,
         devices: _detailData.devices,
         onSwitch: system.setBluetooth,
@@ -761,6 +958,7 @@ class _ControlCenterState extends State<ControlCenter>
             setState(() => _detailData = DetailData(devices: devices));
           }
         },
+        onSettings: _settingsAt('bluetooth'),
       ),
       'media' => DetailContent([(nowPlayingHeight, const _NowPlayingDetail())]),
       'dnd' => focusDetail(
@@ -776,9 +974,154 @@ class _ControlCenterState extends State<ControlCenter>
             system.setDoNotDisturb(false);
           });
         },
+        onSettings: _settingsAt('focus'),
       ),
       _ => null,
     };
+  }
+
+  /// While building a gallery preview: the size to draw it at.
+  ModuleSize? _sizeOverride;
+
+  /// Module [key] at [size], for the gallery.
+  Widget _preview(String key, ModuleSize size) {
+    _sizeOverride = size;
+    try {
+      return _module(key, widget.system.value);
+    } finally {
+      _sizeOverride = null;
+    }
+  }
+
+  /// The control's name, for the gallery and the badges.
+  String _label(String key) {
+    final l = l10nOf(context);
+    return switch (key) {
+      'wifi' => 'Wi-Fi',
+      'bluetooth' => 'Bluetooth',
+      'nearby' => l.ccNearbySharing,
+      'media' => l.ccNowPlaying,
+      'dnd' => l.ccFocus,
+      'dark' => l.ccDarkMode,
+      'capture' => l.ccScreenCapture,
+      'staging' => l.ccStageView,
+      'mirroring' => l.ccScreenMirroring,
+      'battery' => l.ccBattery,
+      'display' => l.ccDisplay,
+      _ => l.ccSound,
+    };
+  }
+
+  // Edit Controls: the arrangement changes and is saved at once.
+
+  void _setModules(List<CcModule> modules) {
+    setState(() => _modules = modules);
+    saveModules(modules, env: widget.env);
+  }
+
+  void _removeModule(String key) => _setModules([
+    for (final m in _modules)
+      if (m.id != key) m,
+  ]);
+
+  /// Adds [key] (from the gallery) or moves it (in the Center) before [before], or at the
+  /// end.
+  void _placeModule(String key, {String? before}) {
+    if (key == before) return;
+    final existing = _modules.where((m) => m.id == key).firstOrNull;
+    final module =
+        existing ?? CcModule(key, moduleSizes[key]?.first ?? ModuleSize.small);
+    final rest = [
+      for (final m in _modules)
+        if (m.id != key) m,
+    ];
+    final at = before == null
+        ? rest.length
+        : rest.indexWhere((m) => m.id == before);
+    rest.insert(at < 0 ? rest.length : at, module);
+    _setModules(rest);
+  }
+
+  void _resizeModule(String key, ModuleSize size) => _setModules([
+    for (final m in _modules) m.id == key ? m.withSize(size) : m,
+  ]);
+
+  bool _editing = false;
+  late final AnimationController _editAnim = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: editTotalMs.round()),
+  )..addListener(() => setState(() {}));
+
+  void _startEditing() {
+    _closeDetail();
+    setState(() => _editing = true);
+    _editAnim.forward(from: 0);
+  }
+
+  void _stopEditing() {
+    if (!_editing) return;
+    setState(() => _editing = false);
+    _editAnim.value = 0;
+  }
+
+  /// The module menu (secondary click): its top-right corner on the pointer.
+  (String, Offset)? _moduleMenu;
+
+  List<MenuEntry> _moduleMenuEntries(String key) {
+    final l = l10nOf(context);
+    final sizes = moduleSizes[key] ?? const <ModuleSize>[];
+    final current = _sizeOf(key);
+    MenuAction size(String label, ModuleSize s) => MenuAction(
+      label,
+      checked: current == s,
+      enabled: sizes.contains(s) && sizes.length > 1,
+      onSelected: () => _resizeModule(key, s),
+    );
+    return [
+      MenuSection(l.ccSize),
+      size(l.ccSizeSmall, ModuleSize.small),
+      size(l.ccSizeMedium, ModuleSize.medium),
+      size(l.ccSizeLarge, ModuleSize.large),
+      const MenuDivider(),
+      // The menu bar can't host Control Center controls yet (#59).
+      MenuAction(l.ccCopyToMenuBar, enabled: false),
+      const MenuDivider(),
+      MenuAction(l.ccRemove, onSelected: () => _removeModule(key)),
+    ];
+  }
+
+  /// The size of module [key] in the arrangement.
+  ModuleSize _sizeOf(String key) =>
+      _modules.where((m) => m.id == key).firstOrNull?.size ?? ModuleSize.small;
+
+  /// A toggle without a detail: a 64 pt round tile when small, a 140 × 64 capsule (disc and
+  /// label) when medium. Without [onTap] it is disabled: Silica can't do it yet.
+  Widget _toggleModule(
+    String key, {
+    required GlyphKind glyph,
+    required String label,
+    required bool active,
+    required VoidCallback? onTap,
+  }) {
+    final l = l10nOf(context);
+    if ((_sizeOverride ?? _sizeOf(key)) == ModuleSize.small) {
+      return _RoundToggle(
+        glyph: glyph,
+        label: label,
+        active: active,
+        onTap: onTap,
+      );
+    }
+    return _Capsule(
+      glyph: glyph,
+      title: label,
+      subtitle: onTap == null
+          ? l.ccNotAvailableYet
+          : (active ? l.ccOn : l.ccOff),
+      active: active,
+      enabled: onTap != null,
+      onTap: onTap,
+    );
   }
 
   Widget _module(String key, SystemSnapshot s) {
@@ -826,14 +1169,16 @@ class _ControlCenterState extends State<ControlCenter>
         onTap: () => system.setDoNotDisturb(!s.doNotDisturb),
         onOpen: () => _openDetail('dnd'),
       ),
-      'dark' => _RoundToggle(
+      'dark' => _toggleModule(
+        key,
         glyph: GlyphKind.contrast,
         label: l.ccDarkMode,
         active:
             MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
         onTap: () => ShellChannel.instance.execute('system.dark_toggle'),
       ),
-      'capture' => _RoundToggle(
+      'capture' => _toggleModule(
+        key,
         glyph: GlyphKind.screenCapture,
         label: l.ccScreenCapture,
         active: false,
@@ -841,6 +1186,30 @@ class _ControlCenterState extends State<ControlCenter>
           _hide();
           ShellChannel.instance.execute('screenshot.toolbar');
         },
+      ),
+      // In the reference's grid, with no backend in Silica yet: shown disabled, saying so
+      // (nearby sharing #140; window staging and screen mirroring need Ossido's stage view
+      // and a second display).
+      'nearby' => _Capsule(
+        glyph: GlyphKind.nearby,
+        title: l.ccNearbySharing,
+        subtitle: l.ccNotAvailableYet,
+        active: false,
+        enabled: false,
+      ),
+      'staging' => _toggleModule(
+        key,
+        glyph: GlyphKind.staging,
+        label: l.ccStageView,
+        active: false,
+        onTap: null,
+      ),
+      'mirroring' => _toggleModule(
+        key,
+        glyph: GlyphKind.mirroring,
+        label: l.ccScreenMirroring,
+        active: false,
+        onTap: null,
       ),
       'battery' => _Capsule(
         glyph: GlyphKind.battery,
@@ -888,9 +1257,13 @@ class _Capsule extends StatefulWidget {
     this.onOpen,
     this.glyphLevel = 1,
     this.activeGlyph = glyphOn,
+    this.enabled = true,
   });
 
   final GlyphKind glyph;
+
+  /// False when Silica can't do it yet: the module is dimmed and does not respond.
+  final bool enabled;
 
   /// The glyph color on the white disc when on (blue, purple for Focus).
   final Color activeGlyph;
@@ -919,8 +1292,8 @@ class _CapsuleState extends State<_Capsule> {
   @override
   Widget build(BuildContext context) {
     final widget = this.widget;
-    final arrow = _hover && widget.onOpen != null;
-    return MouseRegion(
+    final arrow = _hover && widget.onOpen != null && widget.enabled;
+    final capsule = MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: Stack(
@@ -992,8 +1365,18 @@ class _CapsuleState extends State<_Capsule> {
         ],
       ),
     );
+    if (widget.enabled) return capsule;
+    return Semantics(
+      enabled: false,
+      child: AbsorbPointer(
+        child: Opacity(opacity: disabledOpacity, child: capsule),
+      ),
+    );
   }
 }
+
+/// A module Silica can't drive yet: dimmed (provisional, the reference shows none).
+const double disabledOpacity = 0.45;
 
 /// "Until this evening": 19:00 today, or the end of the day once past it (provisional).
 Duration untilEvening(DateTime now) {
@@ -1018,7 +1401,9 @@ class _RoundToggle extends StatefulWidget {
   final GlyphKind glyph;
   final String label;
   final bool active;
-  final VoidCallback onTap;
+
+  /// Null: Silica can't do it yet, the tile is dimmed and does not respond.
+  final VoidCallback? onTap;
 
   @override
   State<_RoundToggle> createState() => _RoundToggleState();
@@ -1028,35 +1413,41 @@ class _RoundToggleState extends State<_RoundToggle> {
   bool _hover = false;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    toggled: widget.active,
-    label: widget.label,
-    child: MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: widget.active
-                ? discOn
-                : _hover
-                ? const Color(0x12FFFFFF)
-                : null,
-          ),
-          child: Center(
-            child: Glyph(
-              widget.glyph,
-              color: widget.active ? const Color(0xFF000000) : glyphOff,
-              size: 24,
-            ),
-          ),
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final tile = DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: widget.active
+            ? discOn
+            : _hover && enabled
+            ? const Color(0x12FFFFFF)
+            : null,
+      ),
+      child: Center(
+        child: Glyph(
+          widget.glyph,
+          color: widget.active ? const Color(0xFF000000) : glyphOff,
+          size: 24,
         ),
       ),
-    ),
-  );
+    );
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      toggled: widget.active,
+      label: widget.label,
+      child: enabled
+          ? MouseRegion(
+              onEnter: (_) => setState(() => _hover = true),
+              onExit: (_) => setState(() => _hover = false),
+              child: GestureDetector(onTap: widget.onTap, child: tile),
+            )
+          : AbsorbPointer(
+              child: Opacity(opacity: disabledOpacity, child: tile),
+            ),
+    );
+  }
 }
 
 /// The media module (controlcenter.md, light over grey): the 40 × 40 cover 14 pt from the edge, the text from
@@ -1245,9 +1636,9 @@ class _MediaState extends State<_Media> {
                             weight: FontWeight.w600,
                           ).copyWith(color: mediaTitle),
                         ),
-                        if (now.artist.isNotEmpty)
+                        if (now.byline.isNotEmpty)
                           Text(
-                            now.artist,
+                            now.byline,
                             maxLines: 1,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
@@ -1422,9 +1813,9 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
                   weight: FontWeight.w600,
                 ).copyWith(color: mediaTitle),
               ),
-              if (now != null && now.artist.isNotEmpty)
+              if (now != null && now.byline.isNotEmpty)
                 Text(
-                  now.artist,
+                  now.byline,
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.ellipsis,
@@ -1710,6 +2101,110 @@ class _OutputsGlyph extends CustomPainter {
 
   @override
   bool shouldRepaint(_OutputsGlyph old) => false;
+}
+
+/// The privacy pill (SH-CC-25): a 24 pt capsule of the modules' glass, centred over the stack;
+/// a 15 pt `#6e7cff` rounded square with the microphone or camera, 11 pt from the left; the
+/// app, bold `#f0f0f1`, 6 pt after it ("<app> recently" once it stopped). A click opens the
+/// privacy settings (provisional: the reference's click was not observed).
+class _PrivacyPill extends StatelessWidget {
+  const _PrivacyPill({required this.use, required this.onTap});
+
+  final PrivacyUse use;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = l10nOf(context);
+    final text = use.inUse
+        ? l.ccPrivacyNow(use.app)
+        : l.ccPrivacyRecent(use.app);
+    return Semantics(
+      button: onTap != null,
+      label: text,
+      child: GestureDetector(
+        onTap: onTap,
+        child: LiquidGlass(
+          radius: pillHeight / 2,
+          material: GlassMaterial.regular,
+          interactive: false,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 11, right: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 15,
+                  height: 15,
+                  decoration: BoxDecoration(
+                    color: pillIcon,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Glyph(
+                      use.kind == 'camera'
+                          ? GlyphKind.camera
+                          : GlyphKind.microphone,
+                      color: const Color(0xFFFFFFFF),
+                      size: 11,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _text(
+                      titleSize,
+                      weight: FontWeight.w700,
+                    ).copyWith(color: pillText),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Edit Controls button: a 118 × 24 capsule of the modules' glass, centred, 16 pt under
+/// the last module; white text, ~11–12 pt from each side.
+const Size editButton = Size(118, 24);
+const double editButtonGap = 16;
+
+class _EditButton extends StatelessWidget {
+  const _EditButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: LiquidGlass(
+        radius: editButton.height / 2,
+        material: GlassMaterial.regular,
+        interactive: false,
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _text(titleSize, weight: FontWeight.w600),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _StackShadow extends CustomPainter {

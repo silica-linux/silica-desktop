@@ -25,6 +25,22 @@ enum GlyphKind {
   mouse,
   headphones,
   keyboard,
+
+  /// Nearby sharing: a dot with two arcs above it, as waves going out.
+  nearby,
+
+  /// Window staging: a window with a strip of small windows on its left.
+  staging,
+
+  /// Screen mirroring: two overlapping screens.
+  mirroring,
+
+  /// Edit mode: the remove badge's minus.
+  minus,
+
+  /// The privacy pill: a microphone, a camera.
+  microphone,
+  camera,
 }
 
 class Glyph extends StatelessWidget {
@@ -146,6 +162,95 @@ class _GlyphPainter extends CustomPainter {
           Offset(body.left + 5 * s, body.bottom - 2.6 * s),
           Offset(body.right - 5 * s, body.bottom - 2.6 * s),
           stroke..strokeWidth = 1.2 * s,
+        );
+      case GlyphKind.nearby:
+        final base = c + Offset(0, 5 * s);
+        canvas.drawCircle(base, 2.2 * s, fill);
+        for (final r in [6.0, 10.5]) {
+          canvas.drawArc(
+            Rect.fromCircle(center: base, radius: r * s),
+            -math.pi * 0.8,
+            math.pi * 0.6,
+            false,
+            stroke..strokeWidth = 1.8 * s,
+          );
+        }
+      case GlyphKind.staging:
+        final main = RRect.fromRectAndRadius(
+          Rect.fromLTWH(c.dx - 3 * s, c.dy - 6 * s, 12 * s, 12 * s),
+          Radius.circular(2 * s),
+        );
+        canvas.drawRRect(main, stroke..strokeWidth = 1.6 * s);
+        for (var i = 0; i < 3; i++) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(
+                c.dx - 9 * s,
+                c.dy - 6 * s + i * 4.4 * s,
+                4 * s,
+                3.2 * s,
+              ),
+              Radius.circular(0.8 * s),
+            ),
+            fill,
+          );
+        }
+      case GlyphKind.mirroring:
+        final back = RRect.fromRectAndRadius(
+          Rect.fromLTWH(c.dx - 8 * s, c.dy - 7 * s, 12 * s, 9 * s),
+          Radius.circular(1.6 * s),
+        );
+        final front = RRect.fromRectAndRadius(
+          Rect.fromLTWH(c.dx - 3 * s, c.dy - 2 * s, 12 * s, 9 * s),
+          Radius.circular(1.6 * s),
+        );
+        canvas
+          ..drawRRect(back, stroke..strokeWidth = 1.5 * s)
+          ..drawRRect(front, fill);
+      case GlyphKind.microphone:
+        canvas
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromCenter(
+                center: c - Offset(0, 3 * s),
+                width: 6 * s,
+                height: 10 * s,
+              ),
+              Radius.circular(3 * s),
+            ),
+            fill,
+          )
+          ..drawArc(
+            Rect.fromCircle(center: c - Offset(0, 2 * s), radius: 5.5 * s),
+            0,
+            math.pi,
+            false,
+            stroke..strokeWidth = 1.6 * s,
+          )
+          ..drawLine(c + Offset(0, 3.5 * s), c + Offset(0, 7 * s), stroke);
+      case GlyphKind.camera:
+        canvas
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(c.dx - 8 * s, c.dy - 5 * s, 11 * s, 10 * s),
+              Radius.circular(2 * s),
+            ),
+            fill,
+          )
+          ..drawPath(
+            Path()
+              ..moveTo(c.dx + 4 * s, c.dy - 1.5 * s)
+              ..lineTo(c.dx + 8 * s, c.dy - 4 * s)
+              ..lineTo(c.dx + 8 * s, c.dy + 4 * s)
+              ..lineTo(c.dx + 4 * s, c.dy + 1.5 * s)
+              ..close(),
+            fill,
+          );
+      case GlyphKind.minus:
+        canvas.drawLine(
+          c - Offset(5 * s, 0),
+          c + Offset(5 * s, 0),
+          stroke..strokeWidth = 2.2 * s,
         );
       case GlyphKind.contrast:
         final r = 8 * s;
