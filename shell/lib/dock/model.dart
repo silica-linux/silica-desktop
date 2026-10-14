@@ -404,6 +404,47 @@ double bounceHeight(double ms) {
   return 0;
 }
 
+/// Attention request (dock.md › SH-DK-30): three decaying hops (56, 23, 8 pt lasting ~466,
+/// 320, 214 ms), then ~1 s still, repeated every 2 s until the app is activated.
+const List<(double, double)> attentionHops = [(466, 56), (320, 23), (214, 8)];
+const double attentionPeriod = 2000;
+
+/// Attention height `ms` after the request.
+double attentionHeight(double ms) {
+  if (ms <= 0) return 0;
+  var t = ms % attentionPeriod;
+  for (final (duration, height) in attentionHops) {
+    if (t < duration) {
+      final x = t / duration;
+      // A hop: up and down, symmetric.
+      return 4 * height * x * (1 - x);
+    }
+    t -= duration;
+  }
+  return 0;
+}
+
+/// Badge (dock.md › SH-DK-29): a red capsule 23 pt tall, its top 10 pt below the cell top,
+/// its right edge 3 pt inside the cell; 23 pt wide for one or two characters, then 26, 33, 39.
+const double badgeHeight = 23;
+const double badgeTop = 10;
+const double badgeRightInset = 3;
+const ui.Color badgeFill = ui.Color(0xFFF23F34);
+
+/// The badge width for `text` (measured widths; beyond five characters ~6.5 pt each).
+double badgeWidth(String text) => switch (text.length) {
+  <= 2 => 23,
+  3 => 26,
+  4 => 33,
+  5 => 39,
+  final n => 39 + (n - 5) * 6.5,
+};
+
+/// Download progress (SH-DK-30): a 59 × 4 pt outlined capsule in place of the indicator dot,
+/// filling from the left in the dot's color.
+const double progressWidth = 59;
+const double progressHeight = 4;
+
 /// The cell under the pointer, if there is an app.
 /// The cell under `x`, separator included.
 int? cellAt(Layout l, double x) {

@@ -30,6 +30,7 @@ import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
 import 'apps.dart';
 import 'autostart.dart';
+import 'launcher_entry.dart';
 import 'options.dart';
 import 'recent_documents.dart';
 import 'icons.dart';
@@ -54,6 +55,9 @@ class _LiveDockState extends State<LiveDock> {
 
   /// Dock options (dock.json), reloaded when Settings changes them.
   final DockOptionsWatcher _options = DockOptionsWatcher();
+
+  /// Badges, progress and attention asked by the apps (LauncherEntry on D-Bus).
+  final LauncherEntries _launcher = LauncherEntries();
   DockOptions get _o => _options.value.value;
   bool get _magnify => _o.magnify;
   bool get _recentsOn => _o.recents;
@@ -184,9 +188,13 @@ class _LiveDockState extends State<LiveDock> {
     ShellChannel.instance.refresh();
     _options.value.addListener(_optionsChanged);
     _applyOptions();
+    _launcher.value.addListener(_launcherChanged);
+    _launcher.start();
     // Login items: Silica has no other runner; once per session.
     runAutostartOnce();
   }
+
+  void _launcherChanged() => setState(() {});
 
   void _optionsChanged() {
     setState(() {});
@@ -231,6 +239,8 @@ class _LiveDockState extends State<LiveDock> {
     ShellChannel.instance.minimized.removeListener(_minimized);
     _options.value.removeListener(_optionsChanged);
     _options.dispose();
+    _launcher.value.removeListener(_launcherChanged);
+    _launcher.dispose();
     for (final image in _thumbnails.values) {
       image.dispose();
     }
@@ -321,6 +331,16 @@ class _LiveDockState extends State<LiveDock> {
   void _focused() {
     final id = ShellChannel.instance.focused.value;
     if (id.isEmpty) return;
+    // An app asking attention stops when it comes to the front.
+    final appId = ShellChannel.instance.toplevels.value
+        .where((t) => t.id == id)
+        .firstOrNull
+        ?.appId;
+    if (appId != null) {
+      for (final entry in _entries.values) {
+        if (entry.matchesAppId(appId)) _launcher.activated(entry.id);
+      }
+    }
     _recent
       ..remove(id)
       ..insert(0, id);
@@ -600,6 +620,7 @@ class _LiveDockState extends State<LiveDock> {
     magnification: _magnify ? defaultMagnification : 1,
     autohide: _o.autohide,
     indicators: _o.indicators,
+    launcher: _launcher.value.value,
     onActivate: _activate,
     onDropFiles: _dropFiles,
     menuFor: _menu,
@@ -783,6 +804,7 @@ class Dock extends StatefulWidget {
     this.magnification = defaultMagnification,
     this.autohide = false,
     this.indicators = true,
+    this.launcher = const {},
     this.onActivate,
     this.onDropFiles,
     this.menuFor,
@@ -801,6 +823,9 @@ class Dock extends StatefulWidget {
 
   /// The dots under the open apps (SH-DK-12).
   final bool indicators;
+
+  /// What the apps ask of their icons (badge, progress, attention), by item id.
+  final Map<String, LauncherState> launcher;
 
   /// Click on an app.
   final void Function(Item item)? onActivate;
@@ -1321,7 +1346,14 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   double _bounceOf(Item item) {
     final start = _bounces[_key(item)];
-    if (start == null) return 0;
+    if (start == null) {
+      // Attention (SH-DK-30): hops every 2 s until the app is activated.
+      final since = widget.launcher[item.id]?.urgentSince;
+      if (since == null) return 0;
+      return attentionHeight(
+        DateTime.now().difference(since).inMicroseconds / 1000,
+      );
+    }
     return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
 
@@ -1544,6 +1576,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         if (sliding && !dragging) {
           WidgetsBinding.instance.scheduleFrame();
         }
+        if (widget.launcher.values.any((s) => s.urgentSince != null)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
         // The menu tip: above the icon, ~11 pt above the bottom of the Dock (D-04).
         final menuIndex = _menuIndex;
         final tip = menuIndex == null || menuIndex >= l.cells.length
@@ -1693,6 +1730,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         size.height,
                         DockColors.of(context),
                         indicators: widget.indicators,
+                        launcher: widget.launcher,
                       ),
                     ),
                   ),
@@ -1709,6 +1747,20 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                       )
                     else if (items[i].icon case final source?)
                       _icon(l, i, size.height, source, items[i], sliding),
+                  if (widget.launcher.values.any((s) => s.badge != null))
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: _BadgePainter(
+                            items,
+                            l,
+                            size.height,
+                            widget.launcher,
+                            [for (final item in items) _bounceOf(item)],
+                          ),
+                        ),
+                      ),
+                    ),
                   if (_drag case final drag?) ..._dragged(drag),
                   if (_ghost case final ghost?) _faded(ghost),
                   if (hovered != null && _menuIndex == null)
@@ -1984,6 +2036,7 @@ class _DockPainter extends CustomPainter {
     this.height,
     this.colors, {
     this.indicators = true,
+    this.launcher = const {},
   });
 
   final List<Item> items;
@@ -1993,6 +2046,7 @@ class _DockPainter extends CustomPainter {
 
   /// With indicators off nothing else changes (SH-DK-12).
   final bool indicators;
+  final Map<String, LauncherState> launcher;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2012,7 +2066,31 @@ class _DockPainter extends CustomPainter {
       if (item.icon == null) {
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
       }
-      if (item.running && indicators) {
+      if (launcher[item.id]?.progress case final progress?) {
+        // The progress bar replaces the dot (SH-DK-30).
+        final bar = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(l.center(i), by + bh - indicatorAbove),
+            width: progressWidth,
+            height: progressHeight,
+          ),
+          const Radius.circular(progressHeight / 2),
+        );
+        canvas.save();
+        canvas.clipRRect(bar);
+        canvas.drawRect(
+          Rect.fromLTWH(bar.left, bar.top, bar.width * progress, bar.height),
+          Paint()..color = colors.indicator,
+        );
+        canvas.restore();
+        canvas.drawRRect(
+          bar.deflate(0.5),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = colors.indicator,
+        );
+      } else if (item.running && indicators) {
         canvas.drawCircle(
           Offset(l.center(i), by + bh - indicatorAbove),
           indicatorSize / 2,
@@ -2024,6 +2102,63 @@ class _DockPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DockPainter old) => true;
+}
+
+/// The badges (SH-DK-29): above the icons, following their bounce and magnification.
+class _BadgePainter extends CustomPainter {
+  _BadgePainter(this.items, this.l, this.height, this.launcher, this.lifts);
+
+  final List<Item> items;
+  final Layout l;
+  final double height;
+  final Map<String, LauncherState> launcher;
+  final List<double> lifts;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var i = 0; i < items.length && i < l.cells.length; i++) {
+      final text = launcher[items[i].id]?.badge;
+      if (text == null) continue;
+      final (ix, iy, side) = iconRect(l, i, height);
+      // Measured at the 48 pt icon: everything scales with the magnified icon.
+      final k = side / iconSize;
+      // Cells are (left, width).
+      final cellRight = l.cells[i].$1 + l.cells[i].$2;
+      final w = badgeWidth(text) * k;
+      final rect = Rect.fromLTWH(
+        cellRight - badgeRightInset * k - w,
+        iy - (iconTop - badgeTop) * k - (i < lifts.length ? lifts[i] : 0),
+        w,
+        badgeHeight * k,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+        Paint()..color = badgeFill,
+      );
+      // Provisional: the text size and weight are not measured (~14 pt semibold).
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            fontFamily: uiFontFamily,
+            package: 'silica_ui',
+            fontSize: 14 * k,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFFFFFFFF),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        rect.center - Offset(painter.width / 2, painter.height / 2),
+      );
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BadgePainter old) => true;
 }
 
 /// The Dock label's tip (TIP-01), origin on the apex, pointing down, in pt.
