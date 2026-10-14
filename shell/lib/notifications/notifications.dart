@@ -94,9 +94,9 @@ const Color buttonFill = Color(0x1C000000);
 const Color buttonText = Color(0xFF2F2F31);
 const double buttonHeight = 22;
 
-/// The card colors, light and dark. Dark is measured on
-/// `shots/glass/notifications/gray-dark.png` (Center open over grey, lightest pixels of the
-/// texts, backgrounds in clean spots) and on `banner-gray-dark.png` (text `#eaeaeb`):
+/// The card colors, light and dark. Dark is measured in
+/// silica-reference (glass.md, notifications: Center open over grey, lightest pixels of the
+/// texts, backgrounds in clean spots) and on the dark banner over grey (text `#eaeaeb`):
 /// - text `#eaeaeb`, time `#b4b5ba`, buttons `#dadbe0`;
 /// - actions section **lighter** than the card by ~20 levels (`#7a7a7e` over `#66676c`,
 ///   the opposite of light), darker divider line (102 over 122), buttons +21 levels;

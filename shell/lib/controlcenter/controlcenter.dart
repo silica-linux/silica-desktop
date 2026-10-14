@@ -148,7 +148,7 @@ double sliderValue(double dx, {double length = trackLength}) =>
 double sliderFill(double value, {double length = trackLength}) =>
     10 + value.clamp(0, 1) * (length - 20);
 
-/// The audio outputs circle in the Sound module (cc-gray-light): 26 × 26 with its center at
+/// The audio outputs circle in the Sound module (controlcenter.md, light over grey): 26 × 26 with its center at
 /// +265.5 from the module edge; the track gets 44 pt shorter and the high volume glyph moves
 /// with it. White background at 24 % (`#8f9094` over the module grey).
 const double outputsShift = 44;
@@ -1045,7 +1045,7 @@ class _RoundToggleState extends State<_RoundToggle> {
   );
 }
 
-/// The media module (cc-gray-light): the 40 × 40 cover 14 pt from the edge, the text from
+/// The media module (controlcenter.md, light over grey): the 40 × 40 cover 14 pt from the edge, the text from
 /// x 15 (capitals of the first line at y 68), the transport buttons centered at x
 /// 28.5 / 71 / 110.5 and y 111 (⏮ and ⏭ 22 × 12, ▶ 17 × 20). With nothing playing the buttons
 /// are dimmed (white at 33 and 51 %); with an MPRIS player it shows title and artist and

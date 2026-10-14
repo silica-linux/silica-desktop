@@ -1,5 +1,5 @@
 // The shell's Dock: layout and magnification from model.dart (measurements in
-// plan/reference/dock.md), Liquid Glass background computed by Ossido, icons, separator,
+// plan/reference/dock.md), lens glass background computed by Ossido, icons, separator,
 // indicators and label drawn here.
 
 import 'dart:async';

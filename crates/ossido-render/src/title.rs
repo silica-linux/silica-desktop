@@ -4,7 +4,7 @@
 //! ~15 pt (inference: the system font cannot be identified), semibold weight, baseline at
 //! ~31 pt from the top, `#4d4d4d` active and `#bebebe` inactive; in dark `#e9e9e9` and
 //! `#646464`.
-//! In Finder the title follows the navigation buttons; a window with only the title is
+//! In the reference file manager the title follows the navigation buttons; a window with only the title is
 //! not measured: here it is centered, provisional.
 
 use std::cell::RefCell;

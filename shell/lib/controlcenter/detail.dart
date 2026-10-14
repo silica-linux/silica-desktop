@@ -7,8 +7,8 @@
 // (a single interpolated rectangle, slow-fast-slow curve, longer if the module is lower)
 // while the others fade out.
 //
-// Not done: the hotspot and privacy notice rows, the "Dark Mode" and "Night Shift" tiles
-// of Display (not there yet), "Impostazioni…" (no app).
+// Not done: the hotspot and privacy notice rows, the dark appearance and night light
+// tiles of Display (not there yet), the settings item at the bottom (no app).
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';

@@ -49,7 +49,7 @@
     <enum name="material">
       <description summary="measured materials">
         The measured glass families: clear (small blur, almost transparent), thick (wide
-        blur, almost white in the light appearance) and regular (the Liquid Glass of
+        blur, almost white in the light appearance) and regular (the lens glass of
         controls: strong lens at the edge). Since version 2: notification (very wide blur,
         almost opaque, like banners and the Notification Center).
       </description>

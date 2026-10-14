@@ -1,6 +1,6 @@
 // The dark appearance of Control Center, HUD and notifications. Control Center and HUD are
 // identical in both appearances over grey (controlcenter.md, hud.md); notifications change
-// (notifications.md, gray-dark).
+// (notifications.md, dark over grey).
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';

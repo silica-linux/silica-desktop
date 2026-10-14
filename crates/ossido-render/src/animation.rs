@@ -48,14 +48,14 @@ pub fn smoothstep(x: f64) -> f64 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Minimizing into the Dock ("genie"), measured on the frames of
-/// `video/windows/minimize-restore-light.mov` (75 Hz, screen 2560 × 1440, window 900 × 600 at
+/// Minimizing into the Dock ("genie"), measured frame by frame on a
+/// reference recording (silica-reference, windows.md; 75 Hz, screen 2560 × 1440, window 900 × 600 at
 /// (700, 300), Dock cell at x ~1644–1698, Dock top at y 1356). Times from the first bent
-/// frame (960 ms of the file); the thumbnail is still at 1440 ms: **480 ms** in all
+/// frame (960 ms into the recording); the thumbnail is still at 1440 ms: **480 ms** in all
 /// (the notes count 390 ms from the first movement of the top edge, at 1053 ms).
 pub const MINIMIZE: Duration = Duration::from_millis(480);
 
-/// Restore: 4868 → 5308/5335 ms of the file, ~440–470 ms.
+/// Restore: 4868 → 5308/5335 ms into the recording, ~440–470 ms.
 pub const RESTORE: Duration = Duration::from_millis(470);
 
 /// The state of the genie at an instant: how bent the funnel is (0–1) and how far the top and

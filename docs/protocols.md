@@ -17,7 +17,7 @@ top.
   circular-arc corners of radius `radius`, like the measured glass (Dock, menus,
   notifications: windows instead have superellipse corners).
 - Materials: `clear` (clear glass, like the Dock), `thick` (thick glass, like menus and
-  search) and `regular` (the Liquid Glass of the controls, like the Control Center modules:
+  search) and `regular` (the lens glass of the controls, like the Control Center modules:
   a strong lens that near the edge folds in the background from well inside), from the measurements
   in `plan/reference/glass.md`. Since version 2 also `notification` (banners and Notification
   Center: very wide blur, almost opaque, dark edge line on the first pixel of the region,

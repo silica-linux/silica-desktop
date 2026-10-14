@@ -1,6 +1,6 @@
 //! `cargo xtask bench glass`: the cost of the glass for Ossido, per quality level.
 //!
-//! Worst case: the shell's Dock (Liquid Glass, Impeller) with a window scrolling behind it
+//! Worst case: the shell's Dock (lens glass, Impeller) with a window scrolling behind it
 //! on every frame, so the glass background always changes, and the pointer passing over
 //! the icons. For each level it measures Ossido's rendering time (`perf.render`, winit
 //! backend) and the Dock's pace (`perf.frames`). Run it in a graphical session with the GPU

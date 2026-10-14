@@ -1,6 +1,6 @@
 // The app launcher: Faro in another mode, from plan/reference/launcher.md (light
 // appearance). An 844 × 577 pt panel with its top at 30 % of the screen, radius 25, Faro's
-// material. A 56 pt header (apps icon 22 pt from the edge, "Applicazioni" placeholder at
+// material. A 56 pt header (apps icon 22 pt from the edge, "Applications" placeholder at
 // 26 pt, "…" on the right), a separator, a row of 7 categories, then the grid: 7 columns at a
 // 112.5 pt pitch, rows at a 102 pitch, 61 pt icons, 14 pt names truncated at the end; at the
 // top a row of recent apps separated by a line. The scroll bar is always visible.
@@ -10,7 +10,7 @@
 // Esc removes the text, then the category, then goes back to Faro.
 //
 // Searching all apps, if the first result starts with the text the field completes it
-// inline ("cal" + "endario — Apri" in a grey rectangle) and shows the app icon on the right.
+// inline ("cal" + "endar — Open" in a grey rectangle) and shows the app icon on the right.
 //
 // Not done (PA-60): keyboard selection in the grid, the "…" menu, the final wobble of the
 // opening.

@@ -481,7 +481,7 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
         "the nearby capsules do not merge"
     );
 
-    // At 10 pt (the Spotlight buttons from the panel) they stay separate.
+    // At 10 pt (the search panel's buttons from the panel) they stay separate.
     glass
         .set_glass(&[
             (0, 20, 100, 60, 30.0, Material::Regular),
@@ -546,7 +546,7 @@ fn separate_groups_overlap_without_merging() {
 }
 
 /// Widths of glass per row below the body of the reference Dock menu's tip, from its base
-/// down (misc.md, `shots/misc/dock-context-light.png`, x 844–868, y 1338–1347).
+/// down (measured in silica-reference, misc.md "Context menu of a Dock icon", x 844–868, y 1338–1347).
 const TIP_WIDTHS: [u32; 10] = [23, 18, 16, 15, 14, 12, 10, 8, 6, 2];
 
 /// The glass of a thick body with a 24 × 10 tip on one of its sides, over the reference

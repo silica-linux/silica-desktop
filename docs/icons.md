@@ -71,7 +71,7 @@ For every folder in the view:
 
 For the icons of files, folders, volumes and the Trash the side is the **whole canvas**
 (silica-icons 0.2: sheet 684 × 904 at (170, 60), folder 944 × 760 at (40, 132), volumes
-944 × 583, Trash 656 × 824 with the base at 924), measured on the Finder; the `min_size`
+944 × 583, Trash 656 × 824 with the base at 924), measured on the macOS file manager; the `min_size`
 bands are compared with that side. In the Dock, next to the apps, a place instead uses the
 apps' canvas (`SilicaIcon(…, besideApps: true)`, silica_ui ≥ 0.17): side = body, canvas
 1024/824 of the side.

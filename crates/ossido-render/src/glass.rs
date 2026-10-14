@@ -73,7 +73,7 @@ const NONE: [f32; 2] = [0.0, 0.0];
 
 /// Dock, light: 1 pt light row on top and at the bottom (+61 over the `#818289` fill, the
 /// same on both sides in the gray capture) with an inner glow, 1 dark pt on the sides
-/// (61 over the fill's 132), nothing outside. `dock-gray-light.png`, columns x 1095–1408 and
+/// (61 over the fill's 132), nothing outside. Light Dock over grey (silica-reference, glass.md), columns x 1095–1408 and
 /// rows 1380–1410 (medians).
 const DOCK_EDGE: Edge = Edge {
     top: profile(
@@ -91,7 +91,7 @@ const DOCK_EDGE: Edge = Edge {
 };
 
 /// Dock, dark: +38 rows on top and at the bottom over the `#6a6a6f` fill, glow, sides 49 over
-/// the fill's 106 (`dock-gray-dark`).
+/// the fill's 106 (dark Dock over grey, glass.md).
 const DOCK_DARK_EDGE: Edge = Edge {
     top: profile(
         [38.0, 8.3, 5.0, 3.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -110,7 +110,7 @@ const DOCK_DARK_EDGE: Edge = Edge {
 /// Control Center modules (`regular`): a strong light row on top and at the bottom (+94 /
 /// +90 over the `#6a6b70` fill) with a glow over ~6 pt; on the sides the dark line is
 /// **outside** the module (black ~0.63, the "1 pt border sticking out" of
-/// controlcenter.md), nothing inside. `cc/gray-dark.png`, the middle rows and columns of the
+/// controlcenter.md), nothing inside. Dark modules over grey (glass.md), the middle rows and columns of the
 /// eleven modules (identical in light).
 const REGULAR_EDGE: Edge = Edge {
     top: profile(
@@ -134,8 +134,8 @@ const REGULAR_EDGE: Edge = Edge {
 /// Menus, light: a dark outline all around, outside the body (black ~0.2: menubar.md
 /// "outer line ~24 %", 0.16–0.30 over the shadowed gray of the captures), and inside a light
 /// row, stronger at the bottom (+30) than on top (+14) and faint on the sides (+4, then a
-/// slightly darker band of ~3 levels). `menubar/gray-light.png` (top),
-/// `misc/dock-context-light.png` (bottom and sides).
+/// slightly darker band of ~3 levels). Light menu over grey (top) and
+/// light Dock context menu (bottom and sides), glass.md and misc.md.
 const MENU_EDGE: Edge = Edge {
     top: profile(
         [14.2, 5.7, 4.8, 3.7, 2.8, 1.8, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -155,7 +155,7 @@ const MENU_EDGE: Edge = Edge {
 
 /// Menus, dark: an almost black outline outside (black ~0.85, menubar.md `#111112` over the
 /// gray), inside +51 on top, +39 at the bottom, +10 on the sides followed by a darker band
-/// (−12 … −4 over 4 pt). `menubar/gray-dark.png`, `misc/dock-context-dark.png`.
+/// (−12 … −4 over 4 pt). Dark menu over grey and dark Dock context menu (glass.md, misc.md).
 const MENU_DARK_EDGE: Edge = Edge {
     top: profile(
         [50.9, 6.2, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -344,7 +344,7 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
 /// edge as in light ("same identical look in light and dark over gray", controlcenter.md).
 pub const REGULAR_DARK: MaterialParams = REGULAR_LIGHT;
 
-/// The Liquid Glass lens, measured on the Control Center modules from the displacement maps
+/// The lens of the regular glass, measured on the Control Center modules from the displacement maps
 /// with the edge's own light taken out (the gray capture subtracted: a glow of 10 levels
 /// would read as ~20 px; `xtask/tools/glass_parity.py`). Near the edge the glass shows the
 /// background from well inside, folded: at 2 pt from the top or bottom edge the background
@@ -554,7 +554,7 @@ pub const NOTIFICATION_DARK: MaterialParams = MaterialParams {
 
 /// Gap between two regions of the same material below which they join into a single shape,
 /// like drops (smooth union of the distances, k = 2 · MERGE_PT: two edges at distance g touch
-/// when g < k / 2). Measured limits: Spotlight's round buttons 10 pt from the panel stay
+/// when g < k / 2). Measured limits: the search panel's round buttons 10 pt from the panel stay
 /// separate (spotlight.md) and the Control Center modules, whose glasses are 10 pt apart
 /// horizontally (the side edge sticks out by 1 pt), have no bridge or bulge on the edge
 /// (controlcenter.md): k ≤ 10, that is at most 5. The exact value is not measured

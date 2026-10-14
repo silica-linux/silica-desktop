@@ -119,7 +119,7 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 
 | Repository | What | License |
 | --- | --- | --- |
-| `silica-ui` (public) | Dart package `silica_ui`: Inter, glass, Liquid Glass. Stable API, versions tagged `vX.Y.Z`; the shell and the apps take it from the tag | MIT OR Apache-2.0 |
+| `silica-ui` (public) | Dart package `silica_ui`: Inter, glass, lens glass. Stable API, versions tagged `vX.Y.Z`; the shell and the apps take it from the tag | MIT OR Apache-2.0 |
 | `silica-icons` | app and file icons (layered), 313 system symbols in three weights | CC BY-SA 4.0 |
 | `silica-cursors` | cursors, archived: to be redone later | CC BY-SA 4.0 |
 | `silica-reference` | macOS 27 observations, cloned into `plan/reference/` (private) | — |

@@ -49,18 +49,6 @@ SURFACES = {
     "dock": {
         "crop": (760, 1250, 1040, 190),
         "regions": [(816, 1356, 928, 79, 22, "clear", "none")],
-        "files": {
-            "gray": "shots/glass/dock-gray-{ap}.png",
-            "stripes-v": "shots/glass/dock-stripes-v-{ap}.png",
-            "stripes-h": "shots/glass/dock-stripes-h-{ap}.png",
-            "stripes-v-fine": "shots/glass/dock-stripes-v-fine-{ap}.png",
-            "saw-gray": "shots/glass/ramps/dock-saw-gray-{ap}.png",
-            "saw-r": "shots/glass/ramps/dock-saw-r-{ap}.png",
-            "saw-g": "shots/glass/ramps/dock-saw-g-{ap}.png",
-            "saw-b": "shots/glass/ramps/dock-saw-b-{ap}.png",
-            "disp-x": "shots/glass/disp/dock-disp-x-{ap}.png",
-            "disp-y": "shots/glass/disp/dock-disp-y-{ap}.png",
-        },
     },
     # Control Center modules (controlcenter.md, with the privacy pill: Wi-Fi at y 70).
     "cc": {
@@ -71,19 +59,6 @@ SURFACES = {
         "mask_appearance": "dark",
         # Some captures have a notification above the modules (see `shifted`).
         "check_shift": True,
-        "files": {
-            "gray": "shots/glass/cc/gray-{ap}.png",
-            "stripes-v": "shots/glass/cc/stripes-v-{ap}.png",
-            "stripes-v-mid": "shots/glass/cc/stripes-v-mid-{ap}.png",
-            "saw-gray": "shots/glass/cc/saw-gray-{ap}.png",
-            "saw-r": "shots/glass/cc/saw-r-{ap}.png",
-            "saw-g": "shots/glass/cc/saw-g-{ap}.png",
-            "saw-b": "shots/glass/cc/saw-b-{ap}.png",
-            "disp-x": "shots/glass/cc/disp-x-{ap}.png",
-            "disp-y": "shots/glass/cc/disp-y-{ap}.png",
-        },
-        # The light gray capture has no Control Center (glass.md): use the full-screen one.
-        "gray_light": ("shots/controlcenter/cc-gray-light.png", (0, 0)),
     },
     # The File menu of the menu bar (menubar.md: body x 99–385, y 31–659, r ~12).
     "menu": {
@@ -94,15 +69,6 @@ SURFACES = {
         # The desktop widgets are behind the left part (x < 190) and the menu bar gradient
         # behind the top (y < 120): measure where the glass sees only the wallpaper.
         "valid": (240, 140, 800, 700),
-        "files": {
-            "gray": "shots/glass/menubar/gray-{ap}.png",
-            "stripes-v": "shots/glass/menubar/stripes-v-{ap}.png",
-            "stripes-v-mid": "shots/glass/menubar/stripes-v-mid-{ap}.png",
-            "saw-gray": "shots/glass/menubar/saw-gray-{ap}.png",
-            "saw-r": "shots/glass/menubar/saw-r-{ap}.png",
-            "saw-g": "shots/glass/menubar/saw-g-{ap}.png",
-            "saw-b": "shots/glass/menubar/saw-b-{ap}.png",
-        },
     },
     # The context menu of a Dock icon with its tip (misc.md: body x 829–1056, y 841–1337;
     # tip centered at x 856, 10 pt deep: silica_ui sends a 24 × 10 rectangle, the sharp
@@ -113,7 +79,6 @@ SURFACES = {
             (829, 841, 228, 497, 12, "thick", "none"),
             (844, 1338, 24, 10, 0, "thick", "down"),
         ],
-        "files": {"gray": "shots/misc/dock-context-{ap}.png"},
         # A widget sits above the menu.
         "rim_sides": ("bottom", "left", "right"),
         # In the dark capture the menu has another size: not comparable.
@@ -155,11 +120,28 @@ def load(path):
     return np.asarray(image).astype(float)
 
 
+def load_files(ref):
+    """Adds to every surface the capture files it is compared with. The table lives in the
+    private reference checkout (`tools/glass_parity_files.json`): per surface, `files` maps a
+    wallpaper to a path pattern with `{ap}`, and the optional `gray_light` is a full-screen
+    capture used for the light gray case."""
+    path = os.path.join(ref, "tools", "glass_parity_files.json")
+    if not os.path.exists(path):
+        sys.exit(f"capture table not found: {path} (it comes with silica-reference)")
+    with open(path) as f:
+        table = json.load(f)
+    for surface, spec in SURFACES.items():
+        if surface not in table:
+            sys.exit(f"{path}: no entry for the surface {surface!r}")
+        spec["files"] = table[surface]["files"]
+        if "gray_light" in table[surface]:
+            spec["gray_light"] = table[surface]["gray_light"]
+
+
 def reference_file(ref, surface, wp, ap):
     spec = SURFACES[surface]
     if wp == "gray" and ap == "light" and "gray_light" in spec:
-        path, _ = spec["gray_light"]
-        return os.path.join(ref, path), True
+        return os.path.join(ref, spec["gray_light"]), True
     path = os.path.join(ref, spec["files"][wp].format(ap=ap))
     return path, spec.get("fullscreen", False)
 
@@ -524,6 +506,7 @@ def main():
     args.reference = os.path.abspath(args.reference)
     if not os.path.isdir(args.reference):
         sys.exit(f"reference not found: {args.reference}")
+    load_files(args.reference)
     if not args.skip_render:
         render(cases(args.reference, args.out, args.only), args.out)
     rows = analyze(args.reference, args.out, args.only)

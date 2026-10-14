@@ -2,7 +2,7 @@
 //
 // A 292 × 64 `regular` glass panel at the top right, 10 pt below the menu bar and 10 pt from
 // the screen edge, like a Control Center module: title (the name of the audio output, or
-// "Schermo"), a 4 pt track with 17 ticks below (one per step), icon on the right. It appears
+// the display label), a 4 pt track with 17 ticks below (one per step), icon on the right. It appears
 // at every volume or mute change and at every brightness requested by Silica (keys,
 // commands; not adaptive brightness, which changes the value by itself), except with the
 // Control Center open (there the slider changes). Appearance ~380 ms scaling from 0.91 with

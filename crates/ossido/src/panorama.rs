@@ -118,7 +118,7 @@ pub const OPEN_CURVE: &[(f64, f64)] = &[
     (320.0, 1.0),
 ];
 
-/// Closing progress (ms, 0–1): edge of the Finder in the burst after Esc.
+/// Closing progress (ms, 0–1): edge of the file manager window in the burst after Esc.
 pub const CLOSE_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (13.0, 0.054),
@@ -236,7 +236,7 @@ fn center(r: &Rectangle<f64, Logical>) -> (f64, f64) {
 
 /// Overlapping windows (counting the 16 pt gap) move apart in equal parts along the line
 /// through their centers, by as much as needed to separate them on one of the two axes. In
-/// the reference: Finder (700,300 900 × 600) and Terminal (1283,308 597 × 422) move by
+/// the reference: a file manager window (700,300 900 × 600) and a terminal (1283,308 597 × 422) move by
 /// (−167, +32) and (+166, −32). Then the group comes back into the area, if it goes out. `None`
 /// if it does not fit at full size.
 fn spread(
@@ -1276,7 +1276,7 @@ mod tests {
 
     #[test]
     fn two_windows_that_fit_keep_their_size() {
-        // The reference: Finder 900 × 600 and Terminal 597 × 422 go to (533,332) and
+        // The reference: file manager 900 × 600 and terminal 597 × 422 go to (533,332) and
         // (1449,276), scale 1, 16 pt between them (measurements at ±1 pt).
         let area = rect(48.0, 88.0, 2464.0, 1220.0);
         let out = layout(

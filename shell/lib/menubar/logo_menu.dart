@@ -1,5 +1,5 @@
-// The logo menu at the left of the bar (SH-MB-02, SH-MB-03, SH-MB-04; menubar.md ›
-// Inventory INV-A1 › Apple menu): about, settings, recent items, force quit, the power
+// The logo menu at the left of the bar (SH-MB-02, SH-MB-03, SH-MB-04; menubar.md,
+// inventory INV-A1): about, settings, recent items, force quit, the power
 // items, lock and log out. Icons only on the first two items; with ⌥ held some items
 // change: "About" → "System Information", "Restart…" → "Restart", "Shut Down…" → "Shut
 // Down", the log out item loses its ellipsis and its shortcut becomes ⌥⇧⌘Q. The menu keeps

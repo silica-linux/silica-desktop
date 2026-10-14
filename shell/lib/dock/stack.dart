@@ -562,7 +562,7 @@ class GridStack extends StatelessWidget {
   );
 }
 
-/// The "stack" icon of a folder in the Dock (d06-icon-pila-10-light): the first file in front,
+/// The "stack" icon of a folder in the Dock (dock-stacks.md › Icon in the Dock): the first file in front,
 /// the next two behind, smaller (0.89 and 0.73) and with their tops 4 pt higher each, no
 /// rotation. Measured on a 54 pt icon: front sheet 37 × 46, tops at +0, −4, −8.
 class PileIcon extends StatelessWidget {

@@ -1,5 +1,5 @@
 // The window arrangement popover (windows.md, long press on the green button;
-// shots/windows/wtl-press-zoom-long-light): a menu with its tip pointing up at the button,
+// measured in silica-reference, windows.md): a menu with its tip pointing up at the button,
 // 241 wide, two rows of four 25 × 20 icons at a 53.5 pitch (tops at +45 and +124 from the
 // panel edge) below their headings, then the full screen item (center at +179). The items
 // run Ossido's `window.tile_*` / `window.arrange_*` commands on the focused window (the one
@@ -109,7 +109,7 @@ MenuCustom _row(List<String> commands, ValueChanged<String> execute) =>
     );
 
 /// The icon glyph: light `#1d1d1f`, dark `#e1e1e1` (lightest pixel of
-/// wtl-press-zoom-long-dark). The background under the pointer in dark is *estimated*.
+/// the dark capture, windows.md). The background under the pointer in dark is *estimated*.
 const Color tileGlyph = Color(0xFF1D1D1F);
 const Color tileGlyphDark = Color(0xFFE1E1E1);
 

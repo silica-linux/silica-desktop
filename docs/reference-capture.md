@@ -20,8 +20,7 @@ Structure:
 plan/reference/
   setup.md              Mac, macOS build, display, settings used
   <area>.md             measurements and observations of an area (dock.md, glass.md, …)
-  shots/<area>/*.png    screenshots cited by the notes
-  video/<area>/*.mov    recordings for the animations
+  (captures)            screenshots and recordings cited by the notes (private)
 ```
 
 ## Fixed conditions
@@ -55,13 +54,14 @@ and written in `setup.md`.
 
 ## Note format
 
-Every measurement has a value, unit, method and source screenshot. Sizes in points
+Every measurement has a value, unit, method and source capture (cited only inside
+silica-reference; public code, docs and issues cite the note or the inventory ID instead). Sizes in points
 (pixels / scale), durations in ms, colors in hexadecimal sRGB with alpha.
 
 ```markdown
 ## Dock · icons at rest
 
-- Icon side: 48 pt (96 px at 2×), method: alpha edge on shots/dock/rest-light.png
+- Icon side: 48 pt (96 px at 2×), method: alpha edge on the capture of the Dock at rest
 - Spacing between icons: 8 pt
 - macOS 27.0 (build …), 2026-10-13
 ```
