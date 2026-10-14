@@ -106,6 +106,16 @@ How it works, without root on the host and without changing the image:
   `share/applications/` (the apps' `.desktop` entries, before the installed ones), `icons/`
   (silica-icons) and `session.sh`. The hook in `50-dev.env` runs `session.sh` instead of the
   installed session when it exists; silica-session also has `SILICA_PREFIX` for the same.
+- **D-Bus activation.** The image ships activation files in `/usr/share/dbus-1/services`
+  (`dev.frascella.Silica`, `dev.frascella.Mail`) that start the packaged daemons from
+  `/usr/libexec/silica`. When the bus name is requested while the dev daemon does not own it
+  (a session restart), that would start an old daemon, and calls such as `SetDark` would reach
+  the wrong one. `deploy` writes user-level overrides in
+  `~silica/.local/share/dbus-1/services/` (they take precedence) with
+  `Exec=/run/silica-dev/bin/silica-daemon` (and the mail engine, when the share has it), owned
+  by `silica`, reloads the user bus (`busctl --user call org.freedesktop.DBus /
+  org.freedesktop.DBus ReloadConfig`) and kills the packaged daemons still running, found by
+  exact command line with `pgrep -x -f` inside the guest only.
 - **Binaries.** Built on the host: its glibc must not be newer than Fedora 44's (2.43),
   which `deploy` checks.
 - **Restart.** greetd logs in automatically only once per boot (its run file in `/run`):
