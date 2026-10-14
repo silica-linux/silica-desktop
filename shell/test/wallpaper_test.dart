@@ -28,4 +28,14 @@ void main() {
     await tester.pumpWidget(const Wallpaper(choice: GeneratedWallpaper()));
     expect(find.byType(CustomPaint), findsWidgets);
   });
+
+  test('the Silica wallpaper follows the appearance', () {
+    const light = SilicaWallpaperPainter(dark: false);
+    const dark = SilicaWallpaperPainter(dark: true);
+    expect(light.shouldRepaint(dark), isTrue);
+    expect(
+      light.shouldRepaint(const SilicaWallpaperPainter(dark: false)),
+      isFalse,
+    );
+  });
 }

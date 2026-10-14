@@ -1,5 +1,6 @@
-// The desktop wallpaper (background layer). Default: generated in code, original (no Apple
-// images nor assets to license): a twilight sky over dunes of silica sand. Alternatively a
+// The desktop wallpaper (background layer). Default: the Silica wallpaper of silica-brand
+// (exports/wallpapers, a trademark asset of the project), rendered in code from its recipe at
+// any size, light or dark with the appearance. Alternatively a
 // solid color or a user image, from ~/.config/silica/wallpaper.json: {"color": "#7a7b80"}
 // or {"image": "/path"}.
 
@@ -83,13 +84,98 @@ class Wallpaper extends StatelessWidget {
   );
 
   Widget _picture() => switch (choice) {
-    GeneratedWallpaper() => const CustomPaint(
-      painter: DunesPainter(),
-      size: Size.infinite,
+    GeneratedWallpaper() => Builder(
+      builder: (context) => CustomPaint(
+        painter: SilicaWallpaperPainter(
+          dark: MediaQuery.platformBrightnessOf(context) == Brightness.dark,
+        ),
+        size: Size.infinite,
+      ),
     ),
     ColorWallpaper(:final color) => ColoredBox(color: color),
     ImageWallpaper(:final path) => Image.file(File(path), fit: BoxFit.cover),
   };
+}
+
+/// The Silica wallpaper (silica-brand `exports/wallpapers/wallpapers.json`): a diagonal
+/// gradient from the top left to the bottom right and four soft elliptical glows, frames given
+/// on a 2560 × 1440 canvas and scaled to cover the screen.
+class SilicaWallpaperPainter extends CustomPainter {
+  const SilicaWallpaperPainter({required this.dark});
+
+  final bool dark;
+
+  static const _lightBase = [
+    (0.0, Color(0xFF8EC5FF)),
+    (0.5, Color(0xFFF9C6D9)),
+    (1.0, Color(0xFFFFE2B0)),
+  ];
+  static const _darkBase = [
+    (0.0, Color(0xFF0B1030)),
+    (0.55, Color(0xFF2A1446)),
+    (1.0, Color(0xFF0A2A2E)),
+  ];
+  static const _frames = [
+    Rect.fromLTWH(-300, 420, 1500, 1000),
+    Rect.fromLTWH(1400, -380, 1500, 1100),
+    Rect.fromLTWH(800, 760, 1300, 900),
+    Rect.fromLTWH(1900, 900, 1000, 800),
+  ];
+  static const _lightGlows = [
+    Color(0xCC6FE0B0),
+    Color(0xB3A48BFF),
+    Color(0xB3FFB07A),
+    Color(0xB37CC4FF),
+  ];
+  static const _darkGlows = [
+    Color(0xCC1F8A6E),
+    Color(0xCC5B3FD0),
+    Color(0x99C2456A),
+    Color(0x991A5FB0),
+  ];
+
+  /// The recipe's "blur 220 px" at 2560 pt wide, as a Gaussian sigma: 235 reproduces the
+  /// brand's PNG exports within half a level per channel on average (measured at 640 × 360).
+  static const double blurSigma = 235;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = dark ? _darkBase : _lightBase;
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          size.bottomRight(Offset.zero),
+          [for (final (_, color) in base) color],
+          [for (final (stop, _) in base) stop],
+        ),
+    );
+    // Cover: the 2560 × 1440 canvas scaled to fill, centred.
+    final scale = size.width / 2560 > size.height / 1440
+        ? size.width / 2560
+        : size.height / 1440;
+    final dx = (size.width - 2560 * scale) / 2;
+    final dy = (size.height - 1440 * scale) / 2;
+    canvas.save();
+    canvas.clipRect(rect);
+    canvas.translate(dx, dy);
+    canvas.scale(scale);
+    final glows = dark ? _darkGlows : _lightGlows;
+    for (final (i, frame) in _frames.indexed) {
+      canvas.drawOval(
+        frame,
+        Paint()
+          ..color = glows[i]
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, blurSigma),
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(SilicaWallpaperPainter old) => old.dark != dark;
 }
 
 /// Twilight over the dunes: a gradient sky with a low glow, three rows of soft dunes
