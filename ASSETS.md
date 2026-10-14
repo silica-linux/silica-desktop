@@ -28,3 +28,4 @@ generated in code are preferred.
 | `docs/spec/diagrams/app-switcher-panel.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/launcher-layout.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/faro-layout.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
+| `docs/spec/diagrams/stage-view-strip.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |

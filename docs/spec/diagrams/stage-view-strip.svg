@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 300" font-family="Inter, sans-serif" font-size="10">
+  <title>Stage view strip: two tilted thumbnails at pitch 125 pt (scale 1:1)</title>
+  <rect width="360" height="300" fill="#ffffff"/>
+  <line x1="0" y1="0" x2="0" y2="300" stroke="#333" stroke-width="2"/>
+  <!-- thumbnail 1 at y 20: left edge 97 tall, right edge 0.88 -->
+  <polygon points="15,20 99,24 99,108 15,117" fill="#e8e8ea" stroke="#888"/>
+  <rect x="2" y="88" width="32" height="32" rx="7" fill="#555"/>
+  <!-- thumbnail 2 at y 145 -->
+  <polygon points="15,145 99,149 99,233 15,242" fill="#e8e8ea" stroke="#888"/>
+  <rect x="2" y="213" width="32" height="32" rx="7" fill="#555"/>
+  <line x1="120" y1="20" x2="120" y2="145" stroke="#000"/>
+  <text x="126" y="86">pitch 125 pt</text>
+  <text x="126" y="160">right edge ≈ 0.88 × left edge</text>
+  <text x="126" y="176">app icon ~32 pt on the lower left</text>
+  <text x="126" y="192">~15 pt from the screen edge</text>
+</svg>
