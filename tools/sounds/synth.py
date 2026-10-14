@@ -19,8 +19,9 @@ running the script again rebuilds the same files bit for bit:
 
     python3 tools/sounds/synth.py [--spectrograms]
 
-Writes the candidates of each sound (A, B, C, and the refinements B1–B4) to
-tools/sounds/candidates/<name>-<variant>.wav with an index.json describing them, and copies the chosen candidate (CHOSEN) to
+Writes the candidates of each sound (A, B, C, the refinements B1–B4 and the role designs
+C1–C4) to tools/sounds/candidates/<name>-<variant>.wav with an index.json describing them,
+and copies the chosen candidate (CHOSEN; ALIASES for sounds that share another's file) to
 data/sounds/<name>.wav. `--spectrograms` also renders a PNG per candidate next to it
 (needs matplotlib; the PNGs are not committed). See tools/sounds/README.md for the design.
 
@@ -45,12 +46,12 @@ MAX_LIMIT_DB = 6.0
 ROOM_MIX = 0.08  # about -22 dB of the room under the dry sound
 
 # The candidate shipped in data/sounds/ for each sound.
+# trash-drag has no choice of its own: it ships trash-move's file (ALIASES).
 CHOSEN = {
-    "trash-move": "B",
-    "trash-drag": "B",
-    "trash-empty": "B",
-    "file-transfer": "B",
-    "screen-capture": "B",
+    "trash-move": "C1",
+    "trash-empty": "C1",
+    "file-transfer": "C1",
+    "screen-capture": "C1",
     "alert-crystal": "A",
     "alert-woodblock": "A",
     "alert-drop": "A",
@@ -394,7 +395,9 @@ def finish(signal, rng, room=ROOM_MIX, max_limit_db=MAX_LIMIT_DB):
     # DC and rumble out: a gentle zero-phase high-pass at 30 Hz.
     signal = shape(signal - np.mean(signal), lambda f: highpass_mag(f, 30))
     # Cut where the sound has fallen 60 dB below its peak, then fade to true silence.
-    level = np.convolve(np.abs(signal), np.ones(n_of(0.005)) / n_of(0.005), "same")
+    # The last 20 ms are left out of the search: subtracting the mean leaves a step at the
+    # buffer's end that the high-pass turns into a tiny transient there, which is not sound.
+    level = np.convolve(np.abs(signal), np.ones(n_of(0.005)) / n_of(0.005), "same")[: -n_of(0.02)]
     loud = np.nonzero(level > np.max(level) * 10 ** (-60 / 20))[0]
     end = min(len(signal), loud[-1] + n_of(0.005))
     signal = signal[:end]
@@ -1047,6 +1050,207 @@ DRY = {("trash-move", "B3"), ("trash-drag", "B3"), ("trash-empty", "B3")}
 LIMIT_DB = {("screen-capture", v): 10.0 for v in ("B1", "B2", "B3", "B4")}
 
 
+# --- The C candidates: one sound per role -----------------------------------------------
+#
+# The file manager has three file sounds: moving to the Trash (any way: keyboard, menu,
+# script or a drop on the Dock's Trash, so trash-drag ships the same file as trash-move,
+# see ALIASES), moving / copying / duplicating, and emptying the Trash. The C candidates
+# design each role; they keep the refined paper of B1–B4.
+
+
+def ticks(rng, times_at, centre, gain):
+    """Tiny paper ticks after a gesture (the sheet or the ball settling)."""
+    total = max(times_at) + 0.02
+    out = np.zeros(n_of(total))
+    for at in times_at:
+        out += place(total, paper_grain(rng, centre * rng.uniform(0.9, 1.15), 0.0012, 0.3, 2.0), at, gain)
+    return out
+
+
+# Trash: a short, bright, dry rustle, ~100 ms.
+
+
+def trash_c1(rng):
+    rustle = paper_fine(rng, 0.09, swelling(0.09, 1.2), 3600, lambda t: 4600 + 15000 * t, size=0.0012, sheen=0.3, bed=0)
+    return mix(0.25, (unit(rustle), 0.0, 1.0), (ticks(rng, [0.17], 5200, 1.0), 0.0, 0.25))
+
+
+def trash_c2(rng):
+    rustle = paper_fine(rng, 0.07, swelling(0.07, 1.0), 4200, lambda t: 5200, size=0.001, sigma=0.5, q=3.0, sheen=0.35, bed=0)
+    return unit(rustle)
+
+
+def trash_c3(rng):
+    rustle = paper_fine(rng, 0.11, swelling(0.11, 1.4), 3800, lambda t: 4300 + 10000 * t, cluster=0.35, crackle=0.07, sheen=0.25, bed=0.03)
+    return mix(0.2, (unit(rustle), 0.0, 1.0), (flop(rng, 0.025, 1800), 0.02, 0.12))
+
+
+def trash_c4(rng):
+    rustle = paper_fine(rng, 0.09, swelling(0.09, 1.2), 3600, lambda t: 4800 + 12000 * t, size=0.0012, sheen=0.3, bed=0)
+    return mix(0.3, (unit(rustle), 0.0, 1.0), (steel_tap(820, 0.18, 0.0002), 0.16, 0.12))
+
+
+# Move / copy / duplicate: a brief bright click, then a soft low tonal body (150–330 Hz)
+# that holds for about 0.4 s and fades out, ~0.6 s in all.
+
+
+def hold(length, sustain, release):
+    """1 until `sustain`, then a raised-cosine fade to 0 at `sustain + release`."""
+    t = times(length)
+    return 0.5 + 0.5 * np.cos(np.pi * np.clip((t - sustain) / release, 0, 1))
+
+
+# Circular membrane (a drum head), Bessel-zero ratios of the modes (0,1), (1,1), (2,1),
+# (0,2), (3,1).
+MEMBRANE = [1.0, 1.594, 2.136, 2.296, 2.653]
+
+
+def low_body(excitation, modes, length=0.6, sustain=0.32, release=0.26):
+    body = strike(excitation, modes, length)[: n_of(length)]
+    return unit(body * hold(len(body) / RATE, sustain, release))
+
+
+def file_click(rng, centre=4200.0):
+    """The start of the gesture: a short cluster of bright paper ticks, ~25 ms."""
+    return unit(ticks(rng, [0.0, 0.004, 0.011, 0.019], centre, 1.0))
+
+
+def file_transfer_c1(rng):
+    # A soft felt mallet on a hollow wooden box: its air cavity (175 Hz) and a few wall
+    # modes, long enough to hold.
+    walls = modes_from(240, [r for r, _, _ in plate_ratios(1.3, 4)], [0.5, 0.25, 0.12, 0.06], 3.0, 600)
+    body = low_body(mallet(0.004), [(175, 1.0, 4.0)] + walls)
+    return mix(0.7, (file_click(rng), 0.0, 0.5), (body, 0.008, 1.0))
+
+
+def file_transfer_c2(rng):
+    # A plastic latch clicks, then a felt-covered drum head (membrane modes on 165 Hz).
+    latch = unit(strike(mallet(0.0002), plastic_bin(2800, 0.02, 1.2, (0.3, 0.4))))
+    head = modes_from(165, MEMBRANE, [1.0, 0.45, 0.25, 0.18, 0.1], 3.5, 500)
+    return mix(0.7, (latch, 0.0, 0.45), (low_body(mallet(0.005), head), 0.01, 1.0))
+
+
+def file_transfer_c3(rng):
+    # A low tuned bar (G3, tuned overtones 1 : 3.9 : 9.2) with a soft mallet: woody, tonal.
+    bar = modes_from(196, TUNED_BAR, [1.0, 0.22, 0.04], 3.5, 900)
+    return mix(0.7, (file_click(rng, 4600), 0.0, 0.45), (low_body(mallet(0.003), bar), 0.006, 1.0))
+
+
+def file_transfer_c4(rng):
+    # A cushioned thud: a slow, low noise push (~30 ms) blooms into three resonances.
+    t = times(0.03)
+    push = shape(rng.standard_normal(len(t)), lambda f: lowpass_mag(f, 300, 2)) * np.sin(np.pi * t / 0.03) ** 2
+    modes = [(150, 1.0, 3.5), (228, 0.55, 3.0), (312, 0.3, 2.5)]
+    return mix(0.7, (file_click(rng, 3800), 0.0, 0.4), (low_body(push, modes), 0.004, 1.0))
+
+
+# Empty Trash: a papery crumple that swells to a peak around 110 ms and fades, ~320 ms.
+
+
+def swell_fade(rng, length, peak):
+    wobble = random_envelope(rng, length + 0.05, 30, 0.45)
+
+    def density(t):
+        shape_ = (t / peak) ** 1.5 if t < peak else np.exp(-(t - peak) / ((length - peak) / 2.5))
+        return float(np.clip(0.8 * shape_ * wobble[min(len(wobble) - 1, n_of(t))], 0, 1))
+
+    return density
+
+
+def trash_empty_c1(rng):
+    body = paper_fine(rng, 0.3, swell_fade(rng, 0.3, 0.11), 4200, lambda t: 4600 * (3200 / 4600) ** (t / 0.3), sheen=0.3)
+    return mix(0.45, (unit(body), 0.0, 1.0), (ticks(rng, [0.33, 0.37], 4800, 1.0), 0.0, 0.2))
+
+
+def trash_empty_c2(rng):
+    body = paper_fine(rng, 0.27, swell_fade(rng, 0.27, 0.1), 4800, lambda t: 5000 * (3600 / 5000) ** (t / 0.27), size=0.0011, sigma=0.5, q=3.0, sheen=0.35, bed=0)
+    return unit(body)
+
+
+def trash_empty_c3(rng):
+    body = paper_fine(rng, 0.32, swell_fade(rng, 0.32, 0.12), 3600, lambda t: 3800 * (2600 / 3800) ** (t / 0.32), size=0.002, cluster=0.2, crackle=0.03, sheen=0.2, bed=0.1)
+    return mix(0.45, (unit(body), 0.0, 1.0), (ticks(rng, [0.35, 0.385], 4000, 1.0), 0.0, 0.15))
+
+
+def trash_empty_c4(rng):
+    body = paper_fine(rng, 0.3, swell_fade(rng, 0.3, 0.1), 4600, lambda t: 4800 * (3000 / 4800) ** (t / 0.3), cluster=0.4, crackle=0.08, sheen=0.3)
+    return mix(0.45, (unit(body), 0.0, 1.0), (ticks(rng, [0.31, 0.335], 5200, 1.0), 0.0, 0.28))
+
+
+# Screenshot: two soft clicks about 230 ms apart, ~370 ms in all.
+
+
+def soft_click(rng, blade_f0, body_f0, body_t60, width, air):
+    """A soft, fairly broadband shutter click: a blade snap with a wider (softer) pulse and
+    a short puff of band-limited air from the moving blades."""
+    snap = blade_snap(rng, blade_f0, body_f0, body_t60, 1500, 0.08, width)
+    puff = shaped_noise(rng, 0.012, lambda t, f: bandpass_mag(f, 3500, 0.6) * lowpass_mag(f, 10000, 3))
+    puff = unit(puff * np.exp(-times(0.012) / 0.003) * np.clip(times(0.012) / 0.0004, 0, 1))
+    return mix(0.0, (snap, 0.0, 1.0), (puff, 0.0, air))
+
+
+def two_clicks(first, second, gap, second_gain=0.85):
+    out = mix(0.37, (first, 0.0, 1.0), (second, gap, second_gain))[: n_of(0.37)]
+    return out * hold(0.37, 0.3, 0.07)
+
+
+def screen_capture_c1(rng):
+    return two_clicks(soft_click(rng, 4300, 1100, 0.06, 0.0004, 0.35), soft_click(rng, 4050, 1060, 0.06, 0.0004, 0.35), 0.23)
+
+
+def screen_capture_c2(rng):
+    return two_clicks(soft_click(rng, 3600, 800, 0.07, 0.0006, 0.45), soft_click(rng, 3400, 780, 0.07, 0.0006, 0.45), 0.225, 0.8)
+
+
+def screen_capture_c3(rng):
+    return two_clicks(soft_click(rng, 5000, 1500, 0.045, 0.0003, 0.3), soft_click(rng, 4700, 1450, 0.045, 0.0003, 0.3), 0.235, 0.9)
+
+
+def screen_capture_c4(rng):
+    # The first click is a latch and the blades a few milliseconds apart.
+    latch = soft_click(rng, 4600, 1300, 0.04, 0.0003, 0.2)
+    first = mix(0.0, (latch, 0.0, 0.5), (soft_click(rng, 4200, 1050, 0.06, 0.0004, 0.35), 0.006, 1.0))
+    return two_clicks(first, soft_click(rng, 4000, 1000, 0.06, 0.0004, 0.35), 0.23)
+
+
+ROLES = {
+    "trash-move": {
+        "C1": (trash_c1, "Trash (also trash-drag): a short bright dry rustle rising in brightness, ~100 ms, with a faint settling tick after."),
+        "C2": (trash_c2, "Trash (also trash-drag): the shortest and crispest, ~70 ms of fine paper ticks, no tail."),
+        "C3": (trash_c3, "Trash (also trash-drag): a slightly fuller rustle with micro-crackles over a soft puff, ~110 ms."),
+        "C4": (trash_c4, "Trash (also trash-drag): the bright rustle, then a tiny steel tick of the bin."),
+    },
+    "file-transfer": {
+        "C1": (file_transfer_c1, "Move/copy: a bright paper click, then a soft felt-mallet thud of a hollow wooden box (175 Hz), held ~0.35 s, ~0.6 s."),
+        "C2": (file_transfer_c2, "Move/copy: a plastic latch click, then a felt-covered drum head on 165 Hz, held and faded, ~0.6 s."),
+        "C3": (file_transfer_c3, "Move/copy: a bright click, then a low tuned wooden bar on G3, woody and tonal, ~0.6 s."),
+        "C4": (file_transfer_c4, "Move/copy: a click, then a cushioned thud blooming into 150/228/312 Hz resonances, ~0.6 s."),
+    },
+    "trash-empty": {
+        "C1": (trash_empty_c1, "Empty Trash: a crumple swelling to its peak at ~110 ms and fading by ~300 ms, then two tiny ticks."),
+        "C2": (trash_empty_c2, "Empty Trash: a drier, crisper, slightly shorter crumple (~270 ms), no ticks."),
+        "C3": (trash_empty_c3, "Empty Trash: a softer, darker crumple with longer grains (~320 ms), two faint ticks."),
+        "C4": (trash_empty_c4, "Empty Trash: a crackly, denser crumple (~300 ms) with two clearer ticks."),
+    },
+    "screen-capture": {
+        "C1": (screen_capture_c1, "Screenshot: two soft shutter clicks 230 ms apart (blade, body, a puff of air), ~0.37 s."),
+        "C2": (screen_capture_c2, "Screenshot: two softer, warmer clicks 225 ms apart, the second a little quieter."),
+        "C3": (screen_capture_c3, "Screenshot: two brighter, tighter clicks 235 ms apart."),
+        "C4": (screen_capture_c4, "Screenshot: a latch and the blades a few ms apart, then the closing click 230 ms later."),
+    },
+}
+
+for _name, _roles in ROLES.items():
+    SOUNDS[_name].update(_roles)
+
+LIMIT_DB.update({("screen-capture", v): 10.0 for v in ("C1", "C2", "C3", "C4")})
+# The thud and the clicks have a fixed length; a quarter of the room keeps its tail short.
+DRY.update({(n, v) for n in ("file-transfer", "screen-capture") for v in ("C1", "C2", "C3", "C4")})
+
+# Sounds shipped as a copy of another sound's chosen file (same role, same sound).
+ALIASES = {"trash-drag": "trash-move"}
+
+
 # --- Output -----------------------------------------------------------------------------
 
 
@@ -1086,7 +1290,10 @@ def main():
     shipped.mkdir(parents=True, exist_ok=True)
     index = {}
     for name, variants in SOUNDS.items():
-        index[name] = {"chosen": CHOSEN[name], "candidates": {}}
+        chosen = CHOSEN.get(ALIASES.get(name, name)) if name in ALIASES else CHOSEN[name]
+        index[name] = {"chosen": chosen, "candidates": {}}
+        if name in ALIASES:
+            index[name]["same_as"] = ALIASES[name]
         for variant, (make, description) in variants.items():
             # One generator per candidate: changing one leaves the others identical.
             rng = np.random.default_rng([SEED, sum(name.encode()), *variant.encode()])
@@ -1105,7 +1312,8 @@ def main():
             )
             if "--spectrograms" in sys.argv:
                 spectrogram(path.with_suffix(".png"), signal, f"{name} {variant}")
-        shutil.copyfile(candidates / f"{name}-{CHOSEN[name]}.wav", shipped / f"{name}.wav")
+        source = ALIASES.get(name, name)
+        shutil.copyfile(candidates / f"{source}-{CHOSEN[source]}.wav", shipped / f"{name}.wav")
     (candidates / "index.json").write_text(json.dumps(index, indent=2) + "\n")
 
 

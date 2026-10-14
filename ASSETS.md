@@ -32,11 +32,11 @@ generated in code are preferred.
 | `docs/spec/diagrams/misc-alert.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/misc-bounce.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/icon-mask-corner.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
-| `data/sounds/file-transfer.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
-| `data/sounds/screen-capture.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
-| `data/sounds/trash-drag.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
-| `data/sounds/trash-empty.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
-| `data/sounds/trash-move.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate B, `tools/sounds/README.md`) |
+| `data/sounds/file-transfer.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate C1, `tools/sounds/README.md`) |
+| `data/sounds/screen-capture.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate C1, `tools/sounds/README.md`) |
+| `data/sounds/trash-drag.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (a copy of `trash-move.wav`, `tools/sounds/README.md`) |
+| `data/sounds/trash-empty.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate C1, `tools/sounds/README.md`) |
+| `data/sounds/trash-move.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate C1, `tools/sounds/README.md`) |
 | `data/sounds/alert-crystal.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
 | `data/sounds/alert-drop.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
 | `data/sounds/alert-pebble.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` (candidate A, `tools/sounds/README.md`) |
@@ -49,6 +49,10 @@ generated in code are preferred.
 | `tools/sounds/candidates/file-transfer-B3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/file-transfer-B4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/file-transfer-C.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/file-transfer-C1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/file-transfer-C2.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/file-transfer-C3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/file-transfer-C4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/screen-capture-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/screen-capture-B.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/screen-capture-B1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
@@ -56,6 +60,10 @@ generated in code are preferred.
 | `tools/sounds/candidates/screen-capture-B3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/screen-capture-B4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/screen-capture-C.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/screen-capture-C1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/screen-capture-C2.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/screen-capture-C3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/screen-capture-C4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-drag-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-drag-B.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-drag-B1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
@@ -70,6 +78,10 @@ generated in code are preferred.
 | `tools/sounds/candidates/trash-empty-B3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-empty-B4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-empty-C.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-empty-C1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-empty-C2.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-empty-C3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-empty-C4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-B.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-B1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
@@ -77,6 +89,10 @@ generated in code are preferred.
 | `tools/sounds/candidates/trash-move-B3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-B4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/trash-move-C.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-move-C1.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-move-C2.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-move-C3.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `tools/sounds/candidates/trash-move-C4.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/alert-crystal-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/alert-drop-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/alert-pebble-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |

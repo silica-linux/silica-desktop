@@ -1,6 +1,6 @@
 {
   "trash-move": {
-    "chosen": "B",
+    "chosen": "C1",
     "candidates": {
       "A": {
         "file": "trash-move-A.wav",
@@ -29,11 +29,27 @@
       "B4": {
         "file": "trash-move-B4.wav",
         "description": "B with a more defined bin contact: the landing ends on a clear tap of a steel bin rim."
+      },
+      "C1": {
+        "file": "trash-move-C1.wav",
+        "description": "Trash (also trash-drag): a short bright dry rustle rising in brightness, ~100 ms, with a faint settling tick after."
+      },
+      "C2": {
+        "file": "trash-move-C2.wav",
+        "description": "Trash (also trash-drag): the shortest and crispest, ~70 ms of fine paper ticks, no tail."
+      },
+      "C3": {
+        "file": "trash-move-C3.wav",
+        "description": "Trash (also trash-drag): a slightly fuller rustle with micro-crackles over a soft puff, ~110 ms."
+      },
+      "C4": {
+        "file": "trash-move-C4.wav",
+        "description": "Trash (also trash-drag): the bright rustle, then a tiny steel tick of the bin."
       }
     }
   },
   "trash-drag": {
-    "chosen": "B",
+    "chosen": "C1",
     "candidates": {
       "A": {
         "file": "trash-drag-A.wav",
@@ -63,10 +79,11 @@
         "file": "trash-drag-B4.wav",
         "description": "B with a more defined bin contact: a firmer tap with contact noise on the steel bin."
       }
-    }
+    },
+    "same_as": "trash-move"
   },
   "trash-empty": {
-    "chosen": "B",
+    "chosen": "C1",
     "candidates": {
       "A": {
         "file": "trash-empty-A.wav",
@@ -95,11 +112,27 @@
       "B4": {
         "file": "trash-empty-B4.wav",
         "description": "B with a more defined bin contact: the ball lands with an audible steel bin tap."
+      },
+      "C1": {
+        "file": "trash-empty-C1.wav",
+        "description": "Empty Trash: a crumple swelling to its peak at ~110 ms and fading by ~300 ms, then two tiny ticks."
+      },
+      "C2": {
+        "file": "trash-empty-C2.wav",
+        "description": "Empty Trash: a drier, crisper, slightly shorter crumple (~270 ms), no ticks."
+      },
+      "C3": {
+        "file": "trash-empty-C3.wav",
+        "description": "Empty Trash: a softer, darker crumple with longer grains (~320 ms), two faint ticks."
+      },
+      "C4": {
+        "file": "trash-empty-C4.wav",
+        "description": "Empty Trash: a crackly, denser crumple (~300 ms) with two clearer ticks."
       }
     }
   },
   "file-transfer": {
-    "chosen": "B",
+    "chosen": "C1",
     "candidates": {
       "A": {
         "file": "file-transfer-A.wav",
@@ -128,6 +161,22 @@
       "B4": {
         "file": "file-transfer-B4.wav",
         "description": "B refined, pitched: the swish narrows onto the chime's pitch and lands on a tuned glass tink on D7 (~0.42 s)."
+      },
+      "C1": {
+        "file": "file-transfer-C1.wav",
+        "description": "Move/copy: a bright paper click, then a soft felt-mallet thud of a hollow wooden box (175 Hz), held ~0.35 s, ~0.6 s."
+      },
+      "C2": {
+        "file": "file-transfer-C2.wav",
+        "description": "Move/copy: a plastic latch click, then a felt-covered drum head on 165 Hz, held and faded, ~0.6 s."
+      },
+      "C3": {
+        "file": "file-transfer-C3.wav",
+        "description": "Move/copy: a bright click, then a low tuned wooden bar on G3, woody and tonal, ~0.6 s."
+      },
+      "C4": {
+        "file": "file-transfer-C4.wav",
+        "description": "Move/copy: a click, then a cushioned thud blooming into 150/228/312 Hz resonances, ~0.6 s."
       }
     }
   },
@@ -177,7 +226,7 @@
     }
   },
   "screen-capture": {
-    "chosen": "B",
+    "chosen": "C1",
     "candidates": {
       "A": {
         "file": "screen-capture-A.wav",
@@ -206,6 +255,22 @@
       "B4": {
         "file": "screen-capture-B4.wav",
         "description": "B, slower and more mechanical: 55 ms apart, audible blade travel and a defined spring ring."
+      },
+      "C1": {
+        "file": "screen-capture-C1.wav",
+        "description": "Screenshot: two soft shutter clicks 230 ms apart (blade, body, a puff of air), ~0.37 s."
+      },
+      "C2": {
+        "file": "screen-capture-C2.wav",
+        "description": "Screenshot: two softer, warmer clicks 225 ms apart, the second a little quieter."
+      },
+      "C3": {
+        "file": "screen-capture-C3.wav",
+        "description": "Screenshot: two brighter, tighter clicks 235 ms apart."
+      },
+      "C4": {
+        "file": "screen-capture-C4.wav",
+        "description": "Screenshot: a latch and the blades a few ms apart, then the closing click 230 ms later."
       }
     }
   }
