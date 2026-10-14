@@ -156,108 +156,108 @@ tracker is the live source.
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-SP-01` | Panel: position, size, background, border, shadow | done | — |
-| `SH-SP-02` | Search field and inline completion | done | — |
-| `SH-SP-03` | First-launch panel (suggestions, privacy notice, continue button) | missing ([#88](https://github.com/silica-linux/silica-desktop/issues/88)) | — |
-| `SH-SP-04` | Steady-state empty panel (after continue button) | done | — |
-| `SH-SP-05` | Four circular buttons (apps, files, actions, clipboard) | partial ([#89](https://github.com/silica-linux/silica-desktop/issues/89)) | — |
-| `SH-SP-06` | Result kind: applications | done | — |
-| `SH-SP-07` | Result kind: documents and files (thumbnail with badge) | missing ([#90](https://github.com/silica-linux/silica-desktop/issues/90)) | — |
-| `SH-SP-08` | Result kind: folders | done ([#91](https://github.com/silica-linux/silica-desktop/issues/91)) | — |
-| `SH-SP-09` | Result kind: mail, messages, contacts, calendar | missing ([#92](https://github.com/silica-linux/silica-desktop/issues/92)) | — |
-| `SH-SP-10` | Result kind: web / browser suggestions, knowledge answers, definitions | missing ([#93](https://github.com/silica-linux/silica-desktop/issues/93)) | — |
-| `SH-SP-11` | Result kind: System Settings panes, images, music, events | missing ([#94](https://github.com/silica-linux/silica-desktop/issues/94)) | — |
-| `SH-SP-12` | Filter bar (pills) and "search in …" chip | missing ([#95](https://github.com/silica-linux/silica-desktop/issues/95)) | — |
-| `SH-SP-13` | Calculations | done ([#96](https://github.com/silica-linux/silica-desktop/issues/96)) | — |
-| `SH-SP-14` | Unit and currency conversions | missing ([#97](https://github.com/silica-linux/silica-desktop/issues/97)) | — |
-| `SH-SP-15` | Actions and quick commands | missing ([#98](https://github.com/silica-linux/silica-desktop/issues/98)) | — |
-| `SH-SP-16` | Clipboard history | missing ([#99](https://github.com/silica-linux/silica-desktop/issues/99)) | — |
-| `SH-SP-17` | Keyboard: ↑ ↓ ⏎ ⌘⏎ Tab, Esc | partial ([#100](https://github.com/silica-linux/silica-desktop/issues/100)) | — |
-| `SH-SP-18` | No results / error state | done ([#101](https://github.com/silica-linux/silica-desktop/issues/101)) | — |
-| `SH-SP-19` | Opening animation | done | — |
-| `SH-SP-20` | Closing and typing animations | missing ([#102](https://github.com/silica-linux/silica-desktop/issues/102)) | — |
+| `SH-SP-01` | Panel: position, size, background, border, shadow | done | [faro.md](faro.md) |
+| `SH-SP-02` | Search field and inline completion | done | [faro.md](faro.md) |
+| `SH-SP-03` | First-launch panel (suggestions, privacy notice, continue button) | missing ([#88](https://github.com/silica-linux/silica-desktop/issues/88)) | [faro.md](faro.md) |
+| `SH-SP-04` | Steady-state empty panel (after continue button) | done | [faro.md](faro.md) |
+| `SH-SP-05` | Four circular buttons (apps, files, actions, clipboard) | partial ([#89](https://github.com/silica-linux/silica-desktop/issues/89)) | [faro.md](faro.md) |
+| `SH-SP-06` | Result kind: applications | done | [faro.md](faro.md) |
+| `SH-SP-07` | Result kind: documents and files (thumbnail with badge) | missing ([#90](https://github.com/silica-linux/silica-desktop/issues/90)) | [faro.md](faro.md) |
+| `SH-SP-08` | Result kind: folders | done ([#91](https://github.com/silica-linux/silica-desktop/issues/91)) | [faro.md](faro.md) |
+| `SH-SP-09` | Result kind: mail, messages, contacts, calendar | missing ([#92](https://github.com/silica-linux/silica-desktop/issues/92)) | [faro.md](faro.md) |
+| `SH-SP-10` | Result kind: web / browser suggestions, knowledge answers, definitions | missing ([#93](https://github.com/silica-linux/silica-desktop/issues/93)) | [faro.md](faro.md) |
+| `SH-SP-11` | Result kind: System Settings panes, images, music, events | missing ([#94](https://github.com/silica-linux/silica-desktop/issues/94)) | [faro.md](faro.md) |
+| `SH-SP-12` | Filter bar (pills) and "search in …" chip | missing ([#95](https://github.com/silica-linux/silica-desktop/issues/95)) | [faro.md](faro.md) |
+| `SH-SP-13` | Calculations | done ([#96](https://github.com/silica-linux/silica-desktop/issues/96)) | [faro.md](faro.md) |
+| `SH-SP-14` | Unit and currency conversions | missing ([#97](https://github.com/silica-linux/silica-desktop/issues/97)) | [faro.md](faro.md) |
+| `SH-SP-15` | Actions and quick commands | missing ([#98](https://github.com/silica-linux/silica-desktop/issues/98)) | [faro.md](faro.md) |
+| `SH-SP-16` | Clipboard history | missing ([#99](https://github.com/silica-linux/silica-desktop/issues/99)) | [faro.md](faro.md) |
+| `SH-SP-17` | Keyboard: ↑ ↓ ⏎ ⌘⏎ Tab, Esc | partial ([#100](https://github.com/silica-linux/silica-desktop/issues/100)) | [faro.md](faro.md) |
+| `SH-SP-18` | No results / error state | done ([#101](https://github.com/silica-linux/silica-desktop/issues/101)) | [faro.md](faro.md) |
+| `SH-SP-19` | Opening animation | done | [faro.md](faro.md) |
+| `SH-SP-20` | Closing and typing animations | missing ([#102](https://github.com/silica-linux/silica-desktop/issues/102)) | [faro.md](faro.md) |
 
 ## Launcher, Panorama, spaces, app windows view
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-LP-01` | Apps launcher: panel, header, search field | done | — |
-| `SH-LP-02` | Launcher: category capsules and token in the field | done | — |
-| `SH-LP-03` | Launcher: icon grid, hover, keyboard selection | partial ([#103](https://github.com/silica-linux/silica-desktop/issues/103)) | — |
-| `SH-LP-04` | Launcher: scrollbar | done | — |
-| `SH-LP-05` | Launcher: search and results | done | — |
-| `SH-LP-06` | Launcher: animations (open, category change, search, Esc) | partial ([#104](https://github.com/silica-linux/silica-desktop/issues/104)) | — |
-| `SH-LP-07` | Launcher: drag icons into folders / reorder, delete | missing ([#105](https://github.com/silica-linux/silica-desktop/issues/105)) | — |
-| `SH-MC-01` | Panorama desktop (windows layout) | done | — |
-| `SH-MC-02` | Spaces bar compact and expanded | done | — |
-| `SH-MC-03` | Panorama animations (open, close, curves) | done | — |
-| `SH-MC-04` | Thumbnails: hover and click; keyboard | done | — |
-| `SH-MC-05` | Spaces: switching ⌃→ / ⌃←, bounce at the edge | done | — |
-| `SH-MC-06` | Spaces: add (+) and remove (×) | done | — |
-| `SH-MC-07` | Full-screen app as a space; dragging a window to the bar; moving to an existing space | partial ([#106](https://github.com/silica-linux/silica-desktop/issues/106)) | — |
-| `SH-MC-08` | Panorama with two displays | partial ([#107](https://github.com/silica-linux/silica-desktop/issues/107)) | — |
-| `SH-MC-09` | App windows view | done | — |
-| `SH-MC-10` | Show Desktop | done | — |
-| `SH-MC-11` | Reduce Motion and dark in Panorama | partial ([#108](https://github.com/silica-linux/silica-desktop/issues/108)) | — |
-| `SH-MC-12` | Notification Center / Panorama gestures (trackpad) | partial ([#109](https://github.com/silica-linux/silica-desktop/issues/109)) | — |
+| `SH-LP-01` | Apps launcher: panel, header, search field | done | [launcher.md](launcher.md) |
+| `SH-LP-02` | Launcher: category capsules and token in the field | done | [launcher.md](launcher.md) |
+| `SH-LP-03` | Launcher: icon grid, hover, keyboard selection | partial ([#103](https://github.com/silica-linux/silica-desktop/issues/103)) | [launcher.md](launcher.md) |
+| `SH-LP-04` | Launcher: scrollbar | done | [launcher.md](launcher.md) |
+| `SH-LP-05` | Launcher: search and results | done | [launcher.md](launcher.md) |
+| `SH-LP-06` | Launcher: animations (open, category change, search, Esc) | partial ([#104](https://github.com/silica-linux/silica-desktop/issues/104)) | [launcher.md](launcher.md) |
+| `SH-LP-07` | Launcher: drag icons into folders / reorder, delete | missing ([#105](https://github.com/silica-linux/silica-desktop/issues/105)) | [launcher.md](launcher.md) |
+| `SH-MC-01` | Panorama desktop (windows layout) | done | [panorama.md](panorama.md) |
+| `SH-MC-02` | Spaces bar compact and expanded | done | [panorama.md](panorama.md) |
+| `SH-MC-03` | Panorama animations (open, close, curves) | done | [panorama.md](panorama.md) |
+| `SH-MC-04` | Thumbnails: hover and click; keyboard | done | [panorama.md](panorama.md) |
+| `SH-MC-05` | Spaces: switching ⌃→ / ⌃←, bounce at the edge | done | [panorama.md](panorama.md) |
+| `SH-MC-06` | Spaces: add (+) and remove (×) | done | [panorama.md](panorama.md) |
+| `SH-MC-07` | Full-screen app as a space; dragging a window to the bar; moving to an existing space | partial ([#106](https://github.com/silica-linux/silica-desktop/issues/106)) | [panorama.md](panorama.md) |
+| `SH-MC-08` | Panorama with two displays | partial ([#107](https://github.com/silica-linux/silica-desktop/issues/107)) | [panorama.md](panorama.md) |
+| `SH-MC-09` | App windows view | done | [panorama.md](panorama.md) |
+| `SH-MC-10` | Show Desktop | done | [panorama.md](panorama.md) |
+| `SH-MC-11` | Reduce Motion and dark in Panorama | partial ([#108](https://github.com/silica-linux/silica-desktop/issues/108)) | [panorama.md](panorama.md) |
+| `SH-MC-12` | Notification Center / Panorama gestures (trackpad) | partial ([#109](https://github.com/silica-linux/silica-desktop/issues/109)) | [panorama.md](panorama.md) |
 
 ## Window grouping, hot corners, app switcher
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-SM-01` | Window grouping (strip with one thumbnail) | missing ([#110](https://github.com/silica-linux/silica-desktop/issues/110)) | — |
-| `SH-SM-02` | Window grouping: several groups, switching, animation, thumbnail tilt | missing ([#111](https://github.com/silica-linux/silica-desktop/issues/111)) | — |
-| `SH-HC-01` | Hot corners (delay, repeat visit) | missing ([#112](https://github.com/silica-linux/silica-desktop/issues/112)) | — |
-| `SH-HC-02` | Hot corner actions: Notification Center, Launcher, quick note, lock screen, screen saver | missing ([#113](https://github.com/silica-linux/silica-desktop/issues/113)) | — |
-| `SH-AS-01` | App switcher ⌘⇥: panel, icons, selection | done | — |
-| `SH-AS-02` | App switcher: many apps, actions inside (Q, H, arrows, ⌘`) | partial ([#114](https://github.com/silica-linux/silica-desktop/issues/114)) | — |
+| `SH-SM-01` | Window grouping (strip with one thumbnail) | missing ([#110](https://github.com/silica-linux/silica-desktop/issues/110)) | [stage-view.md](stage-view.md) |
+| `SH-SM-02` | Window grouping: several groups, switching, animation, thumbnail tilt | missing ([#111](https://github.com/silica-linux/silica-desktop/issues/111)) | [stage-view.md](stage-view.md) |
+| `SH-HC-01` | Hot corners (delay, repeat visit) | missing ([#112](https://github.com/silica-linux/silica-desktop/issues/112)) | [panorama.md](panorama.md) |
+| `SH-HC-02` | Hot corner actions: Notification Center, Launcher, quick note, lock screen, screen saver | missing ([#113](https://github.com/silica-linux/silica-desktop/issues/113)) | [panorama.md](panorama.md) |
+| `SH-AS-01` | App switcher ⌘⇥: panel, icons, selection | done | [app-switcher.md](app-switcher.md) |
+| `SH-AS-02` | App switcher: many apps, actions inside (Q, H, arrows, ⌘`) | partial ([#114](https://github.com/silica-linux/silica-desktop/issues/114)) | [app-switcher.md](app-switcher.md) |
 
 ## Lock, login, screen saver
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-LK-01` | Lock screen | missing ([#115](https://github.com/silica-linux/silica-desktop/issues/115)) | — |
-| `SH-LK-02` | Login window (several users) | missing ([#116](https://github.com/silica-linux/silica-desktop/issues/116)) | — |
-| `SH-LK-03` | Wrong-password shake, unlock animation | missing ([#117](https://github.com/silica-linux/silica-desktop/issues/117)) | — |
-| `SH-LK-04` | Screen saver | missing ([#118](https://github.com/silica-linux/silica-desktop/issues/118)) | — |
+| `SH-LK-01` | Lock screen | missing ([#115](https://github.com/silica-linux/silica-desktop/issues/115)) | [misc.md](misc.md) |
+| `SH-LK-02` | Login window (several users) | missing ([#116](https://github.com/silica-linux/silica-desktop/issues/116)) | [misc.md](misc.md) |
+| `SH-LK-03` | Wrong-password shake, unlock animation | missing ([#117](https://github.com/silica-linux/silica-desktop/issues/117)) | [misc.md](misc.md) |
+| `SH-LK-04` | Screen saver | missing ([#118](https://github.com/silica-linux/silica-desktop/issues/118)) | [misc.md](misc.md) |
 
 ## Focus, night light, screenshots, Force Quit, About
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-FO-01` | Focus modes (Do Not Disturb on: moon icon, white disc) | partial ([#119](https://github.com/silica-linux/silica-desktop/issues/119)) | — |
-| `SH-FO-02` | Focus: other modes, schedules, menu bar status | missing ([#120](https://github.com/silica-linux/silica-desktop/issues/120)) | — |
-| `SH-NS-01` | Night light tile in the Display detail | missing ([#121](https://github.com/silica-linux/silica-desktop/issues/121)) | — |
+| `SH-FO-01` | Focus modes (Do Not Disturb on: moon icon, white disc) | partial ([#119](https://github.com/silica-linux/silica-desktop/issues/119)) | [misc.md](misc.md) |
+| `SH-FO-02` | Focus: other modes, schedules, menu bar status | missing ([#120](https://github.com/silica-linux/silica-desktop/issues/120)) | [misc.md](misc.md) |
+| `SH-NS-01` | Night light tile in the Display detail | missing ([#121](https://github.com/silica-linux/silica-desktop/issues/121)) | [misc.md](misc.md) |
 | `SH-SS-01` | ⇧⌘3 screenshot and thumbnail | done | [screenshot-ui.md](screenshot-ui.md) |
 | `SH-SS-02` | ⇧⌘4 selection and window (Space) with tint | done | [screenshot-ui.md](screenshot-ui.md) |
 | `SH-SS-03` | ⇧⌘5 toolbar and options menu | done | [screenshot-ui.md](screenshot-ui.md) |
 | `SH-SS-04` | Screen recording and its menu bar control | missing ([#122](https://github.com/silica-linux/silica-desktop/issues/122)) | [screenshot-ui.md](screenshot-ui.md) |
 | `SH-SS-05` | Screenshot editor (thumbnail click) | missing ([#123](https://github.com/silica-linux/silica-desktop/issues/123)) | [screenshot-ui.md](screenshot-ui.md) |
 | `SH-FQ-01` | Force Quit window | done | [screenshot-ui.md](screenshot-ui.md) |
-| `SH-AB-01` | About this computer | missing ([#124](https://github.com/silica-linux/silica-desktop/issues/124)) | — |
+| `SH-AB-01` | About this computer | missing ([#124](https://github.com/silica-linux/silica-desktop/issues/124)) | [misc.md](misc.md) |
 | `SH-EM-01` | Characters and emoji (⌃⌘Space) | missing ([#125](https://github.com/silica-linux/silica-desktop/issues/125)) | [screenshot-ui.md](screenshot-ui.md) |
 
 ## Keyboard shortcuts catalogue
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-KS-01` | System shortcuts from Settings (Dock, Screen, Panorama, Keyboard, Input sources, Screenshots, Services, Faro, Accessibility, App, Overlay mode, Window management) | partial ([#126](https://github.com/silica-linux/silica-desktop/issues/126)) | — |
-| `SH-KS-02` | Mustache menu shortcuts | partial ([#127](https://github.com/silica-linux/silica-desktop/issues/127)) | — |
-| `SH-KS-03` | Known shortcuts not in Settings (⌘⇥, ⌘Space, ⌃⌘Q, 🌐, media keys, ⇧⌘3/4/5) | partial ([#128](https://github.com/silica-linux/silica-desktop/issues/128)) | — |
-| `SH-KS-04` | Function keys with the fn flag, key repeat in ms | missing ([#129](https://github.com/silica-linux/silica-desktop/issues/129)) | — |
+| `SH-KS-01` | System shortcuts from Settings (Dock, Screen, Panorama, Keyboard, Input sources, Screenshots, Services, Faro, Accessibility, App, Overlay mode, Window management) | partial ([#126](https://github.com/silica-linux/silica-desktop/issues/126)) | [shortcuts.md](shortcuts.md) |
+| `SH-KS-02` | Mustache menu shortcuts | partial ([#127](https://github.com/silica-linux/silica-desktop/issues/127)) | [shortcuts.md](shortcuts.md) |
+| `SH-KS-03` | Known shortcuts not in Settings (⌘⇥, ⌘Space, ⌃⌘Q, 🌐, media keys, ⇧⌘3/4/5) | partial ([#128](https://github.com/silica-linux/silica-desktop/issues/128)) | [shortcuts.md](shortcuts.md) |
+| `SH-KS-04` | Function keys with the fn flag, key repeat in ms | missing ([#129](https://github.com/silica-linux/silica-desktop/issues/129)) | [shortcuts.md](shortcuts.md) |
 
 ## Accessibility shell features
 
 | ID | Item | Silica | Spec |
 |---|---|---|---|
-| `SH-AX-01` | Reduce Transparency | partial ([#130](https://github.com/silica-linux/silica-desktop/issues/130)) | — |
-| `SH-AX-02` | Increase Contrast | missing ([#131](https://github.com/silica-linux/silica-desktop/issues/131)) | — |
-| `SH-AX-03` | Reduce Motion | missing ([#132](https://github.com/silica-linux/silica-desktop/issues/132)) | — |
-| `SH-AX-04` | Zoom | missing ([#133](https://github.com/silica-linux/silica-desktop/issues/133)) | — |
-| `SH-AX-05` | Screen reader presence (menu bar item, cursor, panel) | missing ([#134](https://github.com/silica-linux/silica-desktop/issues/134)) | — |
-| `SH-AX-06` | Accessibility shortcuts panel | missing ([#135](https://github.com/silica-linux/silica-desktop/issues/135)) | — |
-| `SH-AX-07` | Always show scroll bars; sidebar text size; accent and highlight colors | missing ([#136](https://github.com/silica-linux/silica-desktop/issues/136)) | — |
-| `SH-AX-08` | Show borders (accessibility) | not tracked | — |
+| `SH-AX-01` | Reduce Transparency | partial ([#130](https://github.com/silica-linux/silica-desktop/issues/130)) | [misc.md](misc.md) |
+| `SH-AX-02` | Increase Contrast | missing ([#131](https://github.com/silica-linux/silica-desktop/issues/131)) | [misc.md](misc.md) |
+| `SH-AX-03` | Reduce Motion | missing ([#132](https://github.com/silica-linux/silica-desktop/issues/132)) | [misc.md](misc.md) |
+| `SH-AX-04` | Zoom | missing ([#133](https://github.com/silica-linux/silica-desktop/issues/133)) | [misc.md](misc.md) |
+| `SH-AX-05` | Screen reader presence (menu bar item, cursor, panel) | missing ([#134](https://github.com/silica-linux/silica-desktop/issues/134)) | [misc.md](misc.md) |
+| `SH-AX-06` | Accessibility shortcuts panel | missing ([#135](https://github.com/silica-linux/silica-desktop/issues/135)) | [misc.md](misc.md) |
+| `SH-AX-07` | Always show scroll bars; sidebar text size; accent and highlight colors | missing ([#136](https://github.com/silica-linux/silica-desktop/issues/136)) | [misc.md](misc.md) |
+| `SH-AX-08` | Show borders (accessibility) | not tracked | [misc.md](misc.md) |
 
 ## Windows and dialogs seen from the shell
 
@@ -267,5 +267,5 @@ tracker is the live source.
 | `SH-WN-02` | Window buttons (traffic lights) all states | done | [windows.md](windows.md) |
 | `SH-WN-03` | Green button tiling popover | done | [windows.md](windows.md) |
 | `SH-WN-04` | Window animations (open/close, minimize genie, full screen) | done | [windows.md](windows.md) |
-| `SH-WN-05` | Alert dialog | done | — |
+| `SH-WN-05` | Alert dialog | done | [misc.md](misc.md) |
 | `SH-WN-06` | Save card (compact, expanded), Open panel | missing ([#137](https://github.com/silica-linux/silica-desktop/issues/137)) | [dialogs.md](dialogs.md) |

@@ -89,4 +89,14 @@ says otherwise. Labels are in English.
 | [tip.md](tip.md) | The tips of menus and popovers |
 | [windows.md](windows.md) | Windows: corners, shadows, border, buttons, animations |
 | [dialogs.md](dialogs.md) | System alerts and dialogs |
+| [spaces.md](spaces.md) | Spaces: switching, adding, removing, full screen, dragging |
+| [panorama.md](panorama.md) | Panorama, App Windows, Show Desktop, hot corners |
+| [app-switcher.md](app-switcher.md) | The app switcher panel |
+| [launcher.md](launcher.md) | Launcher: layout, categories, search |
+| [faro.md](faro.md) | Faro, the search panel |
+| [stage-view.md](stage-view.md) | Stage view: the strip of window groups |
+| [displays.md](displays.md) | Several displays |
+| [shortcuts.md](shortcuts.md) | System shortcuts and their Silica actions |
+| [misc.md](misc.md) | Shared panel material, alerts, context menus, launch bounce, system panels |
+| [icon-geometry.md](icon-geometry.md) | Icon sizes, mask, shadow and edge light |
 | [inventory-shell.md](inventory-shell.md) | Inventory of shell features with their status in Silica |
