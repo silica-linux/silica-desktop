@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 280" font-family="Inter, sans-serif" font-size="11">
+  <title>App switcher panel with four apps (scale 1:1, 580 x 176 pt)</title>
+  <rect width="680" height="280" fill="#ffffff"/>
+  <rect x="50" y="40" width="580" height="176" rx="56" fill="#818289" stroke="#3c3d41"/>
+  <!-- icons at x 35 + i*134, y 35, 104 -->
+  <rect x="85" y="75" width="104" height="104" rx="23" fill="#d0d1d6"/>
+  <rect x="211" y="67" width="120" height="120" rx="30" fill="#484950"/>
+  <rect x="219" y="75" width="104" height="104" rx="23" fill="#d0d1d6"/>
+  <rect x="353" y="75" width="104" height="104" rx="23" fill="#d0d1d6"/>
+  <rect x="487" y="75" width="104" height="104" rx="23" fill="#d0d1d6"/>
+  <text x="271" y="204" text-anchor="middle" font-weight="600" fill="#131314">App name</text>
+  <!-- dims -->
+  <line x1="50" y1="240" x2="630" y2="240" stroke="#000"/>
+  <text x="340" y="255" text-anchor="middle">580 pt = 134 × 4 + 44</text>
+  <line x1="137" y1="25" x2="271" y2="25" stroke="#000"/>
+  <text x="204" y="20" text-anchor="middle">pitch 134</text>
+  <text x="640" y="130">176 pt</text>
+  <text x="50" y="272">icon 104 · inset 35 · selection 120 × 120 r 30 · panel radius ~56</text>
+</svg>
