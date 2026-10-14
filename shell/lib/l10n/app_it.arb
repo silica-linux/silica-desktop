@@ -40,6 +40,8 @@
   "showRecentApps": "Mostra le app recenti",
   "open": "Apri",
   "trash": "Cestino",
+  "dockApps": "App",
+  "newWindow": "Nuova finestra",
   "emptyTrashEllipsis": "Svuota il Cestino…",
   "removeFromDock": "Rimuovi dal Dock",
   "keepInDock": "Mantieni nel Dock",

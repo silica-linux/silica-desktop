@@ -180,6 +180,14 @@
   "@trash": {
     "description": "The Trash in the Dock"
   },
+  "dockApps": "Apps",
+  "@dockApps": {
+    "description": "The Dock item that opens the Launcher"
+  },
+  "newWindow": "New Window",
+  "@newWindow": {
+    "description": "File manager menu in the Dock"
+  },
   "emptyTrashEllipsis": "Empty Trash…",
   "@emptyTrashEllipsis": {
     "description": "Trash menu item (asks for confirmation)"

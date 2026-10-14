@@ -270,7 +270,9 @@ class _LiveDockState extends State<LiveDock> {
     // A minimized window comes back itself; an app with all windows minimized brings back
     // the last minimized (D-03); an open app comes to the front; otherwise it launches.
     final minimized = ShellChannel.instance.minimized.value;
-    if (item.minimizedWindow case final window?) {
+    if (item.action case final action?) {
+      ShellChannel.instance.execute(action);
+    } else if (item.minimizedWindow case final window?) {
       ShellChannel.instance.activate(window);
     } else if (item.windows.isNotEmpty &&
         item.windows.every(minimized.contains)) {
@@ -327,6 +329,22 @@ class _LiveDockState extends State<LiveDock> {
     }
     if (item.kind == ItemKind.separator) return _separatorMenu();
     if (item.folder case final folder?) return _folderMenu(item, folder);
+    if (item.action case final action?) {
+      return [
+        MenuAction(
+          l.options,
+          submenu: [
+            MenuAction(
+              l.removeFromDock,
+              onSelected: () => _setPinned(item, false),
+            ),
+          ],
+        ),
+        const MenuDivider(),
+        MenuAction(l.open, onSelected: () => shell.execute(action)),
+      ];
+    }
+    if (item.fixed) return _fileManagerMenu(item);
     // Trash: Open; when full also Empty (D-07).
     if (item.id == null) {
       return [
@@ -382,6 +400,32 @@ class _LiveDockState extends State<LiveDock> {
     ];
   }
 
+  /// The file manager's menu (#141): its windows, then New Window; it can be neither
+  /// removed nor quit. Provisional: the reference's file manager menu is not measured.
+  List<MenuEntry> _fileManagerMenu(Item item) {
+    final shell = ShellChannel.instance;
+    final l = l10nOf(context);
+    final toplevels = shell.toplevels.value;
+    return [
+      for (final id in item.windows)
+        MenuAction(
+          toplevels.where((t) => t.id == id).firstOrNull?.title ?? item.label,
+          onSelected: () => shell.activate(id),
+        ),
+      if (item.windows.isNotEmpty) const MenuDivider(),
+      if (item.command case final command?)
+        MenuAction(l.newWindow, onSelected: () => shell.launch(command)),
+      if (item.running)
+        MenuAction(
+          l.showAllWindows,
+          onSelected: () {
+            shell.activate(_latest(item));
+            shell.execute('panorama.app');
+          },
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) => Dock(
     items: dockItems(
@@ -392,6 +436,7 @@ class _LiveDockState extends State<LiveDock> {
       thumbnails: _thumbnails,
       recents: _recentsOn ? _closed : null,
       trashLabel: l10nOf(context).trash,
+      appsLabel: l10nOf(context).dockApps,
     ),
     magnification: _magnify ? defaultMagnification : 1,
     onActivate: _activate,
@@ -786,7 +831,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final l = layout(rest, width: size.width, height: size.height);
     final end = rest.indexWhere((i) => i.kind == ItemKind.separator);
     final limit = end < 0 ? rest.length : end;
-    for (var i = 0; i < limit; i++) {
+    // Nothing goes before the fixed items (the file manager, #141).
+    final first = rest.takeWhile((i) => i.fixed).length;
+    for (var i = first; i < limit; i++) {
       if (x < l.center(i)) return i;
     }
     return limit;
@@ -796,7 +843,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final index = _downIndex;
     if (index == null || index >= _leftEnd || widget.onReorder == null) return;
     final item = widget.items[index];
-    if (item.kind != ItemKind.app) return;
+    if (item.kind != ItemKind.app || item.fixed) return;
     final l = layout(
       widget.items,
       width: size.width,

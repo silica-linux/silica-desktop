@@ -270,6 +270,54 @@ void main() {
     },
   );
 
+  testWidgets('the fixed file manager is not dragged, nothing goes before it', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final orders = <String>[];
+    const items = [
+      Item.app('Files', command: 'files', pinned: true, fixed: true),
+      Item.app('Due', command: 'due', pinned: true),
+      Item.app('Tre', command: 'tre', pinned: true),
+      Item.separator(),
+      Item.app('Trash', command: 'cestino'),
+    ];
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: items,
+          onReorder: (order, dropped) => orders.add(
+            '${[for (final i in order) i.label].join(' ')} | ${dropped?.label}',
+          ),
+        ),
+      ),
+    );
+    final rest = layout(items, width: 1280, height: 400);
+    final y = 400 - bottomGap - backgroundHeight / 2;
+    // Dragging the file manager does nothing, also up high.
+    var gesture = await tester.startGesture(Offset(rest.center(0), y));
+    await gesture.moveBy(const Offset(10, 0));
+    await tester.pump();
+    await gesture.moveTo(Offset(rest.center(0), y - 140));
+    await tester.pump();
+    expect(find.text('Remove'), findsNothing);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(orders, isEmpty);
+    // Tre dropped at the far left lands after it.
+    gesture = await tester.startGesture(Offset(rest.center(2), y));
+    await gesture.moveBy(const Offset(-10, 0));
+    await tester.pump();
+    await gesture.moveTo(Offset(rest.center(0) - 20, y));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(orders, ['Files Tre Due | Tre']);
+  });
+
   testWidgets(
     'right click on the separator: its menu; the left click nothing',
     (tester) async {

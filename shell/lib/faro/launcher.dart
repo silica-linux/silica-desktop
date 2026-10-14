@@ -270,7 +270,7 @@ String categoryOf(DesktopEntry entry) {
 int _byName(DesktopEntry a, DesktopEntry b) =>
     a.name.toLowerCase().compareTo(b.name.toLowerCase());
 
-/// The grid apps: alphabetical, in the category if there is one; with text, inside a
+/// The grid apps (system components left out, #141): alphabetical, in the category if there is one; with text, inside a
 /// category it filters alphabetically, over all apps the best goes first.
 List<DesktopEntry> launcherApps(
   Iterable<DesktopEntry> entries, {
@@ -279,7 +279,9 @@ List<DesktopEntry> launcherApps(
 }) {
   final inCategory = [
     for (final e in entries)
-      if (category == null || categoryOf(e) == category) e,
+      if (!systemComponentIds.contains(e.id) &&
+          (category == null || categoryOf(e) == category))
+        e,
   ];
   if (query.trim().isEmpty) return inCategory..sort(_byName);
   final found = searchApps(inCategory, query);

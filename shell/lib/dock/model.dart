@@ -4,6 +4,7 @@
 // bottom edge on the screen edge).
 
 import 'dart:ui' as ui;
+
 import 'package:silica_ui/silica_ui.dart';
 
 /// Pitch between app cells: 63 pt (AX).
@@ -137,6 +138,8 @@ class Item {
     this.folder,
     this.openFiles,
     this.trash = false,
+    this.action,
+    this.fixed = false,
   }) : kind = ItemKind.app,
        minimizedWindow = null,
        thumbnail = null;
@@ -157,6 +160,8 @@ class Item {
        folder = null,
        openFiles = null,
        trash = false,
+       action = null,
+       fixed = false,
        minimizedWindow = window;
   const Item.separator()
     : kind = ItemKind.separator,
@@ -171,6 +176,8 @@ class Item {
       folder = null,
       openFiles = null,
       trash = false,
+      action = null,
+      fixed = false,
       minimizedWindow = null,
       thumbnail = null;
 
@@ -204,6 +211,13 @@ class Item {
 
   /// The Trash: dropped files end up inside it.
   final bool trash;
+
+  /// A shell command (engine.execute id) run on a click instead of launching [command]: the
+  /// Apps item opens the Launcher.
+  final String? action;
+
+  /// Always first in the Dock, neither dragged nor removed: the file manager (#141).
+  final bool fixed;
 
   /// Accepts files dragged from another app (D-05, MU-40).
   bool get acceptsFiles =>

@@ -5,12 +5,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
+
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
+import 'dock.dart' show shellQuote;
 import 'model.dart';
 
 File _dockConfig(Map<String, String>? env) {
@@ -59,9 +61,14 @@ bool dockFlag(String key, {required bool fallback, Map<String, String>? env}) {
 void savePinned(List<String> ids, {Map<String, String>? env}) =>
     saveDockOption('pinned', ids, env: env);
 
+/// The Apps item: not a .desktop entry, it opens the Launcher (the reference has it right
+/// after the file manager).
+const String appsItemId = 'dev.frascella.Apps';
+
 /// Apps pinned when the configuration is missing: the first installed ones of this list.
 const List<List<String>> defaultPinned = [
-  ['dev.frascella.Mustache', 'org.gnome.Nautilus'],
+  [fileManagerId, 'org.gnome.Nautilus'],
+  [appsItemId],
   [
     'firefox_firefox',
     'firefox',
@@ -94,16 +101,51 @@ List<String> pinnedIds(
 }) {
   final pinned = readDockConfig(env: env)['pinned'];
   if (pinned is List) return [for (final id in pinned) '$id'];
+  bool available(String id) => id == appsItemId || entries.containsKey(id);
   return [
     for (final choices in defaultPinned)
-      if (choices.where(entries.containsKey).firstOrNull case final id?) id,
+      if (choices.where(available).firstOrNull case final id?) id,
   ];
+}
+
+/// The Apps item: the Launcher.
+Item appsItem(String label) => Item.app(
+  label,
+  layered: findSilicaIcon('apps'),
+  iconPath: findIcon('view-app-grid-symbolic'),
+  action: 'launcher.toggle',
+  id: appsItemId,
+  pinned: true,
+);
+
+/// The user's Trash folder (freedesktop Trash specification).
+String trashFilesDir({Map<String, String>? env}) {
+  final e = env ?? Platform.environment;
+  final data = e['XDG_DATA_HOME'];
+  final base = (data == null || data.isEmpty)
+      ? '${e['HOME'] ?? ''}/.local/share'
+      : data;
+  return '$base/Trash/files';
+}
+
+/// The command that opens the Trash: the file manager on the Trash folder when it is installed
+/// (it shows that folder as the Trash; created first, it may not exist yet).
+String trashCommand(
+  Map<String, DesktopEntry> entries, {
+  Map<String, String>? env,
+}) {
+  if (entries[fileManagerId]?.exec case final exec?) {
+    final dir = shellQuote(trashFilesDir(env: env));
+    return 'mkdir -p $dir && $exec $dir';
+  }
+  return 'xdg-open trash:///';
 }
 
 Item _appItem(
   DesktopEntry entry,
   List<Toplevel> windows, {
   bool pinned = false,
+  bool fixed = false,
 }) => Item.app(
   entry.name,
   running: windows.isNotEmpty,
@@ -114,6 +156,7 @@ Item _appItem(
   windows: [for (final w in windows) w.id],
   id: entry.id,
   pinned: pinned,
+  fixed: fixed,
 );
 
 /// The Dock items for these apps and these windows.
@@ -125,6 +168,7 @@ List<Item> dockItems(
   Map<String, ui.Image> thumbnails = const {},
   List<String>? recents,
   String trashLabel = 'Trash',
+  String appsLabel = 'Apps',
 }) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
@@ -132,7 +176,17 @@ List<Item> dockItems(
   ];
   final items = <Item>[];
   final shown = <String>{};
+  // The file manager first, whatever the configuration says (#141).
+  if (entries[fileManagerId] case final manager?) {
+    items.add(_appItem(manager, windowsOf(manager), pinned: true, fixed: true));
+    shown.add(fileManagerId);
+  }
   for (final id in pinned) {
+    if (id == appsItemId) {
+      if (shown.add(id)) items.add(appsItem(appsLabel));
+      continue;
+    }
+    if (shown.contains(id)) continue;
     final entry = entries[id];
     if (entry == null) continue;
     items.add(_appItem(entry, windowsOf(entry), pinned: true));
@@ -181,7 +235,7 @@ List<Item> dockItems(
       trashLabel,
       iconPath: findIcon(trashFull ? 'user-trash-full' : 'user-trash'),
       layered: findSilicaIcon(trashFull ? 'trash-full' : 'trash-empty'),
-      command: 'xdg-open trash:///',
+      command: trashCommand(entries),
       trash: true,
     ),
   ];

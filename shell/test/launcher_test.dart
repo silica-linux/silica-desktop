@@ -65,6 +65,18 @@ void main() {
     },
   );
 
+  test('the file manager is a system component: not in the grid (#141)', () {
+    const manager = DesktopEntry(
+      id: fileManagerId,
+      name: 'Mustache',
+      exec: 'mustache',
+      categories: ['System', 'FileManager'],
+    );
+    final all = launcherApps([...entries.values, manager]);
+    expect(all.where((e) => e.id == fileManagerId), isEmpty);
+    expect(launcherApps([manager], query: 'must'), isEmpty);
+  });
+
   test('grid: recents, line and list at the measured distances', () {
     const layout = GridLayout(recents: 7, apps: 30);
     // Area from y 536: recents at 547, line at 652, list at 664, 766 (102 pitch).

@@ -147,6 +147,72 @@ void main() {
     },
   );
 
+  test('the file manager is first and fixed, whatever the configuration', () {
+    const mustache = DesktopEntry(
+      id: fileManagerId,
+      name: 'Mustache',
+      exec: 'mustache',
+    );
+    const editor = DesktopEntry(id: 'editor', name: 'Editor', exec: 'editor');
+    final entries = {fileManagerId: mustache, 'editor': editor};
+    // A configuration that lists it later, or not at all.
+    for (final pinned in [
+      ['editor', fileManagerId],
+      ['editor'],
+    ]) {
+      final items = dockItems(entries, pinned, const []);
+      expect([for (final i in items) i.label].take(2), ['Mustache', 'Editor']);
+      expect(items.first.fixed, isTrue);
+      expect(items.first.pinned, isTrue);
+      expect(items[1].fixed, isFalse);
+    }
+  });
+
+  test('the Apps item follows the file manager and opens the Launcher', () {
+    const mustache = DesktopEntry(
+      id: fileManagerId,
+      name: 'Mustache',
+      exec: 'mustache',
+    );
+    final entries = {fileManagerId: mustache};
+    final dir = Directory.systemTemp.createTempSync('dock');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final pinned = pinnedIds(entries, env: {'HOME': dir.path});
+    expect(pinned.take(2), [fileManagerId, appsItemId]);
+    final items = dockItems(entries, pinned, const [], appsLabel: 'Apps');
+    final apps = items[1];
+    expect(apps.label, 'Apps');
+    expect(apps.action, 'launcher.toggle');
+    expect(apps.command, isNull);
+    expect(apps.pinned, isTrue);
+    expect(apps.fixed, isFalse);
+    // Removed from the Dock: it is not there.
+    final without = dockItems(entries, [fileManagerId], const []);
+    expect(without.where((i) => i.id == appsItemId), isEmpty);
+  });
+
+  test('the Trash opens the file manager on the Trash', () {
+    const mustache = DesktopEntry(
+      id: fileManagerId,
+      name: 'Mustache',
+      exec: '/usr/bin/mustache',
+    );
+    // The Trash folder, created first (the file manager shows it as the Trash).
+    expect(
+      trashCommand({fileManagerId: mustache}, env: {'HOME': '/home/a b'}),
+      "mkdir -p '/home/a b/.local/share/Trash/files' && "
+      "/usr/bin/mustache '/home/a b/.local/share/Trash/files'",
+    );
+    expect(
+      trashFilesDir(env: {'HOME': '/h', 'XDG_DATA_HOME': '/data'}),
+      '/data/Trash/files',
+    );
+    expect(trashCommand(const {}), 'xdg-open trash:///');
+    final items = dockItems({fileManagerId: mustache}, const [], const []);
+    expect(items.last.trash, isTrue);
+    expect(items.last.command, contains('/usr/bin/mustache '));
+  });
+
   test('the Dock options do not erase the pinned apps', () {
     final dir = Directory.systemTemp.createTempSync('dock');
     addTearDown(() => dir.deleteSync(recursive: true));

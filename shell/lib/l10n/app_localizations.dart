@@ -338,6 +338,18 @@ abstract class AppLocalizations {
   /// **'Trash'**
   String get trash;
 
+  /// The Dock item that opens the Launcher
+  ///
+  /// In en, this message translates to:
+  /// **'Apps'**
+  String get dockApps;
+
+  /// File manager menu in the Dock
+  ///
+  /// In en, this message translates to:
+  /// **'New Window'**
+  String get newWindow;
+
   /// Trash menu item (asks for confirmation)
   ///
   /// In en, this message translates to:

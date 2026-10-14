@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -141,6 +142,12 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get trash => 'Cestino';
+
+  @override
+  String get dockApps => 'App';
+
+  @override
+  String get newWindow => 'Nuova finestra';
 
   @override
   String get emptyTrashEllipsis => 'Svuota il Cestino…';

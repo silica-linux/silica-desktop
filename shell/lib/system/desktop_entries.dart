@@ -103,6 +103,15 @@ String stripFieldCodes(String exec) {
   return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+/// The file manager: a system component, always first in the Dock, neither dragged nor
+/// removed, not in the Launcher grid; Faro still finds it (#141).
+// TODO(#142): start it with the session and restart it when it exits, once the embedder keeps
+// an app alive without windows (today it would open a window at login).
+const String fileManagerId = 'dev.frascella.Mustache';
+
+/// System components: in the Dock and in Faro, not in the Launcher grid.
+const Set<String> systemComponentIds = {fileManagerId};
+
 /// Reads an entry; null if it is not an app to show (NoDisplay, Hidden, no Exec).
 DesktopEntry? parseDesktopEntry(
   String id,
