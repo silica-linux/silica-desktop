@@ -103,6 +103,7 @@ Item _appItem(
   iconPath: findIcon(entry.icon),
   layered: silicaIconFor(entry),
   command: entry.exec,
+  openFiles: entry.rawExec,
   windows: [for (final w in windows) w.id],
   id: entry.id,
   pinned: pinned,
@@ -171,6 +172,7 @@ List<Item> dockItems(
       iconPath: findIcon(trashFull ? 'user-trash-full' : 'user-trash'),
       layered: findSilicaIcon(trashFull ? 'trash-full' : 'trash-empty'),
       command: 'xdg-open trash:///',
+      trash: true,
     ),
   ];
 }

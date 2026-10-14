@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
@@ -307,6 +308,68 @@ void main() {
       await tester.tapAt(separator, buttons: kSecondaryButton);
       await tester.pump();
       expect(find.text('Mostra le app recenti'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'file da un\'altra app: la cella sotto si scurisce, il rilascio va all\'elemento',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final dropped = <String>[];
+      const items = [
+        Item.app('Terminale', command: 'term'),
+        Item.app('Testo', command: 'testo', openFiles: 'testo %F'),
+        Item.separator(),
+        Item.app('Cestino', command: 'xdg-open trash:///', trash: true),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(
+            items: items,
+            onDropFiles: (item, paths) =>
+                dropped.add('${item.label}: ${paths.join(',')}'),
+          ),
+        ),
+      );
+      Future<void> send(String method, [Object? args]) async {
+        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          SilicaDrag.channel.name,
+          const JSONMethodCodec().encodeMethodCall(MethodCall(method, args)),
+          (_) {},
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      final rest = layout(items, width: 1280, height: 300);
+      final y = 300 - bottomGap - backgroundHeight / 2;
+      // Sul Terminale (non prende file) niente; sul Cestino sì.
+      await send('enter', {'x': rest.center(0), 'y': y});
+      await send('motion', {'x': rest.center(0), 'y': y});
+      await send('drop', {
+        'x': rest.center(0),
+        'y': y,
+        'uris': ['file:///tmp/a.txt'],
+      });
+      expect(dropped, isEmpty);
+      await send('enter', {'x': rest.center(3), 'y': y});
+      final current = layout(
+        items,
+        width: 1280,
+        height: 300,
+        pointerX: rest.center(3),
+        amount: 1,
+      );
+      await send('motion', {'x': current.center(3), 'y': y});
+      await send('drop', {
+        'x': current.center(3),
+        'y': y,
+        'uris': ['file:///tmp/a.txt', 'file:///tmp/b%20c.txt'],
+      });
+      expect(dropped, ['Cestino: /tmp/a.txt,/tmp/b c.txt']);
+      await tester.pump(const Duration(seconds: 1));
     },
   );
 }

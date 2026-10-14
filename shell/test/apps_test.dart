@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/apps.dart';
 import 'package:silica_shell/dock/model.dart';
+import 'package:silica_shell/dock/trash_alert.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
@@ -149,5 +150,45 @@ void main() {
     expect(readDockConfig(env: env)['pinned'], ['files', 'editor']);
     expect(dockFlag('recents', fallback: false, env: env), isTrue);
     expect(dockFlag('magnify', fallback: true, env: env), isTrue);
+  });
+
+  test(
+    'Exec con i file: %f, %F, %u, %U citati; senza codici non li prende',
+    () {
+      expect(
+        execWithFiles('testo %F', ['/tmp/a.txt', "/tmp/l'altro.txt"]),
+        "testo '/tmp/a.txt' '/tmp/l'\\''altro.txt'",
+      );
+      expect(
+        execWithFiles('apri %f --nuovo', ['/a', '/b']),
+        "apri '/a' --nuovo",
+      );
+      expect(execWithFiles('web %U', ['/x y']), "web 'file:///x%20y'");
+      expect(execWithFiles('web %u %i', ['/x']), "web 'file:///x'");
+      expect(execWithFiles('calcolatrice', ['/a']), isNull);
+      expect(execWithFiles('cento %%F', ['/a']), isNull);
+      expect(execWithFiles('testo %F', []), isNull);
+    },
+  );
+
+  test('nel Cestino a mano: scheda .trashinfo, nomi uguali numerati', () async {
+    final home = Directory.systemTemp.createTempSync('cestino');
+    addTearDown(() => home.deleteSync(recursive: true));
+    final a = File('${home.path}/a b.txt')..writeAsStringSync('1');
+    await moveToTrash(
+      [a.path],
+      env: {'HOME': home.path},
+      now: DateTime(2026, 10, 14, 9, 30),
+    );
+    final trash = '${home.path}/.local/share/Trash';
+    expect(a.existsSync(), isFalse);
+    expect(File('$trash/files/a b.txt').readAsStringSync(), '1');
+    expect(
+      File('$trash/info/a b.txt.trashinfo').readAsStringSync(),
+      '[Trash Info]\nPath=${Uri.file(a.path).path}\nDeletionDate=2026-10-14T09:30:00\n',
+    );
+    File(a.path).writeAsStringSync('2');
+    await moveToTrash([a.path], env: {'HOME': home.path});
+    expect(File('$trash/files/a b.txt 2').readAsStringSync(), '2');
   });
 }

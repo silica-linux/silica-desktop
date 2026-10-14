@@ -135,6 +135,8 @@ class Item {
     this.id,
     this.pinned = false,
     this.folder,
+    this.openFiles,
+    this.trash = false,
   }) : kind = ItemKind.app,
        minimizedWindow = null,
        thumbnail = null;
@@ -153,6 +155,8 @@ class Item {
        id = null,
        pinned = false,
        folder = null,
+       openFiles = null,
+       trash = false,
        minimizedWindow = window;
   const Item.separator()
     : kind = ItemKind.separator,
@@ -165,6 +169,8 @@ class Item {
       id = null,
       pinned = false,
       folder = null,
+      openFiles = null,
+      trash = false,
       minimizedWindow = null,
       thumbnail = null;
 
@@ -192,6 +198,18 @@ class Item {
 
   /// Una cartella mostrata come pila (D-06): il suo percorso.
   final String? folder;
+
+  /// Exec con i codici di campo, per aprire i file rilasciati sull'app (null: non li prende).
+  final String? openFiles;
+
+  /// Il Cestino: i file rilasciati ci finiscono dentro.
+  final bool trash;
+
+  /// Accetta i file trascinati da un'altra app (D-05, MU-40).
+  bool get acceptsFiles =>
+      trash ||
+      folder != null ||
+      (openFiles != null && RegExp('%[fFuU]').hasMatch(openFiles!));
 
   /// La finestra ridotta che questo elemento rappresenta (null per app e cartelle).
   final String? minimizedWindow;

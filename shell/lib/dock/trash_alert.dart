@@ -53,6 +53,54 @@ Future<void> emptyTrash({Map<String, String>? env}) async {
   }
 }
 
+/// Sposta `paths` nel Cestino: `gio trash` (anche sui volumi); senza `gio`, nel Cestino della
+/// home con il file `.trashinfo` (specifica freedesktop Trash).
+Future<void> moveToTrash(
+  List<String> paths, {
+  Map<String, String>? env,
+  DateTime? now,
+}) async {
+  if (paths.isEmpty) return;
+  if (env == null) {
+    try {
+      final result = await Process.run('gio', ['trash', '--', ...paths]);
+      if (result.exitCode == 0) return;
+    } on ProcessException {
+      // Nessun gio: a mano.
+    }
+  }
+  final home = (env ?? Platform.environment)['HOME'] ?? '';
+  final files = Directory('$home/.local/share/Trash/files')
+    ..createSync(recursive: true);
+  final info = Directory('$home/.local/share/Trash/info')
+    ..createSync(recursive: true);
+  final when = (now ?? DateTime.now()).toIso8601String().split('.').first;
+  for (final path in paths) {
+    final base = path.split('/').where((p) => p.isNotEmpty).lastOrNull;
+    if (base == null) continue;
+    var name = base;
+    for (var n = 2; File('${info.path}/$name.trashinfo').existsSync(); n++) {
+      name = '$base $n';
+    }
+    try {
+      File('${info.path}/$name.trashinfo').writeAsStringSync(
+        '[Trash Info]\nPath=${Uri.file(path).path}\nDeletionDate=$when\n',
+      );
+      FileSystemEntity.typeSync(path, followLinks: false) ==
+              FileSystemEntityType.directory
+          ? Directory(path).renameSync('${files.path}/$name')
+          : File(path).renameSync('${files.path}/$name');
+    } on FileSystemException {
+      // Un altro volume o un file protetto: resta dov'è.
+      try {
+        File('${info.path}/$name.trashinfo').deleteSync();
+      } on FileSystemException {
+        // Nemmeno la scheda si è scritta.
+      }
+    }
+  }
+}
+
 class TrashAlert extends StatelessWidget {
   const TrashAlert({super.key, required this.onEmpty, required this.onCancel});
 

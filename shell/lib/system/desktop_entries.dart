@@ -13,6 +13,7 @@ class DesktopEntry {
     required this.id,
     required this.name,
     required this.exec,
+    this.rawExec,
     this.icon,
     this.wmClass,
     this.keywords = const [],
@@ -26,6 +27,9 @@ class DesktopEntry {
 
   /// Comando senza i codici di campo (`%f`, `%U`, …), pronto per `sh -c`.
   final String exec;
+
+  /// Exec com'è nella voce, con i codici di campo: per aprire dei file ([execWithFiles]).
+  final String? rawExec;
   final String? icon;
   final String? wmClass;
   final List<String> keywords;
@@ -45,6 +49,44 @@ class DesktopEntry {
         id.toLowerCase().split('.').last == lower ||
         exec.split(' ').first.split('/').last.toLowerCase() == lower;
   }
+}
+
+/// Il comando che apre `paths` con l'app (specifica Desktop Entry, "Exec"): `%f`/`%u` con il
+/// primo, `%F`/`%U` con tutti (URI `file://` per `%u`/`%U`), citati per `sh -c`. Null se Exec
+/// non prende file: l'app non li accetta.
+String? execWithFiles(String exec, List<String> paths) {
+  if (paths.isEmpty) return null;
+  String quote(String s) => "'${s.replaceAll("'", r"'\''")}'";
+  String uri(String p) => Uri.file(p).toString();
+  final out = StringBuffer();
+  var takes = false;
+  for (var i = 0; i < exec.length; i++) {
+    if (exec[i] != '%' || i + 1 >= exec.length) {
+      out.write(exec[i]);
+      continue;
+    }
+    i++;
+    switch (exec[i]) {
+      case '%':
+        out.write('%');
+      case 'f':
+        takes = true;
+        out.write(quote(paths.first));
+      case 'F':
+        takes = true;
+        out.write(paths.map(quote).join(' '));
+      case 'u':
+        takes = true;
+        out.write(quote(uri(paths.first)));
+      case 'U':
+        takes = true;
+        out.write(paths.map((p) => quote(uri(p))).join(' '));
+      default:
+      // Gli altri codici si tolgono.
+    }
+  }
+  if (!takes) return null;
+  return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 /// Toglie i codici di campo di Exec (`%f %F %u %U %d %D %n %N %i %c %k %v %m`) e `%%`.
@@ -95,6 +137,7 @@ DesktopEntry? parseDesktopEntry(
     id: id,
     name: name,
     exec: stripFieldCodes(exec),
+    rawExec: exec,
     icon: values['Icon'],
     wmClass: values['StartupWMClass'],
     keywords: (values['Keywords[$locale]'] ?? values['Keywords'] ?? '')

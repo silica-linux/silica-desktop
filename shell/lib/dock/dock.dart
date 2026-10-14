@@ -5,7 +5,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io'
-    show Directory, File, FileSystemEntity, FileSystemException, Platform;
+    show
+        Directory,
+        File,
+        FileSystemEntity,
+        FileSystemException,
+        Platform,
+        Process,
+        ProcessException;
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
@@ -265,6 +272,24 @@ class _LiveDockState extends State<LiveDock> {
     }
   }
 
+  /// File rilasciati da un'altra app (dock.md D-05, MU-40): sul Cestino vi finiscono, su una
+  /// pila si spostano nella cartella, su un'app si aprono con lei.
+  Future<void> _dropFiles(Item item, List<String> paths) async {
+    if (item.trash) {
+      await moveToTrash(paths);
+    } else if (item.folder case final folder?) {
+      try {
+        await Process.run('mv', ['--', ...paths, folder]);
+      } on ProcessException {
+        // Niente mv: i file restano dove sono.
+      }
+    } else if (item.openFiles case final exec?) {
+      final command = execWithFiles(exec, paths);
+      if (command != null) ShellChannel.instance.launch(command);
+    }
+    if (mounted) setState(() {});
+  }
+
   void _setPinned(Item item, bool pinned) {
     final id = item.id;
     if (id == null) return;
@@ -359,6 +384,7 @@ class _LiveDockState extends State<LiveDock> {
     ),
     magnification: _magnify ? defaultMagnification : 1,
     onActivate: _activate,
+    onDropFiles: _dropFiles,
     menuFor: _menu,
     onOpenPath: _openPath,
     stackSettingsFor: _stackOf,
@@ -534,6 +560,7 @@ class Dock extends StatefulWidget {
     required this.items,
     this.magnification = defaultMagnification,
     this.onActivate,
+    this.onDropFiles,
     this.menuFor,
     this.onReorder,
     this.alert,
@@ -547,6 +574,9 @@ class Dock extends StatefulWidget {
 
   /// Clic su un'app.
   final void Function(Item item)? onActivate;
+
+  /// File rilasciati da un'altra app su un elemento che li accetta ([Item.acceptsFiles]).
+  final void Function(Item item, List<String> paths)? onDropFiles;
 
   /// Un avviso modale sopra lo schermo (Svuota il Cestino), grande [trashAlertSize].
   final Widget? alert;
@@ -643,9 +673,62 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   double _from = 0;
   Duration? _start;
 
+  /// Un trascinamento di file da un'altra app: la cella sotto, scurita come alla pressione.
+  StreamSubscription<SilicaDragEvent>? _fileDrags;
+  int? _dropIndex;
+
+  void _fileDrag(SilicaDragEvent event) {
+    final box = context.findRenderObject();
+    if (!mounted || box is! RenderBox || !box.hasSize) return;
+    final size = box.size;
+    switch (event) {
+      case SilicaDragOver(:final position):
+        final local = box.globalToLocal(position);
+        _hover(local, size);
+        final current = layout(
+          widget.items,
+          width: size.width,
+          height: size.height,
+          pointerX: _pointerX,
+          amount: _amount,
+          magnification: widget.magnification,
+        );
+        final index = _inside ? itemAt(current, widget.items, local.dx) : null;
+        final target = index != null && widget.items[index].acceptsFiles
+            ? index
+            : null;
+        if (target != _dropIndex) {
+          setState(() {
+            if (_pressed == _dropIndex) _pressed = target;
+            _dropIndex = target;
+          });
+        }
+      case SilicaDragLeave():
+        _endFileDrag();
+      case SilicaDrop(:final paths):
+        final index = _dropIndex;
+        _endFileDrag();
+        if (index != null && index < widget.items.length && paths.isNotEmpty) {
+          widget.onDropFiles?.call(widget.items[index], paths);
+        }
+      case SilicaDragFinished():
+        break;
+    }
+  }
+
+  void _endFileDrag() {
+    setState(() {
+      if (_pressed == _dropIndex) _pressed = null;
+      _dropIndex = null;
+    });
+    _setInside(false);
+    _showLabel(null);
+  }
+
   @override
   void initState() {
     super.initState();
+    _fileDrags = SilicaDrag.events.listen(_fileDrag);
     // Lo schermo serve già al primo menu (la superficie lo copre per prendere il clic fuori).
     LayerControl.outputSize().then((size) {
       if (mounted && size != null && _screen == null) {
@@ -656,6 +739,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _fileDrags?.cancel();
     _ticker.dispose();
     _bounceTicker.dispose();
     _labelAnim.dispose();
