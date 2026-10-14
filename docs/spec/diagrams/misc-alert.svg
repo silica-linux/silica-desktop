@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 220" font-family="Inter, sans-serif" font-size="10">
+  <title>Alert, 420 x 132 pt (scale 1:1)</title>
+  <rect width="480" height="220" fill="#ffffff"/>
+  <rect x="30" y="20" width="420" height="132" rx="15" fill="#ffffff" stroke="#555" stroke-width="1"/>
+  <line x1="30" y1="52.5" x2="450" y2="52.5" stroke="#e5e5e5"/>
+  <text x="48" y="40" font-weight="600" fill="#595959" font-size="13">Title</text>
+  <text x="49" y="77" fill="#272727" font-size="13">Message text</text>
+  <rect x="258" y="108" width="80" height="24" rx="8" fill="#ececec"/>
+  <text x="298" y="124" text-anchor="middle" fill="#242424" font-size="12">Cancel</text>
+  <rect x="350" y="108" width="80" height="24" rx="8" fill="#007aff"/>
+  <text x="390" y="124" text-anchor="middle" fill="#ffffff" font-size="12">OK</text>
+  <text x="30" y="172">420 × 132 · radius ~15 · header 32 + 1 pt separator</text>
+  <text x="30" y="188">buttons 80 × 24, r 8, gap 12, 20 pt from the right and bottom edges</text>
+  <text x="30" y="204">title 18 pt from the left edge · message 19 pt</text>
+</svg>
