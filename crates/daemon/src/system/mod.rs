@@ -84,6 +84,10 @@ pub struct SystemState {
     pub battery: Option<Battery>,
     /// 0–1.
     pub brightness: Option<f64>,
+    /// Quante volte la luminosità è stata chiesta con `SetBrightness` (tasti e cursori di
+    /// Silica). Un cambio che arriva da fuori (luminosità adattiva, un'altra app) cambia
+    /// `brightness` ma non questo: l'HUD compare solo quando cambia questo.
+    pub brightness_requests: u64,
     pub audio: Option<Audio>,
     pub do_not_disturb: bool,
 }
@@ -117,6 +121,7 @@ impl SystemState {
             Value::Bool(self.brightness.is_some()),
         );
         put("brightness", Value::F64(self.brightness.unwrap_or(0.0)));
+        put("brightness.requests", Value::U64(self.brightness_requests));
         let audio = self.audio.clone().unwrap_or_default();
         put("audio.available", Value::Bool(self.audio.is_some()));
         put("audio.volume", Value::F64(audio.volume));
@@ -262,7 +267,10 @@ impl System {
         }
         backends::set_brightness(&self.shared, brightness.clamp(0.0, 1.0))
             .await
-            .map_err(failed)
+            .map_err(failed)?;
+        self.shared
+            .update(|s| s.brightness_requests = s.brightness_requests.wrapping_add(1));
+        Ok(())
     }
 
     /// Le reti Wi-Fi visibili: (nome, segnale 0–100, protetta, salvata, in uso), quella in

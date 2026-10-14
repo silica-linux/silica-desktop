@@ -466,6 +466,14 @@ fn reads_and_changes_the_system() {
             proxy.set_brightness(0.0).await.unwrap();
             let written = std::fs::read_to_string(backlight.join("brightness")).unwrap();
             assert_eq!(written.trim(), "1");
+            // Due richieste di Silica; un cambio da fuori (luminosità adattiva) cambia il
+            // valore ma non le richieste: l'HUD non compare.
+            let state = wait_for(&proxy, |s| get::<u64>(s, "brightness.requests") == 2).await;
+            assert!((get::<f64>(&state, "brightness") - 0.001).abs() < 1e-9);
+            std::fs::write(backlight.join("brightness"), "700").unwrap();
+            let state =
+                wait_for(&proxy, |s| (get::<f64>(s, "brightness") - 0.7).abs() < 1e-9).await;
+            assert_eq!(get::<u64>(&state, "brightness.requests"), 2);
 
             proxy.set_do_not_disturb(true).await.unwrap();
             wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;

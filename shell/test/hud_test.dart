@@ -57,11 +57,26 @@ void main() {
     },
   );
 
-  testWidgets('luminosità: titolo dello schermo', (tester) async {
+  testWidgets('luminosità chiesta da Silica: titolo dello schermo', (
+    tester,
+  ) async {
     final system = await pumpHud(tester);
-    system.value = system.value.copyWith(brightness: 0.25);
+    system.value = system.value.copyWith(
+      brightness: 0.25,
+      brightnessRequests: system.value.brightnessRequests + 1,
+    );
     await tester.pump();
     expect(find.text('Schermo'), findsOneWidget);
+  });
+
+  testWidgets('la luminosità adattiva non mostra l\'HUD', (tester) async {
+    final system = await pumpHud(tester);
+    // Il valore cambia da solo, nessuna richiesta di Silica.
+    for (final v in [0.4, 0.42, 0.45]) {
+      system.value = system.value.copyWith(brightness: v);
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(find.text('Schermo'), findsNothing);
   });
 
   testWidgets('con il Centro di controllo aperto niente HUD', (tester) async {

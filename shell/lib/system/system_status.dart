@@ -29,6 +29,7 @@ class SystemSnapshot {
     this.batteryCharging = false,
     this.brightnessAvailable = false,
     this.brightness = 0,
+    this.brightnessRequests = 0,
     this.audioAvailable = false,
     this.volume = 0,
     this.muted = false,
@@ -48,6 +49,10 @@ class SystemSnapshot {
   final bool batteryCharging;
   final bool brightnessAvailable;
   final double brightness;
+
+  /// Quante volte Silica ha chiesto la luminosità (tasti, cursori): cambia solo per l'utente,
+  /// non per la luminosità adattiva.
+  final int brightnessRequests;
   final bool audioAvailable;
   final double volume;
   final bool muted;
@@ -76,6 +81,7 @@ class SystemSnapshot {
       batteryCharging: flag('battery.charging'),
       brightnessAvailable: flag('brightness.available'),
       brightness: number('brightness').clamp(0, 1),
+      brightnessRequests: number('brightness.requests').round(),
       audioAvailable: flag('audio.available'),
       volume: number('audio.volume').clamp(0, 1),
       muted: flag('audio.muted'),
@@ -88,6 +94,7 @@ class SystemSnapshot {
     bool? wifiEnabled,
     bool? bluetoothPowered,
     double? brightness,
+    int? brightnessRequests,
     double? volume,
     bool? muted,
     bool? doNotDisturb,
@@ -104,6 +111,7 @@ class SystemSnapshot {
     batteryCharging: batteryCharging,
     brightnessAvailable: brightnessAvailable,
     brightness: brightness ?? this.brightness,
+    brightnessRequests: brightnessRequests ?? this.brightnessRequests,
     audioAvailable: audioAvailable,
     volume: volume ?? this.volume,
     muted: muted ?? this.muted,

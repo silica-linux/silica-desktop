@@ -3,7 +3,8 @@
 // Un pannello di vetro `regular` 292 × 64 in alto a destra, 10 pt sotto la barra dei menu e
 // 10 pt dal bordo dello schermo, come un modulo del Centro di controllo: titolo (il nome
 // dell'uscita audio, o "Schermo"), traccia di 4 pt con 17 tacche sotto (una per passo), icona
-// a destra. Compare a ogni cambio di volume, muto o luminosità, salvo con il Centro di
+// a destra. Compare a ogni cambio di volume o muto e a ogni luminosità chiesta da Silica (tasti,
+// comandi; non la luminosità adattiva, che cambia il valore da sola), salvo con il Centro di
 // controllo aperto (lì cambia il cursore). Comparsa ~380 ms in scala da 0,91 e dissolvenza
 // che accelera; permanenza 1,09 s dall'ultimo cambio (un cambio nuovo la fa ripartire senza
 // ricomparire); scomparsa ~550 ms con un calo rapido nei primi ~80 ms e una coda lunga.
@@ -121,10 +122,11 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
         now.audioAvailable &&
         last.audioAvailable &&
         (now.volume != last.volume || now.muted != last.muted);
+    // Solo la luminosità chiesta dall'utente: quella adattiva cambia il valore senza HUD.
     final screen =
         now.brightnessAvailable &&
         last.brightnessAvailable &&
-        now.brightness != last.brightness;
+        now.brightnessRequests != last.brightnessRequests;
     if (!audio && !screen) return;
     _show(audio ? HudKind.volume : HudKind.brightness);
   }
