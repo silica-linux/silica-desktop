@@ -69,16 +69,23 @@ pub struct SpaceShift {
 pub struct Workspaces {
     /// The windows of the non-active spaces; the active space's entry stays empty.
     pub stored: Vec<Placed>,
+    /// Per space: the full-screen window that owns it (a full-screen window is a space of its
+    /// own, right after the one it came from; spaces › full screen), None for a desktop.
+    pub owners: Vec<Option<Window>>,
     pub active: usize,
     pub transition: Option<Transition>,
+    /// A full-screen space to remove once the scroll away from it ends.
+    pub pending_removal: Option<Window>,
 }
 
 impl Default for Workspaces {
     fn default() -> Self {
         Self {
             stored: vec![Vec::new()],
+            owners: vec![None],
             active: 0,
             transition: None,
+            pending_removal: None,
         }
     }
 }
@@ -237,6 +244,18 @@ impl State {
                 self.space.map_element(window, base, false);
             }
         }
+        // A full-screen space left behind on leaving full screen: gone once off screen.
+        if let Some(owner) = self.workspaces.pending_removal.take()
+            && let Some(index) = self.owned_space(&owner)
+            && index != self.workspaces.active
+        {
+            if let Some(slot) = self.workspaces.owners.get_mut(index) {
+                *slot = None;
+            }
+            if let Err(err) = self.remove_space(index) {
+                tracing::warn!("full-screen space: {err}");
+            }
+        }
     }
 
     /// Adds a space at the end and returns its index.
@@ -245,7 +264,48 @@ impl State {
             return Err(format!("at most {MAX_SPACES} spaces"));
         }
         self.workspaces.stored.push(Vec::new());
+        self.workspaces.owners.push(None);
         Ok(self.workspaces.count() - 1)
+    }
+
+    /// Inserts an empty space at `index` (the active index follows its space).
+    pub fn insert_space(&mut self, index: usize) -> Result<usize, String> {
+        self.settle_transition();
+        if self.workspaces.count() >= MAX_SPACES {
+            return Err(format!("at most {MAX_SPACES} spaces"));
+        }
+        let index = index.min(self.workspaces.count());
+        self.workspaces.stored.insert(index, Vec::new());
+        self.workspaces.owners.insert(index, None);
+        if self.workspaces.active >= index {
+            self.workspaces.active += 1;
+        }
+        Ok(index)
+    }
+
+    /// The space owned by a full-screen window.
+    pub fn owned_space(&self, window: &Window) -> Option<usize> {
+        self.workspaces
+            .owners
+            .iter()
+            .position(|owner| owner.as_ref() == Some(window))
+    }
+
+    /// The labels of the spaces bar: "Desktop n" counting only desktops, the window title for a
+    /// full-screen space (title or app name: not determined in the reference; provisional).
+    pub fn space_labels(&self) -> Vec<String> {
+        let mut desktops = 0;
+        (0..self.workspaces.count())
+            .map(
+                |index| match self.workspaces.owners.get(index).cloned().flatten() {
+                    Some(window) => crate::panorama::window_label(&window),
+                    None => {
+                        desktops += 1;
+                        crate::panorama::desktop_label(desktops - 1)
+                    }
+                },
+            )
+            .collect()
     }
 
     /// Removes a space: its windows move to the previous one (or to the first). Removing the
@@ -279,6 +339,9 @@ impl State {
                 .unwrap_or_default()
         };
         self.workspaces.stored.remove(index);
+        if index < self.workspaces.owners.len() {
+            self.workspaces.owners.remove(index);
+        }
         // The space receiving the windows, with the indices already shifted after the removal.
         let receiver = index.saturating_sub(1);
         let new_active = match active.cmp(&index) {
@@ -366,6 +429,30 @@ impl State {
     pub fn forget_dead_windows(&mut self) {
         for slot in &mut self.workspaces.stored {
             slot.retain(|(window, _)| window.alive());
+        }
+        // A full-screen window closed: its space goes too, back to the space before it.
+        let dead = self
+            .workspaces
+            .owners
+            .iter()
+            .position(|owner| owner.as_ref().is_some_and(|w| !w.alive()));
+        if let Some(index) = dead {
+            if index == self.workspaces.active {
+                if let Some(owner) = self.workspaces.owners.get(index).cloned().flatten() {
+                    self.workspaces.pending_removal = Some(owner);
+                }
+                let before = index.saturating_sub(1);
+                if !self.switch_space(before, Instant::now()) {
+                    self.settle_transition();
+                }
+            } else {
+                if let Some(slot) = self.workspaces.owners.get_mut(index) {
+                    *slot = None;
+                }
+                if let Err(err) = self.remove_space(index) {
+                    tracing::warn!("full-screen space: {err}");
+                }
+            }
         }
     }
 }

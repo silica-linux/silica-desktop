@@ -501,6 +501,8 @@ pub struct PanoramaView {
     pub thumbnails: Vec<Thumbnail>,
     /// The dragged window and its frame at this moment.
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
+    /// The label of each space.
+    pub labels: Vec<String>,
 }
 
 /// An entry of the spaces bar, in points in the output.
@@ -514,6 +516,35 @@ struct BarItem {
 /// translation; `LANGUAGE`, then `LC_ALL`, `LC_MESSAGES`, `LANG`).
 fn space_label(index: usize) -> String {
     space_label_in(index, &system_language(|key| std::env::var(key).ok()))
+}
+
+/// The label of the `index`-th desktop (counting desktops only).
+pub fn desktop_label(index: usize) -> String {
+    space_label(index)
+}
+
+/// The label of a full-screen space: the window title, or its app id without the reverse
+/// domain when there is no title.
+pub fn window_label(window: &Window) -> String {
+    use smithay::wayland::compositor::with_states;
+    use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+    let (title, app_id) = window
+        .toplevel()
+        .map(|toplevel| {
+            with_states(toplevel.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .and_then(|data| data.lock().ok())
+                    .map(|data| (data.title.clone(), data.app_id.clone()))
+                    .unwrap_or_default()
+            })
+        })
+        .unwrap_or_default();
+    title
+        .filter(|t| !t.is_empty())
+        .or_else(|| app_id.and_then(|id| id.rsplit('.').next().map(str::to_owned)))
+        .unwrap_or_default()
 }
 
 fn space_label_in(index: usize, language: &str) -> String {
@@ -544,10 +575,10 @@ fn system_language(get: impl Fn(&str) -> Option<String>) -> String {
         .unwrap_or_else(|| "en".to_owned())
 }
 
-fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
-    let mut items: Vec<BarItem> = (0..count)
+fn bar_items(labels: &[String], width: f64) -> Vec<BarItem> {
+    let mut items: Vec<BarItem> = (0..labels.len())
         .map(|index| {
-            let label = space_label(index);
+            let label = labels.get(index).cloned().unwrap_or_default();
             let w =
                 f64::from(text_width(&label, LABEL_SIZE, Weight::Regular)) + 2.0 * LABEL_PADDING;
             BarItem {
@@ -558,7 +589,7 @@ fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
         })
         .collect();
     let total = items.iter().map(|i| i.rect.size.w).sum::<f64>()
-        + LABEL_GAP * count.saturating_sub(1) as f64;
+        + LABEL_GAP * labels.len().saturating_sub(1) as f64;
     let mut x = (width - total) / 2.0;
     for item in &mut items {
         item.rect.loc.x = x;
@@ -873,6 +904,7 @@ impl State {
             expansion: panorama.expansion,
             thumbnails,
             drag,
+            labels: self.space_labels(),
         })
     }
 
@@ -940,7 +972,7 @@ impl State {
                 return;
             }
             let index = if expansion < THUMBS_FROM {
-                bar_items(self.workspaces.count(), width)
+                bar_items(&self.space_labels(), width)
                     .iter()
                     .find(|item| item.rect.contains(location))
                     .map(|item| item.index)
@@ -1089,6 +1121,8 @@ pub struct BarLook {
     pub expansion: f64,
     /// Color of the thumbnails behind the wallpaper (the desktop's).
     pub backdrop: [u8; 4],
+    /// The label of each space (desktops and full-screen apps).
+    pub labels: Vec<String>,
 }
 
 impl BarLook {
@@ -1101,11 +1135,12 @@ impl BarLook {
     /// Cache key: it changes with what is visible (height at the whole point).
     fn key(&self) -> String {
         format!(
-            "{}:{}:{}:{:?}",
+            "{}:{}:{}:{:?}:{}",
             self.count,
             self.active,
             (self.expansion * 1000.0).round(),
-            self.backdrop
+            self.backdrop,
+            self.labels.join("\u{1f}")
         )
     }
 }
@@ -1137,7 +1172,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     // The compact entries vanish at the start of the expansion.
     let compact = 1.0 - e / 0.3;
     if compact > 0.0 {
-        for item in bar_items(look.count, look.width) {
+        for item in bar_items(&look.labels, look.width) {
             let r = item.rect;
             if item.index == look.active {
                 let rect = [
@@ -1189,7 +1224,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                     faded(RING_COLOR, shown),
                 );
             }
-            let label = space_label(index);
+            let label = look.labels.get(index).cloned().unwrap_or_default();
             let text = f64::from(text_width(&label, THUMB_LABEL_SIZE, Weight::Regular));
             canvas.text(
                 [

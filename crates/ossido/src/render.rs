@@ -845,6 +845,7 @@ pub fn output_elements(
             active: context.spaces.1,
             expansion: panorama.expansion,
             backdrop: context.clear_color.map(to_u8),
+            labels: panorama.labels.clone(),
         };
         if panorama.mode == crate::panorama::Mode::Panorama
             && let Some(bar) =

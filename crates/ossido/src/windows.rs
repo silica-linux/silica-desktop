@@ -278,6 +278,9 @@ impl State {
             .output_geometry(&self.output)
             .ok_or("output without geometry")?;
         if is_fullscreen(window) {
+            // Leaving full screen: back to the space before the full-screen one, which goes
+            // once the scroll has left it.
+            let owned = self.owned_space(window);
             let previous = before.0.take();
             let frame = before.1.take();
             toplevel.with_pending_state(|state| {
@@ -290,6 +293,15 @@ impl State {
             }
             if let Some(frame) = frame {
                 self.start_morph(window, output.to_f64(), frame, false);
+            }
+            if let Some(index) = owned {
+                let target = index.saturating_sub(1);
+                self.move_window_to_space(window, target)?;
+                self.workspaces.pending_removal = Some(window.clone());
+                if !self.switch_space(target, std::time::Instant::now()) {
+                    self.settle_transition();
+                }
+                self.focus_window(Some(window.clone()));
             }
         } else {
             let current = self
@@ -306,6 +318,22 @@ impl State {
             });
             toplevel.send_pending_configure();
             self.space.map_element(window.clone(), output.loc, true);
+            // A full-screen window is a space of its own, right after the one it came from.
+            let from = self.window_space(window).unwrap_or(self.workspaces.active);
+            match self.insert_space(from.saturating_add(1)) {
+                Ok(index) => {
+                    if let Some(slot) = self.workspaces.owners.get_mut(index) {
+                        *slot = Some(window.clone());
+                    }
+                    self.move_window_to_space(window, index)?;
+                    if !self.switch_space(index, std::time::Instant::now()) {
+                        self.settle_transition();
+                    }
+                    self.focus_window(Some(window.clone()));
+                }
+                // No room for another space: full screen in place.
+                Err(err) => tracing::info!("full screen: {err}"),
+            }
         }
         Ok(())
     }
