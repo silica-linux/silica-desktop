@@ -125,7 +125,7 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 | `silica-reference` | macOS 27 observations, cloned into `plan/reference/` (private) | — |
 | `silica-packages` | the RPM packages (desktop, apps, Inter, silica-icons) and the Wayland session installable on Fedora | MIT OR Apache-2.0 |
 | `silica-os` | the distro: a bootc image on top of Fedora Atomic with Silica's defaults, pipeline and installation ISO | MIT OR Apache-2.0 |
-| `silica-brand` | logo, repository banners, release wallpapers (with their rows in `ASSETS.md`) | to be decided (trademark) |
+| `silica-brand` | logo, repository banners, release wallpapers (with their rows in `ASSETS.md`) | Silica trademark, all rights reserved (`TRADEMARKS.md`) |
 | `silica-setup` | the first-boot assistant (an app, like `mustache`) | MIT OR Apache-2.0 |
 | `clock`, `calculator` | the clock and calculator apps (like `mustache`) | MIT OR Apache-2.0 |
 | `.github` (public) | default issue templates for every repository | — |
