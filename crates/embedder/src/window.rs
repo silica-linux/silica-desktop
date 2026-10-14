@@ -204,6 +204,10 @@ impl Ord for Queued {
     }
 }
 
+/// How long the glass regions must stay the same before they are committed on their own
+/// (two frames): while they change every frame, the frames' commits carry them.
+const GLASS_SETTLE: Duration = Duration::from_millis(34);
+
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -233,6 +237,8 @@ struct App {
     clipboard: Option<(CopyPasteSource, Arc<Vec<u8>>)>,
     /// The serial of the last key or button press: setting the selection needs one.
     input_serial: u32,
+    /// The commit that applies the glass regions once they stop changing.
+    glass_commit: Option<RegistrationToken>,
     /// To send requests before waiting on another client (a paste).
     conn: Connection,
     dropped: Option<DragOffer>,
@@ -562,6 +568,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         drag_in: false,
         clipboard: None,
         input_serial: 0,
+        glass_commit: None,
         conn: conn.clone(),
         dropped: None,
         ptys: crate::pty::PtyHost::default(),
@@ -678,9 +685,13 @@ impl App {
                 let (reply, changed) =
                     self.glass
                         .handle_call(&message.data, self.surface.wl_surface(), &self.qh);
-                // The regions apply from the commit: without a new frame it is needed here.
+                // The regions apply from the next commit. Committing now would show them with
+                // the buffer already on screen, a frame ahead of the content they were
+                // measured on (a double edge while a panel animates). The frame they belong to
+                // is still being rasterized: its own commit carries them. Only once the
+                // regions stop changing, a commit makes sure they apply without a new frame.
                 if changed {
-                    self.surface.commit();
+                    self.commit_glass_later();
                 }
                 reply
             }
@@ -802,6 +813,21 @@ impl App {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Commits the pending glass regions if they do not change for [GLASS_SETTLE].
+    fn commit_glass_later(&mut self) {
+        if let Some(token) = self.glass_commit.take() {
+            self.loop_handle.remove(token);
+        }
+        self.glass_commit = self
+            .loop_handle
+            .insert_source(Timer::from_duration(GLASS_SETTLE), |_, _, app: &mut App| {
+                app.glass_commit = None;
+                app.surface.commit();
+                TimeoutAction::Drop
+            })
+            .ok();
     }
 
     /// `Clipboard.setData`: this window becomes the selection owner with `text`.
