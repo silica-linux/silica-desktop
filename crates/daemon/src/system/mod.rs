@@ -123,6 +123,10 @@ pub struct SystemState {
     pub dark: bool,
     /// The apps recording now or recently, the ones in use first (the privacy pill).
     pub privacy: Vec<PrivacyUse>,
+    /// The keyboard backlight, 0–1; `None` without a backlit keyboard.
+    pub keyboard_brightness: Option<f64>,
+    /// How many times Silica set it (`SetKeyboardBrightness`): the HUD appears only then.
+    pub keyboard_requests: u64,
 }
 
 impl SystemState {
@@ -169,6 +173,15 @@ impl SystemState {
             .map(|p| format!("{}\u{1f}{}\u{1f}{}", p.app, p.kind, u8::from(p.in_use)))
             .collect();
         put("privacy", Value::from(privacy));
+        put(
+            "keyboard.available",
+            Value::Bool(self.keyboard_brightness.is_some()),
+        );
+        put(
+            "keyboard.brightness",
+            Value::F64(self.keyboard_brightness.unwrap_or(0.0)),
+        );
+        put("keyboard.requests", Value::U64(self.keyboard_requests));
         dict
     }
 }
@@ -318,6 +331,21 @@ impl System {
             .map_err(failed)?;
         self.shared
             .update(|s| s.brightness_requests = s.brightness_requests.wrapping_add(1));
+        Ok(())
+    }
+
+    /// The keyboard backlight, from 0 to 1 (UPower's `KbdBacklight`).
+    async fn set_keyboard_brightness(&self, brightness: f64) -> zbus::fdo::Result<()> {
+        if !brightness.is_finite() {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "non-finite brightness".into(),
+            ));
+        }
+        backends::set_keyboard_brightness(&self.shared, brightness)
+            .await
+            .map_err(failed)?;
+        self.shared
+            .update(|s| s.keyboard_requests = s.keyboard_requests.wrapping_add(1));
         Ok(())
     }
 

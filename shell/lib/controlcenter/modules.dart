@@ -75,6 +75,7 @@ const Map<String, List<ModuleSize>> moduleSizes = {
   'mirroring': [ModuleSize.small, ModuleSize.medium],
   'battery': [ModuleSize.small, ModuleSize.medium],
   'display': [ModuleSize.wide],
+  'keyboard': [ModuleSize.wide],
   'sound': [ModuleSize.wide],
 };
 
@@ -130,10 +131,18 @@ Map<String, Rect> packModules(List<CcModule> modules) {
   return frames;
 }
 
-/// The modules that can be shown on this machine: the battery only with a battery.
+/// Whether module [id] can show on this machine: the battery only with a battery, the
+/// keyboard backlight only with a backlit keyboard.
+bool moduleAvailable(String id, SystemSnapshot s) => switch (id) {
+  'battery' => s.batteryPresent,
+  'keyboard' => s.keyboardAvailable,
+  _ => true,
+};
+
+/// The modules that can be shown on this machine.
 List<CcModule> presentModules(List<CcModule> modules, SystemSnapshot s) => [
   for (final m in modules)
-    if (m.id != 'battery' || s.batteryPresent) m,
+    if (moduleAvailable(m.id, s)) m,
 ];
 
 /// The arrangement file: $XDG_CONFIG_HOME/silica/controlcenter.json.

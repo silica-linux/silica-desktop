@@ -69,7 +69,7 @@ double hudVanishOpacity(double ms) {
 double hudVanishScale(double ms) =>
     1 - (1 - hudScaleFrom) * (ms / 410).clamp(0.0, 1.0);
 
-enum HudKind { volume, brightness }
+enum HudKind { volume, brightness, keyboard }
 
 class SystemHud extends StatefulWidget {
   const SystemHud({super.key, required this.system, required this.suppressed});
@@ -128,8 +128,19 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
         now.brightnessAvailable &&
         last.brightnessAvailable &&
         now.brightnessRequests != last.brightnessRequests;
-    if (!audio && !screen) return;
-    _show(audio ? HudKind.volume : HudKind.brightness);
+    // The keyboard backlight: like the screen, only when Silica set it (keys, slider).
+    final keyboard =
+        now.keyboardAvailable &&
+        last.keyboardAvailable &&
+        now.keyboardRequests != last.keyboardRequests;
+    if (!audio && !screen && !keyboard) return;
+    _show(
+      audio
+          ? HudKind.volume
+          : screen
+          ? HudKind.brightness
+          : HudKind.keyboard,
+    );
   }
 
   void _show(HudKind kind) {
@@ -161,12 +172,29 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
         : hudAppearScale(_appear.value);
     final s = widget.system.value;
     final volume = _kind == HudKind.volume;
-    final value = volume ? (s.muted ? null : s.volume) : s.brightness;
-    final title = volume
-        ? (s.audioName.isNotEmpty
-              ? s.audioName
-              : l10nOf(context).hudAudioOutput)
-        : l10nOf(context).ccDisplay;
+    final keyboard = _kind == HudKind.keyboard;
+    final value = switch (_kind) {
+      HudKind.volume => s.muted ? null : s.volume,
+      HudKind.brightness => s.brightness,
+      HudKind.keyboard => s.keyboardBrightness,
+    };
+    final title = switch (_kind) {
+      HudKind.volume =>
+        s.audioName.isNotEmpty ? s.audioName : l10nOf(context).hudAudioOutput,
+      HudKind.brightness => l10nOf(context).ccDisplay,
+      // Not measured on the reference (no backlit keyboard there): the Display layout.
+      HudKind.keyboard => l10nOf(context).ccKeyboardBrightness,
+    };
+    final small = volume
+        ? GlyphKind.speakerSmall
+        : keyboard
+        ? GlyphKind.keyboard
+        : GlyphKind.sunSmall;
+    final large = volume
+        ? GlyphKind.speakerLarge
+        : keyboard
+        ? GlyphKind.keyboard
+        : GlyphKind.sunLarge;
     return LayoutBuilder(
       builder: (context, constraints) => Stack(
         children: [
@@ -231,7 +259,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       width: 13,
                       height: 13,
                       child: Glyph(
-                        volume ? GlyphKind.speakerSmall : GlyphKind.sunSmall,
+                        small,
                         color: const Color(0xFFFFFFFF),
                         size: 13,
                       ),
@@ -242,7 +270,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       width: 16,
                       height: 16,
                       child: Glyph(
-                        volume ? GlyphKind.speakerLarge : GlyphKind.sunLarge,
+                        large,
                         color: const Color(0xFFFFFFFF),
                         size: 16,
                       ),

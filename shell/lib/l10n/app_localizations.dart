@@ -1249,6 +1249,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{app}'**
   String ccPrivacyNow(String app);
+
+  /// Control Center module and HUD title: the keyboard backlight
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard Brightness'**
+  String get ccKeyboardBrightness;
 }
 
 class _AppLocalizationsDelegate

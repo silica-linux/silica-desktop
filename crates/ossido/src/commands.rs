@@ -24,9 +24,10 @@ use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
     SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_DOWN_FINE, SYSTEM_BRIGHTNESS_UP,
-    SYSTEM_BRIGHTNESS_UP_FINE, SYSTEM_DARK, SYSTEM_DARK_TOGGLE, SYSTEM_DND, SYSTEM_MUTE,
-    SYSTEM_MUTE_TOGGLE, SYSTEM_STATUS, SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_DOWN_FINE,
-    SYSTEM_VOLUME_UP, SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
+    SYSTEM_BRIGHTNESS_UP_FINE, SYSTEM_DARK, SYSTEM_DARK_TOGGLE, SYSTEM_DND,
+    SYSTEM_KEYBOARD_BRIGHTNESS, SYSTEM_KEYBOARD_BRIGHTNESS_DOWN, SYSTEM_KEYBOARD_BRIGHTNESS_UP,
+    SYSTEM_MUTE, SYSTEM_MUTE_TOGGLE, SYSTEM_STATUS, SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN,
+    SYSTEM_VOLUME_DOWN_FINE, SYSTEM_VOLUME_UP, SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
 };
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
@@ -248,16 +249,16 @@ impl State {
                 };
                 Ok(json!({ "queued": self.system.queue(call) }))
             }
-            SYSTEM_VOLUME | SYSTEM_BRIGHTNESS => {
+            SYSTEM_VOLUME | SYSTEM_BRIGHTNESS | SYSTEM_KEYBOARD_BRIGHTNESS => {
                 let ValueParams { value } = parse_required(params)?;
                 if !value.is_finite() {
                     return Err("non-finite value".to_owned());
                 }
                 let value = value.clamp(0.0, 1.0);
-                let call = if id == SYSTEM_VOLUME {
-                    Call::Volume(value)
-                } else {
-                    Call::Brightness(value)
+                let call = match id {
+                    SYSTEM_VOLUME => Call::Volume(value),
+                    SYSTEM_BRIGHTNESS => Call::Brightness(value),
+                    _ => Call::KeyboardBrightness(value),
                 };
                 Ok(json!({ "queued": self.system.queue(call) }))
             }
@@ -279,6 +280,9 @@ impl State {
                     matches!(id, SYSTEM_BRIGHTNESS_UP | SYSTEM_BRIGHTNESS_UP_FINE),
                     matches!(id, SYSTEM_BRIGHTNESS_UP_FINE | SYSTEM_BRIGHTNESS_DOWN_FINE),
                 )
+            })),
+            SYSTEM_KEYBOARD_BRIGHTNESS_UP | SYSTEM_KEYBOARD_BRIGHTNESS_DOWN => Ok(json!({
+                "queued": self.system.keyboard_step(id == SYSTEM_KEYBOARD_BRIGHTNESS_UP)
             })),
             SWITCHER_NEXT | SWITCHER_PREVIOUS => {
                 self.switcher_active = true;

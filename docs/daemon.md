@@ -106,10 +106,14 @@ bar.
   `wifi.strength` (0–100), `wifi.wired`; `bluetooth.available`, `bluetooth.powered`;
   `battery.present`, `battery.percent`, `battery.charging`; `brightness.available`,
   `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`, `audio.name`
-  (name of the output, PipeWire's `node.description`); `dnd`.
+  (name of the output, PipeWire's `node.description`); `dnd`; `keyboard.available`,
+  `keyboard.brightness` (0–1), `keyboard.requests` (the keyboard backlight, UPower's
+  `KbdBacklight`); `privacy` (`as`: `app␟kind␟1|0` per app that recorded from the
+  microphone or the camera, now or in the last 10 minutes, the ones recording now first; from
+  the active capture streams of `wpctl status`, every 2 s).
 - `SetWifiEnabled(b)`, `SetBluetoothPowered(b)`, `SetVolume(d)`, `SetMuted(b)`,
-  `SetBrightness(d)` (0–1, never to zero), `SetDoNotDisturb(b)`. A missing source is the
-  `org.freedesktop.DBus.Error.Failed` error.
+  `SetBrightness(d)` (0–1, never to zero), `SetKeyboardBrightness(d)`,
+  `SetDoNotDisturb(b)`. A missing source is the `org.freedesktop.DBus.Error.Failed` error.
 - For the Control Center's detail panels, read on request:
   `WifiNetworks() → a(sybbb)` (name, signal 0–100, secured, saved, in use; the one in use
   first, then the saved ones, then by signal; at most 40), `ConnectWifi(s)` (saved networks

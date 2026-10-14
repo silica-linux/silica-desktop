@@ -67,6 +67,25 @@ void main() {
     expect(find.text('Display'), findsOneWidget);
   });
 
+  testWidgets('keyboard backlight set by Silica: its own title (SH-CC-30)', (
+    tester,
+  ) async {
+    final system = await pumpHud(tester);
+    system.value = system.value.copyWith(
+      keyboardAvailable: true,
+      keyboardBrightness: 0.5,
+    );
+    await tester.pump();
+    // Becoming available is not a change by the user.
+    expect(find.text('Keyboard Brightness'), findsNothing);
+    system.value = system.value.copyWith(
+      keyboardBrightness: 0.5625,
+      keyboardRequests: system.value.keyboardRequests + 1,
+    );
+    await tester.pump();
+    expect(find.text('Keyboard Brightness'), findsOneWidget);
+  });
+
   testWidgets('adaptive brightness does not show the HUD', (tester) async {
     final system = await pumpHud(tester);
     // The value changes by itself, no request from Silica.

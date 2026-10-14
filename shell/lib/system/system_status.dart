@@ -36,7 +36,16 @@ class SystemSnapshot {
     this.audioName = '',
     this.doNotDisturb = false,
     this.privacy = const [],
+    this.keyboardAvailable = false,
+    this.keyboardBrightness = 0,
+    this.keyboardRequests = 0,
   });
+
+  /// The keyboard backlight (UPower): there, its level 0–1, and how many times Silica set it
+  /// (the HUD appears only for those).
+  final bool keyboardAvailable;
+  final double keyboardBrightness;
+  final int keyboardRequests;
 
   final bool wifiAvailable;
   final bool wifiEnabled;
@@ -97,6 +106,9 @@ class SystemSnapshot {
             in d['privacy'] is List ? d['privacy'] as List : const [])
           if (item is String) ?PrivacyUse.parse(item),
       ],
+      keyboardAvailable: flag('keyboard.available'),
+      keyboardBrightness: number('keyboard.brightness').clamp(0, 1),
+      keyboardRequests: number('keyboard.requests').round(),
     );
   }
 
@@ -109,6 +121,9 @@ class SystemSnapshot {
     bool? muted,
     bool? doNotDisturb,
     List<PrivacyUse>? privacy,
+    bool? keyboardAvailable,
+    double? keyboardBrightness,
+    int? keyboardRequests,
   }) => SystemSnapshot(
     wifiAvailable: wifiAvailable,
     wifiEnabled: wifiEnabled ?? this.wifiEnabled,
@@ -129,6 +144,9 @@ class SystemSnapshot {
     audioName: audioName,
     doNotDisturb: doNotDisturb ?? this.doNotDisturb,
     privacy: privacy ?? this.privacy,
+    keyboardAvailable: keyboardAvailable ?? this.keyboardAvailable,
+    keyboardBrightness: keyboardBrightness ?? this.keyboardBrightness,
+    keyboardRequests: keyboardRequests ?? this.keyboardRequests,
   );
 }
 

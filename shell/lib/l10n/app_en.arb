@@ -885,5 +885,9 @@
         "type": "String"
       }
     }
+  },
+  "ccKeyboardBrightness": "Keyboard Brightness",
+  "@ccKeyboardBrightness": {
+    "description": "Control Center module and HUD title: the keyboard backlight"
   }
 }

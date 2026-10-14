@@ -649,4 +649,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String ccPrivacyNow(String app) {
     return '$app';
   }
+
+  @override
+  String get ccKeyboardBrightness => 'Luminosità tastiera';
 }

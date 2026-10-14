@@ -60,7 +60,7 @@ enum GalleryCategory {
   connectivity(['wifi', 'bluetooth', 'nearby'], Color(0xFF0A84FF)),
   focus(['dnd'], Color(0xFF6E7CFF)),
   nowPlaying(['media'], Color(0xFFFF375F)),
-  display(['display', 'dark', 'mirroring'], Color(0xFF0A84FF)),
+  display(['display', 'keyboard', 'dark', 'mirroring'], Color(0xFF0A84FF)),
   sound(['sound'], Color(0xFFFF453A)),
   screenshot(['capture'], Color(0xFF8E8E93)),
   desktop(['staging'], Color(0xFF30B0C7)),

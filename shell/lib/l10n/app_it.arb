@@ -191,5 +191,6 @@
   "ccFocusSettings": "Impostazioni Full immersion…",
   "ccPrivacyWarning": "Avviso sulla privacy",
   "ccPrivacyRecent": "{app} di recente",
-  "ccPrivacyNow": "{app}"
+  "ccPrivacyNow": "{app}",
+  "ccKeyboardBrightness": "Luminosità tastiera"
 }

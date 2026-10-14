@@ -46,7 +46,7 @@ type Result<T> = std::result::Result<T, String>;
 pub(super) async fn run(shared: &Shared) {
     future::zip(
         future::zip(network(shared), bluetooth(shared)),
-        future::zip(power(shared), poll(shared)),
+        future::zip(future::zip(power(shared), keyboard(shared)), poll(shared)),
     )
     .await;
 }
@@ -330,6 +330,71 @@ async fn read_battery(bus: &Connection) -> Result<Option<Battery>> {
         },
         charging: matches!(state, 1 | 4 | 5),
     }))
+}
+
+// --- Keyboard backlight ------------------------------------------------------------
+
+const UPOWER_KBD: &str = "/org/freedesktop/UPower/KbdBacklight";
+const UPOWER_KBD_IFACE: &str = "org.freedesktop.UPower.KbdBacklight";
+
+/// The keyboard backlight through UPower: read at the start and at every
+/// `BrightnessChanged`; absent without a backlit keyboard (`GetMaxBrightness` 0 or failing).
+async fn keyboard(shared: &Shared) {
+    follow(
+        shared,
+        UPOWER,
+        Some(UPOWER_KBD),
+        |bus| async move {
+            let level = read_keyboard(&bus).await?;
+            shared.update(|s| s.keyboard_brightness = level);
+            Ok(())
+        },
+        |shared| shared.update(|s| s.keyboard_brightness = None),
+    )
+    .await;
+}
+
+async fn kbd_call(bus: &Connection, method: &str) -> Result<i32> {
+    let reply = bus
+        .call_method(
+            Some(UPOWER),
+            UPOWER_KBD,
+            Some(UPOWER_KBD_IFACE),
+            method,
+            &(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    reply.body().deserialize::<i32>().map_err(|e| e.to_string())
+}
+
+async fn read_keyboard(bus: &Connection) -> Result<Option<f64>> {
+    let max = kbd_call(bus, "GetMaxBrightness").await?;
+    if max <= 0 {
+        return Ok(None);
+    }
+    let value = kbd_call(bus, "GetBrightness").await?;
+    Ok(Some((f64::from(value) / f64::from(max)).clamp(0.0, 1.0)))
+}
+
+pub(super) async fn set_keyboard_brightness(shared: &Shared, fraction: f64) -> Result<()> {
+    let bus = shared.config.system_bus.clone().ok_or("no system bus")?;
+    let max = kbd_call(&bus, "GetMaxBrightness").await?;
+    if max <= 0 {
+        return Err("no keyboard backlight".into());
+    }
+    let value = (fraction.clamp(0.0, 1.0) * f64::from(max)).round() as i32;
+    bus.call_method(
+        Some(UPOWER),
+        UPOWER_KBD,
+        Some(UPOWER_KBD_IFACE),
+        "SetBrightness",
+        &(value,),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    shared.update(|s| s.keyboard_brightness = Some(f64::from(value) / f64::from(max)));
+    Ok(())
 }
 
 // --- Brightness and audio ----------------------------------------------------------

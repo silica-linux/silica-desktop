@@ -812,7 +812,7 @@ class _ControlCenterState extends State<ControlCenter>
     final present = {for (final m in _modules) m.id};
     final available = {
       for (final id in moduleSizes.keys)
-        if (id != 'battery' || widget.system.value.batteryPresent) id,
+        if (moduleAvailable(id, widget.system.value)) id,
     };
     return Positioned(
       left: (screen.width - gallerySize.width) / 2,
@@ -1007,6 +1007,7 @@ class _ControlCenterState extends State<ControlCenter>
       'staging' => l.ccStageView,
       'mirroring' => l.ccScreenMirroring,
       'battery' => l.ccBattery,
+      'keyboard' => l.ccKeyboardBrightness,
       'display' => l.ccDisplay,
       _ => l.ccSound,
     };
@@ -1221,6 +1222,18 @@ class _ControlCenterState extends State<ControlCenter>
         active: false,
       ),
       'media' => _Media(onOpen: () => _openDetail('media')),
+      // The keyboard backlight (UPower), offered only with a backlit keyboard.
+      'keyboard' => _SliderModule(
+        title: l.ccKeyboardBrightness,
+        value: s.keyboardBrightness,
+        enabled: s.keyboardAvailable,
+        low: GlyphKind.keyboard,
+        high: GlyphKind.keyboard,
+        onChanged: (v) => ShellChannel.instance.execute(
+          'system.keyboard_brightness',
+          {'value': v},
+        ),
+      ),
       'display' => _SliderModule(
         onOpen: () => _openDetail('display'),
         title: l.ccDisplay,

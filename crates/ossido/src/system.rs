@@ -37,6 +37,7 @@ pub enum Call {
     Volume(f64),
     Muted(bool),
     Brightness(f64),
+    KeyboardBrightness(f64),
     DoNotDisturb(bool),
     Dark(bool),
 }
@@ -49,6 +50,7 @@ impl Call {
             Call::Volume(v) => set(connection, "SetVolume", v),
             Call::Muted(on) => set(connection, "SetMuted", on),
             Call::Brightness(v) => set(connection, "SetBrightness", v),
+            Call::KeyboardBrightness(v) => set(connection, "SetKeyboardBrightness", v),
             Call::DoNotDisturb(on) => set(connection, "SetDoNotDisturb", on),
             Call::Dark(on) => set(connection, "SetDark", on),
         }
@@ -142,6 +144,17 @@ impl SystemLink {
     pub fn mute_toggle(&self) -> bool {
         match self.flag("audio.muted") {
             Some(muted) => self.queue(Call::Muted(!muted)),
+            None => false,
+        }
+    }
+
+    /// The keyboard backlight up or down one 1/16 step; false without a backlit keyboard.
+    pub fn keyboard_step(&self, up: bool) -> bool {
+        if self.flag("keyboard.available") != Some(true) {
+            return false;
+        }
+        match self.number("keyboard.brightness") {
+            Some(value) => self.queue(Call::KeyboardBrightness(step_by(value, up, STEP))),
             None => false,
         }
     }

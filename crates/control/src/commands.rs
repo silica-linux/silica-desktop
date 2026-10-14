@@ -85,6 +85,9 @@ pub const SYSTEM_MUTE_TOGGLE: &str = "system.mute_toggle";
 pub const SYSTEM_BRIGHTNESS: &str = "system.brightness";
 pub const SYSTEM_BRIGHTNESS_UP: &str = "system.brightness_up";
 pub const SYSTEM_BRIGHTNESS_DOWN: &str = "system.brightness_down";
+pub const SYSTEM_KEYBOARD_BRIGHTNESS: &str = "system.keyboard_brightness";
+pub const SYSTEM_KEYBOARD_BRIGHTNESS_UP: &str = "system.keyboard_brightness_up";
+pub const SYSTEM_KEYBOARD_BRIGHTNESS_DOWN: &str = "system.keyboard_brightness_down";
 pub const SYSTEM_DND: &str = "system.dnd";
 pub const SYSTEM_DARK: &str = "system.dark";
 pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
@@ -567,6 +570,27 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Brightness down slightly",
         description: "Lowers the brightness by a quarter step (1/64).",
         shortcut: Some("Alt+Shift+XF86MonBrightnessDown"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_KEYBOARD_BRIGHTNESS,
+        label: "Keyboard brightness",
+        description: "Keyboard backlight, from 0 to 1 (UPower).",
+        shortcut: None,
+        params: value_param,
+    },
+    CommandSpec {
+        id: SYSTEM_KEYBOARD_BRIGHTNESS_UP,
+        label: "Keyboard brightness up",
+        description: "Raises the keyboard backlight by one sixteenth.",
+        shortcut: Some("XF86KbdBrightnessUp"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SYSTEM_KEYBOARD_BRIGHTNESS_DOWN,
+        label: "Keyboard brightness down",
+        description: "Lowers the keyboard backlight by one sixteenth.",
+        shortcut: Some("XF86KbdBrightnessDown"),
         params: no_params,
     },
     CommandSpec {
