@@ -21,6 +21,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
 import '../system/folder_icons.dart';
+import '../system/folder_style.dart';
 import 'stack_settings.dart';
 
 const int fanMax = 15;
@@ -194,7 +195,8 @@ String fileName(String path) {
 /// (icon-format.md).
 IconSource? fileIcon(FileSystemEntity entry) {
   if (entry is Directory) {
-    final folder = resolveFolderIcon(entry.path);
+    // With its colour and symbol (folder_style.dart).
+    final folder = styledFolderIcon(entry.path);
     if (folder == null) return null;
     // A folder with something inside is drawn full (symbol and tint on top as before).
     return FolderSource(
