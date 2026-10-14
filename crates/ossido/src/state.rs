@@ -128,6 +128,8 @@ pub struct State {
     pub buttons_hover: Option<ButtonsHover>,
     /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
     pub moving: Option<(Window, Point<f64, Logical>)>,
+    /// Finestra ridimensionata da un bordo (MU-08) o su richiesta del client.
+    pub resizing: Option<crate::resize::Resize>,
     /// Il serial dell'ultima pressione di un pulsante del mouse, finché non viene rilasciato:
     /// `xdg_toplevel.move` vale solo con questo serial.
     pub press_serial: Option<smithay::utils::Serial>,
@@ -305,6 +307,7 @@ impl State {
             screenshot_count: 0,
             buttons_hover: None,
             moving: None,
+            resizing: None,
             press_serial: None,
             animation_speed: 1.0,
             closing: Vec::new(),

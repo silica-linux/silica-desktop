@@ -16,6 +16,7 @@ mod layers;
 pub(crate) mod panorama;
 mod perf;
 mod render;
+mod resize;
 mod session_bus;
 mod shell;
 pub mod state;

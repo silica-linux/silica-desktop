@@ -209,6 +209,30 @@ impl XdgShellHandler for State {
         self.moving = Some((window, grab));
     }
 
+    /// Il client ridimensiona la finestra da un suo bordo (decorazioni lato client), con il
+    /// pulsante ancora premuto.
+    fn resize_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _seat: WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+        if self.press_serial != Some(serial) || self.resizing.is_some() || self.moving.is_some() {
+            return;
+        }
+        let edges = crate::resize::Edges::from_xdg(edges);
+        let (Some(window), Some(pointer)) = (
+            self.window_for(surface.wl_surface()),
+            self.seat.get_pointer(),
+        ) else {
+            return;
+        };
+        if edges.any() {
+            self.start_resize(window, edges, pointer.current_location());
+        }
+    }
+
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // I grab dei popup arrivano con i menu (M3); per ora il popup resta aperto.
     }

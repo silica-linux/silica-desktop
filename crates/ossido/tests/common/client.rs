@@ -51,6 +51,8 @@ struct App {
     /// Il serial dell'ultima pressione di un pulsante sulla finestra.
     press_serial: Option<u32>,
     configured: bool,
+    /// L'ultima dimensione chiesta da Ossido (`xdg_toplevel.configure`).
+    configured_size: Option<(i32, i32)>,
     close_requested: bool,
     /// Modo delle decorazioni scelto da Ossido.
     decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
@@ -296,8 +298,12 @@ impl Dispatch<XdgToplevel, ()> for App {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_toplevel::Event::Close = event {
-            state.close_requested = true;
+        match event {
+            xdg_toplevel::Event::Close => state.close_requested = true,
+            xdg_toplevel::Event::Configure { width, height, .. } => {
+                state.configured_size = Some((width, height));
+            }
+            _ => {}
         }
     }
 }
@@ -661,6 +667,13 @@ impl TestWindow {
     pub fn decoration_mode(&mut self) -> Option<zxdg_toplevel_decoration_v1::Mode> {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.decoration_mode
+    }
+
+    /// L'ultima dimensione del contenuto chiesta da Ossido, dopo aver letto gli eventi.
+    #[allow(dead_code)]
+    pub fn configured_size(&mut self) -> Option<(i32, i32)> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.configured_size
     }
 
     /// Legge gli eventi in arrivo e dice se Ossido ha chiesto la chiusura.

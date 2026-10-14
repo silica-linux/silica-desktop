@@ -22,6 +22,9 @@ impl State {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
+        if self.resizing.is_some() {
+            self.resize_to(location);
+        }
         // Trascinamento per la barra: la cornice segue il punto di presa.
         if let Some((window, grab)) = self.moving.clone() {
             let bar = decorations::titlebar_height(&window);
@@ -122,6 +125,13 @@ impl State {
                         self.focus_layer(&layer);
                     }
                 }
+                // I bordi della cornice ridimensionano, anche appena fuori (MU-08).
+                None if !self.panorama_open()
+                    && let Some((window, edges)) = self.resize_hit(location) =>
+                {
+                    self.focus_window(Some(window.clone()));
+                    self.start_resize(window, edges, location);
+                }
                 None => match self.window_hit(location) {
                     Some(Hit::Titlebar(window, part, local)) => {
                         self.focus_window(Some(window.clone()));
@@ -146,6 +156,7 @@ impl State {
         if state == ButtonState::Released {
             self.press_serial = None;
             self.moving = None;
+            self.end_resize();
             if let Some((window, part)) = self.titlebar_press.take()
                 && let Some(Hit::Titlebar(over, over_part, _)) = self.window_hit(location)
                 && over == window
