@@ -233,6 +233,10 @@ struct App {
     ptys: crate::pty::PtyHost,
     pty_sources: BTreeMap<u32, RegistrationToken>,
     pty_ticking: bool,
+    pty_timer: Option<RegistrationToken>,
+    /// Until when the ptys tick fast ([`crate::pty::TICK`]): a little while after output or
+    /// input, so a change goes out at once; otherwise at the frame period.
+    pty_busy_until: Option<std::time::Instant>,
     loop_handle: LoopHandle<'static, App>,
     drops: Option<channel::Sender<(f64, f64, Vec<u8>)>>,
     /// The pointer seat and the serial of the last press (to move the window).
@@ -556,6 +560,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ptys: crate::pty::PtyHost::default(),
         pty_sources: BTreeMap::new(),
         pty_ticking: false,
+        pty_timer: None,
+        pty_busy_until: None,
         loop_handle: event_loop.handle(),
         drops: None,
         seat: None,
@@ -996,6 +1002,8 @@ impl App {
             self.watch_pty(id);
         }
         self.start_pty_ticks();
+        // Input usually brings output back (echo, a prompt): be ready to send it at once.
+        self.pty_activity();
         crate::text_input::success(reply.value)
     }
 
@@ -1013,7 +1021,10 @@ impl App {
         let inserted = self
             .loop_handle
             .insert_source(source, move |_, _, app: &mut App| {
-                Ok(match app.ptys.readable(id) {
+                let readable = app.ptys.readable(id);
+                // Output arrived: frames go out at once while the pty is busy.
+                app.pty_activity();
+                Ok(match readable {
                     crate::pty::Readable::Continue => PostAction::Continue,
                     crate::pty::Readable::Pause => PostAction::Disable,
                     crate::pty::Readable::Remove => {
@@ -1030,25 +1041,56 @@ impl App {
         }
     }
 
-    /// One message per frame per pty: a timer at the frame period while there are ptys.
+    /// One message per frame per pty (the host keeps the 60 Hz limit) from a timer that runs
+    /// while there are ptys: every [`crate::pty::TICK`] around activity, so the first change
+    /// after a quiet moment goes out at once, and at the frame period when idle.
     fn start_pty_ticks(&mut self) {
         if self.pty_ticking {
             return;
         }
-        let timer = Timer::from_duration(Duration::from_nanos(FRAME_PERIOD_NANOS));
+        let timer = Timer::from_duration(crate::pty::TICK);
         let inserted = self
             .loop_handle
             .insert_source(timer, |_, _, app: &mut App| {
                 if app.pty_tick() {
-                    TimeoutAction::ToDuration(Duration::from_nanos(FRAME_PERIOD_NANOS))
+                    TimeoutAction::ToDuration(app.pty_cadence())
                 } else {
                     app.pty_ticking = false;
+                    app.pty_timer = None;
                     TimeoutAction::Drop
                 }
             });
         match inserted {
-            Ok(_) => self.pty_ticking = true,
+            Ok(token) => {
+                self.pty_ticking = true;
+                self.pty_timer = Some(token);
+            }
             Err(err) => warn!("pty timer: {err}"),
+        }
+    }
+
+    /// The interval to the next pty tick.
+    fn pty_cadence(&self) -> Duration {
+        let busy = self
+            .pty_busy_until
+            .is_some_and(|until| std::time::Instant::now() < until);
+        if busy {
+            crate::pty::TICK
+        } else {
+            Duration::from_nanos(FRAME_PERIOD_NANOS)
+        }
+    }
+
+    /// Output or input on a pty: tick fast for a while. Coming out of a quiet moment the timer
+    /// may be up to a frame away: it starts again from now.
+    fn pty_activity(&mut self) {
+        let now = std::time::Instant::now();
+        let quiet = self.pty_busy_until.is_none_or(|until| now >= until);
+        self.pty_busy_until = Some(now + crate::pty::BUSY_SPELL);
+        if quiet && let Some(token) = self.pty_timer.take() {
+            self.loop_handle.remove(token);
+            self.pty_ticking = false;
+            self.start_pty_ticks();
         }
     }
 

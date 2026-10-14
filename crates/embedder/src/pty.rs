@@ -43,6 +43,18 @@ pub const CHANNEL: &str = "silica/pty";
 pub const MAX_MESSAGE: usize = 64 * 1024;
 /// Output waiting for the app beyond this pauses reading from the pty.
 const MAX_PENDING: usize = 1024 * 1024;
+/// For `grid` sessions, output read ahead of the parser (waiting here, and again queued in
+/// the parser thread): everything already read is parsed and shown after a Ctrl+C, so the
+/// smaller this is the sooner the screen settles; it only has to cover the parser's appetite
+/// between two frames (~56 MB/s, under 1 MB per frame).
+const GRID_READ_AHEAD: usize = 256 * 1024;
+/// The most one `readable` call takes, in bytes and in time: a program that keeps writing
+/// (`yes`) never lets the read reach WouldBlock, and the event loop must get back to input
+/// and the app's messages (Ctrl+C) between reads. The pty hands over small chunks, so the
+/// time bound is the one that usually ends a call. The source is level-triggered: the rest is
+/// read on the next turn of the loop.
+const READ_BUDGET: usize = 64 * 1024;
+const READ_TIME_BUDGET: Duration = Duration::from_millis(1);
 /// Input waiting for the pty beyond this refuses `write`.
 const MAX_WRITE_QUEUE: usize = 4 * 1024 * 1024;
 /// At most this many ptys per window.
@@ -52,6 +64,15 @@ const MAX_ENV: usize = 256;
 const MAX_STRING: usize = 4096;
 /// How long a closed child has after SIGHUP before SIGKILL.
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
+/// At most one message per pty per frame (60 Hz). The host ticks more often ([`TICK`]) so
+/// that the first change after a quiet moment goes out at once instead of waiting for the
+/// next frame boundary (typing echo, the prompt after Ctrl+C).
+const FRAME_PERIOD: Duration = Duration::from_nanos(16_666_667);
+/// How often the window's event loop calls [`PtyHost::tick`] around activity (output read,
+/// input written); at the frame period when the ptys are quiet.
+pub const TICK: Duration = Duration::from_millis(2);
+/// How long after the last activity the fast ticks last.
+pub const BUSY_SPELL: Duration = Duration::from_millis(250);
 /// How often a running child is checked for exit while its output is still open.
 const EXIT_POLL: Duration = Duration::from_millis(250);
 
@@ -414,6 +435,35 @@ struct Session {
     last_exit_poll: Instant,
     /// The emulator, for `grid` sessions.
     grid: Option<crate::termgrid::GridWorker>,
+    /// When the last `output` or `grid` message went out (at most one per [`FRAME_PERIOD`]).
+    last_sent: Option<Instant>,
+}
+
+impl Session {
+    /// For `grid` sessions, hands what was read to the parser thread while it keeps up.
+    fn feed_grid(&mut self) {
+        if let Some(grid) = &self.grid
+            && !self.pending.is_empty()
+            && grid.queued() < GRID_READ_AHEAD
+        {
+            grid.feed(std::mem::take(&mut self.pending));
+        }
+    }
+
+    /// A message may go out now: none sent yet, or the frame period has passed.
+    fn may_send(&self, now: Instant) -> bool {
+        self.last_sent
+            .is_none_or(|last| now.saturating_duration_since(last) >= FRAME_PERIOD)
+    }
+
+    /// Output read from the pty and not yet handed on, beyond which reading pauses.
+    fn read_ahead(&self) -> usize {
+        if self.grid.is_some() {
+            GRID_READ_AHEAD
+        } else {
+            MAX_PENDING
+        }
+    }
 }
 
 /// The ptys of a window.
@@ -489,6 +539,7 @@ impl PtyHost {
                         closing: None,
                         last_exit_poll: Instant::now(),
                         grid,
+                        last_sent: None,
                     },
                 );
                 Ok(Reply {
@@ -560,15 +611,25 @@ impl PtyHost {
             return Readable::Remove;
         }
         let mut buf = [0u8; 16 * 1024];
+        let mut taken = 0usize;
+        let started = Instant::now();
         loop {
-            if session.pending.len() >= MAX_PENDING {
+            if taken >= READ_BUDGET || started.elapsed() >= READ_TIME_BUDGET {
+                return Readable::Continue;
+            }
+            if session.pending.len() >= session.read_ahead() {
                 session.paused = true;
                 return Readable::Pause;
             }
             match session.pty.read(&mut buf) {
-                Ok(Read::Data(n)) => session
-                    .pending
-                    .extend_from_slice(buf.get(..n).unwrap_or(&[])),
+                Ok(Read::Data(n)) => {
+                    taken = taken.saturating_add(n);
+                    session
+                        .pending
+                        .extend_from_slice(buf.get(..n).unwrap_or(&[]));
+                    // Grid sessions parse as soon as output arrives, not at the next tick.
+                    session.feed_grid();
+                }
                 Ok(Read::WouldBlock) => return Readable::Continue,
                 Ok(Read::Closed) => {
                     session.eof = true;
@@ -597,29 +658,32 @@ impl PtyHost {
                 continue;
             }
             flush_writes(session);
+            // The parser thread takes the backlog while it keeps up; beyond GRID_READ_AHEAD
+            // queued there, reading from the pty pauses (backpressure to the program).
+            session.feed_grid();
+            let send = session.may_send(now);
             if let Some(grid) = &session.grid {
-                // The parser thread takes the backlog while it keeps up; beyond MAX_PENDING
-                // queued there, reading from the pty pauses (backpressure to the program).
-                if !session.pending.is_empty() && grid.queued() < MAX_PENDING {
-                    grid.feed(std::mem::take(&mut session.pending));
+                if send {
+                    let (frame, replies) = grid.frame(id);
+                    if !replies.is_empty() && session.writes.len() < MAX_WRITE_QUEUE {
+                        session.writes.extend(replies);
+                        flush_writes(session);
+                    }
+                    if let Some(frame) = frame {
+                        tick.messages.push(message("grid", frame));
+                        session.last_sent = Some(now);
+                    }
                 }
-                let (frame, replies) = grid.frame(id);
-                if !replies.is_empty() && session.writes.len() < MAX_WRITE_QUEUE {
-                    session.writes.extend(replies);
-                    flush_writes(session);
-                }
-                if let Some(frame) = frame {
-                    tick.messages.push(message("grid", frame));
-                }
-            } else if !session.pending.is_empty() {
+            } else if send && !session.pending.is_empty() {
                 let take = session.pending.len().min(MAX_MESSAGE);
                 let chunk: Vec<u8> = session.pending.drain(..take).collect();
                 tick.messages.push(message(
                     "output",
                     json!({ "id": id, "data": base64_encode(&chunk) }),
                 ));
+                session.last_sent = Some(now);
             }
-            if session.paused && session.pending.len() < MAX_PENDING / 2 {
+            if session.paused && session.pending.len() < session.read_ahead() / 2 {
                 session.paused = false;
                 tick.resume.push(id);
             }
@@ -895,5 +959,99 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(gone);
+    }
+
+    fn spawn(host: &mut PtyHost, script: &str, grid: bool) -> u32 {
+        host.handle(Call::Spawn(SpawnArgs {
+            command: Some(vec!["/bin/sh".into(), "-c".into(), script.into()]),
+            cwd: None,
+            env: vec![],
+            rows: 24,
+            cols: 80,
+            grid,
+        }))
+        .unwrap()
+        .spawned
+        .unwrap()
+    }
+
+    fn outputs(tick: &Tick) -> usize {
+        tick.messages
+            .iter()
+            .filter(|m| serde_json::from_slice::<Value>(m).unwrap()["method"] == "output")
+            .count()
+    }
+
+    /// A program that never stops writing must not hold the event loop: one `readable` call
+    /// takes at most its budget and gives the loop back (Ctrl+C and the app's messages wait
+    /// behind it otherwise).
+    #[test]
+    fn a_flood_does_not_hold_the_loop() {
+        let mut host = PtyHost::default();
+        let id = spawn(&mut host, "exec yes", false);
+        std::thread::sleep(Duration::from_millis(100));
+        for _ in 0..10 {
+            let before = host.sessions[&id].pending.len();
+            let readable = host.readable(id);
+            assert_ne!(readable, Readable::Remove);
+            let read = host.sessions[&id].pending.len() - before;
+            assert!(
+                read <= READ_BUDGET + 16 * 1024,
+                "one call read {read} bytes"
+            );
+            let _ = host.tick(Instant::now());
+        }
+        host.handle(Call::Close { id }).unwrap();
+    }
+
+    /// Output goes out at most once per frame, but the first after a quiet moment at once.
+    #[test]
+    fn output_is_sent_at_most_once_per_frame() {
+        let mut host = PtyHost::default();
+        let id = spawn(&mut host, "exec yes", false);
+        std::thread::sleep(Duration::from_millis(100));
+        let now = Instant::now();
+        let _ = host.readable(id);
+        assert_eq!(outputs(&host.tick(now)), 1, "the first output goes at once");
+        let _ = host.readable(id);
+        assert_eq!(
+            outputs(&host.tick(now + Duration::from_millis(2))),
+            0,
+            "not again within the frame"
+        );
+        let _ = host.readable(id);
+        assert_eq!(outputs(&host.tick(now + FRAME_PERIOD)), 1);
+        host.handle(Call::Close { id }).unwrap();
+    }
+
+    /// A grid session hands output to the parser as it reads it, not at the next tick, and
+    /// reads ahead of the parser only so far.
+    #[test]
+    fn grid_output_goes_to_the_parser_as_it_is_read() {
+        let mut host = PtyHost::default();
+        let id = spawn(&mut host, "printf hello; sleep 5", true);
+        let start = Instant::now();
+        while host.sessions[&id]
+            .grid
+            .as_ref()
+            .is_some_and(|g| g.queued() == 0)
+            && start.elapsed() < Duration::from_secs(5)
+        {
+            let _ = host.readable(id);
+            assert!(
+                host.sessions[&id].pending.is_empty(),
+                "nothing waits for the tick"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+            // Parsed meanwhile: the frame shows it.
+            if let (Some(frame), _) = host.sessions[&id].grid.as_ref().unwrap().frame(id)
+                && frame["lines"].to_string().contains("hello")
+            {
+                break;
+            }
+        }
+        assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(host.sessions[&id].read_ahead() < MAX_PENDING);
+        host.handle(Call::Close { id }).unwrap();
     }
 }
