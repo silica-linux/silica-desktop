@@ -5,7 +5,6 @@
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -133,7 +132,6 @@ class _MenuBarState extends State<MenuBar> {
   final GlobalKey _rootKey = GlobalKey();
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _switchTimer;
-  double _width = 0;
 
   static const List<String> _menuNames = ['logo', 'app', ...genericMenus];
 
@@ -227,12 +225,19 @@ class _MenuBarState extends State<MenuBar> {
     final anchor = Offset(rect.left - menuLeftOfItem, barHeight + 1);
     _switchTimer?.cancel();
     setState(() => _open = name);
+    // While a menu is open the surface covers the screen and takes every click, as for the
+    // window and desktop menus: a click outside the menu closes it (it reaches
+    // MenuHost.pointerDown), and does nothing else, as in the reference.
     LayerControl.size(0, anchor.dy + size.height + menuShadowRoom);
-    LayerControl.inputRegion([
-      Rect.fromLTWH(0, 0, _width, barHeight),
-      (anchor & size).inflate(2),
-    ]);
+    LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
+    _coverScreen();
+  }
+
+  Future<void> _coverScreen() async {
+    final screen = await LayerControl.outputSize();
+    if (!mounted || _open == null || screen == null) return;
+    LayerControl.size(0, screen.height);
   }
 
   void _closeMenu() {
@@ -576,7 +581,6 @@ class _MenuBarState extends State<MenuBar> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        _width = constraints.maxWidth;
         return Listener(
           key: _rootKey,
           behavior: HitTestBehavior.translucent,
@@ -630,18 +634,8 @@ class _MenuBarState extends State<MenuBar> {
                       onDismissed: _closeMenu,
                       onNext: () => _neighbour(1),
                       onPrevious: () => _neighbour(-1),
-                      // With a submenu open the input region includes it.
-                      onRectsChanged: (rects) {
-                        final bottom = rects.fold(
-                          barHeight,
-                          (double b, r) => math.max(b, r.bottom),
-                        );
-                        LayerControl.size(0, bottom + menuShadowRoom);
-                        LayerControl.inputRegion([
-                          Rect.fromLTWH(0, 0, _width, barHeight),
-                          for (final r in rects) r.inflate(2),
-                        ]);
-                      },
+                      // The surface already covers the screen while a menu is open.
+                      onRectsChanged: (_) {},
                     ),
                   ),
               ],

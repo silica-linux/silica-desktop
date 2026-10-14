@@ -1749,6 +1749,11 @@ class _StackShadow extends CustomPainter {
       ..restore();
   }
 
+  // Decoration only: without this, a full-screen CustomPaint counts as hit and swallows the
+  // clicks outside the modules that should close the Control Center.
+  @override
+  bool? hitTest(Offset position) => false;
+
   @override
   bool shouldRepaint(_StackShadow old) =>
       old.origin != origin ||

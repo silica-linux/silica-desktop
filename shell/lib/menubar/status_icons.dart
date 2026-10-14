@@ -8,8 +8,10 @@ import 'package:flutter/widgets.dart';
 
 import 'menubar.dart';
 
-/// The Silica mark: a hexagonal crystal with a facet (14 × 16 pt, like the ink of the logo
-/// in the measured box).
+/// The Silica mark ("from sand to glass", silica-brand `exports/mark/silica-mark-16-mono.svg`):
+/// the half disc of glass and the three grains of sand, in one colour on the 16 pt grid
+/// (ink 14 × 14 pt). The mark is a trademark (silica-brand TRADEMARKS.md): only the shape
+/// from the brand, never redrawn.
 class SilicaMark extends StatelessWidget {
   const SilicaMark({super.key, required this.color});
 
@@ -17,7 +19,7 @@ class SilicaMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      CustomPaint(size: const Size(14, 16), painter: _MarkPainter(color));
+      CustomPaint(size: const Size(16, 16), painter: _MarkPainter(color));
 }
 
 class _MarkPainter extends CustomPainter {
@@ -25,30 +27,22 @@ class _MarkPainter extends CustomPainter {
 
   final Color color;
 
+  /// The mark on its 16-unit grid, as in the brand's 16 pt mono export.
+  static Path markPath() => Path()
+    // M8 1 A7 7 0 0 1 8 15 Z: the right half of a disc of radius 7.
+    ..moveTo(8, 1)
+    ..arcToPoint(const Offset(8, 15), radius: const Radius.circular(7))
+    ..close()
+    ..addRRect(RRect.fromLTRBR(4, 4, 7, 7, const Radius.circular(0.9)))
+    ..addRRect(RRect.fromLTRBR(4, 9, 7, 12, const Radius.circular(0.9)))
+    ..addRRect(RRect.fromLTRBR(1, 7, 3, 9, const Radius.circular(0.6)));
+
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final outline = Path()
-      ..moveTo(w / 2, 0)
-      ..lineTo(w, h * 0.25)
-      ..lineTo(w, h * 0.75)
-      ..lineTo(w / 2, h)
-      ..lineTo(0, h * 0.75)
-      ..lineTo(0, h * 0.25)
-      ..close();
-    canvas.drawPath(outline, Paint()..color = color);
-    // Facet: a darker cut that gives volume.
-    final facet = Path()
-      ..moveTo(w / 2, h * 0.5)
-      ..lineTo(w, h * 0.25)
-      ..lineTo(w, h * 0.75)
-      ..lineTo(w / 2, h)
-      ..close();
-    canvas.drawPath(
-      facet,
-      Paint()..color = color.withValues(alpha: 0.55 * color.a),
-    );
+    canvas.save();
+    canvas.scale(size.width / 16, size.height / 16);
+    canvas.drawPath(markPath(), Paint()..color = color);
+    canvas.restore();
   }
 
   @override
