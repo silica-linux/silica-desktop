@@ -63,6 +63,8 @@ fn headless_renderer() -> Result<Headless, Box<dyn std::error::Error>> {
 pub struct WinitBackend {
     pub graphics: WinitGraphicsBackend<GlesRenderer>,
     pub damage_tracker: OutputDamageTracker,
+    /// The shape last given to the host's pointer (nested, the host draws the cursor).
+    pub host_cursor: Option<smithay::input::pointer::CursorImageStatus>,
 }
 
 /// Refresh rate declared for the outputs, in millihertz.
@@ -147,6 +149,7 @@ pub fn init_winit(
         Backend::Winit(Box::new(WinitBackend {
             graphics,
             damage_tracker,
+            host_cursor: None,
         })),
     )?;
     if let Backend::Winit(backend) = &mut state.backend {
@@ -249,9 +252,28 @@ impl State {
         let alt = self.alt_held();
         let dark = self.dark();
         let drag_icon = self.drag_icon_view();
+        let cursor = self.effective_cursor();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
+        // Nested, the host draws the pointer: it gets the named shape (a client's own cursor
+        // surface cannot be passed on, the arrow stands in for it).
+        if backend.host_cursor.as_ref() != Some(&cursor) {
+            use smithay::input::pointer::{CursorIcon, CursorImageStatus};
+            let window = backend.graphics.window();
+            match &cursor {
+                CursorImageStatus::Hidden => window.set_cursor_visible(false),
+                CursorImageStatus::Named(icon) => {
+                    window.set_cursor_visible(true);
+                    window.set_cursor(*icon);
+                }
+                CursorImageStatus::Surface(_) => {
+                    window.set_cursor_visible(true);
+                    window.set_cursor(CursorIcon::Default);
+                }
+            }
+            backend.host_cursor = Some(cursor);
+        }
         let size = backend.graphics.window_size();
         let damage = Rectangle::from_size(size);
         let clear_color = self.clear_color;

@@ -698,6 +698,14 @@ fn deploy(args: &[String]) -> Result<()> {
         }
         swap_dir(&staged, &share.join("icons"))?;
     }
+    // The cursors: silica-cursors' manifest and SVGs, drawn by Ossido.
+    if let Some(cursors) = sibling("silica-cursors") {
+        let staged = work.join("cursors.stage");
+        let _ = std::fs::remove_dir_all(&staged);
+        copy_tree(&cursors.join("cursors"), &staged.join("cursors"))?;
+        replace_file(&cursors.join("cursors.json"), &staged.join("cursors.json"))?;
+        swap_dir(&staged, &share.join("cursors"))?;
+    }
     for app in &apps {
         deploy_app(app, &share)?;
     }
@@ -860,6 +868,7 @@ export PATH="$D/bin:/usr/libexec/silica:$PATH"
 # The share's .desktop entries (deployed apps) come before the installed ones.
 export XDG_DATA_DIRS="$D/share:${{XDG_DATA_DIRS:-/usr/local/share:/usr/share}}"
 [ -d "$D/icons" ] && export SILICA_ICONS_DIR="$D/icons"
+[ -d "$D/cursors" ] && export SILICA_CURSORS_DIR="$D/cursors"
 
 set -- \
 {spawn}

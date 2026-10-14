@@ -19,6 +19,7 @@ mod glass;
 mod keyboard;
 mod keymap;
 mod locale;
+mod mouse_cursor;
 mod pty;
 mod shell;
 mod termgrid;

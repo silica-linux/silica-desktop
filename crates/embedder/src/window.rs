@@ -210,6 +210,12 @@ struct App {
     pool: SlotPool,
     surface: Shell,
     pointer: Option<wl_pointer::WlPointer>,
+    /// wp_cursor_shape_v1: Ossido draws the shape Flutter asks for (`flutter/mousecursor`).
+    cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
+    cursor_device: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    /// The last shape asked by Flutter, `None` = hidden; set again at every pointer enter.
+    cursor_kind: Option<String>,
+    enter_serial: u32,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     keys: Keyboard,
     modifiers: Modifiers,
@@ -569,6 +575,14 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         appearance: None,
         activated: None,
         data_manager: DataDeviceManagerState::bind(&globals, &qh).ok(),
+        cursor_shapes:
+            smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(
+                &globals, &qh,
+            )
+            .ok(),
+        cursor_device: None,
+        cursor_kind: Some("basic".to_owned()),
+        enter_serial: 0,
         data_device: None,
         drag_out: None,
         drag_in: false,
@@ -669,6 +683,26 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl App {
+    /// Gives Ossido the shape Flutter asked for (needs the serial of the last pointer enter).
+    fn apply_cursor(&self) {
+        let Some(pointer) = &self.pointer else {
+            return;
+        };
+        match self
+            .cursor_kind
+            .as_deref()
+            .and_then(crate::mouse_cursor::shape_of)
+        {
+            Some(shape) => {
+                if let Some(device) = &self.cursor_device {
+                    device.set_shape(self.enter_serial, shape);
+                }
+            }
+            // `none`: no cursor surface hides the pointer.
+            None => pointer.set_cursor(self.enter_serial, None, 0, 0),
+        }
+    }
+
     /// Answers a framework message. Every message with a handle gets a
     /// response, empty if the channel is not handled.
     fn handle_message(&mut self, message: PlatformMessage) {
@@ -700,6 +734,14 @@ impl App {
                 reply
             }
             "flutter/platform" => self.handle_platform_call(&message.data),
+            crate::mouse_cursor::CHANNEL => {
+                if let Some(kind) = crate::mouse_cursor::activate_kind(&message.data) {
+                    self.cursor_kind = (kind != "none").then_some(kind);
+                    self.apply_cursor();
+                }
+                // StandardMethodCodec success with a null result.
+                vec![0, 0]
+            }
             // StandardMethodCodec: getKeyboardState, the pressed keys physical → logical.
             "flutter/keyboard" => crate::codec::success_int_map(
                 self.keys
@@ -1849,7 +1891,13 @@ impl SeatHandler for App {
         }
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seat_state.get_pointer(qh, &seat) {
-                Ok(pointer) => self.pointer = Some(pointer),
+                Ok(pointer) => {
+                    self.cursor_device = self
+                        .cursor_shapes
+                        .as_ref()
+                        .map(|shapes| shapes.get_shape_device(&pointer, qh));
+                    self.pointer = Some(pointer);
+                }
                 Err(err) => warn!("pointer unavailable: {err}"),
             }
         }
@@ -1900,7 +1948,9 @@ impl PointerHandler for App {
             }
             let position = event.position;
             match event.kind {
-                PointerEventKind::Enter { .. } => {
+                PointerEventKind::Enter { serial } => {
+                    self.enter_serial = serial;
+                    self.apply_cursor();
                     self.send_pointer(PointerPhase::Add, position, None);
                 }
                 PointerEventKind::Leave { .. } => {

@@ -341,3 +341,6 @@ delegate_seat!(State);
 delegate_data_device!(State);
 delegate_output!(State);
 delegate_viewporter!(State);
+smithay::delegate_cursor_shape!(State);
+
+impl smithay::wayland::tablet_manager::TabletSeatHandler for State {}

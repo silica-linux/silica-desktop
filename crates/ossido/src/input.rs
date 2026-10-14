@@ -17,6 +17,14 @@ use crate::decorations::{self, Hit};
 use crate::state::State;
 
 impl State {
+    /// The cursor to draw: Ossido's own shape if it imposes one, otherwise the client's.
+    pub fn effective_cursor(&self) -> smithay::input::pointer::CursorImageStatus {
+        match self.cursor_override {
+            Some(icon) => smithay::input::pointer::CursorImageStatus::Named(icon),
+            None => self.cursor_status.clone(),
+        }
+    }
+
     /// Moves the pointer to a point of the desktop (logical pixels).
     pub fn pointer_move_to(&mut self, location: Point<f64, Logical>, time: u32) {
         let Some(pointer) = self.seat.get_pointer() else {
@@ -80,11 +88,28 @@ impl State {
             _ => false,
         };
         self.titlebar_hover = hover;
+        // Ossido's own shapes: the resize edges (MU-08) win over the client below, the bar
+        // and the desktop have the arrow; elsewhere the client's choice.
+        let edges = if let Some(resize) = &self.resizing {
+            Some(resize.edges)
+        } else if !over_layer && !in_panorama && self.moving.is_none() {
+            self.resize_hit(location).map(|(_, edges)| edges)
+        } else {
+            None
+        };
+        let on_bar = matches!(hit, Some(Hit::Titlebar(..)));
         // On the bar the pointer is not on any client surface.
         let under = match hit {
             Some(Hit::Titlebar(..)) => None,
             _ if in_panorama => None,
             _ => self.surface_under(location),
+        };
+        self.cursor_override = match edges {
+            Some(edges) => Some(crate::cursor_theme::resize_icon(edges)),
+            None if on_bar || under.is_none() || self.moving.is_some() => {
+                Some(smithay::input::pointer::CursorIcon::Default)
+            }
+            None => None,
         };
         pointer.motion(
             self,

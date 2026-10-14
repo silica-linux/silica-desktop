@@ -61,10 +61,12 @@ pub fn arrow() -> (i32, i32, Vec<u8>) {
 }
 
 /// The elements of the pointer at `location` (logical, relative to the output), in front.
+/// `named` is the texture of a named shape (theme or built-in arrow) with its hotspot in
+/// physical pixels.
 pub fn elements(
     renderer: &mut GlesRenderer,
     status: &CursorImageStatus,
-    default: Option<&GlesTexture>,
+    named: Option<(&GlesTexture, (i32, i32))>,
     location: Point<f64, Logical>,
     scale: f64,
 ) -> Vec<OutputElement> {
@@ -85,13 +87,14 @@ pub fn elements(
                 .collect()
         }
         CursorImageStatus::Named(_) => {
-            let Some(texture) = default else {
+            let Some((texture, hotspot)) = named else {
                 return Vec::new();
             };
+            let at = location.to_physical(scale) - Point::from((hotspot.0, hotspot.1)).to_f64();
             let element = TextureRenderElement::from_static_texture(
                 default_id(),
                 renderer.context_id(),
-                location.to_physical(scale),
+                at,
                 texture.clone(),
                 1,
                 Transform::Normal,
@@ -103,14 +106,14 @@ pub fn elements(
             );
             vec![OutputElement::Texture(RescaleRenderElement::from_element(
                 element,
-                location.to_physical(scale).to_i32_round(),
+                at.to_i32_round(),
                 1.0,
             ))]
         }
     }
 }
 
-/// One id for the default arrow, so the damage tracker sees it move instead of a new element.
+/// One id for the named cursor, so the damage tracker sees it move instead of a new element.
 fn default_id() -> Id {
     thread_local! {
         static ID: Id = Id::new();

@@ -7,6 +7,7 @@ pub mod commands;
 mod control;
 #[cfg(feature = "drm")]
 mod cursor;
+mod cursor_theme;
 mod decorations;
 mod dmabuf;
 #[cfg(feature = "drm")]
