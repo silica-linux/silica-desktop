@@ -218,7 +218,8 @@ impl State {
         let shell_manager_state = crate::shell::ShellManagerState::new(&dh);
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, "seat0");
-        seat.add_keyboard(Default::default(), 200, 25)?;
+        let (delay, rate) = key_repeat();
+        seat.add_keyboard(Default::default(), delay, rate)?;
         seat.add_pointer();
 
         let _global = output.create_global::<State>(&dh);
@@ -402,4 +403,40 @@ pub struct ButtonsHover {
     pub window: Window,
     pub entered: std::time::Instant,
     pub left: Option<std::time::Instant>,
+}
+
+/// Default key repeat, sent to the clients in `wl_keyboard.repeat_info` (they run the timer).
+/// Provisional: the reference only exposes the Keyboard sliders' positions (K-03), not
+/// milliseconds; these are its system defaults (initial delay 375 ms, one repeat every 90 ms).
+/// Override with `OSSIDO_KEY_REPEAT=<delay ms>,<rate per second>`.
+const KEY_REPEAT_DELAY_MS: i32 = 375;
+const KEY_REPEAT_RATE: i32 = 11;
+
+fn key_repeat() -> (i32, i32) {
+    parse_key_repeat(std::env::var("OSSIDO_KEY_REPEAT").ok().as_deref())
+}
+
+fn parse_key_repeat(value: Option<&str>) -> (i32, i32) {
+    let parsed = value.and_then(|v| {
+        let (delay, rate) = v.split_once(',')?;
+        let delay: i32 = delay.trim().parse().ok()?;
+        let rate: i32 = rate.trim().parse().ok()?;
+        (delay > 0 && (0..=200).contains(&rate)).then_some((delay, rate))
+    });
+    parsed.unwrap_or((KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE))
+}
+
+#[cfg(test)]
+mod key_repeat_tests {
+    use super::*;
+
+    #[test]
+    fn key_repeat_defaults_and_override() {
+        assert_eq!(parse_key_repeat(None), (375, 11));
+        assert_eq!(parse_key_repeat(Some("250, 30")), (250, 30));
+        // Rate 0 disables repeat (Wayland semantics).
+        assert_eq!(parse_key_repeat(Some("500,0")), (500, 0));
+        assert_eq!(parse_key_repeat(Some("fast")), (375, 11));
+        assert_eq!(parse_key_repeat(Some("-1,30")), (375, 11));
+    }
 }

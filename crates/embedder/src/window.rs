@@ -1646,7 +1646,21 @@ impl SeatHandler for App {
         capability: Capability,
     ) {
         if capability == Capability::Keyboard && self.keyboard.is_none() {
-            match self.seat_state.get_keyboard(qh, &seat, None) {
+            // Key repeat is the client's job on Wayland: SCTK runs the timer from the
+            // compositor's repeat_info and calls back for every repeat (held ⌫ keeps deleting).
+            let repeat: smithay_client_toolkit::seat::keyboard::repeat::RepeatCallback<App> =
+                Box::new(
+                    |app: &mut App, _: &wl_keyboard::WlKeyboard, event: SeatKeyEvent| {
+                        app.key_down(event);
+                    },
+                );
+            match self.seat_state.get_keyboard_with_repeat(
+                qh,
+                &seat,
+                None,
+                self.loop_handle.clone(),
+                repeat,
+            ) {
                 Ok(keyboard) => self.keyboard = Some(keyboard),
                 Err(err) => warn!("keyboard unavailable: {err}"),
             }
@@ -1770,6 +1784,25 @@ impl PointerHandler for App {
     }
 }
 
+impl App {
+    /// A press, or a repeat of the held key (the second press without a release is a
+    /// `KeyPhase::Repeat` for Flutter, and the text field gets the edit again).
+    fn key_down(&mut self, event: SeatKeyEvent) {
+        let keysym = event.keysym.raw();
+        let utf8 = event.utf8.as_deref();
+        let micros = self.now_micros();
+        let key = self.keys.press(event.raw_code, keysym, utf8, micros);
+        let raw = raw_key_message(true, event.raw_code, keysym, utf8, self.gtk_modifiers());
+        let edit = edit_key(
+            keysym,
+            utf8,
+            self.modifiers.shift,
+            self.modifiers.ctrl || self.modifiers.alt,
+        );
+        self.send_key(&key, Some(raw), edit);
+    }
+}
+
 impl KeyboardHandler for App {
     fn enter(
         &mut self,
@@ -1806,18 +1839,7 @@ impl KeyboardHandler for App {
         _: u32,
         event: SeatKeyEvent,
     ) {
-        let keysym = event.keysym.raw();
-        let utf8 = event.utf8.as_deref();
-        let micros = self.now_micros();
-        let key = self.keys.press(event.raw_code, keysym, utf8, micros);
-        let raw = raw_key_message(true, event.raw_code, keysym, utf8, self.gtk_modifiers());
-        let edit = edit_key(
-            keysym,
-            utf8,
-            self.modifiers.shift,
-            self.modifiers.ctrl || self.modifiers.alt,
-        );
-        self.send_key(&key, Some(raw), edit);
+        self.key_down(event);
     }
 
     fn release_key(
