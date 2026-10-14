@@ -17,6 +17,7 @@ mod ffi;
 mod glass;
 mod keyboard;
 mod keymap;
+mod locale;
 mod shell;
 mod text_input;
 mod window;

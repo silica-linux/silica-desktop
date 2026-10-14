@@ -559,6 +559,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Appearance: light until the portal says otherwise, then on every change.
+    // The system languages, before the first frame.
+    if let Some(engine) = &app.engine
+        && let Err(err) = engine.update_locales(&crate::locale::from_env(|k| std::env::var(k).ok()))
+    {
+        warn!("languages: {err}");
+    }
     app.send_appearance(false);
     let (appearance_sender, appearance_channel) = channel::channel::<bool>();
     event_loop

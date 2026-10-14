@@ -37,7 +37,7 @@ use bindings::{
     FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineAOTData,
     FlutterEngineAOTDataSource, FlutterEngineAOTDataSourceType, FlutterEngineLib,
     FlutterEngineResult, FlutterFrameInfo, FlutterKeyEvent as RawKeyEvent,
-    FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterOpenGLRendererConfig,
+    FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLocale, FlutterOpenGLRendererConfig,
     FlutterPlatformMessage, FlutterPlatformMessageResponseHandle, FlutterPointerDeviceKind,
     FlutterPointerEvent as RawPointerEvent, FlutterPointerPhase, FlutterPointerSignalKind,
     FlutterProjectArgs, FlutterRendererConfig, FlutterRendererType, FlutterSoftwareRendererConfig,
@@ -224,6 +224,8 @@ type RespondFn = unsafe extern "C" fn(
     usize,
 ) -> FlutterEngineResult;
 
+type UpdateLocalesFn =
+    unsafe extern "C" fn(FlutterEngine, *mut *const FlutterLocale, usize) -> FlutterEngineResult;
 type RunsAotFn = unsafe extern "C" fn() -> bool;
 type ScheduleFrameFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
 type OnVsyncFn = unsafe extern "C" fn(FlutterEngine, isize, u64, u64) -> FlutterEngineResult;
@@ -251,6 +253,7 @@ struct Api {
     respond: RespondFn,
     create_reply: CreateReplyFn,
     release_reply: ReleaseReplyFn,
+    update_locales: UpdateLocalesFn,
 }
 
 macro_rules! symbol {
@@ -574,6 +577,7 @@ impl Engine {
             respond: symbol!(library, FlutterEngineSendPlatformMessageResponse),
             create_reply: symbol!(library, FlutterPlatformMessageCreateResponseHandle),
             release_reply: symbol!(library, FlutterPlatformMessageReleaseResponseHandle),
+            update_locales: symbol!(library, FlutterEngineUpdateLocales),
         };
 
         let callbacks = Box::new(callbacks);
@@ -941,6 +945,34 @@ impl Engine {
         let released = unsafe { (self.api.release_reply)(self.engine, handle) };
         check("FlutterEngineSendPlatformMessage", sent)?;
         check("FlutterPlatformMessageReleaseResponseHandle", released)
+    }
+
+    /// The system languages, most preferred first (`FlutterEngineUpdateLocales`).
+    pub fn update_locales(&self, locales: &[crate::locale::Locale]) -> Result<(), Error> {
+        let strings: Vec<(CString, Option<CString>)> = locales
+            .iter()
+            .filter_map(|l| {
+                let language = CString::new(l.language.as_str()).ok()?;
+                let country = l.country.as_deref().and_then(|c| CString::new(c).ok());
+                Some((language, country))
+            })
+            .collect();
+        let structs: Vec<FlutterLocale> = strings
+            .iter()
+            .map(|(language, country)| FlutterLocale {
+                struct_size: size_of::<FlutterLocale>(),
+                language_code: language.as_ptr(),
+                country_code: country.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+                script_code: ptr::null(),
+                variant_code: ptr::null(),
+            })
+            .collect();
+        let mut pointers: Vec<*const FlutterLocale> = structs.iter().map(ptr::from_ref).collect();
+        // SAFETY: the engine is alive; the strings, structs and pointers live during the call
+        // (the engine copies them).
+        check("FlutterEngineUpdateLocales", unsafe {
+            (self.api.update_locales)(self.engine, pointers.as_mut_ptr(), pointers.len())
+        })
     }
 
     /// Sends a message without a response to the framework on `channel`.
