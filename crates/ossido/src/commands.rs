@@ -24,9 +24,9 @@ use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
     SYSTEM_BRIGHTNESS_DOWN, SYSTEM_BRIGHTNESS_DOWN_FINE, SYSTEM_BRIGHTNESS_UP,
-    SYSTEM_BRIGHTNESS_UP_FINE, SYSTEM_DND, SYSTEM_MUTE, SYSTEM_MUTE_TOGGLE, SYSTEM_STATUS,
-    SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_DOWN_FINE, SYSTEM_VOLUME_UP,
-    SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
+    SYSTEM_BRIGHTNESS_UP_FINE, SYSTEM_DARK, SYSTEM_DARK_TOGGLE, SYSTEM_DND, SYSTEM_MUTE,
+    SYSTEM_MUTE_TOGGLE, SYSTEM_STATUS, SYSTEM_VOLUME, SYSTEM_VOLUME_DOWN, SYSTEM_VOLUME_DOWN_FINE,
+    SYSTEM_VOLUME_UP, SYSTEM_VOLUME_UP_FINE, SYSTEM_WIFI, ValueParams,
 };
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
@@ -240,12 +240,14 @@ impl State {
                 .system
                 .status()
                 .ok_or_else(|| "silica-daemon non raggiungibile".to_owned()),
-            SYSTEM_WIFI | SYSTEM_BLUETOOTH | SYSTEM_MUTE | SYSTEM_DND => {
+            SYSTEM_DARK_TOGGLE => Ok(json!({ "queued": self.system.dark_toggle() })),
+            SYSTEM_WIFI | SYSTEM_BLUETOOTH | SYSTEM_MUTE | SYSTEM_DND | SYSTEM_DARK => {
                 let EnabledParams { enabled } = parse_required(params)?;
                 let call = match id {
                     SYSTEM_WIFI => Call::Wifi(enabled),
                     SYSTEM_BLUETOOTH => Call::Bluetooth(enabled),
                     SYSTEM_MUTE => Call::Muted(enabled),
+                    SYSTEM_DARK => Call::Dark(enabled),
                     _ => Call::DoNotDisturb(enabled),
                 };
                 Ok(json!({ "queued": self.system.queue(call) }))

@@ -9,7 +9,11 @@ publish = false
 
 [dependencies]
 async-io = "2"
+futures-lite = "2"
 zbus = "5.19"
+
+[dev-dependencies]
+futures-lite = "2"
 
 [lints]
 workspace = true

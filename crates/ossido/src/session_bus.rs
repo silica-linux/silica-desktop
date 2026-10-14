@@ -26,6 +26,8 @@ pub struct SessionBus {
     /// Tenuto aperto finché vive Ossido: chiuderlo chiude il bus.
     _guard: Option<ChildStdin>,
     daemon: Option<Child>,
+    /// `silica-portal` (FileChooser e Settings), se si trova.
+    portal: Option<Child>,
 }
 
 impl SessionBus {
@@ -56,13 +58,16 @@ impl SessionBus {
             watchdog,
             _guard: guard,
             daemon: None,
+            portal: None,
         };
-        bus.daemon = bus.spawn_daemon();
+        bus.daemon = bus.spawn("silica-daemon");
+        bus.portal = bus.spawn("silica-portal");
         Ok(bus)
     }
 
-    fn spawn_daemon(&self) -> Option<Child> {
-        let program = daemon_path();
+    /// Avvia un servizio di Silica su questo bus (accanto a Ossido o dal PATH).
+    fn spawn(&self, name: &str) -> Option<Child> {
+        let program = sibling_path(name);
         match Command::new(&program)
             .args(["--address", &self.address])
             .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
@@ -74,7 +79,7 @@ impl SessionBus {
                 Some(child)
             }
             Err(err) => {
-                warn!("silica-daemon non avviato ({}): {err}", program.display());
+                warn!("{name} non avviato ({}): {err}", program.display());
                 None
             }
         }
@@ -83,9 +88,9 @@ impl SessionBus {
 
 impl Drop for SessionBus {
     fn drop(&mut self) {
-        if let Some(daemon) = &mut self.daemon {
-            let _ = daemon.kill();
-            let _ = daemon.wait();
+        for child in [&mut self.daemon, &mut self.portal].into_iter().flatten() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
         // Chiudere lo stdin fa uscire la shell di guardia, che chiude il bus.
         self._guard = None;
@@ -93,11 +98,11 @@ impl Drop for SessionBus {
     }
 }
 
-/// `silica-daemon` accanto all'eseguibile di Ossido (target/…), altrimenti dal PATH.
-fn daemon_path() -> PathBuf {
+/// Un programma di Silica accanto all'eseguibile di Ossido (target/…), altrimenti dal PATH.
+fn sibling_path(name: &str) -> PathBuf {
     std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("silica-daemon")))
+        .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
         .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("silica-daemon"))
+        .unwrap_or_else(|| PathBuf::from(name))
 }

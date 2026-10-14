@@ -121,3 +121,16 @@ bus di sistema, riletti a ogni loro segnale; la retroilluminazione in `/sys/clas
 (scrittura con `SetBrightness` di logind, altrimenti nel file) e l'audio dell'uscita
 predefinita con `wpctl`, riletti ogni secondo. Se un servizio manca la sorgente è assente
 (`*.available = false`) e si riprova ogni 10 s.
+
+## Aspetto chiaro e scuro
+
+- `System1` ha la chiave `appearance.dark` e il metodo `SetDark(b)`, che salva la scelta in
+  `$XDG_CONFIG_HOME/silica/appearance.json` (`{"dark": true}`) per il prossimo avvio.
+- `silica-portal` offre `org.freedesktop.impl.portal.Settings` con
+  `org.freedesktop.appearance` › `color-scheme` (1 scuro, 2 chiaro): lo legge dal daemon e
+  ne segue `Changed` (senza daemon, dal file), ed emette `SettingChanged`. Le app GTK, Qt e
+  libadwaita lo seguono dal frontend; l'embedder lo legge dal backend e manda a Flutter
+  `flutter/settings` con `platformBrightness`.
+- Ossido avvia `silica-portal` insieme a `silica-daemon` sul suo bus privato; i comandi
+  `system.dark` e `system.dark_toggle` chiamano `SetDark`.
+

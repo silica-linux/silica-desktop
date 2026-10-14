@@ -156,24 +156,52 @@ fn main() -> ExitCode {
             }
         }
     }
-    match zbus::block_on(async {
+    let outcome: zbus::Result<()> = zbus::block_on(async move {
         let builder = match &address {
             Some(address) => zbus::connection::Builder::address(address.as_str())?,
             None => zbus::connection::Builder::session()?,
         };
+        // L'aspetto: dal file finché il daemon non risponde, poi dal daemon.
+        let settings = silica_portal::settings::Settings {
+            dark: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                silica_portal::settings::appearance_file()
+                    .is_some_and(|f| silica_portal::settings::read_file(&f)),
+            )),
+        };
         let connection = builder
             .name(BUS_NAME)?
             .serve_at(OBJECT_PATH, FileChooser)?
+            .serve_at(OBJECT_PATH, settings.clone())?
             .build()
             .await?;
         eprintln!(
-            "silica-portal: FileChooser su {}",
+            "silica-portal: FileChooser e Settings su {}",
             connection
                 .unique_name()
                 .map_or("?".to_owned(), |n| n.to_string())
         );
-        std::future::pending::<zbus::Result<()>>().await
-    }) {
+        // Il daemon può non esserci ancora: si riprova ogni 2 s. Se il bus si chiude (il bus
+        // privato di Ossido muore con Ossido) il portale esce.
+        let follow = async {
+            loop {
+                if let Err(err) =
+                    silica_portal::settings::follow_daemon(&connection, &settings, OBJECT_PATH)
+                        .await
+                {
+                    eprintln!("silica-portal: aspetto dal daemon: {err}");
+                }
+                async_io::Timer::after(Duration::from_secs(2)).await;
+            }
+        };
+        let lost = async {
+            use futures_lite::StreamExt;
+            let mut messages = zbus::MessageStream::from(&connection);
+            while let Some(Ok(_)) = messages.next().await {}
+            Err(zbus::Error::Failure("bus di sessione chiuso".to_owned()))
+        };
+        futures_lite::future::or(follow, lost).await
+    });
+    match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("silica-portal: {err}");

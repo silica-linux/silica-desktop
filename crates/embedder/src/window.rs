@@ -511,6 +511,19 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         exit: false,
     };
 
+    // L'aspetto: chiaro finché il portale non dice altro, poi a ogni cambio.
+    app.send_appearance(false);
+    let (appearance_sender, appearance_channel) = channel::channel::<bool>();
+    event_loop
+        .handle()
+        .insert_source(appearance_channel, |event, _, app: &mut App| {
+            if let Event::Msg(dark) = event {
+                app.send_appearance(dark);
+            }
+        })
+        .map_err(|e| format!("canale dell'aspetto: {e}"))?;
+    let _appearance = crate::appearance::watch(appearance_sender);
+
     while !app.exit {
         let timeout = app.run_due_tasks();
         event_loop.dispatch(Some(timeout), &mut app)?;
@@ -628,6 +641,18 @@ impl App {
     }
 
     /// Un esito del thread D-Bus: la risposta a una chiamata o un segnale per Dart.
+    /// `flutter/settings` con l'aspetto (chiaro o scuro): `MediaQuery.platformBrightness`.
+    fn send_appearance(&mut self, dark: bool) {
+        if let Some(engine) = &self.engine
+            && let Err(err) = engine.send_message(
+                crate::appearance::SETTINGS_CHANNEL,
+                &crate::appearance::settings_message(dark),
+            )
+        {
+            warn!("flutter/settings: {err}");
+        }
+    }
+
     fn handle_dbus(&mut self, event: dbus::Event<ResponseHandle>) {
         let Some(engine) = &self.engine else { return };
         let result = match event {

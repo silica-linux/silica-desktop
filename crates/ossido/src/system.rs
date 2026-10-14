@@ -38,6 +38,7 @@ pub enum Call {
     Muted(bool),
     Brightness(f64),
     DoNotDisturb(bool),
+    Dark(bool),
 }
 
 impl Call {
@@ -49,6 +50,7 @@ impl Call {
             Call::Muted(on) => set(connection, "SetMuted", on),
             Call::Brightness(v) => set(connection, "SetBrightness", v),
             Call::DoNotDisturb(on) => set(connection, "SetDoNotDisturb", on),
+            Call::Dark(on) => set(connection, "SetDark", on),
         }
     }
 }
@@ -126,6 +128,15 @@ impl SystemLink {
             self.queue(Call::Muted(false));
         }
         self.queue(Call::Volume(target))
+    }
+
+    /// L'aspetto scuro, dalla cache dello stato del daemon (chiaro se non si sa).
+    pub fn dark(&self) -> bool {
+        self.flag("appearance.dark").unwrap_or(false)
+    }
+
+    pub fn dark_toggle(&self) -> bool {
+        self.queue(Call::Dark(!self.dark()))
     }
 
     pub fn mute_toggle(&self) -> bool {

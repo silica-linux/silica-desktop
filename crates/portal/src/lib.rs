@@ -4,6 +4,8 @@
 //! URI per riga (vuoto e uscita non zero: annullato). Specifica: documentazione di
 //! xdg-desktop-portal, interfaccia `org.freedesktop.impl.portal.FileChooser`.
 
+pub mod settings;
+
 use std::collections::HashMap;
 use std::path::Path;
 

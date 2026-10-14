@@ -9,6 +9,7 @@
 //!   `FlutterKeyEvent`, e quelli che il framework non consuma vanno al campo di testo
 //!   attivo (`flutter/textinput`).
 
+mod appearance;
 mod codec;
 pub mod dbus;
 mod ffi;

@@ -37,6 +37,25 @@ pub struct SystemConfig {
     pub wpctl: PathBuf,
     /// Ogni quanto rileggere luminosità e volume, che non hanno segnali.
     pub poll: Duration,
+    /// Dove si salva l'aspetto (chiaro o scuro); `None`: solo in memoria.
+    pub appearance_file: Option<PathBuf>,
+}
+
+/// `$XDG_CONFIG_HOME/silica/appearance.json` (di solito `~/.config`).
+pub fn default_appearance_file() -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    Some(config.join("silica").join("appearance.json"))
+}
+
+/// L'aspetto salvato: `{"dark": true}`; senza file o illeggibile, chiaro.
+pub fn read_appearance(file: &std::path::Path) -> bool {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|json| json.get("dark").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
 }
 
 impl Default for SystemConfig {
@@ -46,6 +65,7 @@ impl Default for SystemConfig {
             backlight_dir: PathBuf::from("/sys/class/backlight"),
             wpctl: PathBuf::from("wpctl"),
             poll: Duration::from_secs(1),
+            appearance_file: default_appearance_file(),
         }
     }
 }
@@ -90,6 +110,8 @@ pub struct SystemState {
     pub brightness_requests: u64,
     pub audio: Option<Audio>,
     pub do_not_disturb: bool,
+    /// Aspetto scuro (tutto il sistema: Ossido, shell, app con il portale Settings).
+    pub dark: bool,
 }
 
 impl SystemState {
@@ -128,6 +150,7 @@ impl SystemState {
         put("audio.muted", Value::Bool(audio.muted));
         put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
+        put("appearance.dark", Value::Bool(self.dark));
         dict
     }
 }
@@ -166,8 +189,15 @@ pub struct SystemService {
 impl SystemService {
     /// Pubblica l'interfaccia; le sorgenti partono con `run`.
     pub async fn serve(connection: Connection, config: SystemConfig) -> zbus::Result<Self> {
+        let dark = config
+            .appearance_file
+            .as_deref()
+            .is_some_and(read_appearance);
         let shared = Shared {
-            state: Arc::new(Mutex::new(SystemState::default())),
+            state: Arc::new(Mutex::new(SystemState {
+                dark,
+                ..SystemState::default()
+            })),
             changed: Arc::new(Event::new()),
             config,
         };
@@ -311,6 +341,19 @@ impl System {
     /// Non disturbare: la shell non mostra i banner.
     fn set_do_not_disturb(&self, enabled: bool) {
         self.shared.update(|state| state.do_not_disturb = enabled);
+    }
+
+    /// Aspetto scuro o chiaro, per tutto il sistema; si salva (`appearance.json`).
+    fn set_dark(&self, dark: bool) -> zbus::fdo::Result<()> {
+        if let Some(file) = &self.shared.config.appearance_file {
+            if let Some(dir) = file.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| failed(e.to_string()))?;
+            }
+            std::fs::write(file, format!("{{\"dark\": {dark}}}\n"))
+                .map_err(|e| failed(e.to_string()))?;
+        }
+        self.shared.update(|state| state.dark = dark);
+        Ok(())
     }
 
     #[zbus(signal)]

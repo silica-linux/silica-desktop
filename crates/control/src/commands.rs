@@ -86,6 +86,8 @@ pub const SYSTEM_BRIGHTNESS: &str = "system.brightness";
 pub const SYSTEM_BRIGHTNESS_UP: &str = "system.brightness_up";
 pub const SYSTEM_BRIGHTNESS_DOWN: &str = "system.brightness_down";
 pub const SYSTEM_DND: &str = "system.dnd";
+pub const SYSTEM_DARK: &str = "system.dark";
+pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -573,6 +575,20 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Con Non disturbare attivo le notifiche arrivano nel Centro senza banner.",
         shortcut: None,
         params: enabled_param,
+    },
+    CommandSpec {
+        id: SYSTEM_DARK,
+        label: "Aspetto scuro",
+        description: "Aspetto scuro o chiaro per tutto il sistema: Ossido, la shell e le app (portale Settings).",
+        shortcut: None,
+        params: enabled_param,
+    },
+    CommandSpec {
+        id: SYSTEM_DARK_TOGGLE,
+        label: "Cambia aspetto",
+        description: "Passa dall'aspetto chiaro a quello scuro e viceversa.",
+        shortcut: None,
+        params: no_params,
     },
     CommandSpec {
         id: GLASS_LIST,

@@ -349,6 +349,7 @@ trait System {
     fn set_volume(&self, volume: f64) -> zbus::Result<()>;
     fn set_muted(&self, muted: bool) -> zbus::Result<()>;
     fn set_brightness(&self, brightness: f64) -> zbus::Result<()>;
+    fn set_dark(&self, dark: bool) -> zbus::Result<()>;
     fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
     fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
@@ -403,6 +404,7 @@ fn reads_and_changes_the_system() {
                 backlight_dir: dir.join("backlight"),
                 wpctl,
                 poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
             },
         )
         .await
@@ -483,6 +485,13 @@ fn reads_and_changes_the_system() {
             proxy.set_do_not_disturb(true).await.unwrap();
             wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
 
+            // L'aspetto scuro: nello stato e nel file, per il prossimo avvio.
+            proxy.set_dark(true).await.unwrap();
+            wait_for(&proxy, |s| get::<bool>(s, "appearance.dark")).await;
+            assert!(silica_daemon::system::read_appearance(
+                &dir.join("appearance.json")
+            ));
+
             // Reti: quella in uso, poi la salvata, poi le altre per segnale.
             let networks = proxy.wifi_networks().await.unwrap();
             assert_eq!(
@@ -533,6 +542,7 @@ fn missing_sources_are_absent_not_errors() {
                 backlight_dir: dir.join("nessuna"),
                 wpctl: dir.join("nessun-wpctl"),
                 poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
             },
         )
         .await
