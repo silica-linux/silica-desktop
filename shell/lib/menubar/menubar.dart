@@ -225,13 +225,38 @@ class _MenuBarState extends State<MenuBar> {
     final anchor = Offset(rect.left - menuLeftOfItem, barHeight + 1);
     _switchTimer?.cancel();
     setState(() => _open = name);
-    // While a menu is open the surface covers the screen and takes every click, as for the
-    // window and desktop menus: a click outside the menu closes it (it reaches
-    // MenuHost.pointerDown), and does nothing else, as in the reference.
+    // The surface grows to the screen, but takes the pointer only on the bar and the menus
+    // (`_menuRegion`, from the menu's rectangles): the windows below keep their hover, and a
+    // press outside arrives from Ossido as transientDismissed (#149).
     LayerControl.size(0, anchor.dy + size.height + menuShadowRoom);
-    LayerControl.inputRegion(null);
+    LayerControl.inputRegion([_barRect]);
     LayerControl.keyboard('exclusive');
     _coverScreen();
+  }
+
+  static const Rect _barRect = Rect.fromLTWH(0, 0, 16384, barHeight);
+
+  /// A menu of this surface is open with these rectangles (submenus included): the input
+  /// region is the bar plus the menus, and Ossido tells about a press outside. Without that
+  /// support (an older Ossido) the surface takes every click, as before.
+  Future<void> _menuRegion(List<Rect> rects) async {
+    final menus = [for (final r in rects) r.inflate(2)];
+    final supported = await LayerControl.transient(rects: menus);
+    if (!mounted ||
+        (_open == null && _windowMenuTip == null && _desktopMenuAt == null)) {
+      return;
+    }
+    LayerControl.inputRegion(supported ? [_barRect, ...menus] : null);
+  }
+
+  /// A press outside the open menu ended it (Ossido, #149).
+  void _transientDismissed() {
+    if (_open != null) {
+      final menu = _menuKey.currentState;
+      menu == null ? _closeMenu() : menu.close();
+    }
+    _closeWindowMenu();
+    _closeDesktopMenu();
   }
 
   Future<void> _coverScreen() async {
@@ -244,6 +269,7 @@ class _MenuBarState extends State<MenuBar> {
     _switchTimer?.cancel();
     if (_open == null) return;
     setState(() => _open = null);
+    LayerControl.clearTransient();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(null);
     LayerControl.size(0, barHeight);
@@ -301,11 +327,16 @@ class _MenuBarState extends State<MenuBar> {
     _windowMenus = ShellChannel.instance.windowMenus.listen(
       (menu) => _openWindowMenu(menu.tip),
     );
+    _dismissed = ShellChannel.instance.transientDismissed.listen(
+      (_) => _transientDismissed(),
+    );
   }
 
+  StreamSubscription<void>? _dismissed;
+
   /// The arrangement popover of a window (long press on the green button): the tip at the
-  /// point given by Ossido. While it is open the surface covers the screen and takes all
-  /// clicks: one outside closes it (as in the reference, in the document).
+  /// point given by Ossido. While it is open the surface covers the screen but takes the
+  /// pointer only on the popover; a click outside closes it (#149).
   StreamSubscription<({String id, Offset tip})>? _windowMenus;
   Offset? _windowMenuTip;
 
@@ -315,7 +346,7 @@ class _MenuBarState extends State<MenuBar> {
     if (!mounted) return;
     setState(() => _windowMenuTip = tip);
     LayerControl.size(0, screen?.height ?? tip.dy + 400);
-    LayerControl.inputRegion(null);
+    LayerControl.inputRegion([_barRect]);
     LayerControl.keyboard('exclusive');
   }
 
@@ -344,7 +375,7 @@ class _MenuBarState extends State<MenuBar> {
     if (!mounted) return;
     setState(() => _desktopMenuAt = at);
     LayerControl.size(0, screen?.height ?? at.dy + 400);
-    LayerControl.inputRegion(null);
+    LayerControl.inputRegion([_barRect]);
     LayerControl.keyboard('exclusive');
   }
 
@@ -355,6 +386,7 @@ class _MenuBarState extends State<MenuBar> {
       _desktopMenuState = '';
       ShellChannel.instance.broadcast('desktopmenu', '');
     }
+    LayerControl.clearTransient();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(null);
     LayerControl.size(0, barHeight);
@@ -373,6 +405,7 @@ class _MenuBarState extends State<MenuBar> {
   void _closeWindowMenu() {
     if (_windowMenuTip == null) return;
     setState(() => _windowMenuTip = null);
+    LayerControl.clearTransient();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(null);
     LayerControl.size(0, barHeight);
@@ -405,6 +438,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.states.removeListener(_desktopMenuChanged);
     widget.system?.removeListener(_changed);
     _windowMenus?.cancel();
+    _dismissed?.cancel();
     HardwareKeyboard.instance.removeHandler(_keyChanged);
     widget.media?.removeListener(_changed);
     super.dispose();
@@ -610,6 +644,7 @@ class _MenuBarState extends State<MenuBar> {
                       tip: tip,
                       tipUp: true,
                       onDismissed: _closeWindowMenu,
+                      onRectsChanged: _menuRegion,
                     ),
                   ),
                 if (_desktopMenuAt case final at?)
@@ -619,6 +654,7 @@ class _MenuBarState extends State<MenuBar> {
                       entries: _desktopEntries(),
                       anchor: Offset(at.dx, at.dy - desktopMenuAbove),
                       onDismissed: _closeDesktopMenu,
+                      onRectsChanged: _menuRegion,
                     ),
                   ),
                 if (_open case final name?)
@@ -634,8 +670,8 @@ class _MenuBarState extends State<MenuBar> {
                       onDismissed: _closeMenu,
                       onNext: () => _neighbour(1),
                       onPrevious: () => _neighbour(-1),
-                      // The surface already covers the screen while a menu is open.
-                      onRectsChanged: (_) {},
+                      // With a submenu open the input region includes it.
+                      onRectsChanged: _menuRegion,
                     ),
                   ),
               ],

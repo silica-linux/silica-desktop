@@ -12,6 +12,7 @@
 //!   `faro.toggle`), `broadcast {topic, value}` (a state of another shell component),
 //!   `minimized [id…]` (the minimized ones, from the first minimized); `windowMenu {id, x,
 //!   y}` (long press on the green button: the arrangement popover with its tip at x, y);
+//!   `transientDismissed` (a press outside the open menu or panel ended it, #149);
 //! - `thumbnail {id}` from Dart asks for the thumbnail of a minimized window: it arrives as
 //!   `thumbnail {id, width, height, path}`, a premultiplied RGBA file that Dart reads and
 //!   deletes (width 0 if there is none).
@@ -68,6 +69,11 @@ impl ShellLink {
             thumbnails: std::cell::RefCell::new(Vec::new()),
             serial: std::cell::Cell::new(0),
         }
+    }
+
+    /// The shell manager, if Ossido shows it to this process.
+    pub fn manager(&self) -> Option<&SilicaShellManagerV1> {
+        self.manager.as_ref()
     }
 
     /// The focus changed: the `focused` message for Dart.

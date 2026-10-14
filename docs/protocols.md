@@ -85,6 +85,22 @@ against other processes of the same user: that will come with the app sandbox.
 - `silica_shell_manager_v1.execute_with(id, params)` (version 5): like `execute`, with the
   parameters in a JSON object (screenshots: `screenshot.region`, `screenshot.window_at`).
   Ossido announces every screenshot with the broadcast `screenshot` = "<path> <w> <h>".
+- `silica_shell_manager_v1.set_transient(surface, region, press, scroll)`,
+  `clear_transient(surface)` and the event `dismissed(surface)` (version 6, #149): a menu or
+  panel of a shell surface is open. The surface keeps an input region as small as the menu,
+  so the windows below keep the pointer (hover, window button glyphs, cursor shapes). A
+  press outside every open transient (not on the owner surface or its popups, not inside
+  `region`) makes Ossido send `dismissed`; then the press is consumed (`consume`) or also
+  delivered (`pass_through`). Scrolling outside is dropped or delivered without ending it.
+  Keyboard routing stays with the layer surface's keyboard interactivity. App popups with
+  `xdg_popup.grab` follow the same rules (a press outside the popup's app ends it and is
+  consumed; the popup has the keyboard while open).
+  **Provisional** until silica-reference INPUT-01: menus (menu bar, desktop, window
+  popover, status menus, app popups) consume the press outside, panels (Control Center,
+  Notification Center, Faro) let it through; menus also consume the scroll outside. The
+  shell keeps these in one place (`TransientPolicy` in `shell/lib/system/layer_control.dart`)
+  and the embedder exposes them on `silica/layer` (`setTransient`, `clearTransient`) and
+  `silica/shell` (`transientDismissed`).
 
 ## Drag between apps (`wl_data_device`)
 
