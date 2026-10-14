@@ -96,7 +96,7 @@ against other processes of the same user: that will come with the app sandbox.
   `xdg_popup.grab` follow the same rules (a press outside the popup's app ends it and is
   consumed; the popup has the keyboard while open).
   **Provisional** until silica-reference INPUT-01: menus (menu bar, desktop, window
-  popover, status menus, app popups) consume the press outside, panels (Control Center,
+  popover, status menus, Dock menus and stacks, app popups) consume the press outside, panels (Control Center,
   Notification Center, Faro) let it through; menus also consume the scroll outside. The
   shell keeps these in one place (`TransientPolicy` in `shell/lib/system/layer_control.dart`)
   and the embedder exposes them on `silica/layer` (`setTransient`, `clearTransient`) and

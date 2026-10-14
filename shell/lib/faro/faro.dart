@@ -180,6 +180,11 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode();
   StreamSubscription<String>? _commands;
+  StreamSubscription<void>? _dismissed;
+  DateTime? _dismissedAt;
+
+  /// What was last given to Ossido as the panel's rectangles (only when it changes).
+  String _regionKey = '';
   bool _visible = false;
   bool _launcher = false;
 
@@ -428,6 +433,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       if (id == 'faro.toggle') _toggle();
       if (id == 'launcher.toggle') _toggleLauncher();
     });
+    _dismissed = ShellChannel.instance.transientDismissed.listen(
+      (_) => _transientDismissed(),
+    );
     if (widget.startLauncher) {
       _showLauncher();
     } else if (widget.startOpen) {
@@ -441,6 +449,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   @override
   void dispose() {
     _commands?.cancel();
+    _dismissed?.cancel();
     _spreadDelay?.cancel();
     _fade.dispose();
     _scaleY.dispose();
@@ -461,7 +470,50 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   @visibleForTesting
   void reopenForTest() => _show();
 
-  void _toggle() => _open && !_launcher ? _hide() : _show();
+  void _toggle() {
+    if (_justDismissed) return;
+    _open && !_launcher ? _hide() : _show();
+  }
+
+  /// A press outside the panel ended it (Ossido, #149).
+  void _transientDismissed() {
+    if (!_open) return;
+    _dismissedAt = DateTime.now();
+    _hide();
+  }
+
+  /// The shortcut pressed while the panel is open: Ossido first ends it (transientDismissed),
+  /// then the command arrives, which must not open it again.
+  bool get _justDismissed {
+    final at = _dismissedAt;
+    return !_open &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(milliseconds: 400);
+  }
+
+  /// The panel's rectangles are the only place Faro takes the pointer; a press outside
+  /// arrives from Ossido (#149), so the windows below keep their hover. Without that support
+  /// Faro covers the screen.
+  void _syncRegion(List<Rect> rects) {
+    if (!_open) return;
+    final key = rects
+        .map(
+          (r) =>
+              '${r.left.round()},${r.top.round()},${r.width.round()},${r.height.round()}',
+        )
+        .join(' ');
+    if (key == _regionKey) return;
+    _regionKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || !_open) return;
+      final supported = await LayerControl.transient(
+        rects: rects,
+        policy: TransientPolicy.panel,
+      );
+      if (!mounted || !_open) return;
+      LayerControl.inputRegion(supported ? rects : null);
+    });
+  }
 
   /// Esc from the launcher: no fade, the panel turns into Faro (the measured return).
   void _backToFaro() {
@@ -480,7 +532,10 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
-  void _toggleLauncher() => _open && _launcher ? _hide() : _showLauncher();
+  void _toggleLauncher() {
+    if (_justDismissed) return;
+    _open && _launcher ? _hide() : _showLauncher();
+  }
 
   void _showLauncher() {
     setState(() {
@@ -491,7 +546,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     });
     _fade.forward(from: 0);
     _launcherClock.forward(from: 0);
-    LayerControl.inputRegion(null);
+    // The region follows the panel from the first frame (_syncRegion); until then nothing.
+    _regionKey = '';
     LayerControl.keyboard('exclusive');
   }
 
@@ -517,7 +573,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       },
     );
     _rates.load(onDone: _tick);
-    LayerControl.inputRegion(null);
+    _regionKey = '';
     LayerControl.keyboard('exclusive');
     _spreadDelay?.cancel();
     _spread.value = 0;
@@ -548,7 +604,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     setState(() => _closing = true);
     _spreadDelay?.cancel();
     LayerControl.keyboard('none');
+    LayerControl.clearTransient();
     LayerControl.inputRegion(const []);
+    _regionKey = '';
     _fade.reverse();
     if (!_launcher) {
       _scaleY.animateTo(
@@ -782,9 +840,22 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
           panelHeight = lerp(launcherHeight, height);
           panelRadius = lerp(launcherRadius, radius);
         }
+        _syncRegion([
+          Rect.fromLTWH(left, top, panelWidth, panelHeight).inflate(2),
+          if (buttons && back >= 1)
+            Rect.fromLTWH(
+              left + width,
+              top + (headerHeight - circle) / 2 - 2,
+              (frameLeft + wideWidth + 40 - (left + width)).clamp(
+                0.0,
+                double.infinity,
+              ),
+              circle + 4,
+            ),
+        ]);
         return Stack(
           children: [
-            // A click outside closes Faro.
+            // A click outside closes Faro (without transient support).
             Positioned.fill(
               child: GestureDetector(
                 onTap: _hide,
@@ -1596,6 +1667,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
+        _syncRegion([
+          Rect.fromLTWH(
+            (screen.width - launcherWidth) / 2,
+            screen.height * topFraction,
+            launcherWidth,
+            launcherHeight,
+          ).inflate(2),
+        ]);
         return Stack(
           children: [
             Positioned.fill(

@@ -172,7 +172,7 @@ void main() {
   });
 
   testWidgets(
-    'with the menu open the Dock takes the pointer over the whole screen',
+    'an older Ossido (no transients): with the menu open the Dock takes the whole screen',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 300);
       tester.view.devicePixelRatio = 1;
@@ -215,6 +215,88 @@ void main() {
       expect(regions.last, [
         [0, 0, 1280, 800],
       ]);
+    },
+  );
+
+  testWidgets(
+    'a Dock menu is a transient: the region stays small, a press outside closes it (#149)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final layer = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        LayerControl.channel,
+        (call) async {
+          layer.add(call);
+          if (call.method == 'outputSize') {
+            return {'width': 1280, 'height': 800};
+          }
+          return call.method == 'setTransient' ? true : null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          LayerControl.channel,
+          null,
+        ),
+      );
+      const items = [Item.app('Note', command: 'note')];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(items: items, menuFor: (item) => [MenuAction('Open')]),
+        ),
+      );
+      await tester.pump();
+      expect(layer.any((c) => c.method == 'setTransient'), isFalse);
+      final rest = layout(items, width: 1280, height: 300);
+      final icon = Offset(
+        rest.center(0),
+        300 - bottomGap - backgroundHeight / 2,
+      );
+      await tester.tapAt(icon, buttons: kSecondaryButton);
+      await tester.pump();
+      await tester.pump();
+      Rect rect(Object? r) {
+        final v = r as List;
+        return Rect.fromLTWH(
+          (v[0] as num).toDouble(),
+          (v[1] as num).toDouble(),
+          (v[2] as num).toDouble(),
+          (v[3] as num).toDouble(),
+        );
+      }
+
+      // The menu policy, and the Dock plus the menu as the rectangles: not the screen.
+      final transient = layer.lastWhere((c) => c.method == 'setTransient');
+      final args = transient.arguments as Map;
+      expect(args['press'], 'consume');
+      final rects = [for (final r in args['rects'] as List) rect(r)];
+      expect(rects, hasLength(2));
+      expect(rects.any((r) => r.contains(icon)), isTrue);
+      expect(
+        rects.any((r) => r.contains(tester.getCenter(find.text('Open')))),
+        isTrue,
+      );
+      expect(rects.every((r) => r.height < 400), isTrue);
+      final region = layer.lastWhere((c) => c.method == 'setInputRegion');
+      expect((region.arguments as Map)['rects'], args['rects']);
+
+      // Ossido: a press outside ended it.
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'silica/shell',
+        const JSONMethodCodec().encodeMethodCall(
+          const MethodCall('transientDismissed'),
+        ),
+        (_) {},
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Open'), findsNothing);
+      expect(layer.any((c) => c.method == 'clearTransient'), isTrue);
+      final closed = layer.lastWhere((c) => c.method == 'setInputRegion');
+      expect(((closed.arguments as Map)['rects'] as List), hasLength(1));
     },
   );
 
