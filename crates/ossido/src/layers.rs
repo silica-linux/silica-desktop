@@ -2,7 +2,7 @@
 //! edges, above or below the windows.
 
 use smithay::delegate_layer_shell;
-use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
+use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -105,6 +105,9 @@ impl State {
             .user_data()
             .get::<WasExclusive>()
             .is_some_and(|flag| flag.0.replace(exclusive));
+        if first && desktop_owner(layer.namespace()).is_some() {
+            self.desktop_owner_fallback(None);
+        }
         if exclusive && (first || !was) {
             self.focus_layer(&layer);
         } else if was && !exclusive {
@@ -209,6 +212,22 @@ impl State {
         })
     }
 
+    /// With no app frontmost (no focused window other than `closing`, no windowless app) the
+    /// desktop's owner is, as the Finder on macOS (#147). A window in use is never displaced.
+    pub fn desktop_owner_fallback(&mut self, closing: Option<&Window>) {
+        if self.windowless_front.is_some() {
+            return;
+        }
+        if self.focused_window().is_some_and(|w| Some(&w) != closing) {
+            return;
+        }
+        if let Some((_, owner)) = self.desktop_layer()
+            && !owner.is_empty()
+        {
+            self.set_windowless_front(Some(owner));
+        }
+    }
+
     /// A press on the desktop (no layer above, no window): the windows lose the focus and the
     /// desktop's owner becomes the frontmost app, with the keyboard (#147). Without a desktop
     /// owner no app stays frontmost.
@@ -250,6 +269,8 @@ mod tests {
             Some("dev.frascella.Mustache")
         );
         assert_eq!(desktop_owner("desktop-icons"), Some(""));
+        // An empty owner is a desktop, but no app to bring to the front.
+        assert_eq!(desktop_owner("desktop-icons:"), Some(""));
         assert_eq!(desktop_owner("wallpaper"), None);
         assert_eq!(desktop_owner("desktop-iconsx"), None);
     }
