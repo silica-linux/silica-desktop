@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 560" font-family="Inter, sans-serif" font-size="11">
+  <title>Folder stack fan (D-06): item boxes from the AX geometry, drawn at 0.5× (1 unit = 2 pt)</title>
+  <rect width="360" height="560" fill="#ffffff"/>
+  <!-- origin: x = (X − 1600)·0.5 + 40, y = (Y − 290)·0.5 + 20; boxes side·0.5 -->
+  <g fill="#e9e9ef" stroke="#888" stroke-width="0.5">
+    <rect x="76.6" y="514" width="32.9" height="32.9"/>
+    <rect x="77.3" y="481.8" width="33.6" height="33.6"/>
+    <rect x="78.9" y="449.4" width="34.2" height="34.2"/>
+    <rect x="81.1" y="417.1" width="34.8" height="34.8"/>
+    <rect x="84.3" y="384.8" width="35.5" height="35.5"/>
+    <rect x="88" y="352.5" width="36.1" height="36.1"/>
+    <rect x="92.2" y="320.2" width="36.6" height="36.6"/>
+    <rect x="97.4" y="287.9" width="37.2" height="37.2"/>
+    <rect x="103.7" y="255.7" width="37.8" height="37.8"/>
+    <rect x="109.9" y="223.4" width="38.3" height="38.3"/>
+    <rect x="117.1" y="191.1" width="38.8" height="38.8"/>
+    <rect x="154.2" y="62.2" width="40.7" height="40.7"/>
+    <rect x="165.5" y="30" width="41.2" height="41.2"/>
+  </g>
+  <text x="130" y="140" fill="#555">… items 12–14</text>
+  <g fill="#333">
+    <text x="190" y="520">item 1: side 65.8 pt,</text>
+    <text x="190" y="534">bottom 7 pt above the Dock zone</text>
+    <text x="210" y="56">slot 16: open in Mustache,</text>
+    <text x="210" y="70">side 82.3 pt</text>
+    <text x="190" y="300">vertical pitch 64.6 pt</text>
+    <text x="190" y="314">side +1.2 pt per step</text>
+    <text x="190" y="328">curves to the right</text>
+    <text x="10" y="440">labels:</text>
+    <text x="10" y="454">capsules</text>
+    <text x="10" y="468">on the left</text>
+  </g>
+</svg>
