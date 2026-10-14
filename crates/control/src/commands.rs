@@ -17,6 +17,9 @@ pub const SCREENSHOT_TOOLBAR: &str = "screenshot.toolbar";
 pub const SCREENSHOT_REGION: &str = "screenshot.region";
 pub const SCREENSHOT_WINDOW_AT: &str = "screenshot.window_at";
 pub const SCREENSHOT_WINDOW_VEIL: &str = "screenshot.window_veil";
+pub const SCREENSHOT_SCREEN_CLIPBOARD: &str = "screenshot.screen_clipboard";
+pub const SCREENSHOT_SELECTION_CLIPBOARD: &str = "screenshot.selection_clipboard";
+pub const SCREENSHOT_SETTINGS: &str = "screenshot.settings";
 pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
 pub const UI_GLASS_QUALITY: &str = "ui.glass_quality";
 pub const PERF_RENDER: &str = "perf.render";
@@ -193,8 +196,24 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: SCREENSHOT_SCREEN,
         label: "Screenshot",
-        description: "Captures the whole screen; the thumbnail appears at the bottom right and the file goes to the Desktop.",
+        description: "Captures the whole screen; the thumbnail appears at the bottom right and the file goes to the chosen place (the Desktop by default).",
         shortcut: Some("Logo+Shift+3"),
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "pointer": {"type": "boolean", "description": "Draw the pointer into the image (default: screenshot.settings)"},
+                    "clipboard": {"type": "boolean", "description": "The capture goes to the clipboard"}
+                },
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: SCREENSHOT_SCREEN_CLIPBOARD,
+        label: "Screenshot to the clipboard",
+        description: "Captures the whole screen into the clipboard, without a file.",
+        shortcut: Some("Logo+Ctrl+Shift+3"),
         params: no_params,
     },
     CommandSpec {
@@ -202,6 +221,13 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Screenshot of a part",
         description: "The crosshair to choose a region (Space: a window); shell component.",
         shortcut: Some("Logo+Shift+4"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SCREENSHOT_SELECTION_CLIPBOARD,
+        label: "Screenshot of a part to the clipboard",
+        description: "The crosshair to choose a region (Space: a window), copied into the clipboard; shell component.",
+        shortcut: Some("Logo+Ctrl+Shift+4"),
         params: no_params,
     },
     CommandSpec {
@@ -221,7 +247,9 @@ pub const CATALOG: &[CommandSpec] = &[
                 "type": "object",
                 "properties": {
                     "x": {"type": "number"}, "y": {"type": "number"},
-                    "width": {"type": "number"}, "height": {"type": "number"}
+                    "width": {"type": "number"}, "height": {"type": "number"},
+                    "pointer": {"type": "boolean", "description": "Draw the pointer into the image (default: screenshot.settings)"},
+                    "clipboard": {"type": "boolean", "description": "The capture goes to the clipboard"}
                 },
                 "required": ["x", "y", "width", "height"],
                 "additionalProperties": false
@@ -231,13 +259,33 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: SCREENSHOT_WINDOW_AT,
         label: "Screenshot of a window",
-        description: "Captures the window under the given point, on its own.",
+        description: "Captures the window under the given point, on its own, with its shadow on a transparent background.",
         shortcut: None,
         params: || {
             json!({
                 "type": "object",
-                "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                "properties": {
+                    "x": {"type": "number"}, "y": {"type": "number"},
+                    "shadow": {"type": "boolean", "description": "With the shadow (default true)"},
+                    "or_screen": {"type": "boolean", "description": "No window there: the whole screen"},
+                    "pointer": {"type": "boolean", "description": "Draw the pointer into the image (default: screenshot.settings)"},
+                    "clipboard": {"type": "boolean", "description": "The capture goes to the clipboard"}
+                },
                 "required": ["x", "y"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: SCREENSHOT_SETTINGS,
+        label: "Screenshot settings",
+        description: "The settings Ossido applies to its own screenshot shortcuts: whether the pointer is drawn into the image.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"pointer": {"type": "boolean"}},
+                "required": ["pointer"],
                 "additionalProperties": false
             })
         },

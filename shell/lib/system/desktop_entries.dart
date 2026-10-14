@@ -20,6 +20,7 @@ class DesktopEntry {
     this.silicaIcon,
     this.categories = const [],
     this.actions = const [],
+    this.mimeTypes = const [],
   });
 
   /// File name without `.desktop` (e.g. `org.gnome.Nautilus`).
@@ -40,6 +41,9 @@ class DesktopEntry {
 
   /// The freedesktop categories (`Categories`, e.g. `Utility`, `Office`).
   final List<String> categories;
+
+  /// The types of file it opens (`MimeType`).
+  final List<String> mimeTypes;
 
   /// The entry's own actions (`Actions` and their `[Desktop Action …]` groups).
   final List<DesktopAction> actions;
@@ -184,6 +188,10 @@ DesktopEntry? parseDesktopEntry(
     categories: (values['Categories'] ?? '')
         .split(';')
         .where((c) => c.isNotEmpty)
+        .toList(),
+    mimeTypes: (values['MimeType'] ?? '')
+        .split(';')
+        .where((m) => m.isNotEmpty)
         .toList(),
     actions: [
       for (final action in (values['Actions'] ?? '').split(';'))

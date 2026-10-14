@@ -1,5 +1,6 @@
 //! Screenshots: the screen, a region, a single window (⇧⌘3, ⇧⌘4); the temporary PNG files
-//! that the shell shows as a thumbnail and then moves to the Desktop.
+//! that the shell shows as a thumbnail and then moves to their place; the pointer drawn in,
+//! the window's shadow and the clipboard flag.
 
 #![allow(
     clippy::unwrap_used,
@@ -10,10 +11,13 @@
 
 mod common;
 
-use common::Headless;
 use common::client::{FIRST_WINDOW_AT, TestWindow};
+use common::{Headless, decode, pixel_in};
 use serde_json::{Value, json};
-use silica_control::commands::{SCREENSHOT_REGION, SCREENSHOT_SCREEN, SCREENSHOT_WINDOW_AT};
+use silica_control::commands::{
+    INPUT_POINTER_MOVE, SCREENSHOT_REGION, SCREENSHOT_SCREEN, SCREENSHOT_SCREEN_CLIPBOARD,
+    SCREENSHOT_SETTINGS, SCREENSHOT_WINDOW_AT,
+};
 
 fn png_size(path: &str) -> (u32, u32) {
     let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
@@ -22,47 +26,157 @@ fn png_size(path: &str) -> (u32, u32) {
     (info.width, info.height)
 }
 
+/// Runs a capture command; the size of the PNG it wrote (removed afterwards) and its reply.
+fn capture(client: &mut silica_control::Client, id: &str, params: Value) -> ((u32, u32), Value) {
+    let reply = client.call(id, params).unwrap();
+    let path = reply["path"].as_str().unwrap().to_owned();
+    let size = png_size(&path);
+    assert_eq!(
+        size,
+        (
+            reply["width"].as_u64().unwrap() as u32,
+            reply["height"].as_u64().unwrap() as u32
+        )
+    );
+    std::fs::remove_file(&path).unwrap();
+    (size, reply)
+}
+
+/// The pixels of a capture, decoded (the file is removed).
+fn capture_pixels(client: &mut silica_control::Client, id: &str, params: Value) -> Vec<u8> {
+    let reply = client.call(id, params).unwrap();
+    let path = reply["path"].as_str().unwrap().to_owned();
+    let pixels = decode(&std::fs::read(&path).unwrap()).1;
+    std::fs::remove_file(&path).unwrap();
+    pixels
+}
+
 #[test]
 fn screen_region_and_window_captures_write_png_files() {
     let ossido = Headless::start_with("screenshots", (640, 400), &[]);
     let _window = TestWindow::open_decorated(&ossido.wayland, "to capture", (200, 120));
     let mut client = ossido.client();
-    let call = |client: &mut silica_control::Client, id: &str, params: Value| {
-        let reply = client.call(id, params).unwrap();
-        let path = reply["path"].as_str().unwrap().to_owned();
-        let size = png_size(&path);
-        assert_eq!(
-            size,
-            (
-                reply["width"].as_u64().unwrap() as u32,
-                reply["height"].as_u64().unwrap() as u32
-            )
-        );
-        std::fs::remove_file(&path).unwrap();
-        size
-    };
     assert_eq!(
-        call(&mut client, SCREENSHOT_SCREEN, Value::Null),
+        capture(&mut client, SCREENSHOT_SCREEN, Value::Null).0,
         (640, 400)
     );
     assert_eq!(
-        call(
+        capture(
             &mut client,
             SCREENSHOT_REGION,
             json!({"x": 10, "y": 20, "width": 100, "height": 50})
-        ),
+        )
+        .0,
         (100, 50)
     );
-    // The window with its 52 bar: 200 × (120 + 52).
+    // The window without its shadow: the frame with its 52 bar, 200 × (120 + 52).
     let at = f64::from(FIRST_WINDOW_AT) + 10.0;
     assert_eq!(
-        call(&mut client, SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at})),
+        capture(
+            &mut client,
+            SCREENSHOT_WINDOW_AT,
+            json!({"x": at, "y": at, "shadow": false})
+        )
+        .0,
         (200, 172)
     );
-    // Outside every window: an error, no file.
+    // With its shadow (the default): larger, and transparent in the corner.
+    let ((w, h), reply) = capture(&mut client, SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at}));
+    assert!(w > 200 && h > 172, "with the shadow: {w} × {h}");
+    assert_eq!(reply["clipboard"], json!(false));
+    // Outside every window: an error, no file; with or_screen, the whole screen.
     assert!(
         client
             .call(SCREENSHOT_WINDOW_AT, json!({"x": 630, "y": 390}))
             .is_err()
     );
+    assert_eq!(
+        capture(
+            &mut client,
+            SCREENSHOT_WINDOW_AT,
+            json!({"x": 630, "y": 390, "or_screen": true})
+        )
+        .0,
+        (640, 400)
+    );
+    // Unknown parameters are refused.
+    assert!(
+        client
+            .call(SCREENSHOT_SCREEN, json!({"cursor": true}))
+            .is_err()
+    );
+}
+
+#[test]
+fn the_window_shadow_is_transparent_around_the_frame() {
+    let ossido = Headless::start_with("screenshot-shadow", (640, 400), &[]);
+    let _window = TestWindow::open_decorated(&ossido.wayland, "shadowed", (200, 120));
+    let mut client = ossido.client();
+    let at = f64::from(FIRST_WINDOW_AT) + 10.0;
+    let reply = client
+        .call(SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at}))
+        .unwrap();
+    let path = reply["path"].as_str().unwrap().to_owned();
+    let width = reply["width"].as_u64().unwrap() as u32;
+    let height = reply["height"].as_u64().unwrap() as u32;
+    let pixels = decode(&std::fs::read(&path).unwrap()).1;
+    std::fs::remove_file(&path).unwrap();
+    // The bottom-right corner is beyond the frame: shadow or nothing, never opaque.
+    let corner = pixel_in(&pixels, width, width - 1, height - 1);
+    assert!(corner[3] < 255, "corner {corner:?}");
+    // Somewhere in the middle: the window, opaque.
+    let middle = pixel_in(&pixels, width, width / 2, height / 2);
+    assert_eq!(middle[3], 255, "middle {middle:?}");
+}
+
+#[test]
+fn the_pointer_is_drawn_in_when_asked_or_set() {
+    let ossido = Headless::start_with("screenshot-pointer", (320, 200), &[]);
+    let mut client = ossido.client();
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": 100, "y": 80}))
+        .unwrap();
+    let plain = capture_pixels(&mut client, SCREENSHOT_SCREEN, Value::Null);
+    let with = capture_pixels(&mut client, SCREENSHOT_SCREEN, json!({"pointer": true}));
+    // The arrow's tip (white outline) and its black body just below it.
+    assert_ne!(
+        pixel_in(&plain, 320, 101, 83),
+        pixel_in(&with, 320, 101, 83)
+    );
+    assert_eq!(&pixel_in(&with, 320, 101, 83)[..3], &[0, 0, 0]);
+    assert_eq!(&pixel_in(&with, 320, 100, 80)[..3], &[255, 255, 255]);
+    // Far from the pointer nothing changes.
+    assert_eq!(pixel_in(&plain, 320, 10, 10), pixel_in(&with, 320, 10, 10));
+
+    // The setting applies to the shortcut (no parameters).
+    client
+        .call(SCREENSHOT_SETTINGS, json!({"pointer": true}))
+        .unwrap();
+    let set = capture_pixels(&mut client, SCREENSHOT_SCREEN, Value::Null);
+    assert_eq!(&pixel_in(&set, 320, 101, 83)[..3], &[0, 0, 0]);
+    // A region: the pointer at its place inside the region.
+    let region = capture_pixels(
+        &mut client,
+        SCREENSHOT_REGION,
+        json!({"x": 90, "y": 70, "width": 40, "height": 40}),
+    );
+    assert_eq!(&pixel_in(&region, 40, 11, 13)[..3], &[0, 0, 0]);
+    // An explicit false wins over the setting.
+    let off = capture_pixels(&mut client, SCREENSHOT_SCREEN, json!({"pointer": false}));
+    assert_eq!(pixel_in(&off, 320, 101, 83), pixel_in(&plain, 320, 101, 83));
+}
+
+#[test]
+fn the_clipboard_shortcut_marks_the_capture() {
+    let ossido = Headless::start_with("screenshot-clipboard", (320, 200), &[]);
+    let mut client = ossido.client();
+    let (size, reply) = capture(&mut client, SCREENSHOT_SCREEN_CLIPBOARD, Value::Null);
+    assert_eq!(size, (320, 200));
+    assert_eq!(reply["clipboard"], json!(true));
+    let (_, reply) = capture(
+        &mut client,
+        SCREENSHOT_REGION,
+        json!({"x": 0, "y": 0, "width": 10, "height": 10, "clipboard": true}),
+    );
+    assert_eq!(reply["clipboard"], json!(true));
 }

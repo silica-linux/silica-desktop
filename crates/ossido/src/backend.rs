@@ -400,8 +400,8 @@ pub const THUMBNAIL_MAX: u32 = 256;
 impl State {
     /// Photographs the window frame (without shadow) and keeps it, reduced, in its data.
     pub fn capture_thumbnail(&mut self, window: &smithay::desktop::Window) {
-        let capture = match self.window_capture(window) {
-            Ok(capture) => capture,
+        let capture = match self.window_capture(window, false) {
+            Ok((capture, _)) => capture,
             Err(err) => {
                 warn!("thumbnail not read: {err}");
                 return;
@@ -418,11 +418,14 @@ impl State {
         }
     }
 
-    /// The window on its own (frame and bar included), at full resolution.
+    /// The window on its own (frame and bar included), at full resolution; with `shadow`, its
+    /// shadow too on a transparent background (what the screen shows of it). Also where the
+    /// image's top-left pixel sits on the output, in physical pixels.
     pub fn window_capture(
         &mut self,
         window: &smithay::desktop::Window,
-    ) -> Result<crate::capture::Capture, String> {
+        shadow: bool,
+    ) -> Result<(crate::capture::Capture, (f64, f64)), String> {
         use smithay::backend::renderer::ExportMem;
         let dark = self.dark();
         let Some(renderer) = self.backend.gles() else {
@@ -441,9 +444,13 @@ impl State {
         let mut frame = crate::decorations::frame_of(window, geometry);
         frame.loc -= origin.loc;
         let frame = frame.to_physical_precise_round(scale);
-        let visible = frame
-            .intersection(snapshot.bbox)
-            .ok_or("window off screen")?;
+        let visible = if shadow {
+            snapshot.bbox
+        } else {
+            frame
+                .intersection(snapshot.bbox)
+                .ok_or("window off screen")?
+        };
         let region = Rectangle::<i32, smithay::utils::Buffer>::new(
             (visible.loc - snapshot.bbox.loc).to_logical(1).to_buffer(
                 1,
@@ -465,11 +472,14 @@ impl State {
         else {
             return Err("invalid size".to_owned());
         };
-        Ok(crate::capture::Capture {
-            width,
-            height,
-            rgba: pixels,
-        })
+        Ok((
+            crate::capture::Capture {
+                width,
+                height,
+                rgba: pixels,
+            },
+            (f64::from(visible.loc.x), f64::from(visible.loc.y)),
+        ))
     }
 }
 

@@ -18,7 +18,8 @@ use silica_control::commands::{
 };
 use silica_control::commands::{
     APP_FORCE_QUIT, APP_FORCE_QUIT_PANEL, SCREENSHOT_REGION, SCREENSHOT_SCREEN,
-    SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT, SCREENSHOT_WINDOW_VEIL,
+    SCREENSHOT_SCREEN_CLIPBOARD, SCREENSHOT_SELECTION, SCREENSHOT_SELECTION_CLIPBOARD,
+    SCREENSHOT_SETTINGS, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT, SCREENSHOT_WINDOW_VEIL,
 };
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
@@ -40,6 +41,7 @@ use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
 use silica_control::commands::{MinimizeEffectParams, WINDOW_MINIMIZE_EFFECT};
+use silica_control::{CaptureAnnouncement, CaptureOptions, ScreenshotSettings};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -104,8 +106,22 @@ impl State {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
             SCREENSHOT_SCREEN => {
+                let options: CaptureOptions = parse(params)?;
                 let capture = self.screenshot()?;
-                self.publish_screenshot(&capture)
+                self.publish_screenshot(capture, options, (0.0, 0.0))
+            }
+            SCREENSHOT_SCREEN_CLIPBOARD => {
+                let capture = self.screenshot()?;
+                let options = CaptureOptions {
+                    pointer: None,
+                    clipboard: true,
+                };
+                self.publish_screenshot(capture, options, (0.0, 0.0))
+            }
+            SCREENSHOT_SETTINGS => {
+                let settings: ScreenshotSettings = parse_required(params)?;
+                self.screenshot_settings = settings;
+                to_value(settings)
             }
             SCREENSHOT_REGION => {
                 let region: silica_control::RegionParams = parse_required(params)?;
@@ -116,25 +132,36 @@ impl State {
                     .output_geometry(&self.output)
                     .map(|g| g.loc.to_f64())
                     .unwrap_or_default();
+                let (x, y) = ((region.x - origin.x) * scale, (region.y - origin.y) * scale);
                 let crop = crate::capture::crop(
                     &capture,
-                    (region.x - origin.x) * scale,
-                    (region.y - origin.y) * scale,
+                    x,
+                    y,
                     region.width * scale,
                     region.height * scale,
                 )
                 .ok_or("empty region or off screen")?;
-                self.publish_screenshot(&crop)
+                // The crop starts at the rounded, clamped corner (see `crop`).
+                let corner = (
+                    x.round().clamp(0.0, f64::from(capture.width)),
+                    y.round().clamp(0.0, f64::from(capture.height)),
+                );
+                self.publish_screenshot(crop, region.options(), corner)
             }
             SCREENSHOT_WINDOW_AT => {
-                let point: silica_control::PointParams = parse_required(params)?;
-                let window = match self.window_hit(Point::from((point.x, point.y))) {
+                let shot: silica_control::WindowShotParams = parse_required(params)?;
+                let window = match self.window_hit(Point::from((shot.x, shot.y))) {
                     Some(crate::decorations::Hit::Titlebar(window, _, _))
                     | Some(crate::decorations::Hit::Content(window)) => window,
+                    None if shot.or_screen => {
+                        let capture = self.screenshot()?;
+                        return self.publish_screenshot(capture, shot.options(), (0.0, 0.0));
+                    }
                     None => return Err("no window at that point".to_owned()),
                 };
-                let capture = self.window_capture(&window)?;
-                self.publish_screenshot(&capture)
+                let (capture, corner) =
+                    self.window_capture(&window, shot.shadow.unwrap_or(true))?;
+                self.publish_screenshot(capture, shot.options(), corner)
             }
             SCREENSHOT_WINDOW_VEIL => {
                 let EnabledParams { enabled } = parse_required(params)?;
@@ -146,9 +173,10 @@ impl State {
                 let killed = self.force_quit(&app_id)?;
                 Ok(json!({ "killed": killed }))
             }
-            SCREENSHOT_SELECTION | SCREENSHOT_TOOLBAR | APP_FORCE_QUIT_PANEL => {
-                Ok(json!({ "forwarded": self.forward_to_shell(id) }))
-            }
+            SCREENSHOT_SELECTION
+            | SCREENSHOT_SELECTION_CLIPBOARD
+            | SCREENSHOT_TOOLBAR
+            | APP_FORCE_QUIT_PANEL => Ok(json!({ "forwarded": self.forward_to_shell(id) })),
             WINDOW_MINIMIZE_EFFECT => {
                 let MinimizeEffectParams { effect } = parse_required(params)?;
                 self.minimize_effect = crate::render::MinimizeEffect::parse(&effect)
@@ -854,8 +882,34 @@ impl State {
     }
 
     /// Writes the screenshot to a temporary file and announces it to the shell (`broadcast`
-    /// "screenshot" = "<path> <width> <height>"): the thumbnail, then the Desktop.
-    fn publish_screenshot(&mut self, capture: &crate::capture::Capture) -> Result<Value, String> {
+    /// "screenshot" = [`CaptureAnnouncement`] as JSON): the thumbnail, then its place.
+    /// `corner` is where the image's top-left pixel sits on the output (physical pixels),
+    /// to draw the pointer in when asked.
+    fn publish_screenshot(
+        &mut self,
+        mut capture: crate::capture::Capture,
+        options: CaptureOptions,
+        corner: (f64, f64),
+    ) -> Result<Value, String> {
+        if options.pointer.unwrap_or(self.screenshot_settings.pointer)
+            && let Some(pointer) = self.seat.get_pointer()
+        {
+            let scale = self.output.current_scale().fractional_scale();
+            let origin = self
+                .space
+                .output_geometry(&self.output)
+                .map(|g| g.loc.to_f64())
+                .unwrap_or_default();
+            let at = pointer.current_location() - origin;
+            let (w, h, arrow) = crate::cursor::arrow();
+            crate::capture::draw_over(
+                &mut capture,
+                (at.x * scale - corner.0, at.y * scale - corner.1),
+                (w, h, &arrow),
+                scale,
+            );
+        }
+        let capture = &capture;
         let png = capture.to_png()?;
         let dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(std::path::PathBuf::from)
@@ -868,11 +922,23 @@ impl State {
         ));
         std::fs::write(&path, &png).map_err(|e| format!("writing {}: {e}", path.display()))?;
         let path = path.to_string_lossy().into_owned();
+        let announcement = CaptureAnnouncement {
+            path: path.clone(),
+            width: capture.width,
+            height: capture.height,
+            clipboard: options.clipboard,
+            seq: self.screenshot_count,
+        };
         self.broadcast_to_shell(
             "screenshot".to_owned(),
-            format!("{path} {} {}", capture.width, capture.height),
+            serde_json::to_string(&announcement).map_err(|e| e.to_string())?,
         );
-        Ok(json!({ "path": path, "width": capture.width, "height": capture.height }))
+        Ok(json!({
+            "path": path,
+            "width": capture.width,
+            "height": capture.height,
+            "clipboard": options.clipboard,
+        }))
     }
 
     fn command_screenshot(&mut self, params: ScreenshotParams) -> Result<Value, String> {

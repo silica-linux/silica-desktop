@@ -321,7 +321,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String screenshotFileName(String date, String time) {
-    return 'Schermata del $date alle $time';
+    return 'Istantanea schermo $date alle $time';
   }
 
   @override
@@ -352,6 +352,57 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get capture => 'Acquisisci';
+
+  @override
+  String get shotDesktop => 'Scrivania';
+
+  @override
+  String get shotDocuments => 'Documenti';
+
+  @override
+  String get shotClipboard => 'Appunti';
+
+  @override
+  String get shotOtherFolder => 'Altra cartella…';
+
+  @override
+  String get shotChooseFolder => 'Scegli dove salvare le istantanee';
+
+  @override
+  String get shotKeepSelection => 'Mantieni l’ultima selezione';
+
+  @override
+  String get shotIncludePointer => 'Includi il puntatore';
+
+  @override
+  String get shotSaveToDesktop => 'Salva sulla Scrivania';
+
+  @override
+  String get shotSaveToDocuments => 'Salva in Documenti';
+
+  @override
+  String get shotSaveToClipboard => 'Copia negli Appunti';
+
+  @override
+  String shotSaveToFolder(String name) {
+    return 'Salva in “$name”';
+  }
+
+  @override
+  String shotOpenWith(String app) {
+    return 'Apri con $app';
+  }
+
+  @override
+  String shotShowIn(String app) {
+    return 'Mostra in $app';
+  }
+
+  @override
+  String get shotDelete => 'Elimina';
+
+  @override
+  String get shotClose => 'Chiudi';
 
   @override
   String faroCompletionAction(String action) {

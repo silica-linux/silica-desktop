@@ -14,6 +14,9 @@ Sounds (48 kHz, 16-bit mono WAV, peak at PEAK_DBFS):
                  from a few inharmonic partials, ~280 ms.
 - trash-empty    the Trash emptied: a dry crumple of short noise grains thinning out, ~280 ms.
 - file-transfer  a copy or move finished: a quiet rising two-partial blip, ~200 ms.
+- screen-capture a screenshot taken: a mechanical double click (two short bursts of filtered
+                 noise 70 ms apart, each over a low thump), ~190 ms. Provisional: the
+                 reference's timing and level are not measured (SCREENSHOT-2).
 
 Requires numpy.
 """
@@ -151,11 +154,29 @@ def file_transfer(rng):
     return tone * envelope(length, 0.004, 0.050)
 
 
+def screen_capture(rng):
+    total = 0.19
+
+    def click(gain, decay, thump_hz):
+        length = 0.06
+        tick = lowpass(bandpass(rng.standard_normal(seconds(length)), 2600, 0.9), 7000)
+        tick *= envelope(length, 0.0008, decay)
+        t = time(length)
+        thump = np.sin(2 * np.pi * thump_hz * t) * envelope(length, 0.001, 0.018)
+        return gain * (tick / max(np.max(np.abs(tick)), 1e-9) + 0.4 * thump)
+
+    # The blades open, then close a little softer.
+    return place(total, click(1.0, 0.006, 170), 0) + place(
+        total, click(0.7, 0.008, 140), 0.07
+    )
+
+
 SOUNDS = {
     "trash-move": trash_move,
     "trash-drag": trash_drag,
     "trash-empty": trash_empty,
     "file-transfer": file_transfer,
+    "screen-capture": screen_capture,
 }
 
 

@@ -142,3 +142,45 @@ insertion point. It has three buttons and an arrow that expands it into the full
 - ⇧⌘4 in dark appearance.
 - Dragging the thumbnail.
 - The full character panel.
+
+### What Silica does meanwhile (*provisional*)
+
+Until these are measured, `shell/lib/screenshot/` follows the best knowledge of the reference
+system; every value below is marked *provisional* in the code.
+
+- **Thumbnail:**
+  - Dragging it starts a real drag and drop of the file. The file is written to its place
+    first, so a folder, the desktop or an app receives a file that exists. The image on the
+    pointer is the thumbnail, held where it was grabbed. Dropped nowhere, the thumbnail comes
+    back.
+  - A secondary click opens its menu: save to Desktop, Documents, the clipboard or a folder
+    chosen before, open with the default image viewer, show in the file manager, Delete,
+    Close. The current place has a checkmark. Delete removes the capture; Close saves it.
+  - A click opens the image with the default app. There is no annotation editor yet.
+  - A two-finger swipe to the right of 40 pt sends it away at once.
+  - The pointer on it or its open menu keep it; when the pointer leaves, it stays another
+    5.1 s.
+- **⇧⌘4:**
+  - While dragging, the label shows the selection's size.
+  - Shift keeps one side fixed, Option grows from the center, Space moves the selection.
+  - Window captures include the window's shadow on a transparent background (Option: the
+    frame only). Over the desktop, the whole screen is captured.
+- **⇧⌘5 bar:**
+  - The separators, Options and the action button sit at 192, 372, 383 and 463 pt from the
+    bar's left edge. The blue pill is 76 × 30.
+  - In screen mode a click anywhere captures. The first time, the selection is half the
+    screen, centered.
+  - The selection is drawn with a 35 % black dim outside, a white border and eight 9 pt
+    handles.
+  - The bar's background drags it, and its place is remembered.
+  - The timer shows a 96 × 96 dark square with the seconds left, at the center of the
+    target. Apps stay usable during the countdown.
+  - Options menu: Save to (Desktop, Documents, Clipboard, the image viewer, folders chosen
+    before, Other Folder…), the timer (none, 5 s, 10 s), and the options (thumbnail, keep the
+    last selection, include the pointer). The pointer setting applies to ⇧⌘3 as well.
+  - Recording is not available yet: its three buttons are dimmed and do nothing.
+- **Clipboard:** ⌃ captures go straight to the clipboard, with no thumbnail and no file.
+- **Files:** the name is the capture time, "Screenshot 2026-10-14 at 04.12.33.png"; in Italian
+  "Istantanea schermo 2026-10-14 alle 04.12.33.png" (the Italian wording is provisional).
+- **Sound:** an original synthesized shutter (`screen-capture`, made by `tools/sounds/synth.py`,
+  played by silica-daemon `Sound1`) on every capture, unless the interface sound effects are off.

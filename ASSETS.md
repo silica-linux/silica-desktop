@@ -33,6 +33,7 @@ generated in code are preferred.
 | `docs/spec/diagrams/misc-bounce.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/icon-mask-corner.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `data/sounds/file-transfer.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `data/sounds/screen-capture.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `data/sounds/trash-drag.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `data/sounds/trash-empty.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `data/sounds/trash-move.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |

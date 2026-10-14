@@ -15,7 +15,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::os::fd::AsFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -316,6 +316,31 @@ impl Clipboard {
             .is_ok()
     }
 
+    /// Puts a PNG file on the clipboard as an image (a screenshot sent to the clipboard).
+    /// False if it is not a readable PNG.
+    fn copy_image(&self, path: &str) -> bool {
+        let Some(data) = read_png(Path::new(path)) else {
+            return false;
+        };
+        let entry = Entry {
+            id: 0,
+            kind: Kind::Image,
+            text: String::new(),
+            image: None,
+            time: now(),
+            data,
+            mime: PNG.to_owned(),
+        };
+        std::thread::Builder::new()
+            .name("clipboard-source".to_owned())
+            .spawn(move || {
+                if let Err(err) = offer(&entry) {
+                    eprintln!("silica-daemon: clipboard: {err}");
+                }
+            })
+            .is_ok()
+    }
+
     fn remove(&self, id: u64) -> bool {
         let removed = self.shared.history().remove(id);
         if removed {
@@ -331,6 +356,20 @@ impl Clipboard {
 
     #[zbus(signal)]
     async fn changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+/// Largest PNG [`Clipboard::copy_image`] reads (a full 8K screen fits).
+const MAX_COPIED_IMAGE: u64 = 128 << 20;
+
+/// The bytes of a PNG file, if it is one and not too large.
+pub fn read_png(path: &Path) -> Option<Vec<u8>> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_COPIED_IMAGE {
+        return None;
+    }
+    let data = std::fs::read(path).ok()?;
+    data.starts_with(SIGNATURE).then_some(data)
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -627,6 +666,24 @@ mod tests {
         );
         assert_eq!(chosen_type(&types(&[PNG])), Some(PNG));
         assert_eq!(chosen_type(&types(&["application/x-other"])), None);
+    }
+
+    #[test]
+    fn only_png_files_are_copied_as_images() {
+        let dir = std::env::temp_dir().join(format!("silica-copy-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("shot.png");
+        std::fs::write(&png, b"\x89PNG\r\n\x1a\nrest").unwrap();
+        let text = dir.join("shot.txt");
+        std::fs::write(&text, b"hello").unwrap();
+        assert_eq!(
+            read_png(&png).as_deref(),
+            Some(&b"\x89PNG\r\n\x1a\nrest"[..])
+        );
+        assert_eq!(read_png(&text), None);
+        assert_eq!(read_png(&dir), None);
+        assert_eq!(read_png(&dir.join("missing.png")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

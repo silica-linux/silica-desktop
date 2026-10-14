@@ -59,6 +59,58 @@ pub fn crop(capture: &Capture, x: f64, y: f64, width: f64, height: f64) -> Optio
     })
 }
 
+/// Draws `image` (premultiplied RGBA, `w × h` at scale 1, hotspot at its top-left pixel) over
+/// the capture with its hotspot at `at` (physical pixels, relative to the capture), scaled to
+/// `scale` (nearest pixel). Parts outside the capture are left out.
+pub fn draw_over(
+    capture: &mut Capture,
+    at: (f64, f64),
+    (w, h, image): (i32, i32, &[u8]),
+    scale: f64,
+) {
+    if !at.0.is_finite() || !at.1.is_finite() || !scale.is_finite() || scale <= 0.0 {
+        return;
+    }
+    let (Ok(w), Ok(h)) = (usize::try_from(w), usize::try_from(h)) else {
+        return;
+    };
+    let out_w = (w as f64 * scale).round() as i64;
+    let out_h = (h as f64 * scale).round() as i64;
+    let (x0, y0) = (at.0.round() as i64, at.1.round() as i64);
+    let (cw, ch) = (i64::from(capture.width), i64::from(capture.height));
+    for dy in 0..out_h {
+        let y = y0 + dy;
+        if !(0..ch).contains(&y) {
+            continue;
+        }
+        let sy = ((dy as f64 / scale) as usize).min(h.saturating_sub(1));
+        for dx in 0..out_w {
+            let x = x0 + dx;
+            if !(0..cw).contains(&x) {
+                continue;
+            }
+            let sx = ((dx as f64 / scale) as usize).min(w.saturating_sub(1));
+            let from = (sy * w + sx) * 4;
+            let Some(src) = image.get(from..from + 4) else {
+                continue;
+            };
+            let alpha = src.get(3).copied().map(u32::from).unwrap_or(0);
+            if alpha == 0 {
+                continue;
+            }
+            let i = ((y * cw + x) * 4) as usize;
+            let Some(dst) = capture.rgba.get_mut(i..i + 4) else {
+                continue;
+            };
+            // Source over, both premultiplied.
+            for (d, s) in dst.iter_mut().zip(src) {
+                let under = u32::from(*d) * (255 - alpha) / 255;
+                *d = (u32::from(*s) + under).min(255) as u8;
+            }
+        }
+    }
+}
+
 /// Draws the space into an offscreen buffer and reads it back (renderer without effects).
 pub fn capture<R, T>(
     renderer: &mut R,
@@ -130,4 +182,49 @@ where
         height,
         rgba,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grey(width: u32, height: u32) -> Capture {
+        Capture {
+            width,
+            height,
+            rgba: [128, 128, 128, 255].repeat((width * height) as usize),
+        }
+    }
+
+    fn at(capture: &Capture, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * capture.width + x) * 4) as usize;
+        capture.rgba[i..i + 4].try_into().unwrap()
+    }
+
+    #[test]
+    fn the_pointer_is_drawn_at_its_hotspot_and_clipped() {
+        let mut shot = grey(8, 8);
+        // A 2 × 2 image: white, transparent / black, half black.
+        let image = [
+            255, 255, 255, 255, 0, 0, 0, 0, //
+            0, 0, 0, 255, 0, 0, 0, 128,
+        ];
+        draw_over(&mut shot, (6.0, 6.0), (2, 2, &image), 1.0);
+        assert_eq!(at(&shot, 6, 6), [255, 255, 255, 255]);
+        assert_eq!(at(&shot, 7, 6), [128, 128, 128, 255]);
+        assert_eq!(at(&shot, 6, 7), [0, 0, 0, 255]);
+        assert_eq!(at(&shot, 7, 7), [63, 63, 63, 255]);
+        // Partly outside: no panic, the inside part drawn.
+        draw_over(&mut shot, (-1.0, -1.0), (2, 2, &image), 1.0);
+        assert_eq!(at(&shot, 0, 0), [63, 63, 63, 255]);
+        // Scale 2: every pixel twice as large.
+        let mut big = grey(8, 8);
+        draw_over(&mut big, (0.0, 0.0), (2, 2, &image), 2.0);
+        assert_eq!(at(&big, 1, 1), [255, 255, 255, 255]);
+        assert_eq!(at(&big, 0, 3), [0, 0, 0, 255]);
+        // Hostile values are ignored.
+        draw_over(&mut big, (f64::NAN, 0.0), (2, 2, &image), 1.0);
+        draw_over(&mut big, (0.0, 0.0), (-2, 2, &image), 1.0);
+        draw_over(&mut big, (0.0, 0.0), (4, 4, &image), 1.0);
+    }
 }
