@@ -11,10 +11,12 @@ python3 tools/sounds/synth.py --spectrograms  # also a PNG per candidate (needs 
 ```
 
 The script writes the candidates of each sound to `candidates/<name>-<variant>.wav`: three
-first designs (A, B, C) and four refinements of B (B1–B4, see below). It lists them with a
-one-line description in `candidates/index.json` and copies the chosen one (`CHOSEN` in
-`synth.py`, B after the first listening) to `data/sounds/<name>.wav`. To ship another
-candidate, change its name in `CHOSEN` and run the script again. Each candidate has its own
+first designs (A, B, C), four refinements of B (B1–B4) and four designs per file-sound role
+(C1–C4, see "Roles" below). It lists them with a one-line description in
+`candidates/index.json` and copies the chosen one (`CHOSEN` in `synth.py`, C1 for now) to
+`data/sounds/<name>.wav`. `trash-drag` has no choice of its own: it ships a copy of
+`trash-move`'s file (`ALIASES`). To ship another candidate, change its name in `CHOSEN` and
+run the script again. Each candidate has its own
 random generator, so changing one leaves the others identical. The spectrogram PNGs are for
 inspection only and are not committed.
 
@@ -77,6 +79,38 @@ inspection only and are not committed.
 The `alert-*` sounds are the choices of Settings › Sound › Alert sound (silica-daemon's
 `Sound1.PlayAlert`, `docs/daemon.md`); each has one candidate for now.
 
+## Roles (C1–C4)
+
+The file manager plays three file sounds, each when its operation completes, plus the
+screenshot shutter:
+
+- **Trash** (`trash-move`, and `trash-drag` as an identical copy: moving to the Trash by
+  keyboard, menu, script or a drop on the Dock's Trash is one sound): a short, bright, dry
+  paper rustle of about 100 ms, built with the refined paper of B1–B4. **C1** rises in
+  brightness and has a faint settling tick after it; **C2** is the shortest and crispest
+  (~70 ms); **C3** is a little fuller with micro-crackles over a soft puff; **C4** ends on a
+  tiny steel tick of the bin.
+- **Move / copy / duplicate** (`file-transfer`): a brief bright click, then a soft, low,
+  tonal body (150–330 Hz) that holds for about 0.3 s and fades out, ~0.6 s in all. The body
+  is a modal resonator struck by a soft (felt) mallet and shaped by a hold-and-release
+  envelope. **C1** a hollow wooden box (air cavity at 175 Hz plus wall modes); **C2** a
+  plastic latch, then a felt-covered drum head (circular-membrane modes, ratios
+  1 : 1.594 : 2.136 : 2.296 : 2.653, on 165 Hz); **C3** a low tuned wooden bar on G3;
+  **C4** a cushioned thud, a slow low push blooming into resonances at 150, 228 and 312 Hz.
+- **Empty Trash** (`trash-empty`): a papery crumple whose grain density swells to a peak at
+  about 110 ms and fades, ~0.3 s, with the refined paper. **C1** with two tiny settling
+  ticks after it; **C2** drier, crisper and a little shorter, no ticks; **C3** softer and
+  darker, longer grains; **C4** denser and crackly, with clearer ticks.
+- **Screenshot** (`screen-capture`): two soft shutter clicks about 230 ms apart, ~0.37 s in
+  all. Each click is a blade snap (blade, body and spring modes) with a wider, softer pulse
+  and a short puff of air. **C1** 230 ms apart; **C2** softer and warmer, 225 ms; **C3**
+  brighter and tighter, 235 ms; **C4** a latch and the blades a few milliseconds apart,
+  then the closing click.
+
+The thuds and the clicks are finished with a quarter of the room, so their tails stay
+short. The clicks measure about −27 to −28 LUFS at the −6 dBFS peak ceiling (they are
+almost all transient).
+
 ## Refinements of B (B1–B4)
 
 B was preferred for every sound. B1–B4 stay close to its character and try improvements:
@@ -105,4 +139,4 @@ B was preferred for every sound. B1–B4 stay close to its character and try imp
   bodies: **B1** 35 ms, mid body; **B2** 45 ms, warmer; **B3** 30 ms, small and bright;
   **B4** 55 ms, audible blade travel and spring.
 
-The timing and level of each sound are set by ear, not measured from a reference.
+The roles, rough durations and characters of the C designs follow measured observations (FILE-SOUNDS); the sounds themselves are designed and synthesized here, and their levels are set by the loudness rules above.
