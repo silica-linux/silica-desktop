@@ -11,6 +11,10 @@ publish = false
 name = "silica-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "silica-action"
+path = "src/action.rs"
+
 [dependencies]
 serde_json = "1"
 silica-control = { path = "../control" }

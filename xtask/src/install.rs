@@ -66,6 +66,42 @@ pub fn install_app(app: &str) -> Result<()> {
     Ok(())
 }
 
+/// The shell's own applications (`shell/linux/*.desktop.in`: Apps, Screenshot), their
+/// `@ACTION@` replaced with `action` (the `silica-action` binary): `(file name, entry)`.
+pub fn shell_entries(root: &Path, action: &str) -> Result<Vec<(String, String)>> {
+    let dir = root.join("shell/linux");
+    let mut entries = Vec::new();
+    for item in std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let path = item.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+        let Some(name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".in"))
+            .filter(|n| n.ends_with(".desktop"))
+        else {
+            continue;
+        };
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        entries.push((name.to_owned(), text.replace("@ACTION@", action)));
+    }
+    entries.sort();
+    Ok(entries)
+}
+
+/// Installs the shell's applications in `~/.local/share/applications` for sessions on this
+/// machine (`xtask run --shell`).
+pub fn install_shell_entries(root: &Path) -> Result<()> {
+    let action = root.join("target/release/silica-action");
+    let target = applications_dir()?;
+    std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+    for (name, entry) in shell_entries(root, &action.display().to_string())? {
+        let out = target.join(&name);
+        std::fs::write(&out, entry).map_err(|e| format!("{}: {e}", out.display()))?;
+    }
+    Ok(())
+}
+
 /// `$XDG_DATA_HOME/applications`, or `~/.local/share/applications`.
 fn applications_dir() -> Result<PathBuf> {
     Ok(data_home()?.join("applications"))
@@ -131,4 +167,38 @@ pub fn install_portal() -> Result<()> {
         eprintln!("xtask: installed {}", path.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn shell_entries_run_their_action() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let entries = shell_entries(root, "/opt/silica-action").unwrap();
+        let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "dev.frascella.Apps.desktop",
+                "dev.frascella.Screenshot.desktop"
+            ]
+        );
+        let apps = &entries[0].1;
+        assert!(
+            apps.contains("Exec=/opt/silica-action launcher.toggle"),
+            "{apps}"
+        );
+        assert!(apps.contains("X-Silica-Icon=apps"), "{apps}");
+        let shot = &entries[1].1;
+        assert!(
+            shot.contains("Exec=/opt/silica-action screenshot.toolbar"),
+            "{shot}"
+        );
+        assert!(shot.contains("Categories=Utility;"), "{shot}");
+        assert!(!apps.contains("@ACTION@") && !shot.contains("@ACTION@"));
+    }
 }

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Apps
+Name[it]=App
+Comment=All your apps
+Comment[it]=Tutte le app
+Exec=@ACTION@ launcher.toggle
+Icon=view-app-grid-symbolic
+X-Silica-Icon=apps
+Categories=System;
+Keywords=launcher;applications;launchpad;
+Keywords[it]=launcher;applicazioni;
+Terminal=false
+StartupNotify=false
+OnlyShowIn=Silica;

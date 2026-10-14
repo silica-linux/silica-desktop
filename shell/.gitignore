@@ -2,3 +2,4 @@
 build/
 .flutter-plugins*
 pubspec.lock
+linux/flutter/

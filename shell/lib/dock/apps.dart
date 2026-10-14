@@ -66,8 +66,10 @@ bool dockFlag(String key, {required bool fallback, Map<String, String>? env}) {
 void savePinned(List<String> ids, {Map<String, String>? env}) =>
     saveDockOption('pinned', ids, env: env);
 
-/// The Apps item: not a .desktop entry, it opens the Launcher (the reference has it right
-/// after the file manager).
+/// The Apps application (#148): a .desktop entry shipped with the shell (`shell/linux`) whose
+/// Exec is `silica-action launcher.toggle`, right after the file manager on the reference. The
+/// Dock runs the action itself (no process, no launch bounce, never a running dot) and keeps
+/// the item even where the entry is missing.
 const String appsItemId = 'dev.frascella.Apps';
 
 /// Apps pinned when the configuration is missing: the first installed ones of this list.

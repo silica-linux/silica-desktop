@@ -215,7 +215,10 @@ fn shell_components() -> Result<Vec<String>> {
         "silica-embedder",
         "--package",
         "silica-daemon",
+        "--package",
+        "silica-cli",
     ]))?;
+    install::install_shell_entries(&root)?;
     let engine = flutter::release_engine_dir()?;
     if !engine.join("libflutter_engine.so").exists() {
         return Err(format!(

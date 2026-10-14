@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Name[it]=Istantanea schermo
+Comment=Capture the screen, a window or a selection
+Comment[it]=Cattura lo schermo, una finestra o una selezione
+Exec=@ACTION@ screenshot.toolbar
+Icon=applets-screenshooter
+X-Silica-Icon=screenshot
+Categories=Utility;
+Keywords=screenshot;capture;screen;
+Keywords[it]=istantanea;cattura;schermo;
+Terminal=false
+StartupNotify=false
+OnlyShowIn=Silica;

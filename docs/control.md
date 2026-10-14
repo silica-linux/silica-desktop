@@ -112,3 +112,20 @@ ossido --backend headless --appearance dark --control 0
 
 Via MCP the commands are tools with `_` instead of `.` (`window_list`); `ui_screenshot`
 without `path` returns the image as `image` content.
+
+## Actions socket
+
+A real session doesn't open the control channel, but a few user-facing actions must work from
+anywhere: the Apps and Screenshot applications, launchers, scripts. Ossido always listens on
+`$XDG_RUNTIME_DIR/silica/actions-<wayland display>.sock` (folder 0700, socket 0600). The
+protocol is the same JSON lines as the control channel, and only the commands in
+`silica_control::actions::ACTIONS` run there:
+
+- `launcher.toggle`, `faro.toggle`;
+- `screenshot.toolbar`, `screenshot.screen`, `screenshot.selection`;
+- `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`.
+
+Anything else is refused. The client is `silica-action <action>`, which finds the socket
+through `WAYLAND_DISPLAY`. `shell/linux/*.desktop.in` are the shell's own applications:
+`dev.frascella.Apps` runs `silica-action launcher.toggle` and `dev.frascella.Screenshot` runs
+`silica-action screenshot.toolbar`.

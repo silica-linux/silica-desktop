@@ -682,8 +682,15 @@ fn deploy(args: &[String]) -> Result<()> {
         "silica-daemon",
         "silica-portal",
         "silica-cli",
+        "silica-action",
     ] {
         replace_file(&release.join(binary), &share.join("bin").join(binary))?;
+    }
+    // The shell's own applications (Apps, Screenshot).
+    for (name, entry) in
+        crate::install::shell_entries(&root, &format!("{GUEST_SHARE}/bin/silica-action"))?
+    {
+        write(&share.join("share/applications").join(name), &entry)?;
     }
     let engine = flutter::release_engine_dir()?;
     for file in ["libflutter_engine.so", "icudtl.dat"] {
