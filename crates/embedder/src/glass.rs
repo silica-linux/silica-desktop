@@ -5,12 +5,15 @@
 //! radius, at most 64 regions) so that a wrong value does not become a protocol error that
 //! would disconnect the app.
 
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+
 use serde_json::{Value, json};
 use silica_protocols::glass::MAX_REGIONS;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{Material, Side, SilicaGlassV1};
 use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{Dispatch, Proxy, QueueHandle};
+use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 
 pub const CHANNEL: &str = "silica/glass";
 
@@ -123,48 +126,64 @@ pub fn parse_regions(args: &Value) -> Vec<Region> {
 /// The glass of the app surface.
 pub struct Glass {
     manager: Option<SilicaGlassManagerV1>,
-    object: Option<SilicaGlassV1>,
+    /// The regions last asked by the app.
     current: Vec<Region>,
+    sync: Arc<GlassSync>,
 }
 
 impl Glass {
-    pub fn new(manager: Option<SilicaGlassManagerV1>) -> Self {
+    pub fn new(manager: Option<SilicaGlassManagerV1>, sync: Arc<GlassSync>) -> Self {
         Self {
             manager,
-            object: None,
             current: Vec::new(),
+            sync,
         }
     }
 
-    /// Handles a channel call. Returns the reply (JSON method codec) and whether the regions
-    /// changed: in that case the surface needs a commit.
-    pub fn handle_call<D>(
+    /// Takes in a channel call, as soon as the platform task delivering it runs (one main
+    /// loop turn sooner than the reply). `raster_seq` is the raster task that presents the
+    /// frame the regions were measured on (`PlatformMessage::raster_seq`). Returns whether the
+    /// surface must be committed now: the regions go with their frame, and only when that
+    /// frame is already on screen they need a commit of their own.
+    pub fn receive<D>(
         &mut self,
         message: &[u8],
+        raster_seq: u64,
         surface: &WlSurface,
         qh: &QueueHandle<D>,
-    ) -> (Vec<u8>, bool)
+    ) -> bool
     where
         D: Dispatch<SilicaGlassV1, ()> + 'static,
     {
         let Ok(call) = serde_json::from_slice::<Value>(message) else {
-            return (Vec::new(), false);
+            return false;
         };
         match call.get("method").and_then(Value::as_str) {
             Some("setRegions") => {
                 let regions = parse_regions(call.get("args").unwrap_or(&Value::Null));
-                let changed = self.set_regions(regions, surface, qh);
-                (reply(json!(self.manager.is_some())), changed)
+                self.set_regions(regions, raster_seq, surface, qh)
             }
-            // Does Ossido offer glass? Without it, the app draws an opaque background.
-            Some("isSupported") => (reply(json!(self.manager.is_some())), false),
-            _ => (Vec::new(), false),
+            _ => false,
+        }
+    }
+
+    /// The reply to a channel call (JSON method codec), once [`Glass::receive`] took it in.
+    pub fn reply(&self, message: &[u8]) -> Vec<u8> {
+        let Ok(call) = serde_json::from_slice::<Value>(message) else {
+            return Vec::new();
+        };
+        match call.get("method").and_then(Value::as_str) {
+            // `isSupported`: does Ossido offer glass? Without it, the app draws an opaque
+            // background.
+            Some("setRegions" | "isSupported") => reply(json!(self.manager.is_some())),
+            _ => Vec::new(),
         }
     }
 
     fn set_regions<D>(
         &mut self,
         regions: Vec<Region>,
+        raster_seq: u64,
         surface: &WlSurface,
         qh: &QueueHandle<D>,
     ) -> bool
@@ -177,68 +196,190 @@ impl Glass {
         let Some(manager) = &self.manager else {
             return false;
         };
-        let object = self
-            .object
-            .get_or_insert_with(|| manager.get_glass(surface, qh, ()));
-        object.clear();
-        // An Ossido with version 1 of the protocol does not know the notification glass:
-        // the closest one is the thick glass.
-        let notification = object.version() >= 2;
-        let translucent = object.version() >= 3;
-        let groups = object.version() >= 4;
-        let mut group = regions.first().map_or(0, |r| r.group);
-        for region in &regions {
-            if region.tip.is_some_and(|tip| object.version() < tip.since()) {
-                // An earlier Ossido cannot draw this tip.
-                continue;
+        self.sync
+            .ensure_object(|| manager.get_glass(surface, qh, ()));
+        self.current = regions.clone();
+        self.sync.submit(raster_seq, regions)
+    }
+}
+
+/// The glass regions on their way to the compositor, in step with the frames.
+///
+/// Dart sends the regions after the frame they were measured on has gone to the raster thread
+/// (`GlassRegistry` runs after the paint). Sent at once, the next commit would apply them: the
+/// commit asking for the next vsync, a frame ahead of their content (a double edge while a
+/// panel opens). Sent with a commit of their own after a delay, they would stay on screen after
+/// a closing panel's last frame (the outline of the Control Center's tiles left for a moment).
+/// Here they wait for the present of the raster task that draws their frame and are sent just
+/// before it, so the frame's own commit applies them; if that frame is already on screen, or
+/// the task draws nothing, they are committed right away.
+pub struct GlassSync {
+    conn: Connection,
+    surface: WlSurface,
+    state: Mutex<SyncState>,
+}
+
+#[derive(Default)]
+struct SyncState {
+    object: Option<SilicaGlassV1>,
+    /// Regions waiting for the frame of their raster task, in order.
+    pending: VecDeque<(u64, Vec<Region>)>,
+    /// The last raster task whose frame is committed (or that has run without a frame).
+    done: u64,
+    /// A software frame drawn by this raster task, not yet committed by the main thread.
+    software_frame: Option<u64>,
+}
+
+impl GlassSync {
+    pub fn new(conn: Connection, surface: WlSurface) -> Self {
+        Self {
+            conn,
+            surface,
+            state: Mutex::new(SyncState::default()),
+        }
+    }
+
+    fn ensure_object(&self, create: impl FnOnce() -> SilicaGlassV1) {
+        if let Ok(mut state) = self.state.lock()
+            && state.object.is_none()
+        {
+            state.object = Some(create());
+        }
+    }
+
+    /// New regions measured on the frame of raster task `seq`. True if the caller must commit
+    /// the surface now (their frame is already on screen).
+    fn submit(&self, seq: u64, regions: Vec<Region>) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if seq <= state.done {
+            state.pending.clear();
+            if let Some(object) = &state.object {
+                send_regions(object, &regions);
             }
-            if groups && region.group != group {
-                object.separate();
-                group = region.group;
+            return true;
+        }
+        state.pending.push_back((seq, regions));
+        false
+    }
+
+    /// The frame of raster task `seq` is about to be committed: its regions go with it. On
+    /// the raster thread (GL, Vulkan) or on the main thread (software frames).
+    pub fn before_present(&self, seq: u64) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.send_due(seq);
+        state.done = state.done.max(seq);
+        if state.software_frame.is_some_and(|frame| frame <= seq) {
+            state.software_frame = None;
+        }
+    }
+
+    /// The software renderer drew a frame in raster task `seq`: the main thread commits it.
+    pub fn software_frame(&self, seq: u64) {
+        if let Ok(mut state) = self.state.lock() {
+            state.software_frame = Some(seq);
+        }
+    }
+
+    /// Raster task `seq` has run (on the raster thread). If regions waited for it and it
+    /// committed no frame (a task that draws nothing, a frame dropped while resizing), they
+    /// are committed now on their own.
+    pub fn after_task(&self, seq: u64) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state.software_frame.is_some() {
+            // The main thread commits that frame, with what goes with it.
+            return;
+        }
+        state.done = state.done.max(seq);
+        if state.send_due(seq) {
+            self.surface.commit();
+            if let Err(err) = self.conn.flush() {
+                tracing::warn!("glass commit: {err}");
             }
-            let material = match region.material {
-                Material::Notification if !notification => Material::Thick,
-                material => material,
-            };
-            let (x, y, w, h, opacity) = (
+        }
+    }
+}
+
+impl SyncState {
+    /// Sends the latest regions waiting for a raster task up to `seq`; true if any.
+    fn send_due(&mut self, seq: u64) -> bool {
+        let mut due = None;
+        while self.pending.front().is_some_and(|(at, _)| *at <= seq) {
+            due = self.pending.pop_front().map(|(_, regions)| regions);
+        }
+        match (due, &self.object) {
+            (Some(regions), Some(object)) => {
+                send_regions(object, &regions);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The requests that replace the surface's regions (applied at the next commit).
+fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
+    object.clear();
+    // An Ossido with version 1 of the protocol does not know the notification glass:
+    // the closest one is the thick glass.
+    let notification = object.version() >= 2;
+    let translucent = object.version() >= 3;
+    let groups = object.version() >= 4;
+    let mut group = regions.first().map_or(0, |r| r.group);
+    for region in regions {
+        if region.tip.is_some_and(|tip| object.version() < tip.since()) {
+            // An earlier Ossido cannot draw this tip.
+            continue;
+        }
+        if groups && region.group != group {
+            object.separate();
+            group = region.group;
+        }
+        let material = match region.material {
+            Material::Notification if !notification => Material::Thick,
+            material => material,
+        };
+        let (x, y, w, h, opacity) = (
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+            region.opacity,
+        );
+        if let Some(tip) = region.tip {
+            match tip {
+                Tip::Down => object.add_tip(x, y, w, h, material, opacity),
+                Tip::Up => object.add_upward_tip(x, y, w, h, material, opacity),
+                Tip::Left => object.add_side_tip(x, y, w, h, Side::Left, material, opacity),
+                Tip::Right => object.add_side_tip(x, y, w, h, Side::Right, material, opacity),
+            }
+        } else if translucent && region.opacity < 1.0 {
+            object.add_translucent_region(
                 region.x,
                 region.y,
                 region.width,
                 region.height,
+                region.radius,
+                material,
                 region.opacity,
             );
-            if let Some(tip) = region.tip {
-                match tip {
-                    Tip::Down => object.add_tip(x, y, w, h, material, opacity),
-                    Tip::Up => object.add_upward_tip(x, y, w, h, material, opacity),
-                    Tip::Left => object.add_side_tip(x, y, w, h, Side::Left, material, opacity),
-                    Tip::Right => object.add_side_tip(x, y, w, h, Side::Right, material, opacity),
-                }
-            } else if translucent && region.opacity < 1.0 {
-                object.add_translucent_region(
-                    region.x,
-                    region.y,
-                    region.width,
-                    region.height,
-                    region.radius,
-                    material,
-                    region.opacity,
-                );
-            } else if region.opacity >= 0.5 || translucent {
-                // An Ossido without version 3 composes the glass at full opacity: better no
-                // glass for an almost invisible region.
-                object.add_region(
-                    region.x,
-                    region.y,
-                    region.width,
-                    region.height,
-                    region.radius,
-                    material,
-                );
-            }
+        } else if region.opacity >= 0.5 || translucent {
+            // An Ossido without version 3 composes the glass at full opacity: better no
+            // glass for an almost invisible region.
+            object.add_region(
+                region.x,
+                region.y,
+                region.width,
+                region.height,
+                region.radius,
+                material,
+            );
         }
-        self.current = regions;
-        true
     }
 }
 
