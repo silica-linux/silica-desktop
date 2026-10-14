@@ -1041,10 +1041,14 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     // With a menu or the stack the surface covers the screen and takes the whole pointer: a
     // click outside (on the desktop, on a window) closes them instead of going through.
     final catchAll = (menu != null || stack) && screen != null;
-    // With the alert, the whole screen; outside Silica, with a menu up to the top of the menu;
-    // without, back to the starting height.
-    final height = alert != null || catchAll
-        ? screen ?? size.height
+    // The surface stays as tall as the screen once its size is known, and only the input
+    // region changes: the Dock is anchored to the bottom, so every height change moved the
+    // content's origin and the Dock and its menu flashed up for a frame before the
+    // compositor caught up (right click on an item). Without the screen size: as before.
+    final height = screen != null
+        ? screen
+        : alert != null || catchAll
+        ? size.height
         : menu != null
         ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
         : base;
