@@ -11,7 +11,7 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
 import 'package:silica_shell/menubar/window_menu.dart';
 import 'package:silica_ui/silica_ui.dart'
-    show MenuAction, MenuDivider, MenuEntry, MenuPanel;
+    show MenuAction, MenuDivider, MenuEntry, MenuHost, MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
@@ -695,5 +695,69 @@ void main() {
         expect(layer.any((c) => c.method == 'clearTransient'), isTrue);
       },
     );
+
+    group('stays on screen', () {
+      Future<Rect> openAt(WidgetTester tester, String at) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        tester.binding.defaultBinaryMessenger
+          ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+            return switch (call.method) {
+              'list' => const <Object?>[],
+              'focused' => '',
+              _ => null,
+            };
+          })
+          ..setMockMethodCallHandler(
+            const MethodChannel('silica/layer', JSONMethodCodec()),
+            (call) async => switch (call.method) {
+              'outputSize' => {'width': 1280, 'height': 800},
+              _ => true,
+            },
+          );
+        addTearDown(() {
+          ShellChannel.instance.states.value = const {};
+        });
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+          ),
+        );
+        await tester.pump();
+        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'silica/shell',
+          const JSONMethodCodec().encodeMethodCall(
+            MethodCall('broadcast', {'topic': 'desktopmenu', 'value': at}),
+          ),
+          (_) {},
+        );
+        await tester.pumpAndSettle();
+        final texts = find.descendant(
+          of: find.byType(MenuHost),
+          matching: find.byType(Text),
+        );
+        expect(texts, findsWidgets);
+        return [
+          for (final t in texts.evaluate())
+            tester.getRect(find.byWidget(t.widget)),
+        ].reduce((a, b) => a.expandToInclude(b));
+      }
+
+      testWidgets('opened at the right edge it opens to the left', (
+        tester,
+      ) async {
+        final rect = await openAt(tester, '1275 300 items');
+        expect(rect.right, lessThanOrEqualTo(1275));
+        expect(rect.left, greaterThanOrEqualTo(0));
+      });
+
+      testWidgets('opened near the bottom it shifts up', (tester) async {
+        final rect = await openAt(tester, '400 790 items');
+        expect(rect.bottom, lessThanOrEqualTo(800));
+        expect(rect.top, greaterThanOrEqualTo(barHeight));
+      });
+    });
   });
 }
