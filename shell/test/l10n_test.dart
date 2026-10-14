@@ -64,7 +64,7 @@ void main() {
     await command(tester, 'controlcenter.toggle');
     await tester.pumpAndSettle();
     expect(find.text('80% · in carica'), findsOneWidget);
-    expect(find.text('Non disturbare'), findsOneWidget);
+    expect(find.text('Focus'), findsOneWidget);
     expect(find.text('Suono'), findsOneWidget);
   });
 

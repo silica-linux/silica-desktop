@@ -61,6 +61,21 @@ class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
 
   @override
   Future<void> setAudioOutput(int id) async => calls.add('output $id');
+
+  @override
+  Future<List<BluetoothDevice>> bluetoothDevices() async => const [
+    BluetoothDevice(
+      address: 'AA:01',
+      name: 'Headphones',
+      icon: 'audio-headset',
+      connected: true,
+    ),
+    BluetoothDevice(address: 'AA:02', name: 'Mouse', icon: 'input-mouse'),
+  ];
+
+  @override
+  Future<void> connectBluetooth(String address, bool connect) async =>
+      calls.add('bt-connect $address $connect');
 }
 
 const SystemSnapshot laptop = SystemSnapshot(
@@ -93,10 +108,13 @@ void main() {
       expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
       expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
       expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-      expect(slots['dnd']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
-      expect(slots['battery']!.rect, const Rect.fromLTWH(152, 152, 140, 64));
-      expect(slots['display']!.rect, const Rect.fromLTWH(0, 228, 292, 64));
-      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+      // Dark Mode and Screen Capture at 0 and 76, Focus on the right (INV-A2).
+      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 152, 64, 64));
+      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 152, 64, 64));
+      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 152, 140, 64));
+      expect(slots['battery']!.rect, const Rect.fromLTWH(0, 228, 140, 64));
+      expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
       expect(slots['wifi']!.radius, 32);
       expect(slots['display']!.radius, 28);
 
@@ -241,6 +259,77 @@ void main() {
     await tester.tap(find.text('Cuffie'));
     await tester.pump();
     expect(system.calls.last, 'output 62');
+  });
+
+  testWidgets('Bluetooth detail: the paired devices, a click connects', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final system = FakeSystem(laptop);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ControlCenter(system: system),
+      ),
+    );
+    await sendCommand(tester, 'controlcenter.toggle');
+    await tester.pumpAndSettle();
+    await tester.tapAt(tester.getCenter(find.text('Bluetooth')));
+    await tester.pumpAndSettle();
+    expect(find.text('Headphones'), findsOneWidget);
+    await tester.tap(find.text('Mouse'));
+    await tester.pump();
+    expect(system.calls.last, 'bt-connect AA:02 true');
+  });
+
+  testWidgets(
+    'Focus: Do Not Disturb on shows the durations; Dark Mode toggles',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final calls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        ShellChannel.channel,
+        (call) async {
+          calls.add(call);
+          return true;
+        },
+      );
+      final system = FakeSystem(laptop.copyWith(doNotDisturb: true));
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(system: system),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      expect(find.text('Do not disturb'), findsOneWidget);
+      await tester.tapAt(tester.getCenter(find.text('Do not disturb')));
+      await tester.pumpAndSettle();
+      expect(find.text('Focus on'), findsOneWidget);
+      expect(find.text('For 1 hour'), findsOneWidget);
+      expect(find.text('Until this evening'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.bySemanticsLabel('Dark Mode'));
+      await tester.pump();
+      expect(
+        calls
+            .where((c) => c.method == 'execute')
+            .map((c) => (c.arguments as Map)['id']),
+        contains('system.dark_toggle'),
+      );
+    },
+  );
+
+  test('"until this evening" ends at 19:00, or at midnight once past it', () {
+    expect(untilEvening(DateTime(2026, 10, 14, 15)), const Duration(hours: 4));
+    expect(untilEvening(DateTime(2026, 10, 14, 20)), const Duration(hours: 4));
   });
 
   testWidgets(

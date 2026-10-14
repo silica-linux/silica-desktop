@@ -1,6 +1,6 @@
 //! The data of the Control Center detail panels, read on demand (they are not part of
-//! the state emitted on every change): the Wi-Fi networks visible to NetworkManager and
-//! PipeWire's audio outputs (`wpctl status`).
+//! the state emitted on every change): the Wi-Fi networks visible to NetworkManager, the
+//! paired Bluetooth devices (BlueZ) and PipeWire's audio outputs (`wpctl status`).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,6 +24,9 @@ const DEVICE_WIFI: u32 = 2;
 /// At most this many networks in the list: a crowded place must not bloat the answer.
 const MAX_NETWORKS: usize = 40;
 const MAX_OUTPUTS: usize = 32;
+const MAX_DEVICES: usize = 32;
+const BLUEZ: &str = "org.bluez";
+const BLUEZ_DEVICE: &str = "org.bluez.Device1";
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -47,6 +50,119 @@ pub struct Output {
     pub id: u32,
     pub name: String,
     pub default: bool,
+}
+
+/// A paired Bluetooth device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Device {
+    pub address: String,
+    pub name: String,
+    /// The freedesktop icon name BlueZ gives (`input-mouse`, `audio-headset`…).
+    pub icon: String,
+    pub connected: bool,
+}
+
+type ManagedObjects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
+
+/// The paired devices among BlueZ's objects, connected first, then by name.
+pub fn paired_devices(objects: &ManagedObjects) -> Vec<(OwnedObjectPath, Device)> {
+    let text = |props: &HashMap<String, OwnedValue>, key: &str| {
+        props
+            .get(key)
+            .and_then(|v| String::try_from(v.clone()).ok())
+            .unwrap_or_default()
+    };
+    let flag = |props: &HashMap<String, OwnedValue>, key: &str| {
+        props
+            .get(key)
+            .and_then(|v| bool::try_from(v).ok())
+            .unwrap_or(false)
+    };
+    let mut list: Vec<(OwnedObjectPath, Device)> = objects
+        .iter()
+        .filter_map(|(path, interfaces)| {
+            let props = interfaces.get(BLUEZ_DEVICE)?;
+            if !flag(props, "Paired") {
+                return None;
+            }
+            let address = text(props, "Address");
+            let alias = text(props, "Alias");
+            let name = if alias.is_empty() {
+                text(props, "Name")
+            } else {
+                alias
+            };
+            Some((
+                path.clone(),
+                Device {
+                    name: if name.is_empty() {
+                        address.clone()
+                    } else {
+                        name
+                    }
+                    .chars()
+                    .take(128)
+                    .collect(),
+                    address,
+                    icon: text(props, "Icon").chars().take(64).collect(),
+                    connected: flag(props, "Connected"),
+                },
+            ))
+        })
+        .collect();
+    list.sort_by(|(_, a), (_, b)| {
+        b.connected
+            .cmp(&a.connected)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    list.truncate(MAX_DEVICES);
+    list
+}
+
+async fn bluez_objects(bus: &Connection) -> Result<ManagedObjects> {
+    let reply = bus
+        .call_method(
+            Some(BLUEZ),
+            "/",
+            Some("org.freedesktop.DBus.ObjectManager"),
+            "GetManagedObjects",
+            &(),
+        )
+        .await
+        .map_err(|e| format!("GetManagedObjects: {e}"))?;
+    reply
+        .body()
+        .deserialize::<ManagedObjects>()
+        .map_err(|e| format!("GetManagedObjects: {e}"))
+}
+
+pub(super) async fn bluetooth_devices(shared: &Shared) -> Result<Vec<Device>> {
+    let bus = bus(shared)?;
+    let objects = bluez_objects(bus).await?;
+    Ok(paired_devices(&objects)
+        .into_iter()
+        .map(|(_, d)| d)
+        .collect())
+}
+
+/// Connects (or disconnects) a paired device, by address.
+pub(super) async fn connect_bluetooth(shared: &Shared, address: &str, connect: bool) -> Result<()> {
+    let bus = bus(shared)?;
+    let objects = bluez_objects(bus).await?;
+    let (path, _) = paired_devices(&objects)
+        .into_iter()
+        .find(|(_, d)| d.address == address)
+        .ok_or_else(|| format!("{address}: not a paired device"))?;
+    bus.call_method(
+        Some(BLUEZ),
+        path.as_str(),
+        Some(BLUEZ_DEVICE),
+        if connect { "Connect" } else { "Disconnect" },
+        &(),
+    )
+    .await
+    .map_err(|e| format!("{BLUEZ_DEVICE}: {e}"))?;
+    Ok(())
 }
 
 fn bus(shared: &Shared) -> Result<&Connection> {
@@ -303,6 +419,44 @@ Video
         );
         assert!(parse_outputs("").is_empty());
         assert!(parse_outputs("Audio\n ├─ Sinks:\n │  *   x. broken\n").is_empty());
+    }
+
+    #[test]
+    fn paired_devices_connected_first_then_by_name() -> std::result::Result<(), String> {
+        let device = |address: &str, alias: &str, paired: bool, connected: bool| {
+            let mut props = HashMap::new();
+            let value =
+                |v: zbus::zvariant::Value<'_>| OwnedValue::try_from(v).map_err(|e| e.to_string());
+            props.insert("Address".to_owned(), value(address.into())?);
+            props.insert("Alias".to_owned(), value(alias.into())?);
+            props.insert("Icon".to_owned(), value("input-mouse".into())?);
+            props.insert("Paired".to_owned(), value(paired.into())?);
+            props.insert("Connected".to_owned(), value(connected.into())?);
+            let mut interfaces = HashMap::new();
+            interfaces.insert(BLUEZ_DEVICE.to_owned(), props);
+            let path = OwnedObjectPath::try_from(format!(
+                "/org/bluez/hci0/dev_{}",
+                address.replace(':', "_")
+            ))
+            .map_err(|e| e.to_string())?;
+            Ok::<_, String>((path, interfaces))
+        };
+        let mut objects = HashMap::new();
+        for (a, n, p, c) in [
+            ("00:00:00:00:00:01", "Zeta mouse", true, false),
+            ("00:00:00:00:00:02", "headphones", true, true),
+            ("00:00:00:00:00:03", "Alpha keyboard", true, false),
+            ("00:00:00:00:00:04", "stranger", false, false),
+        ] {
+            let (path, interfaces) = device(a, n, p, c)?;
+            objects.insert(path, interfaces);
+        }
+        let names: Vec<_> = paired_devices(&objects)
+            .into_iter()
+            .map(|(_, d)| d.name)
+            .collect();
+        assert_eq!(names, ["headphones", "Alpha keyboard", "Zeta mouse"]);
+        Ok(())
     }
 
     #[test]

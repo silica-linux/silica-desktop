@@ -120,9 +120,14 @@ TextStyle detailText(double size, {FontWeight? weight, Color? color}) =>
 
 /// The data of a panel, loaded when it opens.
 class DetailData {
-  const DetailData({this.networks = const [], this.outputs = const []});
+  const DetailData({
+    this.networks = const [],
+    this.outputs = const [],
+    this.devices = const [],
+  });
   final List<WifiNetwork> networks;
   final List<AudioOutput> outputs;
+  final List<BluetoothDevice> devices;
 }
 
 /// A piece of the panel in the column: height and widget.
@@ -214,6 +219,7 @@ class DetailRow extends StatelessWidget {
     required this.active,
     this.trailing = const [],
     this.onTap,
+    this.activeGlyph = detailBlue,
   });
 
   final GlyphKind glyph;
@@ -221,6 +227,9 @@ class DetailRow extends StatelessWidget {
   final bool active;
   final List<Widget> trailing;
   final VoidCallback? onTap;
+
+  /// The glyph color on the white disc when active (blue; Focus purple).
+  final Color activeGlyph;
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -239,7 +248,7 @@ class DetailRow extends StatelessWidget {
           child: Center(
             child: Glyph(
               glyph,
-              color: active ? detailBlue : const Color(0xFFFFFFFF),
+              color: active ? activeGlyph : const Color(0xFFFFFFFF),
               size: 14,
             ),
           ),
@@ -509,3 +518,132 @@ DetailContent displayDetail({
   ),
   (13, const SizedBox()),
 ]);
+
+/// The glyph of a Bluetooth device from its freedesktop icon name.
+GlyphKind deviceGlyph(String icon) => switch (icon) {
+  'input-mouse' || 'input-tablet' => GlyphKind.mouse,
+  'audio-headset' || 'audio-headphones' || 'audio-card' => GlyphKind.headphones,
+  'input-keyboard' => GlyphKind.keyboard,
+  _ => GlyphKind.bluetooth,
+};
+
+/// Bluetooth (SH-CC-17): the switch in the header, one 32 pt row per paired device (the
+/// connected ones on the white disc); a click connects or disconnects.
+DetailContent bluetoothDetail({
+  required SystemSnapshot s,
+  required List<BluetoothDevice> devices,
+  required ValueChanged<bool> onSwitch,
+  required void Function(BluetoothDevice device) onDevice,
+}) {
+  // Header 42 pt: the separator at +42, the first row at +48 (SH-CC-17).
+  final pieces = <_Piece>[
+    (
+      42,
+      _header(
+        'Bluetooth',
+        trailing: DetailSwitch(on: s.bluetoothPowered, onChanged: onSwitch),
+      ),
+    ),
+  ];
+  if (!s.bluetoothPowered || devices.isEmpty) return DetailContent(pieces);
+  pieces
+    ..add((1, _separator()))
+    ..add((5, const SizedBox()));
+  for (final d in devices) {
+    pieces.add((
+      detailRow,
+      DetailRow(
+        glyph: deviceGlyph(d.icon),
+        label: d.name,
+        active: d.connected,
+        onTap: () => onDevice(d),
+      ),
+    ));
+  }
+  pieces.add((10, const SizedBox()));
+  return DetailContent(pieces);
+}
+
+/// Focus (SH-CC-19): header with "Focus on" under it while a Focus is on, the Do Not
+/// Disturb row (purple moon on the white disc when on) and, when on, the two duration
+/// options on a tinted band (22 pt rows, white at ~14 %).
+DetailContent focusDetail({
+  required AppLocalizations l,
+  required SystemSnapshot s,
+  required ValueChanged<bool> onDoNotDisturb,
+  required ValueChanged<Duration?> onFor,
+}) {
+  final on = s.doNotDisturb;
+  final pieces = <_Piece>[
+    // Header 42 pt with or without the subtitle (separator at +42, SH-CC-19).
+    (
+      42,
+      Padding(
+        padding: const EdgeInsets.only(left: detailInset, top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l.ccFocus,
+              style: detailText(detailTitleSize, weight: FontWeight.w600),
+            ),
+            if (on)
+              Text(l.ccFocusOn, style: detailText(11, color: detailSection)),
+          ],
+        ),
+      ),
+    ),
+    (1, _separator()),
+    (5, const SizedBox()),
+    (
+      detailRow,
+      DetailRow(
+        glyph: GlyphKind.moon,
+        label: l.ccDoNotDisturb,
+        active: on,
+        activeGlyph: focusPurpleGlyph,
+        onTap: () => onDoNotDisturb(!on),
+      ),
+    ),
+  ];
+  if (on) {
+    Widget option(String label, Duration? duration) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onFor(duration),
+      child: Padding(
+        padding: const EdgeInsets.only(left: detailTextLeft),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(label, style: detailText(13)),
+        ),
+      ),
+    );
+    pieces
+      ..add((4, const SizedBox()))
+      ..add((
+        56,
+        ColoredBox(
+          color: focusBand,
+          child: Column(
+            children: [
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 22,
+                child: option(l.focusForAnHour, const Duration(hours: 1)),
+              ),
+              SizedBox(height: 22, child: option(l.focusUntilEvening, null)),
+            ],
+          ),
+        ),
+      ));
+  }
+  pieces.add((10, const SizedBox()));
+  return DetailContent(pieces);
+}
+
+/// The purple of an active Focus: the moon on the white disc (raw `#6f73fb`, the same
+/// purple as the privacy pill icon, sRGB `#6e7cff`; SH-CC-06).
+const Color focusPurpleGlyph = Color(0xFF6E7CFF);
+
+/// The band of the duration options: `#7e7f84` over `#696b6f` → white at ~14 %.
+const Color focusBand = Color(0x24FFFFFF);

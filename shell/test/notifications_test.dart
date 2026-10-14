@@ -353,4 +353,8 @@ class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {
   Future<List<AudioOutput>> audioOutputs() async => const [];
   @override
   Future<void> setAudioOutput(int id) async {}
+  @override
+  Future<List<BluetoothDevice>> bluetoothDevices() async => const [];
+  @override
+  Future<void> connectBluetooth(String address, bool connect) async {}
 }

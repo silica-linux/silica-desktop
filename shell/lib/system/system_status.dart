@@ -156,6 +156,37 @@ class WifiNetwork {
   }
 }
 
+/// A paired Bluetooth device (Bluetooth detail panel).
+@immutable
+class BluetoothDevice {
+  const BluetoothDevice({
+    required this.address,
+    required this.name,
+    this.icon = '',
+    this.connected = false,
+  });
+
+  final String address;
+  final String name;
+
+  /// The freedesktop icon name BlueZ gives (`input-mouse`, `audio-headset`…).
+  final String icon;
+  final bool connected;
+
+  /// From `(sssb)` of `BluetoothDevices`.
+  static BluetoothDevice? fromTuple(Object? tuple) {
+    if (tuple is! List || tuple.length < 4) return null;
+    final [address, name, icon, connected, ...] = tuple;
+    if (address is! String || name is! String) return null;
+    return BluetoothDevice(
+      address: address,
+      name: name,
+      icon: icon is String ? icon : '',
+      connected: connected == true,
+    );
+  }
+}
+
 /// An audio output (Sound detail panel).
 @immutable
 class AudioOutput {
@@ -186,6 +217,10 @@ abstract class SystemSource implements ValueListenable<SystemSnapshot> {
   Future<void> connectWifi(String ssid);
   Future<List<AudioOutput>> audioOutputs();
   Future<void> setAudioOutput(int id);
+
+  /// The paired Bluetooth devices, connected first.
+  Future<List<BluetoothDevice>> bluetoothDevices();
+  Future<void> connectBluetooth(String address, bool connect);
 
   Future<void> setWifi(bool enabled);
   Future<void> setBluetooth(bool powered);
@@ -315,6 +350,21 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   @override
   Future<List<AudioOutput>> audioOutputs() =>
       _list('AudioOutputs', AudioOutput.fromTuple);
+
+  @override
+  Future<List<BluetoothDevice>> bluetoothDevices() =>
+      _list('BluetoothDevices', BluetoothDevice.fromTuple);
+
+  @override
+  Future<void> connectBluetooth(String address, bool connect) async {
+    try {
+      await _call('ConnectBluetooth', 'sb', [address, connect]);
+    } on PlatformException catch (error) {
+      debugPrint('system: ConnectBluetooth: ${error.code}: ${error.message}');
+    } on MissingPluginException {
+      // Outside Silica.
+    }
+  }
 
   @override
   Future<void> setAudioOutput(int id) => _set('SetAudioOutput', 'u', id);

@@ -187,17 +187,28 @@ Map<String, ModuleSlot> layoutModules(SystemSnapshot s) {
     Rect.fromLTWH(right, 0, columnWidth, rowHeight * 2 + gap),
     mediaRadius,
   );
+  // The row of the reference's Dark Mode, Screen Capture and Focus (INV-A2 grid): two
+  // 64 pt round toggles at 0 and 76, the Focus capsule in the right column.
+  slots['dark'] = const ModuleSlot(
+    Rect.fromLTWH(0, rowStep * 2, rowHeight, rowHeight),
+    rowHeight / 2,
+  );
+  slots['capture'] = const ModuleSlot(
+    Rect.fromLTWH(rowStep, rowStep * 2, rowHeight, rowHeight),
+    rowHeight / 2,
+  );
   slots['dnd'] = const ModuleSlot(
-    Rect.fromLTWH(0, rowStep * 2, columnWidth, rowHeight),
+    Rect.fromLTWH(right, rowStep * 2, columnWidth, rowHeight),
     capsuleRadius,
   );
+  var y = rowStep * 3;
   if (s.batteryPresent) {
-    slots['battery'] = const ModuleSlot(
-      Rect.fromLTWH(right, rowStep * 2, columnWidth, rowHeight),
+    slots['battery'] = ModuleSlot(
+      Rect.fromLTWH(0, y, columnWidth, rowHeight),
       capsuleRadius,
     );
+    y += rowStep;
   }
-  var y = rowStep * 3;
   if (s.brightnessAvailable) {
     slots['display'] = ModuleSlot(
       Rect.fromLTWH(0, y, stackWidth, rowHeight),
@@ -236,7 +247,13 @@ class ControlCenter extends StatefulWidget {
 }
 
 /// The modules with a detail panel.
-const Set<String> detailModules = {'wifi', 'sound', 'display'};
+const Set<String> detailModules = {
+  'wifi',
+  'bluetooth',
+  'dnd',
+  'sound',
+  'display',
+};
 
 /// Room around the stack for the detail panel, which sticks out to the left and up.
 const Offset detailPad = Offset(-detailLeft, -detailTop);
@@ -258,6 +275,10 @@ class _ControlCenterState extends State<ControlCenter>
   )..addListener(_detailTick);
   DetailData _detailData = const DetailData();
   bool _othersOpen = false;
+
+  /// Do Not Disturb "for an hour" or "until this evening" (provisional: the timer lives in
+  /// the shell and does not survive a restart).
+  Timer? _dndTimer;
   final FocusNode _focus = FocusNode();
   StreamSubscription<String>? _commands;
   bool _open = false;
@@ -286,6 +307,7 @@ class _ControlCenterState extends State<ControlCenter>
     ShellChannel.instance.states.removeListener(_statesChanged);
     _commands?.cancel();
     _anim.dispose();
+    _dndTimer?.cancel();
     _detailAnim.dispose();
     _focus.dispose();
     _menuFocus.dispose();
@@ -438,6 +460,7 @@ class _ControlCenterState extends State<ControlCenter>
     final data = switch (key) {
       'wifi' => DetailData(networks: await system.wifiNetworks()),
       'sound' => DetailData(outputs: await system.audioOutputs()),
+      'bluetooth' => DetailData(devices: await system.bluetoothDevices()),
       _ => const DetailData(),
     };
     if (mounted && _detail == key) setState(() => _detailData = data);
@@ -701,6 +724,32 @@ class _ControlCenterState extends State<ControlCenter>
         onBrightness: system.setBrightness,
         track: track,
       ),
+      'bluetooth' => bluetoothDetail(
+        s: s,
+        devices: _detailData.devices,
+        onSwitch: system.setBluetooth,
+        onDevice: (d) async {
+          await system.connectBluetooth(d.address, !d.connected);
+          final devices = await system.bluetoothDevices();
+          if (mounted && _detail == 'bluetooth') {
+            setState(() => _detailData = DetailData(devices: devices));
+          }
+        },
+      ),
+      'dnd' => focusDetail(
+        l: l,
+        s: s,
+        onDoNotDisturb: (on) {
+          _dndTimer?.cancel();
+          system.setDoNotDisturb(on);
+        },
+        onFor: (duration) {
+          _dndTimer?.cancel();
+          _dndTimer = Timer(duration ?? untilEvening(DateTime.now()), () {
+            system.setDoNotDisturb(false);
+          });
+        },
+      ),
       _ => null,
     };
   }
@@ -737,13 +786,34 @@ class _ControlCenterState extends State<ControlCenter>
         onTap: s.bluetoothAvailable
             ? () => system.setBluetooth(!s.bluetoothPowered)
             : null,
+        onOpen: s.bluetoothAvailable ? () => _openDetail('bluetooth') : null,
       ),
+      // Focus: off it is titled "Focus"; on, "Do Not Disturb / On" with a purple moon
+      // on the white disc (SH-CC-06).
       'dnd' => _Capsule(
         glyph: GlyphKind.moon,
-        title: l.ccDoNotDisturb,
-        subtitle: s.doNotDisturb ? l.ccDoNotDisturbOn : l.ccOff,
+        title: s.doNotDisturb ? l.ccDoNotDisturb : l.ccFocus,
+        subtitle: s.doNotDisturb ? l.ccDoNotDisturbOn : '',
         active: s.doNotDisturb,
+        activeGlyph: focusPurpleGlyph,
         onTap: () => system.setDoNotDisturb(!s.doNotDisturb),
+        onOpen: () => _openDetail('dnd'),
+      ),
+      'dark' => _RoundToggle(
+        glyph: GlyphKind.contrast,
+        label: l.ccDarkMode,
+        active:
+            MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
+        onTap: () => ShellChannel.instance.execute('system.dark_toggle'),
+      ),
+      'capture' => _RoundToggle(
+        glyph: GlyphKind.screenCapture,
+        label: l.ccScreenCapture,
+        active: false,
+        onTap: () {
+          _hide();
+          ShellChannel.instance.execute('screenshot.toolbar');
+        },
       ),
       'battery' => _Capsule(
         glyph: GlyphKind.battery,
@@ -790,9 +860,13 @@ class _Capsule extends StatefulWidget {
     this.onTap,
     this.onOpen,
     this.glyphLevel = 1,
+    this.activeGlyph = glyphOn,
   });
 
   final GlyphKind glyph;
+
+  /// The glyph color on the white disc when on (blue, purple for Focus).
+  final Color activeGlyph;
   final double glyphLevel;
   final String title;
   final String subtitle;
@@ -846,7 +920,7 @@ class _CapsuleState extends State<_Capsule> {
                 child: Center(
                   child: Glyph(
                     widget.glyph,
-                    color: widget.active ? glyphOn : glyphOff,
+                    color: widget.active ? widget.activeGlyph : glyphOff,
                     level: widget.glyphLevel,
                   ),
                 ),
@@ -871,12 +945,13 @@ class _CapsuleState extends State<_Capsule> {
                     overflow: TextOverflow.ellipsis,
                     style: _text(titleSize, weight: FontWeight.w600),
                   ),
-                  Text(
-                    widget.subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: _text(subtitleSize),
-                  ),
+                  if (widget.subtitle.isNotEmpty)
+                    Text(
+                      widget.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _text(subtitleSize),
+                    ),
                 ],
               ),
             ),
@@ -891,6 +966,70 @@ class _CapsuleState extends State<_Capsule> {
       ),
     );
   }
+}
+
+/// "Until this evening": 19:00 today, or the end of the day once past it (provisional).
+Duration untilEvening(DateTime now) {
+  final evening = DateTime(now.year, now.month, now.day, 19);
+  final end = now.isBefore(evening)
+      ? evening
+      : DateTime(now.year, now.month, now.day + 1);
+  return end.difference(now);
+}
+
+/// A 64 pt round toggle (Dark Mode, Screen Capture; SH-CC-09, SH-CC-10): the module itself
+/// is the button. Off: the white glyph on the module glass, lighter under the pointer
+/// (+9 levels, CC-01); on: the whole module white with a black glyph (SH-CC-03 dark).
+class _RoundToggle extends StatefulWidget {
+  const _RoundToggle({
+    required this.glyph,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final GlyphKind glyph;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  State<_RoundToggle> createState() => _RoundToggleState();
+}
+
+class _RoundToggleState extends State<_RoundToggle> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    toggled: widget.active,
+    label: widget.label,
+    child: MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.active
+                ? discOn
+                : _hover
+                ? const Color(0x12FFFFFF)
+                : null,
+          ),
+          child: Center(
+            child: Glyph(
+              widget.glyph,
+              color: widget.active ? const Color(0xFF000000) : glyphOff,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// The media module (cc-gray-light): the 40 × 40 cover 14 pt from the edge, the text from

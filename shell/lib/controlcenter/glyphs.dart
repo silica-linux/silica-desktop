@@ -14,6 +14,17 @@ enum GlyphKind {
   sunLarge,
   speakerSmall,
   speakerLarge,
+
+  /// Dark Mode: a ring with its right half filled.
+  contrast,
+
+  /// Screen capture: a rounded frame with a band at the bottom.
+  screenCapture,
+
+  /// Bluetooth devices: a mouse, headphones, a keyboard.
+  mouse,
+  headphones,
+  keyboard,
 }
 
 class Glyph extends StatelessWidget {
@@ -81,6 +92,88 @@ class _GlyphPainter extends CustomPainter {
           ..lineTo(c.dx + 4.5 * s, c.dy - 4.5 * s)
           ..lineTo(c.dx - 4.5 * s, c.dy + 4.5 * s);
         canvas.drawPath(path, stroke..strokeWidth = 1.8 * s);
+      case GlyphKind.mouse:
+        final body = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: c, width: 10 * s, height: 16 * s),
+          Radius.circular(5 * s),
+        );
+        canvas
+          ..drawRRect(body, stroke..strokeWidth = 1.6 * s)
+          ..drawLine(c + Offset(0, -6 * s), c + Offset(0, -2.5 * s), stroke);
+      case GlyphKind.headphones:
+        canvas
+          ..drawArc(
+            Rect.fromCircle(center: c + Offset(0, 1 * s), radius: 7 * s),
+            math.pi,
+            math.pi,
+            false,
+            stroke..strokeWidth = 1.6 * s,
+          )
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(c.dx - 8 * s, c.dy + 1 * s, 4 * s, 7 * s),
+              Radius.circular(1.5 * s),
+            ),
+            fill,
+          )
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(c.dx + 4 * s, c.dy + 1 * s, 4 * s, 7 * s),
+              Radius.circular(1.5 * s),
+            ),
+            fill,
+          );
+      case GlyphKind.keyboard:
+        final body = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: c, width: 18 * s, height: 11 * s),
+          Radius.circular(2 * s),
+        );
+        canvas.drawRRect(body, stroke..strokeWidth = 1.4 * s);
+        for (var row = 0; row < 2; row++) {
+          for (var col = 0; col < 5; col++) {
+            canvas.drawRect(
+              Rect.fromLTWH(
+                body.left + (2.2 + col * 2.9) * s,
+                body.top + (2.2 + row * 2.6) * s,
+                1.6 * s,
+                1.4 * s,
+              ),
+              fill,
+            );
+          }
+        }
+        canvas.drawLine(
+          Offset(body.left + 5 * s, body.bottom - 2.6 * s),
+          Offset(body.right - 5 * s, body.bottom - 2.6 * s),
+          stroke..strokeWidth = 1.2 * s,
+        );
+      case GlyphKind.contrast:
+        final r = 8 * s;
+        canvas
+          ..drawCircle(c, r, stroke..strokeWidth = 2 * s)
+          ..drawArc(
+            Rect.fromCircle(center: c, radius: r - 2.5 * s),
+            -math.pi / 2,
+            math.pi,
+            true,
+            fill,
+          );
+      case GlyphKind.screenCapture:
+        final frame = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: c, width: 18 * s, height: 14 * s),
+          Radius.circular(3 * s),
+        );
+        canvas
+          ..drawRRect(frame, stroke..strokeWidth = 1.8 * s)
+          ..drawRect(
+            Rect.fromLTRB(
+              frame.left + 2 * s,
+              c.dy + 1.5 * s,
+              frame.right - 2 * s,
+              c.dy + 4 * s,
+            ),
+            fill,
+          );
       case GlyphKind.moon:
         final moon = Path.combine(
           PathOperation.difference,

@@ -320,6 +320,24 @@ impl System {
             .map_err(failed)
     }
 
+    /// The paired Bluetooth devices: (address, name, icon name, connected), connected first.
+    async fn bluetooth_devices(&self) -> zbus::fdo::Result<Vec<(String, String, String, bool)>> {
+        let list = details::bluetooth_devices(&self.shared)
+            .await
+            .map_err(failed)?;
+        Ok(list
+            .into_iter()
+            .map(|d| (d.address, d.name, d.icon, d.connected))
+            .collect())
+    }
+
+    /// Connects or disconnects a paired Bluetooth device.
+    async fn connect_bluetooth(&self, address: String, connect: bool) -> zbus::fdo::Result<()> {
+        details::connect_bluetooth(&self.shared, &address, connect)
+            .await
+            .map_err(failed)
+    }
+
     /// The audio outputs: (id, name, default).
     async fn audio_outputs(&self) -> zbus::fdo::Result<Vec<(u32, String, bool)>> {
         let list = details::audio_outputs(&self.shared.config.wpctl)
