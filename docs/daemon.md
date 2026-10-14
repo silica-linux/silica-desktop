@@ -127,6 +127,15 @@ bar.
   whenever the daemon (re)appears. `displays` (s): the JSON of `output.list`, sent again on
   every change (a display plugged in, a new mode, scale or rotation), so `Changed` tells apps.
 
+### Energy
+
+- `Suspend()`: logind's `Suspend(false)`; Ossido calls it when `sleepMinutes` of `power.json`
+  is up (`docs/control.md`). Without the system bus: `Failed`.
+- `preventSleep` of `$XDG_CONFIG_HOME/silica/power.json` (read again every 30 s): while it is
+  on the daemon holds logind's `idle` inhibitor (mode `block`), so logind's own idle action
+  does not suspend either; a sleep the user asks for still happens. State keys
+  `power.preventSleep` and `power.inhibited` (the inhibitor is held).
+
 ### Displays and night light
 
 - `Outputs() → s`: the displays as JSON (Ossido's `output.list`, `docs/control.md`).

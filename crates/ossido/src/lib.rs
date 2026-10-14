@@ -18,6 +18,7 @@ mod egl;
 mod gestures;
 mod glass;
 mod handlers;
+mod idle;
 mod input;
 mod keep;
 pub mod keys;
@@ -158,6 +159,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             Err(err) => warn!("settings folder: {err}"),
         }
     }
+
+    // Energy: the idle times of power.json.
+    event_loop.handle().insert_source(
+        smithay::reexports::calloop::timer::Timer::from_duration(idle::CHECK),
+        |_, _, ossido| {
+            ossido.state.idle_check();
+            smithay::reexports::calloop::timer::TimeoutAction::ToDuration(idle::CHECK)
+        },
+    )?;
 
     // The lines on stdout are the interface for scripts and tests: one per variable.
     let socket = ossido.state.socket_name.clone();

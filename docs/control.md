@@ -77,6 +77,7 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
 | `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
 | `input.state` | — | the pointer settings in use (`mouse`, `touchpad`: `speed`, `naturalScroll`, `scrollSpeed`, `leftHanded`, `secondaryClick`, `tapToClick`, `disableWhileTyping`) and `devices` (`mouse`, `touchpad`: connected) |
+| `idle.state` | — | `idleSeconds` since the last input, `displayOff`, and `displayOffMinutes`, `sleepMinutes`, `preventSleep` from `power.json` |
 | `output.list` | — | the connected displays: `connector`, `identity` (EDID make, model and serial; the connector without EDID), `make`, `model`, `serial`, `modes` and `current` (`width`, `height`, `refresh` in Hz, `preferred`), `scale`, `transform`, `enabled`, `primary`, `widthMm`, `heightMm` |
 | `output.configure` | `connector?`, `mode?` (`width`, `height`, `refresh?`), `scale?` (1–4, quarter steps), `transform?` (`normal`, `90`, `180`, `270`, `flipped`, `flipped-90`…) | the display after the change; applied at once and saved in `displays.json` for that display. Without `connector`: the display in use. The real session drives one display: the others are listed but not configurable yet; nested and headless cannot change mode |
 | `output.color_temperature` | `kelvin` (1000–6500) | `kelvin`, `applied`: the night light on every display through the CRTC gamma ramp (6500 is neutral; `applied` false where there is no gamma: nested, headless, some virtual GPUs). silica-daemon drives it with the schedule |
@@ -142,6 +143,24 @@ Written by Ossido on `output.configure` (keeping the other keys of the file), re
 when the file changes and when a display is plugged in. The key is the display's identity
 (`output.list` › `identity`), so a display gets its choice back on any connector. A mode is
 matched by size and the closest refresh; a mode the display does not have is ignored.
+
+### power.json
+
+```json
+{"displayOffMinutes": 10, "sleepMinutes": 30, "preventSleep": false}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `displayOffMinutes` | number > 0 (decimals allowed) | after this idle time the display turns off; absent or 0: never |
+| `sleepMinutes` | number > 0 | after this idle time Ossido asks silica-daemon to suspend (`System1.Suspend`, logind); absent or 0: never |
+| `preventSleep` | boolean | never sleep on idle; silica-daemon also holds logind's `idle` inhibitor |
+
+Any input (real or the `input.*` commands) is activity: it wakes the display and restarts the
+count. In the real session the display goes off with DPMS (the CRTC is cleared and nothing is
+drawn until the next input); nested and headless only keep the state (`idle.state`). There is
+no `ext-idle-notify-v1` for clients yet (Smithay's implementation needs the event loop's data
+to be the compositor state).
 
 ### input.json
 

@@ -101,6 +101,7 @@ pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
 pub const KEYBOARD_STATE: &str = "keyboard.state";
 pub const KEYBOARD_NEXT_SOURCE: &str = "keyboard.next_source";
 pub const INPUT_STATE: &str = "input.state";
+pub const IDLE_STATE: &str = "idle.state";
 pub const OUTPUT_LIST: &str = "output.list";
 pub const OUTPUT_CONFIGURE: &str = "output.configure";
 pub const OUTPUT_COLOR_TEMPERATURE: &str = "output.color_temperature";
@@ -1023,6 +1024,13 @@ pub const CATALOG: &[CommandSpec] = &[
         id: INPUT_STATE,
         label: "Pointer settings",
         description: "The mouse and touchpad settings in use (from input.json) and the kinds of pointer connected.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: IDLE_STATE,
+        label: "Idle state",
+        description: "Seconds since the last input, whether the display is off, and the idle times of power.json.",
         shortcut: None,
         params: no_params,
     },

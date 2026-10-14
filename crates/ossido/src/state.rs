@@ -119,6 +119,12 @@ pub struct State {
     pub keyboard_config: crate::config::KeyboardConfig,
     /// The night light's colour temperature in kelvin (6500: off), `output.color_temperature`.
     pub color_temperature: u32,
+    /// Energy (`power.json`, `idle.rs`): the last input, whether the display is off, whether
+    /// this idle period already asked for sleep.
+    pub power_config: crate::config::PowerConfig,
+    pub last_activity: Instant,
+    pub display_off: bool,
+    pub idle_slept: bool,
     /// The mouse and touchpad settings applied (`input.json`).
     pub input_config: crate::config::InputConfig,
     /// Frame pace, startup and memory of the clients (`perf.*`).
@@ -353,6 +359,10 @@ impl State {
             config_dir: None,
             keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
             input_config: crate::config::InputConfig::default(),
+            power_config: crate::config::PowerConfig::default(),
+            last_activity: Instant::now(),
+            display_off: false,
+            idle_slept: false,
             color_temperature: crate::displays::NEUTRAL_KELVIN,
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,

@@ -356,6 +356,7 @@ trait System {
     fn set_brightness(&self, brightness: f64) -> zbus::Result<()>;
     fn set_dark(&self, dark: bool) -> zbus::Result<()>;
     fn set_appearance_mode(&self, mode: &str) -> zbus::Result<()>;
+    fn suspend(&self) -> zbus::Result<()>;
     fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
     fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
@@ -419,6 +420,7 @@ fn reads_and_changes_the_system() {
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
                 utc_offset: Some(0),
@@ -562,6 +564,7 @@ fn missing_sources_are_absent_not_errors() {
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
                 utc_offset: Some(0),
@@ -658,6 +661,7 @@ fn displays_and_night_light_go_through_ossido() {
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
                 actions_socket: Some(socket.clone()),
                 place: None,
                 utc_offset: Some(0),
@@ -766,6 +770,7 @@ fn automatic_appearance_follows_the_sun() {
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: Some(place),
                 utc_offset: Some(0),
@@ -814,6 +819,95 @@ fn automatic_appearance_follows_the_sun() {
                 get::<String>(s, "appearance.mode") == "light" && !get::<bool>(s, "appearance.dark")
             })
             .await;
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// logind: records inhibitors and suspends; never touches the machine.
+struct FakeLogind {
+    calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[interface(name = "org.freedesktop.login1.Manager")]
+impl FakeLogind {
+    fn inhibit(&self, what: &str, _who: &str, _why: &str, mode: &str) -> zbus::zvariant::OwnedFd {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("inhibit {what} {mode}"));
+        let file = std::fs::File::open("/dev/null").unwrap();
+        zbus::zvariant::OwnedFd::from(std::os::fd::OwnedFd::from(file))
+    }
+    fn suspend(&self, interactive: bool) {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("suspend {interactive}"));
+    }
+}
+
+#[test]
+fn energy_inhibits_idle_sleep_and_suspends_through_logind() {
+    let session = Bus::start();
+    let system = Bus::start();
+    let dir = temp_dir("power");
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    zbus::block_on(async {
+        let logind = system.connect().await;
+        logind
+            .object_server()
+            .at(
+                "/org/freedesktop/login1",
+                FakeLogind {
+                    calls: calls.clone(),
+                },
+            )
+            .await
+            .unwrap();
+        logind.request_name("org.freedesktop.login1").await.unwrap();
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: Some(system.connect().await),
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                power_file: Some(dir.join("power.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| s.contains_key("power.preventSleep")).await;
+            assert!(!get::<bool>(&state, "power.inhibited"));
+            std::fs::write(dir.join("power.json"), r#"{"preventSleep": true}"#).unwrap();
+            wait_for(&proxy, |s| get::<bool>(s, "power.inhibited")).await;
+            assert_eq!(*calls.lock().unwrap(), ["inhibit idle block"]);
+            std::fs::write(dir.join("power.json"), r#"{"preventSleep": false}"#).unwrap();
+            wait_for(&proxy, |s| !get::<bool>(s, "power.inhibited")).await;
+            proxy.suspend().await.unwrap();
+            assert_eq!(calls.lock().unwrap().last().unwrap(), "suspend false");
         };
         future::or(test, async {
             let result = service.run().await;

@@ -33,7 +33,7 @@ use silica_control::commands::{
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
 };
-use silica_control::commands::{INPUT_STATE, KEYBOARD_NEXT_SOURCE, KEYBOARD_STATE};
+use silica_control::commands::{IDLE_STATE, INPUT_STATE, KEYBOARD_NEXT_SOURCE, KEYBOARD_STATE};
 use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
@@ -105,10 +105,15 @@ impl State {
     /// Runs a catalog command: the same entry point for the channel, shortcuts and, later,
     /// UI and MCP.
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        // Synthetic input is activity too (the display wakes, the idle count restarts).
+        if id.starts_with("input.") && id != INPUT_STATE {
+            self.user_activity();
+        }
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
             KEYBOARD_STATE => Ok(self.keyboard_state()),
             INPUT_STATE => Ok(self.input_state()),
+            IDLE_STATE => Ok(self.idle_state()),
             OUTPUT_LIST => Ok(self.output_list()),
             OUTPUT_CONFIGURE => self.output_configure(&params),
             OUTPUT_COLOR_TEMPERATURE => {

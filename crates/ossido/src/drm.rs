@@ -640,6 +640,26 @@ impl State {
         Ok(())
     }
 
+    /// Display power: off sets DPMS off on the CRTC (and `render_drm` stops drawing); on draws a
+    /// full frame again, which re-enables it.
+    pub fn drm_display_power(&mut self, on: bool) {
+        let output = self.output.clone();
+        let Some(backend) = self.drm_backend() else {
+            return;
+        };
+        let Some(surface) = &mut backend.surface else {
+            return;
+        };
+        if on {
+            surface.gbm.reset_buffers();
+            surface.damage_tracker = OutputDamageTracker::from_output(&output);
+            backend.pending = false;
+            self.render_drm();
+        } else if let Err(err) = surface.gbm.surface().clear() {
+            warn!("display off: {err}");
+        }
+    }
+
     /// The output's scale or rotation changed: the damage tracker follows it.
     pub fn drm_output_changed(&mut self) {
         let output = self.output.clone();
@@ -684,8 +704,12 @@ impl State {
     /// vblank or the session is not active.
     pub fn render_drm(&mut self) {
         let now = Instant::now();
+        let display_off = self.display_off;
         let ready = self.drm_backend().is_some_and(|backend| {
-            !backend.pending && backend.surface.is_some() && backend.session.is_active()
+            !display_off
+                && !backend.pending
+                && backend.surface.is_some()
+                && backend.session.is_active()
         });
         if !ready {
             // Clients still get their frame callbacks, at the idle rate.

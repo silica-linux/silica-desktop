@@ -261,12 +261,40 @@ impl InputConfig {
     }
 }
 
+// --- power.json ----------------------------------------------------------------------------
+
+pub const POWER_FILE: &str = "power.json";
+
+/// `power.json`: idle times, in minutes (decimals allowed); absent or 0: never.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PowerConfig {
+    pub display_off_minutes: Option<f64>,
+    pub sleep_minutes: Option<f64>,
+    /// Never sleep on idle (silica-daemon also holds logind's idle inhibitor).
+    pub prevent_sleep: bool,
+}
+
+impl PowerConfig {
+    pub fn parse(map: Option<&serde_json::Map<String, Value>>) -> Self {
+        let Some(map) = map else {
+            return Self::default();
+        };
+        let minutes = |key| number_in(map, key, (0.0, 100_000.0)).filter(|m| *m > 0.0);
+        Self {
+            display_off_minutes: minutes("displayOffMinutes"),
+            sleep_minutes: minutes("sleepMinutes"),
+            prevent_sleep: bool_of(map, "preventSleep").unwrap_or(false),
+        }
+    }
+}
+
 impl State {
     /// A file of the settings folder changed.
     pub fn config_changed(&mut self, name: &str) {
         match name {
             KEYBOARD_FILE => self.apply_keyboard_config(),
             INPUT_FILE => self.apply_input_config(),
+            POWER_FILE => self.apply_power_config(),
             crate::displays::DISPLAYS_FILE => self.apply_displays_config(),
             _ => {}
         }
@@ -289,6 +317,7 @@ impl State {
     pub fn apply_all_config(&mut self) {
         self.apply_keyboard_config();
         self.apply_input_config();
+        self.apply_power_config();
         self.apply_displays_config();
     }
 

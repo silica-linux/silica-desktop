@@ -231,6 +231,32 @@ fn displays_are_listed_configured_and_saved() {
 }
 
 #[test]
+fn power_json_turns_the_display_off_until_input() {
+    let ossido = Headless::start("power-json");
+    let state = ossido.client().call("idle.state", Value::Null).unwrap();
+    assert_eq!(state["displayOff"], false);
+    assert_eq!(state["displayOffMinutes"], Value::Null);
+
+    // 0.02 minutes: 1.2 s.
+    write_setting(
+        &ossido,
+        "power.json",
+        &json!({"displayOffMinutes": 0.02, "preventSleep": true}),
+    );
+    let state = wait_for(&ossido, "idle.state", |s| s["displayOff"] == true);
+    assert_eq!(state["preventSleep"], true);
+    assert!(state["idleSeconds"].as_u64().unwrap() >= 1);
+    // Input wakes it.
+    ossido
+        .client()
+        .call("input.pointer_move", json!({"x": 10.0, "y": 10.0}))
+        .unwrap();
+    let state = ossido.client().call("idle.state", Value::Null).unwrap();
+    assert_eq!(state["displayOff"], false);
+    assert_eq!(state["idleSeconds"], 0);
+}
+
+#[test]
 fn input_json_is_read_live() {
     let ossido = Headless::start("input-json");
     let state = ossido.client().call("input.state", Value::Null).unwrap();

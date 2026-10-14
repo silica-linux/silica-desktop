@@ -43,6 +43,8 @@ pub struct SystemConfig {
     pub appearance_file: Option<PathBuf>,
     /// Where the night light is saved (`nightlight.json`); `None`: only in memory.
     pub nightlight_file: Option<PathBuf>,
+    /// Settings › Energy (`power.json`): `preventSleep` holds logind's idle inhibitor.
+    pub power_file: Option<PathBuf>,
     /// Ossido's actions socket; `None`: the one of `WAYLAND_DISPLAY`.
     pub actions_socket: Option<PathBuf>,
     /// Where the sun is computed from; `None` at start is filled from the time zone.
@@ -104,6 +106,7 @@ impl Default for SystemConfig {
             poll: Duration::from_secs(1),
             appearance_file: default_appearance_file(),
             nightlight_file: display::config_file("nightlight.json"),
+            power_file: display::config_file("power.json"),
             actions_socket: None,
             place: crate::sun::local_place(),
             utc_offset: None,
@@ -209,6 +212,9 @@ pub struct SystemState {
     /// The night light's settings and whether it is warming the displays now.
     pub night_light: NightLight,
     pub night_light_active: bool,
+    /// `preventSleep` of `power.json`, and whether logind's idle inhibitor is held for it.
+    pub prevent_sleep: bool,
+    pub sleep_inhibited: bool,
 }
 
 impl SystemState {
@@ -272,6 +278,8 @@ impl SystemState {
         put("nightlight.from", Value::from(light.from.clone()));
         put("nightlight.to", Value::from(light.to.clone()));
         put("nightlight.active", Value::Bool(self.night_light_active));
+        put("power.preventSleep", Value::Bool(self.prevent_sleep));
+        put("power.inhibited", Value::Bool(self.sleep_inhibited));
         for (key, value) in &self.compositor {
             match value {
                 Reported::Bool(b) => put(key, Value::Bool(*b)),
@@ -290,6 +298,8 @@ struct Shared {
     changed: Arc<Event>,
     /// Wakes the schedules (a setting changed).
     schedule: Arc<Event>,
+    /// logind's idle inhibitor while `preventSleep` is on: closing it releases it.
+    inhibitor: Arc<Mutex<Option<zbus::zvariant::OwnedFd>>>,
     config: SystemConfig,
 }
 
@@ -334,6 +344,7 @@ impl SystemService {
             })),
             changed: Arc::new(Event::new()),
             schedule: Arc::new(Event::new()),
+            inhibitor: Arc::new(Mutex::new(None)),
             config,
         };
         connection
@@ -376,6 +387,7 @@ impl SystemService {
                 let listener = self.shared.schedule.listen();
                 display::night_light_tick(&self.shared, &mut last, first).await;
                 appearance_tick(&self.shared).await;
+                power_tick(&self.shared).await;
                 first = false;
                 future::or(
                     async {
@@ -399,6 +411,61 @@ impl SystemService {
 
 struct System {
     shared: Shared,
+}
+
+/// `preventSleep`: holds logind's `idle` inhibitor while it is on (the idle action of logind
+/// does not suspend; a sleep the user asks for still happens), releases it when it goes off.
+async fn power_tick(shared: &Shared) {
+    let prevent = shared.config.power_file.as_deref().is_some_and(|file| {
+        std::fs::read_to_string(file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|json| {
+                json.get("preventSleep")
+                    .and_then(serde_json::Value::as_bool)
+            })
+            .unwrap_or(false)
+    });
+    let held = shared
+        .inhibitor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    if prevent && !held {
+        if let Some(bus) = &shared.config.system_bus {
+            let reply = bus
+                .call_method(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    Some("org.freedesktop.login1.Manager"),
+                    "Inhibit",
+                    &(
+                        "idle",
+                        "Silica",
+                        "Settings: prevent automatic sleep",
+                        "block",
+                    ),
+                )
+                .await;
+            match reply.and_then(|r| r.body().deserialize::<zbus::zvariant::OwnedFd>()) {
+                Ok(fd) => {
+                    *shared.inhibitor.lock().unwrap_or_else(|e| e.into_inner()) = Some(fd);
+                }
+                Err(err) => tracing::warn!("logind inhibitor: {err}"),
+            }
+        }
+    } else if !prevent && held {
+        *shared.inhibitor.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    let inhibited = shared
+        .inhibitor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    shared.update(|state| {
+        state.prevent_sleep = prevent;
+        state.sleep_inhibited = inhibited;
+    });
 }
 
 /// Whether it is night now at the configured place.
@@ -669,6 +736,26 @@ impl System {
         self.shared.update(|state| state.night_light = light);
         self.shared.schedule.notify(usize::MAX);
         Ok(())
+    }
+
+    /// Sleeps now (logind's `Suspend`): Ossido asks when the idle time of `power.json` is up.
+    async fn suspend(&self) -> zbus::fdo::Result<()> {
+        let bus = self
+            .shared
+            .config
+            .system_bus
+            .as_ref()
+            .ok_or_else(|| failed("no system bus"))?;
+        bus.call_method(
+            Some("org.freedesktop.login1"),
+            "/org/freedesktop/login1",
+            Some("org.freedesktop.login1.Manager"),
+            "Suspend",
+            &(false,),
+        )
+        .await
+        .map(|_| ())
+        .map_err(failed)
     }
 
     /// Ossido's report (a JSON object of the keys in `REPORTED_KEYS`): they join the state.

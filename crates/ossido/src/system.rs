@@ -42,6 +42,8 @@ pub enum Call {
     Dark(bool),
     /// What Ossido knows that apps need (pointer kinds, outputs): the whole report as JSON.
     Report(String),
+    /// Sleep (logind, through the daemon).
+    Suspend,
 }
 
 impl Call {
@@ -56,6 +58,9 @@ impl Call {
             Call::DoNotDisturb(on) => set(connection, "SetDoNotDisturb", on),
             Call::Dark(on) => set(connection, "SetDark", on),
             Call::Report(ref json) => set(connection, "ReportCompositor", json.as_str()),
+            Call::Suspend => connection
+                .call_method(Some(DESTINATION), PATH, Some(INTERFACE), "Suspend", &())
+                .map(|_| ()),
         }
     }
 }
