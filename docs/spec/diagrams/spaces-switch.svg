@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" font-family="Inter, sans-serif" font-size="11">
+  <title>Space switch: two spaces slide together with a 64 pt black band between them</title>
+  <rect x="0" y="0" width="640" height="220" fill="#ffffff"/>
+  <!-- screen outline -->
+  <rect x="120" y="30" width="256" height="144" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="248" y="22" text-anchor="middle">screen (2560 pt)</text>
+  <!-- space 1 leaving -->
+  <rect x="20" y="40" width="194" height="124" fill="#7a7b80" opacity="0.6"/>
+  <text x="117" y="105" text-anchor="middle" fill="#fff">space 1 →left</text>
+  <!-- band -->
+  <rect x="214" y="40" width="6.4" height="124" fill="#000"/>
+  <!-- space 2 entering -->
+  <rect x="220" y="40" width="256" height="124" fill="#a3a5ab" opacity="0.6"/>
+  <text x="348" y="105" text-anchor="middle">space 2 ←enters</text>
+  <!-- dock -->
+  <rect x="200" y="150" width="96" height="14" rx="5" fill="#d9d9de" stroke="#666"/>
+  <text x="248" y="160" text-anchor="middle" font-size="9">Dock (fixed)</text>
+  <!-- annotations -->
+  <line x1="214" y1="185" x2="220.4" y2="185" stroke="#000"/>
+  <text x="217" y="200" text-anchor="middle">64 pt black band</text>
+  <text x="500" y="60">travel = 2560 + 64 pt</text>
+  <text x="500" y="80">spring ω ≈ 13.2 s⁻¹</text>
+  <text x="500" y="100">50 % ≈ 120 ms</text>
+  <text x="500" y="120">90 % ≈ 290 ms</text>
+  <text x="500" y="140">99 % ≈ 505 ms</text>
+</svg>
