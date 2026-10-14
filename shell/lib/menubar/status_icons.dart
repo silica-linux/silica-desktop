@@ -272,7 +272,10 @@ class _StatusPainter extends CustomPainter {
             : 3;
         for (var i = 0; i < waves; i++) {
           canvas.drawArc(
-            Rect.fromCircle(center: c - const Offset(1, 0), radius: 3.5 + i * 3),
+            Rect.fromCircle(
+              center: c - const Offset(1, 0),
+              radius: 3.5 + i * 3,
+            ),
             -math.pi * 0.3,
             math.pi * 0.6,
             false,

@@ -4,7 +4,7 @@
 //! ossido [--backend winit|headless|drm] [--size WxH] [--scale N] [--control PORT]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
 //!     [--session-bus] [--logo-key none|rightctrl|rightalt] [--appearance light|dark]
-//!     [--spawn COMMAND]... [--spawn-shell COMMAND]...
+//!     [--spawn COMMAND]... [--spawn-shell COMMAND]... [--keep-shell COMMAND]...
 //! ```
 //!
 //! Without `--backend`: winit inside a host session, `drm` on a TTY (no `WAYLAND_DISPLAY` and
@@ -115,6 +115,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--spawn-shell" => {
                 let command = value()?;
                 options.spawn_shell.push(command);
+            }
+            "--keep-shell" => {
+                let command = value()?;
+                options.keep_shell.push(command);
             }
             _ => return Err(format!("unknown argument: {arg}")),
         }

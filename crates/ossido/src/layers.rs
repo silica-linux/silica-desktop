@@ -16,6 +16,21 @@ use tracing::{info, warn};
 
 use crate::state::State;
 
+/// The namespace of the file manager's desktop surface (#147): `desktop-icons:<app id>`, on the
+/// bottom layer (above the wallpaper, below the windows). On the reference the desktop icons are
+/// a window of the file manager, and a click on the desktop makes it the frontmost app.
+pub const DESKTOP_ICONS: &str = "desktop-icons";
+
+/// The owner app of a desktop surface's namespace: `Some(app id)` for `desktop-icons:<app id>`,
+/// `Some("")` for a bare `desktop-icons`, `None` for any other surface.
+pub fn desktop_owner(namespace: &str) -> Option<&str> {
+    let rest = namespace.strip_prefix(DESKTOP_ICONS)?;
+    if rest.is_empty() {
+        return Some("");
+    }
+    rest.strip_prefix(':')
+}
+
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
         &mut self.layer_shell_state
@@ -184,6 +199,32 @@ impl State {
             .collect()
     }
 
+    /// The file manager's desktop surface, if one is mapped, with its owner app id.
+    pub fn desktop_layer(&self) -> Option<(LayerSurface, String)> {
+        let map = layer_map_for_output(&self.output);
+        [Layer::Bottom, Layer::Background].iter().find_map(|level| {
+            map.layers_on(*level).find_map(|layer| {
+                desktop_owner(layer.namespace()).map(|owner| (layer.clone(), owner.to_owned()))
+            })
+        })
+    }
+
+    /// A press on the desktop (no layer above, no window): the windows lose the focus and the
+    /// desktop's owner becomes the frontmost app, with the keyboard (#147). Without a desktop
+    /// owner no app stays frontmost.
+    pub fn desktop_pressed(&mut self) {
+        self.focus_window(None);
+        match self.desktop_layer() {
+            Some((layer, owner)) => {
+                self.set_windowless_front((!owner.is_empty()).then_some(owner));
+                if layer.can_receive_keyboard_focus() {
+                    self.focus_layer(&layer);
+                }
+            }
+            None => self.set_windowless_front(None),
+        }
+    }
+
     /// The area free of layers with an exclusive zone: the windows go there.
     pub fn usable_area(&self) -> Rectangle<i32, Logical> {
         let map = layer_map_for_output(&self.output);
@@ -197,3 +238,19 @@ impl State {
 
 /// Whether the layer asked for the keyboard exclusively on the previous commit.
 struct WasExclusive(std::cell::Cell<bool>);
+
+#[cfg(test)]
+mod tests {
+    use super::desktop_owner;
+
+    #[test]
+    fn the_desktop_surface_names_its_owner() {
+        assert_eq!(
+            desktop_owner("desktop-icons:dev.frascella.Mustache"),
+            Some("dev.frascella.Mustache")
+        );
+        assert_eq!(desktop_owner("desktop-icons"), Some(""));
+        assert_eq!(desktop_owner("wallpaper"), None);
+        assert_eq!(desktop_owner("desktop-iconsx"), None);
+    }
+}
