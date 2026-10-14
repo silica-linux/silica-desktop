@@ -1,0 +1,65 @@
+name: vm
+
+# The real session in a QEMU/KVM virtual machine: Ossido on DRM/KMS (virtio-gpu) with the
+# shell, checked with a screenshot over the control channel (cargo xtask vm, docs/vm.md).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  vm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub's Linux runners have KVM; the device is only readable by root until a udev
+      # rule opens it.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev libxkbcommon-dev libudev-dev libinput-dev \
+            libgbm-dev libseat-dev libpixman-1-dev libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri \
+            unzip fontconfig fonts-dejavu-core dbus \
+            qemu-system-x86 qemu-utils
+      - uses: dtolnay/rust-toolchain@stable
+      # Same engine version as in crates/embedder/ENGINE_VERSION (see ci.yml).
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: target/flutter-engine
+          key: flutter-engine-${{ hashFiles('crates/embedder/ENGINE_VERSION') }}
+      # The guest image (same Ubuntu release as the runner), downloaded once a week.
+      - id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: target/vm/*-server-cloudimg-amd64.img
+          key: vm-cloudimg-${{ runner.os }}-${{ steps.week.outputs.week }}
+      - run: cargo xtask vm --out target/vm/screenshot.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-session
+          path: |
+            target/vm/screenshot.png
+            target/vm/console.log
+          if-no-files-found: warn
