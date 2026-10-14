@@ -70,6 +70,25 @@ void main() {
     expect(wifiArcs(0.1), 1);
   });
 
+  testWidgets('the Focus moon only while a Focus is on (SH-MB-26)', (
+    tester,
+  ) async {
+    final system = FakeSystem(const SystemSnapshot(wifiAvailable: true));
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MenuBar(system: system, now: DateTime(2026, 10, 13, 9)),
+      ),
+    );
+    bool moon() => tester
+        .widgetList<StatusIcon>(find.byType(StatusIcon))
+        .any((i) => i.kind == StatusKind.focus);
+    expect(moon(), isFalse);
+    system.value = system.value.copyWith(doNotDisturb: true);
+    await tester.pump();
+    expect(moon(), isTrue);
+  });
+
   testWidgets('battery and network from the system state', (tester) async {
     final system = FakeSystem(
       const SystemSnapshot(

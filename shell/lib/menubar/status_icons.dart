@@ -55,7 +55,7 @@ class _MarkPainter extends CustomPainter {
   bool shouldRepaint(_MarkPainter old) => old.color != color;
 }
 
-enum StatusKind { network, wired, battery, search, controls }
+enum StatusKind { network, wired, battery, search, controls, focus }
 
 class StatusIcon extends StatelessWidget {
   const StatusIcon({
@@ -217,6 +217,16 @@ class _StatusPainter extends CustomPainter {
           c + const Offset(5.5, 5.5),
           stroke,
         );
+      case StatusKind.focus:
+        // A Focus is on: the crescent moon, ~13 pt (SH-MB-26).
+        final moon = Path.combine(
+          PathOperation.difference,
+          Path()..addOval(Rect.fromCircle(center: c, radius: 6.5)),
+          Path()..addOval(
+            Rect.fromCircle(center: c + const Offset(4, -3.2), radius: 5.6),
+          ),
+        );
+        canvas.drawPath(moon, fill);
       case StatusKind.controls:
         // Two stacked switches: 14 × 14 pt.
         for (final (dy, knobLeft) in [(-3.5, true), (3.5, false)]) {

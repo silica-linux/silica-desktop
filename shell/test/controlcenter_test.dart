@@ -378,6 +378,17 @@ void main() {
       await tester.pump();
       expect(find.byKey(const ValueKey('wifi status menu')), findsNothing);
       expect(broadcasts, contains('statusmenu='));
+
+      // The Focus moon opens the Focus panel the same way (SH-MB-26).
+      system.value = system.value.copyWith(doNotDisturb: true);
+      await announce('dnd 1100');
+      await tester.pump();
+      await tester.pump();
+      final focus = tester.getRect(
+        find.byKey(const ValueKey('dnd status menu')),
+      );
+      expect(focus.right, 1100 + statusMenuRight);
+      expect(find.text('Focus on'), findsOneWidget);
     },
   );
 

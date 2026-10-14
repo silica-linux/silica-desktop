@@ -318,29 +318,36 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _toggle() => _open ? _hide() : _show();
 
-  /// The Wi-Fi status menu opened from the bar: the right edge of the icon.
+  /// The status menu opened from the bar (Wi-Fi, Focus): the right edge of the icon.
   double? _wifiMenuRight;
+  String? _statusMenuKey;
   final FocusNode _menuFocus = FocusNode();
 
-  /// The bar announces `statusmenu` = "wifi <right edge of the icon>" or "".
+  /// The panels the bar's status items open.
+  static const Set<String> statusMenus = {'wifi', 'dnd'};
+
+  /// The bar announces `statusmenu` = "<panel> <right edge of the icon>" or "".
   void _statesChanged() {
     final value = ShellChannel.instance.states.value['statusmenu'] ?? '';
-    final right = value.startsWith('wifi ')
-        ? double.tryParse(value.substring(5))
+    final parts = value.split(' ');
+    final key = parts.length == 2 && statusMenus.contains(parts[0])
+        ? parts[0]
         : null;
-    if (right == _wifiMenuRight) return;
-    if (right == null) {
+    final right = key == null ? null : double.tryParse(parts[1]);
+    if (right == _wifiMenuRight && key == _statusMenuKey) return;
+    if (key == null || right == null) {
       _closeWifiMenu(announce: false);
     } else {
-      _openWifiMenu(right);
+      _openWifiMenu(key, right);
     }
   }
 
-  Future<void> _openWifiMenu(double right) async {
+  Future<void> _openWifiMenu(String key, double right) async {
     if (_open) _hide();
     setState(() {
       _wifiMenuRight = right;
-      _detail = 'wifi';
+      _statusMenuKey = key;
+      _detail = key;
       _detailClosing = false;
       _othersOpen = false;
       _detailData = const DetailData();
@@ -350,14 +357,16 @@ class _ControlCenterState extends State<ControlCenter>
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _menuFocus.requestFocus(),
     );
+    if (key != 'wifi') return;
     final networks = await widget.system.wifiNetworks();
-    if (mounted && _wifiMenuRight != null) {
+    if (mounted && _wifiMenuRight != null && _statusMenuKey == 'wifi') {
       setState(() => _detailData = DetailData(networks: networks));
     }
   }
 
   void _closeWifiMenu({bool announce = true}) {
     if (_wifiMenuRight == null) return;
+    _statusMenuKey = null;
     setState(() {
       _wifiMenuRight = null;
       _detail = null;
@@ -401,7 +410,7 @@ class _ControlCenterState extends State<ControlCenter>
           Positioned.fromRect(
             rect: rect,
             child: DecoratedBox(
-              key: const ValueKey('wifi status menu'),
+              key: ValueKey('${_statusMenuKey ?? ''} status menu'),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(detailRadius),
                 boxShadow: const [

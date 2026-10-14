@@ -432,9 +432,8 @@ class _MenuBarState extends State<MenuBar> {
         : null;
     final clock = states['notifications.open'] == '1' ? _rectOf('clock') : null;
     // A status menu open: its icon with the capsule of the open items.
-    final statusMenu = (states['statusmenu'] ?? '').startsWith('wifi')
-        ? _rectOf('wifi')
-        : null;
+    final statusMenuKey = (states['statusmenu'] ?? '').split(' ').first;
+    final statusMenu = statusMenuKey.isEmpty ? null : _rectOf(statusMenuKey);
     final bar = SizedBox(
       height: barHeight,
       child: Stack(
@@ -652,6 +651,16 @@ class _MenuBarState extends State<MenuBar> {
       return const [StatusIcon(kind: StatusKind.network, cell: 22)];
     }
     return [
+      // While a Focus is on, its moon (SH-MB-26); the menu is the Focus panel.
+      if (s.doNotDisturb) ...[
+        GestureDetector(
+          key: _keyFor('dnd'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleStatusMenu('dnd'),
+          child: const StatusIcon(kind: StatusKind.focus, cell: 22),
+        ),
+        const SizedBox(width: statusGap),
+      ],
       if (s.batteryPresent) ...[
         StatusIcon(
           kind: StatusKind.battery,
@@ -667,7 +676,7 @@ class _MenuBarState extends State<MenuBar> {
         GestureDetector(
           key: _keyFor('wifi'),
           behavior: HitTestBehavior.opaque,
-          onTap: _toggleWifiMenu,
+          onTap: () => _toggleStatusMenu('wifi'),
           child: StatusIcon(
             kind: StatusKind.network,
             cell: 22,
@@ -678,14 +687,15 @@ class _MenuBarState extends State<MenuBar> {
     ];
   }
 
-  /// The Wi-Fi status menu (menubar.md › Status menu): the Wi-Fi panel of the Control Center
-  /// below the icon, which draws it when the bar announces `statusmenu`.
-  void _toggleWifiMenu() {
+  /// A status menu (menubar.md › Status menu): the Control Center panel of `key` (`wifi`,
+  /// `dnd`) below the icon, which the Center draws when the bar announces `statusmenu`.
+  void _toggleStatusMenu(String key) {
     final shell = ShellChannel.instance;
-    final rect = _rectOf('wifi');
+    final rect = _rectOf(key);
     if (rect == null) return;
-    final open = shell.states.value['statusmenu']?.startsWith('wifi') ?? false;
-    shell.broadcast('statusmenu', open ? '' : 'wifi ${rect.right}');
+    final open =
+        (shell.states.value['statusmenu'] ?? '').split(' ').first == key;
+    shell.broadcast('statusmenu', open ? '' : '$key ${rect.right}');
   }
 
   /// An item: the text with ~10.75 pt per side.
