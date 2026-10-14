@@ -39,6 +39,8 @@ trait Notifications {
     fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
     #[zbus(signal)]
     fn action_invoked(&self, id: u32, action_key: String) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn notification_replied(&self, id: u32, text: String) -> zbus::Result<()>;
 }
 
 #[proxy(
@@ -51,6 +53,7 @@ trait Shell {
     fn dismiss(&self, id: u32) -> zbus::Result<()>;
     fn clear(&self) -> zbus::Result<()>;
     fn invoke_action(&self, id: u32, action_key: &str) -> zbus::Result<()>;
+    fn reply(&self, id: u32, text: &str) -> zbus::Result<()>;
     #[zbus(signal)]
     fn added(&self, notification: Notification) -> zbus::Result<()>;
     #[zbus(signal)]
@@ -328,5 +331,43 @@ fn a_second_server_cannot_take_the_names() {
         assert!(matches!(second, Err(zbus::Error::NameTaken)));
         // With --replace it takes the place of the first one, which allows it.
         assert!(Daemon::serve(bus.connect().await, true).await.is_ok());
+    });
+}
+
+#[test]
+fn inline_replies_are_forwarded_and_close() {
+    with_daemon(|conn| async move {
+        let fdo = NotificationsProxy::new(&conn).await.unwrap();
+        let shell = ShellProxy::new(&conn).await.unwrap();
+        assert!(
+            fdo.get_capabilities()
+                .await
+                .unwrap()
+                .contains(&"inline-reply".to_owned())
+        );
+        let mut replied = fdo.receive_notification_replied().await.unwrap();
+        let mut closed = fdo.receive_notification_closed().await.unwrap();
+
+        // Without the inline-reply action there is no reply field.
+        let plain = fdo
+            .notify("chat", 0, "", "plain", "", &[], no_hints(), -1)
+            .await
+            .unwrap();
+        assert!(shell.reply(plain, "hello").await.is_err());
+
+        let actions = ["inline-reply", "Reply"];
+        let id = fdo
+            .notify("chat", 0, "", "question", "", &actions, no_hints(), -1)
+            .await
+            .unwrap();
+        shell.reply(id, "on my way").await.unwrap();
+        let args = replied.next().await.unwrap();
+        assert_eq!(args.args().unwrap().id, id);
+        assert_eq!(args.args().unwrap().text, "on my way");
+        let args = closed.next().await.unwrap();
+        assert_eq!(
+            (args.args().unwrap().id, args.args().unwrap().reason),
+            (id, 2)
+        );
     });
 }

@@ -31,8 +31,19 @@ pub const SHELL_INTERFACE: &str = "dev.frascella.Silica.Notifications1";
 pub const SPEC_VERSION: &str = "1.2";
 
 /// Capabilities announced by `GetCapabilities`. No markup in the body: the shell shows it
-/// as plain text.
-pub const CAPABILITIES: &[&str] = &["actions", "body", "icon-static", "persistence"];
+/// as plain text. `inline-reply` is the KDE extension apps already use: a notification
+/// with the `inline-reply` action gets a reply field, and the text comes back with the
+/// `NotificationReplied` signal.
+pub const CAPABILITIES: &[&str] = &[
+    "actions",
+    "body",
+    "icon-static",
+    "persistence",
+    "inline-reply",
+];
+
+/// The action key that asks for a reply field (KDE's inline-reply extension).
+pub const REPLY_ACTION: &str = "inline-reply";
 
 #[derive(Clone, Default)]
 struct Shared {
@@ -213,6 +224,14 @@ impl Notifications {
         id: u32,
         action_key: &str,
     ) -> zbus::Result<()>;
+
+    /// The user replied from the notification (inline-reply extension).
+    #[zbus(signal)]
+    async fn notification_replied(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        text: &str,
+    ) -> zbus::Result<()>;
 }
 
 /// `dev.frascella.Silica.Notifications1`: the shell's view.
@@ -271,6 +290,34 @@ impl ShellNotifications {
         };
         let emitter = SignalEmitter::new(connection, FDO_PATH)?;
         Notifications::action_invoked(&emitter, id, &action_key).await?;
+        if !resident && self.shared.store().remove(id).is_some() {
+            emit_closed(connection, id, CloseReason::Dismissed).await?;
+        }
+        Ok(())
+    }
+
+    /// The user replied in the notification's field. Only for notifications that offer the
+    /// `inline-reply` action; without the `resident` hint the notification then closes.
+    async fn reply(
+        &self,
+        #[zbus(connection)] connection: &Connection,
+        id: u32,
+        text: String,
+    ) -> zbus::fdo::Result<()> {
+        let resident = {
+            let store = self.shared.store();
+            let notification = store.get(id).ok_or_else(|| {
+                zbus::fdo::Error::InvalidArgs(format!("notification {id} absent"))
+            })?;
+            if !action_keys(notification).any(|key| key == REPLY_ACTION) {
+                return Err(zbus::fdo::Error::InvalidArgs(format!(
+                    "notification {id} does not take a reply"
+                )));
+            }
+            notification.resident
+        };
+        let emitter = SignalEmitter::new(connection, FDO_PATH)?;
+        Notifications::notification_replied(&emitter, id, &text).await?;
         if !resident && self.shared.store().remove(id).is_some() {
             emit_closed(connection, id, CloseReason::Dismissed).await?;
         }

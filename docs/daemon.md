@@ -78,6 +78,9 @@ On `/dev/frascella/Silica/Notifications1`, for the shell (banners and Notificati
 - `Dismiss(id)`: closed by the user (reason 2). `Clear()`: all of them.
 - `InvokeAction(id, key)`: emits `ActionInvoked`; without `resident` it then closes with
   reason 2. A missing key is the `InvalidArgs` error.
+- `Reply(id, text)`: for notifications with the `inline-reply` action (KDE's extension,
+  announced in `GetCapabilities`): emits `NotificationReplied(id, text)` on
+  `org.freedesktop.Notifications`; without `resident` it then closes with reason 2.
 - Signals `Added(notification)` (new or replaced: same id) and `Removed(id, reason)`.
 
 ## Trying it by hand
