@@ -5,6 +5,8 @@
 
 import 'dart:ui' as ui;
 
+import 'package:flutter/animation.dart' show Cubic;
+
 import 'package:silica_ui/silica_ui.dart';
 
 /// Pitch between app cells: 63 pt (AX).
@@ -242,21 +244,49 @@ class Item {
       kind == ItemKind.separator ? separatorCell : cellPitch;
 }
 
-/// A slot opening (an app that is not kept in the Dock launches, the separator appears) or
-/// closing (it quits): the neighbours slide apart or together while the icon grows and fades
-/// in, or shrinks and fades out. Measured with the launch animation turned off (dock.md, D-02):
-/// the Dock widens by one cell in ~320 ms and narrows in ~480 ms. Provisional: the same times
-/// with the launch animation on (macOS is expected at ~0.2-0.3 s), the ease-in-out curve, the
-/// icon starting at scale 0 and the linear-in-presence opacity.
-const Duration slotOpenDuration = Duration(milliseconds: 320);
-const Duration slotCloseDuration = Duration(milliseconds: 480);
+/// Launch of an app that is not kept in the Dock (dock.md, DOCK-ANIM, measured): the item is
+/// inserted before the separator at 10 % of its size with its centre fixed; the cell grows
+/// 6.3 to 63 pt in ~350 ms along cubic-bezier(0.38, 0, 0.64, 1) and the neighbours each move
+/// half the width. The icon is drawn at the cell's scale with opacity (scale - 0.2) / 0.8.
+const double launchStartScale = 0.1;
+const Duration launchDuration = Duration(milliseconds: 350);
+const Cubic launchCurve = Cubic(0.38, 0, 0.64, 1);
+
+/// The 17 pt rise of the hop is the same animation (same curve); the fall takes ~350 ms,
+/// quadratic ease-in, with no settle and no squash; one hop is ~705 ms. With magnification the
+/// peak is ~18 pt.
+const double launchHopPeak = 17;
+const Duration launchFallDuration = Duration(milliseconds: 350);
+const Duration launchHopDuration = Duration(milliseconds: 705);
+
+/// The running dot fades in linearly over ~450 ms (415-480 measured), starting ~255 ms in
+/// (230-325 measured) and ending at the landing.
+const Duration launchDotStart = Duration(milliseconds: 255);
+const Duration launchDotFade = Duration(milliseconds: 450);
+
+/// Quit: the cell goes 63 to 0 pt in ~480 ms (470-490) along cubic-bezier(0.38, 0.05, 0.61,
+/// 1); the icon shrinks in place with opacity = scale squared; the dot fades out over ~370 ms
+/// (350-390) from the start.
+const Duration quitDuration = Duration(milliseconds: 480);
+const Cubic quitCurve = Cubic(0.38, 0.05, 0.61, 1);
+const Duration quitDotFade = Duration(milliseconds: 370);
+
+/// Height of the launch hop as a fraction of its peak, `ms` after the start.
+double launchHop(double ms) {
+  if (ms <= 0) return 0;
+  final rise = launchDuration.inMilliseconds;
+  if (ms < rise) return launchCurve.transform(ms / rise);
+  final fall = launchFallDuration.inMilliseconds;
+  final u = (ms - rise) / fall;
+  return u >= 1 ? 0 : 1 - u * u;
+}
 
 /// The Dock layout at one moment: cells, background, icons.
 class Layout {
   Layout._(this.cells, this.scales, this.background, this.presence);
 
   /// How present every item is (1 normally; 0..1 while its slot opens or closes, see
-  /// [slotOpenDuration]): it scales the width of the cell, the icon and its opacity.
+  /// [launchDuration]): it scales the width of the cell, the icon and its opacity.
   final List<double> presence;
 
   /// Rectangle (x, width) of every cell, in the order of the items.
