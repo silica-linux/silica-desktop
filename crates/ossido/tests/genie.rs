@@ -95,7 +95,7 @@ fn minimize_bends_the_window_into_the_dock_and_restore_brings_it_back() {
     // (Changing the speed also recomputes the opening: the window may still be at 98 %.)
     let (a, b) = red_span(&at_start, mid_row).expect("window at the start");
     assert!((a - left).abs() <= 4 && (b - right).abs() <= 4, "{a}–{b}");
-    let [r, g, b, _] = pixel_in(&at_start, SIZE.0, (left + 210) as u32, (info.y - 26) as u32);
+    let [r, g, b, _] = pixel_in(&at_start, SIZE.0, (left + 210) as u32, (info.y - 16) as u32);
     assert!(r > 230 && g > 230 && b > 230, "bar on top: {r} {g} {b}");
 
     // Halfway (~215 ms of 480): the bottom of the window is bent towards the thumbnail, which

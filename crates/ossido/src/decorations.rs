@@ -48,16 +48,11 @@ pub fn titlebar_height(window: &Window) -> i32 {
     }
 }
 
-/// The vertical center of the buttons: 26 in Ossido's bar, half of the app's toolbar with
-/// full-size content.
-pub fn button_center_y(window: &Window) -> f64 {
-    full_size_toolbar(window).map_or(titlebar::BUTTON_CENTERS[0].1, |h| f64::from(h) / 2.0)
-}
-
-/// A point of the frame in the coordinates of Ossido's bar (where the buttons have their
-/// center at y 26), to reuse `part_at` and `over_buttons` with full-size content too.
-pub fn to_titlebar_space(window: &Window, local: Point<f64, Logical>) -> Point<f64, Logical> {
-    local - Point::from((0.0, button_center_y(window) - titlebar::BUTTON_CENTERS[0].1))
+/// The height of the bar the buttons are placed in: Ossido's own bar, or the app's toolbar
+/// with full-size content (`SilicaWindow.setFullSizeContent(toolbarHeight)`). The buttons
+/// are centred on it and take their left margin from it (`titlebar::button_centers`).
+pub fn button_bar_height(window: &Window) -> f64 {
+    full_size_toolbar(window).map_or(f64::from(titlebar::HEIGHT), f64::from)
 }
 
 /// The frame given the content rectangle: the bar is added on top.
@@ -119,18 +114,12 @@ impl State {
             {
                 let local = location - frame.loc.to_f64();
                 if frame.to_f64().contains(location)
-                    && let Some(part) = titlebar::part_at(to_titlebar_space(window, local))
+                    && let Some(part) = titlebar::part_at(local, button_bar_height(window))
                     // With full-size content the rest of the band belongs to the app (its
                     // toolbar): only the buttons are Ossido's.
                     && (full_size_toolbar(window).is_none() || part != Part::Bar)
                 {
-                    // The point in the bar coordinates: there `over_buttons` and dragging
-                    // apply.
-                    return Some(Hit::Titlebar(
-                        window.clone(),
-                        part,
-                        to_titlebar_space(window, local),
-                    ));
+                    return Some(Hit::Titlebar(window.clone(), part, local));
                 }
             }
             let Some(render_location) = self
@@ -179,13 +168,9 @@ impl State {
                 && state.titlebar_press_inside
                 && matches!(&state.titlebar_press, Some((w, Part::Zoom)) if *w == window);
             if same && let Some(frame) = state.window_frame(&window) {
-                // The tip below the button: center x 72, bottom of the disc (radius 7).
-                let center_y = button_center_y(&window);
-                let point = frame.loc
-                    + Point::from((
-                        titlebar::BUTTON_CENTERS[2].0.round() as i32,
-                        (center_y + 7.0).round() as i32,
-                    ));
+                // The tip below the button: its center x, bottom of the disc (radius 7).
+                let (x, y) = titlebar::button_centers(button_bar_height(&window))[2];
+                let point = frame.loc + Point::from((x.round() as i32, (y + 7.0).round() as i32));
                 if state.announce_window_menu(&window, point) > 0 {
                     state.titlebar_press = None;
                     state.titlebar_press_inside = false;

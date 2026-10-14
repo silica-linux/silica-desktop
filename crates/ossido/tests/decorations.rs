@@ -20,7 +20,7 @@ use silica_control::commands::{
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::Mode;
 
 const SIZE: (u32, u32) = (640, 400);
-const BAR: i32 = 52;
+const BAR: i32 = 32;
 
 fn start(name: &str) -> Headless {
     Headless::start_with(name, SIZE, &["--background", "7a7b80"])
@@ -57,7 +57,7 @@ fn assert_near(shot: &[u8], (x, y): (i32, i32), expected: [u8; 3], tolerance: u8
 
 /// Center of a bar button (0 close, 1 minimize, 2 full screen) of the window.
 fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
-    (window.x + 26 + 23 * index, window.y - BAR + 26)
+    (window.x + 16 + 23 * index, window.y - BAR + 16)
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn titlebar_is_negotiated_and_drawn_with_the_measured_buttons() {
     // White background of the active bar; top-left corner cut (gray background).
     assert_near(
         &shot,
-        (info.x + 150, info.y - 26),
+        (info.x + 150, info.y - 16),
         [255, 255, 255],
         1,
         "bar background",
@@ -261,7 +261,7 @@ fn dragging_the_titlebar_moves_the_window() {
     let _window = TestWindow::open_decorated(&ossido.wayland, "drag", (240, 140));
     let info = windows(&ossido).remove(0);
     let mut client = ossido.client();
-    let (x, y) = (info.x + 150, info.y - 26);
+    let (x, y) = (info.x + 150, info.y - 16);
     client
         .call(INPUT_POINTER_MOVE, json!({"x": x, "y": y}))
         .unwrap();
@@ -291,7 +291,7 @@ fn full_size_content_keeps_only_the_buttons_over_the_app() {
     // Above the content there is no white bar any more: the gray background.
     assert_near(
         &image,
-        (info.x + 150, info.y - 26),
+        (info.x + 150, info.y - 16),
         [0x7a, 0x7b, 0x80],
         6,
         "no bar above the content",
@@ -321,12 +321,52 @@ fn full_size_content_keeps_only_the_buttons_over_the_app() {
     let info = windows(&ossido).remove(0);
     assert_near(
         &image,
-        (info.x + 150, info.y - 26),
+        (info.x + 150, info.y - 16),
         [255, 255, 255],
         1,
         "the bar comes back",
     );
     let _ = before;
+}
+
+/// The buttons keep the same margin and sit on the centre of whatever bar the app declares:
+/// 32 pt (a title band like the Terminal's) gives (16, 16), a 52 pt toolbar (26, 26).
+#[test]
+fn full_size_buttons_follow_the_bar_height_with_a_constant_margin() {
+    let ossido = start("decor-bar-heights");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "short", (240, 140));
+    window.set_full_size_content(32);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let info = windows(&ossido).remove(0);
+    let image = shot(&ossido);
+    let at = |i: i32| (info.x + 16 + 23 * i, info.y + 16);
+    assert_near(&image, at(0), [0xf8, 0x7d, 0x77], 8, "close in a 32 pt bar");
+    assert_near(
+        &image,
+        at(2),
+        [0x85, 0xd6, 0x60],
+        8,
+        "full screen in a 32 pt bar",
+    );
+    // The app's red 2 pt before the disc (which starts 9 pt from the edge).
+    assert_near(
+        &image,
+        (info.x + 6, info.y + 16),
+        [255, 0, 0],
+        0,
+        "app bar left of the disc",
+    );
+    window.set_full_size_content(52);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let info = windows(&ossido).remove(0);
+    let image = shot(&ossido);
+    assert_near(
+        &image,
+        (info.x + 26, info.y + 26),
+        [0xf8, 0x7d, 0x77],
+        8,
+        "close in a 52 pt bar",
+    );
 }
 
 /// The app moves the window from its toolbar (`xdg_toplevel.move`): only with the button
@@ -370,7 +410,7 @@ fn the_app_moves_its_window_from_the_toolbar() {
 }
 
 /// The arrangement commands: the halves and the fill of the usable area, frame included (the
-/// 52 bar above the content); two windows side by side.
+/// 32 bar above the content); two windows side by side.
 #[test]
 fn tile_commands_place_the_frame_in_the_usable_area() {
     use silica_control::commands::{WINDOW_ARRANGE_2, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT};
@@ -387,10 +427,10 @@ fn tile_commands_place_the_frame_in_the_usable_area() {
     };
     client.call(WINDOW_TILE_LEFT, json!({})).unwrap();
     let b = by_title("b");
-    assert_eq!((b.x, b.y), (0, 52));
+    assert_eq!((b.x, b.y), (0, BAR));
     client.call(WINDOW_TILE_RIGHT, json!({})).unwrap();
     let b = by_title("b");
-    assert_eq!((b.x, b.y), (half, 52));
+    assert_eq!((b.x, b.y), (half, BAR));
     // Arrange two: "b" (with the focus) on the left, "a" on the right.
     client.call(WINDOW_ARRANGE_2, json!({})).unwrap();
     assert_eq!(by_title("b").x, 0);

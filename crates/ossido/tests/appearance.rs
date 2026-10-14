@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use silica_control::commands::{INPUT_POINTER_MOVE, WINDOW_LIST, WINDOW_MOVE, WindowInfo};
 
 const SIZE: (u32, u32) = (640, 400);
-const BAR: i32 = 52;
+const BAR: i32 = 32;
 const GRAY: &str = "7a7b80";
 
 fn start(name: &str, appearance: &str) -> Headless {
@@ -60,7 +60,7 @@ fn assert_near(shot: &[u8], at: (i32, i32), expected: [u8; 3], tolerance: u8, wh
 
 /// Center of a bar button (0 close, 1 minimize, 2 full screen).
 fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
-    (window.x + 26 + 23 * index, window.y - BAR + 26)
+    (window.x + 16 + 23 * index, window.y - BAR + 16)
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn dark_windows_use_the_measured_bar_buttons_and_inner_border() {
     // Active bar: like the content in dark, `#272728`.
     assert_near(
         &shot,
-        (info.x + 150, info.y - 26),
+        (info.x + 150, info.y - 16),
         [39, 39, 40],
         1,
         "background",
@@ -127,7 +127,7 @@ fn inactive_dark_windows_have_their_own_bar_and_gray_buttons() {
     // Inactive bar `#2f2f30`, 1 pt separator `#363636` above the content.
     assert_near(
         &shot,
-        (first.x + 150, first.y - 26),
+        (first.x + 150, first.y - 16),
         [47, 47, 48],
         1,
         "background",

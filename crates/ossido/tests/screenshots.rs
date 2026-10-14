@@ -69,7 +69,7 @@ fn screen_region_and_window_captures_write_png_files() {
         .0,
         (100, 50)
     );
-    // The window without its shadow: the frame with its 52 bar, 200 × (120 + 52).
+    // The window without its shadow: the frame with its 32 bar, 200 × (120 + 32).
     let at = f64::from(FIRST_WINDOW_AT) + 10.0;
     assert_eq!(
         capture(
@@ -78,11 +78,11 @@ fn screen_region_and_window_captures_write_png_files() {
             json!({"x": at, "y": at, "shadow": false})
         )
         .0,
-        (200, 172)
+        (200, 152)
     );
     // With its shadow (the default): larger, and transparent in the corner.
     let ((w, h), reply) = capture(&mut client, SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at}));
-    assert!(w > 200 && h > 172, "with the shadow: {w} × {h}");
+    assert!(w > 200 && h > 152, "with the shadow: {w} × {h}");
     assert_eq!(reply["clipboard"], json!(false));
     // Outside every window: an error, no file; with or_screen, the whole screen.
     assert!(

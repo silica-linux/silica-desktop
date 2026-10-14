@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use silica_control::commands::{INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, WINDOW_LIST, WindowInfo};
 
 const SIZE: (u32, u32) = (1280, 800);
-const BAR: i32 = 52;
+const BAR: i32 = 32;
 const W: i32 = 300;
 const H: i32 = 200;
 

@@ -1,6 +1,11 @@
-//! Title bar of the server-side decorations: 52 pt like the measured toolbar, with the
-//! three window buttons (`plan/reference/windows.md`, "Toolbar", "Window buttons" and
-//! "Windows · border and background"), in light and dark.
+//! Title bar of the server-side decorations: 32 pt like the measured plain title bar, with
+//! the three window buttons (`plan/reference/windows.md`, "Window buttons" and
+//! "Windows · border and background"; `plan/reference/titlebar.md` §1), in light and dark.
+//!
+//! Button placement rule (TITLEBAR-GLASS, #86): 14 pt discs at a 23 pt pitch, always
+//! centred vertically on the bar; the first centre is 16 pt from the left edge in bars up to
+//! 32 pt (9 pt margin) and 26 pt in 52 pt toolbars (19 pt margin). The buttons never move or
+//! shrink with the window width: apps declare a minimum width that keeps them clear.
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -9,12 +14,32 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use crate::cache::ShaderCache;
 use crate::corners::{CORNER_EXPONENT, CORNER_RADIUS};
 
-/// Bar height, in points.
-pub const HEIGHT: i32 = 52;
-/// Centers of the buttons (close, minimize, full screen) in the bar: x 26, 49, 72, y 26.
-pub const BUTTON_CENTERS: [(f64, f64); 3] = [(26.0, 26.0), (49.0, 26.0), (72.0, 26.0)];
+/// Height of Ossido's own bar (a plain title bar), in points.
+pub const HEIGHT: i32 = 32;
+/// Height of the unified toolbars (drawn by the app with full-size content).
+pub const TOOLBAR_HEIGHT: f64 = 52.0;
+/// Distance between the centres of two buttons.
+pub const BUTTON_PITCH: f64 = 23.0;
+/// First button centre x in bars up to [`HEIGHT`] tall (9 pt margin from the edge).
+pub const BUTTON_X_PLAIN: f64 = 16.0;
+/// First button centre x in [`TOOLBAR_HEIGHT`] toolbars (19 pt margin).
+pub const BUTTON_X_TOOLBAR: f64 = 26.0;
 /// Radius of the active zone of each button: the accessibility cell is 16 × 16 pt.
 pub const BUTTON_HIT_RADIUS: f64 = 8.0;
+
+/// The first button centre x for a bar of the given height: 16 up to 32 pt, 26 from 52 pt,
+/// in between (not measured) a linear blend rounded to a whole point.
+pub fn button_x(bar: f64) -> f64 {
+    let t = ((bar - f64::from(HEIGHT)) / (TOOLBAR_HEIGHT - f64::from(HEIGHT))).clamp(0.0, 1.0);
+    (BUTTON_X_PLAIN + t * (BUTTON_X_TOOLBAR - BUTTON_X_PLAIN)).round()
+}
+
+/// Centres of the buttons (close, minimize, full screen) in a bar of the given height:
+/// always on the vertical centre of the bar.
+pub fn button_centers(bar: f64) -> [(f64, f64); 3] {
+    let (x, y) = (button_x(bar), bar / 2.0);
+    [(x, y), (x + BUTTON_PITCH, y), (x + 2.0 * BUTTON_PITCH, y)]
+}
 
 /// Bar background: like the content of the active window in light (`#ffffff`).
 const BACKGROUND: [f32; 3] = [1.0, 1.0, 1.0];
@@ -27,7 +52,7 @@ const SEPARATOR_INACTIVE: [f32; 4] = [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.
 const SEPARATOR_INACTIVE_DARK: [f32; 4] = [54.0 / 255.0, 54.0 / 255.0, 54.0 / 255.0, 1.0];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
-pub const UNIFORMS: [(&str, UniformType); 14] = [
+pub const UNIFORMS: [(&str, UniformType); 15] = [
     ("frame_height", UniformType::_1f),
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -40,6 +65,7 @@ pub const UNIFORMS: [(&str, UniformType); 14] = [
     ("alt", UniformType::_1f),
     ("disabled", UniformType::_1f),
     ("bar", UniformType::_1f),
+    ("button_x", UniformType::_1f),
     ("button_y", UniformType::_1f),
     ("dark", UniformType::_1f),
 ];
@@ -92,9 +118,9 @@ pub struct TitlebarState {
     /// The bar background: false with full-size content (`silica-window-v1`), where only
     /// the buttons above the app remain.
     pub bar: bool,
-    /// The vertical center of the buttons (26 in Ossido's bar; half of the app's toolbar
-    /// with full-size content).
-    pub button_y: f32,
+    /// The bar height the buttons are placed for (32 in Ossido's bar; the app's toolbar
+    /// with full-size content): see [`button_centers`].
+    pub bar_height: f32,
     /// Dark appearance.
     pub dark: bool,
 }
@@ -126,7 +152,7 @@ impl Titlebar {
     ) -> PixelShaderElement {
         // With full-size content the band reaches below the buttons, centered lower
         // if the app's bar is taller.
-        let height = HEIGHT.max((state.button_y * 2.0).ceil() as i32);
+        let height = HEIGHT.max(state.bar_height.ceil() as i32);
         let area = Rectangle::new(frame.loc, Size::from((frame.size.w, height)));
         self.cache.element(program, area, (frame.size, state), || {
             uniforms(frame.size, state)
@@ -149,6 +175,7 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         (true, true) => BACKGROUND_DARK,
         (false, true) => BACKGROUND_DARK_INACTIVE,
     };
+    let centers = button_centers(f64::from(state.bar_height));
     let flag = |on: bool| if on { 1.0 } else { 0.0 };
     vec![
         Uniform::new("frame_height", UniformValue::_1f(frame.h as f32)),
@@ -175,7 +202,8 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         Uniform::new("alt", UniformValue::_1f(flag(state.alt))),
         Uniform::new("disabled", UniformValue::_1f(state.disabled.uniform())),
         Uniform::new("bar", UniformValue::_1f(flag(state.bar))),
-        Uniform::new("button_y", UniformValue::_1f(state.button_y)),
+        Uniform::new("button_x", UniformValue::_1f(centers[0].0 as f32)),
+        Uniform::new("button_y", UniformValue::_1f(centers[0].1 as f32)),
         Uniform::new("dark", UniformValue::_1f(flag(state.dark))),
     ]
 }
@@ -202,13 +230,14 @@ pub enum Part {
     Bar,
 }
 
-/// The part of the bar at a point relative to the top left corner of the frame.
-pub fn part_at(point: Point<f64, Logical>) -> Option<Part> {
-    if point.y < 0.0 || point.y >= f64::from(HEIGHT) || point.x < 0.0 {
+/// The part of the bar at a point relative to the top left corner of the frame, for a bar
+/// `bar` pt tall.
+pub fn part_at(point: Point<f64, Logical>, bar: f64) -> Option<Part> {
+    if point.y < 0.0 || point.y >= bar || point.x < 0.0 {
         return None;
     }
     let parts = [Part::Close, Part::Minimize, Part::Zoom];
-    for ((x, y), part) in BUTTON_CENTERS.iter().zip(parts) {
+    for ((x, y), part) in button_centers(bar).iter().zip(parts) {
         let (dx, dy) = (point.x - x, point.y - y);
         if dx.abs() <= BUTTON_HIT_RADIUS && dy.abs() <= BUTTON_HIT_RADIUS {
             return Some(part);
@@ -218,8 +247,9 @@ pub fn part_at(point: Point<f64, Logical>) -> Option<Part> {
 }
 
 /// The pointer is on the button group: the symbols appear on all three.
-pub fn over_buttons(point: Point<f64, Logical>) -> bool {
-    let (first, last) = (BUTTON_CENTERS[0], BUTTON_CENTERS[2]);
+pub fn over_buttons(point: Point<f64, Logical>, bar: f64) -> bool {
+    let centers = button_centers(bar);
+    let (first, last) = (centers[0], centers[2]);
     point.x >= first.0 - BUTTON_HIT_RADIUS
         && point.x <= last.0 + BUTTON_HIT_RADIUS
         && (point.y - first.1).abs() <= BUTTON_HIT_RADIUS
@@ -230,15 +260,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plain_bar_buttons_sit_9_pt_from_the_edge_centred_on_16() {
+        let c = button_centers(32.0);
+        assert_eq!(c, [(16.0, 16.0), (39.0, 16.0), (62.0, 16.0)]);
+        // The first disc edge (radius 7) is 9 pt from the left edge.
+        assert_eq!(c[0].0 - 7.0, 9.0);
+        // Shorter bars keep the same margin; the centre follows the bar.
+        assert_eq!(button_centers(28.0)[0], (16.0, 14.0));
+    }
+
+    #[test]
+    fn toolbar_buttons_sit_19_pt_from_the_edge_centred_on_26() {
+        let c = button_centers(52.0);
+        assert_eq!(c, [(26.0, 26.0), (49.0, 26.0), (72.0, 26.0)]);
+        assert_eq!(c[0].0 - 7.0, 19.0);
+        // Taller than a toolbar: the margin stays, the centre follows the bar.
+        assert_eq!(button_centers(60.0)[0], (26.0, 30.0));
+        // In between: blended, never outside the two measured margins.
+        let x = button_x(42.0);
+        assert!((16.0..=26.0).contains(&x));
+    }
+
+    #[test]
     fn parts_follow_the_measured_buttons() {
-        assert_eq!(part_at(Point::from((26.0, 26.0))), Some(Part::Close));
-        assert_eq!(part_at(Point::from((49.0, 20.0))), Some(Part::Minimize));
-        assert_eq!(part_at(Point::from((72.0, 33.0))), Some(Part::Zoom));
-        assert_eq!(part_at(Point::from((200.0, 26.0))), Some(Part::Bar));
-        assert_eq!(part_at(Point::from((26.0, 52.0))), None);
-        assert_eq!(part_at(Point::from((26.0, -1.0))), None);
-        assert!(over_buttons(Point::from((60.0, 26.0))));
-        assert!(!over_buttons(Point::from((100.0, 26.0))));
+        // 32 pt bar.
+        assert_eq!(part_at(Point::from((16.0, 16.0)), 32.0), Some(Part::Close));
+        assert_eq!(
+            part_at(Point::from((39.0, 10.0)), 32.0),
+            Some(Part::Minimize)
+        );
+        assert_eq!(part_at(Point::from((62.0, 23.0)), 32.0), Some(Part::Zoom));
+        assert_eq!(part_at(Point::from((200.0, 16.0)), 32.0), Some(Part::Bar));
+        assert_eq!(part_at(Point::from((16.0, 32.0)), 32.0), None);
+        assert_eq!(part_at(Point::from((16.0, -1.0)), 32.0), None);
+        assert!(over_buttons(Point::from((50.0, 16.0)), 32.0));
+        assert!(!over_buttons(Point::from((90.0, 16.0)), 32.0));
+        // 52 pt toolbar.
+        assert_eq!(part_at(Point::from((26.0, 26.0)), 52.0), Some(Part::Close));
+        assert_eq!(
+            part_at(Point::from((49.0, 20.0)), 52.0),
+            Some(Part::Minimize)
+        );
+        assert_eq!(part_at(Point::from((72.0, 33.0)), 52.0), Some(Part::Zoom));
+        assert_eq!(part_at(Point::from((26.0, 52.0)), 52.0), None);
+        assert!(over_buttons(Point::from((60.0, 26.0)), 52.0));
+        assert!(!over_buttons(Point::from((100.0, 26.0)), 52.0));
     }
 }
 

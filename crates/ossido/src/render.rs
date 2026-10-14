@@ -584,7 +584,7 @@ fn window_elements(
                 disabled: buttons_disabled(window),
                 scale,
                 bar: full_size.is_none(),
-                button_y: decorations::button_center_y(window) as f32,
+                bar_height: decorations::button_bar_height(window) as f32,
                 dark,
             };
             let element = OutputElement::Shader(RescaleRenderElement::from_element(
