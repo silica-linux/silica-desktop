@@ -33,6 +33,8 @@ uniform float disabled;
 uniform float bar;
 // Centro verticale dei pulsanti.
 uniform float button_y;
+// 1 = aspetto scuro (windows.md: tabelle "Scuro" dei pulsanti).
+uniform float dark;
 
 float shape_distance(vec2 p, vec4 rect) {
     vec2 half_size = rect.zw * 0.5;
@@ -110,55 +112,79 @@ void main() {
         color = vec4(mix(background, separator.rgb, separator.a), 1.0);
     }
 
-    vec3 close_c, close_t, close_b, close_o, min_c, min_t, min_b, min_o, zoom_c, zoom_t, zoom_b, zoom_o;
+    // Colori dei dischi: centro, alto, basso, contorno ai lati, sopra e sotto.
+    vec3 close_c, close_t, close_b, close_o, close_ot, close_ob;
+    vec3 min_c, min_t, min_b, min_o, min_ot, min_ob;
+    vec3 zoom_c, zoom_t, zoom_b, zoom_o, zoom_ot, zoom_ob;
+    // Grigi degli inattivi, anche per i pulsanti disattivati.
+    vec3 grey_c, grey_t, grey_b, grey_o, grey_ot, grey_ob;
     bool lit = active > 0.5 || symbols > 0.0;
-    if (lit) {
-        close_c = vec3(0.973, 0.490, 0.467); close_t = vec3(0.996, 0.431, 0.400);
-        close_b = vec3(0.961, 0.545, 0.514); close_o = vec3(0.867, 0.302, 0.278);
-        min_c = vec3(0.988, 0.788, 0.231); min_t = vec3(0.988, 0.722, 0.180);
-        min_b = vec3(0.996, 0.827, 0.267); min_o = vec3(0.816, 0.553, 0.043);
-        zoom_c = vec3(0.522, 0.839, 0.376); zoom_t = vec3(0.384, 0.816, 0.180);
-        zoom_b = vec3(0.600, 0.851, 0.475); zoom_o = vec3(0.318, 0.620, 0.196);
+    bool is_dark = dark > 0.5;
+    if (is_dark) {
+        // Scuro: contorno luminoso sopra e sotto.
+        close_c = vec3(0.949, 0.376, 0.337); close_t = vec3(0.973, 0.388, 0.353); close_b = vec3(0.933, 0.400, 0.376);
+        close_o = vec3(0.933, 0.333, 0.286); close_ot = vec3(0.980, 0.694, 0.655); close_ob = vec3(0.984, 0.678, 0.647);
+        min_c = vec3(0.992, 0.753, 0.008); min_t = vec3(0.980, 0.710, 0.000); min_b = vec3(0.992, 0.804, 0.161);
+        min_o = vec3(0.973, 0.725, 0.016); min_ot = vec3(0.984, 0.933, 0.353); min_ob = vec3(0.984, 0.973, 0.412);
+        zoom_c = vec3(0.224, 0.757, 0.004); zoom_t = vec3(0.004, 0.737, 0.000); zoom_b = vec3(0.294, 0.757, 0.200);
+        zoom_o = vec3(0.035, 0.725, 0.004); zoom_ot = vec3(0.588, 0.984, 0.471); zoom_ob = vec3(0.545, 0.984, 0.463);
+        // Inattivi: contorno solo sopra e sotto, nessuno ai lati.
+        grey_c = vec3(0.302, 0.302, 0.302); grey_t = vec3(0.322, 0.322, 0.325); grey_b = vec3(0.282, 0.282, 0.286);
+        grey_o = grey_c; grey_ot = vec3(0.600, 0.600, 0.600); grey_ob = vec3(0.565, 0.565, 0.569);
     } else {
-        close_c = vec3(0.918, 0.922, 0.925); close_t = vec3(0.925, 0.929, 0.933);
-        close_b = vec3(0.925, 0.922, 0.941); close_o = vec3(0.765, 0.765, 0.780);
-        min_c = close_c; min_t = close_t; min_b = close_b; min_o = close_o;
-        zoom_c = close_c; zoom_t = close_t; zoom_b = close_b; zoom_o = close_o;
+        // Chiaro: contorno più scuro del fondo, uguale tutto intorno.
+        close_c = vec3(0.973, 0.490, 0.467); close_t = vec3(0.996, 0.431, 0.400); close_b = vec3(0.961, 0.545, 0.514);
+        close_o = vec3(0.867, 0.302, 0.278); close_ot = close_o; close_ob = close_o;
+        min_c = vec3(0.988, 0.788, 0.231); min_t = vec3(0.988, 0.722, 0.180); min_b = vec3(0.996, 0.827, 0.267);
+        min_o = vec3(0.816, 0.553, 0.043); min_ot = min_o; min_ob = min_o;
+        zoom_c = vec3(0.522, 0.839, 0.376); zoom_t = vec3(0.384, 0.816, 0.180); zoom_b = vec3(0.600, 0.851, 0.475);
+        zoom_o = vec3(0.318, 0.620, 0.196); zoom_ot = zoom_o; zoom_ob = zoom_o;
+        grey_c = vec3(0.918, 0.922, 0.925); grey_t = vec3(0.925, 0.929, 0.933); grey_b = vec3(0.925, 0.922, 0.941);
+        grey_o = vec3(0.765, 0.765, 0.780); grey_ot = vec3(0.902, 0.906, 0.910); grey_ob = vec3(0.890, 0.890, 0.906);
     }
-    // Contorno sopra e sotto: nei pulsanti attivi come ai lati, negli inattivi più chiaro.
-    vec3 ot = lit ? close_o : vec3(0.902, 0.906, 0.910);
-    vec3 ob = lit ? close_o : vec3(0.890, 0.890, 0.906);
-    // Disattivati: come gli inattivi.
-    vec3 grey_c = vec3(0.918, 0.922, 0.925), grey_t = vec3(0.925, 0.929, 0.933);
-    vec3 grey_b = vec3(0.925, 0.922, 0.941), grey_o = vec3(0.765, 0.765, 0.780);
-    vec3 grey_ot = vec3(0.902, 0.906, 0.910), grey_ob = vec3(0.890, 0.890, 0.906);
+    if (!lit) {
+        close_c = grey_c; close_t = grey_t; close_b = grey_b;
+        close_o = grey_o; close_ot = grey_ot; close_ob = grey_ob;
+        min_c = grey_c; min_t = grey_t; min_b = grey_b;
+        min_o = grey_o; min_ot = grey_ot; min_ob = grey_ob;
+        zoom_c = grey_c; zoom_t = grey_t; zoom_b = grey_b;
+        zoom_o = grey_o; zoom_ot = grey_ot; zoom_ob = grey_ob;
+    }
     bool off = disabled > 0.5;
     // Premuto: il disco si schiarisce (centro misurato premuto meno hover).
     vec3 no_shift = vec3(0.0);
-    vec3 close_s = pressed == 0.0 ? vec3(0.024, 0.137, 0.110) : no_shift;
-    vec3 min_s = pressed == 1.0 && !off ? vec3(0.0, 0.176, 0.110) : no_shift;
-    vec3 zoom_s = pressed == 2.0 && !off ? vec3(0.004, 0.024, -0.035) : no_shift;
+    vec3 close_p = is_dark ? vec3(14.0, 31.0, 19.0) / 255.0 : vec3(6.0, 35.0, 28.0) / 255.0;
+    vec3 min_p = is_dark ? vec3(2.0, 50.0, 18.0) / 255.0 : vec3(0.0, 45.0, 28.0) / 255.0;
+    vec3 zoom_p = is_dark ? vec3(4.0, 8.0, 10.0) / 255.0 : vec3(1.0, 6.0, -9.0) / 255.0;
+    vec3 close_s = pressed == 0.0 ? close_p : no_shift;
+    vec3 min_s = pressed == 1.0 && !off ? min_p : no_shift;
+    vec3 zoom_s = pressed == 2.0 && !off ? zoom_p : no_shift;
 
     vec2 c1 = vec2(26.0, button_y);
     vec2 c2 = vec2(49.0, button_y);
     vec2 c3 = vec2(72.0, button_y);
-    color = over(button(p, c1, close_t, close_c, close_b, close_o,
-                        lit ? close_o : ot, lit ? close_o : ob, close_s), color);
+    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s),
+                 color);
     if (off) {
         color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
         color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
     } else {
-        color = over(button(p, c2, min_t, min_c, min_b, min_o,
-                            lit ? min_o : ot, lit ? min_o : ob, min_s), color);
-        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o,
-                            lit ? zoom_o : ot, lit ? zoom_o : ob, zoom_s), color);
+        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s), color);
+        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s), color);
     }
 
     if (symbols > 0.0) {
         // Simboli: più chiari e saturi sul pulsante premuto.
-        vec3 close_y = pressed == 0.0 ? vec3(0.855, 0.0, 0.0) : vec3(0.639, 0.0, 0.0);
-        vec3 min_y = pressed == 1.0 ? vec3(1.0, 0.353, 0.0) : vec3(0.757, 0.267, 0.0);
-        vec3 zoom_y = pressed == 2.0 ? vec3(0.231, 0.588, 0.0) : vec3(0.212, 0.533, 0.0);
+        vec3 close_y, min_y, zoom_y;
+        if (is_dark) {
+            close_y = pressed == 0.0 ? vec3(0.733, 0.000, 0.000) : vec3(0.549, 0.000, 0.000);
+            min_y = pressed == 1.0 ? vec3(0.867, 0.298, 0.000) : vec3(0.647, 0.227, 0.000);
+            zoom_y = pressed == 2.0 ? vec3(0.200, 0.494, 0.000) : vec3(0.176, 0.447, 0.004);
+        } else {
+            close_y = pressed == 0.0 ? vec3(0.855, 0.000, 0.000) : vec3(0.639, 0.000, 0.000);
+            min_y = pressed == 1.0 ? vec3(1.000, 0.353, 0.000) : vec3(0.757, 0.267, 0.000);
+            zoom_y = pressed == 2.0 ? vec3(0.231, 0.588, 0.000) : vec3(0.212, 0.533, 0.000);
+        }
         color = over(vec4(close_y, 1.0) * symbol_close(p - c1) * symbols, color);
         if (!off) {
             color = over(vec4(min_y, 1.0) * symbol_minimize(p - c2) * symbols, color);

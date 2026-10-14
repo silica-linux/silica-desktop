@@ -141,6 +141,53 @@ fn materials_on_the_reference_gray_match_the_measured_fill() {
     expect((430, 250), [0xc7, 0xc8, 0xcd], "vetro spesso");
 }
 
+/// In scuro (`--appearance dark`) Dock e menu prendono i materiali scuri; i moduli del Centro
+/// di controllo restano quasi uguali (glass.md, "Confronto fra i materiali").
+#[test]
+fn dark_materials_on_the_reference_gray() {
+    let ossido = Headless::start_with(
+        "glass-gray-dark",
+        SHOT,
+        &["--background", "7a7b80", "--appearance", "dark"],
+    );
+    let size = (200, 100);
+    let mut clear = TestWindow::open_pixels(&ossido.wayland, "chiaro", size, &transparent(size));
+    clear
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Clear)])
+        .unwrap();
+    let mut thick = TestWindow::open_pixels(&ossido.wayland, "spesso", size, &transparent(size));
+    thick
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Thick)])
+        .unwrap();
+    ossido
+        .client()
+        .call(
+            silica_control::commands::WINDOW_MOVE,
+            serde_json::json!({"x": 330, "y": 200}),
+        )
+        .unwrap();
+    let shot = shot(&ossido, "glass-gray-dark.png");
+    let expect = |at: (u32, u32), expected: [u8; 3], tolerance: u8, name: &str| {
+        let got = rgb(&shot, at.0, at.1);
+        let worst = got
+            .iter()
+            .zip(expected)
+            .map(|(g, e)| g.abs_diff(e))
+            .max()
+            .unwrap_or(0);
+        eprintln!("{name}: {got:?} (riferimento {expected:?})");
+        assert!(
+            worst <= tolerance,
+            "{name}: {got:?}, riferimento {expected:?}"
+        );
+    };
+    // Dock scuro `#68696e`: la matrice misurata (rmse 4,7) sul grigio dà ~7 livelli in meno,
+    // perché il trasferimento scuro non è lineare.
+    expect((132, 82), [0x68, 0x69, 0x6e], 8, "vetro chiaro, scuro");
+    // Menu scuro `#6f7075`: l'offset è ricalcolato per questo grigio.
+    expect((430, 250), [0x6f, 0x70, 0x75], 3, "vetro spesso, scuro");
+}
+
 /// Profilo di un bordo di striscia (nero → bianco) dentro il fondo del Dock, chiaro, riga
 /// 1366 (glass.md, "Vetro · Dock · Sfocatura"), 1 pt per valore.
 const DOCK_EDGE: [f64; 20] = [

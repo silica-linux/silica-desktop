@@ -97,5 +97,14 @@ sotto: per questo con `--backend winit` il **Ctrl destro fa da tasto Logo** (Ctr
 apre Faro, Ctrl destro+Tab il selettore delle app). `--logo-key rightalt` usa l'Alt destro,
 `--logo-key none` lascia i tasti come sono (predefinito in headless).
 
+L'aspetto (chiaro o scuro) di finestre, barre, ombre e vetri lo decide `silica-daemon`
+(`appearance.dark`, cambiato con `system.dark` / `system.dark_toggle`); Ossido lo rilegge a ogni
+frame. Senza daemon (headless, test) è chiaro: `--appearance dark` (o `light`) lo impone e
+vince sul daemon, per screenshot deterministici in scuro:
+
+```
+ossido --backend headless --appearance dark --control 0
+```
+
 Via MCP i comandi sono tool con `_` al posto di `.` (`window_list`); `ui_screenshot`
 senza `path` restituisce l'immagine come contenuto `image`.

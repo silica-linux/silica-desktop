@@ -66,6 +66,8 @@ pub struct Options {
     /// Un tasto che fa da Logo (`--logo-key`): annidato in un altro desktop, le combinazioni
     /// con Super le prende quel desktop. `None`: predefinito del backend (Ctrl destro annidato).
     pub logo_key: Option<keys::LogoKey>,
+    /// Aspetto imposto (`--appearance light|dark`): vero = scuro. `None` segue silica-daemon.
+    pub appearance: Option<bool>,
 }
 
 impl Default for Options {
@@ -82,6 +84,7 @@ impl Default for Options {
             glass: state::GlassSetting::Auto,
             session_bus: false,
             logo_key: None,
+            appearance: None,
         }
     }
 }
@@ -97,6 +100,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     ossido.state.clear_color = options.background;
     ossido.state.animation_speed = options.animation_scale;
     ossido.state.glass_setting = options.glass;
+    ossido.state.appearance = options.appearance;
     ossido.state.logo_key = options.logo_key.unwrap_or(match options.backend {
         BackendKind::Winit => keys::LogoKey::RightCtrl,
         BackendKind::Headless => keys::LogoKey::None,

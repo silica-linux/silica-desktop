@@ -3,7 +3,7 @@
 //! ```text
 //! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
-//!     [--session-bus] [--logo-key none|rightctrl|rightalt]
+//!     [--session-bus] [--logo-key none|rightctrl|rightalt] [--appearance light|dark]
 //!     [--spawn COMANDO]... [--spawn-shell COMANDO]...
 //! ```
 
@@ -103,6 +103,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     ossido::keys::LogoKey::parse(&name)
                         .ok_or(format!("--logo-key: {name} (none, rightctrl, rightalt)"))?,
                 );
+            }
+            "--appearance" => {
+                options.appearance = match value()?.as_str() {
+                    "light" => Some(false),
+                    "dark" => Some(true),
+                    other => return Err(format!("aspetto sconosciuto (light, dark): {other}")),
+                }
             }
             "--spawn-shell" => {
                 let command = value()?;

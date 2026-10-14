@@ -2,7 +2,8 @@
 //!
 //! Misure della barra degli strumenti (`plan/reference/windows.md`): altezza delle
 //! maiuscole 10,75 pt → Inter a ~15 pt (inferenza: il font di sistema non si identifica),
-//! peso semibold, linea di base a ~31 pt dalla cima, `#4d4d4d` attiva e `#bebebe` inattiva.
+//! peso semibold, linea di base a ~31 pt dalla cima, `#4d4d4d` attiva e `#bebebe` inattiva;
+//! in scuro `#e9e9e9` e `#646464`.
 //! In Finder il titolo segue i pulsanti di navigazione; una finestra con il solo titolo
 //! non è misurata: qui è centrato, provvisorio.
 
@@ -26,6 +27,18 @@ pub const BASELINE: f64 = 31.0;
 const MARGIN: f64 = 92.0;
 const ACTIVE: [u8; 3] = [0x4d, 0x4d, 0x4d];
 const INACTIVE: [u8; 3] = [0xbe, 0xbe, 0xbe];
+const ACTIVE_DARK: [u8; 3] = [0xe9, 0xe9, 0xe9];
+const INACTIVE_DARK: [u8; 3] = [0x64, 0x64, 0x64];
+
+/// Il colore del titolo secondo stato e aspetto.
+pub fn color(active: bool, dark: bool) -> [u8; 3] {
+    match (active, dark) {
+        (true, false) => ACTIVE,
+        (false, false) => INACTIVE,
+        (true, true) => ACTIVE_DARK,
+        (false, true) => INACTIVE_DARK,
+    }
+}
 
 /// Il testo rasterizzato, in RGBA premoltiplicato.
 struct Raster {
@@ -127,7 +140,7 @@ pub struct Title {
 }
 
 struct Cached {
-    key: (String, bool, u32, i32),
+    key: (String, [u8; 3], u32, i32),
     buffer: TextureBuffer<GlesTexture>,
     /// Posizione della linea di base nel raster, in punti.
     ascent: f64,
@@ -142,7 +155,7 @@ impl Title {
         renderer: &mut GlesRenderer,
         text: &str,
         frame: Rectangle<i32, Logical>,
-        active: bool,
+        color: [u8; 3],
         scale: f64,
     ) -> Option<TextureRenderElement<GlesTexture>> {
         let text = text.trim();
@@ -156,14 +169,13 @@ impl Title {
         }
         let key = (
             text.to_owned(),
-            active,
+            color,
             buffer_scale.unsigned_abs(),
             frame.size.w,
         );
         let mut state = self.state.borrow_mut();
         if state.as_ref().is_none_or(|cached| cached.key != key) {
             let px = SIZE * buffer_scale as f32;
-            let color = if active { ACTIVE } else { INACTIVE };
             let raster = rasterize(
                 text,
                 px,

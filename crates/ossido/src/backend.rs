@@ -178,6 +178,7 @@ impl State {
         let spaces = (self.workspaces.count(), self.workspaces.active);
         let buttons = self.buttons_view();
         let alt = self.alt_held();
+        let dark = self.dark();
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
@@ -193,6 +194,7 @@ impl State {
                     space_shift,
                     panorama: panorama.clone(),
                     spaces,
+                    dark,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -215,6 +217,7 @@ impl State {
                     space_shift,
                     panorama: panorama.clone(),
                     spaces,
+                    dark,
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -248,6 +251,7 @@ impl State {
         let spaces = (self.workspaces.count(), self.workspaces.active);
         let buttons = self.buttons_view();
         let alt = self.alt_held();
+        let dark = self.dark();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
@@ -266,6 +270,7 @@ impl State {
             space_shift,
             panorama,
             spaces,
+            dark,
         };
         let elements = output_elements(
             backend.graphics.renderer(),
@@ -301,6 +306,7 @@ impl State {
         if self.animation_speed <= 0.0 {
             return;
         }
+        let dark = self.dark();
         let renderer = match &mut self.backend {
             Backend::Winit(backend) => backend.graphics.renderer(),
             Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
@@ -310,7 +316,7 @@ impl State {
         let speed = self.animation_speed;
         self.closing.retain(|closing| !closing.finished(now, speed));
         if let Some(closing) =
-            crate::render::snapshot_window(renderer, &self.space, &self.output, window)
+            crate::render::snapshot_window(renderer, &self.space, &self.output, window, dark)
         {
             self.closing.push(closing);
         }
@@ -328,6 +334,7 @@ impl State {
         let Some(target) = self.minimize_target(window) else {
             return;
         };
+        let dark = self.dark();
         let renderer = match &mut self.backend {
             Backend::Winit(backend) => backend.graphics.renderer(),
             Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
@@ -345,6 +352,7 @@ impl State {
             window,
             target,
             restoring,
+            dark,
         ) {
             self.genies.push(genie);
         }
@@ -385,6 +393,7 @@ impl State {
         window: &smithay::desktop::Window,
     ) -> Result<crate::capture::Capture, String> {
         use smithay::backend::renderer::ExportMem;
+        let dark = self.dark();
         let renderer = match &mut self.backend {
             Backend::Winit(backend) => backend.graphics.renderer(),
             Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
@@ -392,8 +401,9 @@ impl State {
                 return Err("cattura di una finestra non disponibile con pixman".to_owned());
             }
         };
-        let snapshot = crate::render::snapshot_window(renderer, &self.space, &self.output, window)
-            .ok_or("finestra non disegnabile")?;
+        let snapshot =
+            crate::render::snapshot_window(renderer, &self.space, &self.output, window, dark)
+                .ok_or("finestra non disegnabile")?;
         let scale = self.output.current_scale().fractional_scale();
         let (Some(geometry), Some(origin)) = (
             self.space.element_geometry(window),

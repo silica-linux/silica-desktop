@@ -45,6 +45,9 @@ pub struct State {
     pub session_bus: Option<String>,
     /// I comandi `system.*` verso silica-daemon.
     pub system: crate::system::SystemLink,
+    /// L'aspetto imposto con `--appearance` (test, sessioni senza daemon): vince sullo
+    /// stato di silica-daemon.
+    pub appearance: Option<bool>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
     pub loop_signal: LoopSignal,
@@ -160,6 +163,15 @@ impl GlassSetting {
 }
 
 impl State {
+    /// L'aspetto scuro: quello imposto con `--appearance`, altrimenti quello di silica-daemon
+    /// (`appearance.dark`, chiaro se non si sa). Si legge a ogni frame, quindi un cambio
+    /// del daemon si vede al frame successivo.
+    pub fn dark(&self) -> bool {
+        self.appearance.unwrap_or_else(|| self.system.dark())
+    }
+}
+
+impl State {
     /// La qualità del vetro in uso.
     pub fn glass_quality(&self) -> ossido_render::glass::GlassQuality {
         use ossido_render::glass::GlassQuality;
@@ -241,6 +253,7 @@ impl State {
             socket_name,
             session_bus: None,
             system: crate::system::SystemLink::disconnected(),
+            appearance: None,
             display_handle: dh,
             loop_handle,
             loop_signal,

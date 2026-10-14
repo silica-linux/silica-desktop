@@ -1,6 +1,6 @@
 //! Barra del titolo delle decorazioni lato server: 52 pt come la barra degli strumenti
 //! misurata, con i tre pulsanti della finestra (`plan/reference/windows.md`, "Barra degli
-//! strumenti" e "Pulsanti della finestra"). Aspetto chiaro.
+//! strumenti", "Pulsanti della finestra" e "Finestre · bordo e fondo"), in chiaro e in scuro.
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -18,11 +18,16 @@ pub const BUTTON_HIT_RADIUS: f64 = 8.0;
 
 /// Fondo della barra: come il contenuto della finestra attiva in chiaro (`#ffffff`).
 const BACKGROUND: [f32; 3] = [1.0, 1.0, 1.0];
-/// Finestra inattiva: riga di 1 pt `#e5e5e5` fra barra e contenuto.
+/// Scuro: come il contenuto quando la finestra è attiva (`#272728`); inattiva la barra ha un
+/// fondo suo, `#2f2f30`.
+const BACKGROUND_DARK: [f32; 3] = [39.0 / 255.0, 39.0 / 255.0, 40.0 / 255.0];
+const BACKGROUND_DARK_INACTIVE: [f32; 3] = [47.0 / 255.0, 47.0 / 255.0, 48.0 / 255.0];
+/// Finestra inattiva: riga di 1 pt `#e5e5e5` fra barra e contenuto; in scuro `#363636`.
 const SEPARATOR_INACTIVE: [f32; 4] = [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 1.0];
+const SEPARATOR_INACTIVE_DARK: [f32; 4] = [54.0 / 255.0, 54.0 / 255.0, 54.0 / 255.0, 1.0];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
-pub const UNIFORMS: [(&str, UniformType); 13] = [
+pub const UNIFORMS: [(&str, UniformType); 14] = [
     ("frame_height", UniformType::_1f),
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -36,6 +41,7 @@ pub const UNIFORMS: [(&str, UniformType); 13] = [
     ("disabled", UniformType::_1f),
     ("bar", UniformType::_1f),
     ("button_y", UniformType::_1f),
+    ("dark", UniformType::_1f),
 ];
 
 /// Stato della barra che cambia il disegno.
@@ -59,6 +65,8 @@ pub struct TitlebarState {
     /// Il centro verticale dei pulsanti (26 nella barra di Ossido; metà della barra degli
     /// strumenti dell'app con il contenuto a tutta finestra).
     pub button_y: f32,
+    /// Aspetto scuro.
+    pub dark: bool,
 }
 
 /// Simboli dei pulsanti nel tempo (windows.md, "Altri stati"): all'ingresso del puntatore
@@ -101,10 +109,15 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         .min(frame.w as f32 / 2.0)
         .min(frame.h as f32 / 2.0)
         .max(0.0);
-    let separator = if state.active {
-        [0.0; 4]
-    } else {
-        SEPARATOR_INACTIVE
+    let separator = match (state.active, state.dark) {
+        (true, _) => [0.0; 4],
+        (false, false) => SEPARATOR_INACTIVE,
+        (false, true) => SEPARATOR_INACTIVE_DARK,
+    };
+    let background = match (state.active, state.dark) {
+        (_, false) => BACKGROUND,
+        (true, true) => BACKGROUND_DARK,
+        (false, true) => BACKGROUND_DARK_INACTIVE,
     };
     let flag = |on: bool| if on { 1.0 } else { 0.0 };
     vec![
@@ -117,7 +130,7 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         ),
         Uniform::new(
             "background",
-            UniformValue::_3f(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2]),
+            UniformValue::_3f(background[0], background[1], background[2]),
         ),
         Uniform::new(
             "separator",
@@ -133,6 +146,7 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         Uniform::new("disabled", UniformValue::_1f(flag(state.disabled))),
         Uniform::new("bar", UniformValue::_1f(flag(state.bar))),
         Uniform::new("button_y", UniformValue::_1f(state.button_y)),
+        Uniform::new("dark", UniformValue::_1f(flag(state.dark))),
     ]
 }
 

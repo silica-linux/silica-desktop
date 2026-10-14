@@ -6,12 +6,14 @@ use std::cell::Cell;
 use std::time::Instant;
 
 use ossido_render::animation;
+use ossido_render::border::WindowBorder;
 use ossido_render::corners::{RoundedSurface, WindowSurface};
 use ossido_render::glass::{
-    CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, NOTIFICATION_LIGHT, PhysicalRegion,
-    REGULAR_LIGHT, THICK_LIGHT, render_to_texture,
+    CLEAR_DARK, CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, NOTIFICATION_DARK,
+    NOTIFICATION_LIGHT, PhysicalRegion, REGULAR_DARK, REGULAR_LIGHT, THICK_DARK, THICK_LIGHT,
+    render_to_texture,
 };
-use ossido_render::shadow::{ACTIVE_LIGHT, INACTIVE_LIGHT, WindowShadow};
+use ossido_render::shadow::WindowShadow;
 use ossido_render::title::Title;
 use ossido_render::titlebar::{Titlebar, TitlebarState};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
@@ -79,6 +81,8 @@ pub struct RenderContext<'a> {
     pub panorama: Option<crate::panorama::PanoramaView>,
     /// Numero di spazi e spazio attivo, per la barra di Panorama.
     pub spaces: (usize, usize),
+    /// Aspetto scuro: finestre, barre, ombre e vetri.
+    pub dark: bool,
 }
 
 /// I pulsanti della barra di una finestra nel frame.
@@ -441,6 +445,7 @@ fn window_elements(
     offset: Point<i32, Logical>,
     factor: f64,
     buttons: ButtonsLook,
+    dark: bool,
 ) -> Vec<OutputElement> {
     let render_location = (location - window.geometry().loc - output_origin + offset)
         .to_physical_precise_round(scale);
@@ -481,7 +486,13 @@ fn window_elements(
         // A tutta finestra il titolo lo scrive l'app nella sua barra.
         if full_size.is_none()
             && let Some(title) = window.user_data().get::<Title>()
-            && let Some(text) = title.element(renderer, &window_title(window), frame, active, scale)
+            && let Some(text) = title.element(
+                renderer,
+                &window_title(window),
+                frame,
+                ossido_render::title::color(active, dark),
+                scale,
+            )
         {
             elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
                 text, center, factor,
@@ -498,6 +509,7 @@ fn window_elements(
                 scale,
                 bar: full_size.is_none(),
                 button_y: decorations::button_center_y(window) as f32,
+                dark,
             };
             let element = OutputElement::Shader(RescaleRenderElement::from_element(
                 titlebar.element(program, frame, state),
@@ -513,8 +525,24 @@ fn window_elements(
             }
         }
     }
+    // Il bordo interno di 1 pt (solo in scuro), sopra il contenuto.
+    if let Some(style) = ossido_render::border::style(active, dark)
+        && let Some(program) = &shaders.border
+    {
+        window.user_data().insert_if_missing(WindowBorder::default);
+        if let Some(border) = window.user_data().get::<WindowBorder>() {
+            elements.insert(
+                0,
+                OutputElement::Shader(RescaleRenderElement::from_element(
+                    border.element(program, frame, style, scale),
+                    center,
+                    factor,
+                )),
+            );
+        }
+    }
     if let Some(program) = &shaders.shadow {
-        let style = if active { ACTIVE_LIGHT } else { INACTIVE_LIGHT };
+        let style = ossido_render::shadow::style(active, dark);
         window.user_data().insert_if_missing(WindowShadow::default);
         if let Some(shadow) = window.user_data().get::<WindowShadow>() {
             elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
@@ -535,8 +563,9 @@ pub fn snapshot_genie(
     window: &Window,
     target: Rectangle<f64, Logical>,
     restoring: bool,
+    dark: bool,
 ) -> Option<Genie> {
-    let snapshot = snapshot_window(renderer, space, output, window)?;
+    let snapshot = snapshot_window(renderer, space, output, window, dark)?;
     let scale = output.current_scale().fractional_scale();
     let origin = space.output_geometry(output)?.loc.to_f64();
     let mut frame = frame_rect(window, space.element_geometry(window)?);
@@ -561,6 +590,7 @@ pub fn snapshot_window(
     space: &Space<Window>,
     output: &Output,
     window: &Window,
+    dark: bool,
 ) -> Option<Closing> {
     let shaders = ossido_render::shaders(renderer);
     let scale = output.current_scale().fractional_scale();
@@ -577,6 +607,7 @@ pub fn snapshot_window(
         Point::default(),
         1.0,
         ButtonsLook::default(),
+        dark,
     );
     let bbox = elements
         .iter()
@@ -703,6 +734,7 @@ pub fn output_elements(
                 offset,
                 factor,
                 ButtonsLook::default(),
+                context.dark,
             ));
         }
         for thumbnail in &panorama.thumbnails {
@@ -726,6 +758,7 @@ pub fn output_elements(
                     offset,
                     factor,
                     ButtonsLook::default(),
+                    context.dark,
                 ));
             }
             // Lo sfondo del desktop in piccolo.
@@ -899,6 +932,7 @@ pub fn output_elements(
             offset,
             factor,
             buttons,
+            context.dark,
         ));
         if let Some(toplevel) = window.toplevel()
             && let Some(location) = space.element_location(window)
@@ -1023,6 +1057,10 @@ pub fn output_elements(
                     ),
                     radius: region.radius * scale,
                     material: match region.material {
+                        Material::Clear if context.dark => CLEAR_DARK,
+                        Material::Thick if context.dark => THICK_DARK,
+                        Material::Regular if context.dark => REGULAR_DARK,
+                        Material::Notification if context.dark => NOTIFICATION_DARK,
                         Material::Clear => CLEAR_LIGHT,
                         Material::Thick => THICK_LIGHT,
                         Material::Regular => REGULAR_LIGHT,

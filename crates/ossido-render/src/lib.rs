@@ -6,6 +6,7 @@
 
 pub mod animation;
 pub mod backdrop;
+pub mod border;
 pub mod cache;
 pub mod corners;
 pub mod genie;
@@ -27,6 +28,8 @@ pub struct Shaders {
     pub corners: Option<GlesTexProgram>,
     pub shadow: Option<GlesPixelProgram>,
     pub titlebar: Option<GlesPixelProgram>,
+    /// Il bordo interno di 1 pt delle finestre in scuro.
+    pub border: Option<GlesPixelProgram>,
     pub glass: Option<glass::GlassPrograms>,
     pub tone: Option<GlesTexProgram>,
     /// La deformazione a imbuto della riduzione nel Dock.
@@ -45,6 +48,12 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         "barra del titolo",
         titlebar::SHADER,
         &titlebar::UNIFORMS,
+    );
+    let border = compile_pixel(
+        renderer,
+        "bordo della finestra",
+        border::SHADER,
+        &border::UNIFORMS,
     );
     let blur = compile_texture(
         renderer,
@@ -72,6 +81,7 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         corners,
         shadow,
         titlebar,
+        border,
         glass,
         tone,
         genie,

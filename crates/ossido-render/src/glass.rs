@@ -120,6 +120,16 @@ const NOTIFICATION_EDGE: Edge = Edge {
     side_dark: 0.70,
 };
 
+/// Bordo del Dock in scuro: riga sopra e sotto `#8e8f95` sul riempimento `#68696e`
+/// (+38, +38, +39), sfumatura interna +8, +5, +3, +2, +1, +1 (≈ 8·e^(−t/2,2)), lati
+/// `#2f3033` (nero con alfa ~0,545). `dock.md`, tabella del fondo.
+const DARK_EDGE: Edge = Edge {
+    rim: [38.0 / 255.0, 38.0 / 255.0, 39.0 / 255.0],
+    glow: 8.0 / 255.0,
+    glow_decay_pt: 2.2,
+    side_dark: 0.545,
+};
+
 /// Fondo del Dock, chiaro: σ 2,5–3,25 pt (si usa 2,75), w 0,28, matrice libera
 /// (rmse 2,45) con b = (37,3; 39,3; 36,8).
 pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
@@ -133,6 +143,22 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
     lens: DOCK_LENS,
     edge: EDGE,
+    merge_pt: MERGE_PT,
+};
+
+/// Fondo del Dock, scuro: σ 2,5–3,25 pt (si usa 2,875, a metà), w 0,28, matrice libera
+/// (rmse 4,71) con b = (16,2; 15,7; 16,3) (glass.md, "Vetro · Dock", tabelle "Scuro").
+pub const CLEAR_DARK: MaterialParams = MaterialParams {
+    sigma: 2.875,
+    sharp: 0.28,
+    matrix: [
+        [1.058, -0.307, -0.083],
+        [-0.199, 0.729, 0.141],
+        [-0.164, -0.327, 1.159],
+    ],
+    offset: [16.2 / 255.0, 15.7 / 255.0, 16.3 / 255.0],
+    lens: DOCK_LENS,
+    edge: DARK_EDGE,
     merge_pt: MERGE_PT,
 };
 
@@ -179,6 +205,19 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     lens: LIQUID_LENS,
     edge: REGULAR_EDGE,
     merge_pt: MERGE_PT,
+};
+
+/// Moduli del Centro di controllo, scuro: stessa sfocatura, matrice dello scuro (rmse 1,82)
+/// con b = (31,2; 32,5; 30,8), quasi uguale alla chiara; bordo come in chiaro ("stesso
+/// identico aspetto in chiaro e in scuro su grigio", controlcenter.md).
+pub const REGULAR_DARK: MaterialParams = MaterialParams {
+    matrix: [
+        [0.942, -0.289, -0.041],
+        [-0.130, 0.646, 0.090],
+        [-0.144, -0.304, 1.061],
+    ],
+    offset: [31.2 / 255.0, 32.5 / 255.0, 30.8 / 255.0],
+    ..REGULAR_LIGHT
 };
 
 /// La lente del Liquid Glass, misurata sui moduli del Centro di controllo: fra ~6 e
@@ -236,6 +275,22 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
     },
     edge: EDGE,
     merge_pt: MERGE_PT,
+};
+
+/// Menu, scuro: σ ≈ 9 pt come in chiaro (8,7 dalle strisce), matrice dello scuro
+/// (menubar.md, "Colore"). Il trasferimento scuro è una curva a S che la matrice segue male
+/// (rmse 9,9; con b = (44, 47, 45) il grigio `#7a7b80` darebbe ~96 invece di 111): l'offset
+/// è ricalcolato perché sul grigio il riempimento sia quello misurato, `#6f7075`; il nero
+/// dà allora ~59, come le strisce (58). Bordo come in chiaro (il filo del menu scuro non è
+/// misurato nella forma del modello).
+pub const THICK_DARK: MaterialParams = MaterialParams {
+    matrix: [
+        [0.891, -0.347, -0.113],
+        [-0.150, 0.580, 0.000],
+        [-0.177, -0.391, 1.001],
+    ],
+    offset: [59.4 / 255.0, 59.0 / 255.0, 58.6 / 255.0],
+    ..THICK_LIGHT
 };
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
@@ -315,6 +370,23 @@ pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
     edge: NOTIFICATION_EDGE,
     // Carte separate anche a pochi punti l'una dall'altra (Centro notifiche).
     merge_pt: 0.0,
+};
+
+/// Vetro delle notifiche, scuro: σ 10,75–11 pt (si usa 10,9), w 0,02, matrice della seconda
+/// notifica (rmse 7,43). Come in chiaro l'offset misurato include lo scrim del Centro: qui è
+/// ricalcolato perché sul grigio il riempimento sia quello del banner isolato, `#75767b`
+/// (notifications.md, "Matrice di colore" e "Centro"). Il bordo scuro non è misurato: come
+/// in chiaro.
+pub const NOTIFICATION_DARK: MaterialParams = MaterialParams {
+    sigma: 10.9,
+    sharp: 0.02,
+    matrix: [
+        [0.757, -0.256, -0.091],
+        [-0.111, 0.512, 0.012],
+        [-0.148, -0.297, 0.857],
+    ],
+    offset: [67.8 / 255.0, 67.0 / 255.0, 67.9 / 255.0],
+    ..NOTIFICATION_LIGHT
 };
 
 /// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola

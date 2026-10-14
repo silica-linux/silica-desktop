@@ -1,6 +1,7 @@
 //! Ombra delle finestre, misurata su macOS 27 (`plan/reference/windows.md`,
 //! "Finestre · ombra"): nera, profilo da sfocatura gaussiana, spostata in basso, più
-//! ampia per la finestra attiva, con un anello di 1 pt a contatto.
+//! ampia per la finestra attiva, con un anello di 1 pt a contatto; in scuro circa il doppio
+//! più forte.
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -48,6 +49,41 @@ pub const INACTIVE_LIGHT: ShadowStyle = ShadowStyle {
     ring_top: 44.0 / 255.0,
     extent: (23, 16, 30),
 };
+
+/// Finestra attiva, aspetto scuro: A 190, s −1, σ 20, stesso spostamento (18), anello 243 ai
+/// lati e 239 sopra (praticamente un bordo nero di 1 pt). Margini come in chiaro: il profilo
+/// arriva a 1 a d = 48 (windows.md, "Finestre · ombra").
+pub const ACTIVE_DARK: ShadowStyle = ShadowStyle {
+    amplitude: 190.0 / 255.0,
+    shift: -1.0,
+    sigma: 20.0,
+    offset_y: 18.0,
+    ring_side: 243.0 / 255.0,
+    ring_top: 239.0 / 255.0,
+    extent: (56, 38, 74),
+};
+
+/// Finestra inattiva, aspetto scuro: A 194, s −4, σ 9, spostamento 7, anello 223 e 215,
+/// margini come in chiaro (il profilo è a 0 a d = 20).
+pub const INACTIVE_DARK: ShadowStyle = ShadowStyle {
+    amplitude: 194.0 / 255.0,
+    shift: -4.0,
+    sigma: 9.0,
+    offset_y: 7.0,
+    ring_side: 223.0 / 255.0,
+    ring_top: 215.0 / 255.0,
+    extent: (23, 16, 30),
+};
+
+/// L'ombra di una finestra secondo lo stato e l'aspetto.
+pub fn style(active: bool, dark: bool) -> ShadowStyle {
+    match (active, dark) {
+        (true, false) => ACTIVE_LIGHT,
+        (false, false) => INACTIVE_LIGHT,
+        (true, true) => ACTIVE_DARK,
+        (false, true) => INACTIVE_DARK,
+    }
+}
 
 pub const SHADER: &str = include_str!("shaders/shadow.frag");
 pub const UNIFORMS: [(&str, UniformType); 9] = [
