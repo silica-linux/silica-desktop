@@ -242,9 +242,22 @@ class Item {
       kind == ItemKind.separator ? separatorCell : cellPitch;
 }
 
+/// A slot opening (an app that is not kept in the Dock launches, the separator appears) or
+/// closing (it quits): the neighbours slide apart or together while the icon grows and fades
+/// in, or shrinks and fades out. Measured with the launch animation turned off (dock.md, D-02):
+/// the Dock widens by one cell in ~320 ms and narrows in ~480 ms. Provisional: the same times
+/// with the launch animation on (macOS is expected at ~0.2-0.3 s), the ease-in-out curve, the
+/// icon starting at scale 0 and the linear-in-presence opacity.
+const Duration slotOpenDuration = Duration(milliseconds: 320);
+const Duration slotCloseDuration = Duration(milliseconds: 480);
+
 /// The Dock layout at one moment: cells, background, icons.
 class Layout {
-  Layout._(this.cells, this.scales, this.background);
+  Layout._(this.cells, this.scales, this.background, this.presence);
+
+  /// How present every item is (1 normally; 0..1 while its slot opens or closes, see
+  /// [slotOpenDuration]): it scales the width of the cell, the icon and its opacity.
+  final List<double> presence;
 
   /// Rectangle (x, width) of every cell, in the order of the items.
   final List<(double, double)> cells;
@@ -269,15 +282,24 @@ Layout layout(
   double? pointerX,
   double amount = 0,
   double magnification = defaultMagnification,
+  double Function(Item item)? presenceOf,
 }) {
-  final restTotal = items.fold<double>(0, (sum, item) => sum + item.restWidth);
+  final presence = [
+    for (final item in items) presenceOf?.call(item).clamp(0.0, 1.0) ?? 1.0,
+  ];
+  // The resting width of a cell, shrunk while its slot is opening or closing.
+  double rest(int i) => items[i].restWidth * presence[i];
+  var restTotal = 0.0;
+  for (var i = 0; i < items.length; i++) {
+    restTotal += rest(i);
+  }
   final restLeft = (width - restTotal) / 2;
   // Resting centers, from which the distance is measured.
   final restCenters = <double>[];
   var x = restLeft;
-  for (final item in items) {
-    restCenters.add(x + item.restWidth / 2);
-    x += item.restWidth;
+  for (var i = 0; i < items.length; i++) {
+    restCenters.add(x + rest(i) / 2);
+    x += rest(i);
   }
   final scales = [
     for (var i = 0; i < items.length; i++)
@@ -291,19 +313,16 @@ Layout layout(
   // according to the pointer's position in the resting cell.
   var leftGrowth = 0.0;
   for (var i = 0; i < items.length; i++) {
-    final extra = items[i].restWidth * (scales[i] - 1);
+    final extra = rest(i) * (scales[i] - 1);
     if (extra == 0 || pointerX == null) continue;
-    final cellLeft = restCenters[i] - items[i].restWidth / 2;
-    final fraction = ((pointerX - cellLeft) / items[i].restWidth).clamp(
-      0.0,
-      1.0,
-    );
+    final cellLeft = restCenters[i] - rest(i) / 2;
+    final fraction = ((pointerX - cellLeft) / rest(i)).clamp(0.0, 1.0);
     leftGrowth += extra * fraction;
   }
   final cells = <(double, double)>[];
   x = restLeft - leftGrowth;
   for (var i = 0; i < items.length; i++) {
-    final w = items[i].restWidth * scales[i];
+    final w = rest(i) * scales[i];
     cells.add((x, w));
     x += w;
   }
@@ -315,12 +334,12 @@ Layout layout(
     top,
     last - first + 2 * sidePadding,
     backgroundHeight,
-  ));
+  ), presence);
 }
 
 /// The icon square of cell `i`: left, top, side.
 (double, double, double) iconRect(Layout l, int i, double height) {
-  final side = iconSize * l.scales[i];
+  final side = iconSize * l.scales[i] * l.presence[i];
   final restBottom = height - bottomGap - backgroundHeight + iconTop + iconSize;
   final bottom = restBottom - iconLiftPerScale * (l.scales[i] - 1);
   return (l.center(i) - side / 2, bottom - side, side);
