@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 640" font-family="Inter, sans-serif" font-size="11">
+  <title>Control Center grid (SH-CC-01), 1 unit = 1 pt; origin at the stack's top-left corner (x 2254, y 70)</title>
+  <rect width="420" height="640" fill="#ffffff"/>
+  <g transform="translate(20 40)">
+    <rect x="-20" y="-40" width="420" height="640" fill="#7a7b80" opacity="0.15"/>
+    <g fill="#6a6b70" stroke="#26272b" stroke-width="1">
+      <rect x="0" y="0" width="140" height="64" rx="32"/>
+      <rect x="0" y="76" width="140" height="64" rx="32"/>
+      <rect x="152" y="0" width="140" height="140" rx="35"/>
+      <rect x="0" y="152" width="140" height="64" rx="32"/>
+      <circle cx="184" cy="184" r="32"/>
+      <circle cx="260" cy="184" r="32"/>
+      <circle cx="32" cy="260" r="32"/>
+      <circle cx="108" cy="260" r="32"/>
+      <rect x="152" y="228" width="140" height="64" rx="32"/>
+      <rect x="0" y="304" width="292" height="64" rx="28"/>
+      <rect x="0" y="380" width="292" height="64" rx="28"/>
+      <rect x="87" y="460" width="118" height="24" rx="12"/>
+    </g>
+    <circle cx="32" cy="32" r="18" fill="#ffffff"/>
+    <g fill="#ffffff">
+      <text x="56" y="30">Wi-Fi</text><text x="56" y="106">Bluetooth</text><text x="56" y="182">Nearby</text>
+      <text x="164" y="24">Now playing</text><text x="176" y="258">Focus</text>
+      <text x="16" y="326">Display</text><text x="16" y="402">Sound</text>
+      <text x="108" y="476">Edit Controls</text>
+    </g>
+    <g fill="#333">
+      <text x="300" y="36">140 × 64</text>
+      <text x="300" y="52">capsule r 32</text>
+      <text x="300" y="184">64 tiles:</text>
+      <text x="300" y="198">circles</text>
+      <text x="300" y="340">292 × 64</text>
+      <text x="300" y="354">r 28</text>
+      <text x="0" y="520">gaps 12 pt · row pitch 76 · stack 292 wide, 14 pt from the screen edge</text>
+      <text x="0" y="536">first row at y 42 (y 70 with the privacy pill above)</text>
+      <text x="0" y="552">36 pt status disc, 14 pt inset · button 16 pt below the last row</text>
+    </g>
+  </g>
+</svg>
