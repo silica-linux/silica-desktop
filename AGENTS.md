@@ -90,7 +90,9 @@ Assets:
 - Allowed licenses: the project's own original work, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache.
   Graphics generated in code are preferred.
 - App, file and system icons: repo `silica-linux/silica-icons`, license
-  CC BY-SA 4.0. Cursors are postponed: the repo `silica-linux/silica-cursors` is archived.
+  CC BY-SA 4.0. Pointer cursors are not ours: the standard Adwaita XCursor theme
+  (`XCURSOR_THEME`, Fedora package `adwaita-cursor-theme`); the repo
+  `silica-linux/silica-cursors` is archived.
 - Release wallpapers: our own photos or photographers' with a written transfer of rights,
   or Wikimedia Commons with a compatible license.
 
@@ -121,7 +123,7 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 | --- | --- | --- |
 | `silica-ui` (public) | Dart package `silica_ui`: Inter, glass, lens glass. Stable API, versions tagged `vX.Y.Z`; the shell and the apps take it from the tag | MIT OR Apache-2.0 |
 | `silica-icons` | app and file icons (layered), 313 system symbols in three weights | CC BY-SA 4.0 |
-| `silica-cursors` | cursors, archived: to be redone later | CC BY-SA 4.0 |
+| `silica-cursors` | archived, unused: the cursors are the Adwaita XCursor theme | CC BY-SA 4.0 |
 | `silica-reference` | macOS 27 observations, cloned into `plan/reference/` (private) | — |
 | `silica-packages` | the RPM packages (desktop, apps, Inter, silica-icons) and the Wayland session installable on Fedora | MIT OR Apache-2.0 |
 | `silica-os` | the distro: a bootc image on top of Fedora Atomic with Silica's defaults, pipeline and installation ISO | MIT OR Apache-2.0 |

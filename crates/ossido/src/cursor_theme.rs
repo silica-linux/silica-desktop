@@ -1,20 +1,27 @@
-//! The cursor theme: Silica's cursors (silica-cursors, CC BY-SA 4.0), one SVG per shape with a
-//! manifest (`cursors.json`: name, file, hotspot in units of the 32 u canvas, aliases), drawn
-//! at 32 pt and rasterized here at the output scale. Looked up in `SILICA_CURSORS_DIR`
-//! (development), then `silica/cursors` in the XDG data folders. Without a theme the built-in
-//! arrow of `cursor.rs` stays.
+//! The cursor theme: a standard XCursor theme, `Adwaita` by default, the same one GNOME and
+//! Ubuntu use. The theme is named by `XCURSOR_THEME` and drawn at `XCURSOR_SIZE` (24 by
+//! default) times the output scale. It is looked up through the usual XCursor search path
+//! (`XCURSOR_PATH`, otherwise the XDG icon folders, `~/.icons` and `/usr/share/icons`),
+//! following `Inherits` in `index.theme`. Animated cursors (wait, progress) keep the frame
+//! delays of the file. Without the theme the built-in arrow of `cursor.rs` stays.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Instant;
 
 use smithay::input::pointer::CursorIcon;
 use tracing::{info, warn};
 
-/// The nominal size of the canvas on screen, in logical pixels (cursor-format.md).
-pub const CANVAS: f64 = 32.0;
+/// The theme used when `XCURSOR_THEME` is not set.
+pub const DEFAULT_THEME: &str = "Adwaita";
+/// The nominal size, in logical pixels, when `XCURSOR_SIZE` is not set.
+pub const DEFAULT_SIZE: u32 = 24;
 
-/// A cursor ready to upload: premultiplied RGBA, its size and its hotspot (physical pixels).
-#[derive(Debug, Clone)]
+/// A cursor ready to upload: RGBA bytes (premultiplied, as stored in XCursor files), its size
+/// and its hotspot (physical pixels).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorImage {
     pub width: u32,
     pub height: u32,
@@ -22,154 +29,350 @@ pub struct CursorImage {
     pub rgba: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
-struct Entry {
-    file: PathBuf,
-    /// In units of the canvas (0..32).
-    hotspot: (f64, f64),
+/// Identifies one frame of one cursor at one scale, for the texture cache of the backend.
+pub type FrameKey = (String, u32, usize);
+
+/// The frames of a cursor with the time each one stays on screen.
+#[derive(Debug)]
+struct Animation {
+    /// The XCursor name that was resolved (aliases share it).
+    name: String,
+    frames: Vec<(Arc<CursorImage>, u64)>,
+    /// The duration of the whole loop in milliseconds; 0 for a still cursor.
+    total_ms: u64,
 }
 
-/// The shapes found on disk, by name and alias.
-#[derive(Debug, Default)]
-pub struct CursorTheme {
-    entries: HashMap<String, Entry>,
-    cache: HashMap<(String, u32), Option<CursorImage>>,
+impl Animation {
+    /// The frame to show `elapsed_ms` after the start of the loop.
+    fn frame_at(&self, elapsed_ms: u64) -> Option<(usize, &Arc<CursorImage>)> {
+        if self.total_ms == 0 {
+            return self.frames.first().map(|(image, _)| (0, image));
+        }
+        let mut left = elapsed_ms % self.total_ms;
+        for (index, (image, delay)) in self.frames.iter().enumerate() {
+            if left < *delay {
+                return Some((index, image));
+            }
+            left -= delay;
+        }
+        self.frames.first().map(|(image, _)| (0, image))
+    }
 }
 
-impl CursorTheme {
-    /// The first folder with a manifest; an empty theme if none.
-    pub fn load() -> Self {
-        for dir in search_dirs() {
-            match Self::from_dir(&dir) {
-                Some(theme) => {
-                    info!(
-                        "cursors: {} shapes from {}",
-                        theme.entries.len(),
-                        dir.display()
-                    );
-                    return theme;
+/// The environment that decides which theme is loaded and where it is looked for.
+#[derive(Debug, Clone, Default)]
+pub struct ThemeEnv {
+    pub theme: Option<String>,
+    pub size: Option<String>,
+    pub xcursor_path: Option<String>,
+    pub home: Option<PathBuf>,
+    pub xdg_data_home: Option<PathBuf>,
+    pub xdg_data_dirs: Option<String>,
+}
+
+impl ThemeEnv {
+    pub fn from_process() -> Self {
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+        Self {
+            theme: var("XCURSOR_THEME"),
+            size: var("XCURSOR_SIZE"),
+            xcursor_path: var("XCURSOR_PATH"),
+            home: var("HOME").map(PathBuf::from),
+            xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
+            xdg_data_dirs: var("XDG_DATA_DIRS"),
+        }
+    }
+
+    fn theme_name(&self) -> &str {
+        self.theme.as_deref().unwrap_or(DEFAULT_THEME)
+    }
+
+    fn nominal_size(&self) -> u32 {
+        self.size
+            .as_deref()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .filter(|s| *s > 0)
+            .unwrap_or(DEFAULT_SIZE)
+    }
+
+    /// The folders that may hold theme folders, in order.
+    fn search_paths(&self) -> Vec<PathBuf> {
+        let expand = |entry: &str| -> Option<PathBuf> {
+            match entry.strip_prefix('~') {
+                Some(rest) => {
+                    let home = self.home.as_ref()?;
+                    Some(home.join(rest.trim_start_matches('/')))
                 }
-                None => continue,
+                None => Some(PathBuf::from(entry)),
             }
+        };
+        if let Some(path) = &self.xcursor_path {
+            return path
+                .split(':')
+                .filter(|e| !e.is_empty())
+                .filter_map(expand)
+                .collect();
         }
-        warn!("cursors: no theme found, built-in arrow only");
-        Self::default()
-    }
-
-    /// The theme in `dir` (`cursors.json` next to the SVGs).
-    pub fn from_dir(dir: &Path) -> Option<Self> {
-        let manifest = std::fs::read_to_string(dir.join("cursors.json")).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&manifest).ok()?;
-        let mut entries = HashMap::new();
-        for cursor in json.get("cursors")?.as_array()? {
-            let Some(name) = cursor.get("name").and_then(|n| n.as_str()) else {
-                continue;
-            };
-            let Some(file) = cursor.get("file").and_then(|f| f.as_str()) else {
-                continue;
-            };
-            let hotspot = cursor
-                .get("hotspot")
-                .and_then(|h| h.as_array())
-                .and_then(|h| Some((h.first()?.as_f64()?, h.get(1)?.as_f64()?)))
-                .unwrap_or((0.0, 0.0));
-            let entry = Entry {
-                file: dir.join(file),
-                hotspot,
-            };
-            for alias in cursor
-                .get("aliases")
-                .and_then(|a| a.as_array())
-                .into_iter()
-                .flatten()
-                .filter_map(|a| a.as_str())
-            {
-                entries.entry(alias.to_owned()).or_insert(entry.clone());
-            }
-            entries.insert(name.to_owned(), entry);
+        let mut paths = Vec::new();
+        if let Some(data_home) = &self.xdg_data_home {
+            paths.push(data_home.join("icons"));
+        } else if let Some(home) = &self.home {
+            paths.push(home.join(".local/share/icons"));
         }
-        (!entries.is_empty()).then_some(Self {
-            entries,
-            cache: HashMap::new(),
-        })
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// The image of `icon` at `scale` (whole or fractional), cached; falls back to `default`.
-    pub fn image(&mut self, icon: CursorIcon, scale: f64) -> Option<CursorImage> {
-        let name = icon.name();
-        let key = (name.to_owned(), (scale * 100.0).round() as u32);
-        if let Some(image) = self.cache.get(&key) {
-            return image.clone();
+        if let Some(home) = &self.home {
+            paths.push(home.join(".icons"));
         }
-        let image = self
-            .entries
-            .get(name)
-            .or_else(|| self.entries.get("default"))
-            .and_then(|entry| rasterize(entry, scale));
-        self.cache.insert(key, image.clone());
-        image
+        let data_dirs = self
+            .xdg_data_dirs
+            .as_deref()
+            .unwrap_or("/usr/local/share:/usr/share");
+        for dir in data_dirs.split(':').filter(|d| !d.is_empty()) {
+            paths.push(Path::new(dir).join("icons"));
+        }
+        paths.push(PathBuf::from("/usr/share/pixmaps"));
+        paths
     }
 }
 
-fn search_dirs() -> Vec<PathBuf> {
+/// The `Inherits` list of a theme's `index.theme`.
+fn inherits(index: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(index) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("Inherits"))
+        .filter_map(|rest| rest.trim_start().strip_prefix('='))
+        .flat_map(|list| {
+            list.split([',', ';'])
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// A theme and the themes it inherits, as the folders that hold their `cursors` directories,
+/// in lookup order. The `default` theme closes the chain.
+fn theme_chain(name: &str, search: &[PathBuf]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(dir) = std::env::var_os("SILICA_CURSORS_DIR").filter(|d| !d.is_empty()) {
-        dirs.push(PathBuf::from(dir));
+    let mut seen = HashSet::new();
+    let mut queue = vec![name.to_owned()];
+    let mut next = 0;
+    while let Some(current) = queue.get(next).cloned() {
+        next += 1;
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        for base in search {
+            let dir = base.join(&current);
+            if !dir.is_dir() {
+                continue;
+            }
+            queue.extend(inherits(&dir.join("index.theme")));
+            dirs.push(dir);
+        }
     }
-    let data_home = std::env::var_os("XDG_DATA_HOME")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
-    if let Some(home) = data_home {
-        dirs.push(home.join("silica/cursors"));
-    }
-    let data_dirs = std::env::var("XDG_DATA_DIRS")
-        .ok()
-        .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
-    for dir in data_dirs.split(':').filter(|d| !d.is_empty()) {
-        dirs.push(Path::new(dir).join("silica/cursors"));
+    if !seen.contains("default") {
+        for base in search {
+            let dir = base.join("default");
+            if dir.is_dir() {
+                dirs.push(dir);
+            }
+        }
     }
     dirs
 }
 
-fn rasterize(entry: &Entry, scale: f64) -> Option<CursorImage> {
-    let data = match std::fs::read(&entry.file) {
+/// The XCursor names to try for a shape: the CSS name (what recent themes ship), then the
+/// classic X11 names older themes use, and finally the plain arrow.
+pub fn candidate_names(icon: CursorIcon) -> Vec<&'static str> {
+    let mut names = vec![icon.name()];
+    names.extend_from_slice(legacy_names(icon));
+    for last in ["default", "left_ptr"] {
+        if !names.contains(&last) {
+            names.push(last);
+        }
+    }
+    names
+}
+
+fn legacy_names(icon: CursorIcon) -> &'static [&'static str] {
+    match icon {
+        CursorIcon::Default | CursorIcon::ContextMenu => &["left_ptr"],
+        CursorIcon::Help => &["question_arrow", "whats_this"],
+        CursorIcon::Pointer => &["hand2", "hand1"],
+        CursorIcon::Progress => &["left_ptr_watch", "half-busy"],
+        CursorIcon::Wait => &["watch"],
+        CursorIcon::Cell => &["plus"],
+        CursorIcon::Crosshair => &["cross"],
+        CursorIcon::Text => &["xterm", "ibeam"],
+        CursorIcon::VerticalText => &["vertical-text"],
+        CursorIcon::Alias => &["dnd-link"],
+        CursorIcon::Copy => &["dnd-copy"],
+        CursorIcon::Move => &["fleur", "dnd-move"],
+        CursorIcon::NoDrop => &["dnd-none", "crossed_circle"],
+        CursorIcon::NotAllowed => &["crossed_circle", "forbidden"],
+        CursorIcon::Grab => &["openhand", "hand1"],
+        CursorIcon::Grabbing => &["closedhand", "dnd-none"],
+        CursorIcon::EResize => &["right_side"],
+        CursorIcon::NResize => &["top_side"],
+        CursorIcon::NeResize => &["top_right_corner"],
+        CursorIcon::NwResize => &["top_left_corner"],
+        CursorIcon::SResize => &["bottom_side"],
+        CursorIcon::SeResize => &["bottom_right_corner"],
+        CursorIcon::SwResize => &["bottom_left_corner"],
+        CursorIcon::WResize => &["left_side"],
+        CursorIcon::EwResize => &["sb_h_double_arrow", "h_double_arrow", "size_hor"],
+        CursorIcon::NsResize => &["sb_v_double_arrow", "v_double_arrow", "size_ver"],
+        CursorIcon::NeswResize => &["fd_double_arrow", "size_bdiag"],
+        CursorIcon::NwseResize => &["bd_double_arrow", "size_fdiag"],
+        CursorIcon::ColResize => &["sb_h_double_arrow", "split_h"],
+        CursorIcon::RowResize => &["sb_v_double_arrow", "split_v"],
+        CursorIcon::AllScroll => &["fleur"],
+        _ => &[],
+    }
+}
+
+/// The shapes of the theme, loaded from disk on demand.
+#[derive(Debug)]
+pub struct CursorTheme {
+    /// The theme folders, in lookup order; empty when the theme is missing.
+    dirs: Vec<PathBuf>,
+    size: u32,
+    epoch: Instant,
+    cache: HashMap<(&'static str, u32), Option<Rc<Animation>>>,
+}
+
+impl Default for CursorTheme {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl CursorTheme {
+    /// No theme: every lookup fails and the built-in arrow is drawn.
+    pub fn empty() -> Self {
+        Self {
+            dirs: Vec::new(),
+            size: DEFAULT_SIZE,
+            epoch: Instant::now(),
+            cache: HashMap::new(),
+        }
+    }
+
+    /// The theme of the process environment (`XCURSOR_THEME`, `XCURSOR_SIZE`, ...).
+    pub fn load() -> Self {
+        Self::from_env(&ThemeEnv::from_process())
+    }
+
+    pub fn from_env(env: &ThemeEnv) -> Self {
+        let name = env.theme_name();
+        let dirs = theme_chain(name, &env.search_paths());
+        if dirs.is_empty() {
+            warn!("cursors: theme {name} not found, built-in arrow only");
+        } else {
+            info!("cursors: theme {name} at size {}", env.nominal_size());
+        }
+        Self {
+            dirs,
+            size: env.nominal_size(),
+            ..Self::empty()
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.dirs.is_empty()
+    }
+
+    /// The frame of `icon` to show at `now` for an output at `scale`, with the key that
+    /// identifies it. `None` when the theme has no usable cursor: the caller draws the arrow.
+    pub fn image(
+        &mut self,
+        icon: CursorIcon,
+        scale: f64,
+        now: Instant,
+    ) -> Option<(FrameKey, Arc<CursorImage>)> {
+        if self.dirs.is_empty() {
+            return None;
+        }
+        let scale_key = (scale * 100.0).round().max(1.0) as u32;
+        let animation = match self.cache.get(&(icon.name(), scale_key)) {
+            Some(animation) => animation.clone(),
+            None => {
+                let want = (f64::from(self.size) * scale).round().max(1.0) as u32;
+                let animation = self.load_animation(icon, want).map(Rc::new);
+                self.cache
+                    .insert((icon.name(), scale_key), animation.clone());
+                animation
+            }
+        }?;
+        let elapsed =
+            u64::try_from(now.saturating_duration_since(self.epoch).as_millis()).unwrap_or(0);
+        let (index, image) = animation.frame_at(elapsed)?;
+        Some(((animation.name.clone(), scale_key, index), image.clone()))
+    }
+
+    fn load_animation(&self, icon: CursorIcon, want: u32) -> Option<Animation> {
+        for name in candidate_names(icon) {
+            for dir in &self.dirs {
+                let path = dir.join("cursors").join(name);
+                if !path.is_file() {
+                    continue;
+                }
+                if let Some(animation) = read_animation(&path, name, want) {
+                    return Some(animation);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// The frames of the XCursor file at `path` whose nominal size is closest to `want`.
+fn read_animation(path: &Path, name: &str, want: u32) -> Option<Animation> {
+    let data = match std::fs::read(path) {
         Ok(data) => data,
         Err(err) => {
-            warn!("cursor {}: {err}", entry.file.display());
+            warn!("cursor {}: {err}", path.display());
             return None;
         }
     };
-    let tree = match resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()) {
-        Ok(tree) => tree,
-        Err(err) => {
-            warn!("cursor {}: {err}", entry.file.display());
-            return None;
-        }
-    };
-    let side = (CANVAS * scale).round().max(1.0) as u32;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(side, side)?;
-    let size = tree.size();
-    let fit = f64::from(side) / f64::from(size.width().max(1.0));
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::from_scale(fit as f32, fit as f32),
-        &mut pixmap.as_mut(),
-    );
-    let unit = f64::from(side) / CANVAS;
-    Some(CursorImage {
-        width: side,
-        height: side,
-        hotspot: (
-            (entry.hotspot.0 / CANVAS * CANVAS * unit).round() as i32,
-            (entry.hotspot.1 / CANVAS * CANVAS * unit).round() as i32,
-        ),
-        rgba: pixmap.take(),
+    let images = xcursor::parser::parse_xcursor(&data).or_else(|| {
+        warn!("cursor {}: not an XCursor file", path.display());
+        None
+    })?;
+    let size = images
+        .iter()
+        .map(|image| image.size)
+        .min_by_key(|size| size.abs_diff(want))?;
+    let chosen: Vec<_> = images.iter().filter(|image| image.size == size).collect();
+    let animated = chosen.len() > 1;
+    let frames: Vec<(Arc<CursorImage>, u64)> = chosen
+        .iter()
+        .map(|image| {
+            let frame = CursorImage {
+                width: image.width,
+                height: image.height,
+                hotspot: (
+                    i32::try_from(image.xhot).unwrap_or(0),
+                    i32::try_from(image.yhot).unwrap_or(0),
+                ),
+                rgba: image.pixels_rgba.clone(),
+            };
+            let delay = if animated {
+                u64::from(image.delay).max(1)
+            } else {
+                0
+            };
+            (Arc::new(frame), delay)
+        })
+        .collect();
+    let total_ms = frames.iter().map(|(_, delay)| delay).sum();
+    Some(Animation {
+        name: name.to_owned(),
+        frames,
+        total_ms,
     })
 }
 
@@ -188,10 +391,50 @@ pub fn resize_icon(edges: crate::resize::Edges) -> CursorIcon {
 mod tests {
     use super::*;
     use crate::resize::Edges;
+    use std::time::Duration;
 
-    fn theme_dir() -> Option<PathBuf> {
-        let dir = PathBuf::from(std::env::var_os("HOME")?).join("silica/silica-cursors");
-        dir.join("cursors.json").exists().then_some(dir)
+    /// One chunk of a test XCursor file: nominal size, width, height, hotspot (x and y),
+    /// delay in ms and the ARGB value of every pixel.
+    type Chunk = (u32, u32, u32, u32, u32, u32);
+
+    /// A minimal XCursor file with the given image chunks.
+    fn xcursor_file(chunks: &[Chunk]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let word = |out: &mut Vec<u8>, v: u32| out.extend_from_slice(&v.to_le_bytes());
+        out.extend_from_slice(b"Xcur");
+        word(&mut out, 16);
+        word(&mut out, 0x1_0000);
+        word(&mut out, chunks.len() as u32);
+        let mut position = 16 + 12 * chunks.len() as u32;
+        for (size, w, h, ..) in chunks {
+            word(&mut out, 0xfffd_0002);
+            word(&mut out, *size);
+            word(&mut out, position);
+            position += 36 + w * h * 4;
+        }
+        for (size, w, h, hot, delay, argb) in chunks {
+            for v in [36, 0xfffd_0002, *size, 1, *w, *h, *hot, *hot, *delay] {
+                word(&mut out, v);
+            }
+            for _ in 0..w * h {
+                word(&mut out, *argb);
+            }
+        }
+        out
+    }
+
+    fn env_for(dir: &Path, theme: &str) -> ThemeEnv {
+        ThemeEnv {
+            theme: Some(theme.to_owned()),
+            xcursor_path: Some(dir.display().to_string()),
+            ..ThemeEnv::default()
+        }
+    }
+
+    fn write_cursor(dir: &Path, theme: &str, name: &str, bytes: &[u8]) {
+        let cursors = dir.join(theme).join("cursors");
+        assert!(std::fs::create_dir_all(&cursors).is_ok());
+        assert!(std::fs::write(cursors.join(name), bytes).is_ok());
     }
 
     #[test]
@@ -229,24 +472,125 @@ mod tests {
     }
 
     #[test]
-    fn the_theme_rasterizes_at_the_output_scale() {
-        // Only where silica-cursors is checked out next to this repository.
-        let Some(dir) = theme_dir() else {
+    fn shapes_map_to_the_names_adwaita_ships() {
+        let first = |icon| candidate_names(icon).first().copied();
+        assert_eq!(first(CursorIcon::Default), Some("default"));
+        assert_eq!(first(CursorIcon::Text), Some("text"));
+        assert_eq!(first(CursorIcon::Pointer), Some("pointer"));
+        assert_eq!(first(CursorIcon::Grab), Some("grab"));
+        assert_eq!(first(CursorIcon::Grabbing), Some("grabbing"));
+        assert_eq!(first(CursorIcon::Wait), Some("wait"));
+        assert_eq!(first(CursorIcon::Progress), Some("progress"));
+        assert_eq!(first(CursorIcon::NotAllowed), Some("not-allowed"));
+        assert_eq!(first(CursorIcon::Crosshair), Some("crosshair"));
+        assert_eq!(first(CursorIcon::EwResize), Some("ew-resize"));
+        assert_eq!(first(CursorIcon::NsResize), Some("ns-resize"));
+        assert_eq!(first(CursorIcon::NwseResize), Some("nwse-resize"));
+        assert_eq!(first(CursorIcon::NeswResize), Some("nesw-resize"));
+        // Classic names follow, and every list ends with the plain arrow.
+        assert!(candidate_names(CursorIcon::Text).contains(&"xterm"));
+        assert!(candidate_names(CursorIcon::Pointer).contains(&"hand2"));
+        assert_eq!(candidate_names(CursorIcon::Wait).last(), Some(&"left_ptr"));
+    }
+
+    #[test]
+    fn a_missing_theme_falls_back_to_the_arrow() {
+        let Ok(tmp) = tempfile::tempdir() else {
             return;
         };
-        let mut theme = CursorTheme::from_dir(&dir).expect("manifest");
-        let one = theme
-            .image(CursorIcon::Default, 1.0)
-            .expect("default at 1x");
-        assert_eq!((one.width, one.height), (32, 32));
-        assert_eq!(one.rgba.len(), 32 * 32 * 4);
-        let two = theme.image(CursorIcon::Text, 2.0).expect("text at 2x");
-        assert_eq!((two.width, two.height), (64, 64));
-        // The I-beam's hotspot is the centre of the canvas.
-        assert_eq!(two.hotspot, (32, 32));
-        // Something is drawn.
-        assert!(one.rgba.chunks(4).any(|p| p[3] > 0));
-        // Aliases resolve.
-        assert!(theme.image(CursorIcon::Pointer, 1.0).is_some());
+        let now = Instant::now();
+        let mut theme = CursorTheme::from_env(&env_for(tmp.path(), "Nope"));
+        assert!(theme.is_empty());
+        assert!(theme.image(CursorIcon::Default, 1.0, now).is_none());
+        let mut empty = CursorTheme::empty();
+        assert!(empty.image(CursorIcon::Text, 2.0, now).is_none());
+        let (w, h, pixels) = crate::cursor::arrow();
+        assert!(w > 0 && h > 0 && !pixels.is_empty());
+    }
+
+    #[test]
+    fn the_size_comes_from_xcursor_size() {
+        let mut env = ThemeEnv::default();
+        assert_eq!(env.nominal_size(), DEFAULT_SIZE);
+        assert_eq!(env.theme_name(), "Adwaita");
+        env.size = Some("32".to_owned());
+        assert_eq!(env.nominal_size(), 32);
+        env.size = Some("junk".to_owned());
+        assert_eq!(env.nominal_size(), DEFAULT_SIZE);
+    }
+
+    #[test]
+    fn a_theme_loads_from_xcursor_path_with_inheritance_and_animation() {
+        let Ok(tmp) = tempfile::tempdir() else {
+            return;
+        };
+        let dir = tmp.path();
+        // Two sizes of a still arrow, and a two-frame animation, in the theme "Test".
+        write_cursor(
+            dir,
+            "Test",
+            "default",
+            &xcursor_file(&[(24, 2, 2, 1, 0, 0xff10_2030), (48, 4, 4, 2, 0, 0xff40_5060)]),
+        );
+        write_cursor(
+            dir,
+            "Test",
+            "wait",
+            &xcursor_file(&[
+                (24, 2, 2, 0, 100, 0xff00_0001),
+                (24, 2, 2, 0, 50, 0xff00_0002),
+            ]),
+        );
+        // "text" only exists in the parent theme.
+        write_cursor(
+            dir,
+            "Parent",
+            "text",
+            &xcursor_file(&[(24, 3, 3, 1, 0, 0xffff_ffff)]),
+        );
+        assert!(
+            std::fs::write(
+                dir.join("Test/index.theme"),
+                "[Icon Theme]\nName=Test\nInherits=Parent\n"
+            )
+            .is_ok()
+        );
+
+        let mut theme = CursorTheme::from_env(&env_for(dir, "Test"));
+        assert!(!theme.is_empty());
+        let t0 = theme.epoch;
+
+        let Some((key, image)) = theme.image(CursorIcon::Default, 1.0, t0) else {
+            panic!("default");
+        };
+        assert_eq!(key.0, "default");
+        assert_eq!((image.width, image.height, image.hotspot), (2, 2, (1, 1)));
+        assert_eq!(image.rgba.len(), 2 * 2 * 4);
+        // At 2x the 48 px image is the closest.
+        let Some((_, big)) = theme.image(CursorIcon::Default, 2.0, t0) else {
+            panic!("default 2x");
+        };
+        assert_eq!((big.width, big.hotspot), (4, (2, 2)));
+
+        // Inherited from the parent theme.
+        assert!(theme.image(CursorIcon::Text, 1.0, t0).is_some());
+
+        // Wait is animated by the delays of the file: 100 ms, then 50 ms, then it loops.
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let frame = |theme: &mut CursorTheme, ms| {
+            theme
+                .image(CursorIcon::Wait, 1.0, at(ms))
+                .map(|(key, _)| key.2)
+        };
+        assert_eq!(frame(&mut theme, 0), Some(0));
+        assert_eq!(frame(&mut theme, 99), Some(0));
+        assert_eq!(frame(&mut theme, 120), Some(1));
+        assert_eq!(frame(&mut theme, 160), Some(0));
+
+        // A shape the theme lacks resolves to its default arrow.
+        let Some((key, _)) = theme.image(CursorIcon::Crosshair, 1.0, t0) else {
+            panic!("crosshair");
+        };
+        assert_eq!(key.0, "default");
     }
 }

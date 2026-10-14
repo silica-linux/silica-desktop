@@ -52,8 +52,16 @@ pub struct DrmBackend {
     pending: bool,
     /// The default cursor, drawn when no client sets one and there is no theme.
     cursor: Option<GlesTexture>,
-    /// The named shapes of the theme already uploaded, by name and scale (×100).
-    cursors: std::collections::HashMap<(String, u32), (GlesTexture, (i32, i32))>,
+    /// The frames of the theme already uploaded, by name, scale (×100) and frame, with their
+    /// hotspot and the element id the damage tracker follows.
+    cursors: std::collections::HashMap<
+        crate::cursor_theme::FrameKey,
+        (
+            GlesTexture,
+            (i32, i32),
+            smithay::backend::renderer::element::Id,
+        ),
+    >,
 }
 
 /// The connector driven by the output, with its swapchain.
@@ -440,10 +448,9 @@ impl State {
         let cursor_status = self.effective_cursor();
         let scale = self.output.current_scale().fractional_scale();
         let themed = match &cursor_status {
-            smithay::input::pointer::CursorImageStatus::Named(icon) => self
-                .cursor_theme
-                .image(*icon, scale)
-                .map(|image| (icon.name().to_owned(), image)),
+            smithay::input::pointer::CursorImageStatus::Named(icon) => {
+                self.cursor_theme.image(*icon, scale, now)
+            }
             _ => None,
         };
         let Backend::Drm(backend) = &mut self.backend else {
@@ -475,20 +482,26 @@ impl State {
         if backend.cursor.is_none() {
             backend.cursor = default_cursor(&mut backend.renderer);
         }
-        if let Some((name, image)) = &themed {
-            let key = (name.clone(), (scale * 100.0).round() as u32);
-            if !backend.cursors.contains_key(&key) {
-                match backend.renderer.import_memory(
-                    &image.rgba,
-                    Fourcc::Abgr8888,
-                    (image.width as i32, image.height as i32).into(),
-                    false,
-                ) {
-                    Ok(texture) => {
-                        backend.cursors.insert(key, (texture, image.hotspot));
-                    }
-                    Err(err) => warn!("cursor {name}: {err}"),
+        if let Some((key, image)) = &themed
+            && !backend.cursors.contains_key(key)
+        {
+            match backend.renderer.import_memory(
+                &image.rgba,
+                Fourcc::Abgr8888,
+                (image.width as i32, image.height as i32).into(),
+                false,
+            ) {
+                Ok(texture) => {
+                    backend.cursors.insert(
+                        key.clone(),
+                        (
+                            texture,
+                            image.hotspot,
+                            smithay::backend::renderer::element::Id::new(),
+                        ),
+                    );
                 }
+                Err(err) => warn!("cursor {}: {err}", key.0),
             }
         }
         if let Some(location) = pointer {
@@ -499,13 +512,12 @@ impl State {
                 .unwrap_or_default();
             let named = themed
                 .as_ref()
-                .and_then(|(name, _)| {
-                    backend
-                        .cursors
-                        .get(&(name.clone(), (scale * 100.0).round() as u32))
-                })
-                .map(|(texture, hotspot)| (texture, *hotspot))
-                .or(backend.cursor.as_ref().map(|texture| (texture, (0, 0))));
+                .and_then(|(key, _)| backend.cursors.get(key))
+                .map(|(texture, hotspot, id)| (texture, *hotspot, Some(id.clone())))
+                .or(backend
+                    .cursor
+                    .as_ref()
+                    .map(|texture| (texture, (0, 0), None)));
             let cursor = crate::cursor::elements(
                 &mut backend.renderer,
                 &cursor_status,
