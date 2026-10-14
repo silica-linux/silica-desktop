@@ -17,7 +17,9 @@ use ossido_render::shadow::WindowShadow;
 use ossido_render::title::Title;
 use ossido_render::titlebar::{Titlebar, TitlebarState};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
@@ -83,6 +85,8 @@ pub struct RenderContext<'a> {
     pub spaces: (usize, usize),
     /// Aspetto scuro: finestre, barre, ombre e vetri.
     pub dark: bool,
+    /// L'icona di un trascinamento fra app e il punto del puntatore: sopra tutto.
+    pub drag_icon: Option<(WlSurface, Point<f64, Logical>)>,
 }
 
 /// I pulsanti della barra di una finestra nel frame.
@@ -1107,6 +1111,21 @@ pub fn output_elements(
                 None => {}
             }
         }
+    }
+    if let Some((icon, at)) = &context.drag_icon {
+        let location = (*at - output_origin.to_f64()).to_physical_precise_round(scale);
+        let icon: Vec<OutputElement> = render_elements_from_surface_tree(
+            renderer,
+            icon,
+            location,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        )
+        .into_iter()
+        .map(OutputElement::Surface)
+        .collect();
+        elements.splice(0..0, icon);
     }
     elements
 }

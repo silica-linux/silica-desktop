@@ -179,6 +179,7 @@ impl State {
         let buttons = self.buttons_view();
         let alt = self.alt_held();
         let dark = self.dark();
+        let drag_icon = self.drag_icon_view();
         match &mut self.backend {
             Backend::Winit(backend) => {
                 let renderer = backend.graphics.renderer();
@@ -195,6 +196,7 @@ impl State {
                     panorama: panorama.clone(),
                     spaces,
                     dark,
+                    drag_icon: drag_icon.clone(),
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -218,6 +220,7 @@ impl State {
                     panorama: panorama.clone(),
                     spaces,
                     dark,
+                    drag_icon: drag_icon.clone(),
                 };
                 let elements = output_elements(renderer, &self.space, &self.output, &context);
                 capture_elements::<_, GlesTexture, _>(
@@ -252,6 +255,7 @@ impl State {
         let buttons = self.buttons_view();
         let alt = self.alt_held();
         let dark = self.dark();
+        let drag_icon = self.drag_icon_view();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
         };
@@ -271,6 +275,7 @@ impl State {
             panorama,
             spaces,
             dark,
+            drag_icon,
         };
         let elements = output_elements(
             backend.graphics.renderer(),

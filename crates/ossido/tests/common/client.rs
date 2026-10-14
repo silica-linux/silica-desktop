@@ -11,13 +11,19 @@ use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowMana
 use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
+use wayland_client::protocol::wl_data_device::{self, WlDataDevice};
+use wayland_client::protocol::wl_data_device_manager::{self, WlDataDeviceManager};
+use wayland_client::protocol::wl_data_offer::{self, WlDataOffer};
+use wayland_client::protocol::wl_data_source::{self, WlDataSource};
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::protocol::wl_shm::{self, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_client::{
+    Connection, Dispatch, EventQueue, QueueHandle, delegate_noop, event_created_child,
+};
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1;
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
     self, ZxdgToplevelDecorationV1,
@@ -48,6 +54,18 @@ struct App {
     close_requested: bool,
     /// Modo delle decorazioni scelto da Ossido.
     decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
+    data_manager: Option<WlDataDeviceManager>,
+    data_device: Option<WlDataDevice>,
+    /// Trascinamento in partenza da qui: la sorgente e i dati che manda.
+    drag_source: Option<WlDataSource>,
+    drag_payload: Vec<u8>,
+    drag_finished: bool,
+    drag_cancelled: bool,
+    /// Trascinamento in arrivo: l'offerta con i suoi tipi, l'ingresso e il rilascio.
+    offer: Option<WlDataOffer>,
+    offer_mimes: Vec<String>,
+    drag_entered: Option<u32>,
+    dropped: bool,
 }
 
 impl Dispatch<WlRegistry, ()> for App {
@@ -74,6 +92,9 @@ impl Dispatch<WlRegistry, ()> for App {
                     state.glass = Some(registry.bind(name, version, qh, ()));
                 }
                 "wl_seat" => state.seat = Some(registry.bind(name, 1, qh, ())),
+                "wl_data_device_manager" => {
+                    state.data_manager = Some(registry.bind(name, 3.min(version), qh, ()));
+                }
                 "silica_window_manager_v1" => {
                     state.appearance = Some(registry.bind(name, 1, qh, ()));
                 }
@@ -165,6 +186,75 @@ impl Dispatch<WlPointer, ()> for App {
         } = event
         {
             state.press_serial = Some(serial);
+        }
+    }
+}
+
+delegate_noop!(App: ignore WlDataDeviceManager);
+
+impl Dispatch<WlDataDevice, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &WlDataDevice,
+        event: wl_data_device::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_data_device::Event::DataOffer { id } => {
+                state.offer = Some(id);
+                state.offer_mimes.clear();
+            }
+            wl_data_device::Event::Enter { serial, id, .. } => {
+                state.drag_entered = Some(serial);
+                if id.is_none() {
+                    state.offer = None;
+                }
+            }
+            wl_data_device::Event::Leave => state.drag_entered = None,
+            wl_data_device::Event::Drop => state.dropped = true,
+            _ => {}
+        }
+    }
+
+    event_created_child!(App, WlDataDevice, [
+        wl_data_device::EVT_DATA_OFFER_OPCODE => (WlDataOffer, ()),
+    ]);
+}
+
+impl Dispatch<WlDataOffer, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &WlDataOffer,
+        event: wl_data_offer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_data_offer::Event::Offer { mime_type } = event {
+            state.offer_mimes.push(mime_type);
+        }
+    }
+}
+
+impl Dispatch<WlDataSource, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &WlDataSource,
+        event: wl_data_source::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_data_source::Event::Send { fd, .. } => {
+                let mut file = std::fs::File::from(fd);
+                file.write_all(&state.drag_payload).unwrap();
+            }
+            wl_data_source::Event::DndFinished => state.drag_finished = true,
+            wl_data_source::Event::Cancelled => state.drag_cancelled = true,
+            _ => {}
         }
     }
 }
@@ -442,6 +532,121 @@ impl TestWindow {
         let serial = self.app.press_serial.expect("nessuna pressione ricevuta");
         self._toplevel._move(&seat, serial);
         self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    fn data_device(&mut self) -> WlDataDevice {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let qh = self.queue.handle();
+        if self.app.data_device.is_none() {
+            let manager = self
+                .app
+                .data_manager
+                .clone()
+                .expect("data_device_manager assente");
+            let seat = self.app.seat.clone().expect("wl_seat assente");
+            self.app.data_device = Some(manager.get_data_device(&seat, &qh, ()));
+            self.queue.roundtrip(&mut self.app).unwrap();
+        }
+        self.app.data_device.clone().unwrap()
+    }
+
+    /// Si prepara a ricevere trascinamenti (crea il wl_data_device).
+    #[allow(dead_code)]
+    pub fn accept_drops(&mut self) {
+        self.data_device();
+    }
+
+    /// Comincia un trascinamento (`start_drag`) con il serial dell'ultima pressione: offre
+    /// `mime` con `payload`, e un'icona `side` × `side` di un colore pieno (BGRA).
+    #[allow(dead_code)]
+    pub fn start_drag(&mut self, mime: &str, payload: &[u8], side: u32, color: [u8; 4]) {
+        let device = self.data_device();
+        let qh = self.queue.handle();
+        let manager = self.app.data_manager.clone().unwrap();
+        let source = manager.create_data_source(&qh, ());
+        source.offer(mime.to_owned());
+        source.set_actions(
+            wl_data_device_manager::DndAction::Copy | wl_data_device_manager::DndAction::Move,
+        );
+        self.app.drag_payload = payload.to_vec();
+        let compositor = self.app.compositor.clone().unwrap();
+        let shm = self.app.shm.clone().unwrap();
+        let icon = compositor.create_surface(&qh, ());
+        let stride = side * 4;
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&color.repeat((side * side) as usize))
+            .unwrap();
+        let pool = shm.create_pool(file.as_fd(), (stride * side) as i32, &qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            side as i32,
+            side as i32,
+            stride as i32,
+            wl_shm::Format::Argb8888,
+            &qh,
+            (),
+        );
+        let serial = self.app.press_serial.expect("nessuna pressione ricevuta");
+        device.start_drag(Some(&source), &self.surface, Some(&icon), serial);
+        icon.attach(Some(&buffer), 0, 0);
+        icon.damage_buffer(0, 0, side as i32, side as i32);
+        icon.commit();
+        self.app.drag_source = Some(source);
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Legge gli eventi (per la sorgente: manda i dati chiesti) e dice se il trascinamento è
+    /// finito (true) o annullato (false); None se è ancora in corso.
+    #[allow(dead_code)]
+    pub fn drag_outcome(&mut self) -> Option<bool> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        if self.app.drag_finished {
+            Some(true)
+        } else if self.app.drag_cancelled {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// Il trascinamento sopra questa finestra: i tipi offerti (None se non è entrato).
+    #[allow(dead_code)]
+    pub fn drag_over(&mut self) -> Option<Vec<String>> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.drag_entered?;
+        Some(self.app.offer_mimes.clone())
+    }
+
+    /// Accetta `mime` con la copia, come fa un'app sopra una destinazione valida.
+    #[allow(dead_code)]
+    pub fn accept_offer(&mut self, mime: &str) {
+        let serial = self.app.drag_entered.expect("nessun trascinamento");
+        let offer = self.app.offer.clone().expect("nessuna offerta");
+        offer.accept(serial, Some(mime.to_owned()));
+        offer.set_actions(
+            wl_data_device_manager::DndAction::Copy,
+            wl_data_device_manager::DndAction::Copy,
+        );
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Dopo il rilascio: chiede i dati in `mime` (la sorgente li scrive dal suo lato con
+    /// `pump`, chiamata in mezzo) e chiude l'offerta.
+    #[allow(dead_code)]
+    pub fn receive_drop(&mut self, mime: &str, pump: impl FnOnce()) -> Vec<u8> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        assert!(self.app.dropped, "nessun rilascio");
+        let offer = self.app.offer.clone().expect("nessuna offerta");
+        let (mut reader, writer) = std::io::pipe().unwrap();
+        offer.receive(mime.to_owned(), std::os::fd::AsFd::as_fd(&writer));
+        self.queue.roundtrip(&mut self.app).unwrap();
+        drop(writer);
+        pump();
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut reader, &mut data).unwrap();
+        offer.finish();
+        self.queue.roundtrip(&mut self.app).unwrap();
+        data
     }
 
     /// Distrugge il toplevel (la finestra si chiude) lasciando viva la superficie.

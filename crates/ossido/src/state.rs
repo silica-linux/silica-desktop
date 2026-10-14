@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
@@ -48,6 +49,9 @@ pub struct State {
     /// L'aspetto imposto con `--appearance` (test, sessioni senza daemon): vince sullo
     /// stato di silica-daemon.
     pub appearance: Option<bool>,
+    /// L'icona di un trascinamento fra app (`wl_data_device.start_drag`): segue il puntatore
+    /// fino al rilascio.
+    pub drag_icon: Option<WlSurface>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
     pub loop_signal: LoopSignal,
@@ -254,6 +258,7 @@ impl State {
             session_bus: None,
             system: crate::system::SystemLink::disconnected(),
             appearance: None,
+            drag_icon: None,
             display_handle: dh,
             loop_handle,
             loop_signal,
@@ -349,6 +354,21 @@ impl State {
                 Some(output.clone())
             });
         }
+        if let Some(icon) = &self.drag_icon {
+            send_frames_surface_tree(icon, output, now, Some(Duration::ZERO), |_, _| {
+                Some(output.clone())
+            });
+        }
+    }
+
+    /// L'icona del trascinamento e dove disegnarla: il suo angolo sul puntatore.
+    pub fn drag_icon_view(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
+        let icon = self.drag_icon.as_ref()?;
+        if !smithay::reexports::wayland_server::Resource::is_alive(icon) {
+            return None;
+        }
+        let pointer = self.seat.get_pointer()?;
+        Some((icon.clone(), pointer.current_location()))
     }
 }
 
