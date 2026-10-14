@@ -110,6 +110,9 @@ pub enum Call {
     Close {
         id: u32,
     },
+    Busy {
+        id: u32,
+    },
 }
 
 fn field<'a>(args: &'a Value, key: &str) -> Option<&'a Value> {
@@ -236,6 +239,7 @@ pub fn parse_call(data: &[u8]) -> Result<Call, String> {
             Ok(Call::Signal { id, signal })
         }
         "close" => Ok(Call::Close { id: id_of(&args)? }),
+        "busy" => Ok(Call::Busy { id: id_of(&args)? }),
         other => Err(format!("unknown method {other:?}")),
     }
 }
@@ -401,6 +405,19 @@ impl Pty {
     pub fn signal(&self, signal: Signal) {
         if let Err(err) = rustix::process::kill_process(Pid::from_child(&self.child), signal) {
             tracing::debug!("pty signal: {err}");
+        }
+    }
+
+    /// Whether a process other than the shell is in the foreground of the terminal: its
+    /// foreground process group is not the child's (a session leader, so its pid is its
+    /// process group). False on error.
+    pub fn busy(&self) -> bool {
+        match rustix::termios::tcgetpgrp(&self.master) {
+            Ok(foreground) => foreground != Pid::from_child(&self.child),
+            Err(err) => {
+                tracing::debug!("pty busy: {err}");
+                false
+            }
         }
     }
 
@@ -575,6 +592,7 @@ impl PtyHost {
                 self.live(id)?.pty.signal(signal);
                 Ok(done(Value::Null))
             }
+            Call::Busy { id } => Ok(done(Value::Bool(self.live(id)?.pty.busy()))),
             Call::Close { id } => {
                 let session = self.live(id)?;
                 session.pty.signal(Signal::HUP);
@@ -808,6 +826,7 @@ mod tests {
             call("write", json!({ "id": -1, "data": "aGk=" })),
             call("write", json!({ "id": 1, "data": "@@" })),
             call("signal", json!({ "id": 1, "signal": "STOP" })),
+            call("busy", json!({})),
             call("nope", json!({})),
             b"not json".to_vec(),
         ] {
@@ -959,6 +978,52 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(gone);
+    }
+
+    /// `busy` is false at the prompt of an interactive shell and true while a command runs in
+    /// the foreground; the test closes only its own pty.
+    #[test]
+    fn busy_tells_a_foreground_command_from_the_prompt() {
+        let mut host = PtyHost::default();
+        let id = host
+            .handle(Call::Spawn(SpawnArgs {
+                command: Some(vec!["/bin/sh".into(), "-i".into()]),
+                cwd: None,
+                env: vec![("PS1".into(), "READY> ".into())],
+                rows: 24,
+                cols: 80,
+                grid: false,
+            }))
+            .unwrap()
+            .spawned
+            .unwrap();
+        let busy = |host: &mut PtyHost| match host.handle(Call::Busy { id }).unwrap().value {
+            Value::Bool(b) => b,
+            other => panic!("not a bool: {other}"),
+        };
+        let mut out = Vec::new();
+        run_until(&mut host, id, &mut out, |o, _| {
+            String::from_utf8_lossy(o).contains("READY> ")
+        });
+        assert!(!busy(&mut host), "the shell alone is idle");
+        host.handle(Call::Write {
+            id,
+            data: b"echo started; sleep 5\n".to_vec(),
+        })
+        .unwrap();
+        let mut out = Vec::new();
+        run_until(&mut host, id, &mut out, |o, _| {
+            String::from_utf8_lossy(o).contains("started\r\n")
+        });
+        // The echo is printed before sleep is moved to the foreground: wait for it.
+        let start = Instant::now();
+        while !busy(&mut host) && start.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(busy(&mut host), "sleep runs in the foreground");
+        assert!(host.handle(Call::Busy { id: id + 100 }).is_err());
+        // Closing hangs up this pty's shell and its foreground group, nothing else.
+        host.handle(Call::Close { id }).unwrap();
     }
 
     fn spawn(host: &mut PtyHost, script: &str, grid: bool) -> u32 {

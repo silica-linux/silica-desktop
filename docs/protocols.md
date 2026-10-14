@@ -172,7 +172,9 @@ controlling terminal between fork and exec, is in `ffi/pty.rs`). JSONMethodCodec
   `TERM=xterm-256color`, `COLORTERM=truecolor`, then `env`; `cwd` defaults to `$HOME`);
   `write {id, data: base64}`, `resize {id, rows, cols, pixelWidth?, pixelHeight?}`,
   `signal {id, signal: "INT"|"TERM"|"HUP"|"KILL"}`, `close {id}` (SIGHUP, SIGKILL after 2 s,
-  reaped; no `exit` is sent) → null. Errors come back as a PlatformException with code `pty`.
+  reaped; no `exit` is sent) → null; `busy {id}` → bool: true when the pty's foreground
+  process group (`tcgetpgrp` on the master) is not the shell's, that is a command is running
+  in it (the Terminal confirms closing a busy tab); false otherwise or on error. Errors come back as a PlatformException with code `pty`.
 - To the app: `output {id, data: base64}`, coalesced, at most 64 KiB and one message per frame
   per pty; `exit {id, code?, signal?}` after the last output.
 - Limits: 64 ptys per window, rows and columns 1–1000, 256 arguments and environment
