@@ -1,8 +1,8 @@
-//! Dai tasti Wayland (keycode evdev + keysym xkb) agli eventi tasto di Flutter.
+//! From Wayland keys (evdev keycode + xkb keysym) to Flutter key events.
 //!
-//! Le chiavi si calcolano come nell'embedder GTK ufficiale: la fisica dalla tabella dei
-//! keycode, la logica dalla tabella dei keysym, oppure dal carattere minuscolo per i
-//! keysym Latin-1, oppure dal piano GTK per tutto il resto.
+//! Keys are computed as in the official GTK embedder: the physical one from the keycode
+//! table, the logical one from the keysym table, or from the lowercase character for Latin-1
+//! keysyms, or from the GTK plane for everything else.
 
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use crate::ffi::{KeyEvent, KeyPhase};
 use crate::keymap::{GTK_NUMPAD, GTK_TO_LOGICAL, LINUX_TO_PHYSICAL};
 use crate::text_input::EditKey;
 
-/// Piano degli id di Flutter per le chiavi senza tabella (key_mapping di GTK).
+/// Plane of Flutter ids for keys without a table (GTK's key_mapping).
 const GTK_PLANE: u64 = 0x015_0000_0000;
 
 fn lookup(table: &[(u32, u64)], key: u32) -> Option<u64> {
@@ -21,7 +21,7 @@ fn lookup(table: &[(u32, u64)], key: u32) -> Option<u64> {
         .map(|(_, value)| *value)
 }
 
-/// Minuscola di un keysym Latin-1 (gli unici per cui il keysym è il codice Unicode).
+/// Lowercase of a Latin-1 keysym (the only ones whose keysym is the Unicode code point).
 fn latin1_lower(keysym: u32) -> u32 {
     match keysym {
         0x41..=0x5a => keysym + 0x20,
@@ -35,16 +35,16 @@ pub fn physical_key(evdev: u32) -> u64 {
     lookup(LINUX_TO_PHYSICAL, keycode).unwrap_or(GTK_PLANE | u64::from(keycode))
 }
 
-/// Super_L e Super_R: in Silica il tasto Logo è il ⌘ delle app.
+/// Super_L and Super_R: in Silica the Logo key is the apps' ⌘.
 const SUPER_L: u32 = 0xffeb;
 const SUPER_R: u32 = 0xffec;
-/// `LogicalKeyboardKey.metaLeft` e `metaRight` di Flutter.
+/// Flutter's `LogicalKeyboardKey.metaLeft` and `metaRight`.
 const META_LEFT: u64 = 0x0002_0000_0106;
 const META_RIGHT: u64 = 0x0002_0000_0107;
 
 pub fn logical_key(keysym: u32) -> u64 {
-    // GTK li chiama "Super" (logico `superKey`), che Flutter non conta come meta: le
-    // scorciatoie ⌘ delle app (SingleActivator(meta: true)) non scatterebbero mai.
+    // GTK calls them "Super" (logical `superKey`), which Flutter does not count as meta: the
+    // apps' ⌘ shortcuts (SingleActivator(meta: true)) would never fire.
     match keysym {
         SUPER_L => return META_LEFT,
         SUPER_R => return META_RIGHT,
@@ -59,13 +59,13 @@ pub fn logical_key(keysym: u32) -> u64 {
     GTK_PLANE | u64::from(keysym)
 }
 
-/// Il testo da passare a Flutter: niente caratteri di controllo (Invio, Esc, Backspace).
+/// The text to pass to Flutter: no control characters (Enter, Esc, Backspace).
 fn printable(utf8: Option<&str>) -> Option<String> {
     utf8.filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
         .map(str::to_owned)
 }
 
-/// Keysym xkb usati per l'editing (xkbcommon-keysyms.h).
+/// xkb keysyms used for editing (xkbcommon-keysyms.h).
 mod keysym {
     pub const BACKSPACE: u32 = 0xff08;
     pub const RETURN: u32 = 0xff0d;
@@ -77,7 +77,7 @@ mod keysym {
     pub const DELETE: u32 = 0xffff;
 }
 
-/// Cosa fa un tasto in un campo di testo, se il framework non lo consuma.
+/// What a key does in a text field, if the framework does not consume it.
 pub fn edit_key(
     keysym: u32,
     utf8: Option<&str>,
@@ -98,7 +98,7 @@ pub fn edit_key(
     }
 }
 
-/// Maschere dei modificatori GTK (GtkKeyHelper in raw_keyboard_linux.dart).
+/// GTK modifier masks (GtkKeyHelper in raw_keyboard_linux.dart).
 pub mod gtk_modifiers {
     pub const SHIFT: i64 = 1 << 0;
     pub const CAPS_LOCK: i64 = 1 << 1;
@@ -108,8 +108,8 @@ pub mod gtk_modifiers {
     pub const META: i64 = 1 << 26;
 }
 
-/// Il messaggio `flutter/keyevent` (JSON) che accompagna ogni evento tasto: il
-/// framework accoda i `KeyEvent` finché non arriva questo, come con l'embedder GTK.
+/// The `flutter/keyevent` message (JSON) that goes with every key event: the
+/// framework queues the `KeyEvent`s until this arrives, as with the GTK embedder.
 pub fn raw_key_message(
     down: bool,
     evdev: u32,
@@ -132,7 +132,7 @@ pub fn raw_key_message(
     .unwrap_or_default()
 }
 
-/// Lo stato dei tasti premuti, come lo vede Flutter: fisica → logica.
+/// The state of the pressed keys, as Flutter sees it: physical → logical.
 #[derive(Debug, Default)]
 pub struct Keyboard {
     pressed: HashMap<u64, u64>,
@@ -146,7 +146,7 @@ impl Keyboard {
     pub fn press(&mut self, evdev: u32, keysym: u32, utf8: Option<&str>, micros: u64) -> KeyEvent {
         let physical = physical_key(evdev);
         let logical = logical_key(keysym);
-        // Una seconda pressione senza rilascio è una ripetizione per Flutter.
+        // A second press without a release is a repeat for Flutter.
         let phase = if self.pressed.insert(physical, logical).is_some() {
             KeyPhase::Repeat
         } else {
@@ -162,7 +162,7 @@ impl Keyboard {
         }
     }
 
-    /// `None` se il tasto non risulta premuto: Flutter rifiuta un rilascio senza pressione.
+    /// `None` if the key is not pressed: Flutter refuses a release without a press.
     pub fn release(&mut self, evdev: u32, micros: u64) -> Option<KeyEvent> {
         let physical = physical_key(evdev);
         let logical = self.pressed.remove(&physical)?;
@@ -176,7 +176,7 @@ impl Keyboard {
         })
     }
 
-    /// Rilasci sintetici per i tasti ancora premuti, quando la finestra perde il focus.
+    /// Synthetic releases for the keys still pressed, when the window loses the focus.
     pub fn release_all(&mut self, micros: u64) -> Vec<KeyEvent> {
         self.pressed
             .drain()
@@ -198,10 +198,10 @@ mod tests {
 
     #[test]
     fn the_logo_key_is_meta_for_flutter() {
-        // Senza, ⌘D, ⌘⌫ e le altre scorciatoie delle app non arrivavano mai (Mustache).
+        // Without it, ⌘D, ⌘⌫ and the other app shortcuts never arrived (Mustache).
         assert_eq!(logical_key(SUPER_L), META_LEFT);
         assert_eq!(logical_key(SUPER_R), META_RIGHT);
-        // Il resto resta come in GTK.
+        // The rest stays as in GTK.
         assert_eq!(logical_key(0xffe7), META_LEFT);
         assert_eq!(logical_key(u32::from(b'D')), u64::from(b'd'));
     }
@@ -214,11 +214,11 @@ mod tests {
         // PhysicalKeyboardKey.keyA / LogicalKeyboardKey.keyA.
         assert_eq!(physical_key(KEY_A), 0x0007_0004);
         assert_eq!(logical_key(u32::from(b'a')), 0x61);
-        // Maiuscola: stessa chiave logica.
+        // Uppercase: same logical key.
         assert_eq!(logical_key(u32::from(b'A')), 0x61);
         assert_eq!(physical_key(KEY_ESC), 0x0007_0029);
         assert_eq!(logical_key(0xff1b), 0x001_0000_001b);
-        // Keysym senza tabella: piano GTK.
+        // Keysym without a table: GTK plane.
         assert_eq!(logical_key(0x0100_20ac), GTK_PLANE | 0x0100_20ac);
     }
 

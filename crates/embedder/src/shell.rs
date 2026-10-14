@@ -1,20 +1,20 @@
-//! Il canale `silica/shell`, per i componenti della shell: le finestre aperte
-//! (`ext-foreign-toplevel-list-v1`) verso Dart, e `activate` e `launch` verso Ossido
-//! (`silica-shell-v1`). Fuori dalla shell Ossido non mostra questi protocolli: le
-//! chiamate rispondono `false` e l'elenco resta vuoto.
+//! The `silica/shell` channel, for the shell components: the open windows
+//! (`ext-foreign-toplevel-list-v1`) to Dart, and `activate` and `launch` to Ossido
+//! (`silica-shell-v1`). Outside the shell Ossido does not show these protocols: the
+//! calls answer `false` and the list stays empty.
 //!
-//! Messaggi (JSON method codec):
-//! - da Dart: `list` → l'elenco; `focused` → l'identificatore con il focus;
-//!   `activate {id}`; `launch {command}`; `execute {id}` (comando del catalogo) → `true`
-//!   se inviato;
-//! - verso Dart: `toplevels [{id, title, app_id, minimized}]` e `focused id` a ogni
-//!   cambiamento, `command id` quando Ossido inoltra un comando alla shell (es.
-//!   `faro.toggle`), `broadcast {topic, value}` (uno stato di un altro componente della shell),
-//!   `minimized [id…]` (le ridotte, dalla prima ridotta); `windowMenu {id, x,
-//!   y}` (pressione lunga sul pulsante verde: il popover di disposizione con la punta in x, y);
-//! - `thumbnail {id}` da Dart chiede la miniatura di una finestra ridotta: arriva come
-//!   `thumbnail {id, width, height, path}`, un file RGBA premoltiplicato che Dart legge e
-//!   cancella (width 0 se non c'è).
+//! Messages (JSON method codec):
+//! - from Dart: `list` → the list; `focused` → the focused identifier;
+//!   `activate {id}`; `launch {command}`; `execute {id}` (catalog command) → `true`
+//!   if sent;
+//! - to Dart: `toplevels [{id, title, app_id, minimized}]` and `focused id` on every
+//!   change, `command id` when Ossido forwards a command to the shell (e.g.
+//!   `faro.toggle`), `broadcast {topic, value}` (a state of another shell component),
+//!   `minimized [id…]` (the minimized ones, from the first minimized); `windowMenu {id, x,
+//!   y}` (long press on the green button: the arrangement popover with its tip at x, y);
+//! - `thumbnail {id}` from Dart asks for the thumbnail of a minimized window: it arrives as
+//!   `thumbnail {id, width, height, path}`, a premultiplied RGBA file that Dart reads and
+//!   deletes (width 0 if there is none).
 
 use serde_json::{Value, json};
 use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManagerV1;
@@ -28,10 +28,10 @@ use crate::text_input::success;
 
 pub const CHANNEL: &str = "silica/shell";
 
-/// Lato massimo delle miniature (silica-shell-v1 versione 2).
+/// Maximum side of the thumbnails (silica-shell-v1 version 2).
 const THUMBNAIL_MAX: u32 = 256;
 
-/// Una finestra annunciata da Ossido.
+/// A window announced by Ossido.
 struct Toplevel {
     handle: ExtForeignToplevelHandleV1,
     identifier: String,
@@ -41,20 +41,20 @@ struct Toplevel {
 
 pub struct ShellLink {
     manager: Option<SilicaShellManagerV1>,
-    /// La lista delle finestre: tenuta viva perché Ossido continui ad annunciarle.
+    /// The window list: kept alive so that Ossido keeps announcing them.
     _list: Option<ExtForeignToplevelListV1>,
     toplevels: Vec<Toplevel>,
-    /// La finestra con il focus (identificatore), vuoto se nessuna.
+    /// The focused window (identifier), empty if none.
     focused: String,
-    /// Le finestre ridotte, dalla prima ridotta.
+    /// The minimized windows, from the first minimized.
     minimized: Vec<String>,
-    /// Le miniature chieste e non ancora arrivate: identificatore e file.
+    /// The thumbnails asked for and not yet arrived: identifier and file.
     thumbnails: std::cell::RefCell<Vec<(String, std::path::PathBuf)>>,
     serial: std::cell::Cell<u64>,
 }
 
 impl ShellLink {
-    /// I global della shell, se Ossido li mostra a questo processo.
+    /// The shell globals, if Ossido shows them to this process.
     pub fn new(
         manager: Option<SilicaShellManagerV1>,
         list: Option<ExtForeignToplevelListV1>,
@@ -70,14 +70,14 @@ impl ShellLink {
         }
     }
 
-    /// Il focus è cambiato: il messaggio `focused` per Dart.
+    /// The focus changed: the `focused` message for Dart.
     pub fn set_focused(&mut self, identifier: String) -> Vec<u8> {
         self.focused = identifier;
         serde_json::to_vec(&json!({ "method": "focused", "args": self.focused }))
             .unwrap_or_default()
     }
 
-    /// Una finestra nuova: i dettagli arrivano con gli eventi del suo handle.
+    /// A new window: the details arrive with the events of its handle.
     pub fn add(&mut self, handle: ExtForeignToplevelHandleV1) {
         self.toplevels.push(Toplevel {
             handle,
@@ -87,8 +87,8 @@ impl ShellLink {
         });
     }
 
-    /// Un evento di un handle. Restituisce true quando l'elenco va mandato a Dart
-    /// (`done` o `closed`).
+    /// An event of a handle. Returns true when the list must be sent to Dart
+    /// (`done` or `closed`).
     pub fn event(
         &mut self,
         handle: &ExtForeignToplevelHandleV1,
@@ -126,7 +126,7 @@ impl ShellLink {
         }
     }
 
-    /// Una finestra ridotta o tornata: il messaggio `minimized` per Dart.
+    /// A window minimized or restored: the `minimized` message for Dart.
     pub fn set_minimized(&mut self, identifier: String, minimized: bool) -> Vec<u8> {
         self.minimized.retain(|id| *id != identifier);
         if minimized {
@@ -136,7 +136,7 @@ impl ShellLink {
             .unwrap_or_default()
     }
 
-    /// Chiede a Ossido la miniatura in un file nuovo di `$XDG_RUNTIME_DIR`.
+    /// Asks Ossido for the thumbnail into a new file in `$XDG_RUNTIME_DIR`.
     fn request_thumbnail(&self, identifier: &str) -> bool {
         let Some(manager) = self.manager.as_ref().filter(|m| m.version() >= 2) else {
             return false;
@@ -170,13 +170,13 @@ impl ShellLink {
                 true
             }
             Err(err) => {
-                tracing::warn!("miniatura: {err}");
+                tracing::warn!("thumbnail: {err}");
                 false
             }
         }
     }
 
-    /// La miniatura è nel file: il messaggio `thumbnail` per Dart.
+    /// The thumbnail is in the file: the `thumbnail` message for Dart.
     pub fn thumbnail_ready(&self, identifier: &str, width: u32, height: u32) -> Vec<u8> {
         let mut pending = self.thumbnails.borrow_mut();
         let Some(index) = pending.iter().position(|(id, _)| id == identifier) else {
@@ -198,7 +198,7 @@ impl ShellLink {
         .unwrap_or_default()
     }
 
-    /// L'elenco delle finestre, come lo vede Dart.
+    /// The window list, as Dart sees it.
     pub fn list(&self) -> Value {
         Value::Array(
             self.toplevels
@@ -216,13 +216,13 @@ impl ShellLink {
         )
     }
 
-    /// Il messaggio `toplevels` per Dart.
+    /// The `toplevels` message for Dart.
     pub fn toplevels_message(&self) -> Vec<u8> {
         serde_json::to_vec(&json!({ "method": "toplevels", "args": self.list() }))
             .unwrap_or_default()
     }
 
-    /// Una chiamata da Dart; restituisce la risposta.
+    /// A call from Dart; returns the reply.
     pub fn handle_call<D: 'static>(&self, message: &[u8], _qh: &QueueHandle<D>) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<Value>(message) else {
             return Vec::new();
@@ -248,7 +248,7 @@ impl ShellLink {
             }
             Some("execute") => {
                 let id = text("id");
-                // Con i parametri (un oggetto JSON) serve la versione 5.
+                // With parameters (a JSON object) version 5 is needed.
                 let params = call
                     .pointer("/args/params")
                     .filter(|p| p.is_object())

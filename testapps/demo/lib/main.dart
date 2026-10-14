@@ -1,13 +1,13 @@
-// App di prova per l'embedder di Silica: colori noti, così i test leggono lo
+// Test app for the Silica embedder: known colors, so that the tests read the
 // screenshot.
 //
-// - Ogni tocco alterna il fondo tra [idle] e [tapped].
-// - Scrivere "ciao" nel campo di testo rende il fondo [typed] (input di testo).
-// - Esc azzera tocchi e testo (eventi tasto, via HardwareKeyboard).
-// - Il quadrato in alto a sinistra dice il devicePixelRatio: [hiDpi] da 2 in su,
-//   altrimenti [loDpi].
-// - In alto a destra un'area di vetro ([glassSize], silica-glass-v1): il fondo opaco la
-//   copre, serve ai test che leggono `glass.list`.
+// - Every tap toggles the background between [idle] and [tapped].
+// - Typing "word" in the text field makes the background [typed] (text input).
+// - Esc clears taps and text (key events, through HardwareKeyboard).
+// - The square at the top left tells the devicePixelRatio: [hiDpi] from 2 up,
+//   otherwise [loDpi].
+// - At the top right a glass area ([glassSize], silica-glass-v1): the opaque background
+//   covers it, it is for the tests that read `glass.list`.
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -18,7 +18,7 @@ const Color typed = Color(0xFF33CC66);
 const Color loDpi = Color(0xFFFF00FF);
 const Color hiDpi = Color(0xFF00FF00);
 const double probeSize = 16;
-const String magicWord = 'ciao';
+const String magicWord = 'word';
 const Size glassSize = Size(40, 20);
 
 void main() => runApp(const DemoApp());
@@ -51,7 +51,8 @@ class _DemoAppState extends State<DemoApp> {
   }
 
   bool _onKey(KeyEvent event) {
-    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
       setState(() => taps = 0);
       text.clear();
       return true;
@@ -82,7 +83,9 @@ class _DemoAppState extends State<DemoApp> {
                 width: probeSize,
                 height: probeSize,
                 child: ColoredBox(
-                  color: MediaQuery.devicePixelRatioOf(context) >= 2 ? hiDpi : loDpi,
+                  color: MediaQuery.devicePixelRatioOf(context) >= 2
+                      ? hiDpi
+                      : loDpi,
                 ),
               ),
               Positioned(

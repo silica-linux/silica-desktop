@@ -1,7 +1,7 @@
-//! L'aspetto del sistema per Flutter: `flutter/settings` con `platformBrightness`, letto dal
-//! portale Settings (`org.freedesktop.appearance` › `color-scheme`: 1 scuro) e seguito con
-//! `SettingChanged`. Prima il backend di Silica (`silica-portal`), poi il frontend
-//! (`xdg-desktop-portal`); senza nessuno dei due, chiaro.
+//! The system appearance for Flutter: `flutter/settings` with `platformBrightness`, read from
+//! the Settings portal (`org.freedesktop.appearance` › `color-scheme`: 1 dark) and followed
+//! with `SettingChanged`. First Silica's backend (`silica-portal`), then the frontend
+//! (`xdg-desktop-portal`); without either, light.
 
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -13,9 +13,9 @@ use zbus::zvariant::OwnedValue;
 
 pub const SETTINGS_CHANNEL: &str = "flutter/settings";
 
-/// Prima il backend di Silica (dentro Silica è lui a decidere: il frontend senza la
-/// configurazione di Silica ricadrebbe sul backend GTK e sulla preferenza di GNOME), poi il
-/// frontend (Silica dentro un'altra sessione).
+/// First Silica's backend (inside Silica it is the one that decides: the frontend without
+/// Silica's configuration would fall back to the GTK backend and GNOME's preference), then
+/// the frontend (Silica inside another session).
 const SOURCES: [(&str, &str); 2] = [
     (
         "org.freedesktop.impl.portal.desktop.silica",
@@ -30,7 +30,7 @@ const PATH: &str = "/org/freedesktop/portal/desktop";
 const NAMESPACE: &str = "org.freedesktop.appearance";
 const KEY: &str = "color-scheme";
 
-/// Il messaggio `flutter/settings` (JSONMessageCodec).
+/// The `flutter/settings` message (JSONMessageCodec).
 pub fn settings_message(dark: bool) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "textScaleFactor": 1.0,
@@ -40,7 +40,7 @@ pub fn settings_message(dark: bool) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-/// Un valore di `color-scheme`, anche dentro una variante (`Read` della v1 la incapsula).
+/// A `color-scheme` value, even inside a variant (v1's `Read` wraps it).
 fn scheme_of(value: &OwnedValue) -> Option<u32> {
     if let Ok(scheme) = u32::try_from(value) {
         return Some(scheme);
@@ -52,7 +52,7 @@ fn scheme_of(value: &OwnedValue) -> Option<u32> {
     }
 }
 
-/// Legge `color-scheme` dal primo portale che risponde: il proxy e lo scuro.
+/// Reads `color-scheme` from the first portal that answers: the proxy and the dark flag.
 fn read(connection: &Connection) -> Option<(Proxy<'static>, bool)> {
     for (name, interface) in SOURCES {
         let Ok(proxy) = Proxy::new(connection, name, PATH, interface) else {
@@ -70,21 +70,21 @@ fn read(connection: &Connection) -> Option<(Proxy<'static>, bool)> {
     None
 }
 
-/// Segue l'aspetto su un thread: manda `true` (scuro) o `false` a ogni cambio.
+/// Follows the appearance on a thread: sends `true` (dark) or `false` on every change.
 pub fn watch(
     sender: smithay_client_toolkit::reexports::calloop::channel::Sender<bool>,
 ) -> Option<JoinHandle<()>> {
     std::thread::Builder::new()
-        .name("silica-aspetto".to_owned())
+        .name("silica-appearance".to_owned())
         .spawn(move || {
             let connection = match Connection::session() {
                 Ok(connection) => connection,
                 Err(err) => {
-                    info!("aspetto: nessun bus di sessione ({err}), chiaro");
+                    info!("appearance: no session bus ({err}), light");
                     return;
                 }
             };
-            // Il portale può arrivare dopo l'app: qualche tentativo.
+            // The portal may arrive after the app: a few attempts.
             let mut found = None;
             for _ in 0..10 {
                 found = read(&connection);
@@ -94,7 +94,7 @@ pub fn watch(
                 std::thread::sleep(Duration::from_millis(500));
             }
             let Some((proxy, dark)) = found else {
-                info!("aspetto: nessun portale Settings, chiaro");
+                info!("appearance: no Settings portal, light");
                 return;
             };
             if sender.send(dark).is_err() {
@@ -103,7 +103,7 @@ pub fn watch(
             let signals = match proxy.receive_signal("SettingChanged") {
                 Ok(signals) => signals,
                 Err(err) => {
-                    warn!("aspetto: SettingChanged non disponibile: {err}");
+                    warn!("appearance: SettingChanged unavailable: {err}");
                     return;
                 }
             };
@@ -122,7 +122,7 @@ pub fn watch(
                 }
             }
         })
-        .map_err(|err| warn!("aspetto: thread non avviato: {err}"))
+        .map_err(|err| warn!("appearance: thread not started: {err}"))
         .ok()
 }
 

@@ -7,7 +7,7 @@ void main() {
   Color background(WidgetTester tester) =>
       tester.widget<ColoredBox>(find.byType(ColoredBox).first).color;
 
-  testWidgets('un tocco cambia colore e contatore', (tester) async {
+  testWidgets('a tap changes color and counter', (tester) async {
     await tester.pumpWidget(const DemoApp());
     expect(find.text('Silica · 0'), findsOneWidget);
     expect(background(tester), idle);
@@ -18,7 +18,9 @@ void main() {
     expect(background(tester), tapped);
   });
 
-  testWidgets('scrivere la parola magica colora il fondo, Esc azzera', (tester) async {
+  testWidgets('typing the magic word colors the background, Esc clears it', (
+    tester,
+  ) async {
     await tester.pumpWidget(const DemoApp());
     await tester.pump();
     await tester.enterText(find.byType(EditableText), magicWord);
@@ -31,7 +33,7 @@ void main() {
     expect(find.text(magicWord), findsNothing);
   });
 
-  testWidgets('il quadrato sonda segue il devicePixelRatio', (tester) async {
+  testWidgets('the probe square follows the devicePixelRatio', (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const DemoApp());

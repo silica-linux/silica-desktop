@@ -1,8 +1,8 @@
-//! Lo `StandardMessageCodec` di Flutter, per quel poco che serve all'embedder.
+//! Flutter's `StandardMessageCodec`, for the little the embedder needs.
 //!
-//! Formato (services/message_codecs.dart): un byte di tipo, poi il valore in
-//! little-endian; le dimensioni sotto 254 stanno in un byte. Una risposta di
-//! successo del `StandardMethodCodec` è il byte 0 seguito dal valore.
+//! Format (services/message_codecs.dart): a type byte, then the value in
+//! little-endian; sizes below 254 fit in one byte. A success response of the
+//! `StandardMethodCodec` is the byte 0 followed by the value.
 
 const INT32: u8 = 3;
 const INT64: u8 = 4;
@@ -35,7 +35,7 @@ fn write_int(out: &mut Vec<u8>, value: i64) {
     }
 }
 
-/// Risposta di successo con una mappa intero → intero.
+/// Success response with an integer → integer map.
 pub fn success_int_map(entries: impl ExactSizeIterator<Item = (i64, i64)>) -> Vec<u8> {
     let mut out = vec![0, MAP];
     write_size(&mut out, entries.len());
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn encodes_like_dart() {
         assert_eq!(success_int_map(std::iter::empty()), [0, MAP, 0]);
-        // 0x70004 sta in 32 bit; 0x10000001b no.
+        // 0x70004 fits in 32 bits; 0x10000001b does not.
         let encoded = success_int_map([(0x7_0004, 0x1_0000_001b)].into_iter());
         let mut expected = vec![0, MAP, 1, INT32];
         expected.extend_from_slice(&0x7_0004i32.to_le_bytes());

@@ -1,16 +1,16 @@
-//! Il canale `flutter/textinput`: il campo di testo con il focus e il suo stato.
+//! The `flutter/textinput` channel: the focused text field and its state.
 //!
-//! Il framework apre un client (`TextInput.setClient`), ne imposta lo stato
-//! (`TextInput.setEditingState`) e aspetta le modifiche come
-//! `TextInputClient.updateEditingState`. I tasti che il framework non consuma arrivano
-//! qui come [`EditKey`] e cambiano testo e selezione. Gli offset di Flutter sono in
-//! unità UTF-16; dentro si lavora sui byte UTF-8 e si converte ai bordi.
+//! The framework opens a client (`TextInput.setClient`), sets its state
+//! (`TextInput.setEditingState`) and waits for the changes as
+//! `TextInputClient.updateEditingState`. The keys the framework does not consume arrive
+//! here as [`EditKey`] and change text and selection. Flutter offsets are in UTF-16 units;
+//! inside, the work is on UTF-8 bytes, converted at the edges.
 
 use serde_json::{Value, json};
 
 pub const CHANNEL: &str = "flutter/textinput";
 
-/// Un'azione di editing prodotta da un tasto non consumato dal framework.
+/// An editing action produced by a key the framework did not consume.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditKey {
     Text(String),
@@ -26,7 +26,7 @@ pub enum EditKey {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditingState {
     pub text: String,
-    /// Selezione in byte UTF-8 dentro `text`, sempre su un confine di carattere.
+    /// Selection in UTF-8 bytes inside `text`, always on a character boundary.
     pub base: usize,
     pub extent: usize,
 }
@@ -112,7 +112,7 @@ impl EditingState {
         }
     }
 
-    /// Applica un tasto; `false` se non cambia nulla.
+    /// Applies a key; `false` if nothing changes.
     pub fn apply(&mut self, key: &EditKey, multiline: bool) -> bool {
         let before = self.clone();
         let (start, end) = self.selection();
@@ -155,7 +155,7 @@ impl EditingState {
     }
 }
 
-/// Un messaggio da mandare al framework su [`CHANNEL`].
+/// A message to send to the framework on [`CHANNEL`].
 pub type Outgoing = Vec<u8>;
 
 #[derive(Debug, Default)]
@@ -170,14 +170,14 @@ fn method_call(method: &str, args: Value) -> Outgoing {
     serde_json::to_vec(&json!({ "method": method, "args": args })).unwrap_or_default()
 }
 
-/// Busta di successo del JSONMethodCodec.
+/// Success envelope of the JSONMethodCodec.
 pub fn success(result: Value) -> Vec<u8> {
     serde_json::to_vec(&json!([result])).unwrap_or_default()
 }
 
 impl TextInput {
-    /// Gestisce una chiamata dal framework; restituisce la risposta codificata,
-    /// vuota se il metodo non è gestito.
+    /// Handles a call from the framework; returns the encoded reply,
+    /// empty if the method is not handled.
     pub fn handle_call(&mut self, message: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<Value>(message) else {
             return Vec::new();
@@ -212,7 +212,7 @@ impl TextInput {
                 self.client = None;
                 success(Value::Null)
             }
-            // Accettati e ignorati: tastiera a schermo, geometria del campo, stile, IME.
+            // Accepted and ignored: on-screen keyboard, field geometry, style, IME.
             "TextInput.show"
             | "TextInput.hide"
             | "TextInput.setEditableSizeAndTransform"
@@ -225,7 +225,7 @@ impl TextInput {
         }
     }
 
-    /// Applica un tasto al client attivo; restituisce i messaggi per il framework.
+    /// Applies a key to the active client; returns the messages for the framework.
     pub fn handle_key(&mut self, key: &EditKey) -> Vec<Outgoing> {
         let Some(client) = self.client else {
             return Vec::new();
@@ -262,32 +262,32 @@ mod tests {
     #[test]
     fn typing_and_deleting() {
         let mut s = EditingState::default();
-        for ch in ["c", "i", "a", "o"] {
+        for ch in ["w", "o", "r", "d"] {
             s.apply(&EditKey::Text(ch.to_owned()), false);
         }
-        assert_eq!(s, state("ciao", 4, 4));
+        assert_eq!(s, state("word", 4, 4));
         s.apply(&EditKey::Left { extend: false }, false);
         s.apply(&EditKey::Backspace, false);
-        assert_eq!(s, state("cio", 2, 2));
+        assert_eq!(s, state("wod", 2, 2));
         s.apply(&EditKey::Delete, false);
-        assert_eq!(s, state("ci", 2, 2));
+        assert_eq!(s, state("wo", 2, 2));
     }
 
     #[test]
     fn selection_is_replaced_and_collapses_on_arrows() {
-        let mut s = state("ciao", 0, 0);
+        let mut s = state("word", 0, 0);
         s.apply(&EditKey::End { extend: true }, false);
         assert_eq!(s.selection(), (0, 4));
         s.apply(&EditKey::Text("ok".to_owned()), false);
         assert_eq!(s, state("ok", 2, 2));
-        let mut s = state("ciao", 1, 3);
+        let mut s = state("word", 1, 3);
         s.apply(&EditKey::Left { extend: false }, false);
-        assert_eq!(s, state("ciao", 1, 1));
+        assert_eq!(s, state("word", 1, 1));
     }
 
     #[test]
     fn utf16_offsets_round_trip_through_multibyte_text() {
-        // "è" è 2 byte UTF-8 e 1 unità UTF-16; "😀" 4 byte e 2 unità.
+        // "è" is 2 UTF-8 bytes and 1 UTF-16 unit; "😀" 4 bytes and 2 units.
         let json = json!({"text": "è😀a", "selectionBase": 3, "selectionExtent": 3});
         let s = EditingState::from_json(&json);
         assert_eq!((s.base, s.extent), (6, 6));

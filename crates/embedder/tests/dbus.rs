@@ -1,5 +1,5 @@
-//! Il canale `silica/dbus` contro un `dbus-daemon` privato, senza engine Flutter: le
-//! chiamate entrano come le manderebbe Dart e le risposte escono codificate.
+//! The `silica/dbus` channel against a private `dbus-daemon`, without the Flutter engine: the
+//! calls enter as Dart would send them and the replies come out encoded.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -22,7 +22,7 @@ impl Bus {
             .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
             .stdout(Stdio::piped())
             .spawn()
-            .expect("dbus-daemon (pacchetto dbus) è necessario per questo test");
+            .expect("dbus-daemon (package dbus) is required for this test");
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
@@ -72,8 +72,8 @@ impl Harness {
         }
     }
 
-    /// Manda una chiamata e restituisce la busta della risposta (`[valore]` o
-    /// `[codice, messaggio, null]`).
+    /// Sends a call and returns the reply envelope (`[value]` or
+    /// `[code, message, null]`).
     fn call(&mut self, method: &str, args: Value) -> Value {
         self.next += 1;
         let token = self.next;
@@ -117,14 +117,14 @@ fn calls_return_json() {
     let names = reply[0][0].as_array().unwrap();
     assert!(names.iter().any(|n| n == "org.freedesktop.DBus"));
 
-    // Argomenti convertiti secondo la firma: RequestName(s, u) → u.
+    // Arguments converted according to the signature: RequestName(s, u) → u.
     let reply = h.call(
         "call",
-        bus_call("RequestName", "su", json!(["dev.frascella.Prova", 4])),
+        bus_call("RequestName", "su", json!(["dev.frascella.Test", 4])),
     );
     assert_eq!(reply, json!([[1]]));
 
-    // Un dizionario a{sv} diventa un oggetto.
+    // An a{sv} dictionary becomes an object.
     let reply = h.call(
         "call",
         bus_call(
@@ -141,19 +141,19 @@ fn errors_keep_the_dbus_name() {
     let mut h = Harness::new();
     let reply = h.call(
         "call",
-        bus_call("GetNameOwner", "s", json!(["dev.frascella.Assente"])),
+        bus_call("GetNameOwner", "s", json!(["dev.frascella.Absent"])),
     );
     assert_eq!(reply[0], "org.freedesktop.DBus.Error.NameHasNoOwner");
 
-    // Firma e argomenti che non tornano: errore, non crash.
+    // Signature and arguments that do not match: an error, not a crash.
     let reply = h.call("call", bus_call("GetNameOwner", "u", json!(["x"])));
     assert_eq!(reply[0], "org.freedesktop.DBus.Error.InvalidArgs");
     let reply = h.call("call", json!({"path": "/"}));
     assert_eq!(reply[0], "org.freedesktop.DBus.Error.InvalidArgs");
-    let reply = h.call("call", json!({"bus": "altro"}));
+    let reply = h.call("call", json!({"bus": "other"}));
     assert_eq!(reply[0], "org.freedesktop.DBus.Error.InvalidArgs");
 
-    // Metodo sconosciuto del canale: risposta vuota (non implementato).
+    // Unknown channel method: empty reply (not implemented).
     h.bridge.handle(br#"{"method":"boh"}"#, 999);
     loop {
         if let Event::Reply(999, bytes) = h.events.recv_timeout(Duration::from_secs(10)).unwrap() {
@@ -161,7 +161,7 @@ fn errors_keep_the_dbus_name() {
             break;
         }
     }
-    // Messaggio non JSON.
+    // Non-JSON message.
     h.bridge.handle(b"\xff", 1000);
     loop {
         if let Event::Reply(1000, bytes) = h.events.recv_timeout(Duration::from_secs(10)).unwrap() {
@@ -186,14 +186,14 @@ fn signals_reach_dart_until_unsubscribed() {
     );
     let id = reply[0].as_u64().unwrap();
 
-    // Un'altra connessione che prende un nome fa emettere NameOwnerChanged.
+    // Another connection taking a name makes NameOwnerChanged fire.
     let other = zbus::block_on(async {
         let conn = zbus::connection::Builder::address(h.address.as_str())
             .unwrap()
             .build()
             .await
             .unwrap();
-        conn.request_name("dev.frascella.Segnale").await.unwrap();
+        conn.request_name("dev.frascella.Signal").await.unwrap();
         conn
     });
     let mut seen = false;
@@ -202,7 +202,7 @@ fn signals_reach_dart_until_unsubscribed() {
         assert_eq!(signal["method"], "signal");
         assert_eq!(signal["args"]["id"], id);
         assert_eq!(signal["args"]["member"], "NameOwnerChanged");
-        if signal["args"]["args"][0] == "dev.frascella.Segnale" {
+        if signal["args"]["args"][0] == "dev.frascella.Signal" {
             seen = true;
             break;
         }

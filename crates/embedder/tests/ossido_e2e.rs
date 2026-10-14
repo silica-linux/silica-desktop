@@ -1,7 +1,7 @@
-//! L'app demo gira nell'embedder dentro Ossido headless: primo frame, clic, HiDPI, chiusura.
+//! The demo app runs in the embedder inside headless Ossido: first frame, click, HiDPI, close.
 //!
-//! Servono l'engine e il bundle: `cargo xtask engine` e `cargo xtask bundle demo`
-//! (`cargo xtask ci` li prepara da sé).
+//! The engine and the bundle are needed: `cargo xtask engine` and `cargo xtask bundle demo`
+//! (`cargo xtask ci` prepares them by itself).
 
 #![allow(
     clippy::unwrap_used,
@@ -32,7 +32,7 @@ const APP_ID: &str = "dev.frascella.silica.Flutter";
 const CHILD_ENV: &str = "SILICA_E2E_OSSIDO";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Non è un test: è Ossido stesso, quando questo binario viene rilanciato da `Session`.
+/// Not a test: it is Ossido itself, when this binary is relaunched by `Session`.
 #[test]
 fn ossido_child_process() {
     let Ok(config) = std::env::var(CHILD_ENV) else {
@@ -45,7 +45,7 @@ fn ossido_child_process() {
         size: (w.parse().unwrap(), h.parse().unwrap()),
         scale: scale.parse().unwrap(),
         control: Some(0),
-        // Screenshot deterministici: le finestre compaiono subito alla dimensione piena.
+        // Deterministic screenshots: windows appear right away at full size.
         animation_scale: 0.0,
         ..Default::default()
     })
@@ -57,7 +57,7 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Un processo figlio che muore con il test, anche se il test va in panic.
+/// A child process that dies with the test, even if the test panics.
 struct KillOnDrop(Child);
 
 impl Drop for KillOnDrop {
@@ -78,19 +78,19 @@ struct Session {
 }
 
 impl Session {
-    /// Ossido headless di `output` pixel fisici a scala `scale`, con l'app demo in una
-    /// finestra di `window` pixel logici.
+    /// Headless Ossido of `output` physical pixels at scale `scale`, with the demo app in a
+    /// window of `window` logical pixels.
     fn start(name: &str, output: (u32, u32), scale: u32, window: (u32, u32)) -> Self {
         Self::start_with(name, output, scale, &size_args(window))
     }
 
-    /// Come `start`, con argomenti dell'embedder a scelta (per esempio un layer).
+    /// Like `start`, with embedder arguments of choice (for example a layer).
     fn start_with(name: &str, output: (u32, u32), scale: u32, args: &[String]) -> Self {
         let engine = silica_embedder::default_engine_dir();
         let bundle = repo().join("testapps/demo/build/flutter_assets");
         assert!(
             engine.join("libflutter_engine.so").exists() && bundle.join("kernel_blob.bin").exists(),
-            "servono l'engine e il bundle: cargo xtask engine && cargo xtask bundle demo"
+            "the engine and the bundle are needed: cargo xtask engine && cargo xtask bundle demo"
         );
 
         let dir = std::env::temp_dir().join(format!("silica-e2e-{name}-{}", std::process::id()));
@@ -114,8 +114,8 @@ impl Session {
         );
         let mut wayland = None;
         let mut control = None;
-        // libtest scrive "test ossido_child_process ... " sulla stessa riga del primo
-        // println! di Ossido: si cerca la variabile ovunque nella riga.
+        // libtest writes "test ossido_child_process ... " on the same line as Ossido's first
+        // println!: the variable is searched anywhere in the line.
         let value = |line: &str, key: &str| line.split_once(key).map(|(_, v)| v.trim().to_owned());
         for line in BufReader::new(ossido.0.stdout.take().unwrap()).lines() {
             let line = line.unwrap();
@@ -128,27 +128,27 @@ impl Session {
             }
         }
 
-        let wayland = wayland.expect("Ossido senza socket Wayland");
+        let wayland = wayland.expect("Ossido without a Wayland socket");
         let embedder = spawn_embedder(&dir, &wayland, args);
         Self {
             dir,
             _ossido: ossido,
             embedder: Some(embedder),
             others: Vec::new(),
-            control: control.expect("Ossido senza canale di controllo"),
+            control: control.expect("Ossido without a control channel"),
             wayland,
             output,
         }
     }
 
-    /// Un'altra istanza dell'app demo nella stessa sessione.
+    /// Another instance of the demo app in the same session.
     fn spawn(&mut self, args: &[String]) {
         self.others
             .push(KillOnDrop(spawn_embedder(&self.dir, &self.wayland, args)));
     }
 
     fn layer(&self, namespace: &str) -> LayerInfo {
-        wait_for("il layer", || {
+        wait_for("the layer", || {
             let list = self.client().call(LAYER_LIST, Value::Null).unwrap();
             let layers: Vec<LayerInfo> = serde_json::from_value(list).unwrap();
             layers
@@ -162,7 +162,7 @@ impl Session {
     }
 
     fn window(&self) -> WindowInfo {
-        wait_for("la finestra dell'embedder", || {
+        wait_for("the embedder window", || {
             let list = self.client().call(WINDOW_LIST, Value::Null).unwrap();
             let windows: Vec<WindowInfo> = serde_json::from_value(list).unwrap();
             windows
@@ -187,14 +187,14 @@ impl Session {
         pixels[offset..offset + 4].try_into().unwrap()
     }
 
-    /// Aspetta che il pixel fisico (x, y) diventi `color`.
+    /// Waits for the physical pixel (x, y) to become `color`.
     fn expect_pixel(&self, x: u32, y: u32, color: [u8; 4]) {
         let mut last = [0; 4];
         let found = wait_until(|| {
             last = self.pixel(x, y);
             last == color
         });
-        assert!(found, "pixel ({x}, {y}) = {last:?}, atteso {color:?}");
+        assert!(found, "pixel ({x}, {y}) = {last:?}, expected {color:?}");
     }
 }
 
@@ -218,7 +218,7 @@ fn spawn_embedder(dir: &Path, wayland: &str, args: &[String]) -> Child {
         .arg(repo().join("testapps/demo/build/flutter_assets"))
         .env("XDG_RUNTIME_DIR", dir)
         .env("WAYLAND_DISPLAY", wayland)
-        // Ossido headless non offre buffer GPU: Mesa disegna in software (llvmpipe) su wl_shm.
+        // Headless Ossido offers no GPU buffers: Mesa draws in software (llvmpipe) on wl_shm.
         .env("LIBGL_ALWAYS_SOFTWARE", "1")
         .env(
             "RUST_LOG",
@@ -246,7 +246,7 @@ fn wait_for<T>(what: &str, mut find: impl FnMut() -> Option<T>) -> T {
             found = find();
             found.is_some()
         }),
-        "{what} non è arrivata in {TIMEOUT:?}"
+        "{what} did not arrive within {TIMEOUT:?}"
     );
     found.unwrap()
 }
@@ -258,19 +258,19 @@ fn demo_renders_reacts_to_clicks_and_closes() {
     assert_eq!((window.width, window.height), (300, 200));
     let (x, y) = (window.x as u32, window.y as u32);
 
-    // Primo frame: fondo e quadrato sonda a densità 1.
+    // First frame: background and probe square at density 1.
     session.expect_pixel(x + 150, y + 190, IDLE);
-    // Dentro la sonda ma fuori dall'angolo tagliato da Ossido (superellisse, raggio 33,5).
+    // Inside the probe but outside the corner cut by Ossido (superellipse, radius 33.5).
     session.expect_pixel(x + 15, y + 15, LO_DPI);
 
-    // Un clic attraversa Ossido, Wayland, l'embedder e Flutter.
+    // A click crosses Ossido, Wayland, the embedder and Flutter.
     session
         .client()
         .call(INPUT_CLICK, json!({"x": x + 150, "y": y + 100}))
         .unwrap();
     session.expect_pixel(x + 150, y + 190, TAPPED);
 
-    // window.close: l'embedder spegne l'engine ed esce pulito.
+    // window.close: the embedder shuts the engine down and exits cleanly.
     session.client().call(WINDOW_CLOSE, Value::Null).unwrap();
     let mut embedder = session.embedder.take().unwrap();
     let mut status = None;
@@ -279,9 +279,9 @@ fn demo_renders_reacts_to_clicks_and_closes() {
             status = embedder.try_wait().unwrap();
             status.is_some()
         }),
-        "l'embedder non è uscito"
+        "the embedder did not exit"
     );
-    assert!(status.unwrap().success(), "uscita con {status:?}");
+    assert!(status.unwrap().success(), "exit with {status:?}");
 }
 
 #[test]
@@ -291,18 +291,18 @@ fn keyboard_reaches_text_field_and_hardware_keyboard() {
     let (x, y) = (window.x as u32, window.y as u32);
     session.expect_pixel(x + 150, y + 30, IDLE);
 
-    // Testo: tasti non consumati dal framework → flutter/textinput → EditableText.
+    // Text: keys not consumed by the framework → flutter/textinput → EditableText.
     let mut client = session.client();
-    client.call(INPUT_TYPE, json!({"text": "ciao"})).unwrap();
+    client.call(INPUT_TYPE, json!({"text": "word"})).unwrap();
     session.expect_pixel(x + 150, y + 30, TYPED);
 
-    // Backspace e riscrittura passano dal modello di editing dell'embedder.
+    // Backspace and retyping go through the embedder's editing model.
     client.call(INPUT_KEY, json!({"key": "BackSpace"})).unwrap();
     session.expect_pixel(x + 150, y + 30, IDLE);
-    client.call(INPUT_TYPE, json!({"text": "o"})).unwrap();
+    client.call(INPUT_TYPE, json!({"text": "d"})).unwrap();
     session.expect_pixel(x + 150, y + 30, TYPED);
 
-    // Esc: evento tasto gestito da HardwareKeyboard, che azzera il campo.
+    // Esc: key event handled by HardwareKeyboard, which clears the field.
     client.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
     session.expect_pixel(x + 150, y + 30, IDLE);
 }
@@ -311,11 +311,11 @@ fn keyboard_reaches_text_field_and_hardware_keyboard() {
 fn demo_renders_at_scale_two() {
     let session = Session::start("hidpi", (640, 480), 2, (200, 150));
     let window = session.window();
-    // Geometria logica invariata; lo screenshot è in pixel fisici.
+    // Logical geometry unchanged; the screenshot is in physical pixels.
     assert_eq!((window.width, window.height), (200, 150));
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
     session.expect_pixel(x + 30, y + 30, HI_DPI);
-    // Il quadrato sonda è 16 pixel logici, quindi 32 fisici.
+    // The probe square is 16 logical pixels, so 32 physical.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);
 }
@@ -325,13 +325,13 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
     let mut args = size_args((200, 150));
     args.extend(["--renderer".to_owned(), "gl".to_owned()]);
     let session = Session::start_with("gl", (640, 480), 2, &args);
-    // Il primo buffer GL dopo il passaggio a scala 2 può avere la dimensione vecchia
-    // (GlSurface::present): si aspetta quella chiesta.
-    let window = wait_for("la finestra a 200 × 150", || {
+    // The first GL buffer after switching to scale 2 may have the old size
+    // (GlSurface::present): wait for the requested one.
+    let window = wait_for("the window at 200 × 150", || {
         Some(session.window()).filter(|w| (w.width, w.height) == (200, 150))
     });
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
-    // Stessi pixel del renderer software: scala del buffer e dimensione della finestra EGL.
+    // Same pixels as the software renderer: buffer scale and EGL window size.
     session.expect_pixel(x + 31, y + 31, HI_DPI);
     session.expect_pixel(x + 33, y + 33, IDLE);
     session
@@ -346,12 +346,12 @@ fn gl_renderer_draws_at_scale_two_and_reacts_to_clicks() {
 
 #[test]
 fn impeller_renderer_draws_and_reacts_to_clicks() {
-    // Con una GPU è Impeller; su llvmpipe (CI) l'embedder ripiega su Skia, perché lì
-    // Impeller va in crash nell'engine (misure del gate 1, docs/gate1-dock.md).
+    // With a GPU it is Impeller; on llvmpipe (CI) the embedder falls back to Skia, because there
+    // Impeller crashes inside the engine (gate 1 measurements, docs/gate1-dock.md).
     let mut args = size_args((200, 150));
     args.extend(["--renderer".to_owned(), "impeller".to_owned()]);
     let session = Session::start_with("impeller", (640, 480), 2, &args);
-    let window = wait_for("la finestra a 200 × 150", || {
+    let window = wait_for("the window at 200 × 150", || {
         Some(session.window()).filter(|w| (w.width, w.height) == (200, 150))
     });
     let (x, y) = (window.x as u32 * 2, window.y as u32 * 2);
@@ -369,9 +369,9 @@ fn impeller_renderer_draws_and_reacts_to_clicks() {
 
 #[test]
 fn gl_layer_at_scale_two_gets_its_size_and_clicks() {
-    // Il caso di M1.5: layer OpenGL a scala 2. Il primo buffer dopo un resize può uscire
-    // alla dimensione vecchia (vedi GlSurface::present): dipende dai tempi, si è visto in
-    // WSL con d3d12 e su GitHub con llvmpipe (gl_renderer_draws_at_scale_two_...).
+    // The M1.5 case: OpenGL layer at scale 2. The first buffer after a resize may come out
+    // at the old size (see GlSurface::present): it depends on timing, it was seen on
+    // WSL with d3d12 and on GitHub with llvmpipe (gl_renderer_draws_at_scale_two_...).
     let args: Vec<String> = [
         "--renderer",
         "gl",
@@ -387,7 +387,7 @@ fn gl_layer_at_scale_two_gets_its_size_and_clicks() {
     .map(str::to_owned)
     .to_vec();
     let session = Session::start_with("gl-layer", (640, 480), 2, &args);
-    let layer = wait_for("il layer alla dimensione chiesta", || {
+    let layer = wait_for("the layer at the requested size", || {
         Some(session.layer("gl-layer")).filter(|l| (l.width, l.height) == (320, 100))
     });
     let (x, y) = (layer.x as u32 * 2, layer.y as u32 * 2);
@@ -417,15 +417,15 @@ fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
         "--keyboard",
         "exclusive",
         "--namespace",
-        "barra",
+        "bar",
     ]
     .iter()
     .map(|s| (*s).to_owned())
     .collect();
     let mut session = Session::start_with("layer", (640, 480), 1, &bar_args);
 
-    // Ancorato in alto su tutta la larghezza, con la tastiera.
-    let bar = session.layer("barra");
+    // Anchored at the top across the whole width, with the keyboard.
+    let bar = session.layer("bar");
     assert_eq!(
         (bar.x, bar.y, bar.width, bar.height),
         (0, 0, 640, BAR as i32)
@@ -437,24 +437,24 @@ fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
     assert!(bar.focused);
     session.expect_pixel(600, 40, IDLE);
 
-    // Una finestra normale si apre sotto la zona esclusiva.
+    // A normal window opens below the exclusive zone.
     session.spawn(&size_args((200, 100)));
     let window = session.window();
     assert!(
         window.y >= BAR as i32,
-        "finestra in {} sopra la barra",
+        "window at {} above the bar",
         window.y
     );
     let (wx, wy) = (window.x as u32, window.y as u32);
     session.expect_pixel(wx + 100, wy + 90, IDLE);
 
-    // La tastiera va alla barra, non alla finestra.
+    // The keyboard goes to the bar, not to the window.
     let mut client = session.client();
-    client.call(INPUT_TYPE, json!({"text": "ciao"})).unwrap();
+    client.call(INPUT_TYPE, json!({"text": "word"})).unwrap();
     session.expect_pixel(600, 40, TYPED);
     session.expect_pixel(wx + 100, wy + 90, IDLE);
 
-    // Il clic su un layer arriva al layer.
+    // A click on a layer reaches the layer.
     client.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
     session.expect_pixel(600, 40, IDLE);
     client
@@ -468,8 +468,8 @@ fn layer_bar_reserves_space_takes_keyboard_and_clicks() {
 fn glass_widget_declares_its_region_to_ossido() {
     let session = Session::start("glass", (640, 480), 1, (300, 200));
     let window = session.window();
-    // La demo mette un Glass 40 × 20 in alto a destra (testapps/demo, glassSize).
-    let list = wait_for("le regioni di vetro della demo", || {
+    // The demo puts a 40 × 20 Glass at the top right (testapps/demo, glassSize).
+    let list = wait_for("the demo's glass regions", || {
         let list = session
             .client()
             .call(silica_control::commands::GLASS_LIST, Value::Null)
@@ -493,8 +493,8 @@ fn glass_widget_declares_its_region_to_ossido() {
 #[test]
 fn the_window_title_comes_from_the_command_line() {
     let mut args = size_args((300, 200));
-    args.extend(["--title".to_owned(), "Prova del titolo".to_owned()]);
+    args.extend(["--title".to_owned(), "Title test".to_owned()]);
     let session = Session::start_with("title", (640, 480), 1, &args);
     let window = session.window();
-    assert_eq!(window.title.as_deref(), Some("Prova del titolo"));
+    assert_eq!(window.title.as_deref(), Some("Title test"));
 }

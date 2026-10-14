@@ -1,14 +1,14 @@
-//! Il renderer Vulkan dell'engine (Impeller): una swapchain `VK_KHR_wayland_surface` sulla
-//! `wl_surface` dell'app. Il driver (Mesa, NVIDIA) passa i buffer al compositor come
-//! farebbe EGL.
+//! The engine's Vulkan renderer (Impeller): a `VK_KHR_wayland_surface` swapchain on the
+//! app's `wl_surface`. The driver (Mesa, NVIDIA) passes the buffers to the compositor as
+//! EGL would.
 //!
-//! L'engine chiama i callback dal thread raster: `next_image` prende un'immagine della
-//! swapchain (rifatta se la dimensione cambia), Impeller ci disegna, `present` la porta allo
-//! stato di presentazione e la presenta. La presentazione non aspetta il frame callback
-//! (MAILBOX o IMMEDIATE se ci sono): il ritmo lo dà il vsync dell'engine, come con EGL.
+//! The engine calls the callbacks from the raster thread: `next_image` takes an image of the
+//! swapchain (rebuilt if the size changes), Impeller draws on it, `present` brings it to the
+//! presentation state and presents it. Presentation does not wait for the frame callback
+//! (MAILBOX or IMMEDIATE if available): the pace comes from the engine's vsync, as with EGL.
 //!
-//! Si preferisce la GPU integrata (consuma meno e su un portatile tiene spenta la discreta);
-//! `SILICA_VULKAN_GPU=discrete` sceglie la discreta.
+//! The integrated GPU is preferred (it uses less power and on a laptop keeps the discrete one
+//! off); `SILICA_VULKAN_GPU=discrete` chooses the discrete one.
 
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::Mutex;
@@ -25,24 +25,24 @@ fn vk_error(call: &'static str) -> impl Fn(vk::Result) -> Error {
     move |err| Error::Gl(call, format!("{err:?}"))
 }
 
-/// Estensioni dell'istanza e del dispositivo, da dichiarare anche all'engine.
+/// Instance and device extensions, to be declared to the engine too.
 const INSTANCE_EXTENSIONS: [&CStr; 2] = [ash::khr::surface::NAME, ash::khr::wayland_surface::NAME];
 const DEVICE_EXTENSIONS: [&CStr; 1] = [ash::khr::swapchain::NAME];
 
-/// La swapchain del momento e quello che serve per presentarne le immagini.
+/// The current swapchain and what is needed to present its images.
 struct Swap {
     swapchain: vk::SwapchainKHR,
     images: Vec<vk::Image>,
     extent: vk::Extent2D,
     format: vk::Format,
-    /// Comandi che portano ogni immagine da COLOR_ATTACHMENT_OPTIMAL a PRESENT_SRC_KHR.
+    /// Commands that bring every image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR.
     transitions: Vec<vk::CommandBuffer>,
-    /// L'immagine presa con `next_image` e non ancora presentata.
+    /// The image taken with `next_image` and not yet presented.
     current: Option<u32>,
 }
 
-/// Istanza, dispositivo e swapchain dell'app. Vive in [`super::Callbacks`] finché l'engine
-/// gira.
+/// The app's instance, device and swapchain. Lives in [`super::Callbacks`] while the engine
+/// runs.
 pub struct VulkanSurface {
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -63,20 +63,20 @@ pub struct VulkanSurface {
     name: String,
 }
 
-// SAFETY: istanza, dispositivo, coda e oggetti Vulkan sono handle che l'API consente di usare
-// da qualsiasi thread purché l'accesso alla coda e alla swapchain sia sincronizzato
-// dall'esterno: l'engine li usa solo dal thread raster, e lo stato che cambia (swapchain,
-// immagine corrente) sta dietro il Mutex. I puntatori delle estensioni puntano a costanti
-// statiche.
+// SAFETY: instance, device, queue and Vulkan objects are handles the API allows to use from
+// any thread as long as access to the queue and the swapchain is synchronized externally:
+// the engine uses them only from the raster thread, and the state that changes (swapchain,
+// current image) sits behind the Mutex. The extension pointers point to static
+// constants.
 unsafe impl Send for VulkanSurface {}
-// SAFETY: vedi sopra.
+// SAFETY: see above.
 unsafe impl Sync for VulkanSurface {}
 
 impl VulkanSurface {
-    /// Istanza, dispositivo e swapchain per `surface`, di `size` pixel fisici.
+    /// Instance, device and swapchain for `surface`, of `size` physical pixels.
     pub fn new(conn: &Connection, surface: &WlSurface, size: (u32, u32)) -> Result<Self, Error> {
-        // SAFETY: carica la libvulkan di sistema (il loader Khronos), che espone l'API
-        // standard verificata da ash.
+        // SAFETY: loads the system libvulkan (the Khronos loader), which exposes the standard
+        // API checked by ash.
         let entry =
             unsafe { ash::Entry::load() }.map_err(|err| Error::Gl("libvulkan", err.to_string()))?;
         let app = vk::ApplicationInfo::default()
@@ -87,7 +87,7 @@ impl VulkanSurface {
         let create = vk::InstanceCreateInfo::default()
             .application_info(&app)
             .enabled_extension_names(&extensions);
-        // SAFETY: create è una struttura valida con puntatori a dati vivi per la chiamata.
+        // SAFETY: create is a valid structure with pointers to data alive for the call.
         let instance = unsafe { entry.create_instance(&create, None) }
             .map_err(vk_error("vkCreateInstance"))?;
 
@@ -98,15 +98,15 @@ impl VulkanSurface {
         let surface_info = vk::WaylandSurfaceCreateInfoKHR::default()
             .display(display)
             .surface(wl_surface);
-        // SAFETY: display e superficie sono gli oggetti libwayland della connessione e
-        // dell'app, vivi più a lungo della superficie Vulkan (distrutta in Drop).
+        // SAFETY: display and surface are the libwayland objects of the connection and of the
+        // app, alive longer than the Vulkan surface (destroyed in Drop).
         let vk_surface = unsafe { wayland_fn.create_wayland_surface(&surface_info, None) }
             .map_err(vk_error("vkCreateWaylandSurfaceKHR"))?;
 
         let (physical, queue_family, name) = pick_device(&instance, &surface_fn, vk_surface)
             .ok_or(Error::Gl(
                 "vkEnumeratePhysicalDevices",
-                "nessuna GPU Vulkan presenta su questa superficie".to_owned(),
+                "no Vulkan GPU presents on this surface".to_owned(),
             ))?;
         let priorities = [1.0f32];
         let queues = [vk::DeviceQueueCreateInfo::default()
@@ -117,23 +117,23 @@ impl VulkanSurface {
         let device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(&queues)
             .enabled_extension_names(&device_extensions);
-        // SAFETY: physical viene da questa istanza; device_info è valida per la chiamata.
+        // SAFETY: physical comes from this instance; device_info is valid for the call.
         let device = unsafe { instance.create_device(physical, &device_info, None) }
             .map_err(vk_error("vkCreateDevice"))?;
-        // SAFETY: la famiglia è stata creata con una coda (indice 0).
+        // SAFETY: the family was created with one queue (index 0).
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let swapchain_fn = ash::khr::swapchain::Device::new(&instance, &device);
 
         let pool_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue_family)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        // SAFETY: dispositivo valido, struttura valida.
+        // SAFETY: valid device, valid structure.
         let pool = unsafe { device.create_command_pool(&pool_info, None) }
             .map_err(vk_error("vkCreateCommandPool"))?;
-        // SAFETY: come sopra.
+        // SAFETY: as above.
         let acquired = unsafe { device.create_fence(&vk::FenceCreateInfo::default(), None) }
             .map_err(vk_error("vkCreateFence"))?;
-        // SAFETY: come sopra.
+        // SAFETY: as above.
         let transitioned =
             unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None) }
                 .map_err(vk_error("vkCreateSemaphore"))?;
@@ -171,7 +171,7 @@ impl VulkanSurface {
         Ok(this)
     }
 
-    /// La GPU scelta, per il log e le misure.
+    /// The chosen GPU, for the log and the measurements.
     pub fn renderer(&self) -> &str {
         &self.name
     }
@@ -198,19 +198,19 @@ impl VulkanSurface {
         &self.device_extensions
     }
 
-    /// `vkGetInstanceProcAddr` per l'engine.
+    /// `vkGetInstanceProcAddr` for the engine.
     pub(super) fn proc_address(&self, instance: *mut c_void, name: &CStr) -> *mut c_void {
         let instance = vk::Instance::from_raw(instance as u64);
-        // SAFETY: name è una stringa C valida; instance è nulla o quella creata qui (l'engine
-        // passa quella che gli abbiamo dato).
+        // SAFETY: name is a valid C string; instance is null or the one created here (the engine
+        // passes the one we gave it).
         let f =
             unsafe { (self._entry.static_fn().get_instance_proc_addr)(instance, name.as_ptr()) };
         f.map_or(std::ptr::null_mut(), |f| f as *mut c_void)
     }
 
-    /// Rifà la swapchain per `size` pixel fisici (la vecchia diventa `old_swapchain`).
+    /// Rebuilds the swapchain for `size` physical pixels (the old one becomes `old_swapchain`).
     fn rebuild(&self, swap: &mut Swap, size: (u32, u32)) -> Result<(), Error> {
-        // SAFETY: le chiamate usano dispositivo e superficie validi di questa istanza.
+        // SAFETY: the calls use a valid device and surface of this instance.
         let (caps, formats, modes) = unsafe {
             (
                 self.surface_fn
@@ -236,14 +236,14 @@ impl VulkanSurface {
             .copied()
             .ok_or(Error::Gl(
                 "vkGetPhysicalDeviceSurfaceFormatsKHR",
-                "nessun formato".to_owned(),
+                "no format".to_owned(),
             ))?;
-        // Il ritmo lo dà il vsync dell'engine: niente attesa del frame callback.
+        // The pace comes from the engine's vsync: no waiting for the frame callback.
         let mode = [vk::PresentModeKHR::MAILBOX, vk::PresentModeKHR::IMMEDIATE]
             .into_iter()
             .find(|m| modes.contains(m))
             .unwrap_or(vk::PresentModeKHR::FIFO);
-        // Le superfici della shell sono trasparenti: alfa premoltiplicata.
+        // Shell surfaces are transparent: premultiplied alpha.
         let alpha = [
             vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
             vk::CompositeAlphaFlagsKHR::INHERIT,
@@ -289,8 +289,8 @@ impl VulkanSurface {
             .present_mode(mode)
             .clipped(true)
             .old_swapchain(swap.swapchain);
-        // SAFETY: nessun lavoro in sospeso usa la swapchain vecchia (si aspetta la coda);
-        // la struttura è valida per la chiamata.
+        // SAFETY: no pending work uses the old swapchain (the queue is waited on);
+        // the structure is valid for the call.
         let swapchain = unsafe {
             self.device
                 .queue_wait_idle(self.queue)
@@ -299,7 +299,7 @@ impl VulkanSurface {
                 .create_swapchain(&info, None)
                 .map_err(vk_error("vkCreateSwapchainKHR"))?
         };
-        // SAFETY: la vecchia swapchain e i suoi comandi non sono più in uso (coda ferma).
+        // SAFETY: the old swapchain and its commands are no longer in use (queue idle).
         unsafe {
             if !swap.transitions.is_empty() {
                 self.device
@@ -309,14 +309,14 @@ impl VulkanSurface {
                 self.swapchain_fn.destroy_swapchain(swap.swapchain, None);
             }
         }
-        // SAFETY: swapchain appena creata da questo dispositivo.
+        // SAFETY: swapchain just created by this device.
         let images = unsafe { self.swapchain_fn.get_swapchain_images(swapchain) }
             .map_err(vk_error("vkGetSwapchainImagesKHR"))?;
         let alloc = vk::CommandBufferAllocateInfo::default()
             .command_pool(self.pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(u32::try_from(images.len()).unwrap_or(0));
-        // SAFETY: pool valido, struttura valida.
+        // SAFETY: valid pool, valid structure.
         let transitions = unsafe { self.device.allocate_command_buffers(&alloc) }
             .map_err(vk_error("vkAllocateCommandBuffers"))?;
         for (&cmd, &image) in transitions.iter().zip(&images) {
@@ -334,7 +334,7 @@ impl VulkanSurface {
                         .level_count(1)
                         .layer_count(1),
                 );
-            // SAFETY: cmd appena allocato da questo pool; la registrazione usa oggetti validi.
+            // SAFETY: cmd just allocated from this pool; the recording uses valid objects.
             unsafe {
                 self.device
                     .begin_command_buffer(cmd, &vk::CommandBufferBeginInfo::default())
@@ -364,7 +364,7 @@ impl VulkanSurface {
         Ok(())
     }
 
-    /// Un'immagine della swapchain per un frame di `size` pixel (null se non si può).
+    /// An image of the swapchain for a frame of `size` pixels (null if not possible).
     pub(super) fn next_image(&self, size: (u32, u32)) -> (u64, u32) {
         let Ok(mut swap) = self.swap.lock() else {
             return (0, 0);
@@ -378,7 +378,7 @@ impl VulkanSurface {
             return (0, 0);
         }
         for _ in 0..2 {
-            // SAFETY: swapchain e fence validi; si aspetta la fence prima di riusarla.
+            // SAFETY: valid swapchain and fence; the fence is waited on before reusing it.
             let acquired = unsafe {
                 self.swapchain_fn.acquire_next_image(
                     swap.swapchain,
@@ -389,7 +389,7 @@ impl VulkanSurface {
             };
             match acquired {
                 Ok((index, _suboptimal)) => {
-                    // SAFETY: la fence è stata passata all'acquisizione appena riuscita.
+                    // SAFETY: the fence was passed to the acquisition that just succeeded.
                     let waited = unsafe {
                         self.device
                             .wait_for_fences(&[self.acquired], true, u64::MAX)
@@ -421,7 +421,7 @@ impl VulkanSurface {
         (0, 0)
     }
 
-    /// Porta l'immagine corrente allo stato di presentazione e la presenta.
+    /// Brings the current image to the presentation state and presents it.
     pub(super) fn present(&self) -> bool {
         let Ok(mut swap) = self.swap.lock() else {
             return false;
@@ -443,9 +443,9 @@ impl VulkanSurface {
             .wait_semaphores(&signal)
             .swapchains(&swapchains)
             .image_indices(&indices);
-        // SAFETY: il comando di transizione è registrato per quest'immagine; la coda è usata
-        // solo da questo thread (raster); il semaforo ordina la presentazione dopo la
-        // transizione, e la sottomissione dopo il disegno dell'engine sulla stessa coda.
+        // SAFETY: the transition command is recorded for this image; the queue is used only by
+        // this thread (raster); the semaphore orders the presentation after the transition,
+        // and the submission after the engine's drawing on the same queue.
         let result = unsafe {
             self.device
                 .queue_submit(self.queue, &[submit], vk::Fence::null())
@@ -465,28 +465,28 @@ impl VulkanSurface {
     }
 }
 
-/// La GPU che presenta su questa superficie: integrata, poi discreta (o il contrario con
-/// `SILICA_VULKAN_GPU=discrete`), mai quella sulla CPU se c'è altro.
+/// The GPU that presents on this surface: integrated, then discrete (or the other way round
+/// with `SILICA_VULKAN_GPU=discrete`), never the one on the CPU if there is another.
 fn pick_device(
     instance: &ash::Instance,
     surface_fn: &ash::khr::surface::Instance,
     surface: vk::SurfaceKHR,
 ) -> Option<(vk::PhysicalDevice, u32, String)> {
     let discrete_first = std::env::var("SILICA_VULKAN_GPU").is_ok_and(|v| v == "discrete");
-    // SAFETY: istanza valida.
+    // SAFETY: valid instance.
     let devices = unsafe { instance.enumerate_physical_devices() }.ok()?;
     let mut best: Option<(u32, vk::PhysicalDevice, u32, String)> = None;
     for device in devices {
-        // SAFETY: device viene da questa istanza.
+        // SAFETY: device comes from this instance.
         let props = unsafe { instance.get_physical_device_properties(device) };
         if props.api_version < vk::API_VERSION_1_1 {
             continue;
         }
-        // SAFETY: come sopra.
+        // SAFETY: as above.
         let families = unsafe { instance.get_physical_device_queue_family_properties(device) };
         let family = families.iter().enumerate().find_map(|(i, f)| {
             let i = u32::try_from(i).ok()?;
-            // SAFETY: indice di famiglia di questo dispositivo, superficie di questa istanza.
+            // SAFETY: family index of this device, surface of this instance.
             let present =
                 unsafe { surface_fn.get_physical_device_surface_support(device, i, surface) }
                     .unwrap_or(false);
@@ -515,9 +515,9 @@ fn pick_device(
 
 impl Drop for VulkanSurface {
     fn drop(&mut self) {
-        // L'engine è già spento: nessuno usa più coda, immagini e comandi.
-        // SAFETY: tutti gli oggetti sono stati creati qui e si distruggono una volta, in
-        // ordine inverso, dopo che il dispositivo ha finito il lavoro.
+        // The engine is already shut down: nobody uses the queue, images and commands anymore.
+        // SAFETY: every object was created here and is destroyed once, in reverse order,
+        // after the device has finished its work.
         unsafe {
             let _ = self.device.device_wait_idle();
             if let Ok(swap) = self.swap.get_mut() {

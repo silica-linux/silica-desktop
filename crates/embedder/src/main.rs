@@ -1,15 +1,15 @@
-//! Avvio dell'embedder:
+//! Embedder startup:
 //!
 //! ```text
-//! silica-embedder [--engine DIR] [--size LxA] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
-//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITOLO] [--app-id ID] BUNDLE
+//! silica-embedder [--engine DIR] [--size WxH] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
+//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
-//!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NOME]
+//!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NAME]
 //! ```
 //!
-//! `BUNDLE` è la cartella `flutter_assets` di `flutter build bundle`; `DIR` contiene
-//! `libflutter_engine.so` e `icudtl.dat` (`cargo xtask engine`). Con un engine release
-//! serve il codice AOT: `--aot`, oppure `libapp.so` accanto a `BUNDLE`
+//! `BUNDLE` is the `flutter_assets` folder of `flutter build bundle`; `DIR` contains
+//! `libflutter_engine.so` and `icudtl.dat` (`cargo xtask engine`). With a release engine
+//! the AOT code is needed: `--aot`, or `libapp.so` next to `BUNDLE`
 //! (`cargo xtask bundle <app> --release`).
 
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut title = "Silica".to_owned();
     let mut app_id = "dev.frascella.silica.Flutter".to_owned();
     while let Some(arg) = args.next() {
-        let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
+        let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
             "--engine" => engine_dir = Some(value()?.into()),
             "--size" => {
@@ -70,7 +70,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 size = text
                     .split_once('x')
                     .and_then(|(w, h)| parse(w).zip(parse(h)))
-                    .ok_or(format!("dimensione non valida: {text}"))?;
+                    .ok_or(format!("invalid size: {text}"))?;
             }
             "--layer" => {
                 layer_options(&mut layer).layer = match value()?.as_str() {
@@ -78,7 +78,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     "bottom" => LayerKind::Bottom,
                     "top" => LayerKind::Top,
                     "overlay" => LayerKind::Overlay,
-                    other => return Err(format!("livello sconosciuto: {other}")),
+                    other => return Err(format!("unknown layer: {other}")),
                 };
             }
             "--anchor" => {
@@ -90,22 +90,21 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                         "bottom" => anchor.bottom = true,
                         "left" => anchor.left = true,
                         "right" => anchor.right = true,
-                        other => return Err(format!("bordo sconosciuto: {other}")),
+                        other => return Err(format!("unknown edge: {other}")),
                     }
                 }
             }
             "--exclusive-zone" => {
                 let zone = value()?;
-                layer_options(&mut layer).exclusive_zone = zone
-                    .parse()
-                    .map_err(|_| format!("zona non valida: {zone}"))?;
+                layer_options(&mut layer).exclusive_zone =
+                    zone.parse().map_err(|_| format!("invalid zone: {zone}"))?;
             }
             "--keyboard" => {
                 layer_options(&mut layer).keyboard = match value()?.as_str() {
                     "none" => LayerKeyboard::None,
                     "exclusive" => LayerKeyboard::Exclusive,
                     "on-demand" => LayerKeyboard::OnDemand,
-                    other => return Err(format!("tastiera sconosciuta: {other}")),
+                    other => return Err(format!("unknown keyboard mode: {other}")),
                 };
             }
             "--namespace" => layer_options(&mut layer).namespace = value()?,
@@ -120,20 +119,20 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     "gl" => Renderer::Gl,
                     "impeller" => Renderer::Impeller,
                     "vulkan" => Renderer::Vulkan,
-                    other => return Err(format!("renderer sconosciuto: {other}")),
+                    other => return Err(format!("unknown renderer: {other}")),
                 };
             }
             other if other.starts_with("--") => {
-                return Err(format!("argomento sconosciuto: {other}"));
+                return Err(format!("unknown argument: {other}"));
             }
-            // Il primo argomento libero è il bundle; i successivi sono dell'app (i file da
-            // aprire dalla voce .desktop): arrivano a Dart come `--dart-arg`.
+            // The first free argument is the bundle; the following ones belong to the app
+            // (the files to open from the .desktop entry): they reach Dart as `--dart-arg`.
             other if bundle.is_none() => bundle = Some(PathBuf::from(other)),
             other => dart_args.push(other.to_owned()),
         }
     }
     let engine_dir = engine_dir.unwrap_or_else(silica_embedder::default_engine_dir);
-    let bundle: PathBuf = bundle.ok_or("manca la cartella del bundle (flutter_assets)")?;
+    let bundle: PathBuf = bundle.ok_or("the bundle folder (flutter_assets) is missing")?;
     let aot = aot.or_else(|| {
         let sibling = bundle.parent()?.join("libapp.so");
         sibling.exists().then_some(sibling)
@@ -166,22 +165,22 @@ mod tests {
 
     #[test]
     fn arguments_after_the_bundle_go_to_the_app() {
-        // Una voce .desktop senza codici di campo riceve i file in fondo: prima il bundle
-        // veniva sostituito dall'ultimo percorso e l'app non partiva (⌘N di Mustache).
+        // A .desktop entry without field codes receives the files at the end: before, the
+        // bundle was replaced by the last path and the app did not start (Mustache's ⌘N).
         let options = parse(args(&[
             "--engine",
             "/e",
             "--dart-arg",
-            "--uno",
+            "--one",
             "/bundle/flutter_assets",
-            "/home/io",
-            "/home/io/nota.txt",
+            "/home/me",
+            "/home/me/note.txt",
         ]))
         .unwrap();
         assert_eq!(options.bundle, PathBuf::from("/bundle/flutter_assets"));
         assert_eq!(
             options.dart_args,
-            ["--uno", "/home/io", "/home/io/nota.txt"]
+            ["--one", "/home/me", "/home/me/note.txt"]
         );
     }
 }

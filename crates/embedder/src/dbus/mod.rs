@@ -1,18 +1,19 @@
-//! Il canale `silica/dbus`: D-Bus per Dart (bus di sessione e di sistema).
+//! The `silica/dbus` channel: D-Bus for Dart (session and system bus).
 //!
-//! La shell legge i servizi (le notifiche di `silica-daemon`, NetworkManager, UPower,
-//! BlueZ) senza binding generati: Dart chiama metodi e si iscrive ai segnali con valori
-//! JSON, e qui li si converte secondo la firma (`json.rs`). Codec `JSONMethodCodec`.
+//! The shell reads the services (`silica-daemon`'s notifications, NetworkManager, UPower,
+//! BlueZ) without generated bindings: Dart calls methods and subscribes to signals with JSON
+//! values, and here they are converted according to the signature (`json.rs`). Codec
+//! `JSONMethodCodec`.
 //!
-//! - `call {bus?, destination, path, interface?, method, signature?, args?}` → la lista
-//!   degli argomenti della risposta; un errore D-Bus diventa un `PlatformException` con il
-//!   nome dell'errore come codice.
-//! - `subscribe {bus?, sender?, path?, interface?, member?}` → un id; poi i segnali arrivano
-//!   a Dart come chiamata `signal {id, sender, path, interface, member, args}`.
-//! - `unsubscribe {id}` → `true` se l'iscrizione c'era.
+//! - `call {bus?, destination, path, interface?, method, signature?, args?}` → the list of
+//!   the reply arguments; a D-Bus error becomes a `PlatformException` with the error name as
+//!   the code.
+//! - `subscribe {bus?, sender?, path?, interface?, member?}` → an id; then the signals reach
+//!   Dart as a `signal {id, sender, path, interface, member, args}` call.
+//! - `unsubscribe {id}` → `true` if the subscription existed.
 //!
-//! `bus` è `session` (predefinito) o `system`. Le chiamate girano su un thread a parte:
-//! una risposta lenta non ferma l'interfaccia.
+//! `bus` is `session` (default) or `system`. Calls run on a separate thread: a slow reply
+//! does not stop the interface.
 
 pub mod json;
 
@@ -33,29 +34,29 @@ use zbus::{Connection, MatchRule, Message, MessageStream};
 
 pub const CHANNEL: &str = "silica/dbus";
 
-/// Oltre questo tempo una chiamata fallisce con `org.freedesktop.DBus.Error.Timeout`.
+/// Beyond this time a call fails with `org.freedesktop.DBus.Error.Timeout`.
 const CALL_TIMEOUT: Duration = Duration::from_secs(25);
-/// Iscrizioni contemporanee massime per motore.
+/// Maximum concurrent subscriptions per engine.
 const MAX_SUBSCRIPTIONS: usize = 256;
-/// Segnali in coda per iscrizione prima che zbus scarti i più vecchi.
+/// Signals queued per subscription before zbus drops the oldest.
 const SIGNAL_QUEUE: usize = 64;
 
-/// Cosa il thread D-Bus restituisce al thread di piattaforma.
+/// What the D-Bus thread returns to the platform thread.
 pub enum Event<T> {
-    /// La risposta (già codificata) a una chiamata da Dart.
+    /// The (already encoded) reply to a call from Dart.
     Reply(T, Vec<u8>),
-    /// Un messaggio `signal` da mandare a Dart sul canale.
+    /// A `signal` message to send to Dart on the channel.
     Signal(Vec<u8>),
 }
 
-/// Indirizzi dei bus; `None` usa quelli dell'ambiente.
+/// Bus addresses; `None` uses the environment's.
 #[derive(Clone, Debug, Default)]
 pub struct Addresses {
     pub session: Option<String>,
     pub system: Option<String>,
 }
 
-/// Il ponte: le chiamate da Dart entrano con `handle`, gli esiti escono da `sink`.
+/// The bridge: calls from Dart enter with `handle`, outcomes leave through `sink`.
 pub struct Bridge<T> {
     requests: async_channel::Sender<(T, Vec<u8>)>,
     _thread: JoinHandle<()>,
@@ -88,10 +89,10 @@ impl<T: Send + 'static> Bridge<T> {
         })
     }
 
-    /// Una chiamata da Dart; la risposta arriva più tardi come `Event::Reply(token, …)`.
+    /// A call from Dart; the reply arrives later as `Event::Reply(token, …)`.
     pub fn handle(&self, data: &[u8], token: T) {
         if self.requests.try_send((token, data.to_vec())).is_err() {
-            warn!("silica/dbus: il thread D-Bus non risponde");
+            warn!("silica/dbus: the D-Bus thread does not answer");
         }
     }
 }
@@ -121,7 +122,7 @@ impl<T: 'static> Worker<T> {
     ) {
         while let Ok((token, data)) = requests.recv().await {
             let Ok(call) = serde_json::from_slice::<Json>(&data) else {
-                self.reply(token, Err(invalid("messaggio non JSON")));
+                self.reply(token, Err(invalid("non-JSON message")));
                 continue;
             };
             let args = call.get("args").cloned().unwrap_or(Json::Null);
@@ -137,7 +138,7 @@ impl<T: 'static> Worker<T> {
                 }
                 Some("subscribe") => {
                     if self.subscriptions.borrow().len() >= MAX_SUBSCRIPTIONS {
-                        self.reply(token, Err(failed("troppe iscrizioni")));
+                        self.reply(token, Err(failed("too many subscriptions")));
                         continue;
                     }
                     let id = self.next_id.get().wrapping_add(1);
@@ -150,11 +151,11 @@ impl<T: 'static> Worker<T> {
                 }
                 Some("unsubscribe") => {
                     let id = args.get("id").and_then(Json::as_u64).unwrap_or(0);
-                    // Lasciare il task lo ferma e chiude la regola sul bus.
+                    // Dropping the task stops it and removes the rule from the bus.
                     let removed = self.subscriptions.borrow_mut().remove(&id).is_some();
                     self.reply(token, Ok(json!(removed)));
                 }
-                // Metodo sconosciuto: risposta vuota, che Dart legge come non implementato.
+                // Unknown method: empty reply, which Dart reads as not implemented.
                 _ => (self.sink)(Event::Reply(token, Vec::new())),
             }
         }
@@ -175,7 +176,7 @@ impl<T: 'static> Worker<T> {
         let bus = match args.get("bus").and_then(Json::as_str) {
             None | Some("session") => Bus::Session,
             Some("system") => Bus::System,
-            Some(other) => return Err(invalid(&format!("bus sconosciuto: {other}"))),
+            Some(other) => return Err(invalid(&format!("unknown bus: {other}"))),
         };
         let (cell, address) = match bus {
             Bus::Session => (&self.session, &self.addresses.session),
@@ -195,7 +196,7 @@ impl<T: 'static> Worker<T> {
 
     async fn call(&self, args: &Json) -> CallResult {
         let text = |name: &str| args.get(name).and_then(Json::as_str);
-        let required = |name: &str| text(name).ok_or_else(|| invalid(&format!("manca «{name}»")));
+        let required = |name: &str| text(name).ok_or_else(|| invalid(&format!("missing «{name}»")));
         let destination = required("destination")?;
         let path = required("path")?;
         let method = required("method")?;
@@ -204,7 +205,7 @@ impl<T: 'static> Worker<T> {
         let values = match args.get("args") {
             None | Some(Json::Null) => Vec::new(),
             Some(Json::Array(items)) => json::to_args(signature, items).map_err(|e| invalid(&e))?,
-            Some(_) => return Err(invalid("«args» deve essere una lista")),
+            Some(_) => return Err(invalid("«args» must be a list")),
         };
         let connection = self.connection(args).await?;
         let call = async {
@@ -228,7 +229,7 @@ impl<T: 'static> Worker<T> {
             async_io::Timer::after(CALL_TIMEOUT).await;
             Err((
                 "org.freedesktop.DBus.Error.Timeout".to_owned(),
-                format!("{method}: nessuna risposta"),
+                format!("{method}: no reply"),
             ))
         };
         let reply = future::or(call, timeout).await?;
@@ -291,27 +292,27 @@ impl<T: 'static> Worker<T> {
     }
 }
 
-/// Gli argomenti di un messaggio, in JSON.
+/// The arguments of a message, as JSON.
 fn reply_args(message: &Message) -> Result<Vec<Json>, (String, String)> {
     let body = message.body();
     if matches!(body.signature(), Signature::Unit) {
         return Ok(Vec::new());
     }
-    // Gli argomenti di un messaggio si leggono come i campi di una struttura. Serve la
-    // firma com'è scritta nell'intestazione: una volta letta, `us` (due argomenti) e `(us)`
-    // (una struttura) diventano la stessa `Signature`.
+    // The arguments of a message are read as the fields of a structure. The signature is needed
+    // as written in the header: once parsed, `us` (two arguments) and `(us)` (one structure)
+    // become the same `Signature`.
     let raw = header_signature(message.data().bytes())
-        .ok_or_else(|| failed("firma del messaggio illeggibile"))?;
+        .ok_or_else(|| failed("unreadable message signature"))?;
     let fields = format!("({raw})");
     let (structure, _): (Structure<'_>, usize) = body
         .data()
         .deserialize_for_dynamic_signature(fields.as_str())
-        .map_err(|e| failed(&format!("risposta illeggibile: {e}")))?;
+        .map_err(|e| failed(&format!("unreadable reply: {e}")))?;
     Ok(structure.fields().iter().map(json::to_json).collect())
 }
 
-/// La firma del corpo come è scritta nell'intestazione del messaggio (campo 8). Formato:
-/// specifica D-Bus, "Message Format"; i byte vengono dal bus e si leggono con controlli.
+/// The body signature as written in the message header (field 8). Format: D-Bus
+/// specification, "Message Format"; the bytes come from the bus and are read with checks.
 fn header_signature(bytes: &[u8]) -> Option<&str> {
     let little = match bytes.first()? {
         b'l' => true,
@@ -391,7 +392,7 @@ mod tests {
     fn signal(
         body: &(impl zbus::export::serde::Serialize + zbus::zvariant::DynamicType),
     ) -> Message {
-        Message::signal("/a/b", "dev.frascella.Prova", "Cambiato")
+        Message::signal("/a/b", "dev.frascella.Test", "Changed")
             .unwrap()
             .build(body)
             .unwrap()
@@ -416,7 +417,7 @@ mod tests {
         let message = signal(&(7u32, "x"));
         let bytes = message.data().bytes();
         for cut in 0..bytes.len().min(64) {
-            // Mai un panico, qualunque troncamento.
+            // Never a panic, whatever the truncation.
             let _ = header_signature(&bytes[..cut]);
         }
         assert_eq!(header_signature(b"x"), None);

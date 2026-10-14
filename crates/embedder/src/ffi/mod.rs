@@ -1,9 +1,9 @@
-//! FFI verso `libflutter_engine.so`: l'unico modulo del workspace con `unsafe`
-//! (AGENTS.md, "Mai crashare"; verificato da `cargo xtask unsafe`).
+//! FFI to `libflutter_engine.so`: the only module of the workspace with `unsafe`
+//! (AGENTS.md, "Never crash"; checked by `cargo xtask unsafe`).
 //!
-//! Il resto dell'embedder vede solo tipi sicuri: [`Engine`], [`Task`], [`Frame`],
-//! [`PointerEvent`]. La libreria si carica a runtime, così il workspace compila e i
-//! test girano anche dove l'engine non è stato scaricato.
+//! The rest of the embedder sees only safe types: [`Engine`], [`Task`], [`Frame`],
+//! [`PointerEvent`]. The library is loaded at runtime, so the workspace compiles and the
+//! tests run even where the engine has not been downloaded.
 
 #![allow(unsafe_code)]
 
@@ -57,10 +57,10 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Load(err) => write!(f, "libflutter_engine.so non caricabile: {err}"),
-            Error::Symbol(name, err) => write!(f, "simbolo {name} assente: {err}"),
-            Error::Path(path) => write!(f, "percorso non valido: {path}"),
-            Error::Engine(call, code) => write!(f, "{call} ha restituito l'errore {code}"),
+            Error::Load(err) => write!(f, "cannot load libflutter_engine.so: {err}"),
+            Error::Symbol(name, err) => write!(f, "symbol {name} missing: {err}"),
+            Error::Path(path) => write!(f, "invalid path: {path}"),
+            Error::Engine(call, code) => write!(f, "{call} returned error {code}"),
             Error::Gl(call, err) => write!(f, "{call}: {err}"),
         }
     }
@@ -76,20 +76,20 @@ fn check(call: &'static str, result: FlutterEngineResult) -> Result<(), Error> {
     }
 }
 
-/// Un task che l'engine chiede di eseguire sul thread di piattaforma.
+/// A task the engine asks to run on the platform thread.
 pub struct Task {
     inner: FlutterTask,
-    /// Quando eseguirlo, nella base di [`Engine::current_time`] (nanosecondi).
+    /// When to run it, in the base of [`Engine::current_time`] (nanoseconds).
     pub target_nanos: u64,
 }
 
-// SAFETY: FlutterTask è un handle opaco (puntatore al runner + id) che l'engine passa
-// da un thread qualsiasi apposta perché venga eseguito su quello di piattaforma; il
-// contratto di FlutterTaskRunnerPostTaskCallback consente di spostarlo tra thread.
+// SAFETY: FlutterTask is an opaque handle (runner pointer + id) that the engine passes from
+// any thread precisely so that it runs on the platform one; the contract of
+// FlutterTaskRunnerPostTaskCallback allows moving it between threads.
 unsafe impl Send for Task {}
 
-/// Un frame del renderer software: righe di `stride` byte, pixel a 32 bit nel formato
-/// nativo dell'engine (BGRA in memoria su Linux little-endian).
+/// A frame of the software renderer: rows of `stride` bytes, 32-bit pixels in the engine's
+/// native format (BGRA in memory on little-endian Linux).
 pub struct Frame {
     pub width: u32,
     pub height: u32,
@@ -97,19 +97,19 @@ pub struct Frame {
     pub pixels: Vec<u8>,
 }
 
-/// La risposta dovuta a un messaggio di piattaforma: va consumata con
-/// [`Engine::respond`] esattamente una volta, altrimenti il Future Dart non si chiude.
+/// The response owed to a platform message: it must be consumed with
+/// [`Engine::respond`] exactly once, otherwise the Dart Future never completes.
 pub struct ResponseHandle(*const FlutterPlatformMessageResponseHandle);
 
-// SAFETY: l'handle è opaco e l'engine accetta FlutterEngineSendPlatformMessageResponse
-// da qualsiasi thread; qui lo si usa comunque solo sul thread di piattaforma.
+// SAFETY: the handle is opaque and the engine accepts FlutterEngineSendPlatformMessageResponse
+// from any thread; here it is only used on the platform thread anyway.
 unsafe impl Send for ResponseHandle {}
 
-/// Un messaggio dal framework Dart verso l'embedder.
+/// A message from the Dart framework to the embedder.
 pub struct PlatformMessage {
     pub channel: String,
     pub data: Vec<u8>,
-    /// Assente per i messaggi che non aspettano risposta.
+    /// Absent for messages that do not expect a response.
     pub response: Option<ResponseHandle>,
 }
 
@@ -120,44 +120,44 @@ pub enum KeyPhase {
     Repeat,
 }
 
-/// Un evento tasto per il `HardwareKeyboard` di Flutter.
+/// A key event for Flutter's `HardwareKeyboard`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyEvent {
     pub phase: KeyPhase,
-    /// Chiave fisica di Flutter (pagina USB HID).
+    /// Flutter physical key (USB HID page).
     pub physical: u64,
-    /// Chiave logica di Flutter.
+    /// Flutter logical key.
     pub logical: u64,
-    /// Il testo prodotto dal tasto, solo per `Down` e `Repeat`.
+    /// The text produced by the key, only for `Down` and `Repeat`.
     pub character: Option<String>,
-    /// Evento inventato dall'embedder per riallineare lo stato dei tasti.
+    /// Event made up by the embedder to realign the key state.
     pub synthesized: bool,
     pub timestamp_micros: u64,
 }
 
-/// La richiesta di vsync dell'engine: va restituita con [`Engine::on_vsync`].
+/// The engine's vsync request: it must be returned with [`Engine::on_vsync`].
 pub struct VsyncBaton(isize);
 
-/// Le funzioni dell'embedder chiamate dall'engine, da thread qualsiasi.
+/// The embedder functions called by the engine, from any thread.
 pub struct Callbacks {
     pub platform_thread: ThreadId,
     pub post_task: Box<dyn Fn(Task) + Send + Sync>,
-    /// Frame del renderer software; inutile con `gl`.
+    /// Frames of the software renderer; unused with `gl`.
     pub present: Box<dyn Fn(Frame) + Send + Sync>,
     pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
-    /// Con una superficie EGL l'engine disegna con OpenGL ES, altrimenti in software.
+    /// With an EGL surface the engine draws with OpenGL ES, otherwise in software.
     pub gl: Option<GlSurface>,
-    /// Con una swapchain Vulkan l'engine disegna con Impeller su Vulkan (ha la precedenza
-    /// su `gl`).
+    /// With a Vulkan swapchain the engine draws with Impeller on Vulkan (it takes precedence
+    /// over `gl`).
     pub vulkan: Option<VulkanSurface>,
-    /// Il ritmo dei frame lo dà l'embedder (frame callback del compositor); senza, l'engine
-    /// usa un suo timer a 60 Hz, scollegato dal compositor.
+    /// The frame pace comes from the embedder (compositor frame callbacks); without it, the
+    /// engine uses its own 60 Hz timer, unrelated to the compositor.
     pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
 }
 
-/// Chi aspetta di sapere se il framework ha gestito un tasto.
+/// Whoever waits to know whether the framework handled a key.
 type KeyHandled = Box<dyn FnOnce(bool) + Send>;
-/// Chi aspetta la risposta del framework a un messaggio.
+/// Whoever waits for the framework's response to a message.
 type Reply = Box<dyn FnOnce(Vec<u8>) + Send>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,19 +168,19 @@ pub enum PointerPhase {
     Down,
     Move,
     Up,
-    /// Un gesto interrotto (il puntatore portato via da un trascinamento fra app).
+    /// An interrupted gesture (the pointer taken away by a drag between apps).
     Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointerEvent {
     pub phase: PointerPhase,
-    /// Posizione in pixel fisici.
+    /// Position in physical pixels.
     pub x: f64,
     pub y: f64,
-    /// Maschera dei pulsanti premuti: 1 primario, 2 secondario, 4 centrale.
+    /// Mask of the pressed buttons: 1 primary, 2 secondary, 4 middle.
     pub buttons: i64,
-    /// Scorrimento in pixel fisici, se l'evento è una rotella.
+    /// Scroll in physical pixels, if the event is a wheel.
     pub scroll: Option<(f64, f64)>,
     pub timestamp_micros: u64,
 }
@@ -233,7 +233,7 @@ type CreateAotFn = unsafe extern "C" fn(
 ) -> FlutterEngineResult;
 type CollectAotFn = unsafe extern "C" fn(FlutterEngineAOTData) -> FlutterEngineResult;
 
-/// Le funzioni dell'engine usate qui, risolte una volta al caricamento.
+/// The engine functions used here, resolved once at load time.
 struct Api {
     schedule_frame: ScheduleFrameFn,
     on_vsync: OnVsyncFn,
@@ -266,27 +266,27 @@ pub struct EngineConfig<'a> {
     pub library: &'a Path,
     pub assets: &'a Path,
     pub icu_data: &'a Path,
-    /// Il codice Dart compilato AOT (`libapp.so`), per un engine release o profile.
+    /// The AOT-compiled Dart code (`libapp.so`), for a release or profile engine.
     pub aot: Option<&'a Path>,
-    /// Opzioni da riga di comando per l'engine (per esempio `--enable-impeller`).
+    /// Command-line options for the engine (for example `--enable-impeller`).
     pub engine_args: &'a [String],
-    /// Argomenti di `main(List<String> args)` dell'app Dart.
+    /// Arguments of the Dart app's `main(List<String> args)`.
     pub dart_args: &'a [String],
 }
 
-/// Un engine Flutter in esecuzione. Si usa e si distrugge sul thread di piattaforma.
+/// A running Flutter engine. It is used and destroyed on the platform thread.
 pub struct Engine {
     api: Api,
     engine: FlutterEngine,
-    /// Nullo con un engine debug (JIT); si libera dopo lo spegnimento.
+    /// Null with a debug engine (JIT); freed after shutdown.
     aot_data: FlutterEngineAOTData,
-    // Tutto ciò a cui l'engine tiene puntatori: deve vivere quanto lui.
+    // Everything the engine keeps pointers to: it must live as long as the engine.
     _callbacks: Box<Callbacks>,
     _runner: Box<FlutterTaskRunnerDescription>,
     _runners: Box<FlutterCustomTaskRunners>,
     _strings: Vec<CString>,
     _argv: Vec<*const c_char>,
-    /// Gli argomenti di `main` dell'app: l'engine li legge all'avvio dell'isolate.
+    /// The app's `main` arguments: the engine reads them when the isolate starts.
     _dart_strings: Vec<CString>,
     _dart_argv: Vec<*const c_char>,
     _library: FlutterEngineLib,
@@ -296,13 +296,13 @@ fn c_path(path: &Path) -> Result<CString, Error> {
     CString::new(path.as_os_str().as_bytes()).map_err(|_| Error::Path(path.display().to_string()))
 }
 
-/// Il puntatore a [`Callbacks`] passato all'engine come `user_data`.
+/// The pointer to [`Callbacks`] passed to the engine as `user_data`.
 ///
 /// # Safety
-/// `user_data` deve essere il puntatore a `Callbacks` dato a [`Engine::run`], ancora vivo.
+/// `user_data` must be the pointer to `Callbacks` given to [`Engine::run`], still alive.
 unsafe fn callbacks<'a>(user_data: *mut c_void) -> &'a Callbacks {
-    // SAFETY: garantito dal chiamante; Engine tiene il Box finché l'engine non è spento,
-    // e dopo FlutterEngineShutdown l'engine non chiama più i callback.
+    // SAFETY: guaranteed by the caller; Engine keeps the Box until the engine is shut down,
+    // and after FlutterEngineShutdown the engine no longer calls the callbacks.
     unsafe { &*user_data.cast_const().cast::<Callbacks>() }
 }
 
@@ -312,7 +312,7 @@ unsafe extern "C" fn present(
     row_bytes: usize,
     height: usize,
 ) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     let Some(len) = row_bytes.checked_mul(height) else {
         return false;
@@ -320,8 +320,8 @@ unsafe extern "C" fn present(
     if allocation.is_null() || len == 0 {
         return false;
     }
-    // SAFETY: per SoftwareSurfacePresentCallback il buffer ha row_bytes * height byte
-    // validi per tutta la durata della chiamata; lo copiamo prima di tornare.
+    // SAFETY: for SoftwareSurfacePresentCallback the buffer has row_bytes * height valid bytes
+    // for the whole duration of the call; we copy it before returning.
     let pixels = unsafe { std::slice::from_raw_parts(allocation.cast::<u8>(), len) }.to_vec();
     let (Ok(width), Ok(height)) = (u32::try_from(row_bytes / 4), u32::try_from(height)) else {
         return false;
@@ -335,45 +335,45 @@ unsafe extern "C" fn present(
     true
 }
 
-/// La superficie EGL dei callback, se l'engine usa il renderer OpenGL.
+/// The EGL surface of the callbacks, if the engine uses the OpenGL renderer.
 ///
 /// # Safety
-/// Come [`callbacks`].
+/// Like [`callbacks`].
 unsafe fn gl_surface<'a>(user_data: *mut c_void) -> Option<&'a GlSurface> {
-    // SAFETY: garantito dal chiamante.
+    // SAFETY: guaranteed by the caller.
     unsafe { callbacks(user_data) }.gl.as_ref()
 }
 
 unsafe extern "C" fn gl_make_current(user_data: *mut c_void) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     unsafe { gl_surface(user_data) }.is_some_and(GlSurface::make_current)
 }
 
 unsafe extern "C" fn gl_clear_current(user_data: *mut c_void) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     unsafe { gl_surface(user_data) }.is_some_and(GlSurface::clear_current)
 }
 
 unsafe extern "C" fn gl_make_resource_current(user_data: *mut c_void) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     unsafe { gl_surface(user_data) }.is_some_and(GlSurface::make_resource_current)
 }
 
 unsafe extern "C" fn gl_present(user_data: *mut c_void) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     unsafe { gl_surface(user_data) }.is_some_and(GlSurface::present)
 }
 
 unsafe extern "C" fn gl_fbo(user_data: *mut c_void, info: *const FlutterFrameInfo) -> u32 {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     if let Some(gl) = unsafe { gl_surface(user_data) }
         && !info.is_null()
     {
-        // SAFETY: l'engine passa un FlutterFrameInfo valido per la durata della chiamata.
+        // SAFETY: the engine passes a FlutterFrameInfo valid for the duration of the call.
         let size = unsafe { (*info).size };
         gl.resize(size.width, size.height);
     }
-    // Il framebuffer predefinito della superficie EGL.
+    // The default framebuffer of the EGL surface.
     0
 }
 
@@ -381,23 +381,23 @@ unsafe extern "C" fn gl_proc_resolver(user_data: *mut c_void, name: *const c_cha
     if name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let Some(gl) = (unsafe { gl_surface(user_data) }) else {
         return ptr::null_mut();
     };
-    // SAFETY: l'engine passa il nome della funzione GL come stringa C terminata da NUL.
+    // SAFETY: the engine passes the GL function name as a NUL-terminated C string.
     match unsafe { CStr::from_ptr(name) }.to_str() {
         Ok(name) => gl.proc_address(name),
         Err(_) => ptr::null_mut(),
     }
 }
 
-/// La superficie Vulkan dei callback, se l'engine usa il renderer Vulkan.
+/// The Vulkan surface of the callbacks, if the engine uses the Vulkan renderer.
 ///
 /// # Safety
-/// Come [`callbacks`].
+/// Like [`callbacks`].
 unsafe fn vulkan_surface<'a>(user_data: *mut c_void) -> Option<&'a VulkanSurface> {
-    // SAFETY: garantito dal chiamante.
+    // SAFETY: guaranteed by the caller.
     unsafe { callbacks(user_data) }.vulkan.as_ref()
 }
 
@@ -409,11 +409,11 @@ unsafe extern "C" fn vulkan_proc_address(
     if name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let Some(vulkan) = (unsafe { vulkan_surface(user_data) }) else {
         return ptr::null_mut();
     };
-    // SAFETY: l'engine passa il nome della funzione come stringa C terminata da NUL.
+    // SAFETY: the engine passes the function name as a NUL-terminated C string.
     vulkan.proc_address(instance, unsafe { CStr::from_ptr(name) })
 }
 
@@ -425,14 +425,14 @@ unsafe extern "C" fn vulkan_next_image(
         struct_size: size_of::<FlutterVulkanImage>(),
         ..Default::default()
     };
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let Some(vulkan) = (unsafe { vulkan_surface(user_data) }) else {
         return image;
     };
     let size = if info.is_null() {
         (0, 0)
     } else {
-        // SAFETY: l'engine passa un FlutterFrameInfo valido per la durata della chiamata.
+        // SAFETY: the engine passes a FlutterFrameInfo valid for the duration of the call.
         let size = unsafe { (*info).size };
         (size.width, size.height)
     };
@@ -446,12 +446,12 @@ unsafe extern "C" fn vulkan_present(
     user_data: *mut c_void,
     _image: *const FlutterVulkanImage,
 ) -> bool {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     unsafe { vulkan_surface(user_data) }.is_some_and(VulkanSurface::present)
 }
 
 unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     if let Some(vsync) = &callbacks.vsync {
         vsync(VsyncBaton(baton));
@@ -459,7 +459,7 @@ unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
 }
 
 unsafe extern "C" fn post_task(task: FlutterTask, target_nanos: u64, user_data: *mut c_void) {
-    // SAFETY: user_data è quello del FlutterTaskRunnerDescription (vedi `callbacks`).
+    // SAFETY: user_data is the one of the FlutterTaskRunnerDescription (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     (callbacks.post_task)(Task {
         inner: task,
@@ -468,7 +468,7 @@ unsafe extern "C" fn post_task(task: FlutterTask, target_nanos: u64, user_data: 
 }
 
 unsafe extern "C" fn runs_on_current_thread(user_data: *mut c_void) -> bool {
-    // SAFETY: user_data è quello del FlutterTaskRunnerDescription (vedi `callbacks`).
+    // SAFETY: user_data is the one of the FlutterTaskRunnerDescription (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     callbacks.platform_thread == std::thread::current().id()
 }
@@ -477,17 +477,17 @@ unsafe extern "C" fn platform_message(
     message: *const FlutterPlatformMessage,
     user_data: *mut c_void,
 ) {
-    // SAFETY: user_data è quello passato a FlutterEngineRun (vedi `callbacks`).
+    // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     if message.is_null() {
         return;
     }
-    // SAFETY: l'engine passa un messaggio valido per la durata della chiamata.
+    // SAFETY: the engine passes a message valid for the duration of the call.
     let message = unsafe { &*message };
     let channel = if message.channel.is_null() {
         String::new()
     } else {
-        // SAFETY: il nome del canale è una stringa C terminata da NUL.
+        // SAFETY: the channel name is a NUL-terminated C string.
         unsafe { CStr::from_ptr(message.channel) }
             .to_string_lossy()
             .into_owned()
@@ -495,7 +495,7 @@ unsafe extern "C" fn platform_message(
     let data = if message.message.is_null() || message.message_size == 0 {
         Vec::new()
     } else {
-        // SAFETY: message punta a message_size byte validi durante la chiamata; si copiano.
+        // SAFETY: message points to message_size valid bytes during the call; they are copied.
         unsafe { std::slice::from_raw_parts(message.message, message.message_size) }.to_vec()
     };
     let response =
@@ -511,9 +511,9 @@ unsafe extern "C" fn key_handled(handled: bool, user_data: *mut c_void) {
     if user_data.is_null() {
         return;
     }
-    // SAFETY: user_data è il Box<KeyHandled> creato in send_key con Box::into_raw;
-    // l'engine chiama questo callback una sola volta per evento, quindi lo si
-    // riprende in possesso una sola volta.
+    // SAFETY: user_data is the Box<KeyHandled> created in send_key with Box::into_raw;
+    // the engine calls this callback only once per event, so ownership is taken back
+    // only once.
     let done = unsafe { Box::from_raw(user_data.cast::<KeyHandled>()) };
     done(handled);
 }
@@ -522,13 +522,13 @@ unsafe extern "C" fn reply_received(data: *const u8, size: usize, user_data: *mu
     if user_data.is_null() {
         return;
     }
-    // SAFETY: user_data è il Box<Reply> creato in send_message_with_reply; l'engine
-    // chiama il callback di un response handle una sola volta.
+    // SAFETY: user_data is the Box<Reply> created in send_message_with_reply; the engine
+    // calls the callback of a response handle only once.
     let reply = unsafe { Box::from_raw(user_data.cast::<Reply>()) };
     let bytes = if data.is_null() || size == 0 {
         Vec::new()
     } else {
-        // SAFETY: data punta a size byte validi durante la chiamata; si copiano.
+        // SAFETY: data points to size valid bytes during the call; they are copied.
         unsafe { std::slice::from_raw_parts(data, size) }.to_vec()
     };
     reply(bytes);
@@ -539,7 +539,7 @@ unsafe extern "C" fn log_message(tag: *const c_char, message: *const c_char, _: 
         if ptr.is_null() {
             String::new()
         } else {
-            // SAFETY: l'engine passa stringhe C terminate da NUL, valide durante la chiamata.
+            // SAFETY: the engine passes NUL-terminated C strings, valid during the call.
             unsafe { CStr::from_ptr(ptr) }
                 .to_string_lossy()
                 .into_owned()
@@ -549,12 +549,12 @@ unsafe extern "C" fn log_message(tag: *const c_char, message: *const c_char, _: 
 }
 
 impl Engine {
-    /// Carica l'engine e avvia l'app del bundle. Va chiamato sul thread di piattaforma,
-    /// lo stesso di `callbacks.platform_thread`.
+    /// Loads the engine and starts the bundle's app. Must be called on the platform thread,
+    /// the same as `callbacks.platform_thread`.
     pub fn run(config: &EngineConfig<'_>, callbacks: Callbacks) -> Result<Self, Error> {
-        // SAFETY: carica la libreria ufficiale dell'engine alla versione fissata in
-        // ENGINE_VERSION, la stessa dell'header da cui vengono i binding; i suoi
-        // inizializzatori non hanno precondizioni.
+        // SAFETY: loads the official engine library at the version pinned in
+        // ENGINE_VERSION, the same as the header the bindings come from; its
+        // initializers have no preconditions.
         let library = unsafe { FlutterEngineLib::new(config.library) }
             .map_err(|e| Error::Load(e.to_string()))?;
         let api = Api {
@@ -633,12 +633,12 @@ impl Engine {
             };
         }
 
-        // SAFETY: funzione senza argomenti né precondizioni.
+        // SAFETY: function without arguments or preconditions.
         let runs_aot = unsafe { (api.runs_aot)() };
         let aot_data = match (runs_aot, config.aot) {
             (false, Some(path)) => {
                 tracing::warn!(
-                    "engine debug: {} ignorato, il Dart gira in JIT",
+                    "debug engine: {} ignored, the Dart code runs in JIT",
                     path.display()
                 );
                 ptr::null_mut()
@@ -646,7 +646,8 @@ impl Engine {
             (false, None) => ptr::null_mut(),
             (true, None) => {
                 return Err(Error::Path(
-                    "engine release senza libapp.so: cargo xtask bundle <app> --release".to_owned(),
+                    "release engine without libapp.so: cargo xtask bundle <app> --release"
+                        .to_owned(),
                 ));
             }
             (true, Some(path)) => {
@@ -657,8 +658,8 @@ impl Engine {
                 };
                 source.__bindgen_anon_1.elf_path = elf.as_ptr();
                 let mut data: FlutterEngineAOTData = ptr::null_mut();
-                // SAFETY: source è inizializzato e il percorso vive durante la chiamata, che
-                // carica l'ELF e ne copia ciò che serve in data.
+                // SAFETY: source is initialized and the path lives during the call, which
+                // loads the ELF and copies what it needs into data.
                 check("FlutterEngineCreateAOTData", unsafe {
                     (api.create_aot)(&source, &mut data)
                 })?;
@@ -682,7 +683,7 @@ impl Engine {
         let dart_argv: Vec<*const c_char> = dart_strings.iter().map(|s| s.as_ptr()).collect();
         let argv: Vec<*const c_char> = strings.iter().skip(2).map(|s| s.as_ptr()).collect();
         let (Some(assets), Some(icu)) = (strings.first(), strings.get(1)) else {
-            return Err(Error::Path("argomenti mancanti".to_owned()));
+            return Err(Error::Path("missing arguments".to_owned()));
         };
         let args = FlutterProjectArgs {
             struct_size: size_of::<FlutterProjectArgs>(),
@@ -706,9 +707,9 @@ impl Engine {
         };
 
         let mut engine: FlutterEngine = ptr::null_mut();
-        // SAFETY: renderer e args sono struct inizializzate con struct_size corretto; i
-        // puntatori che contengono (stringhe, argv, runner, callbacks) restano vivi in
-        // Engine finché l'engine non viene spento in Drop.
+        // SAFETY: renderer and args are structs initialized with a correct struct_size; the
+        // pointers they contain (strings, argv, runner, callbacks) stay alive in Engine until
+        // the engine is shut down in Drop.
         let result = unsafe {
             (api.run)(
                 FLUTTER_ENGINE_VERSION as usize,
@@ -720,7 +721,7 @@ impl Engine {
         };
         if result != FlutterEngineResult::kSuccess || engine.is_null() {
             if !aot_data.is_null() {
-                // SAFETY: aot_data viene da FlutterEngineCreateAOTData e nessun engine lo usa.
+                // SAFETY: aot_data comes from FlutterEngineCreateAOTData and no engine uses it.
                 let _ = unsafe { (api.collect_aot)(aot_data) };
             }
             check("FlutterEngineRun", result)?;
@@ -741,22 +742,22 @@ impl Engine {
         })
     }
 
-    /// Orologio monotono dell'engine, in nanosecondi.
+    /// The engine's monotonic clock, in nanoseconds.
     pub fn current_time(&self) -> u64 {
-        // SAFETY: funzione senza argomenti né precondizioni.
+        // SAFETY: function without arguments or preconditions.
         unsafe { (self.api.time)() }
     }
 
-    /// Esegue un task ricevuto da `post_task`. Solo sul thread di piattaforma.
+    /// Runs a task received from `post_task`. Only on the platform thread.
     pub fn run_task(&self, task: &Task) -> Result<(), Error> {
-        // SAFETY: engine è vivo; task viene da post_task di questo engine e ogni task
-        // si esegue una volta sola (il chiamante lo consuma dalla coda).
+        // SAFETY: the engine is alive; task comes from this engine's post_task and every task
+        // runs only once (the caller consumes it from the queue).
         check("FlutterEngineRunTask", unsafe {
             (self.api.run_task)(self.engine, &task.inner)
         })
     }
 
-    /// Dimensione della vista in pixel fisici e rapporto pixel fisici / logici.
+    /// Size of the view in physical pixels and ratio of physical to logical pixels.
     pub fn send_window_metrics(
         &self,
         width: u32,
@@ -770,31 +771,31 @@ impl Engine {
             pixel_ratio,
             ..Default::default()
         };
-        // SAFETY: engine è vivo; event è inizializzato e vive per la durata della chiamata.
+        // SAFETY: the engine is alive; event is initialized and lives for the duration of the call.
         check("FlutterEngineSendWindowMetricsEvent", unsafe {
             (self.api.metrics)(self.engine, &event)
         })
     }
 
-    /// Porta la superficie EGL (se c'è) a `width`×`height` pixel fisici. Va chiamato prima
-    /// di mandare le metriche: Mesa fissa la dimensione del buffer quando il contesto
-    /// diventa corrente, prima del callback del frame.
+    /// Brings the EGL surface (if any) to `width`×`height` physical pixels. Must be called
+    /// before sending the metrics: Mesa fixes the buffer size when the context becomes
+    /// current, before the frame callback.
     pub fn resize_surface(&self, width: u32, height: u32) {
         if let Some(gl) = &self._callbacks.gl {
             gl.resize(width, height);
         }
     }
 
-    /// Risponde a una richiesta di vsync: il frame parte a `start` e va finito entro
-    /// `target`, nella base di [`Engine::current_time`].
+    /// Answers a vsync request: the frame starts at `start` and must be done by `target`,
+    /// in the base of [`Engine::current_time`].
     pub fn on_vsync(&self, baton: VsyncBaton, start: u64, target: u64) -> Result<(), Error> {
-        // SAFETY: engine è vivo; il baton viene da questo engine ed è consumato qui.
+        // SAFETY: the engine is alive; the baton comes from this engine and is consumed here.
         check("FlutterEngineOnVsync", unsafe {
             (self.api.on_vsync)(self.engine, baton.0, start, target)
         })
     }
 
-    /// Se la superficie EGL o Vulkan ha già presentato un frame; `true` in software.
+    /// Whether the EGL or Vulkan surface has already presented a frame; `true` in software.
     pub fn gl_presented(&self) -> bool {
         self._callbacks.gl.as_ref().is_none_or(GlSurface::presented)
             && self
@@ -804,9 +805,9 @@ impl Engine {
                 .is_none_or(VulkanSurface::presented)
     }
 
-    /// Chiede un frame anche se il framework non ne ha in programma.
+    /// Asks for a frame even if the framework has none scheduled.
     pub fn schedule_frame(&self) -> Result<(), Error> {
-        // SAFETY: engine è vivo; la funzione non ha altri argomenti.
+        // SAFETY: the engine is alive; the function has no other arguments.
         check("FlutterEngineScheduleFrame", unsafe {
             (self.api.schedule_frame)(self.engine)
         })
@@ -845,7 +846,7 @@ impl Engine {
             buttons: event.buttons,
             ..Default::default()
         };
-        // SAFETY: engine è vivo; raw è un array di un elemento inizializzato.
+        // SAFETY: the engine is alive; raw is an initialized one-element array.
         check("FlutterEngineSendPointerEvent", unsafe {
             (self.api.pointer)(self.engine, &raw, 1)
         })
@@ -853,7 +854,7 @@ impl Engine {
 }
 
 impl Engine {
-    /// Manda un tasto al framework; `handled` riceve se un widget l'ha consumato.
+    /// Sends a key to the framework; `handled` receives whether a widget consumed it.
     pub fn send_key(
         &self,
         event: &KeyEvent,
@@ -880,33 +881,33 @@ impl Engine {
         };
         let done: Box<KeyHandled> = Box::new(Box::new(handled));
         let user_data = Box::into_raw(done).cast::<c_void>();
-        // SAFETY: engine è vivo; raw e character vivono per la durata della chiamata
-        // (l'engine copia l'evento); user_data passa a key_handled, che lo libera.
+        // SAFETY: the engine is alive; raw and character live for the duration of the call
+        // (the engine copies the event); user_data passes to key_handled, which frees it.
         let result = unsafe { (self.api.key)(self.engine, &raw, Some(key_handled), user_data) };
         if result != FlutterEngineResult::kSuccess {
-            // L'engine ha rifiutato l'evento e non chiamerà key_handled: si libera qui.
-            // SAFETY: user_data viene da Box::into_raw qui sopra e non è stato consumato.
+            // The engine rejected the event and will not call key_handled: free it here.
+            // SAFETY: user_data comes from Box::into_raw above and was not consumed.
             drop(unsafe { Box::from_raw(user_data.cast::<KeyHandled>()) });
         }
         check("FlutterEngineSendKeyEvent", result)
     }
 
-    /// Risponde a un messaggio di piattaforma; `data` vuoto vuol dire "non gestito".
+    /// Answers a platform message; empty `data` means "not handled".
     pub fn respond(&self, handle: ResponseHandle, data: &[u8]) -> Result<(), Error> {
         let pointer = if data.is_empty() {
             ptr::null()
         } else {
             data.as_ptr()
         };
-        // SAFETY: engine è vivo; handle viene da un messaggio di questo engine ed è
-        // consumato qui (ResponseHandle non è Clone); data vive durante la chiamata.
+        // SAFETY: the engine is alive; handle comes from a message of this engine and is
+        // consumed here (ResponseHandle is not Clone); data lives during the call.
         check("FlutterEngineSendPlatformMessageResponse", unsafe {
             (self.api.respond)(self.engine, handle.0, pointer, data.len())
         })
     }
 
-    /// Manda un messaggio al framework su `channel`; `reply` riceve la risposta
-    /// (vuota se nessuno lo gestisce).
+    /// Sends a message to the framework on `channel`; `reply` receives the response
+    /// (empty if nobody handles it).
     pub fn send_message_with_reply(
         &self,
         channel: &str,
@@ -917,12 +918,12 @@ impl Engine {
         let boxed: Box<Reply> = Box::new(Box::new(reply));
         let user_data = Box::into_raw(boxed).cast::<c_void>();
         let mut handle: *mut FlutterPlatformMessageResponseHandle = ptr::null_mut();
-        // SAFETY: engine è vivo; user_data passa a reply_received, che lo libera.
+        // SAFETY: the engine is alive; user_data passes to reply_received, which frees it.
         let created = unsafe {
             (self.api.create_reply)(self.engine, Some(reply_received), user_data, &mut handle)
         };
         if created != FlutterEngineResult::kSuccess || handle.is_null() {
-            // SAFETY: l'handle non esiste, quindi reply_received non verrà chiamato.
+            // SAFETY: the handle does not exist, so reply_received will not be called.
             drop(unsafe { Box::from_raw(user_data.cast::<Reply>()) });
             return check("FlutterPlatformMessageCreateResponseHandle", created);
         }
@@ -933,16 +934,16 @@ impl Engine {
             message_size: data.len(),
             response_handle: handle,
         };
-        // SAFETY: engine è vivo; message, channel e data vivono durante la chiamata.
+        // SAFETY: the engine is alive; message, channel and data live during the call.
         let sent = unsafe { (self.api.send_message)(self.engine, &message) };
-        // SAFETY: l'handle è stato creato qui; dopo l'invio l'engine ne tiene una copia
-        // propria e quello dell'embedder va rilasciato (flutter_embedder.h).
+        // SAFETY: the handle was created here; after sending, the engine keeps its own copy
+        // and the embedder's must be released (flutter_embedder.h).
         let released = unsafe { (self.api.release_reply)(self.engine, handle) };
         check("FlutterEngineSendPlatformMessage", sent)?;
         check("FlutterPlatformMessageReleaseResponseHandle", released)
     }
 
-    /// Manda un messaggio senza risposta al framework su `channel`.
+    /// Sends a message without a response to the framework on `channel`.
     pub fn send_message(&self, channel: &str, data: &[u8]) -> Result<(), Error> {
         let channel = CString::new(channel).map_err(|_| Error::Path(channel.to_owned()))?;
         let message = FlutterPlatformMessage {
@@ -952,7 +953,7 @@ impl Engine {
             message_size: data.len(),
             response_handle: ptr::null(),
         };
-        // SAFETY: engine è vivo; message, channel e data vivono durante la chiamata.
+        // SAFETY: the engine is alive; message, channel and data live during the call.
         check("FlutterEngineSendPlatformMessage", unsafe {
             (self.api.send_message)(self.engine, &message)
         })
@@ -961,14 +962,14 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        // SAFETY: engine è vivo e non più usato dopo; i campi che l'engine referenzia
-        // vengono distrutti solo dopo questa chiamata (ordine dei campi in Engine).
+        // SAFETY: the engine is alive and no longer used afterwards; the fields the engine
+        // references are destroyed only after this call (field order in Engine).
         let result = unsafe { (self.api.shutdown)(self.engine) };
         if let Err(err) = check("FlutterEngineShutdown", result) {
             tracing::warn!("{err}");
         }
         if !self.aot_data.is_null() {
-            // SAFETY: l'engine che usava i dati AOT è spento; si liberano una volta sola.
+            // SAFETY: the engine that used the AOT data is shut down; they are freed only once.
             let result = unsafe { (self.api.collect_aot)(self.aot_data) };
             if let Err(err) = check("FlutterEngineCollectAOTData", result) {
                 tracing::warn!("{err}");
@@ -977,7 +978,7 @@ impl Drop for Engine {
     }
 }
 
-/// `VK_API_VERSION_1_1`, la versione con cui sono creati istanza e dispositivo.
+/// `VK_API_VERSION_1_1`, the version the instance and the device are created with.
 fn ash_api_version_1_1() -> u32 {
     ash::vk::API_VERSION_1_1
 }

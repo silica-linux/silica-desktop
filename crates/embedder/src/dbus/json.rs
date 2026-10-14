@@ -1,33 +1,34 @@
-//! Conversione fra JSON (il canale `silica/dbus`) e valori D-Bus.
+//! Conversion between JSON (the `silica/dbus` channel) and D-Bus values.
 //!
-//! Verso D-Bus serve la firma: Dart manda i valori JSON e la firma degli argomenti, e la
-//! conversione segue la firma (un numero diventa `u`, `i` o `d` a seconda di cosa si
-//! aspetta il metodo). Dentro un variante (`v`) la firma non c'è e il tipo si deduce dal
-//! JSON. Da D-Bus a JSON la conversione è senza perdite salvo i descrittori di file.
+//! Towards D-Bus the signature is needed: Dart sends the JSON values and the signature of the
+//! arguments, and the conversion follows the signature (a number becomes `u`, `i` or `d`
+//! depending on what the method expects). Inside a variant (`v`) there is no signature and the
+//! type is deduced from the JSON. From D-Bus to JSON the conversion is lossless except for file
+//! descriptors.
 
 use serde_json::{Map, Number, Value as Json};
 use zbus::zvariant::{Array, Dict, ObjectPath, Signature, Str, StructureBuilder, Value};
 
-/// I valori di `args` secondo la firma degli argomenti (`""` per nessun argomento, `"us"`,
+/// The values of `args` according to the argument signature (`""` for no arguments, `"us"`,
 /// `"a{sv}"`…).
 pub fn to_args(signature: &str, args: &[Json]) -> Result<Vec<Value<'static>>, String> {
     if signature.is_empty() {
         return if args.is_empty() {
             Ok(Vec::new())
         } else {
-            Err(format!("{} argomenti per la firma vuota", args.len()))
+            Err(format!("{} arguments for the empty signature", args.len()))
         };
     }
-    // Più tipi completi si leggono come i campi di una struttura.
+    // Several complete types are read as the fields of a structure.
     let parsed = Signature::try_from(format!("({signature})").as_str())
-        .map_err(|e| format!("firma «{signature}» non valida: {e}"))?;
+        .map_err(|e| format!("invalid signature «{signature}»: {e}"))?;
     let Signature::Structure(fields) = &parsed else {
-        return Err(format!("firma «{signature}» non valida"));
+        return Err(format!("invalid signature «{signature}»"));
     };
     let fields: Vec<&Signature> = fields.iter().collect();
     if fields.len() != args.len() {
         return Err(format!(
-            "la firma «{signature}» vuole {} argomenti, ne sono arrivati {}",
+            "signature «{signature}» wants {} arguments, {} arrived",
             fields.len(),
             args.len()
         ));
@@ -39,9 +40,9 @@ pub fn to_args(signature: &str, args: &[Json]) -> Result<Vec<Value<'static>>, St
         .collect()
 }
 
-/// Un valore JSON con la firma attesa.
+/// A JSON value with the expected signature.
 pub fn to_value(signature: &Signature, json: &Json) -> Result<Value<'static>, String> {
-    let mismatch = || format!("{json} non è un valore di tipo «{signature}»");
+    let mismatch = || format!("{json} is not a value of type «{signature}»");
     let int = || json.as_i64().ok_or_else(mismatch);
     let uint = || json.as_u64().ok_or_else(mismatch);
     Ok(match signature {
@@ -95,12 +96,12 @@ pub fn to_value(signature: &Signature, json: &Json) -> Result<Value<'static>, St
             }
             Value::Structure(builder.build().map_err(|e| e.to_string())?)
         }
-        _ => return Err(format!("tipo «{signature}» non supportato dal canale")),
+        _ => return Err(format!("type «{signature}» not supported by the channel")),
     })
 }
 
-/// Le chiavi degli oggetti JSON sono stringhe: per i dizionari con chiavi numeriche si
-/// leggono come numeri.
+/// The keys of JSON objects are strings: for dictionaries with numeric keys they are read
+/// as numbers.
 fn dict_key(signature: &Signature, key: &str) -> Result<Value<'static>, String> {
     match signature {
         Signature::Str | Signature::ObjectPath | Signature::Signature => {
@@ -110,18 +111,18 @@ fn dict_key(signature: &Signature, key: &str) -> Result<Value<'static>, String> 
         _ => {
             let number: Number = key
                 .parse()
-                .map_err(|_| format!("chiave «{key}» non è un numero"))?;
+                .map_err(|_| format!("key «{key}» is not a number"))?;
             to_value(signature, &Json::Number(number))
         }
     }
 }
 
-/// Il tipo di un valore dentro un variante, dedotto dal JSON: interi `i` (o `x` se non
-/// stanno in 32 bit), decimali `d`, liste di stringhe `as`, altre liste `av`, oggetti
+/// The type of a value inside a variant, deduced from the JSON: integers `i` (or `x` if they
+/// do not fit in 32 bits), decimals `d`, string lists `as`, other lists `av`, objects
 /// `a{sv}`.
 pub fn infer(json: &Json) -> Result<Value<'static>, String> {
     Ok(match json {
-        Json::Null => return Err("null non ha un tipo D-Bus".to_owned()),
+        Json::Null => return Err("null has no D-Bus type".to_owned()),
         Json::Bool(b) => Value::Bool(*b),
         Json::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
             (Some(i), _, _) => match i32::try_from(i) {
@@ -130,7 +131,7 @@ pub fn infer(json: &Json) -> Result<Value<'static>, String> {
             },
             (None, Some(u), _) => Value::U64(u),
             (_, _, Some(f)) => Value::F64(f),
-            _ => return Err(format!("numero {n} non rappresentabile")),
+            _ => return Err(format!("number {n} cannot be represented")),
         },
         Json::String(s) => Value::Str(Str::from(s.clone())),
         Json::Array(items) => {
@@ -145,7 +146,7 @@ pub fn infer(json: &Json) -> Result<Value<'static>, String> {
     })
 }
 
-/// Un valore D-Bus in JSON.
+/// A D-Bus value as JSON.
 pub fn to_json(value: &Value<'_>) -> Json {
     match value {
         Value::U8(v) => Json::from(*v),
@@ -170,7 +171,7 @@ pub fn to_json(value: &Value<'_>) -> Json {
         Value::Structure(structure) => {
             Json::Array(structure.fields().iter().map(to_json).collect())
         }
-        // Descrittori di file (e i Maybe di GVariant) non attraversano il canale.
+        // File descriptors (and GVariant's Maybe) do not cross the channel.
         #[allow(unreachable_patterns)]
         _ => Json::Null,
     }
@@ -207,20 +208,23 @@ mod tests {
 
     #[test]
     fn containers_and_variants() {
-        let dict = json!({"Volume": 0.5, "Muted": false, "Name": "Uscita", "Tags": ["a", "b"]});
+        let dict = json!({"Volume": 0.5, "Muted": false, "Name": "Output", "Tags": ["a", "b"]});
         assert_eq!(roundtrip("a{sv}", dict.clone()), dict);
         assert_eq!(
             roundtrip("a(ou)", json!([["/x", 1], ["/y", 2]])),
             json!([["/x", 1], ["/y", 2]])
         );
-        assert_eq!(roundtrip("a{us}", json!({"3": "tre"})), json!({"3": "tre"}));
+        assert_eq!(
+            roundtrip("a{us}", json!({"3": "three"})),
+            json!({"3": "three"})
+        );
     }
 
     #[test]
     fn bad_input_is_an_error_not_a_crash() {
         assert!(to_args("u", &[json!(-1)]).is_err());
         assert!(to_args("y", &[json!(256)]).is_err());
-        assert!(to_args("o", &[json!("non un percorso")]).is_err());
+        assert!(to_args("o", &[json!("not a path")]).is_err());
         assert!(to_args("(ii)", &[json!([1])]).is_err());
         assert!(to_args("u", &[]).is_err());
         assert!(to_args("a{", &[json!(1)]).is_err());

@@ -1,13 +1,13 @@
-//! Embedder Flutter in Rust: un client Wayland che ospita l'engine Flutter.
+//! Flutter embedder in Rust: a Wayland client that hosts the Flutter engine.
 //!
-//! - Il thread principale è il thread di piattaforma: gira il ciclo Wayland (calloop) ed
-//!   esegue i task che l'engine vi accoda.
-//! - L'engine disegna sul suo thread raster con OpenGL ES (EGL sulla `wl_surface`, lo
-//!   swap fa il commit) oppure in software: ogni frame arriva qui per canale e va in un
-//!   buffer `wl_shm`. Il software è il default perché gira ovunque, anche su Ossido headless.
-//! - Gli eventi del puntatore diventano `FlutterPointerEvent` in pixel fisici; i tasti
-//!   `FlutterKeyEvent`, e quelli che il framework non consuma vanno al campo di testo
-//!   attivo (`flutter/textinput`).
+//! - The main thread is the platform thread: it runs the Wayland loop (calloop) and
+//!   executes the tasks the engine queues on it.
+//! - The engine draws on its raster thread with OpenGL ES (EGL on the `wl_surface`, the
+//!   swap commits) or in software: every frame arrives here over a channel and goes into a
+//!   `wl_shm` buffer. Software is the default because it runs everywhere, even on headless Ossido.
+//! - Pointer events become `FlutterPointerEvent` in physical pixels; keys become
+//!   `FlutterKeyEvent`, and those the framework does not consume go to the active text
+//!   field (`flutter/textinput`).
 
 mod appearance;
 mod codec;
@@ -49,12 +49,12 @@ pub enum LayerKeyboard {
     OnDemand,
 }
 
-/// L'app come superficie della shell (wlr-layer-shell) invece che come finestra.
+/// The app as a shell surface (wlr-layer-shell) instead of a window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerOptions {
     pub layer: LayerKind,
     pub anchor: Anchors,
-    /// Pixel logici riservati sul bordo ancorato; le finestre non ci vanno sopra.
+    /// Logical pixels reserved on the anchored edge; windows do not go over them.
     pub exclusive_zone: i32,
     pub keyboard: LayerKeyboard,
     pub namespace: String,
@@ -64,17 +64,17 @@ pub struct LayerOptions {
 pub enum Renderer {
     #[default]
     Software,
-    /// OpenGL ES con Skia.
+    /// OpenGL ES with Skia.
     Gl,
-    /// OpenGL ES con Impeller, il renderer della shell (gate 1). Su un driver GL software
-    /// (llvmpipe) Impeller va in crash nell'engine: lì si ripiega su Skia.
+    /// OpenGL ES with Impeller, the shell renderer (gate 1). On a software GL driver
+    /// (llvmpipe) Impeller crashes inside the engine: there it falls back to Skia.
     Impeller,
-    /// Vulkan con Impeller (swapchain sulla superficie Wayland). Senza Vulkan si ripiega su
-    /// OpenGL ES con Impeller.
+    /// Vulkan with Impeller (swapchain on the Wayland surface). Without Vulkan it falls back to
+    /// OpenGL ES with Impeller.
     Vulkan,
 }
 
-/// Driver GL che rasterizzano sulla CPU, dal `GL_RENDERER` di Mesa.
+/// GL drivers that rasterize on the CPU, from Mesa's `GL_RENDERER`.
 pub fn is_software_gl(renderer: &str) -> bool {
     let renderer = renderer.to_ascii_lowercase();
     ["llvmpipe", "softpipe", "swrast", "lavapipe"]
@@ -83,36 +83,36 @@ pub fn is_software_gl(renderer: &str) -> bool {
 }
 
 pub struct Options {
-    /// Cartella `flutter_assets` del bundle.
+    /// The `flutter_assets` folder of the bundle.
     pub bundle: PathBuf,
     pub library: PathBuf,
     pub icu_data: PathBuf,
-    /// Dimensione iniziale della finestra in pixel logici, se il compositor non ne sceglie una.
-    /// Per un layer, i lati ancorati su entrambi i bordi li decide il compositor.
+    /// Initial window size in logical pixels, if the compositor does not choose one.
+    /// For a layer, the sides anchored on both edges are decided by the compositor.
     pub size: (u32, u32),
     pub layer: Option<LayerOptions>,
     pub renderer: Renderer,
-    /// `libapp.so` compilato AOT, per un engine release; con un engine debug si ignora.
+    /// AOT-compiled `libapp.so`, for a release engine; ignored with a debug engine.
     pub aot: Option<PathBuf>,
-    /// Opzioni passate all'engine così come sono (`--engine-arg`).
+    /// Options passed to the engine as they are (`--engine-arg`).
     pub engine_args: Vec<String>,
-    /// Argomenti di `main(List<String> args)` dell'app (`--dart-arg`).
+    /// Arguments of the app's `main(List<String> args)` (`--dart-arg`).
     pub dart_args: Vec<String>,
-    /// Titolo iniziale della finestra (`--title`); l'app lo cambia con
+    /// Initial window title (`--title`); the app changes it with
     /// `SystemChrome.setApplicationSwitcherDescription`.
     pub title: String,
-    /// App id della finestra (`--app-id`): lega la finestra alla sua voce `.desktop`.
+    /// Window app id (`--app-id`): ties the window to its `.desktop` entry.
     pub app_id: String,
 }
 
-/// `target/flutter-engine/<ENGINE_VERSION>` del workspace, dove lo mette `cargo xtask engine`.
+/// `target/flutter-engine/<ENGINE_VERSION>` of the workspace, where `cargo xtask engine` puts it.
 pub fn default_engine_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/flutter-engine")
         .join(include_str!("../ENGINE_VERSION").trim())
 }
 
-/// L'engine release compilato da `cargo xtask engine --release` (`docs/engine-release.md`).
+/// The release engine built by `cargo xtask engine --release` (`docs/engine-release.md`).
 pub fn release_engine_dir() -> PathBuf {
     let mut dir = default_engine_dir().into_os_string();
     dir.push("-release");

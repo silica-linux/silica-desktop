@@ -1,9 +1,9 @@
-//! Il canale `silica/glass`: le regioni di vetro dichiarate dai widget `Glass` di
-//! `silica_ui`, passate a Ossido con `silica-glass-v1` (`docs/protocols.md`).
+//! The `silica/glass` channel: the glass regions declared by `silica_ui`'s `Glass` widgets,
+//! passed to Ossido with `silica-glass-v1` (`docs/protocols.md`).
 //!
-//! Il messaggio arriva dal codice Dart dell'app: si controlla qui (dimensioni positive,
-//! raggio finito, al più 64 regioni) perché un valore sbagliato non diventi un errore di
-//! protocollo che disconnetterebbe l'app.
+//! The message comes from the app's Dart code: it is checked here (positive sizes, finite
+//! radius, at most 64 regions) so that a wrong value does not become a protocol error that
+//! would disconnect the app.
 
 use serde_json::{Value, json};
 use silica_protocols::glass::MAX_REGIONS;
@@ -14,7 +14,7 @@ use wayland_client::{Dispatch, Proxy, QueueHandle};
 
 pub const CHANNEL: &str = "silica/glass";
 
-/// Una regione in pixel logici della superficie.
+/// A region in logical pixels of the surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Region {
     pub x: i32,
@@ -23,19 +23,19 @@ pub struct Region {
     pub height: i32,
     pub radius: f64,
     pub material: Material,
-    /// 0–1: il vetro si compone con questa opacità (silica-glass-v1 versione 3).
+    /// 0–1: the glass is composed with this opacity (silica-glass-v1 version 3).
     pub opacity: f64,
-    /// Una punta rivolta in basso invece di un rettangolo (versione 4, `add_tip`).
+    /// A downward tip instead of a rectangle (version 4, `add_tip`).
     pub tip: bool,
-    /// Una punta rivolta in alto (versione 5, `add_upward_tip`).
+    /// An upward tip (version 5, `add_upward_tip`).
     pub tip_up: bool,
-    /// Le regioni si fondono solo nello stesso gruppo; un gruppo più alto sta sopra
-    /// (versione 4, `separate`).
+    /// Regions merge only within the same group; a higher group is drawn on top
+    /// (version 4, `separate`).
     pub group: u32,
 }
 
 impl Region {
-    /// Una regione dal JSON di `setRegions`, se valida.
+    /// A region from the JSON of `setRegions`, if valid.
     fn from_json(value: &Value) -> Option<Self> {
         let int = |name: &str| {
             value
@@ -55,7 +55,7 @@ impl Region {
             Some("notification") => Material::Notification,
             _ => Material::Clear,
         };
-        // Opacità da antenati in dissolvenza; senza, piena.
+        // Opacity from fading ancestors; without it, full.
         let opacity = value
             .get("opacity")
             .and_then(Value::as_f64)
@@ -80,7 +80,7 @@ impl Region {
     }
 }
 
-/// Le regioni valide di un `setRegions`, al più `MAX_REGIONS`.
+/// The valid regions of a `setRegions`, at most `MAX_REGIONS`.
 pub fn parse_regions(args: &Value) -> Vec<Region> {
     args.as_array()
         .map(|list| {
@@ -89,14 +89,14 @@ pub fn parse_regions(args: &Value) -> Vec<Region> {
                 .filter_map(Region::from_json)
                 .take(MAX_REGIONS)
                 .collect();
-            // Per gruppo (stabile): `separate` divide le regioni in ordine.
+            // By group (stable): `separate` splits the regions in order.
             regions.sort_by_key(|r| r.group);
             regions
         })
         .unwrap_or_default()
 }
 
-/// Il vetro della superficie dell'app.
+/// The glass of the app surface.
 pub struct Glass {
     manager: Option<SilicaGlassManagerV1>,
     object: Option<SilicaGlassV1>,
@@ -112,8 +112,8 @@ impl Glass {
         }
     }
 
-    /// Gestisce una chiamata del canale. Restituisce la risposta (JSON method codec) e se
-    /// le regioni sono cambiate: in quel caso serve un commit della superficie.
+    /// Handles a channel call. Returns the reply (JSON method codec) and whether the regions
+    /// changed: in that case the surface needs a commit.
     pub fn handle_call<D>(
         &mut self,
         message: &[u8],
@@ -132,7 +132,7 @@ impl Glass {
                 let changed = self.set_regions(regions, surface, qh);
                 (reply(json!(self.manager.is_some())), changed)
             }
-            // Ossido offre il vetro? Senza, l'app disegna un fondo opaco.
+            // Does Ossido offer glass? Without it, the app draws an opaque background.
             Some("isSupported") => (reply(json!(self.manager.is_some())), false),
             _ => (Vec::new(), false),
         }
@@ -157,19 +157,19 @@ impl Glass {
             .object
             .get_or_insert_with(|| manager.get_glass(surface, qh, ()));
         object.clear();
-        // Un Ossido con la versione 1 del protocollo non conosce il vetro delle notifiche:
-        // il più vicino è quello spesso.
+        // An Ossido with version 1 of the protocol does not know the notification glass:
+        // the closest one is the thick glass.
         let notification = object.version() >= 2;
         let translucent = object.version() >= 3;
         let groups = object.version() >= 4;
         let mut group = regions.first().map_or(0, |r| r.group);
         for region in &regions {
             if region.tip_up && object.version() < 5 {
-                // Un Ossido senza la versione 5 non sa disegnare la punta in alto.
+                // An Ossido without version 5 cannot draw the upward tip.
                 continue;
             }
             if region.tip && !groups {
-                // Un Ossido senza la versione 4 non sa disegnare la punta.
+                // An Ossido without version 4 cannot draw the tip.
                 continue;
             }
             if groups && region.group != group {
@@ -209,8 +209,8 @@ impl Glass {
                     region.opacity,
                 );
             } else if region.opacity >= 0.5 || translucent {
-                // Un Ossido senza la versione 3 compone il vetro pieno: meglio niente vetro
-                // per una regione quasi invisibile.
+                // An Ossido without version 3 composes the glass at full opacity: better no
+                // glass for an almost invisible region.
                 object.add_region(
                     region.x,
                     region.y,
@@ -240,13 +240,13 @@ mod tests {
             {"x": 0, "y": 0, "width": -1, "height": 30},
             {"x": 0, "y": 0, "width": 10, "height": 10, "radius": -3},
             {"y": 0, "width": 10, "height": 10},
-            "non è una regione"
+            "not a region"
         ]);
         let regions = parse_regions(&args);
         assert_eq!(regions.len(), 3);
         assert_eq!((regions[0].y, regions[0].radius), (20, 22.0));
         assert_eq!(regions[1].material, Material::Thick);
-        // Raggio negativo: si usa 0, la regione resta.
+        // Negative radius: 0 is used, the region stays.
         assert_eq!(regions[2].radius, 0.0);
         let many = Value::Array(vec![json!({"x": 0, "y": 0, "width": 1, "height": 1}); 100]);
         assert_eq!(parse_regions(&many).len(), MAX_REGIONS);
@@ -260,7 +260,7 @@ mod tests {
             {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": 0.25},
             {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": 7},
             {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": -1},
-            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": "metà"}
+            {"x": 0, "y": 0, "width": 10, "height": 10, "opacity": "half"}
         ]));
         let opacities: Vec<f64> = regions.iter().map(|r| r.opacity).collect();
         assert_eq!(opacities, [1.0, 0.25, 1.0, 0.0, 1.0]);
@@ -271,7 +271,7 @@ mod tests {
         let regions = parse_regions(&json!([
             {"x": 0, "y": 0, "width": 10, "height": 10, "group": 1},
             {"x": 0, "y": 0, "width": 22, "height": 8, "shape": "tip"},
-            {"x": 0, "y": 0, "width": 10, "height": 10, "group": "uno"}
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": "one"}
         ]));
         let summary: Vec<(u32, bool)> = regions.iter().map(|r| (r.group, r.tip)).collect();
         assert_eq!(summary, [(0, true), (0, false), (1, false)]);

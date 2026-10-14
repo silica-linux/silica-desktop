@@ -1,27 +1,27 @@
-//! Il trascinamento fra app (`wl_data_device`), canale `silica/drag` (JSONMethodCodec).
+//! Drag and drop between apps (`wl_data_device`), channel `silica/drag` (JSONMethodCodec).
 //!
-//! Dall'app:
-//! - `start {uris, icon?: {width, height, rgba}}`: comincia un trascinamento con il seriale
-//!   dell'ultima pressione; offre `text/uri-list`. `rgba` è l'immagine in base64 (RGBA
-//!   premoltiplicato, righe dall'alto), che Ossido disegna con l'angolo sul puntatore.
-//!   Risponde se è partito.
+//! From the app:
+//! - `start {uris, icon?: {width, height, rgba}}`: starts a drag with the serial of the last
+//!   press; offers `text/uri-list`. `rgba` is the image in base64 (premultiplied RGBA, rows
+//!   from the top), which Ossido draws with its corner on the pointer.
+//!   Answers whether it started.
 //!
-//! Verso l'app (chiamate sullo stesso canale):
-//! - `finished {action}`: il trascinamento uscito da qui è finito (`copy`, `move` o `none`);
-//! - `enter {x, y}`, `motion {x, y}`, `leave`: un trascinamento con `text/uri-list` sopra la
-//!   finestra (coordinate logiche);
-//! - `drop {x, y, uris}`: il rilascio, con gli URI già letti.
+//! To the app (calls on the same channel):
+//! - `finished {action}`: the drag that left from here has finished (`copy`, `move` or `none`);
+//! - `enter {x, y}`, `motion {x, y}`, `leave`: a drag with `text/uri-list` over the
+//!   window (logical coordinates);
+//! - `drop {x, y, uris}`: the drop, with the URIs already read.
 
 use serde_json::{Value, json};
 
 pub const CHANNEL: &str = "silica/drag";
 pub const URI_LIST: &str = "text/uri-list";
 
-/// Al più tanti URI in un trascinamento, e un'icona al più tanto grande per lato.
+/// At most this many URIs in a drag, and an icon at most this large per side.
 const MAX_URIS: usize = 10_000;
 const MAX_ICON_SIDE: u32 = 512;
 
-/// Un'icona del trascinamento: lato e pixel in ARGB8888 di Wayland (B, G, R, A in memoria).
+/// A drag icon: size and pixels in Wayland's ARGB8888 (B, G, R, A in memory).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DragIcon {
     pub width: u32,
@@ -29,14 +29,14 @@ pub struct DragIcon {
     pub bgra: Vec<u8>,
 }
 
-/// Una richiesta `start` letta.
+/// A parsed `start` request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Start {
     pub uris: Vec<String>,
     pub icon: Option<DragIcon>,
 }
 
-/// Il corpo `text/uri-list` (RFC 2483): una riga per URI, terminata da CRLF.
+/// The `text/uri-list` body (RFC 2483): one line per URI, terminated by CRLF.
 pub fn uri_list(uris: &[String]) -> Vec<u8> {
     let mut out = String::new();
     for uri in uris {
@@ -46,7 +46,7 @@ pub fn uri_list(uris: &[String]) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// Gli URI di un corpo `text/uri-list`: righe non vuote, senza i commenti `#`.
+/// The URIs of a `text/uri-list` body: non-empty lines, without `#` comments.
 pub fn parse_uri_list(data: &[u8]) -> Vec<String> {
     String::from_utf8_lossy(data)
         .lines()
@@ -57,7 +57,7 @@ pub fn parse_uri_list(data: &[u8]) -> Vec<String> {
         .collect()
 }
 
-/// Legge `start`: gli URI (stringhe non vuote senza a capo) e l'icona, se valida.
+/// Reads `start`: the URIs (non-empty strings without newlines) and the icon, if valid.
 pub fn parse_start(args: &Value) -> Option<Start> {
     let uris: Vec<String> = args
         .get("uris")?
@@ -104,7 +104,7 @@ fn parse_icon(icon: &Value) -> Option<DragIcon> {
     })
 }
 
-/// Base64 standard (con o senza `=` finali); None se c'è un carattere estraneo.
+/// Standard Base64 (with or without trailing `=`); None if there is a foreign character.
 pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
     fn value(c: u8) -> Option<u32> {
         match c {
@@ -134,7 +134,7 @@ pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Una chiamata verso l'app.
+/// A call to the app.
 pub fn call(method: &str, args: Value) -> Vec<u8> {
     serde_json::to_vec(&json!({ "method": method, "args": args })).unwrap_or_default()
 }
@@ -144,7 +144,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uri_list_andata_e_ritorno() {
+    fn uri_list_round_trip() {
         let uris = vec![
             "file:///tmp/a%20b.txt".to_owned(),
             "file:///home/x/".to_owned(),
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(body, b"file:///tmp/a%20b.txt\r\nfile:///home/x/\r\n");
         assert_eq!(parse_uri_list(&body), uris);
         assert_eq!(
-            parse_uri_list(b"# commento\r\nfile:///c\n\n  file:///d  \r\n"),
+            parse_uri_list(b"# comment\r\nfile:///c\n\n  file:///d  \r\n"),
             vec!["file:///c".to_owned(), "file:///d".to_owned()]
         );
     }
@@ -172,10 +172,10 @@ mod tests {
     }
 
     #[test]
-    fn start_con_icona_e_input_ostile() {
-        // Un pixel rosso premoltiplicato: R G B A → B G R A.
+    fn start_with_icon_and_hostile_input() {
+        // A premultiplied red pixel: R G B A → B G R A.
         let start = parse_start(&json!({
-            "uris": ["file:///a", "", "file:///b\r\nfile:///iniettato", 3],
+            "uris": ["file:///a", "", "file:///b\r\nfile:///injected", 3],
             "icon": {"width": 1, "height": 1, "rgba": "/wAA/w=="},
         }))
         .unwrap();
@@ -183,7 +183,7 @@ mod tests {
         let icon = start.icon.unwrap();
         assert_eq!((icon.width, icon.height), (1, 1));
         assert_eq!(icon.bgra, vec![0, 0, 255, 255]);
-        // Dimensioni che non tornano con i pixel, o enormi: niente icona, il resto vale.
+        // Sizes that do not match the pixels, or huge ones: no icon, the rest stands.
         let wrong = parse_start(&json!({
             "uris": ["file:///a"],
             "icon": {"width": 2, "height": 1, "rgba": "/wAA/w=="},

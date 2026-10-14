@@ -1,8 +1,8 @@
-//! Il renderer OpenGL ES dell'engine: EGL sulla `wl_surface` dell'app.
+//! The engine's OpenGL ES renderer: EGL on the app's `wl_surface`.
 //!
-//! L'engine chiama questi callback dal thread raster (contesto della finestra, swap,
-//! ridimensionamento) e dal thread IO (contesto delle risorse, condiviso con il primo).
-//! `eglSwapBuffers` fa da sé attach e commit della superficie.
+//! The engine calls these callbacks from the raster thread (window context, swap,
+//! resize) and from the IO thread (resource context, shared with the first one).
+//! `eglSwapBuffers` attaches and commits the surface by itself.
 
 use std::ffi::c_void;
 use std::sync::Mutex;
@@ -18,7 +18,7 @@ use super::Error;
 
 /// EGL_PLATFORM_WAYLAND_KHR (EGL_KHR_platform_wayland).
 const PLATFORM_WAYLAND: egl::Enum = 0x31D8;
-/// GL_RENDERER, per `glGetString`.
+/// GL_RENDERER, for `glGetString`.
 const GL_RENDERER: u32 = 0x1F01;
 
 type GetStringFn = unsafe extern "C" fn(u32) -> *const std::ffi::c_char;
@@ -27,45 +27,45 @@ fn egl_error(call: &'static str) -> impl Fn(egl::Error) -> Error {
     move |err| Error::Gl(call, err.to_string())
 }
 
-/// Contesti e superficie EGL dell'app. Vive in [`super::Callbacks`] finché l'engine gira.
+/// The app's EGL contexts and surface. Lives in [`super::Callbacks`] while the engine runs.
 pub struct GlSurface {
     egl: egl::DynamicInstance<egl::EGL1_5>,
     display: egl::Display,
     context: egl::Context,
     resource_context: egl::Context,
     surface: egl::Surface,
-    /// La finestra EGL e la sua dimensione in pixel fisici; la ridimensiona il thread raster.
+    /// The EGL window and its size in physical pixels; the raster thread resizes it.
     window: Mutex<(WlEglSurface, (u32, u32))>,
-    /// Ridimensionata dall'ultimo swap: Mesa (almeno il percorso software di WSL) applica
-    /// la dimensione nuova solo dal buffer successivo, quindi serve un altro frame.
+    /// Resized since the last swap: Mesa (at least WSL's software path) applies the new
+    /// size only from the next buffer, so another frame is needed.
     resized: AtomicBool,
-    /// Almeno un frame è arrivato al compositor: da qui i frame callback funzionano.
+    /// At least one frame reached the compositor: from here on the frame callbacks work.
     presented: AtomicBool,
-    /// Quando il thread raster ha iniziato il frame in corso, per il log dei frame lenti.
+    /// When the raster thread started the current frame, for the slow-frame log.
     frame_start: Mutex<Option<std::time::Instant>>,
-    /// Chiede all'engine un frame in più; lo imposta l'embedder.
+    /// Asks the engine for one more frame; set by the embedder.
     redraw: Mutex<Option<Box<dyn Fn() + Send>>>,
     renderer: String,
 }
 
-// SAFETY: display, contesti e superficie EGL sono handle che l'API EGL consente di usare
-// da qualsiasi thread (un contesto è corrente su un solo thread alla volta, e l'engine
-// rispetta questa regola: finestra sul raster, risorse sull'IO); la finestra EGL è
-// protetta dal Mutex.
+// SAFETY: the EGL display, contexts and surface are handles that the EGL API allows to use
+// from any thread (a context is current on one thread at a time, and the engine follows
+// this rule: window on the raster thread, resources on the IO thread); the EGL window is
+// protected by the Mutex.
 unsafe impl Send for GlSurface {}
-// SAFETY: vedi sopra; nessun metodo espone riferimenti mutabili senza il Mutex.
+// SAFETY: see above; no method exposes mutable references without the Mutex.
 unsafe impl Sync for GlSurface {}
 
 impl GlSurface {
-    /// Crea display, contesti e superficie EGL per `surface`, di `size` pixel fisici.
+    /// Creates the EGL display, contexts and surface for `surface`, of `size` physical pixels.
     pub fn new(conn: &Connection, surface: &WlSurface, size: (u32, u32)) -> Result<Self, Error> {
-        // SAFETY: carica la libEGL di sistema (libglvnd o Mesa), che implementa l'API EGL
-        // 1.5 standard verificata da load_required.
+        // SAFETY: loads the system libEGL (libglvnd or Mesa), which implements the standard
+        // EGL 1.5 API checked by load_required.
         let egl = unsafe { egl::DynamicInstance::<egl::EGL1_5>::load_required() }
             .map_err(|err| Error::Gl("libEGL", err.to_string()))?;
         let wl_display = conn.backend().display_ptr().cast::<c_void>();
-        // SAFETY: wl_display è il display libwayland della connessione, vivo quanto conn,
-        // e la piattaforma dichiarata è Wayland.
+        // SAFETY: wl_display is the libwayland display of the connection, alive as long as
+        // conn, and the declared platform is Wayland.
         let display =
             unsafe { egl.get_platform_display(PLATFORM_WAYLAND, wl_display, &[egl::ATTRIB_NONE]) }
                 .map_err(egl_error("eglGetPlatformDisplay"))?;
@@ -97,7 +97,7 @@ impl GlSurface {
             .map_err(egl_error("eglChooseConfig"))?
             .ok_or(Error::Gl(
                 "eglChooseConfig",
-                "nessuna configurazione RGBA8".to_owned(),
+                "no RGBA8 configuration".to_owned(),
             ))?;
         let attributes = [egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE];
         let context = egl
@@ -113,8 +113,8 @@ impl GlSurface {
         );
         let window = WlEglSurface::new(surface.id(), width, height)
             .map_err(|err| Error::Gl("wl_egl_window_create", err.to_string()))?;
-        // SAFETY: window.ptr() è la wl_egl_window appena creata sulla superficie dell'app;
-        // GlSurface la tiene viva più a lungo della superficie EGL (Drop).
+        // SAFETY: window.ptr() is the wl_egl_window just created on the app surface;
+        // GlSurface keeps it alive longer than the EGL surface (Drop).
         let surface = unsafe {
             egl.create_platform_window_surface(
                 display,
@@ -138,8 +138,8 @@ impl GlSurface {
             redraw: Mutex::new(None),
             renderer: String::new(),
         };
-        // Lo swap non aspetta il frame callback: il ritmo lo dà il vsync dell'engine, e il
-        // thread raster non resta bloccato se il compositor smette di mandare frame.
+        // The swap does not wait for the frame callback: the pace comes from the engine's
+        // vsync, and the raster thread does not stay blocked if the compositor stops sending frames.
         if gl.make_current() {
             if let Err(err) = gl.egl.swap_interval(display, 0) {
                 tracing::warn!("eglSwapInterval: {err}");
@@ -150,25 +150,25 @@ impl GlSurface {
         Ok(gl)
     }
 
-    /// Il renderer GL (driver e GPU), per il log e le misure.
+    /// The GL renderer (driver and GPU), for the log and the measurements.
     pub fn renderer(&self) -> &str {
         &self.renderer
     }
 
-    /// `glGetString(GL_RENDERER)`; serve un contesto corrente.
+    /// `glGetString(GL_RENDERER)`; needs a current context.
     fn gl_renderer(&self) -> String {
         let Some(get_string) = self.egl.get_proc_address("glGetString") else {
             return String::new();
         };
-        // SAFETY: glGetString ha questa firma (GLES 2.0, `const GLubyte *glGetString(GLenum)`);
-        // eglGetProcAddress ne ha restituito l'indirizzo.
+        // SAFETY: glGetString has this signature (GLES 2.0, `const GLubyte *glGetString(GLenum)`);
+        // eglGetProcAddress returned its address.
         let get_string: GetStringFn = unsafe { std::mem::transmute(get_string) };
-        // SAFETY: il contesto è corrente su questo thread; GL_RENDERER è un nome valido.
+        // SAFETY: the context is current on this thread; GL_RENDERER is a valid name.
         let text = unsafe { get_string(GL_RENDERER) };
         if text.is_null() {
             return String::new();
         }
-        // SAFETY: glGetString restituisce una stringa statica terminata da NUL.
+        // SAFETY: glGetString returns a static NUL-terminated string.
         unsafe { std::ffi::CStr::from_ptr(text) }
             .to_string_lossy()
             .into_owned()
@@ -204,7 +204,7 @@ impl GlSurface {
         self.presented.load(Ordering::Acquire)
     }
 
-    /// Chi chiamare quando serve un frame in più dopo un ridimensionamento.
+    /// Whom to call when one more frame is needed after a resize.
     pub fn on_redraw(&self, redraw: impl Fn() + Send + 'static) {
         if let Ok(mut slot) = self.redraw.lock() {
             *slot = Some(Box::new(redraw));
@@ -219,7 +219,7 @@ impl GlSurface {
             && start.elapsed() > std::time::Duration::from_millis(12)
         {
             tracing::debug!(
-                "frame raster lento: {:.1} ms, di cui swap {:.1} ms",
+                "slow raster frame: {:.1} ms, of which swap {:.1} ms",
                 start.elapsed().as_secs_f64() * 1000.0,
                 swap_start.elapsed().as_secs_f64() * 1000.0
             );
@@ -236,7 +236,7 @@ impl GlSurface {
         swapped
     }
 
-    /// Porta la finestra EGL a una nuova dimensione; vale dal prossimo buffer.
+    /// Brings the EGL window to a new size; it applies from the next buffer.
     pub(super) fn resize(&self, width: u32, height: u32) {
         let Ok(mut window) = self.window.lock() else {
             return;
@@ -261,13 +261,13 @@ impl GlSurface {
 
 impl Drop for GlSurface {
     fn drop(&mut self) {
-        // L'engine è già spento: nessun thread ha più i contesti correnti.
+        // The engine is already shut down: no thread holds the contexts current anymore.
         let _ = self.egl.make_current(self.display, None, None, None);
         let _ = self.egl.destroy_surface(self.display, self.surface);
         let _ = self
             .egl
             .destroy_context(self.display, self.resource_context);
         let _ = self.egl.destroy_context(self.display, self.context);
-        // La wl_egl_window si distrugge con il campo `window`, dopo la superficie EGL.
+        // The wl_egl_window is destroyed with the `window` field, after the EGL surface.
     }
 }

@@ -1,4 +1,4 @@
-//! La finestra Wayland che ospita l'engine, e il ciclo del thread di piattaforma.
+//! The Wayland window hosting the engine, and the platform thread loop.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -59,18 +59,18 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 
 use crate::{LayerKeyboard, LayerKind, Options, Renderer};
 
-/// Un trascinamento uscito da questa finestra (`silica/drag` › `start`).
+/// A drag that left this window (`silica/drag` › `start`).
 struct DragOut {
     source: DragSource,
-    /// Il corpo `text/uri-list` da mandare a chi lo chiede.
+    /// The `text/uri-list` body to send to whoever asks for it.
     body: Arc<Vec<u8>>,
-    /// L'icona e il suo buffer, vivi fino alla fine.
+    /// The icon and its buffer, alive until the end.
     icon: Option<(wl_surface::WlSurface, Buffer)>,
-    /// L'ultima azione scelta dal compositor.
+    /// The last action chosen by the compositor.
     action: DndAction,
 }
 
-/// La superficie che ospita l'app: una finestra normale o un layer della shell.
+/// The surface hosting the app: a normal window or a shell layer.
 enum Shell {
     Window(Window),
     Layer(LayerSurface),
@@ -91,7 +91,7 @@ impl Shell {
         }
     }
 
-    /// Il titolo della finestra; i layer della shell non ne hanno.
+    /// The window title; shell layers have none.
     fn set_title(&self, title: &str) {
         if let Shell::Window(window) = self {
             window.set_title(title.to_owned());
@@ -107,11 +107,10 @@ use crate::glass::{self, Glass};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
 
-/// Il canale per regione d'input e tastiera di un layer (componenti della shell).
-/// Il canale dello stato dell'app (StringCodec).
+/// The app state channel (StringCodec).
 const LIFECYCLE_CHANNEL: &str = "flutter/lifecycle";
 
-/// Il messaggio di `flutter/lifecycle` per una finestra attiva o no.
+/// The `flutter/lifecycle` message for an active window or not.
 fn lifecycle_message(active: bool) -> &'static str {
     if active {
         "AppLifecycleState.resumed"
@@ -120,20 +119,21 @@ fn lifecycle_message(active: bool) -> &'static str {
     }
 }
 
+/// The channel for the input region and keyboard of a layer (shell components).
 const LAYER_CHANNEL: &str = "silica/layer";
 
-/// Il canale dell'aspetto della finestra (`silica-window-v1`): contenuto a tutta finestra con la
-/// barra degli strumenti dell'app, e lo spostamento della finestra trascinandone la barra.
+/// The window appearance channel (`silica-window-v1`): full-size content with the app's
+/// toolbar, and moving the window by dragging its bar.
 const WINDOW_CHANNEL: &str = "silica/window";
 use crate::text_input::{self, EditKey, TextInput};
 
-/// Esito di un tasto mandato al framework, con l'azione di editing da fare se ignorato.
+/// Outcome of a key sent to the framework, with the editing action to do if ignored.
 struct KeyResult {
     handled: bool,
     edit: Option<EditKey>,
 }
 
-/// Raccoglie le risposte delle due strade di un tasto; all'ultima manda il risultato.
+/// Collects the answers of the two paths of a key; on the last one it sends the result.
 struct KeyJoin {
     remaining: u8,
     handled: bool,
@@ -158,18 +158,18 @@ impl KeyJoin {
     }
 }
 
-/// Codici dei pulsanti del mouse (linux/input-event-codes.h) e maschere di Flutter.
+/// Mouse button codes (linux/input-event-codes.h) and Flutter masks.
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
 
-/// Periodo dei frame dato all'engine con ogni vsync: 60 Hz.
+/// Frame period given to the engine with every vsync: 60 Hz.
 const FRAME_PERIOD_NANOS: u64 = 16_666_667;
 
-/// Intervallo massimo tra due giri del ciclo quando non c'è alcun task in coda.
+/// Maximum interval between two loop iterations when no task is queued.
 const IDLE_WAKEUP: Duration = Duration::from_millis(100);
 
-/// Un task in coda, ordinato per scadenza e poi per ordine di arrivo.
+/// A queued task, ordered by deadline and then by arrival order.
 struct Queued {
     target_nanos: u64,
     seq: u64,
@@ -205,29 +205,29 @@ struct App {
     keys: Keyboard,
     modifiers: Modifiers,
     text_input: TextInput,
-    /// Regioni di vetro dei widget `Glass` (`silica/glass`).
+    /// Glass regions of the `Glass` widgets (`silica/glass`).
     glass: Glass,
-    /// `silica-window-v1`: il gestore e l'oggetto della finestra (creato alla prima richiesta).
+    /// `silica-window-v1`: the manager and the window object (created on the first request).
     appearance_manager: Option<SilicaWindowManagerV1>,
     appearance: Option<SilicaWindowV1>,
-    /// La finestra attiva per Ossido (`activated` di xdg_toplevel), come l'ha saputo Flutter.
+    /// The window active for Ossido (xdg_toplevel's `activated`), as Flutter was told.
     activated: Option<bool>,
-    /// Trascinamento fra app: il gestore, il dispositivo del seat, quello uscito da qui e
-    /// l'offerta rilasciata qui (i dati arrivano da un thread su `drops`).
+    /// Drag between apps: the manager, the seat's device, the drag that left from here and
+    /// the offer dropped here (the data arrives from a thread on `drops`).
     data_manager: Option<DataDeviceManagerState>,
     data_device: Option<DataDevice>,
     drag_out: Option<DragOut>,
     drag_in: bool,
     dropped: Option<DragOffer>,
     drops: Option<channel::Sender<(f64, f64, Vec<u8>)>>,
-    /// Il seat del puntatore e il seriale dell'ultima pressione (per spostare la finestra).
+    /// The pointer seat and the serial of the last press (to move the window).
     seat: Option<wl_seat::WlSeat>,
     press_serial: u32,
-    /// Finestre e comandi per i componenti della shell (`silica/shell`).
+    /// Windows and commands for the shell components (`silica/shell`).
     shell: ShellLink,
-    /// Per le regioni d'input (`silica/layer`).
+    /// For the input regions (`silica/layer`).
     compositor: CompositorState,
-    /// Il canale `silica/dbus`, su un thread a parte.
+    /// The `silica/dbus` channel, on a separate thread.
     dbus: Option<dbus::Bridge<ResponseHandle>>,
     qh: QueueHandle<App>,
     key_results: channel::Sender<KeyResult>,
@@ -236,23 +236,23 @@ struct App {
     tasks: BinaryHeap<Reverse<Queued>>,
     next_seq: u64,
 
-    /// Dimensione in pixel logici e fattore di scala della superficie.
+    /// Size in logical pixels and scale factor of the surface.
     size: (u32, u32),
     scale: i32,
     configured: bool,
-    /// L'ultimo frame dell'engine non ancora presentato.
+    /// The last engine frame not yet presented.
     pending: Option<Frame>,
-    /// Si aspetta il frame callback del compositor prima di presentare ancora.
+    /// Waiting for the compositor's frame callback before presenting again.
     waiting_frame: bool,
     buffer: Option<Buffer>,
     buttons: i64,
-    /// Con OpenGL lo swap dell'engine fa attach e commit: qui si cura solo la scala.
+    /// With OpenGL the engine's swap attaches and commits: here only the scale is handled.
     gl: bool,
-    /// Il software ha presentato almeno un frame (con OpenGL lo sa la superficie EGL).
+    /// Software has presented at least one frame (with OpenGL the EGL surface knows).
     presented: bool,
-    /// La richiesta di vsync dell'engine in attesa del frame callback del compositor.
+    /// The engine's vsync request waiting for the compositor's frame callback.
     vsync: Option<VsyncBaton>,
-    /// Un frame callback chiesto per il vsync e non ancora arrivato.
+    /// A frame callback asked for the vsync and not yet arrived.
     vsync_requested: bool,
     exit: bool,
 }
@@ -260,15 +260,15 @@ struct App {
 pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     for path in [&options.library, &options.icu_data] {
         if !path.exists() {
-            return Err(format!("{} assente: esegui `cargo xtask engine`", path.display()).into());
+            return Err(format!("{} missing: run `cargo xtask engine`", path.display()).into());
         }
     }
-    // Un bundle debug porta il kernel Dart, uno release il manifest degli asset e libapp.so.
+    // A debug bundle carries the Dart kernel, a release one the asset manifest and libapp.so.
     if !options.bundle.join("kernel_blob.bin").exists()
         && !options.bundle.join("AssetManifest.bin").exists()
     {
         return Err(format!(
-            "{} non è un bundle Flutter: esegui `cargo xtask bundle <app>`",
+            "{} is not a Flutter bundle: run `cargo xtask bundle <app>`",
             options.bundle.display()
         )
         .into());
@@ -280,7 +280,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
     WaylandSource::new(conn.clone(), queue)
         .insert(event_loop.handle())
-        .map_err(|e| format!("sorgente Wayland: {e}"))?;
+        .map_err(|e| format!("Wayland source: {e}"))?;
 
     let compositor = CompositorState::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
@@ -319,7 +319,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 anchor.set(edge, on);
             }
             surface.set_anchor(anchor);
-            // Una dimensione ancorata a entrambi i lati la decide il compositor (0).
+            // A size anchored to both sides is decided by the compositor (0).
             let (w, h) = options.size;
             let width = if layer.anchor.left && layer.anchor.right {
                 0
@@ -344,8 +344,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut engine_args = options.engine_args.clone();
-    // Vulkan con Impeller; se Vulkan non c'è (o non presenta su questa superficie) si
-    // ripiega su OpenGL ES con Impeller.
+    // Vulkan with Impeller; if Vulkan is not there (or does not present on this surface) it
+    // falls back to OpenGL ES with Impeller.
     let vulkan = match options.renderer {
         Renderer::Vulkan => match VulkanSurface::new(&conn, surface.wl_surface(), options.size) {
             Ok(vulkan) => {
@@ -354,7 +354,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 Some(vulkan)
             }
             Err(err) => {
-                warn!("Vulkan non disponibile ({err}): uso OpenGL ES con Impeller");
+                warn!("Vulkan unavailable ({err}): using OpenGL ES with Impeller");
                 None
             }
         },
@@ -367,7 +367,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             info!("renderer OpenGL ES: {}", gl.renderer());
             if options.renderer != Renderer::Gl {
                 if crate::is_software_gl(gl.renderer()) {
-                    warn!("Impeller su un driver GL software va in crash: uso Skia");
+                    warn!("Impeller crashes on a software GL driver: using Skia");
                 } else {
                     engine_args.push("--enable-impeller".to_owned());
                 }
@@ -382,7 +382,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                         warn!("{err}");
                     }
                 })
-                .map_err(|e| format!("canale dei ridisegni: {e}"))?;
+                .map_err(|e| format!("redraw channel: {e}"))?;
             gl.on_redraw(move || {
                 let _ = redraw.send(());
             });
@@ -395,7 +395,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let (width, height) = options.size;
     let pool = SlotPool::new((width * height * 4) as usize, &shm)?;
 
-    // Task e frame arrivano dai thread dell'engine: due canali verso questo thread.
+    // Tasks and frames arrive from the engine threads: two channels to this thread.
     let (task_sender, task_channel): (channel::Sender<Task>, Channel<Task>) = channel::channel();
     let (frame_sender, frame_channel): (channel::Sender<Frame>, Channel<Frame>) =
         channel::channel();
@@ -411,7 +411,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 }));
             }
         })
-        .map_err(|e| format!("canale dei task: {e}"))?;
+        .map_err(|e| format!("task channel: {e}"))?;
     let (message_sender, message_channel) = channel::channel::<PlatformMessage>();
     event_loop
         .handle()
@@ -420,7 +420,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.handle_message(message);
             }
         })
-        .map_err(|e| format!("canale dei messaggi: {e}"))?;
+        .map_err(|e| format!("message channel: {e}"))?;
     let (dbus_sender, dbus_channel) = channel::channel::<dbus::Event<ResponseHandle>>();
     event_loop
         .handle()
@@ -429,11 +429,11 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.handle_dbus(event);
             }
         })
-        .map_err(|e| format!("canale D-Bus: {e}"))?;
+        .map_err(|e| format!("D-Bus channel: {e}"))?;
     let dbus = dbus::Bridge::start(dbus::Addresses::default(), move |event| {
         let _ = dbus_sender.send(event);
     })
-    .map_err(|err| warn!("silica/dbus non disponibile: {err}"))
+    .map_err(|err| warn!("silica/dbus unavailable: {err}"))
     .ok();
     let (vsync_sender, vsync_channel) = channel::channel::<VsyncBaton>();
     let vsync_qh = qh.clone();
@@ -444,7 +444,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.request_vsync(baton, &vsync_qh);
             }
         })
-        .map_err(|e| format!("canale del vsync: {e}"))?;
+        .map_err(|e| format!("vsync channel: {e}"))?;
     let (key_results, key_channel) = channel::channel::<KeyResult>();
     event_loop
         .handle()
@@ -453,7 +453,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.key_result(result);
             }
         })
-        .map_err(|e| format!("canale dei tasti: {e}"))?;
+        .map_err(|e| format!("key channel: {e}"))?;
     let frame_qh = qh.clone();
     event_loop
         .handle()
@@ -463,21 +463,21 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.present(&frame_qh);
             }
         })
-        .map_err(|e| format!("canale dei frame: {e}"))?;
+        .map_err(|e| format!("frame channel: {e}"))?;
 
     let callbacks = Callbacks {
         platform_thread: std::thread::current().id(),
         post_task: Box::new(move |task| {
             if task_sender.send(task).is_err() {
-                warn!("task scartato: il ciclo principale è chiuso");
+                warn!("task dropped: the main loop is closed");
             }
         }),
         present: Box::new(move |frame| {
             let _ = frame_sender.send(frame);
         }),
         platform_message: Box::new(move |message| {
-            // Se il ciclo è chiuso il messaggio cade con il suo handle: l'engine si sta
-            // spegnendo e non aspetta più risposte.
+            // If the loop is closed the message falls with its handle: the engine is shutting
+            // down and no longer waits for answers.
             let _ = message_sender.send(message);
         }),
         gl,
@@ -497,7 +497,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         },
         callbacks,
     )?;
-    info!("engine avviato con {}", options.bundle.display());
+    info!("engine started with {}", options.bundle.display());
 
     let mut app = App {
         registry_state: RegistryState::new(&globals),
@@ -558,7 +558,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         exit: false,
     };
 
-    // L'aspetto: chiaro finché il portale non dice altro, poi a ogni cambio.
+    // Appearance: light until the portal says otherwise, then on every change.
     app.send_appearance(false);
     let (appearance_sender, appearance_channel) = channel::channel::<bool>();
     event_loop
@@ -568,10 +568,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.send_appearance(dark);
             }
         })
-        .map_err(|e| format!("canale dell'aspetto: {e}"))?;
+        .map_err(|e| format!("appearance channel: {e}"))?;
     let _appearance = crate::appearance::watch(appearance_sender);
 
-    // I dati di un rilascio, letti su un thread (la sorgente può essere questa finestra).
+    // The data of a drop, read on a thread (the source may be this very window).
     let (drop_sender, drop_channel) = channel::channel::<(f64, f64, Vec<u8>)>();
     event_loop
         .handle()
@@ -580,23 +580,23 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 app.deliver_drop(x, y, &data);
             }
         })
-        .map_err(|e| format!("canale dei rilasci: {e}"))?;
+        .map_err(|e| format!("drop channel: {e}"))?;
     app.drops = Some(drop_sender);
 
     while !app.exit {
         let timeout = app.run_due_tasks();
         event_loop.dispatch(Some(timeout), &mut app)?;
     }
-    // Spegne l'engine prima di chiudere la connessione Wayland.
+    // Shuts down the engine before closing the Wayland connection.
     app.engine = None;
     Ok(())
 }
 
 impl App {
-    /// Risponde a un messaggio del framework. Ogni messaggio con handle riceve una
-    /// risposta, vuota se il canale non è gestito.
+    /// Answers a framework message. Every message with a handle gets a
+    /// response, empty if the channel is not handled.
     fn handle_message(&mut self, message: PlatformMessage) {
-        // silica/dbus risponde più tardi, dal suo thread (`handle_dbus`).
+        // silica/dbus answers later, from its thread (`handle_dbus`).
         if message.channel == dbus::CHANNEL
             && let Some(bridge) = &self.dbus
         {
@@ -615,14 +615,14 @@ impl App {
                 let (reply, changed) =
                     self.glass
                         .handle_call(&message.data, self.surface.wl_surface(), &self.qh);
-                // Le regioni valgono dal commit: senza un frame nuovo serve qui.
+                // The regions apply from the commit: without a new frame it is needed here.
                 if changed {
                     self.surface.commit();
                 }
                 reply
             }
             "flutter/platform" => self.handle_platform_call(&message.data),
-            // StandardMethodCodec: getKeyboardState, i tasti premuti fisica → logica.
+            // StandardMethodCodec: getKeyboardState, the pressed keys physical → logical.
             "flutter/keyboard" => crate::codec::success_int_map(
                 self.keys
                     .pressed()
@@ -634,14 +634,14 @@ impl App {
         if let (Some(engine), Some(handle)) = (&self.engine, message.response)
             && let Err(err) = engine.respond(handle, &reply)
         {
-            warn!("risposta su {}: {err}", message.channel);
+            warn!("response on {}: {err}", message.channel);
         }
     }
 
-    /// Il canale `silica/window` (JSONMethodCodec):
-    /// - `setFullSizeContent {toolbarHeight}`: contenuto a tutta finestra (0 torna alla barra di
-    ///   Ossido); risponde se Ossido lo offre;
-    /// - `startMove`: sposta la finestra con il puntatore (dalla barra degli strumenti dell'app).
+    /// The `silica/window` channel (JSONMethodCodec):
+    /// - `setFullSizeContent {toolbarHeight}`: full-size content (0 goes back to Ossido's
+    ///   bar); answers whether Ossido offers it;
+    /// - `startMove`: moves the window with the pointer (from the app's toolbar).
     fn handle_window_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -676,9 +676,9 @@ impl App {
         }
     }
 
-    /// Il canale `flutter/platform` (JSONMethodCodec): per ora il titolo della finestra
-    /// (`SystemChrome.setApplicationSwitcherDescription`, `label`). Il resto non è
-    /// implementato (risposta vuota).
+    /// The `flutter/platform` channel (JSONMethodCodec): for now the window title
+    /// (`SystemChrome.setApplicationSwitcherDescription`, `label`). The rest is not
+    /// implemented (empty response).
     fn handle_platform_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -690,7 +690,7 @@ impl App {
                     .and_then(|args| args.get("label"))
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or_default();
-                // Un titolo lunghissimo da un'app non deve diventare un problema per Ossido.
+                // A very long title from an app must not become a problem for Ossido.
                 let title: String = label.chars().take(256).collect();
                 self.surface.set_title(&title);
                 self.surface.commit();
@@ -700,8 +700,8 @@ impl App {
         }
     }
 
-    /// `flutter/lifecycle`: la finestra attiva è `resumed`, le altre `inactive` (le app ne
-    /// seguono lo stato con `AppLifecycleListener`, per i colori della finestra inattiva).
+    /// `flutter/lifecycle`: the active window is `resumed`, the others `inactive` (apps follow
+    /// the state with `AppLifecycleListener`, for the colors of the inactive window).
     fn send_lifecycle(&mut self, active: bool) {
         if let Some(engine) = &self.engine
             && let Err(err) =
@@ -711,7 +711,7 @@ impl App {
         }
     }
 
-    /// Il canale `silica/drag` (vedi `drag.rs`): `start` comincia un trascinamento.
+    /// The `silica/drag` channel (see `drag.rs`): `start` begins a drag.
     fn handle_drag_call(&mut self, data: &[u8]) -> Vec<u8> {
         let reply = |started: bool| crate::text_input::success(serde_json::json!(started));
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
@@ -765,7 +765,7 @@ impl App {
         reply(true)
     }
 
-    /// Una chiamata verso l'app su `silica/drag`.
+    /// A call to the app on `silica/drag`.
     fn send_drag(&self, method: &str, args: serde_json::Value) {
         if let Some(engine) = &self.engine
             && let Err(err) =
@@ -775,7 +775,7 @@ impl App {
         }
     }
 
-    /// Il trascinamento uscito da qui è finito: l'app sa con quale azione.
+    /// The drag that left from here has finished: the app learns with which action.
     fn finish_drag_out(&mut self, completed: bool) {
         let Some(drag) = self.drag_out.take() else {
             return;
@@ -795,7 +795,7 @@ impl App {
         self.send_drag("finished", serde_json::json!({ "action": action }));
     }
 
-    /// I dati di un rilascio sono arrivati: all'app gli URI, poi l'offerta si chiude.
+    /// The data of a drop has arrived: the URIs to the app, then the offer closes.
     fn deliver_drop(&mut self, x: f64, y: f64, data: &[u8]) {
         let uris = crate::drag::parse_uri_list(data);
         self.send_drag("drop", serde_json::json!({ "x": x, "y": y, "uris": uris }));
@@ -805,8 +805,7 @@ impl App {
         }
     }
 
-    /// Un esito del thread D-Bus: la risposta a una chiamata o un segnale per Dart.
-    /// `flutter/settings` con l'aspetto (chiaro o scuro): `MediaQuery.platformBrightness`.
+    /// `flutter/settings` with the appearance (light or dark): `MediaQuery.platformBrightness`.
     fn send_appearance(&mut self, dark: bool) {
         if let Some(engine) = &self.engine
             && let Err(err) = engine.send_message(
@@ -818,6 +817,7 @@ impl App {
         }
     }
 
+    /// An outcome of the D-Bus thread: the reply to a call or a signal for Dart.
     fn handle_dbus(&mut self, event: dbus::Event<ResponseHandle>) {
         let Some(engine) = &self.engine else { return };
         let result = match event {
@@ -829,13 +829,13 @@ impl App {
         }
     }
 
-    /// Il canale `silica/layer`: un componente della shell nascosto non deve prendere
-    /// puntatore né tastiera (Faro chiuso resta in esecuzione, trasparente).
+    /// The `silica/layer` channel: a hidden shell component must not take the
+    /// pointer or the keyboard (a closed Faro keeps running, transparent).
     /// - `setKeyboardInteractivity {mode: none|exclusive|on-demand}`;
-    /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: tutta la superficie);
-    /// - `outputSize` → `{width, height}` dello schermo in punti (null se non si sa);
-    /// - `setSize {width, height}` in punti, 0 per seguire gli ancoraggi (la barra dei menu si
-    ///   allunga finché un menu è aperto).
+    /// - `setInputRegion {rects: [[x, y, w, h], …] | null}` (null: the whole surface);
+    /// - `outputSize` → `{width, height}` of the screen in points (null if unknown);
+    /// - `setSize {width, height}` in points, 0 to follow the anchors (the menu bar grows
+    ///   while a menu is open).
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -857,8 +857,8 @@ impl App {
                 }
             }
             Some("outputSize") => {
-                // La dimensione logica dello schermo (il primo output): per centrare un avviso
-                // in una superficie che si allunga fino a coprirlo.
+                // The logical size of the screen (the first output): to center an alert
+                // in a surface that grows until it covers it.
                 let size = self
                     .output_state
                     .outputs()
@@ -914,7 +914,7 @@ impl App {
                         true
                     }
                     Err(err) => {
-                        warn!("regione d'input: {err}");
+                        warn!("input region: {err}");
                         false
                     }
                 },
@@ -927,9 +927,9 @@ impl App {
         text_input::success(serde_json::json!(done))
     }
 
-    /// Manda un tasto al framework per le due strade che si aspetta (dato tasto e
-    /// messaggio `flutter/keyevent`); se nessuna delle due lo consuma, l'azione di
-    /// editing va al campo di testo.
+    /// Sends a key to the framework through the two paths it expects (key data and
+    /// `flutter/keyevent` message); if neither consumes it, the editing action goes to
+    /// the text field.
     fn send_key(&self, event: &KeyEvent, raw: Option<Vec<u8>>, edit: Option<EditKey>) {
         let Some(engine) = &self.engine else {
             return;
@@ -978,10 +978,10 @@ impl App {
         .fold(0, |mask, (_, bit)| mask | bit)
     }
 
-    /// Un tasto non consumato dal framework va al campo di testo attivo.
+    /// A key not consumed by the framework goes to the active text field.
     fn key_result(&mut self, result: KeyResult) {
         tracing::debug!(
-            "tasto gestito dal framework: {}, editing: {:?}",
+            "key handled by the framework: {}, editing: {:?}",
             result.handled,
             result.edit
         );
@@ -1004,7 +1004,7 @@ impl App {
             .map_or(0, |engine| engine.current_time() / 1000)
     }
 
-    /// Esegue i task scaduti e dice quanto aspettare il prossimo.
+    /// Runs the expired tasks and tells how long to wait for the next one.
     fn run_due_tasks(&mut self) -> Duration {
         let Some(engine) = &self.engine else {
             return IDLE_WAKEUP;
@@ -1060,8 +1060,8 @@ impl App {
         }
     }
 
-    /// L'engine vuole il prossimo vsync: arriva con il frame callback del compositor.
-    /// Prima del primo frame il compositor non ne manda, quindi si risponde subito.
+    /// The engine wants the next vsync: it arrives with the compositor's frame callback.
+    /// Before the first frame the compositor sends none, so it answers right away.
     fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
         let presented =
             self.presented || (self.gl && self.engine.as_ref().is_some_and(Engine::gl_presented));
@@ -1070,7 +1070,7 @@ impl App {
             return;
         }
         self.vsync = Some(baton);
-        // Un frame callback già chiesto (dal vsync o dalla presentazione) basta.
+        // A frame callback already asked for (by the vsync or by the presentation) is enough.
         if self.vsync_requested || self.waiting_frame {
             return;
         }
@@ -1090,7 +1090,7 @@ impl App {
         }
     }
 
-    /// Presenta l'ultimo frame dell'engine, se il compositor è pronto a riceverne uno.
+    /// Presents the last engine frame, if the compositor is ready to receive one.
     fn present(&mut self, qh: &QueueHandle<Self>) {
         if self.gl || self.waiting_frame || !self.configured {
             return;
@@ -1110,7 +1110,7 @@ impl App {
             {
                 Ok(created) => created,
                 Err(err) => {
-                    warn!("buffer shm non creato: {err}");
+                    warn!("shm buffer not created: {err}");
                     return;
                 }
             };
@@ -1129,7 +1129,7 @@ impl App {
         surface.damage_buffer(0, 0, width, height);
         surface.frame(qh, surface.clone());
         if let Err(err) = buffer.attach_to(surface) {
-            warn!("attach del buffer fallito: {err}");
+            warn!("buffer attach failed: {err}");
             return;
         }
         self.surface.commit();
@@ -1150,7 +1150,7 @@ impl CompositorHandler for App {
         if factor != self.scale && factor >= 1 {
             self.scale = factor;
             if self.gl {
-                // Vale dal prossimo commit, cioè dallo swap del frame alla nuova dimensione.
+                // It applies from the next commit, that is from the swap of the frame at the new size.
                 self.surface.wl_surface().set_buffer_scale(factor);
             }
             self.send_metrics();
@@ -1274,7 +1274,7 @@ impl SeatHandler for App {
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             match self.seat_state.get_keyboard(qh, &seat, None) {
                 Ok(keyboard) => self.keyboard = Some(keyboard),
-                Err(err) => warn!("tastiera non disponibile: {err}"),
+                Err(err) => warn!("keyboard unavailable: {err}"),
             }
         }
         if capability == Capability::Pointer {
@@ -1288,7 +1288,7 @@ impl SeatHandler for App {
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seat_state.get_pointer(qh, &seat) {
                 Ok(pointer) => self.pointer = Some(pointer),
-                Err(err) => warn!("puntatore non disponibile: {err}"),
+                Err(err) => warn!("pointer unavailable: {err}"),
             }
         }
     }
@@ -1342,8 +1342,8 @@ impl PointerHandler for App {
                     self.send_pointer(PointerPhase::Add, position, None);
                 }
                 PointerEventKind::Leave { .. } => {
-                    // Con un pulsante premuto (un trascinamento passato a Ossido) il gesto in
-                    // corso si annulla prima di togliere il puntatore.
+                    // With a button pressed (a drag handed over to Ossido) the gesture in
+                    // progress is cancelled before removing the pointer.
                     if self.buttons != 0 {
                         self.send_pointer(PointerPhase::Cancel, position, None);
                     }
@@ -1417,7 +1417,7 @@ impl KeyboardHandler for App {
         _: &wl_surface::WlSurface,
         _: u32,
     ) {
-        // Fuori dalla finestra i rilasci non arrivano: li si sintetizza ora.
+        // Outside the window releases do not arrive: they are synthesized now.
         let micros = self.now_micros();
         for event in self.keys.release_all(micros) {
             self.send_key(&event, None, None);
@@ -1555,7 +1555,7 @@ impl DataDeviceHandler for App {
         let pipe = match offer.receive(crate::drag::URI_LIST.to_owned()) {
             Ok(pipe) => pipe,
             Err(err) => {
-                warn!("rilascio illeggibile: {err}");
+                warn!("unreadable drop: {err}");
                 return;
             }
         };
@@ -1566,7 +1566,7 @@ impl DataDeviceHandler for App {
         std::thread::spawn(move || {
             let mut data = Vec::new();
             let mut file = std::fs::File::from(std::os::fd::OwnedFd::from(pipe));
-            // Al più 16 MB di URI: oltre si tronca.
+            // At most 16 MB of URIs: beyond that it is truncated.
             let _ = std::io::Read::read_to_end(
                 &mut std::io::Read::take(&mut file, 16 << 20),
                 &mut data,
@@ -1624,11 +1624,11 @@ impl DataSourceHandler for App {
         if mime != crate::drag::URI_LIST {
             return;
         }
-        // Su un thread: chi legge può essere questa stessa finestra.
+        // On a thread: the reader may be this very window.
         let body = Arc::clone(&drag.body);
         std::thread::spawn(move || {
             if let Err(err) = std::io::Write::write_all(&mut pipe, &body) {
-                warn!("trascinamento: dati non mandati: {err}");
+                warn!("drag: data not sent: {err}");
             }
         });
     }
@@ -1699,7 +1699,7 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
         use silica_protocols::shell::client::silica_shell_manager_v1::Event;
         let message = match event {
             Event::Focused { identifier } => app.shell.set_focused(identifier),
-            // Un comando del catalogo per la shell (es. faro.toggle).
+            // A catalog command for the shell (e.g. faro.toggle).
             Event::Command { id } => {
                 serde_json::to_vec(&serde_json::json!({ "method": "command", "args": id }))
                     .unwrap_or_default()
@@ -1713,13 +1713,13 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
                 width,
                 height,
             } => app.shell.thumbnail_ready(&identifier, width, height),
-            // Lo stato annunciato da un componente della shell (Centro di controllo aperto…).
+            // The state announced by a shell component (Control Center open…).
             Event::Broadcast { topic, value } => serde_json::to_vec(&serde_json::json!({
                 "method": "broadcast",
                 "args": { "topic": topic, "value": value },
             }))
             .unwrap_or_default(),
-            // Pressione lunga sul pulsante verde: il popover di disposizione.
+            // Long press on the green button: the arrangement popover.
             Event::WindowMenu { identifier, x, y } => serde_json::to_vec(&serde_json::json!({
                 "method": "windowMenu",
                 "args": { "id": identifier, "x": x, "y": y },
@@ -1730,7 +1730,7 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
         if let Some(engine) = &app.engine
             && let Err(err) = engine.send_message(shell::CHANNEL, &message)
         {
-            warn!("evento della shell a Dart: {err}");
+            warn!("shell event to Dart: {err}");
         }
     }
 }
@@ -1767,7 +1767,7 @@ impl wayland_client::Dispatch<ExtForeignToplevelHandleV1, ()> for App {
             && let Some(engine) = &app.engine
             && let Err(err) = engine.send_message(shell::CHANNEL, &app.shell.toplevels_message())
         {
-            warn!("elenco delle finestre a Dart: {err}");
+            warn!("window list to Dart: {err}");
         }
     }
 }
@@ -1777,7 +1777,7 @@ mod lifecycle_tests {
     use super::lifecycle_message;
 
     #[test]
-    fn la_finestra_attiva_e_resumed_le_altre_inactive() {
+    fn the_active_window_is_resumed_the_others_inactive() {
         assert_eq!(lifecycle_message(true), "AppLifecycleState.resumed");
         assert_eq!(lifecycle_message(false), "AppLifecycleState.inactive");
     }

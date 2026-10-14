@@ -1,5 +1,5 @@
 name: silica_demo
-description: App di prova per l'embedder Flutter di Silica (M1).
+description: Test app for Silica's Flutter embedder (M1).
 publish_to: none
 version: 0.0.0
 
