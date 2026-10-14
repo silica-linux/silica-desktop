@@ -11,6 +11,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../l10n/app_localizations.dart';
 import '../system/desktop_entries.dart';
 import '../system/folder_icons.dart';
+import '../system/folder_style.dart';
 import '../system/icon_lookup.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
@@ -288,6 +289,7 @@ List<Item> dockItems(
         folder: folder,
         iconPath: findIcon(folder == downloads ? 'folder-download' : 'folder'),
         layered: _folderIcon(folder),
+        folderIcon: _styledFolder(folder),
         command: openPathCommand(entries, folder),
       ),
     // The minimized windows, from the first minimized, before the Trash (D-08).
@@ -309,6 +311,16 @@ LayeredIcon? _folderIcon(String folder) {
   final icon = findSilicaIcon('folder');
   if (icon == null || !folderHasItems(folder)) return icon;
   return fullFolderVariant(icon);
+}
+
+/// The Dock folder with its own colour or symbol, full or empty; null for a plain folder (the
+/// item keeps the plain silica-icons folder).
+FolderIcon? _styledFolder(String folder) {
+  final look = folderStyles.look(folder);
+  if (look.symbol == null && look.tint == null) return null;
+  final icon = styledFolderIcon(folder);
+  if (icon == null || (icon.symbol == null && icon.tint == null)) return null;
+  return folderHasItems(folder) ? fullFolder(icon) : icon;
 }
 
 Item _windowItem(

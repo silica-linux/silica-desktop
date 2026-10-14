@@ -133,6 +133,7 @@ class Item {
     this.running = false,
     this.iconPath,
     this.layered,
+    this.folderIcon,
     this.command,
     this.windows = const [],
     this.id,
@@ -154,6 +155,7 @@ class Item {
     this.iconPath,
     this.layered,
   }) : kind = ItemKind.app,
+       folderIcon = null,
        running = false,
        command = null,
        windows = const [],
@@ -171,6 +173,7 @@ class Item {
       running = false,
       iconPath = null,
       layered = null,
+      folderIcon = null,
       command = null,
       windows = const [],
       id = null,
@@ -192,6 +195,9 @@ class Item {
 
   /// The layered silica-icons icon, preferred to [iconPath].
   final LayeredIcon? layered;
+
+  /// A folder with its own colour or symbol (folder_style.dart), preferred to [layered].
+  final FolderIcon? folderIcon;
 
   /// The command to launch it (Exec without field codes), if it is an app.
   final String? command;
@@ -235,6 +241,7 @@ class Item {
 
   /// The icon to draw; null: placeholder with the initial.
   IconSource? get icon => switch ((layered, iconPath)) {
+    _ when folderIcon != null => FolderSource(folderIcon!),
     (final LayeredIcon l, _) => LayeredSource(l),
     (null, final String path) => FlatSource(path),
     _ => null,
