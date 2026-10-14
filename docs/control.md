@@ -76,6 +76,7 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `perf.frames` | `reset?` | per surface: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
 | `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
+| `input.state` | — | the pointer settings in use (`mouse`, `touchpad`: `speed`, `naturalScroll`, `scrollSpeed`, `leftHanded`, `secondaryClick`, `tapToClick`, `disableWhileTyping`) and `devices` (`mouse`, `touchpad`: connected) |
 | `keyboard.next_source` | — | `switched`, `active`: the next input source (⌃Space; with a single source the shortcut goes to the app) |
 | `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
@@ -119,6 +120,35 @@ A change of repeat is sent to every bound keyboard (`wl_keyboard.repeat_info`); 
 `layouts`, `model` or `options` compiles a new keymap and sends it to the clients. A layout xkb
 does not know keeps the keymap in use. ⌃Space (`keyboard.next_source`) moves to the next
 source when there are two or more.
+
+### input.json
+
+```json
+{
+  "mouse": {"speed": 0.0, "naturalScroll": false, "secondaryClick": "right", "scrollSpeed": 1.0},
+  "touchpad": {"speed": 0.0, "naturalScroll": true, "tapToClick": true,
+               "secondaryClick": "twoFinger", "disableWhileTyping": true, "scrollSpeed": 1.0},
+  "doubleClickMs": 500
+}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `*.speed` | number, -1–1 | pointer acceleration speed (libinput) |
+| `*.naturalScroll` | boolean | content follows the fingers / the wheel is reversed |
+| `*.scrollSpeed` | number, 0.1–10 | multiplies the scroll deltas (wheel for `mouse`, fingers for `touchpad`) |
+| `mouse.secondaryClick` | `right`, `left` | which button is the secondary click (`left`: left-handed) |
+| `touchpad.secondaryClick` | `twoFinger`, `bottomRight`, `bottomLeft` | click with two fingers (clickfinger) or in a bottom corner (button areas; `bottomLeft` is left-handed) |
+| `touchpad.tapToClick` | boolean | a tap is a click |
+| `touchpad.disableWhileTyping` | boolean | the touchpad ignores the palm while typing |
+| `doubleClickMs` | integer | for the toolkits (silica-ui reads it); Ossido ignores it |
+
+A device is a touchpad when libinput can tap with it, otherwise a mouse. Every key left out
+gives the device libinput's default. The settings apply to every pointer device at once and
+to each one plugged in later (real session only: nested and headless have no libinput
+devices). `input.state` shows the settings in use and whether a mouse or a touchpad is
+connected; the same `input.mouse` and `input.touchpad` reach apps through silica-daemon's
+`System1` state (`docs/daemon.md`).
 
 ## CLI and MCP
 

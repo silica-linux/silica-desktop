@@ -105,6 +105,39 @@ pub struct PrivacyUse {
     pub in_use: bool,
 }
 
+/// A value Ossido reports (`ReportCompositor`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Reported {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+/// The keys Ossido may report, and only these: pointer kinds, outputs.
+pub const REPORTED_KEYS: &[&str] = &["input.touchpad", "input.mouse", "displays"];
+
+/// The report's JSON object: the known keys with a boolean, number or string value; the rest
+/// is ignored. `None` if it is not a JSON object.
+pub fn parse_report(json: &str) -> Option<std::collections::BTreeMap<String, Reported>> {
+    let serde_json::Value::Object(map) = serde_json::from_str(json).ok()? else {
+        return None;
+    };
+    Some(
+        map.into_iter()
+            .filter(|(key, _)| REPORTED_KEYS.contains(&key.as_str()))
+            .filter_map(|(key, value)| {
+                let value = match value {
+                    serde_json::Value::Bool(b) => Reported::Bool(b),
+                    serde_json::Value::Number(n) => Reported::Number(n.as_f64()?),
+                    serde_json::Value::String(s) if s.len() <= 65536 => Reported::Text(s),
+                    _ => return None,
+                };
+                Some((key, value))
+            })
+            .collect(),
+    )
+}
+
 /// The whole state; `None` means an absent source.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SystemState {
@@ -127,6 +160,8 @@ pub struct SystemState {
     pub keyboard_brightness: Option<f64>,
     /// How many times Silica set it (`SetKeyboardBrightness`): the HUD appears only then.
     pub keyboard_requests: u64,
+    /// What Ossido reported (`input.touchpad`, `input.mouse`, …).
+    pub compositor: std::collections::BTreeMap<String, Reported>,
 }
 
 impl SystemState {
@@ -182,6 +217,13 @@ impl SystemState {
             Value::F64(self.keyboard_brightness.unwrap_or(0.0)),
         );
         put("keyboard.requests", Value::U64(self.keyboard_requests));
+        for (key, value) in &self.compositor {
+            match value {
+                Reported::Bool(b) => put(key, Value::Bool(*b)),
+                Reported::Number(n) => put(key, Value::F64(*n)),
+                Reported::Text(s) => put(key, Value::from(s.as_str())),
+            }
+        }
         dict
     }
 }
@@ -417,6 +459,14 @@ impl System {
                 .map_err(|e| failed(e.to_string()))?;
         }
         self.shared.update(|state| state.dark = dark);
+        Ok(())
+    }
+
+    /// Ossido's report (a JSON object of the keys in `REPORTED_KEYS`): they join the state.
+    fn report_compositor(&self, json: &str) -> zbus::fdo::Result<()> {
+        let report = parse_report(json)
+            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("not a JSON object".into()))?;
+        self.shared.update(|state| state.compositor = report);
         Ok(())
     }
 

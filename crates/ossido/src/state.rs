@@ -117,6 +117,8 @@ pub struct State {
     pub config_dir: Option<std::path::PathBuf>,
     /// The keyboard settings applied (`keyboard.json`).
     pub keyboard_config: crate::config::KeyboardConfig,
+    /// The mouse and touchpad settings applied (`input.json`).
+    pub input_config: crate::config::InputConfig,
     /// Frame pace, startup and memory of the clients (`perf.*`).
     pub perf: crate::perf::Perf,
     /// Desktop color until there is a wallpaper (`--background`).
@@ -348,6 +350,7 @@ impl State {
             keys: crate::keys::KeyLookup::new()?,
             config_dir: None,
             keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
+            input_config: crate::config::InputConfig::default(),
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),

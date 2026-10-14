@@ -380,11 +380,19 @@ impl State {
             }
             InputEvent::PointerAxis { event } => {
                 let source = event.source();
+                // Scroll speed (input.json): wheels are mice, fingers are touchpads.
+                let factor = match source {
+                    AxisSource::Finger | AxisSource::Continuous => {
+                        self.input_config.touchpad.scroll_speed
+                    }
+                    _ => self.input_config.mouse.scroll_speed,
+                };
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 for axis in [Axis::Horizontal, Axis::Vertical] {
-                    let v120 = event.amount_v120(axis);
+                    let v120 = event.amount_v120(axis).map(|v| v * factor);
                     let amount = event
                         .amount(axis)
+                        .map(|a| a * factor)
                         .unwrap_or_else(|| v120.unwrap_or(0.0) * 15.0 / 120.0);
                     if amount != 0.0 {
                         frame = frame.value(axis, amount);

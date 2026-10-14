@@ -120,6 +120,11 @@ bar.
   only: a new network asks for a password), `AudioOutputs() → a(usb)` (PipeWire id, name,
   default; from `wpctl status`), `SetAudioOutput(u)`.
 - Signal `Changed(a{sv})` with the whole state on every change.
+- What Ossido knows and apps need, reported by Ossido with `ReportCompositor(s json)` (a JSON
+  object; only these keys are kept, the rest is ignored) and part of `State`/`Changed` from
+  then on: `input.touchpad` and `input.mouse` (b: a touchpad / another pointer is connected;
+  Settings shows its Trackpad pane only with a touchpad). Ossido sends the whole report again
+  whenever the daemon (re)appears.
 
 Sources: NetworkManager (`WirelessEnabled`, primary connection, access point strength),
 BlueZ (the first adapter), UPower (`DisplayDevice`, only if it is a battery) on the system

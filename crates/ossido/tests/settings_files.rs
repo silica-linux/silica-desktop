@@ -165,3 +165,32 @@ fn keyboard_json_sets_repeat_and_sources_live() {
     assert_eq!(state["repeatRate"], 11);
     assert_eq!(state["layouts"], json!([]));
 }
+
+#[test]
+fn input_json_is_read_live() {
+    let ossido = Headless::start("input-json");
+    let state = ossido.client().call("input.state", Value::Null).unwrap();
+    assert_eq!(state["mouse"]["speed"], Value::Null);
+    assert_eq!(state["mouse"]["scrollSpeed"], 1.0);
+    // Headless has no libinput devices.
+    assert_eq!(state["devices"], json!({"mouse": false, "touchpad": false}));
+
+    write_setting(
+        &ossido,
+        "input.json",
+        &json!({
+            "mouse": {"speed": 0.25, "naturalScroll": true, "secondaryClick": "left"},
+            "touchpad": {"tapToClick": true, "secondaryClick": "twoFinger", "scrollSpeed": 1.5}
+        }),
+    );
+    let state = wait_for(&ossido, "input.state", |s| s["mouse"]["speed"] == 0.25);
+    assert_eq!(state["mouse"]["naturalScroll"], true);
+    assert_eq!(state["mouse"]["leftHanded"], true);
+    assert_eq!(state["touchpad"]["tapToClick"], true);
+    assert_eq!(state["touchpad"]["secondaryClick"], "twoFinger");
+    assert_eq!(state["touchpad"]["scrollSpeed"], 1.5);
+
+    // Not an object: the defaults.
+    write_setting(&ossido, "input.json", &json!("not an object"));
+    wait_for(&ossido, "input.state", |s| s["mouse"]["speed"].is_null());
+}

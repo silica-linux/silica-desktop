@@ -100,6 +100,7 @@ pub const SYSTEM_DARK: &str = "system.dark";
 pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
 pub const KEYBOARD_STATE: &str = "keyboard.state";
 pub const KEYBOARD_NEXT_SOURCE: &str = "keyboard.next_source";
+pub const INPUT_STATE: &str = "input.state";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -1013,6 +1014,13 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Next input source",
         description: "Switches to the next input source of keyboard.json (the shortcut works only with two or more).",
         shortcut: Some("Ctrl+space"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: INPUT_STATE,
+        label: "Pointer settings",
+        description: "The mouse and touchpad settings in use (from input.json) and the kinds of pointer connected.",
+        shortcut: None,
         params: no_params,
     },
 ];

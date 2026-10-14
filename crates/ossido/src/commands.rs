@@ -33,11 +33,11 @@ use silica_control::commands::{
 use silica_control::commands::{
     DESKTOP_SHOW, PANORAMA_APP, PANORAMA_SPACES_BAR, PANORAMA_STATE, PANORAMA_TOGGLE,
 };
+use silica_control::commands::{INPUT_STATE, KEYBOARD_NEXT_SOURCE, KEYBOARD_STATE};
 use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
-use silica_control::commands::{KEYBOARD_NEXT_SOURCE, KEYBOARD_STATE};
 use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
@@ -107,6 +107,7 @@ impl State {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
             KEYBOARD_STATE => Ok(self.keyboard_state()),
+            INPUT_STATE => Ok(self.input_state()),
             KEYBOARD_NEXT_SOURCE => {
                 let switched = self.next_input_source();
                 Ok(json!({ "switched": switched, "active": self.active_layout() }))

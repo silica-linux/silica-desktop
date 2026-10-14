@@ -355,6 +355,7 @@ trait System {
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
     fn set_audio_output(&self, id: u32) -> zbus::Result<()>;
     fn set_do_not_disturb(&self, enabled: bool) -> zbus::Result<()>;
+    fn report_compositor(&self, json: &str) -> zbus::Result<()>;
     #[zbus(signal)]
     fn changed(&self, state: HashMap<String, OwnedValue>) -> zbus::Result<()>;
 }
@@ -569,6 +570,17 @@ fn missing_sources_are_absent_not_errors() {
             assert!(proxy.set_wifi_enabled(true).await.is_err());
             assert!(proxy.set_brightness(0.5).await.is_err());
             assert!(proxy.set_volume(0.5).await.is_err());
+
+            // Ossido's report joins the state: known keys only.
+            proxy
+                .report_compositor(r#"{"input.touchpad": true, "input.mouse": false, "evil": 1}"#)
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| s.contains_key("input.touchpad")).await;
+            assert!(get::<bool>(&state, "input.touchpad"));
+            assert!(!get::<bool>(&state, "input.mouse"));
+            assert!(!state.contains_key("evil"));
+            assert!(proxy.report_compositor("[1]").await.is_err());
         };
         future::or(test, async {
             let result = service.run().await;

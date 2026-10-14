@@ -52,6 +52,20 @@ pub fn int_in(map: &serde_json::Map<String, Value>, key: &str, range: (i64, i64)
     (range.0..=range.1).contains(&n).then_some(n)
 }
 
+/// A number in `range`, or `None`.
+pub fn number_in(
+    map: &serde_json::Map<String, Value>,
+    key: &str,
+    range: (f64, f64),
+) -> Option<f64> {
+    let n = map.get(key)?.as_f64().filter(|f| f.is_finite())?;
+    (range.0..=range.1).contains(&n).then_some(n)
+}
+
+pub fn bool_of(map: &serde_json::Map<String, Value>, key: &str) -> Option<bool> {
+    map.get(key)?.as_bool()
+}
+
 /// A short string (an xkb name, an option list): no control characters, at most 256 bytes.
 pub fn text_of(map: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
     let text = map.get(key)?.as_str()?;
@@ -154,17 +168,126 @@ impl KeyboardConfig {
     }
 }
 
+// --- input.json ----------------------------------------------------------------------------
+
+pub const INPUT_FILE: &str = "input.json";
+
+/// How a touchpad makes a secondary click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClickMethod {
+    /// Two fingers anywhere (libinput's clickfinger).
+    TwoFinger,
+    /// The bottom right corner (libinput's button areas).
+    BottomRight,
+    /// The bottom left corner (button areas, left-handed).
+    BottomLeft,
+}
+
+/// The settings of one kind of pointer device; `None` keeps libinput's default for the device.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointerSettings {
+    /// Pointer acceleration speed, -1–1.
+    pub speed: Option<f64>,
+    pub natural_scroll: Option<bool>,
+    /// Multiplies scroll deltas, 0.1–10 (1: unchanged).
+    pub scroll_speed: f64,
+    /// Primary and secondary buttons swapped.
+    pub left_handed: Option<bool>,
+    /// Touchpads only.
+    pub click_method: Option<ClickMethod>,
+    pub tap_to_click: Option<bool>,
+    pub disable_while_typing: Option<bool>,
+}
+
+impl Default for PointerSettings {
+    fn default() -> Self {
+        Self {
+            speed: None,
+            natural_scroll: None,
+            scroll_speed: 1.0,
+            left_handed: None,
+            click_method: None,
+            tap_to_click: None,
+            disable_while_typing: None,
+        }
+    }
+}
+
+/// `input.json`: mice and touchpads.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InputConfig {
+    pub mouse: PointerSettings,
+    pub touchpad: PointerSettings,
+}
+
+impl InputConfig {
+    pub fn parse(map: Option<&serde_json::Map<String, Value>>) -> Self {
+        let mut config = InputConfig::default();
+        let Some(map) = map else {
+            return config;
+        };
+        let common = |group: &serde_json::Map<String, Value>| PointerSettings {
+            speed: number_in(group, "speed", (-1.0, 1.0)),
+            natural_scroll: bool_of(group, "naturalScroll"),
+            scroll_speed: number_in(group, "scrollSpeed", (0.1, 10.0)).unwrap_or(1.0),
+            ..PointerSettings::default()
+        };
+        if let Some(Value::Object(mouse)) = map.get("mouse") {
+            config.mouse = PointerSettings {
+                left_handed: match mouse.get("secondaryClick").and_then(Value::as_str) {
+                    Some("right") => Some(false),
+                    Some("left") => Some(true),
+                    _ => None,
+                },
+                ..common(mouse)
+            };
+        }
+        if let Some(Value::Object(touchpad)) = map.get("touchpad") {
+            let click = match touchpad.get("secondaryClick").and_then(Value::as_str) {
+                Some("twoFinger") => Some(ClickMethod::TwoFinger),
+                Some("bottomRight") => Some(ClickMethod::BottomRight),
+                Some("bottomLeft") => Some(ClickMethod::BottomLeft),
+                _ => None,
+            };
+            config.touchpad = PointerSettings {
+                click_method: click,
+                left_handed: click.map(|c| c == ClickMethod::BottomLeft),
+                tap_to_click: bool_of(touchpad, "tapToClick"),
+                disable_while_typing: bool_of(touchpad, "disableWhileTyping"),
+                ..common(touchpad)
+            };
+        }
+        config
+    }
+}
+
 impl State {
     /// A file of the settings folder changed.
     pub fn config_changed(&mut self, name: &str) {
-        if name == KEYBOARD_FILE {
-            self.apply_keyboard_config();
+        match name {
+            KEYBOARD_FILE => self.apply_keyboard_config(),
+            INPUT_FILE => self.apply_input_config(),
+            _ => {}
+        }
+    }
+
+    /// `input.json`: to every mouse and touchpad now, and to each one that appears later.
+    pub fn apply_input_config(&mut self) {
+        let Some(dir) = self.config_dir.clone() else {
+            return;
+        };
+        let config = InputConfig::parse(read_json(&dir, INPUT_FILE).as_ref());
+        if config != self.input_config {
+            self.input_config = config;
+            #[cfg(feature = "drm")]
+            self.configure_input_devices();
         }
     }
 
     /// Reads and applies every settings file (at start).
     pub fn apply_all_config(&mut self) {
         self.apply_keyboard_config();
+        self.apply_input_config();
     }
 
     /// `keyboard.json`: the repeat goes to every bound keyboard (`wl_keyboard.repeat_info`),
@@ -236,6 +359,34 @@ impl State {
         true
     }
 
+    /// `input.state`: the settings in use, by kind of device, and the kinds connected.
+    pub fn input_state(&self) -> Value {
+        let settings = |s: &PointerSettings| {
+            serde_json::json!({
+                "speed": s.speed,
+                "naturalScroll": s.natural_scroll,
+                "scrollSpeed": s.scroll_speed,
+                "leftHanded": s.left_handed,
+                "secondaryClick": s.click_method.map(|m| match m {
+                    ClickMethod::TwoFinger => "twoFinger",
+                    ClickMethod::BottomRight => "bottomRight",
+                    ClickMethod::BottomLeft => "bottomLeft",
+                }),
+                "tapToClick": s.tap_to_click,
+                "disableWhileTyping": s.disable_while_typing,
+            })
+        };
+        let report = self.system.reported();
+        serde_json::json!({
+            "mouse": settings(&self.input_config.mouse),
+            "touchpad": settings(&self.input_config.touchpad),
+            "devices": {
+                "mouse": report.get("input.mouse").and_then(Value::as_bool).unwrap_or(false),
+                "touchpad": report.get("input.touchpad").and_then(Value::as_bool).unwrap_or(false),
+            },
+        })
+    }
+
     /// `keyboard.state`.
     pub fn keyboard_state(&mut self) -> Value {
         let active = self.active_layout();
@@ -302,6 +453,34 @@ mod tests {
             Value::Object(map) => map,
             _ => panic!("not an object"),
         }
+    }
+
+    #[test]
+    fn input_file_by_device_kind() {
+        assert_eq!(InputConfig::parse(None), InputConfig::default());
+        let config = InputConfig::parse(Some(&map(
+            r#"{"mouse": {"speed": -0.5, "naturalScroll": false, "secondaryClick": "left",
+                          "scrollSpeed": 2},
+                "touchpad": {"speed": 3, "tapToClick": true, "secondaryClick": "bottomLeft",
+                             "disableWhileTyping": false, "scrollSpeed": 0},
+                "doubleClickMs": 400}"#,
+        )));
+        assert_eq!(config.mouse.speed, Some(-0.5));
+        assert_eq!(config.mouse.natural_scroll, Some(false));
+        assert_eq!(config.mouse.left_handed, Some(true));
+        assert_eq!(config.mouse.scroll_speed, 2.0);
+        assert_eq!(config.mouse.click_method, None);
+        // Out of range: libinput's default speed, the normal scroll.
+        assert_eq!(config.touchpad.speed, None);
+        assert_eq!(config.touchpad.scroll_speed, 1.0);
+        assert_eq!(config.touchpad.tap_to_click, Some(true));
+        assert_eq!(config.touchpad.click_method, Some(ClickMethod::BottomLeft));
+        assert_eq!(config.touchpad.left_handed, Some(true));
+        assert_eq!(config.touchpad.disable_while_typing, Some(false));
+        let two = InputConfig::parse(Some(&map(
+            r#"{"touchpad": {"secondaryClick": "twoFinger"}}"#,
+        )));
+        assert_eq!(two.touchpad.left_handed, Some(false));
     }
 
     #[test]

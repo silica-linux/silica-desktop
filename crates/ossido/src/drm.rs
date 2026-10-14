@@ -47,6 +47,8 @@ pub struct DrmBackend {
     /// The `dev_t` of the GPU, to recognise its udev events.
     device_id: u64,
     libinput: Libinput,
+    /// The pointer devices, to apply `input.json` again when it changes.
+    devices: Vec<smithay::reexports::input::Device>,
     surface: Option<OutputSurface>,
     /// A frame is queued for scanout and waits for its vblank.
     pending: bool,
@@ -249,6 +251,7 @@ pub fn init_drm(
         gbm,
         device_id,
         libinput: libinput.clone(),
+        devices: Vec::new(),
         surface,
         pending: false,
         cursor: None,
@@ -287,8 +290,15 @@ pub fn init_drm(
         }
     })?;
     handle.insert_source(LibinputInputBackend::new(libinput), |event, _, data| {
-        if let InputEvent::DeviceAdded { device } = &event {
-            info!("input device: {}", device.name());
+        match &event {
+            InputEvent::DeviceAdded { device } => {
+                info!("input device: {}", device.name());
+                data.state.input_device_added(device.clone());
+            }
+            InputEvent::DeviceRemoved { device } => {
+                data.state.input_device_removed(device);
+            }
+            _ => {}
         }
         data.state.process_input_event(event);
     })?;
@@ -300,7 +310,115 @@ pub fn init_drm(
     Ok(Ossido { state, display })
 }
 
+/// Whether a libinput device is a touchpad (it can tap) or another pointer (a mouse).
+fn is_touchpad(device: &smithay::reexports::input::Device) -> bool {
+    device.config_tap_finger_count() > 0
+}
+
+fn is_pointer(device: &smithay::reexports::input::Device) -> bool {
+    device.has_capability(smithay::reexports::input::DeviceCapability::Pointer)
+}
+
+/// Applies `input.json` to one device; a setting left out goes back to libinput's default.
+fn configure_device(
+    device: &mut smithay::reexports::input::Device,
+    config: &crate::config::InputConfig,
+) {
+    use smithay::reexports::input::ClickMethod as Click;
+    let touchpad = is_touchpad(device);
+    let settings = if touchpad {
+        &config.touchpad
+    } else {
+        &config.mouse
+    };
+    if device.config_accel_is_available() {
+        let speed = settings
+            .speed
+            .unwrap_or_else(|| device.config_accel_default_speed());
+        let _ = device.config_accel_set_speed(speed);
+    }
+    if device.config_scroll_has_natural_scroll() {
+        let natural = settings
+            .natural_scroll
+            .unwrap_or_else(|| device.config_scroll_default_natural_scroll_enabled());
+        let _ = device.config_scroll_set_natural_scroll_enabled(natural);
+    }
+    if device.config_left_handed_is_available() {
+        let left = settings
+            .left_handed
+            .unwrap_or_else(|| device.config_left_handed_default());
+        let _ = device.config_left_handed_set(left);
+    }
+    if touchpad {
+        let tap = settings
+            .tap_to_click
+            .unwrap_or_else(|| device.config_tap_default_enabled());
+        let _ = device.config_tap_set_enabled(tap);
+        let method = match settings.click_method {
+            Some(crate::config::ClickMethod::TwoFinger) => Some(Click::Clickfinger),
+            Some(_) => Some(Click::ButtonAreas),
+            None => device.config_click_default_method(),
+        };
+        if let Some(method) = method
+            && device.config_click_methods().contains(&method)
+        {
+            let _ = device.config_click_set_method(method);
+        }
+        if device.config_dwt_is_available() {
+            let dwt = settings
+                .disable_while_typing
+                .unwrap_or_else(|| device.config_dwt_default_enabled());
+            let _ = device.config_dwt_set_enabled(dwt);
+        }
+    }
+}
+
 impl State {
+    /// A device appeared (at start or plugged in): `input.json` applies to it at once.
+    fn input_device_added(&mut self, mut device: smithay::reexports::input::Device) {
+        if !is_pointer(&device) {
+            return;
+        }
+        configure_device(&mut device, &self.input_config);
+        if let Some(backend) = self.drm_backend() {
+            backend.devices.push(device);
+        }
+        self.report_input_devices();
+    }
+
+    fn input_device_removed(&mut self, device: &smithay::reexports::input::Device) {
+        if let Some(backend) = self.drm_backend() {
+            backend.devices.retain(|d| d != device);
+        }
+        self.report_input_devices();
+    }
+
+    /// `input.json` changed: every pointer device again.
+    pub fn configure_input_devices(&mut self) {
+        let config = self.input_config.clone();
+        if let Some(backend) = self.drm_backend() {
+            for device in &mut backend.devices {
+                configure_device(device, &config);
+            }
+        }
+    }
+
+    /// Tells silica-daemon which kinds of pointer are connected (Settings shows its Trackpad
+    /// pane only with a touchpad).
+    fn report_input_devices(&mut self) {
+        let (touchpad, mouse) = match self.drm_backend() {
+            Some(backend) => (
+                backend.devices.iter().any(is_touchpad),
+                backend.devices.iter().any(|d| !is_touchpad(d)),
+            ),
+            None => (false, false),
+        };
+        self.system
+            .report("input.touchpad", serde_json::Value::Bool(touchpad));
+        self.system
+            .report("input.mouse", serde_json::Value::Bool(mouse));
+    }
+
     fn drm_backend(&mut self) -> Option<&mut DrmBackend> {
         match &mut self.backend {
             Backend::Drm(backend) => Some(backend),
