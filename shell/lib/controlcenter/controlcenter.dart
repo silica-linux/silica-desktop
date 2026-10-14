@@ -31,6 +31,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../l10n/l10n.dart';
+import '../menubar/menubar.dart' show barHeight;
 import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/shell_channel.dart';
@@ -855,6 +856,7 @@ class _ControlCenterState extends State<ControlCenter>
                     entries: _moduleMenuEntries(key),
                     anchor:
                         at - Offset(menuSize(_moduleMenuEntries(key)).width, 0),
+                    top: barHeight,
                     onDismissed: () => setState(() => _moduleMenu = null),
                   ),
                 ),

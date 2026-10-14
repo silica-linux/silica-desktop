@@ -24,6 +24,7 @@ import 'package:silica_ui/silica_ui.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 
 import '../l10n/l10n.dart';
+import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
 import '../system/app_registry.dart';
@@ -1940,6 +1941,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         entries: _menuEntries,
                         anchor: Offset.zero,
                         tip: tip,
+                        top: barHeight,
                         handlesPointer: false,
                         onDismissed: _closeMenu,
                         onRectsChanged: (rects) => setState(
