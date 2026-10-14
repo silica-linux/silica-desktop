@@ -6,6 +6,8 @@
 //! - `run`: starts Ossido (`--nested` or `--headless`, `--control PORT`); with `--shell` also
 //!   the full shell (wallpaper, menu bar, Dock, Faro, notifications) and the private session
 //!   bus with `silica-daemon`, in release.
+//! - `vm`: the real session (Ossido on DRM/KMS with the shell) in a QEMU/KVM virtual machine,
+//!   checked with a screenshot (`vm.rs`, docs/vm.md).
 //! - `unsafe`: `unsafe` allowed only in the embedder FFI.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter for the embedder (see `flutter.rs`).
 
@@ -13,6 +15,7 @@ mod bench;
 mod bench_glass;
 mod flutter;
 mod install;
+mod vm;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -67,8 +70,9 @@ fn main() -> ExitCode {
             None => Err("usage: cargo xtask install-app <path of an app>".to_owned()),
         },
         Some("install-portal") => install::install_portal(),
+        Some("vm") => vm::vm(args.get(1..).unwrap_or_default()),
         _ => Err(
-            "usage: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
+            "usage: cargo xtask <ci|layers|assets|unsafe|run|vm|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
                 .to_owned(),
         ),
     };
@@ -216,7 +220,19 @@ fn shell_components() -> Result<Vec<String>> {
         root.join("target/release/silica-embedder").display(),
         engine.display()
     );
-    let bundle = bundle.display();
+    // Private session bus with silica-daemon (notifications): when nested, the host
+    // session's ones are already taken.
+    Ok(std::iter::once("--session-bus".to_owned())
+        .chain(shell_component_args(
+            &embedder,
+            &bundle.display().to_string(),
+        ))
+        .collect())
+}
+
+/// `--spawn-shell` arguments for every shell component: `embedder` is the embedder command
+/// with its options, `bundle` the shell's `flutter_assets`.
+pub(crate) fn shell_component_args(embedder: &str, bundle: &str) -> Vec<String> {
     let components = [
         format!(
             "--layer background --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --namespace wallpaper --dart-arg wallpaper {bundle}"
@@ -240,15 +256,10 @@ fn shell_components() -> Result<Vec<String>> {
             "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace controlcenter --dart-arg controlcenter {bundle}"
         ),
     ];
-    // Private session bus with silica-daemon (notifications): when nested, the host
-    // session's ones are already taken.
-    Ok(std::iter::once("--session-bus".to_owned())
-        .chain(
-            components
-                .iter()
-                .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")]),
-        )
-        .collect())
+    components
+        .iter()
+        .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")])
+        .collect()
 }
 
 /// On WSL2 the `$XDG_RUNTIME_DIR/wayland-0` link to WSLg is sometimes missing: in that case

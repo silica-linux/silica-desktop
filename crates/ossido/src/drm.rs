@@ -285,7 +285,7 @@ pub fn init_drm(
         data.state.render_drm();
         TimeoutAction::ToDuration(IDLE_FRAME)
     })?;
-    info!("backend drm pronto");
+    info!("drm backend ready");
     Ok(Ossido { state, display })
 }
 
