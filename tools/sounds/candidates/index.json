@@ -1,0 +1,87 @@
+{
+  "trash-move": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "trash-move-A.wav",
+        "description": "Airy sheet: a passing whoosh with slight flutter, a soft paper rustle landing on a plastic bin bottom."
+      },
+      "B": {
+        "file": "trash-move-B.wav",
+        "description": "Crisp and quick: a brighter, shorter whoosh, a crackly rustle and a faint ring of a steel mesh bin."
+      },
+      "C": {
+        "file": "trash-move-C.wav",
+        "description": "Soft flutter: a slower, darker whoosh of a flapping sheet, a muffled rustle and a deeper thump."
+      }
+    }
+  },
+  "trash-drag": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "trash-drag-A.wav",
+        "description": "A short soft rustle, then a light tap on a moulded plastic bin."
+      },
+      "B": {
+        "file": "trash-drag-B.wav",
+        "description": "A short rustle, then a tiny tap on a thin steel bin that rings briefly."
+      },
+      "C": {
+        "file": "trash-drag-C.wav",
+        "description": "A lighter rustle, then a hollow woody tock with the bin's air cavity."
+      }
+    }
+  },
+  "trash-empty": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "trash-empty-A.wav",
+        "description": "Crisp crumple, about 0.6 s: crackling bursts that darken as the ball compacts."
+      },
+      "B": {
+        "file": "trash-empty-B.wav",
+        "description": "Tight and quick crumple, about 0.5 s, ending with the ball dropping softly into the bin."
+      },
+      "C": {
+        "file": "trash-empty-C.wav",
+        "description": "Soft tissue-like crumple, about 0.75 s: smoother, darker, few crackles."
+      }
+    }
+  },
+  "file-transfer": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "file-transfer-A.wav",
+        "description": "Two-note glass chime (D6 then G6, a fourth up) from small glass bowl modes."
+      },
+      "B": {
+        "file": "file-transfer-B.wav",
+        "description": "Airy rising swish ending on a faint glass tink."
+      },
+      "C": {
+        "file": "file-transfer-C.wav",
+        "description": "Two-note soft woody pop from tuned-bar modes (G5 then D6)."
+      }
+    }
+  },
+  "screen-capture": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "screen-capture-A.wav",
+        "description": "Shutter double click, 60 ms apart: filtered transients, a tiny steel blade body, light housing."
+      },
+      "B": {
+        "file": "screen-capture-B.wav",
+        "description": "Leaf shutter: a tighter, brighter double click 35 ms apart, little body."
+      },
+      "C": {
+        "file": "screen-capture-C.wav",
+        "description": "Reflex-camera style: a heavier first click with a bounce and a spring ring, then the return 90 ms later."
+      }
+    }
+  }
+}
