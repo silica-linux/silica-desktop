@@ -60,6 +60,28 @@ void main() {
     expect(autostartCommands(env: env), ['notes']);
   });
 
+  test('login items start only in a real Silica session', () {
+    final runtime = Directory.systemTemp.createTempSync('runtime');
+    addTearDown(() => runtime.deleteSync(recursive: true));
+    final env = {
+      'XDG_RUNTIME_DIR': runtime.path,
+      'WAYLAND_DISPLAY': 'wayland-9',
+      'XDG_CURRENT_DESKTOP': 'GNOME',
+      'XDG_CONFIG_HOME': runtime.path,
+      'XDG_CONFIG_DIRS': runtime.path,
+    };
+    runAutostartOnce(env: env);
+    expect(
+      File('${runtime.path}/silica-autostart-wayland-9').existsSync(),
+      isFalse,
+    );
+    runAutostartOnce(env: {...env, 'XDG_CURRENT_DESKTOP': 'Silica'});
+    expect(
+      File('${runtime.path}/silica-autostart-wayland-9').existsSync(),
+      isTrue,
+    );
+  });
+
   test('recent documents of an app, newest first, only existing files', () {
     const entry = DesktopEntry(
       id: 'org.example.Editor',

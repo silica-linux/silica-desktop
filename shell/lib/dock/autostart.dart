@@ -93,6 +93,10 @@ List<String> autostartCommands({Map<String, String>? env}) {
 /// Dock from starting them again.
 void runAutostartOnce({Map<String, String>? env}) {
   final e = env ?? Platform.environment;
+  // Only in a real Silica session (silica-session sets the desktop name): a nested or
+  // headless development session must not start the host's login items.
+  final desktops = (e['XDG_CURRENT_DESKTOP'] ?? '').split(':');
+  if (!desktops.contains('Silica')) return;
   final runtime = e['XDG_RUNTIME_DIR'];
   if (runtime == null || runtime.isEmpty) return;
   final marker = File(
