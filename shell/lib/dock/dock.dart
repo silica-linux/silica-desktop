@@ -729,7 +729,6 @@ class _LiveDockState extends State<LiveDock> {
 /// Colors of the light appearance (dock.md).
 const Color separatorColor = Color(0xFF484950);
 const Color indicatorColor = Color(0xFF03040B);
-const Color labelBody = Color(0xFFBDBEC3);
 
 /// Icon menu (D-04): it appears after ~575 ms of pressing (550–600 measured), it drags
 /// beyond 5 pt; the tip touches ~11 pt above the bottom of the Dock.
@@ -814,53 +813,24 @@ const double minimizedBadgeBelow = 4;
 
 /// Pressed icon: darkened (estimate, the value is not measured).
 const Color pressedShade = Color(0x40000000);
-const Color labelBodyTop = Color(0xFFD7D8DE);
-const Color labelBodyBottom = Color(0xFFC1C2C8);
-const Color labelBorder = Color(0xFF3C3D41);
-const Color labelText = Color(0xFF1C1C1D);
 
 /// The Dock colors drawn by the shell, light and dark (dock.md: separator `#a9aaaf`,
-/// indicator `#e5e6eb`, label `#7f8086` with the first row `#8e8f96` and text `#f9f9f9`;
-/// the `#3c3d41` border is the same). The bottom of the label background in dark is
-/// *estimated* equal to the body.
+/// indicator `#e5e6eb`). The label is glass like the menus ([DockLabel]).
 @immutable
 class DockColors {
-  const DockColors({
-    required this.separator,
-    required this.indicator,
-    required this.labelTop,
-    required this.labelBody,
-    required this.labelBottom,
-    required this.labelBorder,
-    required this.labelText,
-  });
+  const DockColors({required this.separator, required this.indicator});
 
   final Color separator;
   final Color indicator;
-  final Color labelTop;
-  final Color labelBody;
-  final Color labelBottom;
-  final Color labelBorder;
-  final Color labelText;
 
   static const DockColors light = DockColors(
     separator: Color(0xFF484950),
     indicator: Color(0xFF03040B),
-    labelTop: Color(0xFFD7D8DE),
-    labelBody: Color(0xFFBDBEC3),
-    labelBottom: Color(0xFFC1C2C8),
-    labelBorder: Color(0xFF3C3D41),
-    labelText: Color(0xFF1C1C1D),
   );
 
   static const DockColors dark = DockColors(
     separator: Color(0xFFA9AAAF),
     indicator: Color(0xFFE5E6EB),
-    labelTop: Color(0xFF8E8F96),
-    labelBody: Color(0xFF7F8086),
-    labelBottom: Color(0xFF7F8086),
-    labelBorder: Color(0xFF3C3D41),
-    labelText: Color(0xFFF9F9F9),
   );
 
   static DockColors of(BuildContext context) =>
@@ -2137,7 +2107,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   Widget _capsule(String text, double centerX, double tipY, double opacity) {
     final style = uiText(
       size: labelFontSize,
-      color: DockColors.of(context).labelText,
+      color: MenuColors.of(context).text,
     );
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
@@ -2151,13 +2121,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       height: labelHeight + labelTip,
       child: Opacity(
         opacity: opacity,
-        child: CustomPaint(
-          painter: _LabelPainter(DockColors.of(context)),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: labelTip),
-            child: Center(child: Text(text, style: style)),
-          ),
-        ),
+        child: DockLabel(text: text, style: style),
       ),
     );
   }
@@ -2268,7 +2232,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final tipY = iconTopY - labelGap;
     final style = uiText(
       size: labelFontSize,
-      color: DockColors.of(context).labelText,
+      color: MenuColors.of(context).text,
     );
     final text = TextPainter(
       text: TextSpan(text: widget.items[index].label, style: style),
@@ -2282,13 +2246,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       height: labelHeight + labelTip,
       child: Opacity(
         opacity: opacity,
-        child: CustomPaint(
-          painter: _LabelPainter(DockColors.of(context)),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: labelTip),
-            child: Center(child: Text(widget.items[index].label, style: style)),
-          ),
-        ),
+        child: DockLabel(text: widget.items[index].label, style: style),
       ),
     );
   }
@@ -2440,52 +2398,90 @@ Path labelTipOutline() => Path()
   ..arcToPoint(const Offset(9.361, -6.516), radius: const Radius.circular(3))
   ..close();
 
-class _LabelPainter extends CustomPainter {
-  const _LabelPainter(this.colors);
-  final DockColors colors;
+/// The Dock label (TIP-01): the same glass as the menus (`thick`, drawn by Ossido with its
+/// rim) and the same shadow, with the label's own measured shape: a capsule of
+/// [labelHeight] and the small tip below it ([labelTipWidth] x [labelTipDepth]).
+class DockLabel extends StatelessWidget {
+  const DockLabel({super.key, required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  /// The glass the label declares; the menus declare the same material
+  /// (`MenuPanel`: `GlassMaterial.thick`, not interactive, no group).
+  static const GlassMaterial material = GlassMaterial.thick;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) => CustomPaint(
+        painter: _LabelShadow(box.maxWidth, MenuColors.of(context).shadow),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: labelHeight,
+            child: LiquidGlass(
+              radius: labelHeight / 2,
+              material: material,
+              interactive: false,
+              tip: GlassTip(
+                x: box.maxWidth / 2,
+                width: labelTipWidth,
+                height: labelTipDepth,
+              ),
+              child: Center(child: Text(text, style: style)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The tip rectangle of the label: base and depth of the measured outline (TIP-01).
+const double labelTipWidth = 18.722;
+const double labelTipDepth = 6.5;
+
+/// The menus' shadow (`MenuPanel`: blur 16 pt, 4 pt lower, not on the glass, tip included).
+class _LabelShadow extends CustomPainter {
+  const _LabelShadow(this.width, this.color);
+  final double width;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0.5, 0.5, size.width - 1, labelHeight - 1),
+      Rect.fromLTWH(0, 0, width, labelHeight),
       const Radius.circular(labelHeight / 2),
     );
-    // The measured outline (TIP-01, Dock label): concave fillets of 3 pt into the body,
-    // straight flanks at 39°, a 0.92 pt round apex, 6.5 pt below the body's edge. It hangs
-    // below the painter's box (layout keeps the earlier 3 pt), like the reference.
-    final edge = labelHeight - 0.5;
-    final tip = labelTipOutline().shift(Offset(size.width / 2, edge + 6.516));
-    final shape = Path.combine(
+    final tip = labelTipOutline().shift(Offset(width / 2, labelHeight + 6.516));
+    final glass = Path.combine(
       PathOperation.union,
       Path()..addRRect(body),
       tip,
     );
-    canvas.drawPath(
-      shape,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          // The first light row (#d7d8de) and the one below still almost the same (215 in the
-          // recording), then the body.
-          colors: [
-            colors.labelTop,
-            colors.labelTop,
-            colors.labelBody,
-            colors.labelBottom,
-          ],
-          stops: const [0, 0.07, 0.16, 1],
-        ).createShader(Offset.zero & size),
-    );
-    canvas.drawPath(
-      shape,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = colors.labelBorder,
-    );
+    canvas
+      ..save()
+      ..clipPath(
+        Path.combine(
+          PathOperation.difference,
+          Path()..addRect(Rect.fromLTWH(0, 0, width, labelHeight).inflate(60)),
+          glass,
+        ),
+      )
+      ..drawRRect(
+        body.shift(const Offset(0, 4)),
+        Paint()
+          ..color = color
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            Shadow.convertRadiusToSigma(16),
+          ),
+      )
+      ..restore();
   }
 
   @override
-  bool shouldRepaint(_LabelPainter old) => old.colors != colors;
+  bool shouldRepaint(_LabelShadow old) =>
+      old.width != width || old.color != color;
 }
