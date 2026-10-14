@@ -108,7 +108,8 @@ plan/                  gitignored: stato, piano, riferimenti macOS
 `cargo xtask layers` verifica i livelli: nessun crate sotto la shell dipende da
 Flutter, e `ossido` non dipende da `daemon`.
 
-Gli altri repository di `silica-linux`:
+Questo repository è `silica-desktop` (fino al 2026-10-14 `silica`). Gli altri repository di
+`silica-linux`:
 
 | Repository | Cosa | Licenza |
 | --- | --- | --- |
@@ -116,6 +117,10 @@ Gli altri repository di `silica-linux`:
 | `silica-icons` | icone delle app e dei file (a livelli), 313 simboli di sistema in tre pesi | CC BY-SA 4.0 |
 | `silica-cursors` | cursori, archiviato: da rifare più avanti | CC BY-SA 4.0 |
 | `silica-reference` | osservazioni di macOS 27, clonato in `plan/reference/` (privato) | — |
+| `silica-packages` | i pacchetti RPM (desktop, app, Inter, silica-icons) e la sessione Wayland installabile su Fedora | MIT OR Apache-2.0 |
+| `silica-os` | la distro: immagine bootc sopra Fedora Atomic con i default di Silica, pipeline e ISO di installazione | MIT OR Apache-2.0 |
+| `silica-brand` | logo, banner dei repository, sfondi delle versioni (con le righe in `ASSETS.md`) | da decidere (marchio) |
+| `silica-setup` | l'assistente al primo avvio (un'app, come `mustache`) | MIT OR Apache-2.0 |
 | un repository per app | `mustache` (pubblico, il gestore dei file), poi Impostazioni, Terminale, …: dipendono da `silica-ui`; si costruiscono con `cargo xtask bundle <percorso>`; `cargo xtask install-app <percorso>` installa la loro voce `.desktop` (modello in `linux/` del repository dell'app) | MIT OR Apache-2.0 |
 
 Faro e gli altri componenti della shell non sono app: restano in `shell/`. Un cambiamento a

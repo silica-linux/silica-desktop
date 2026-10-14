@@ -7,7 +7,7 @@ default-members = ["crates/*"]
 version = "0.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/silica-linux/silica"
+repository = "https://github.com/silica-linux/silica-desktop"
 
 [workspace.lints.rust]
 # "deny" e non "forbid": l'FFI dell'embedder e l'EGL di Ossido lo riabilitano, solo lì
