@@ -444,6 +444,11 @@ class _MenuBarState extends State<MenuBar> {
   /// manager's desktop "x y desktop" or "x y items" (#147).
   Offset? _desktopMenuAt;
   DesktopMenuKind _desktopMenuKind = DesktopMenuKind.wallpaper;
+
+  /// The desktop menu's entries, taken when it opens. The chosen item makes the file manager
+  /// announce its new state (Move to Trash, Use Stacks…): a new list on that rebuild would
+  /// restart the menu halfway through its closing fade and leave it open.
+  List<MenuEntry>? _desktopMenuEntries;
   String _desktopMenuState = '';
 
   /// Each action sent to the file manager's desktop carries a new serial: the broadcast is a
@@ -476,7 +481,10 @@ class _MenuBarState extends State<MenuBar> {
     _closeWindowMenu();
     final screen = await LayerControl.outputSize();
     if (!mounted) return;
-    setState(() => _desktopMenuAt = at);
+    setState(() {
+      _desktopMenuAt = at;
+      _desktopMenuEntries = _desktopEntries();
+    });
     LayerControl.size(0, screen?.height ?? at.dy + 400);
     LayerControl.inputRegion([_barRect]);
     LayerControl.keyboard('exclusive');
@@ -484,7 +492,10 @@ class _MenuBarState extends State<MenuBar> {
 
   void _closeDesktopMenu({bool announce = true}) {
     if (_desktopMenuAt == null) return;
-    setState(() => _desktopMenuAt = null);
+    setState(() {
+      _desktopMenuAt = null;
+      _desktopMenuEntries = null;
+    });
     if (announce) {
       _desktopMenuState = '';
       ShellChannel.instance.broadcast('desktopmenu', '');
@@ -840,7 +851,7 @@ class _MenuBarState extends State<MenuBar> {
                   Positioned.fill(
                     child: MenuHost(
                       key: ValueKey(at),
-                      entries: _desktopEntries(),
+                      entries: _desktopMenuEntries ?? _desktopEntries(),
                       anchor: Offset(at.dx, at.dy - desktopMenuAbove),
                       onDismissed: _closeDesktopMenu,
                       onRectsChanged: _menuRegion,
