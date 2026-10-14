@@ -1410,6 +1410,7 @@ impl App {
     /// - `outputSize` → `{width, height}` of the screen in points (null if unknown);
     /// - `setSize {width, height}` in points, 0 to follow the anchors (the menu bar grows
     ///   while a menu is open).
+    /// - `setExclusiveZone {zone}` in points (the Dock hiding itself gives its room back).
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -1454,6 +1455,20 @@ impl App {
                 match (&self.surface, value("width"), value("height")) {
                     (Shell::Layer(layer), Some(w), Some(h)) => {
                         layer.set_size(w, h);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            Some("setExclusiveZone") => {
+                let zone = args
+                    .get("zone")
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|v| v.is_finite())
+                    .map(|v| v.round().clamp(-1.0, 16384.0) as i32);
+                match (&self.surface, zone) {
+                    (Shell::Layer(layer), Some(zone)) => {
+                        layer.set_exclusive_zone(zone);
                         true
                     }
                     _ => false,

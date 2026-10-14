@@ -652,4 +652,34 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get ccKeyboardBrightness => 'Luminosità tastiera';
+
+  @override
+  String get dockHidingOn => 'Nascondi automaticamente';
+
+  @override
+  String get dockHidingOff => 'Non nascondere più';
+
+  @override
+  String get dockPositionOnScreen => 'Posizione sullo schermo';
+
+  @override
+  String get dockPositionLeft => 'A sinistra';
+
+  @override
+  String get dockPositionBottom => 'In basso';
+
+  @override
+  String get dockPositionRight => 'A destra';
+
+  @override
+  String get dockMinimizeEffect => 'Effetto di riduzione';
+
+  @override
+  String get dockEffectGenie => 'Effetto genio';
+
+  @override
+  String get dockEffectScale => 'Effetto scala';
+
+  @override
+  String get dockSettingsEllipsis => 'Impostazioni del Dock…';
 }

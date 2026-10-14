@@ -652,4 +652,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ccKeyboardBrightness => 'Keyboard Brightness';
+
+  @override
+  String get dockHidingOn => 'Turn hiding on';
+
+  @override
+  String get dockHidingOff => 'Turn hiding off';
+
+  @override
+  String get dockPositionOnScreen => 'Position on screen';
+
+  @override
+  String get dockPositionLeft => 'Left';
+
+  @override
+  String get dockPositionBottom => 'Bottom';
+
+  @override
+  String get dockPositionRight => 'Right';
+
+  @override
+  String get dockMinimizeEffect => 'Minimize effect';
+
+  @override
+  String get dockEffectGenie => 'Genie effect';
+
+  @override
+  String get dockEffectScale => 'Scale effect';
+
+  @override
+  String get dockSettingsEllipsis => 'Dock settings…';
 }

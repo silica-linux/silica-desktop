@@ -30,6 +30,10 @@ class LayerControl {
   static Future<void> size(double width, double height) =>
       _call('setSize', {'width': width, 'height': height});
 
+  /// The exclusive zone in points (the Dock gives its room back while it hides itself).
+  static Future<void> exclusiveZone(double zone) =>
+      _call('setExclusiveZone', {'zone': zone});
+
   /// The screen size in points (null outside Silica or when unknown).
   static Future<Size?> outputSize() async {
     try {

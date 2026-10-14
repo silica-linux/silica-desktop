@@ -28,6 +28,7 @@ import '../system/layer_control.dart';
 import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
 import 'apps.dart';
+import 'options.dart';
 import 'icons.dart';
 import 'stack.dart';
 import 'stack_settings.dart';
@@ -48,9 +49,11 @@ class _LiveDockState extends State<LiveDock> {
   );
   late final List<String> _pinned = pinnedIds(_entries);
 
-  /// Dock options (dock.json): magnification and the recent apps section (D-08).
-  bool _magnify = dockFlag('magnify', fallback: true);
-  bool _recentsOn = dockFlag('recents', fallback: false);
+  /// Dock options (dock.json), reloaded when Settings changes them.
+  final DockOptionsWatcher _options = DockOptionsWatcher();
+  DockOptions get _o => _options.value.value;
+  bool get _magnify => _o.magnify;
+  bool get _recentsOn => _o.recents;
 
   /// The apps open at the last change and those closed recently, from the most recent.
   Set<String> _running = {};
@@ -77,7 +80,7 @@ class _LiveDockState extends State<LiveDock> {
   }
 
   void _openPath(String path) =>
-      ShellChannel.instance.launch('xdg-open ${shellQuote(path)}');
+      ShellChannel.instance.launch(openPathCommand(_entries, path));
 
   /// The settings of a stack as menu items (D-04): "Sort by", "Show as",
   /// "View content as", with the check mark on the choice.
@@ -176,6 +179,22 @@ class _LiveDockState extends State<LiveDock> {
     ShellChannel.instance.focused.addListener(_focused);
     ShellChannel.instance.minimized.addListener(_minimized);
     ShellChannel.instance.refresh();
+    _options.value.addListener(_optionsChanged);
+    _applyOptions();
+  }
+
+  void _optionsChanged() {
+    setState(() {});
+    _applyOptions();
+  }
+
+  /// What the options ask of the compositor: the room the Dock keeps (none while it hides
+  /// itself) and the minimize effect.
+  void _applyOptions() {
+    LayerControl.exclusiveZone(_o.autohide ? 0 : backgroundHeight + bottomGap);
+    ShellChannel.instance.execute('window.minimize_effect', {
+      'effect': _o.minimizeEffect.name,
+    });
   }
 
   void _minimized() {
@@ -205,6 +224,8 @@ class _LiveDockState extends State<LiveDock> {
     AppRegistry.instance.apps.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_focused);
     ShellChannel.instance.minimized.removeListener(_minimized);
+    _options.value.removeListener(_optionsChanged);
+    _options.dispose();
     for (final image in _thumbnails.values) {
       image.dispose();
     }
@@ -233,29 +254,64 @@ class _LiveDockState extends State<LiveDock> {
     setState(() {});
   }
 
-  void _setOption(String key, bool value) {
-    setState(() {
-      if (key == 'magnify') _magnify = value;
-      if (key == 'recents') _recentsOn = value;
-    });
+  void _setOption(String key, Object value) {
     saveDockOption(key, value);
+    _options.reload();
   }
 
-  /// The separator menu (D-04): the options the Dock has. Hide, position and the minimize
-  /// effect arrive with those features.
-  List<MenuEntry> _separatorMenu() => [
-    MenuAction(
-      _magnify
-          ? l10nOf(context).magnificationOff
-          : l10nOf(context).magnificationOn,
-      onSelected: () => _setOption('magnify', !_magnify),
-    ),
-    MenuAction(
-      l10nOf(context).showRecentApps,
-      checked: _recentsOn,
-      onSelected: () => _setOption('recents', !_recentsOn),
-    ),
-  ];
+  /// The separator menu (D-04): hiding, magnification, position, minimize effect, then the
+  /// Dock settings. The side positions are not implemented yet (#72, #73): shown disabled.
+  List<MenuEntry> _separatorMenu() {
+    final l = l10nOf(context);
+    final settings = _entries[settingsAppId];
+    return [
+      MenuAction(
+        _o.autohide ? l.dockHidingOff : l.dockHidingOn,
+        onSelected: () => _setOption('autohide', !_o.autohide),
+      ),
+      MenuAction(
+        _magnify ? l.magnificationOff : l.magnificationOn,
+        onSelected: () => _setOption('magnify', !_magnify),
+      ),
+      MenuAction(
+        l.dockPositionOnScreen,
+        submenu: [
+          for (final (position, label) in [
+            (DockPosition.left, l.dockPositionLeft),
+            (DockPosition.bottom, l.dockPositionBottom),
+            (DockPosition.right, l.dockPositionRight),
+          ])
+            MenuAction(
+              label,
+              checked: _o.position == position,
+              enabled: position == DockPosition.bottom,
+              onSelected: () => _setOption('position', position.name),
+            ),
+        ],
+      ),
+      MenuAction(
+        l.dockMinimizeEffect,
+        submenu: [
+          for (final (effect, label) in [
+            (MinimizeEffect.genie, l.dockEffectGenie),
+            (MinimizeEffect.scale, l.dockEffectScale),
+          ])
+            MenuAction(
+              label,
+              checked: _o.minimizeEffect == effect,
+              onSelected: () => _setOption('minimizeEffect', effect.name),
+            ),
+        ],
+      ),
+      if (settings?.exec case final exec?) ...[
+        const MenuDivider(),
+        MenuAction(
+          l.dockSettingsEllipsis,
+          onSelected: () => ShellChannel.instance.launch(exec),
+        ),
+      ],
+    ];
+  }
 
   void _focused() {
     final id = ShellChannel.instance.focused.value;
@@ -453,6 +509,8 @@ class _LiveDockState extends State<LiveDock> {
       registered: AppRegistry.instance.apps.value,
     ),
     magnification: _magnify ? defaultMagnification : 1,
+    autohide: _o.autohide,
+    indicators: _o.indicators,
     onActivate: _activate,
     onDropFiles: _dropFiles,
     menuFor: _menu,
@@ -512,6 +570,11 @@ const Duration gapSlide = Duration(milliseconds: 265);
 const double removeAbove = 130;
 const Duration removeFade = Duration(milliseconds: 250);
 const double dragInsideAbove = 20;
+
+/// Auto-hide (SH-DK-07): delay before revealing, slide up, slide down.
+const Duration autohideDelay = Duration(milliseconds: 190);
+const Duration autohideReveal = Duration(milliseconds: 190);
+const Duration autohideHide = Duration(milliseconds: 175);
 
 /// The empty slot where the dragged icon would fall.
 const Item gapItem = Item.app('');
@@ -629,6 +692,8 @@ class Dock extends StatefulWidget {
     super.key,
     required this.items,
     this.magnification = defaultMagnification,
+    this.autohide = false,
+    this.indicators = true,
     this.onActivate,
     this.onDropFiles,
     this.menuFor,
@@ -641,6 +706,12 @@ class Dock extends StatefulWidget {
 
   final List<Item> items;
   final double magnification;
+
+  /// Hidden below the screen until the pointer reaches the last row (SH-DK-07).
+  final bool autohide;
+
+  /// The dots under the open apps (SH-DK-12).
+  final bool indicators;
 
   /// Click on an app.
   final void Function(Item item)? onActivate;
@@ -739,6 +810,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   double? _pointerX;
   double _amount = 0;
   bool _inside = false;
+
+  /// Auto-hide (SH-DK-07): 1 shown, 0 hidden below the screen. It comes up only from the
+  /// last row of the screen, at any x, after ~190 ms, sliding in ~190 ms (ease-out); it goes
+  /// down with no delay in ~175 ms (ease-in). The whole Dock slides, no fade.
+  late final AnimationController _shown = AnimationController(
+    vsync: this,
+    value: widget.autohide ? 0 : 1,
+  )..addListener(() => setState(() {}));
+  Timer? _revealTimer;
   // Entrance or exit animation: where it starts and when.
   double _from = 0;
   Duration? _start;
@@ -808,6 +888,34 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   @override
+  void didUpdateWidget(Dock old) {
+    super.didUpdateWidget(old);
+    if (old.autohide != widget.autohide) {
+      widget.autohide ? _hideDock() : _revealDock();
+    }
+  }
+
+  void _revealDock() {
+    _revealTimer?.cancel();
+    _revealTimer = null;
+    _shown.animateTo(1, duration: autohideReveal, curve: Curves.easeOut);
+  }
+
+  /// Down, unless something of the Dock is in use (menu, drag, stack, alert).
+  void _hideDock() {
+    _revealTimer?.cancel();
+    _revealTimer = null;
+    if (!widget.autohide ||
+        _menuIndex != null ||
+        _drag != null ||
+        _stackIndex != null ||
+        widget.alert != null) {
+      return;
+    }
+    _shown.animateBack(0, duration: autohideHide, curve: Curves.easeIn);
+  }
+
+  @override
   void dispose() {
     _fileDrags?.cancel();
     _ticker.dispose();
@@ -818,6 +926,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _ghostTicker.dispose();
     _stackAnim.dispose();
     _stackFocus.dispose();
+    _shown.dispose();
+    _revealTimer?.cancel();
     super.dispose();
   }
 
@@ -1053,7 +1163,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
         : base;
     final submenus = menu == null ? const <Rect>[] : _submenuRects;
-    final key = '$dock $menu $submenus $alert $height $catchAll';
+    // Auto-hide: hidden, only the last row of the screen (the reveal edge); shown, that row too
+    // (it stays up while the pointer runs along it).
+    final bottomRow = Rect.fromLTWH(0, height - 1, size.width, 1);
+    final hiddenDock =
+        widget.autohide && _shown.value < 1 && menu == null && alert == null;
+    final key =
+        '$dock $menu $submenus $alert $height $catchAll $hiddenDock ${widget.autohide}';
     if (key == _layerState) return;
     _layerState = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1061,7 +1177,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       LayerControl.inputRegion(
         catchAll
             ? [Offset.zero & Size(size.width, height)]
+            : hiddenDock
+            ? [bottomRow]
             : [
+                if (widget.autohide) bottomRow,
                 dock,
                 if (menu != null) menu.inflate(4),
                 for (final r in submenus) r.inflate(4),
@@ -1242,6 +1361,21 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   void _hover(Offset position, Size size) {
+    if (widget.autohide) {
+      final bottomRow = position.dy >= size.height - 1;
+      final hidden =
+          _shown.value == 0 || _shown.status == AnimationStatus.reverse;
+      if (hidden) {
+        // Only the last row of the screen brings it up, after a short wait.
+        if (bottomRow) {
+          _revealTimer ??= Timer(autohideDelay, _revealDock);
+        } else {
+          _revealTimer?.cancel();
+          _revealTimer = null;
+        }
+        return;
+      }
+    }
     final rest = layout(widget.items, width: size.width, height: size.height);
     final current = layout(
       widget.items,
@@ -1268,6 +1402,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     });
     _setInside(inside);
     _showLabel(inside ? itemAt(current, widget.items, position.dx) : null);
+    // Leaving the Dock (but not along the bottom row) hides it again.
+    if (widget.autohide && !inside && position.dy < size.height - 1) {
+      _hideDock();
+    }
   }
 
   @override
@@ -1417,87 +1555,96 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             onExit: (_) {
               _setInside(false);
               _showLabel(null);
+              _hideDock();
             },
-            child: Stack(
-              children: [
-                Positioned(
-                  left: bx,
-                  top: by,
-                  width: bw,
-                  height: bh,
-                  child: const LiquidGlass(
-                    radius: backgroundRadius,
-                    material: GlassMaterial.clear,
-                    interactive: false,
-                    child: SizedBox.expand(),
-                  ),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _DockPainter(
-                      items,
-                      l,
-                      size.height,
-                      DockColors.of(context),
+            child: Transform.translate(
+              // Auto-hide: the whole Dock slides below the screen.
+              offset: Offset(
+                0,
+                (1 - _shown.value) * (backgroundHeight + bottomGap + 2),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: bx,
+                    top: by,
+                    width: bw,
+                    height: bh,
+                    child: const LiquidGlass(
+                      radius: backgroundRadius,
+                      material: GlassMaterial.clear,
+                      interactive: false,
+                      child: SizedBox.expand(),
                     ),
                   ),
-                ),
-                for (var i = 0; i < items.length; i++)
-                  if (items[i].minimizedWindow != null)
-                    _windowCell(
-                      l,
-                      i,
-                      iconRect(l, i, size.height).$1,
-                      iconRect(l, i, size.height).$2,
-                      iconRect(l, i, size.height).$3,
-                      items[i].icon,
-                      items[i],
-                    )
-                  else if (items[i].icon case final source?)
-                    _icon(l, i, size.height, source, items[i], sliding),
-                if (_drag case final drag?) ..._dragged(drag),
-                if (_ghost case final ghost?) _faded(ghost),
-                if (hovered != null && _menuIndex == null)
-                  _label(
-                    l,
-                    hovered,
-                    size.height,
-                    _labelAnim.value.clamp(0.0, 1.0),
-                  ),
-                if (stackWidget != null &&
-                    (_screen == null || size.height >= _screen!.height - 1))
-                  Focus(
-                    focusNode: _stackFocus,
-                    onKeyEvent: (node, event) {
-                      if (event is KeyDownEvent &&
-                          event.logicalKey == LogicalKeyboardKey.escape) {
-                        _closeStack();
-                        return KeyEventResult.handled;
-                      }
-                      return KeyEventResult.ignored;
-                    },
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [stackWidget],
-                    ),
-                  ),
-                if (alertRect != null && alert != null && alertRect.top >= 0)
-                  Positioned.fromRect(rect: alertRect, child: alert),
-                if (tip != null)
                   Positioned.fill(
-                    child: MenuHost(
-                      key: _menuKey,
-                      entries: _menuEntries,
-                      anchor: Offset.zero,
-                      tip: tip,
-                      handlesPointer: false,
-                      onDismissed: _closeMenu,
-                      onRectsChanged: (rects) => setState(
-                        () => _submenuRects = rects.skip(1).toList(),
+                    child: CustomPaint(
+                      painter: _DockPainter(
+                        items,
+                        l,
+                        size.height,
+                        DockColors.of(context),
+                        indicators: widget.indicators,
                       ),
                     ),
                   ),
-              ],
+                  for (var i = 0; i < items.length; i++)
+                    if (items[i].minimizedWindow != null)
+                      _windowCell(
+                        l,
+                        i,
+                        iconRect(l, i, size.height).$1,
+                        iconRect(l, i, size.height).$2,
+                        iconRect(l, i, size.height).$3,
+                        items[i].icon,
+                        items[i],
+                      )
+                    else if (items[i].icon case final source?)
+                      _icon(l, i, size.height, source, items[i], sliding),
+                  if (_drag case final drag?) ..._dragged(drag),
+                  if (_ghost case final ghost?) _faded(ghost),
+                  if (hovered != null && _menuIndex == null)
+                    _label(
+                      l,
+                      hovered,
+                      size.height,
+                      _labelAnim.value.clamp(0.0, 1.0),
+                    ),
+                  if (stackWidget != null &&
+                      (_screen == null || size.height >= _screen!.height - 1))
+                    Focus(
+                      focusNode: _stackFocus,
+                      onKeyEvent: (node, event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.escape) {
+                          _closeStack();
+                          return KeyEventResult.handled;
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [stackWidget],
+                      ),
+                    ),
+                  if (alertRect != null && alert != null && alertRect.top >= 0)
+                    Positioned.fromRect(rect: alertRect, child: alert),
+                  if (tip != null)
+                    Positioned.fill(
+                      child: MenuHost(
+                        key: _menuKey,
+                        entries: _menuEntries,
+                        anchor: Offset.zero,
+                        tip: tip,
+                        handlesPointer: false,
+                        onDismissed: _closeMenu,
+                        onRectsChanged: (rects) => setState(
+                          () => _submenuRects = rects.skip(1).toList(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -1723,12 +1870,21 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 }
 
 class _DockPainter extends CustomPainter {
-  _DockPainter(this.items, this.l, this.height, this.colors);
+  _DockPainter(
+    this.items,
+    this.l,
+    this.height,
+    this.colors, {
+    this.indicators = true,
+  });
 
   final List<Item> items;
   final Layout l;
   final double height;
   final DockColors colors;
+
+  /// With indicators off nothing else changes (SH-DK-12).
+  final bool indicators;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1748,7 +1904,7 @@ class _DockPainter extends CustomPainter {
       if (item.icon == null) {
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
       }
-      if (item.running) {
+      if (item.running && indicators) {
         canvas.drawCircle(
           Offset(l.center(i), by + bh - indicatorAbove),
           indicatorSize / 2,

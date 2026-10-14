@@ -1255,6 +1255,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keyboard Brightness'**
   String get ccKeyboardBrightness;
+
+  /// Dock separator menu: hide the Dock automatically
+  ///
+  /// In en, this message translates to:
+  /// **'Turn hiding on'**
+  String get dockHidingOn;
+
+  /// Dock separator menu
+  ///
+  /// In en, this message translates to:
+  /// **'Turn hiding off'**
+  String get dockHidingOff;
+
+  /// Dock separator menu, submenu
+  ///
+  /// In en, this message translates to:
+  /// **'Position on screen'**
+  String get dockPositionOnScreen;
+
+  /// Dock position
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get dockPositionLeft;
+
+  /// Dock position
+  ///
+  /// In en, this message translates to:
+  /// **'Bottom'**
+  String get dockPositionBottom;
+
+  /// Dock position
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get dockPositionRight;
+
+  /// Dock separator menu, submenu
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize effect'**
+  String get dockMinimizeEffect;
+
+  /// Minimize effect
+  ///
+  /// In en, this message translates to:
+  /// **'Genie effect'**
+  String get dockEffectGenie;
+
+  /// Minimize effect
+  ///
+  /// In en, this message translates to:
+  /// **'Scale effect'**
+  String get dockEffectScale;
+
+  /// Dock separator menu: opens Settings
+  ///
+  /// In en, this message translates to:
+  /// **'Dock settings…'**
+  String get dockSettingsEllipsis;
 }
 
 class _AppLocalizationsDelegate

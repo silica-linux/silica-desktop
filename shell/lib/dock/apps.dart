@@ -15,6 +15,9 @@ import '../system/silica_icons.dart';
 import 'dock.dart' show shellQuote;
 import 'model.dart';
 
+/// The Dock configuration file (dock.json).
+File dockConfigFile({Map<String, String>? env}) => _dockConfig(env);
+
 File _dockConfig(Map<String, String>? env) {
   final e = env ?? Platform.environment;
   final config = e['XDG_CONFIG_HOME'] ?? '${e['HOME'] ?? ''}/.config';
@@ -22,7 +25,8 @@ File _dockConfig(Map<String, String>? env) {
 }
 
 /// The Dock configuration ($XDG_CONFIG_HOME/silica/dock.json, usually ~/.config):
-/// `pinned`, `magnify`, `recents`.
+/// `pinned`, `magnify`, `recents`, `autohide`, `position`, `minimizeEffect`, `indicators`
+/// (options.dart).
 Map<String, Object?> readDockConfig({Map<String, String>? env}) {
   final file = _dockConfig(env);
   try {
@@ -126,6 +130,19 @@ String trashFilesDir({Map<String, String>? env}) {
       ? '${e['HOME'] ?? ''}/.local/share'
       : data;
   return '$base/Trash/files';
+}
+
+/// The Settings app ("Dock settings…" in the separator menu).
+const String settingsAppId = 'dev.frascella.Settings';
+
+/// The command that opens `path`: a folder in the file manager when it is installed, a file
+/// with its default app (`gio open`, which the image has; `xdg-open` where xdg-utils is).
+String openPathCommand(Map<String, DesktopEntry> entries, String path) {
+  final quoted = shellQuote(path);
+  if (FileSystemEntity.isDirectorySync(path)) {
+    if (entries[fileManagerId]?.exec case final exec?) return '$exec $quoted';
+  }
+  return 'gio open $quoted 2>/dev/null || xdg-open $quoted';
 }
 
 /// The command that opens the Trash: the file manager on the Trash folder when it is installed

@@ -889,5 +889,45 @@
   "ccKeyboardBrightness": "Keyboard Brightness",
   "@ccKeyboardBrightness": {
     "description": "Control Center module and HUD title: the keyboard backlight"
+  },
+  "dockHidingOn": "Turn hiding on",
+  "@dockHidingOn": {
+    "description": "Dock separator menu: hide the Dock automatically"
+  },
+  "dockHidingOff": "Turn hiding off",
+  "@dockHidingOff": {
+    "description": "Dock separator menu"
+  },
+  "dockPositionOnScreen": "Position on screen",
+  "@dockPositionOnScreen": {
+    "description": "Dock separator menu, submenu"
+  },
+  "dockPositionLeft": "Left",
+  "@dockPositionLeft": {
+    "description": "Dock position"
+  },
+  "dockPositionBottom": "Bottom",
+  "@dockPositionBottom": {
+    "description": "Dock position"
+  },
+  "dockPositionRight": "Right",
+  "@dockPositionRight": {
+    "description": "Dock position"
+  },
+  "dockMinimizeEffect": "Minimize effect",
+  "@dockMinimizeEffect": {
+    "description": "Dock separator menu, submenu"
+  },
+  "dockEffectGenie": "Genie effect",
+  "@dockEffectGenie": {
+    "description": "Minimize effect"
+  },
+  "dockEffectScale": "Scale effect",
+  "@dockEffectScale": {
+    "description": "Minimize effect"
+  },
+  "dockSettingsEllipsis": "Dock settings…",
+  "@dockSettingsEllipsis": {
+    "description": "Dock separator menu: opens Settings"
   }
 }

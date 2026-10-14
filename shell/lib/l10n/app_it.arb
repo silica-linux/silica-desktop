@@ -192,5 +192,15 @@
   "ccPrivacyWarning": "Avviso sulla privacy",
   "ccPrivacyRecent": "{app} di recente",
   "ccPrivacyNow": "{app}",
-  "ccKeyboardBrightness": "Luminosità tastiera"
+  "ccKeyboardBrightness": "Luminosità tastiera",
+  "dockHidingOn": "Nascondi automaticamente",
+  "dockHidingOff": "Non nascondere più",
+  "dockPositionOnScreen": "Posizione sullo schermo",
+  "dockPositionLeft": "A sinistra",
+  "dockPositionBottom": "In basso",
+  "dockPositionRight": "A destra",
+  "dockMinimizeEffect": "Effetto di riduzione",
+  "dockEffectGenie": "Effetto genio",
+  "dockEffectScale": "Effetto scala",
+  "dockSettingsEllipsis": "Impostazioni del Dock…"
 }
