@@ -1,10 +1,10 @@
-// I menu della barra finché il menu globale delle app non arriva (M7): il menu del logo,
-// quello dell'app e i menu con azioni che Ossido sa fare da sé (comandi del catalogo).
-// I menu senza azioni (Modifica, Aiuto) non si aprono.
+// The bar menus until the global app menu arrives (M7): the logo menu, the app menu and
+// the menus with actions Ossido can do by itself (catalog commands).
+// Menus without actions (Edit, Help) do not open.
 
 import 'package:silica_ui/silica_ui.dart';
 
-/// Le voci di un menu della barra; `run` esegue un comando di Ossido.
+/// The items of a bar menu; `run` runs an Ossido command.
 List<MenuEntry> barMenu(
   String name,
   String app,

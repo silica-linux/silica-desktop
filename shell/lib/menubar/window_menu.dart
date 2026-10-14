@@ -1,22 +1,22 @@
-// Il popover di disposizione delle finestre (windows.md, pressione lunga sul pulsante verde;
-// shots/windows/wtl-press-zoom-long-light): un menu con la punta in alto verso il pulsante,
-// largo 241, due righe di quattro icone 25 × 20 a passo 53,5 (la cima a +45 e a +124 dal
-// bordo del pannello) sotto le loro intestazioni, poi la voce dello schermo intero (centro a
-// +179). Le voci eseguono i comandi `window.tile_*` / `window.arrange_*` di Ossido sulla
-// finestra con il focus (quella del pulsante). Ritardo, animazione e margini: W-08.
+// The window arrangement popover (windows.md, long press on the green button;
+// shots/windows/wtl-press-zoom-long-light): a menu with its tip pointing up at the button,
+// 241 wide, two rows of four 25 × 20 icons at a 53.5 pitch (tops at +45 and +124 from the
+// panel edge) below their headings, then the full screen item (center at +179). The items
+// run Ossido's `window.tile_*` / `window.arrange_*` commands on the focused window (the one
+// of the button). Delay, animation and margins: W-08.
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 const double windowMenuWidth = 241;
 
-/// La riga delle icone: alta 46, le icone da +16.
+/// The icon row: 46 tall, icons from +16.
 const double windowMenuRow = 46;
 const Size windowMenuIcon = Size(25, 20);
 const double windowMenuPitch = 53.5;
 
-/// Le parti di un'icona: rettangoli in frazioni del riquadro; il primo è la finestra scelta
-/// (scuro), gli altri le altre finestre (grigio).
+/// The parts of an icon: rectangles as fractions of the box; the first is the chosen window
+/// (dark), the others the other windows (grey).
 typedef TileGlyph = List<Rect>;
 
 const Map<String, TileGlyph> tileGlyphs = {
@@ -42,7 +42,7 @@ const Map<String, TileGlyph> tileGlyphs = {
   ],
 };
 
-/// Le voci del popover; `execute` esegue un comando del catalogo di Ossido.
+/// The popover items; `execute` runs a command of Ossido's catalog.
 List<MenuEntry> windowMenuEntries(ValueChanged<String> execute) => [
   const MenuSection('Metà dello schermo'),
   _row(const [
@@ -85,7 +85,7 @@ MenuCustom _row(List<String> commands, ValueChanged<String> execute) =>
         children: [
           for (var i = 0; i < commands.length; i++)
             Positioned(
-              // Centri a 39, 92,5, 146, 199,5 dal bordo del pannello.
+              // Centers at 39, 92.5, 146, 199.5 from the panel edge.
               left: 39 + windowMenuPitch * i - windowMenuPitch / 2,
               width: windowMenuPitch,
               top: 0,
@@ -103,12 +103,12 @@ MenuCustom _row(List<String> commands, ValueChanged<String> execute) =>
       ),
     );
 
-/// Il glifo delle icone: chiaro `#1d1d1f`, scuro `#e1e1e1` (pixel più chiaro di
-/// wtl-press-zoom-long-dark). Il fondo sotto il puntatore in scuro è *stimato*.
+/// The icon glyph: light `#1d1d1f`, dark `#e1e1e1` (lightest pixel of
+/// wtl-press-zoom-long-dark). The background under the pointer in dark is *estimated*.
 const Color tileGlyph = Color(0xFF1D1D1F);
 const Color tileGlyphDark = Color(0xFFE1E1E1);
 
-/// Un'icona della riga: scura, con un fondo leggero sotto il puntatore.
+/// An icon of the row: dark, with a light background under the pointer.
 class _TileButton extends StatefulWidget {
   const _TileButton({super.key, required this.glyph, required this.onPressed});
   final TileGlyph glyph;
@@ -159,8 +159,8 @@ class _TileButtonState extends State<_TileButton> {
   }
 }
 
-/// Il contorno dello schermo (raggio 4, tratto 1,5) con le parti piene: la finestra scelta
-/// nel colore del testo, le altre in grigio.
+/// The screen outline (radius 4, stroke 1.5) with the filled parts: the chosen window in
+/// the text color, the others in grey.
 class TilePainter extends CustomPainter {
   const TilePainter(this.glyph, this.color, {this.stroke = 1.5});
   final TileGlyph glyph;

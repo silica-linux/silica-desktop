@@ -1,6 +1,6 @@
-// Il canale silica/layer dell'embedder: tastiera e regione d'input del layer, per i
-// componenti che restano in esecuzione nascosti (Faro chiuso non deve prendere né
-// puntatore né tastiera).
+// The embedder's silica/layer channel: keyboard and input region of the layer, for the
+// components that keep running while hidden (a closed Faro must take neither pointer
+// nor keyboard).
 
 import 'package:flutter/services.dart';
 
@@ -12,11 +12,11 @@ class LayerControl {
     JSONMethodCodec(),
   );
 
-  /// `none`, `exclusive` o `on-demand`.
+  /// `none`, `exclusive` or `on-demand`.
   static Future<void> keyboard(String mode) =>
       _call('setKeyboardInteractivity', {'mode': mode});
 
-  /// La superficie riceve il puntatore solo in questi rettangoli; null: ovunque.
+  /// The surface receives the pointer only in these rectangles; null: everywhere.
   static Future<void> inputRegion(List<Rect>? rects) =>
       _call('setInputRegion', {
         'rects': rects == null
@@ -26,11 +26,11 @@ class LayerControl {
               ],
       });
 
-  /// Dimensione della superficie in punti; 0 segue gli ancoraggi (la larghezza della barra).
+  /// Surface size in points; 0 follows the anchors (the width of the bar).
   static Future<void> size(double width, double height) =>
       _call('setSize', {'width': width, 'height': height});
 
-  /// La dimensione dello schermo in punti (null fuori da Silica o se non si sa).
+  /// The screen size in points (null outside Silica or when unknown).
   static Future<Size?> outputSize() async {
     try {
       final size = await channel.invokeMethod<Object?>('outputSize');
@@ -41,7 +41,7 @@ class LayerControl {
         );
       }
     } on MissingPluginException {
-      // Fuori da Silica.
+      // Outside Silica.
     }
     return null;
   }
@@ -50,7 +50,7 @@ class LayerControl {
     try {
       await channel.invokeMethod<Object?>(method, args);
     } on MissingPluginException {
-      // Fuori da Silica (test).
+      // Outside Silica (tests).
     }
   }
 }

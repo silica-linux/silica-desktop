@@ -24,7 +24,7 @@ Exec=nautilus --new-window
 
 void main() {
   test(
-    'una voce .desktop: nome localizzato, Exec senza codici, azioni ignorate',
+    'a .desktop entry: localized name, Exec without codes, actions ignored',
     () {
       final entry = parseDesktopEntry('org.gnome.Nautilus', filesEntry)!;
       expect(entry.name, 'File');
@@ -37,7 +37,7 @@ void main() {
     },
   );
 
-  test('voci nascoste o senza Exec non sono app', () {
+  test('hidden entries or entries without Exec are not apps', () {
     expect(
       parseDesktopEntry(
         'x',
@@ -56,7 +56,7 @@ void main() {
     expect(stripFieldCodes('app %f --x %% %U'), 'app --x %');
   });
 
-  test('le cartelle XDG: la prima vince a parità di id', () {
+  test('XDG folders: the first one wins on equal ids', () {
     final root = Directory.systemTemp.createTempSync('silica-apps');
     addTearDown(() => root.deleteSync(recursive: true));
     final user = Directory('${root.path}/user/applications')
@@ -83,38 +83,35 @@ void main() {
     expect(entries['editor']!.name, 'Mio editor');
   });
 
-  test(
-    'Dock: fissate, poi le aperte non fissate, separatore, cartella e cestino',
-    () {
-      const files = DesktopEntry(
-        id: 'files',
-        name: 'File',
-        exec: 'files',
-        wmClass: 'files',
-      );
-      const editor = DesktopEntry(id: 'editor', name: 'Editor', exec: 'editor');
-      final entries = {'files': files, 'editor': editor};
-      final items = dockItems(
-        entries,
-        ['files'],
-        const [
-          Toplevel(id: 'a', title: 'Documento', appId: 'editor'),
-          Toplevel(id: 'b', title: 'Casa', appId: 'files'),
-        ],
-      );
-      expect(
-        [for (final i in items) i.label],
-        ['File', 'Editor', '', 'Download', 'Cestino'],
-      );
-      expect(items[0].running, isTrue);
-      expect(items[0].windows, ['b']);
-      expect(items[1].windows, ['a']);
-      expect(items[2].kind, ItemKind.separator);
-    },
-  );
+  test('Dock: pinned, then open unpinned, separator, folder and trash', () {
+    const files = DesktopEntry(
+      id: 'files',
+      name: 'File',
+      exec: 'files',
+      wmClass: 'files',
+    );
+    const editor = DesktopEntry(id: 'editor', name: 'Editor', exec: 'editor');
+    final entries = {'files': files, 'editor': editor};
+    final items = dockItems(
+      entries,
+      ['files'],
+      const [
+        Toplevel(id: 'a', title: 'Documento', appId: 'editor'),
+        Toplevel(id: 'b', title: 'Casa', appId: 'files'),
+      ],
+    );
+    expect(
+      [for (final i in items) i.label],
+      ['File', 'Editor', '', 'Download', 'Cestino'],
+    );
+    expect(items[0].running, isTrue);
+    expect(items[0].windows, ['b']);
+    expect(items[1].windows, ['a']);
+    expect(items[2].kind, ItemKind.separator);
+  });
 
   test(
-    'app recenti (D-08): secondo separatore, aperte non fissate e chiuse, al più 3',
+    'recent apps (D-08): second separator, open unpinned and closed, at most 3',
     () {
       DesktopEntry app(String id) => DesktopEntry(id: id, name: id, exec: id);
       final entries = {
@@ -132,7 +129,7 @@ void main() {
         ['files', '', 'editor', 'calc', 'mail', '', 'Download', 'Cestino'],
       );
       expect(items[3].running, isFalse);
-      // Senza l'opzione: un solo separatore, le chiuse non ci sono.
+      // Without the option: a single separator, the closed ones are not there.
       final off = dockItems(entries, ['files'], const []);
       expect(
         [for (final i in off) i.label],
@@ -141,7 +138,7 @@ void main() {
     },
   );
 
-  test('le opzioni del Dock non cancellano le app fissate', () {
+  test('the Dock options do not erase the pinned apps', () {
     final dir = Directory.systemTemp.createTempSync('dock');
     addTearDown(() => dir.deleteSync(recursive: true));
     final env = {'HOME': dir.path};
@@ -153,7 +150,7 @@ void main() {
   });
 
   test(
-    'Exec con i file: %f, %F, %u, %U citati; senza codici non li prende',
+    'Exec with files: %f, %F, %u, %U quoted; without codes it takes none',
     () {
       expect(
         execWithFiles('testo %F', ['/tmp/a.txt', "/tmp/l'altro.txt"]),
@@ -171,7 +168,7 @@ void main() {
     },
   );
 
-  test('nel Cestino a mano: scheda .trashinfo, nomi uguali numerati', () async {
+  test('into the Trash by hand: .trashinfo file, equal names numbered', () async {
     final home = Directory.systemTemp.createTempSync('cestino');
     addTearDown(() => home.deleteSync(recursive: true));
     final a = File('${home.path}/a b.txt')..writeAsStringSync('1');

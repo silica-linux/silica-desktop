@@ -86,26 +86,29 @@ Future<void> sendCommand(WidgetTester tester, String id) =>
     );
 
 void main() {
-  test('la griglia segue le misure: colonne a 0 e 152, righe a passo 76', () {
-    final slots = layoutModules(laptop);
-    expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
-    expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-    expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-    expect(slots['dnd']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
-    expect(slots['battery']!.rect, const Rect.fromLTWH(152, 152, 140, 64));
-    expect(slots['display']!.rect, const Rect.fromLTWH(0, 228, 292, 64));
-    expect(slots['sound']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
-    expect(slots['wifi']!.radius, 32);
-    expect(slots['display']!.radius, 28);
+  test(
+    'the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch',
+    () {
+      final slots = layoutModules(laptop);
+      expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
+      expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
+      expect(slots['dnd']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
+      expect(slots['battery']!.rect, const Rect.fromLTWH(152, 152, 140, 64));
+      expect(slots['display']!.rect, const Rect.fromLTWH(0, 228, 292, 64));
+      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+      expect(slots['wifi']!.radius, 32);
+      expect(slots['display']!.radius, 28);
 
-    // Un fisso senza batteria né retroilluminazione: Suono sale.
-    final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
-    expect(desktop.containsKey('battery'), isFalse);
-    expect(desktop.containsKey('display'), isFalse);
-    expect(desktop['sound']!.rect.top, 228);
-  });
+      // A desktop without battery or backlight: Sound moves up.
+      final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
+      expect(desktop.containsKey('battery'), isFalse);
+      expect(desktop.containsKey('display'), isFalse);
+      expect(desktop['sound']!.rect.top, 228);
+    },
+  );
 
-  test('il cursore riempie fino a x0 + 10 + v · (L − 20)', () {
+  test('the slider fills up to x0 + 10 + v · (L − 20)', () {
     expect(sliderFill(0), 10);
     expect(sliderFill(1), trackLength - 10);
     expect(sliderValue(sliderFill(0.8886)), closeTo(0.8886, 1e-9));
@@ -113,14 +116,14 @@ void main() {
     expect(sliderValue(1000), 1);
   });
 
-  test("l'opacità segue i fotogrammi misurati", () {
+  test('the opacity follows the measured frames', () {
     expect(tableAt(openOpacity, 80), closeTo(0.53, 1e-9));
     expect(tableAt(openOpacity, 1000), 1);
     expect(tableAt(closeOpacity, 67), closeTo(0.49, 1e-9));
     expect(tableAt(closeOpacity, 1000), 0);
   });
 
-  testWidgets('si apre dal comando, i moduli agiscono, Esc chiude', (
+  testWidgets('opens from the command, the modules act, Esc closes', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 800);
@@ -139,7 +142,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Casa'), findsOneWidget);
     expect(find.text('80% · in carica'), findsOneWidget);
-    // La pila: 14 pt dal bordo destro, il primo modulo a y 42.
+    // The stack: 14 pt from the right edge, the first module at y 42.
     final wifi = tester.getRect(
       find
           .ancestor(of: find.text('Wi-Fi'), matching: find.byType(Positioned))
@@ -148,7 +151,7 @@ void main() {
     expect(wifi.right, lessThanOrEqualTo(1280 - 14 - 152));
     expect(tester.getTopLeft(find.text('Wi-Fi')).dx, 1280 - 14 - 292 + 56);
 
-    // Il disco dell'icona spegne; il testo apre il dettaglio.
+    // The icon disc turns off; the text opens the detail.
     final wifiText = tester.getTopLeft(find.text('Wi-Fi'));
     await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
     await tester.pump();
@@ -158,9 +161,9 @@ void main() {
     await tester.pump();
     expect(system.calls.last, 'wifi true');
 
-    // Un tocco a metà della traccia del Suono.
+    // A tap halfway along the Sound track.
     final sound = tester.getTopLeft(find.text('Suono'));
-    // La traccia del Suono è più corta di 44 pt: il cerchio delle uscite sta a destra.
+    // The Sound track is 44 pt shorter: the outputs circle is on the right.
     await tester.tapAt(
       Offset(
         sound.dx - 16 + trackLeft + (trackLength - outputsShift) / 2,
@@ -168,7 +171,7 @@ void main() {
       ),
     );
     expect(system.calls.last, 'volume 0.50');
-    expect(find.byKey(const ValueKey('uscite audio')), findsOneWidget);
+    expect(find.byKey(const ValueKey('audio outputs')), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -176,7 +179,7 @@ void main() {
   });
 
   testWidgets(
-    'il testo apre il dettaglio del Wi-Fi; Esc torna al Centro, poi chiude',
+    'the text opens the Wi-Fi detail; Esc goes back to the Center, then closes',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -192,8 +195,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(tester.getCenter(find.text('Wi-Fi')));
       await tester.pumpAndSettle();
-      // Il pannello: 308 pt, 10 a sinistra della pila, 6 sopra; le reti conosciute.
-      expect(find.text('Reti conosciute'), findsOneWidget); // Casa e Ufficio
+      // The panel: 308 pt, 10 left of the stack, 6 above; the known networks.
+      expect(find.text('Reti conosciute'), findsOneWidget); // Home and Office
       expect(find.text('Ufficio'), findsOneWidget);
       expect(find.text('Bar'), findsNothing);
       final title = tester.getTopLeft(
@@ -202,13 +205,13 @@ void main() {
         ),
       );
       expect(title.dx, 1280 - 14 - 292 - 10 + 14);
-      // Una rete conosciuta si collega; "Altre reti" mostra le altre.
+      // A known network connects; "Altre reti" shows the others.
       await tester.tap(find.text('Ufficio'));
       expect(system.calls.last, 'connect Ufficio');
       await tester.tap(find.text('Altre reti'));
       await tester.pumpAndSettle();
       expect(find.text('Bar'), findsOneWidget);
-      // Esc: di nuovo il Centro, con i moduli.
+      // Esc: the Center again, with the modules.
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.text('Reti conosciute'), findsNothing);
@@ -219,7 +222,7 @@ void main() {
     },
   );
 
-  testWidgets('il titolo del Suono apre le uscite', (tester) async {
+  testWidgets('the Sound title opens the outputs', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -241,7 +244,7 @@ void main() {
   });
 
   testWidgets(
-    'menu di stato del Wi-Fi: sotto l\'icona, Esc lo chiude e lo annuncia',
+    'Wi-Fi status menu: below the icon, Esc closes it and announces it',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -276,7 +279,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       final menu = tester.getRect(
-        find.byKey(const ValueKey('menu di stato del Wi-Fi')),
+        find.byKey(const ValueKey('wifi status menu')),
       );
       expect(menu.top, statusMenuTop);
       expect(menu.right, 1200 + statusMenuRight);
@@ -284,16 +287,13 @@ void main() {
       expect(find.text('Wi-Fi'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
-      expect(
-        find.byKey(const ValueKey('menu di stato del Wi-Fi')),
-        findsNothing,
-      );
+      expect(find.byKey(const ValueKey('wifi status menu')), findsNothing);
       expect(broadcasts, contains('statusmenu='));
     },
   );
 
   testWidgets(
-    'modulo multimediale: pulsanti 30 × 30 a passo 40, glifi e passaggio (CC-04)',
+    'media module: 30 × 30 buttons at a 40 pitch, glyphs and hover (CC-04)',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -312,7 +312,7 @@ void main() {
       expect(previous.size, const Size(30, 30));
       expect(play.center.dx - previous.center.dx, 40);
       expect(next.center.dx - play.center.dx, 40);
-      // Senza lettori tutto è disattivato: bianco ~35 % (`#9d9ea3` sul fondo).
+      // With no players everything is disabled: white ~35 % (`#9d9ea3` over the background).
       final painter =
           tester
                   .widget<CustomPaint>(
@@ -326,21 +326,15 @@ void main() {
                   .painter!
               as dynamic;
       expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
-      // Il puntatore sul modulo lo schiarisce (+7 livelli).
+      // The pointer on the module brightens it (+7 levels).
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
       await mouse.moveTo(play.center);
       await tester.pump();
-      expect(
-        find.byKey(const ValueKey('media sotto il puntatore')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('media under pointer')), findsOneWidget);
       await mouse.moveTo(Offset.zero);
       await tester.pump();
-      expect(
-        find.byKey(const ValueKey('media sotto il puntatore')),
-        findsNothing,
-      );
+      expect(find.byKey(const ValueKey('media under pointer')), findsNothing);
       await mouse.removePointer();
     },
   );

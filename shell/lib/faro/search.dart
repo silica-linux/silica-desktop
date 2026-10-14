@@ -1,9 +1,9 @@
-// La ricerca di Faro sulle app installate.
+// Faro's search over the installed apps.
 
 import '../system/desktop_entries.dart';
 
-/// Le app che corrispondono a `query`, dalle più pertinenti: nome che inizia con la
-/// ricerca, poi una parola del nome, poi il nome che la contiene, poi le parole chiave.
+/// The apps matching `query`, most relevant first: name starting with the query, then a
+/// word of the name, then a name containing it, then the keywords.
 List<DesktopEntry> searchApps(Iterable<DesktopEntry> entries, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
@@ -26,8 +26,8 @@ List<DesktopEntry> searchApps(Iterable<DesktopEntry> entries, String query) {
             ? byRank
             : a.$2.name.toLowerCase().compareTo(b.$2.name.toLowerCase());
       });
-  // Due voci con lo stesso nome e lo stesso comando (pacchetti diversi della stessa app)
-  // si mostrano una volta.
+  // Two entries with the same name and command (different packages of the same app)
+  // are shown once.
   final seen = <String>{};
   return [
     for (final (_, e) in scored)

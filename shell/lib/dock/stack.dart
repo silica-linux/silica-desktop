@@ -1,16 +1,16 @@
-// Le pile di cartella del Dock (plan/reference/dock-stacks.md, misc.md "Pila di cartella").
+// The Dock's folder stacks (plan/reference/dock-stacks.md, misc.md "Folder stack").
 //
-// Vista automatica: ventaglio fino a 15 file, griglia oltre (la soglia vera è fra 11 e 40,
-// non misurata).
-// - Ventaglio: dal basso, un elemento ogni 64,6 pt, lato da 65,8 a 82,3 pt salendo, l'arco
-//   che piega verso destra con gli spostamenti misurati e le icone ruotate di conseguenza;
-//   etichette a sinistra; il primo elemento ha il bordo inferiore 7 pt sopra la zona del
-//   Dock; al più 15 file, il sedicesimo posto apre la cartella. Apertura ~240 ms (la
-//   colonna esce dall'icona e si allunga, poi le etichette), chiusura ~210 ms.
-// - Griglia: pannello con il titolo e celle da 128 pt, ⌈√(n + 1)⌉ colonne, margini 17 / 16
-//   ai lati, 32 in alto (titolo), 11 in basso, raggio 25, punta verso l'icona 5 pt sopra il
-//   Dock; cresce in scala dalla punta in ~240 ms, si chiude in ~150 ms.
-// Un clic su un file chiude la pila e lo apre.
+// Automatic view: fan up to 15 files, grid beyond (the real threshold is between 11 and 40,
+// not measured).
+// - Fan: from the bottom, one item every 64.6 pt, side from 65.8 to 82.3 pt going up, the
+//   arc bending to the right with the measured offsets and the icons rotated accordingly;
+//   labels on the left; the first item has its bottom edge 7 pt above the Dock area; at most
+//   15 files, the sixteenth place opens the folder. Opening ~240 ms (the column comes out of
+//   the icon and stretches, then the labels), closing ~210 ms.
+// - Grid: a panel with the title and 128 pt cells, ⌈√(n + 1)⌉ columns, margins 17 / 16 at
+//   the sides, 32 at the top (title), 11 at the bottom, radius 25, tip towards the icon 5 pt
+//   above the Dock; it scales up from the tip in ~240 ms, closes in ~150 ms.
+// A click on a file closes the stack and opens it.
 
 import 'dart:io';
 import 'dart:math' as math;
@@ -27,7 +27,7 @@ const double fanFirstSide = 65.8;
 const double fanSideStep = 1.1;
 const double fanAboveZone = 7;
 
-/// Spostamento a destra del bordo sinistro di ogni elemento rispetto al primo (pt).
+/// Rightward offset of the left edge of each item relative to the first (pt).
 const List<double> fanShift = [
   0,
   1.4,
@@ -47,26 +47,26 @@ const List<double> fanShift = [
   177.8,
 ];
 
-/// Centro del primo elemento rispetto al centro dell'icona della pila: 1673,1 + 32,9 − 1703,7.
+/// Center of the first item relative to the center of the stack icon: 1673.1 + 32.9 − 1703.7.
 const double fanFirstOffset = 2.3;
 
 const double gridCell = 128;
 
-/// L'icona nella cella: cartella 92 × 74 a 19 pt dalla cima (riquadro di 92 da y 10).
+/// The icon in the cell: folder 92 × 74 19 pt from the top (a 92 box from y 10).
 const double gridIcon = 92;
 const double gridIconTop = 10;
 
-/// La tela dell'icona nella cella (silica-icons 0.2: il lato di un file è la tela): 100 pt da
-/// y 6, così la cartella (0,922 × 0,734 della tela, cima a 132/1024) torna 92 × 74 a 19 pt.
+/// The icon canvas in the cell (silica-icons 0.2: a file's side is the canvas): 100 pt from
+/// y 6, so the folder (0.922 × 0.734 of the canvas, top at 132/1024) is again 92 × 74 at 19 pt.
 const double gridIconCanvas = 100;
 const double gridCanvasTop = 6;
 
-/// L'etichetta: una riga, maiuscole da y 109 (base a ~118), larga al più ~104.
+/// The label: one line, capitals from y 109 (baseline at ~118), at most ~104 wide.
 const double gridLabelBaseline = 118;
 const double gridLabelWidth = 104;
 const Color gridLabelText = Color(0xFF212122);
 
-/// Il colore viene dal [DefaultTextStyle] della griglia (chiaro o scuro).
+/// The color comes from the grid's [DefaultTextStyle] (light or dark).
 TextStyle get gridLabelStyle => const TextStyle(
   fontFamily: uiFontFamily,
   package: 'silica_ui',
@@ -74,12 +74,12 @@ TextStyle get gridLabelStyle => const TextStyle(
   height: 1,
 );
 
-/// La punta verso l'icona: base ~22, alta ~8 (misc.md). Come nei menu, il vertice arrotondato
-/// e l'unione morbida allargano la base di ~14 pt.
+/// The tip towards the icon: base ~22, ~8 tall (misc.md). As in the menus, the rounded apex
+/// and the smooth union widen the base by ~14 pt.
 const double gridTipBase = 22;
 const double gridLeft = 17;
 
-/// 16 pt fino al bordo più 1 di filo: 2 colonne fanno 290 pt, 4 ne fanno 546.
+/// 16 pt to the edge plus 1 of rim: 2 columns make 290 pt, 4 make 546.
 const double gridRight = 17;
 const double gridTop = 32;
 const double gridBottom = 11;
@@ -95,9 +95,9 @@ const Color stackText = Color(0xFF1E1E1F);
 const Color stackLabelFill = Color(0xFFBDBEC3);
 const Color stackLabelText = Color(0xFF1C1C1D);
 
-/// In scuro le pile non sono misurate (dock-stacks.md, "Non osservato"): *stimati* come le
-/// etichette del Dock in scuro (dock.md: corpo `#7f8086`, testo `#f9f9f9`) e testi bianchi
-/// sul vetro scuro.
+/// In dark the stacks are not measured (dock-stacks.md, "Not observed"): *estimated* like the
+/// Dock labels in dark (dock.md: body `#7f8086`, text `#f9f9f9`) and white texts on the
+/// dark glass.
 const Color gridLabelTextDark = Color(0xFFF9F9F9);
 const Color stackTextDark = Color(0xFFFFFFFF);
 const Color stackLabelFillDark = Color(0xFF7F8086);
@@ -108,14 +108,14 @@ bool _dark(BuildContext context) =>
 
 enum StackView { fan, grid }
 
-/// Vista automatica per `count` file.
+/// Automatic view for `count` files.
 StackView automaticView(int count) =>
     count <= fanMax ? StackView.fan : StackView.grid;
 
-/// I file della cartella senza quelli nascosti, nell'ordine scelto: per nome; per data dal più
-/// recente (come le pile dei download); per tipo (estensione, poi nome). Su Linux la "data di
-/// aggiunta" è il cambio di stato (ctime: spostare o copiare un file nella cartella lo
-/// aggiorna) e non c'è una data di creazione affidabile: si usa la modifica.
+/// The files of the folder without the hidden ones, in the chosen order: by name; by date from
+/// the most recent (like download stacks); by kind (extension, then name). On Linux the "date
+/// added" is the status change (ctime: moving or copying a file into the folder updates it)
+/// and there is no reliable creation date: the modification is used.
 List<FileSystemEntity> stackEntries(
   String path, {
   StackSort sort = StackSort.name,
@@ -165,8 +165,8 @@ List<FileSystemEntity> stackEntries(
   }
 }
 
-/// Confronto "naturale": le cifre contano come numeri (documento-2 prima di documento-10),
-/// senza maiuscole.
+/// "Natural" comparison: digits count as numbers (document-2 before document-10),
+/// case-insensitive.
 int naturalCompare(String a, String b) {
   final parts = RegExp(r'\d+|\D+');
   final pa = [for (final m in parts.allMatches(a.toLowerCase())) m[0] ?? ''];
@@ -187,9 +187,9 @@ String fileName(String path) {
   return parts.isEmpty ? path : parts.last;
 }
 
-/// L'icona di silica-icons per un file o una cartella: le cartelle speciali con il loro
-/// simbolo, i file con le regole di silica-icons (tipo MIME, estensione, file generico). Nel
-/// Dock niente badge (icon-format.md).
+/// The silica-icons icon of a file or a folder: special folders with their symbol, files
+/// with the silica-icons rules (MIME type, extension, generic file). No badges in the Dock
+/// (icon-format.md).
 IconSource? fileIcon(FileSystemEntity entry) {
   if (entry is Directory) {
     final folder = resolveFolderIcon(entry.path);
@@ -199,13 +199,13 @@ IconSource? fileIcon(FileSystemEntity entry) {
   return file == null ? null : FileSource(file);
 }
 
-/// La geometria del ventaglio per l'elemento `i` (dal basso): centro e lato, rispetto al
-/// centro dell'icona della pila in x e alla cima della zona del Dock in y; rotazione.
+/// The fan geometry for item `i` (from the bottom): center and side, relative to the center
+/// of the stack icon in x and to the top of the Dock area in y; rotation.
 ({Offset center, double side, double angle}) fanSlot(int i) {
   final side = fanFirstSide + fanSideStep * i;
   final left = fanShift[i.clamp(0, fanShift.length - 1)];
   final x = fanFirstOffset - fanFirstSide / 2 + left + side / 2;
-  // Le cime vanno a passo costante; il primo ha il fondo 7 pt sopra la zona.
+  // The tops go at a constant pitch; the first has its bottom 7 pt above the area.
   final top = -fanAboveZone - fanFirstSide - fanPitch * i;
   final step = i == 0 ? fanShift[1] : fanShift[i] - fanShift[i - 1];
   return (
@@ -215,7 +215,7 @@ IconSource? fileIcon(FileSystemEntity entry) {
   );
 }
 
-/// Colonne e righe della griglia per `count` file (+1 per aprire la cartella).
+/// Grid columns and rows for `count` files (+1 to open the folder).
 (int, int) gridShape(int count) {
   final cells = count + 1;
   final columns = math.sqrt(cells).ceil().clamp(1, 12);
@@ -227,7 +227,7 @@ Size gridPanelSize(int count, double maxHeight) {
   final height = gridTop + rows * gridCell + gridBottom;
   return Size(
     gridLeft + columns * gridCell + gridRight,
-    // Mai un intervallo rovesciato: con poco spazio vince la riga minima.
+    // Never a reversed range: with little room the minimum row wins.
     height.clamp(
       gridTop + gridCell + gridBottom,
       math.max(gridTop + gridCell + gridBottom, maxHeight),
@@ -235,8 +235,8 @@ Size gridPanelSize(int count, double maxHeight) {
   );
 }
 
-/// Il ventaglio sopra l'icona: `anchor` è il centro dell'icona in x e la cima della zona
-/// del Dock in y; `progress` 0–1 apre e chiude.
+/// The fan above the icon: `anchor` is the center of the icon in x and the top of the Dock
+/// area in y; `progress` 0–1 opens and closes.
 class FanStack extends StatelessWidget {
   const FanStack({
     super.key,
@@ -261,7 +261,7 @@ class FanStack extends StatelessWidget {
     final labels = ((progress - 0.7) / 0.3).clamp(0.0, 1.0);
     for (var i = 0; i <= shown.length; i++) {
       final slot = fanSlot(i);
-      // La colonna esce dall'icona: il passo cresce con l'avanzamento.
+      // The column comes out of the icon: the pitch grows with the progress.
       final center =
           anchor + Offset(slot.center.dx * progress, slot.center.dy * progress);
       final side = slot.side;
@@ -312,7 +312,7 @@ class FanStack extends StatelessWidget {
     );
   }
 
-  /// Etichetta larga quanto il testo (al più 360 pt), come quelle del Dock.
+  /// Label as wide as the text (at most 360 pt), like the Dock ones.
   Widget _label(bool dark, String text) => ConstrainedBox(
     constraints: const BoxConstraints(maxWidth: 360),
     child: DecoratedBox(
@@ -336,7 +336,7 @@ class FanStack extends StatelessWidget {
   );
 }
 
-/// "Apri la cartella": una freccia in un cerchio.
+/// "Apri la cartella": an arrow in a circle.
 class _OpenFolderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -370,8 +370,8 @@ class _OpenFolderPainter extends CustomPainter {
   bool shouldRepaint(_OpenFolderPainter old) => false;
 }
 
-/// La griglia: un pannello con il titolo, sopra l'icona con la punta verso di lei.
-/// `tip` è il vertice della punta (5 pt sopra il Dock).
+/// The grid: a panel with the title, above the icon with the tip pointing at it.
+/// `tip` is the apex of the tip (5 pt above the Dock).
 class GridStack extends StatelessWidget {
   const GridStack({
     super.key,
@@ -387,10 +387,10 @@ class GridStack extends StatelessWidget {
   final String title;
   final List<FileSystemEntity> entries;
 
-  /// Il corpo del pannello nell'area.
+  /// The panel body in the area.
   final Rect rect;
 
-  /// Il vertice della punta, dal bordo sinistro del pannello.
+  /// The apex of the tip, from the left edge of the panel.
   final double tipX;
   final double progress;
   final ValueChanged<FileSystemEntity> onOpen;
@@ -469,9 +469,9 @@ class GridStack extends StatelessWidget {
     );
   }
 
-  /// Una cella da 128 (misc.md › Pila di cartella): l'icona di ~92 centrata con la cima della
-  /// cartella a 19 pt (riquadro da y 10), il nome su una riga troncato al centro con le
-  /// maiuscole da y 109, `#212122`.
+  /// A 128 cell (misc.md › Folder stack): the icon of ~92 centered with the top of the
+  /// folder at 19 pt (box from y 10), the name on one line truncated in the middle with the
+  /// capitals from y 109, `#212122`.
   Widget _cell(FileSystemEntity entry) {
     final icon = fileIcon(entry);
     return GestureDetector(
@@ -482,7 +482,7 @@ class GridStack extends StatelessWidget {
         child: Stack(
           children: [
             Positioned(
-              key: ValueKey('icona ${entry.path}'),
+              key: ValueKey('icon ${entry.path}'),
               left: (gridCell - gridIconCanvas) / 2,
               top: gridCanvasTop,
               width: gridIconCanvas,
@@ -559,13 +559,13 @@ class GridStack extends StatelessWidget {
   );
 }
 
-/// L'icona "pila" di una cartella nel Dock (d06-icon-pila-10-light): il primo file davanti, i
-/// due dopo dietro, più piccoli (0,89 e 0,73) e con la cima 4 pt più in alto ciascuno, senza
-/// rotazione. Misure su un'icona di 54 pt: foglio davanti 37 × 46, cime a +0, −4, −8.
+/// The "stack" icon of a folder in the Dock (d06-icon-pila-10-light): the first file in front,
+/// the next two behind, smaller (0.89 and 0.73) and with their tops 4 pt higher each, no
+/// rotation. Measured on a 54 pt icon: front sheet 37 × 46, tops at +0, −4, −8.
 class PileIcon extends StatelessWidget {
   const PileIcon({super.key, required this.sources, required this.side});
 
-  /// Dal primo (davanti) al terzo.
+  /// From the first (in front) to the third.
   final List<IconSource> sources;
   final double side;
 
@@ -574,7 +574,7 @@ class PileIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unit = side / 54;
-    // Il foglio davanti: alto ~46 su 54, appoggiato in basso (2 pt di margine).
+    // The front sheet: ~46 tall over 54, resting at the bottom (2 pt margin).
     final front = side * 0.88;
     final bottom = side - 2 * unit;
     return SizedBox(
@@ -589,7 +589,7 @@ class PileIcon extends StatelessWidget {
               top: bottom - front - 4 * unit * i,
               width: front * scales[i],
               height: front * scales[i],
-              // Misurata con il foglio sul corpo delle app (d06-icon-pila-10).
+              // Measured with the sheet on the app body (d06-icon-pila-10).
               child: SilicaIcon(
                 sources[i],
                 side: front * scales[i],
@@ -602,7 +602,7 @@ class PileIcon extends StatelessWidget {
   }
 }
 
-/// Tronca al centro con "…" perché `text` stia in `width` (le etichette della griglia).
+/// Truncates in the middle with "…" so that `text` fits in `width` (the grid labels).
 String middleEllipsis(String text, TextStyle style, double width) {
   double measure(String s) {
     final painter = TextPainter(

@@ -1,5 +1,5 @@
-// L'aspetto scuro dei componenti della shell: con `platformBrightness` scuro i colori scuri
-// (misurati sui riferimenti o stimati, vedi i commenti delle classi dei colori).
+// The dark appearance of the shell components: with a dark `platformBrightness` the dark
+// colors (measured on the references or estimated, see the comments of the color classes).
 
 import 'dart:io';
 
@@ -41,9 +41,7 @@ void main() {
         (_) {},
       );
 
-  testWidgets('selettore: riquadro #a9aaaf ed etichetta #f7f7f8', (
-    tester,
-  ) async {
+  testWidgets('switcher: #a9aaaf box and #f7f7f8 label', (tester) async {
     tester.view.physicalSize = const Size(2560, 1440);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -65,7 +63,7 @@ void main() {
     );
   });
 
-  testWidgets('launcher: segnaposto #edeef2, capsule bianche traslucide', (
+  testWidgets('launcher: #edeef2 placeholder, translucent white capsules', (
     tester,
   ) async {
     const entries = {
@@ -101,16 +99,14 @@ void main() {
       tester.widget<Text>(find.text('Calcolatrice')).style?.color,
       FaroColors.dark.text,
     );
-    // L'ombra dei pannelli più densa in scuro.
+    // The panel shadow is denser in dark.
     expect(
       FaroColors.dark.shadow(const Color(0x40000000)).a,
       closeTo(0.25 * 1.7, 0.01),
     );
   });
 
-  testWidgets('Dock: separatore, indicatore ed etichetta scuri', (
-    tester,
-  ) async {
+  testWidgets('Dock: dark separator, indicator and label', (tester) async {
     final context = await _context(tester);
     expect(DockColors.of(context).separator, const Color(0xFFA9AAAF));
     expect(DockColors.of(context).indicator, const Color(0xFFE5E6EB));
@@ -118,7 +114,7 @@ void main() {
     expect(DockColors.of(context).labelText, const Color(0xFFF9F9F9));
   });
 
-  testWidgets('pila a griglia: titolo e nomi chiari', (tester) async {
+  testWidgets('grid stack: light title and names', (tester) async {
     final dir = Directory.systemTemp.createTempSync('griglia-scura');
     addTearDown(() => dir.deleteSync(recursive: true));
     for (var i = 1; i <= 12; i++) {
@@ -155,7 +151,7 @@ void main() {
     expect(tester.widget<Text>(title).style?.color, stackTextDark);
   });
 
-  testWidgets('popover delle finestre: glifi #e1e1e1', (tester) async {
+  testWidgets('window popover: #e1e1e1 glyphs', (tester) async {
     await tester.pumpWidget(
       dark(
         Align(
@@ -170,11 +166,11 @@ void main() {
         .whereType<TilePainter>()
         .toList();
     expect(painters, hasLength(9));
-    // Le otto icone delle righe e la voce dello schermo intero nel colore del testo.
+    // The eight icons of the rows and the full screen item in the text color.
     expect(painters.where((p) => p.color == tileGlyphDark), hasLength(8));
   });
 
-  testWidgets('uscita forzata: pannello scuro', (tester) async {
+  testWidgets('force quit: dark panel', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -193,9 +189,9 @@ void main() {
     await send(tester, 'app.force_quit_panel');
     await tester.pump();
     final panel = tester.widget<Container>(
-      find.byKey(const ValueKey('uscita forzata')),
+      find.byKey(const ValueKey('force quit')),
     );
-    // Misurati (K-06): fondo #272727, riga scelta #0059d1, pulsante #007aff, nomi #dedede.
+    // Measured (K-06): background #272727, chosen row #0059d1, button #007aff, names #dedede.
     expect((panel.decoration! as BoxDecoration).color, const Color(0xFF272727));
     expect(
       tester
@@ -213,7 +209,7 @@ void main() {
     final button = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('termina')),
+            of: find.byKey(const ValueKey('force quit button')),
             matching: find.byType(Container),
           )
           .first,
@@ -232,7 +228,7 @@ void main() {
     );
   });
 
-  testWidgets('barra delle istantanee: testo chiaro', (tester) async {
+  testWidgets('screenshot bar: light text', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -243,7 +239,7 @@ void main() {
     await tester.pumpWidget(dark(const ScreenshotLayer()));
     await send(tester, 'screenshot.toolbar');
     await tester.pump();
-    // Misurati su grigio (K-06): glifi e "Opzioni" #c7c8cd, glifo scelto #dbdde2.
+    // Measured over grey (K-06): glyphs and "Opzioni" #c7c8cd, chosen glyph #dbdde2.
     expect(
       tester.widget<Text>(find.textContaining('Opzioni')).style?.color,
       const Color(0xFFC7C8CD),
@@ -264,7 +260,7 @@ void main() {
   });
 }
 
-/// Un contesto con l'aspetto scuro.
+/// A context with the dark appearance.
 Future<BuildContext> _context(WidgetTester tester) async {
   late BuildContext context;
   await tester.pumpWidget(

@@ -1,56 +1,56 @@
-// Geometria e ingrandimento del Dock, da plan/reference/dock.md (macOS 27, aspetto chiaro,
-// cursori delle riprese: dimensione 0,384, ingrandimento 0,429). Tutto in punti logici,
-// con l'origine in alto a sinistra della superficie del Dock (larga quanto lo schermo,
-// con il bordo inferiore sul bordo dello schermo).
+// Dock geometry and magnification, from plan/reference/dock.md (macOS 27, light appearance,
+// sliders of the recordings: size 0.384, magnification 0.429). Everything in logical points,
+// with the origin at the top left of the Dock surface (as wide as the screen, with its
+// bottom edge on the screen edge).
 
 import 'dart:ui' as ui;
 import 'package:silica_ui/silica_ui.dart';
 
-/// Passo fra le celle delle app: 63 pt (AX).
+/// Pitch between app cells: 63 pt (AX).
 const double cellPitch = 63;
 
-/// Larghezza della cella del separatore: 28,35 pt (AX).
+/// Width of the separator cell: 28.35 pt (AX).
 const double separatorCell = 28.35;
 
-/// Altezza del fondo: 79 pt pieni (y 1356–1434).
+/// Background height: 79 pt solid (y 1356–1434).
 const double backgroundHeight = 79;
 
-/// Distanza fra il fondo e il bordo inferiore dello schermo: 5 pt.
+/// Distance between the background and the bottom edge of the screen: 5 pt.
 const double bottomGap = 5;
 
-/// Raggio degli angoli del fondo: arco di cerchio di 22 pt.
+/// Corner radius of the background: a 22 pt circular arc.
 const double backgroundRadius = 22;
 
-/// Margine fra le celle e il bordo del fondo, ai lati: il fondo a riposo è largo 927 pt
-/// contro 910,35 pt di celle (12 app, separatore, 2 elementi): ~8 pt per lato.
+/// Margin between the cells and the background edge, at the sides: the resting background
+/// is 927 pt wide against 910.35 pt of cells (12 apps, separator, 2 items): ~8 pt per side.
 const double sidePadding = 8;
 
-/// Lato dell'icona a riposo e distanza dalla cima del fondo: 48 pt, 16 pt.
+/// Icon side at rest and distance from the top of the background: 48 pt, 16 pt.
 const double iconSize = 48;
 const double iconTop = 16;
 
-/// Quanto sale il bordo inferiore dell'icona ingrandita, per unità di scala oltre 1:
-/// +7 pt a ×2,095, +1 pt a ×1,079 (misura a 1 pt).
+/// How much the bottom edge of the magnified icon rises, per unit of scale above 1:
+/// +7 pt at ×2.095, +1 pt at ×1.079 (measured to 1 pt).
 const double iconLiftPerScale = 6.4;
 
-/// Separatore: riga di 1 pt alta 59 pt, 10 pt di margine nel fondo.
+/// Separator: a 1 pt line 59 pt tall, 10 pt margin in the background.
 const double separatorHeight = 59;
 
-/// Indicatore delle app aperte: disco di 4 pt, centro 6 pt sopra il bordo inferiore del
-/// fondo.
+/// Indicator of open apps: a 4 pt disc, center 6 pt above the bottom edge of the
+/// background.
 const double indicatorSize = 4;
 const double indicatorAbove = 6;
 
-/// Ingrandimento all'impostazione delle riprese: la cella sotto il puntatore passa da 63 a
-/// 68 pt (×1,0794). Al massimo del cursore: 132 pt (×2,0952).
+/// Magnification at the recordings' setting: the cell under the pointer goes from 63 to
+/// 68 pt (×1.0794). At the maximum of the slider: 132 pt (×2.0952).
 const double defaultMagnification = 68 / 63;
 const double maxMagnification = 132 / 63;
 
-/// La zona attiva comincia 5 pt sopra il fondo.
+/// The active zone starts 5 pt above the background.
 const double activeZoneAbove = 5;
 
-/// Profilo dell'ingrandimento f(d) in funzione della distanza d (pt) fra il puntatore e il
-/// centro della cella a riposo: tabella misurata, si annulla fra 208 e 224 pt.
+/// Magnification profile f(d) as a function of the distance d (pt) between the pointer and
+/// the center of the cell at rest: measured table, it vanishes between 208 and 224 pt.
 const List<(double, double)> magnificationProfile = [
   (0, 1.000),
   (16, 0.991),
@@ -69,7 +69,7 @@ const List<(double, double)> magnificationProfile = [
   (224, 0.000),
 ];
 
-/// f(d) per interpolazione lineare della tabella.
+/// f(d) by linear interpolation of the table.
 double profile(double distance) {
   final d = distance.abs();
   for (var i = 1; i < magnificationProfile.length; i++) {
@@ -82,8 +82,8 @@ double profile(double distance) {
   return 0;
 }
 
-/// Curva dell'entrata e dell'uscita dalla zona attiva (uguali entro 0,01: qui la media
-/// delle due), 3 cicli a ingrandimento massimo: avanzamento ogni 10 ms su ~160 ms.
+/// Curve of entering and leaving the active zone (equal within 0.01: here the mean of
+/// the two), 3 cycles at maximum magnification: progress every 10 ms over ~160 ms.
 const List<double> enterCurve = [
   0,
   0.001,
@@ -104,15 +104,15 @@ const List<double> enterCurve = [
   1.0,
 ];
 
-/// L'avanzamento dell'entrata a una frazione `t` (0–1) della durata.
+/// The entrance progress at a fraction `t` (0–1) of the duration.
 double enterProgress(double t) {
   final x = t.clamp(0.0, 1.0) * (enterCurve.length - 1);
   final i = x.floor().clamp(0, enterCurve.length - 2);
   return enterCurve[i] + (enterCurve[i + 1] - enterCurve[i]) * (x - i);
 }
 
-/// Durata dell'entrata: ~60 ms a 68 pt, ~160 ms a 132 pt; cresce con l'ampiezza (con due
-/// soli punti si interpola in linea retta).
+/// Entrance duration: ~60 ms at 68 pt, ~160 ms at 132 pt; it grows with the amplitude (with
+/// only two points it is interpolated linearly).
 Duration enterDuration(double magnification) {
   final span =
       (magnification - defaultMagnification) /
@@ -121,7 +121,7 @@ Duration enterDuration(double magnification) {
   return Duration(microseconds: (ms * 1000).round());
 }
 
-/// Un elemento del Dock: un'app (o cartella, cestino) o il separatore.
+/// A Dock item: an app (or folder, trash) or the separator.
 enum ItemKind { app, separator }
 
 class Item {
@@ -141,7 +141,7 @@ class Item {
        minimizedWindow = null,
        thumbnail = null;
 
-  /// Una finestra ridotta (D-08): la sua miniatura con l'icona dell'app nell'angolo.
+  /// A minimized window (D-08): its thumbnail with the app icon in the corner.
   const Item.window(
     this.label, {
     required String window,
@@ -178,46 +178,46 @@ class Item {
   final String label;
   final bool running;
 
-  /// Il file dell'icona (SVG o PNG); null: segnaposto disegnato in codice.
+  /// The icon file (SVG or PNG); null: placeholder drawn in code.
   final String? iconPath;
 
-  /// L'icona a livelli di silica-icons, preferita a [iconPath].
+  /// The layered silica-icons icon, preferred to [iconPath].
   final LayeredIcon? layered;
 
-  /// Il comando per avviarla (Exec senza codici di campo), se è un'app.
+  /// The command to launch it (Exec without field codes), if it is an app.
   final String? command;
 
-  /// Le finestre aperte dell'app (identificatori della lista di Ossido).
+  /// The open windows of the app (identifiers of Ossido's list).
   final List<String> windows;
 
-  /// L'id della voce .desktop (null per cartelle e cestino).
+  /// The id of the .desktop entry (null for folders and trash).
   final String? id;
 
-  /// Fissata nel Dock (resta anche chiusa).
+  /// Pinned in the Dock (it stays even when closed).
   final bool pinned;
 
-  /// Una cartella mostrata come pila (D-06): il suo percorso.
+  /// A folder shown as a stack (D-06): its path.
   final String? folder;
 
-  /// Exec con i codici di campo, per aprire i file rilasciati sull'app (null: non li prende).
+  /// Exec with field codes, to open the files dropped on the app (null: it takes none).
   final String? openFiles;
 
-  /// Il Cestino: i file rilasciati ci finiscono dentro.
+  /// The Trash: dropped files end up inside it.
   final bool trash;
 
-  /// Accetta i file trascinati da un'altra app (D-05, MU-40).
+  /// Accepts files dragged from another app (D-05, MU-40).
   bool get acceptsFiles =>
       trash ||
       folder != null ||
       (openFiles != null && RegExp('%[fFuU]').hasMatch(openFiles!));
 
-  /// La finestra ridotta che questo elemento rappresenta (null per app e cartelle).
+  /// The minimized window this item stands for (null for apps and folders).
   final String? minimizedWindow;
 
-  /// La sua miniatura, se è già arrivata da Ossido.
+  /// Its thumbnail, if it has already arrived from Ossido.
   final ui.Image? thumbnail;
 
-  /// L'icona da disegnare; null: segnaposto con l'iniziale.
+  /// The icon to draw; null: placeholder with the initial.
   IconSource? get icon => switch ((layered, iconPath)) {
     (final LayeredIcon l, _) => LayeredSource(l),
     (null, final String path) => FlatSource(path),
@@ -228,26 +228,26 @@ class Item {
       kind == ItemKind.separator ? separatorCell : cellPitch;
 }
 
-/// La disposizione del Dock in un momento: celle, fondo, icone.
+/// The Dock layout at one moment: cells, background, icons.
 class Layout {
   Layout._(this.cells, this.scales, this.background);
 
-  /// Rettangolo (x, larghezza) di ogni cella, nell'ordine degli elementi.
+  /// Rectangle (x, width) of every cell, in the order of the items.
   final List<(double, double)> cells;
 
-  /// Scala di ogni cella (1 a riposo; il separatore resta 1).
+  /// Scale of every cell (1 at rest; the separator stays 1).
   final List<double> scales;
 
-  /// Il fondo: sinistra, cima, larghezza, altezza.
+  /// The background: left, top, width, height.
   final (double, double, double, double) background;
 
-  /// Centro della cella `i`.
+  /// Center of cell `i`.
   double center(int i) => cells[i].$1 + cells[i].$2 / 2;
 }
 
-/// Calcola la disposizione per una superficie larga `width` e alta `height`, con il
-/// puntatore a `pointerX` (null: fuori dalla zona attiva) e l'ingrandimento `amount`
-/// (0–1, l'avanzamento dell'entrata) fino a `magnification`.
+/// Computes the layout for a surface `width` wide and `height` tall, with the pointer at
+/// `pointerX` (null: outside the active zone) and the magnification `amount` (0–1, the
+/// progress of the entrance) up to `magnification`.
 Layout layout(
   List<Item> items, {
   required double width,
@@ -258,7 +258,7 @@ Layout layout(
 }) {
   final restTotal = items.fold<double>(0, (sum, item) => sum + item.restWidth);
   final restLeft = (width - restTotal) / 2;
-  // Centri a riposo, da cui si misura la distanza.
+  // Resting centers, from which the distance is measured.
   final restCenters = <double>[];
   var x = restLeft;
   for (final item in items) {
@@ -272,9 +272,9 @@ Layout layout(
       else
         1 + (magnification - 1) * profile(pointerX - restCenters[i]) * amount,
   ];
-  // Espansione laterale: il punto sotto il puntatore resta fermo. Ogni cella cede la sua
-  // crescita al lato in cui sta rispetto al puntatore; quella sotto il puntatore la
-  // divide secondo la posizione del puntatore nella cella a riposo.
+  // Lateral expansion: the point under the pointer stays still. Every cell gives its growth
+  // to the side it is on relative to the pointer; the one under the pointer splits it
+  // according to the pointer's position in the resting cell.
   var leftGrowth = 0.0;
   for (var i = 0; i < items.length; i++) {
     final extra = items[i].restWidth * (scales[i] - 1);
@@ -304,7 +304,7 @@ Layout layout(
   ));
 }
 
-/// Il quadrato dell'icona della cella `i`: sinistra, cima, lato.
+/// The icon square of cell `i`: left, top, side.
 (double, double, double) iconRect(Layout l, int i, double height) {
   final side = iconSize * l.scales[i];
   final restBottom = height - bottomGap - backgroundHeight + iconTop + iconSize;
@@ -312,20 +312,20 @@ Layout layout(
   return (l.center(i) - side / 2, bottom - side, side);
 }
 
-/// Il puntatore è nella zona attiva: dentro il fondo a riposo in orizzontale (x 816 no,
-/// x 820 sì con il fondo da 816,5), da 5 pt sopra il fondo in giù.
+/// The pointer is in the active zone: inside the resting background horizontally (x 816 no,
+/// x 820 yes with the background from 816.5), from 5 pt above the background downwards.
 bool inActiveZone(Layout rest, double x, double y, double height) {
   final top = height - bottomGap - backgroundHeight - activeZoneAbove;
   final (left, _, w, _) = rest.background;
   return y >= top && x >= left && x <= left + w;
 }
 
-/// Uscendo verso l'alto la zona resta attiva finché il puntatore è nella cella ingrandita
-/// (isteresi, dock.md D-01): fino alla cima della sua icona meno questo margine.
+/// Leaving upwards the zone stays active while the pointer is in the magnified cell
+/// (hysteresis, dock.md D-01): up to the top of its icon minus this margin.
 const double activeZoneHold = 6;
 
-/// Resta nella zona: in orizzontale come all'ingresso (la lista a riposo), in verticale fino
-/// alla cima della cella ingrandita sotto il puntatore.
+/// Stays in the zone: horizontally as on entering (the resting list), vertically up to the
+/// top of the magnified cell under the pointer.
 bool staysInActiveZone(
   Layout rest,
   Layout current,
@@ -347,14 +347,14 @@ bool staysInActiveZone(
   return false;
 }
 
-/// Etichetta (D-12): compare con l'ingresso (piena in ~40 ms), salta subito da un'icona
-/// all'altra, all'uscita resta ~40 ms e sfuma in ~250 ms.
+/// Label (D-12): it appears on entering (full in ~40 ms), jumps immediately from one icon to
+/// the next, on exit it stays ~40 ms and fades in ~250 ms.
 const Duration labelAppear = Duration(milliseconds: 40);
 const Duration labelHold = Duration(milliseconds: 40);
 const Duration labelVanish = Duration(milliseconds: 250);
 
-/// Rimbalzo all'avvio (misc.md): quota in pt sopra la quiete, un salto ogni ~0,7 s, finché
-/// l'app non apre una finestra (al più `bounceLimit`).
+/// Launch bounce (misc.md): height in pt above rest, a jump every ~0.7 s, until the app
+/// opens a window (at most `bounceLimit`).
 const List<(double, double)> bounceCurve = [
   (0, 0),
   (27, 3),
@@ -376,7 +376,7 @@ const List<(double, double)> bounceCurve = [
 const double bouncePeriod = 693;
 const Duration bounceLimit = Duration(seconds: 10);
 
-/// Quota del rimbalzo `ms` dopo l'inizio (ripetuto).
+/// Bounce height `ms` after the start (repeated).
 double bounceHeight(double ms) {
   if (ms <= 0) return 0;
   final t = ms % bouncePeriod;
@@ -390,8 +390,8 @@ double bounceHeight(double ms) {
   return 0;
 }
 
-/// La cella sotto il puntatore, se c'è un'app.
-/// La cella sotto `x`, separatore compreso.
+/// The cell under the pointer, if there is an app.
+/// The cell under `x`, separator included.
 int? cellAt(Layout l, double x) {
   for (var i = 0; i < l.cells.length; i++) {
     final (left, w) = l.cells[i];

@@ -85,7 +85,7 @@ Future<void> sendCommand(WidgetTester tester, String id) =>
     );
 
 void main() {
-  test('la struttura D-Bus diventa una notifica', () {
+  test('the D-Bus structure becomes a notification', () {
     final n = ShellNotification.fromDBus([
       7, 'Posta', 'mail', 'Titolo', 'Corpo', //
       ['default', 'Apri', 'reply', 'Rispondi'],
@@ -102,7 +102,7 @@ void main() {
   });
 
   test(
-    'il Centro raggruppa per app, dal più recente, senza le transitorie',
+    'the Center groups by app, from the most recent, without the transient ones',
     () {
       final groups = groupNotifications([
         note(1, minute: 1),
@@ -115,15 +115,15 @@ void main() {
     },
   );
 
-  test("l'entrata del banner segue la decelerazione misurata", () {
+  test('the banner entrance follows the measured deceleration', () {
     expect(bannerEnterOffset(0), bannerEnterDistance);
-    // Un fotogramma a 75 Hz riduce la distanza residua a ~0,82.
+    // A frame at 75 Hz reduces the remaining distance to ~0.82.
     final ratio = bannerEnterOffset(13.33 * 5) / bannerEnterOffset(13.33 * 4);
     expect(ratio, closeTo(0.82, 0.01));
     expect(bannerEnterOffset(bannerEnterDuration.inMilliseconds.toDouble()), 0);
   });
 
-  testWidgets('un banner entra in alto a destra e se ne va da solo', (
+  testWidgets('a banner enters at the top right and leaves by itself', (
     tester,
   ) async {
     final source = FakeSource();
@@ -140,11 +140,11 @@ void main() {
     await tester.pump(bannerDuration);
     await tester.pumpAndSettle();
     expect(find.byType(NotificationCard), findsNothing);
-    // Resta nel Centro.
+    // It stays in the Center.
     expect(source.items, contains(1));
   });
 
-  testWidgets('le notifiche critiche restano, un clic attiva la predefinita', (
+  testWidgets('critical notifications stay, a click activates the default', (
     tester,
   ) async {
     final source = FakeSource();
@@ -160,7 +160,7 @@ void main() {
     expect(find.text('Titolo 2'), findsNothing);
   });
 
-  testWidgets('il Centro mostra gruppi impilati, azioni ed elimina tutto', (
+  testWidgets('the Center shows stacked groups, actions and clear all', (
     tester,
   ) async {
     final source = FakeSource()
@@ -177,7 +177,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Notifiche'), findsOneWidget);
-    // Calendario è il più recente; Posta è chiuso con una carta sotto.
+    // Calendario is the most recent; Posta is collapsed with a card below.
     expect(find.text('Titolo 3'), findsOneWidget);
     expect(find.text('Titolo 2'), findsOneWidget);
     expect(find.text('Titolo 1'), findsNothing);
@@ -190,7 +190,7 @@ void main() {
     await tester.tap(find.text('Posticipa'));
     expect(source.calls, ['invoke 3 snooze']);
 
-    // Un clic sul gruppo lo apre.
+    // A click on the group opens it.
     await tester.tap(find.text('Titolo 2'));
     await tester.pumpAndSettle();
     expect(find.text('Titolo 1'), findsOneWidget);
@@ -206,7 +206,7 @@ void main() {
   });
 
   testWidgets(
-    'con Non disturbare niente banner, la notifica resta nel Centro',
+    'with Do Not Disturb no banner, the notification stays in the Center',
     (tester) async {
       final source = FakeSource();
       final system = _Dnd();
@@ -226,17 +226,17 @@ void main() {
     },
   );
 
-  test('uscita e Centro seguono le misure della sessione 8', () {
-    // Uscita: spostamenti a passi di 13,3 ms.
+  test('exit and Center follow the measurements of session 8', () {
+    // Exit: offsets at 13.3 ms steps.
     expect(bannerExitOffset(0), 0);
     expect(bannerExitOffset(1000 / 75 * 4), 141);
     expect(bannerExitOffset(1000), bannerEnterDistance);
     expect(bannerExitOpacity(190), 0.5);
-    // Entrata: sfocata e trasparente all'inizio, a fuoco e piena dopo ~215 ms.
+    // Entrance: blurred and transparent at the start, sharp and solid after ~215 ms.
     expect(bannerEnterBlur(0), bannerBlurSigma);
     expect(bannerEnterBlur(215), 0);
     expect(bannerEnterOpacity(210), 1);
-    // Centro: bordo dei contenuti a ~2198 dopo 35 ms (2158 a fine corsa, 2545 all'inizio).
+    // Center: content edge at ~2198 after 35 ms (2158 at the end, 2545 at the start).
     expect(centerOpenOffset(0), centerDistance);
     expect(centerOpenOffset(35), closeTo(2198 - 2158, 5));
     expect(centerOpenOffset(300), 0);
@@ -246,7 +246,7 @@ void main() {
   });
 
   testWidgets(
-    'una notifica nuova sostituisce il banner: il vecchio esce mentre entra',
+    'a new notification replaces the banner: the old one leaves while it enters',
     (tester) async {
       final source = FakeSource();
       await pumpLayer(tester, source);
@@ -256,7 +256,7 @@ void main() {
       source.post(note(2));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
-      // Per un momento ci sono entrambi.
+      // For a moment both are there.
       expect(find.text('Titolo 1'), findsOneWidget);
       expect(find.text('Titolo 2'), findsOneWidget);
       await tester.pump(bannerExitDuration);
@@ -266,7 +266,7 @@ void main() {
     },
   );
 
-  testWidgets('sotto il puntatore il banner resta, poi esce ~1,1 s dopo', (
+  testWidgets('under the pointer the banner stays, then leaves ~1.1 s later', (
     tester,
   ) async {
     final source = FakeSource();
@@ -281,13 +281,13 @@ void main() {
     addTearDown(mouse.removePointer);
     await mouse.moveTo(tester.getCenter(find.text('Titolo 3')));
     await tester.pump();
-    // Al passaggio: la × e la capsula Dettagli.
+    // On hover: the × and the Dettagli capsule.
     expect(find.byType(CloseCircle), findsOneWidget);
     expect(find.text('Dettagli'), findsOneWidget);
     await tester.pump(bannerDuration * 2);
     expect(find.text('Titolo 3'), findsOneWidget);
 
-    // Dettagli mostra le azioni nel banner.
+    // Dettagli shows the actions in the banner.
     await tester.tap(find.text('Dettagli'));
     await tester.pump();
     expect(find.text('Posticipa'), findsOneWidget);
@@ -301,32 +301,33 @@ void main() {
     expect(find.text('Titolo 3'), findsNothing);
   });
 
-  testWidgets('trascinato verso destra esce comunque, senza aprire l\'app', (
-    tester,
-  ) async {
-    final source = FakeSource();
-    await pumpLayer(tester, source);
-    source.post(note(4, actions: [('default', 'Apri')]));
-    await tester.pump();
-    await tester.pump(bannerEnterDuration);
-    final start = tester.getTopLeft(find.byType(NotificationCard));
-    final drag = await tester.startGesture(
-      tester.getCenter(find.text('Titolo 4')),
-    );
-    await drag.moveBy(const Offset(20, 0));
-    await drag.moveBy(const Offset(15, 0));
-    await tester.pump();
-    // Segue il puntatore 1:1 (oltre la soglia del riconoscitore).
-    expect(
-      tester.getTopLeft(find.byType(NotificationCard)).dx - start.dx,
-      greaterThan(14),
-    );
-    await drag.up();
-    await tester.pumpAndSettle();
-    expect(find.text('Titolo 4'), findsNothing);
-    expect(source.calls, isEmpty);
-    expect(source.items, contains(4));
-  });
+  testWidgets(
+    'dragged to the right it leaves anyway, without opening the app',
+    (tester) async {
+      final source = FakeSource();
+      await pumpLayer(tester, source);
+      source.post(note(4, actions: [('default', 'Apri')]));
+      await tester.pump();
+      await tester.pump(bannerEnterDuration);
+      final start = tester.getTopLeft(find.byType(NotificationCard));
+      final drag = await tester.startGesture(
+        tester.getCenter(find.text('Titolo 4')),
+      );
+      await drag.moveBy(const Offset(20, 0));
+      await drag.moveBy(const Offset(15, 0));
+      await tester.pump();
+      // It follows the pointer 1:1 (beyond the recognizer's threshold).
+      expect(
+        tester.getTopLeft(find.byType(NotificationCard)).dx - start.dx,
+        greaterThan(14),
+      );
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(find.text('Titolo 4'), findsNothing);
+      expect(source.calls, isEmpty);
+      expect(source.items, contains(4));
+    },
+  );
 }
 
 class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {

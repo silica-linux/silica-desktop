@@ -1,17 +1,17 @@
-// Il selettore delle app (⌘Tab), da plan/reference/appswitcher.md (aspetto chiaro).
+// The app switcher (⌘Tab), from plan/reference/appswitcher.md (light appearance).
 //
-// Pannello centrato sullo schermo con il materiale del Dock: icone da 104 pt su una riga, passo
-// 134 pt, 37 pt di margine ai lati e 35 in alto; con 4 app è 580 × 176 pt, angoli di raggio ~56. L'app
-// scelta ha dietro un riquadro 120 × 120 (raggio 30, `#484950`) e sotto il nome (14 pt
-// semigrassetto, `#131314`) 7 pt sotto il riquadro.
+// Panel centered on the screen with the Dock material: 104 pt icons in one row, 134 pt
+// pitch, 37 pt margin at the sides and 35 at the top; with 4 apps it is 580 × 176 pt, corner radius ~56. The
+// chosen app has a 120 × 120 box behind it (radius 30, `#484950`) and below it the name (14 pt
+// semibold, `#131314`) 7 pt below the box.
 //
-// Ossido gestisce i tasti e inoltra `switcher.next`, `switcher.previous` (con ⌘ tenuto),
-// `switcher.commit` (⌘ rilasciato) e `switcher.cancel` (Esc). L'ordine d'uso delle app lo
-// tiene questo componente dagli eventi di focus del canale silica/shell. Il componente resta
-// sempre in esecuzione su un layer overlay a schermo intero, senza puntatore né tastiera.
+// Ossido handles the keys and forwards `switcher.next`, `switcher.previous` (with ⌘ held),
+// `switcher.commit` (⌘ released) and `switcher.cancel` (Esc). The usage order of the apps
+// is kept by this component from the focus events of the silica/shell channel. The component
+// always runs on a full-screen overlay layer, without pointer or keyboard.
 //
-// Non misurati: comparsa, molte app (qui le icone si riducono per entrare), puntatore sopra
-// un'icona.
+// Not measured: appearance animation, many apps (here the icons shrink to fit), pointer
+// over an icon.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -31,8 +31,8 @@ const double sidePadding = 37;
 const double topPadding = 35;
 const double panelHeight = 176;
 
-/// Angoli del pannello: rientri di 34, 16 e 7 pt a 4, 16 e 28 pt dal bordo, cioè un arco
-/// di raggio ~56 pt (non una capsula piena).
+/// Panel corners: insets of 34, 16 and 7 pt at 4, 16 and 28 pt from the edge, i.e. an arc
+/// of radius ~56 pt (not a full capsule).
 const double panelRadius = 56;
 const double selectionSide = 120;
 const double selectionRadius = 30;
@@ -41,17 +41,17 @@ const double labelSize = 14;
 const Color selectionColor = Color(0xFF484950);
 const Color labelColor = Color(0xFF131314);
 
-/// In scuro (appswitcher.md): selezione `#a9aaaf`, etichetta `#f7f7f8`.
+/// In dark (appswitcher.md): selection `#a9aaaf`, label `#f7f7f8`.
 const Color selectionColorDark = Color(0xFFA9AAAF);
 const Color labelColorDark = Color(0xFFF7F7F8);
 
-/// Larghezza della capsula per `count` app a grandezza piena.
+/// Capsule width for `count` apps at full size.
 double panelWidth(int count) =>
     2 * sidePadding +
     count * iconSide +
     math.max(0, count - 1) * (iconPitch - iconSide);
 
-/// Un'app nel selettore: le sue finestre dalla più recente.
+/// An app in the switcher: its windows from the most recent.
 @immutable
 class SwitcherApp {
   const SwitcherApp({
@@ -61,25 +61,25 @@ class SwitcherApp {
     this.icon,
   });
 
-  /// L'app_id (o l'id della finestra, se l'app non ne ha uno).
+  /// The app_id (or the window id, if the app has none).
   final String key;
   final String name;
   final List<String> windows;
   final IconSource? icon;
 }
 
-/// L'ordine d'uso delle finestre e il selettore aperto.
+/// The usage order of the windows and the open switcher.
 class SwitcherModel {
   SwitcherModel({Map<String, DesktopEntry>? entries})
     : _entries = entries ?? const {};
 
   final Map<String, DesktopEntry> _entries;
 
-  /// Finestre dalla più recente.
+  /// Windows from the most recent.
   final List<String> _recent = [];
   List<Toplevel> _toplevels = const [];
 
-  /// Le app del selettore aperto (null: chiuso) e quella scelta.
+  /// The apps of the open switcher (null: closed) and the chosen one.
   List<SwitcherApp>? apps;
   int selected = 0;
 
@@ -89,7 +89,7 @@ class SwitcherModel {
     _toplevels = list;
     final ids = {for (final t in list) t.id};
     _recent.removeWhere((id) => !ids.contains(id));
-    // Le finestre nuove in fondo, nell'ordine in cui sono comparse.
+    // New windows at the end, in the order they appeared.
     for (final t in list.reversed) {
       if (!_recent.contains(t.id)) _recent.add(t.id);
     }
@@ -102,7 +102,7 @@ class SwitcherModel {
       ..insert(0, id);
   }
 
-  /// Le app nell'ordine d'uso.
+  /// The apps in usage order.
   List<SwitcherApp> recentApps() {
     final byId = {for (final t in _toplevels) t.id: t};
     final order = <String>[];
@@ -137,10 +137,10 @@ class SwitcherModel {
     return SwitcherApp(key: key, name: name, windows: ids, icon: icon);
   }
 
-  /// ⌘Tab: apre il selettore sulla seconda app (quella usata prima), o va avanti.
+  /// ⌘Tab: opens the switcher on the second app (the one used before), or moves forward.
   void next() => _step(1);
 
-  /// ⇧⌘Tab: apre sull'ultima app, o torna indietro.
+  /// ⇧⌘Tab: opens on the last app, or moves back.
   void previous() => _step(-1);
 
   void _step(int delta) {
@@ -154,7 +154,7 @@ class SwitcherModel {
     selected = list.length < 2 ? 0 : (delta > 0 ? 1 : list.length - 1);
   }
 
-  /// ⌘ rilasciato: la finestra da attivare (la più recente dell'app scelta).
+  /// ⌘ released: the window to activate (the most recent of the chosen app).
   String? commit() {
     final list = apps;
     apps = null;
@@ -227,7 +227,7 @@ class _AppSwitcherState extends State<AppSwitcher> {
   }
 }
 
-/// Il pannello, centrato nello spazio che ha.
+/// The panel, centered in the space it has.
 class SwitcherPanel extends StatelessWidget {
   const SwitcherPanel({super.key, required this.apps, required this.selected});
 
@@ -240,7 +240,7 @@ class SwitcherPanel extends StatelessWidget {
         MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Troppe app per lo schermo: tutto si riduce insieme.
+        // Too many apps for the screen: everything shrinks together.
         final natural = panelWidth(apps.length);
         final room = constraints.maxWidth - 2 * sidePadding;
         final k = natural > room && room > 0 ? room / natural : 1.0;

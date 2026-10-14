@@ -1,10 +1,10 @@
-// Faro, la ricerca delle app: da plan/reference/spotlight.md (aspetto chiaro). Pannello di
-// vetro spesso centrato, con la cima al 30 % dello schermo; testata di 56 pt con la lente e
-// il campo; vuoto: largo 384 pt con quattro pulsanti circolari da 54 pt (passo 64); con
-// risultati: largo 640 pt, righe da 57 pt, al più 467 pt di altezza.
+// Faro, the app search: from plan/reference/spotlight.md (light appearance). A thick glass
+// panel, centered, with its top at 30 % of the screen; a 56 pt header with the lens and the
+// field; empty: 384 pt wide with four 54 pt round buttons (64 pitch); with results: 640 pt
+// wide, 57 pt rows, at most 467 pt tall.
 //
-// Il componente resta sempre in esecuzione su un layer overlay a schermo intero: chiuso non
-// disegna niente e non prende né puntatore né tastiera (silica/layer).
+// The component always runs on a full-screen overlay layer: when closed it draws nothing
+// and takes neither pointer nor keyboard (silica/layer).
 
 import 'dart:async';
 
@@ -27,12 +27,12 @@ const double topFraction = 0.30;
 const double headerHeight = 56;
 const double rowHeight = 57;
 
-/// Icona dell'app nella riga: ~38–39 pt visibili (spotlight.md).
+/// App icon in the row: ~38–39 pt visible (spotlight.md).
 const double rowIconSide = 38;
 const double maxHeight = 467;
 const double radius = 28.5;
 
-/// Pulsanti circolari dello stato vuoto: diametro 54, passo 64, 10 pt dal pannello.
+/// Round buttons of the empty state: diameter 54, pitch 64, 10 pt from the panel.
 const double circle = 54;
 const double circlePitch = 64;
 
@@ -41,11 +41,11 @@ const Color textColor = Color(0xFF16171C);
 const Color selectedTextColor = Color(0xFF000003);
 const Color subtitleColor = Color(0xFF88898E);
 
-/// Riga selezionata e separatore: `#afb0b5` sopra il riempimento `#c8c9ce` (−25 livelli):
-/// nero al ~12 %, così segue il materiale sopra sfondi diversi.
+/// Selected row and separator: `#afb0b5` over the `#c8c9ce` fill (−25 levels): black at
+/// ~12 %, so it follows the material over different backgrounds.
 const Color selection = Color(0x20000000);
 
-/// Opacità durante l'apertura (0, 13, 27, 53, 67 ms dal primo fotogramma).
+/// Opacity while opening (0, 13, 27, 53, 67 ms from the first frame).
 const List<(double, double)> openOpacity = [
   (0, 0.22),
   (13.3, 0.66),
@@ -66,8 +66,8 @@ double opacityAt(double ms) {
   return 1;
 }
 
-/// Apertura del launcher: parte ~8 % più grande e si riduce (eccesso residuo misurato a 0,
-/// 13, 40, 53, 67, 93, 107, 120 e 147 ms), con la stessa dissolvenza di Faro.
+/// Launcher opening: it starts ~8 % larger and shrinks (residual overshoot measured at 0,
+/// 13, 40, 53, 67, 93, 107, 120 and 147 ms), with the same fade as Faro.
 const double launcherOpenScale = 0.08;
 const List<(double, double)> launcherExcess = [
   (0, 1),
@@ -93,8 +93,8 @@ double launcherScaleAt(double ms) {
   return 1;
 }
 
-/// Esc nel launcher: il pannello si stringe verso Faro (altezza misurata, curva a S, 215 ms);
-/// larghezza, posizione e raggio seguono lo stesso avanzamento.
+/// Esc in the launcher: the panel shrinks towards Faro (measured height, S curve, 215 ms);
+/// width, position and radius follow the same progress.
 const List<(double, double)> backHeights = [
   (0, 577),
   (26.7, 556),
@@ -112,7 +112,7 @@ const List<(double, double)> backHeights = [
 ];
 const double backDuration = 213.3;
 
-/// Avanzamento 0–1 del ritorno a Faro dopo `ms`.
+/// Progress 0–1 of the return to Faro after `ms`.
 double backProgress(double ms) {
   if (ms <= 0) return 0;
   final first = backHeights.first.$2;
@@ -140,10 +140,10 @@ class Faro extends StatefulWidget {
   final Map<String, DesktopEntry> entries;
   final bool startOpen;
 
-  /// Apre subito il launcher (prove e riprese).
+  /// Opens the launcher right away (tests and recordings).
   final bool startLauncher;
 
-  /// Dove si ricordano le app recenti (predefinito: ~/.local/state/silica).
+  /// Where recent apps are remembered (default: ~/.local/state/silica).
   final RecentApps? recents;
 
   @override
@@ -162,7 +162,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   int _selected = 0;
   DateTime? _openedAt;
 
-  /// Il ritorno dal launcher (valore = ms dall'inizio).
+  /// The return from the launcher (value = ms from the start).
   late final AnimationController _back = AnimationController(
     vsync: this,
     upperBound: backDuration,
@@ -202,7 +202,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
 
   void _toggle() => _visible && !_launcher ? _hide() : _show();
 
-  /// Esc dal launcher: niente dissolvenza, il pannello si trasforma in Faro.
+  /// Esc from the launcher: no fade, the panel turns into Faro.
   void _backToFaro() {
     setState(() {
       _launcher = false;
@@ -223,7 +223,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       _openedAt = DateTime.now();
       _recentIds = _recents.load();
     });
-    // Il controller ricostruisce a ogni fotogramma finché dura l'apertura.
+    // The controller rebuilds every frame while the opening lasts.
     _open.value = 0;
     _open.animateTo(1, duration: const Duration(milliseconds: 200));
     LayerControl.inputRegion(null);
@@ -239,7 +239,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     });
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
-    // Altezza: da 0,966 a 1 con un piccolo superamento (+2 pt su 447).
+    // Height: from 0.966 to 1 with a small overshoot (+2 pt over 447).
     _open.value = 0;
     _open.animateWith(
       SpringSimulation(
@@ -316,7 +316,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         final screen = constraints.biggest;
         var left = (screen.width - wideWidth) / 2;
         final top = screen.height * topFraction;
-        // Dal launcher: dimensioni e posizione dal pannello grande a quello di Faro.
+        // From the launcher: size and position from the big panel to the Faro one.
         final back = _back.isAnimating ? backProgress(_back.value) : 1.0;
         var panelWidth = width;
         var panelHeight = height;
@@ -330,7 +330,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         }
         return Stack(
           children: [
-            // Un clic fuori chiude Faro.
+            // A click outside closes Faro.
             Positioned.fill(
               child: GestureDetector(
                 onTap: _hide,
@@ -378,7 +378,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     double panelRadius = radius,
   }) {
     return OuterShadow(
-      // Ombra spostata in basso (~20 pt): sotto si estende ~65 pt, sopra ~25, ai lati ~45.
+      // Shadow moved down (~20 pt): it extends ~65 pt below, ~25 above, ~45 at the sides.
       radius: panelRadius,
       blurRadius: 42,
       offset: const Offset(0, 20),
@@ -507,7 +507,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   }
 
   Widget _circleButton(int index) => GestureDetector(
-    // Il primo pulsante apre il launcher.
+    // The first button opens the launcher.
     onTap: index == 0 ? _showLauncher : null,
     child: LiquidGlass(
       radius: circle / 2,
@@ -542,7 +542,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 scale: launcherScaleAt(elapsed),
                 child: Opacity(
                   opacity: opacityAt(elapsed),
-                  // Ombra spostata in basso di ~17 pt, estesa ~35 pt.
+                  // Shadow moved down by ~17 pt, extending ~35 pt.
                   child: OuterShadow(
                     radius: launcherRadius,
                     blurRadius: 36,
@@ -597,7 +597,7 @@ class _LensPainter extends CustomPainter {
   bool shouldRepaint(_LensPainter old) => old.color != color;
 }
 
-/// Glifi generici dei quattro pulsanti: app, file, azioni, appunti.
+/// Generic glyphs of the four buttons: apps, files, actions, clipboard.
 class _CircleGlyphPainter extends CustomPainter {
   const _CircleGlyphPainter(this.index, this.color);
 
@@ -683,8 +683,8 @@ class _CircleGlyphPainter extends CustomPainter {
       old.index != index || old.color != color;
 }
 
-/// L'ombra di un pannello di vetro disegnata solo fuori dal pannello: sotto il vetro, che
-/// Ossido compone dietro la superficie, non deve scurire niente (un BoxShadow lo farebbe).
+/// The shadow of a glass panel drawn only outside the panel: under the glass, which Ossido
+/// composes behind the surface, it must darken nothing (a BoxShadow would).
 class OuterShadow extends StatelessWidget {
   const OuterShadow({
     super.key,

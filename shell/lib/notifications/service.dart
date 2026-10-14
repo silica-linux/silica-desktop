@@ -1,5 +1,5 @@
-// Le notifiche da silica-daemon sul bus di sessione (silica/dbus): lo storico all'avvio,
-// poi i segnali Added e Removed. Le azioni dell'utente tornano al daemon.
+// Notifications from silica-daemon on the session bus (silica/dbus): the history at
+// startup, then the Added and Removed signals. User actions go back to the daemon.
 
 import 'dart:async';
 
@@ -13,12 +13,12 @@ const String daemonName = 'dev.frascella.Silica';
 const String daemonPath = '/dev/frascella/Silica/Notifications1';
 const String daemonInterface = 'dev.frascella.Silica.Notifications1';
 
-/// Lo stato delle notifiche per la shell.
+/// The notification state for the shell.
 abstract class NotificationsSource implements Listenable {
-  /// Lo storico, per id.
+  /// The history, by id.
   Map<int, ShellNotification> get notifications;
 
-  /// Le notifiche nuove o sostituite, una volta sola: diventano banner.
+  /// New or replaced notifications, once each: they become banners.
   Stream<ShellNotification> get posted;
 
   Future<void> dismiss(int id);
@@ -26,7 +26,7 @@ abstract class NotificationsSource implements Listenable {
   Future<void> clear();
 }
 
-/// [NotificationsSource] su D-Bus.
+/// [NotificationsSource] over D-Bus.
 class DBusNotifications extends ChangeNotifier implements NotificationsSource {
   DBusNotifications({DBus? dbus}) : _dbus = dbus ?? DBus.instance {
     _start();
@@ -51,7 +51,7 @@ class DBusNotifications extends ChangeNotifier implements NotificationsSource {
         .listen(
           _signal,
           onError: (Object error) {
-            debugPrint('notifiche: segnali non disponibili: $error');
+            debugPrint('notifications: signals not available: $error');
           },
         );
     try {
@@ -65,8 +65,8 @@ class DBusNotifications extends ChangeNotifier implements NotificationsSource {
         notifyListeners();
       }
     } on Object catch (error) {
-      // Senza daemon (fuori da Silica, o bus senza silica-daemon) il Centro resta vuoto.
-      debugPrint('notifiche: silica-daemon non risponde: $error');
+      // Without the daemon (outside Silica, or a bus without silica-daemon) the Center stays empty.
+      debugPrint('notifications: silica-daemon does not answer: $error');
     }
   }
 
@@ -103,9 +103,9 @@ class DBusNotifications extends ChangeNotifier implements NotificationsSource {
     try {
       await call;
     } on PlatformException catch (error) {
-      debugPrint('notifiche: ${error.code}: ${error.message}');
+      debugPrint('notifications: ${error.code}: ${error.message}');
     } on MissingPluginException {
-      // Fuori da Silica.
+      // Outside Silica.
     }
   }
 

@@ -1,8 +1,8 @@
-// L'avviso "Svuota il Cestino" (dock.md, D-07): finestra 292 × 268 centrata in orizzontale,
-// con la cima al ~20 % dello schermo (295 su 1440); vetro spesso (`#c5c6ca` sul grigio),
-// raggio ~26; icona del Cestino da 66 pt a (19, 19), testo principale in grassetto a
-// (21, 99) largo 250, testo secondario a (21, 157), due pulsanti a tutta larghezza da
-// 262 × 30 a (15, 189) e (15, 223): l'azione blu sopra, Annulla bianco traslucido sotto.
+// The "Svuota il Cestino" alert (dock.md, D-07): a 292 × 268 window centered horizontally,
+// with its top at ~20 % of the screen (295 over 1440); thick glass (`#c5c6ca` over grey),
+// radius ~26; a 66 pt Trash icon at (19, 19), main text in bold at (21, 99) 250 wide,
+// secondary text at (21, 157), two full-width 262 × 30 buttons at (15, 189) and (15, 223):
+// the blue action above, Cancel translucent white below.
 
 import 'dart:io';
 
@@ -14,7 +14,7 @@ import '../faro/faro.dart' show OuterShadow;
 
 const Size trashAlertSize = Size(292, 268);
 
-/// La cima dell'avviso, in frazione dell'altezza dello schermo.
+/// The top of the alert, as a fraction of the screen height.
 const double trashAlertTop = 295 / 1440;
 const double trashAlertRadius = 26;
 const double trashAlertIcon = 66;
@@ -26,18 +26,18 @@ const double trashAlertButtonGap = 4;
 const Color alertText = Color(0xFF1A1A1A);
 const Color alertDefault = Color(0xFF007AFF);
 
-/// `#e5e4e5` sul vetro `#c8c9ce`: bianco al ~55 %.
+/// `#e5e4e5` over the `#c8c9ce` glass: white at ~55 %.
 const Color alertCancel = Color(0x8CFFFFFF);
 const Color alertCancelText = Color(0xFF242424);
 
-/// Svuota il Cestino dell'utente: `gio trash --empty` (tutti i cestini, anche dei volumi);
-/// senza `gio`, le cartelle `files` e `info` del Cestino della home (specifica freedesktop).
+/// Empties the user's Trash: `gio trash --empty` (all trashes, including volumes); without
+/// `gio`, the `files` and `info` folders of the home Trash (freedesktop specification).
 Future<void> emptyTrash({Map<String, String>? env}) async {
   try {
     final result = await Process.run('gio', ['trash', '--empty']);
     if (result.exitCode == 0) return;
   } on ProcessException {
-    // Nessun gio: a mano.
+    // No gio: by hand.
   }
   final home = (env ?? Platform.environment)['HOME'] ?? '';
   for (final name in ['files', 'info']) {
@@ -47,14 +47,14 @@ Future<void> emptyTrash({Map<String, String>? env}) async {
       try {
         entry.deleteSync(recursive: true);
       } on FileSystemException {
-        // Un file che non si può togliere resta: il resto si svuota comunque.
+        // A file that cannot be removed stays: the rest is emptied anyway.
       }
     }
   }
 }
 
-/// Sposta `paths` nel Cestino: `gio trash` (anche sui volumi); senza `gio`, nel Cestino della
-/// home con il file `.trashinfo` (specifica freedesktop Trash).
+/// Moves `paths` to the Trash: `gio trash` (also on volumes); without `gio`, into the home
+/// Trash with the `.trashinfo` file (freedesktop Trash specification).
 Future<void> moveToTrash(
   List<String> paths, {
   Map<String, String>? env,
@@ -66,7 +66,7 @@ Future<void> moveToTrash(
       final result = await Process.run('gio', ['trash', '--', ...paths]);
       if (result.exitCode == 0) return;
     } on ProcessException {
-      // Nessun gio: a mano.
+      // No gio: by hand.
     }
   }
   final home = (env ?? Platform.environment)['HOME'] ?? '';
@@ -91,11 +91,11 @@ Future<void> moveToTrash(
           ? Directory(path).renameSync('${files.path}/$name')
           : File(path).renameSync('${files.path}/$name');
     } on FileSystemException {
-      // Un altro volume o un file protetto: resta dov'è.
+      // Another volume or a protected file: it stays where it is.
       try {
         File('${info.path}/$name.trashinfo').deleteSync();
       } on FileSystemException {
-        // Nemmeno la scheda si è scritta.
+        // Not even the info file was written.
       }
     }
   }
@@ -109,8 +109,8 @@ class TrashAlert extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // In scuro come gli avvisi di silica_ui (misc.md): testo `#ebebeb`, Annulla `#525253`
-    // con il testo `#e0e0e0`.
+    // In dark like the silica_ui alerts (misc.md): text `#ebebeb`, Cancel `#525253`
+    // with text `#e0e0e0`.
     final dark =
         MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
     final text = dark ? AlertColors.textDark : alertText;

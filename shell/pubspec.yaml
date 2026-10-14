@@ -1,5 +1,5 @@
 name: silica_shell
-description: La shell di Silica in Flutter (M3) - Dock, barra dei menu, Faro, sfondo; un componente per processo.
+description: The Silica shell in Flutter - Dock, menu bar, Faro, wallpaper; one component per process.
 publish_to: none
 version: 0.0.0
 

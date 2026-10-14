@@ -1,15 +1,15 @@
-// Banner e Centro notifiche, da plan/reference/notifications.md (aspetto chiaro).
+// Banners and Notification Center, from plan/reference/notifications.md (light appearance).
 //
-// Colonna larga 344 pt a 16 pt dal bordo destro e 16 pt sotto la barra dei menu. Carte di
-// vetro "notifica" (σ ~10,5 pt, quasi opaco) con angoli di 20 pt: icona 32 pt a 14 pt dal
-// bordo, testo da 58 pt, padding 12 sopra e 13 sotto, titolo semibold e corpo regolare a
-// ~13,75 pt (maiuscole di 10 pt), stesso colore. Il banner entra da destra con la curva
-// misurata; il Centro (comando notifications.toggle, clic sull'orologio) mostra le
-// notifiche per app, con le carte impilate, le azioni e uno scrim ampio attorno alla
-// colonna.
+// A 344 pt wide column 16 pt from the right edge and 16 pt below the menu bar. "Notification"
+// glass cards (σ ~10.5 pt, almost opaque) with 20 pt corners: 32 pt icon 14 pt from the
+// edge, text from 58 pt, padding 12 above and 13 below, semibold title and regular body at
+// ~13.75 pt (10 pt capitals), same color. The banner enters from the right with the measured
+// curve; the Center (notifications.toggle command, click on the clock) shows the
+// notifications by app, with stacked cards, the actions and a wide scrim around the
+// column.
 //
-// Il componente resta in esecuzione su un layer overlay a schermo intero: senza banner né
-// Centro non prende né puntatore né tastiera (silica/layer).
+// The component keeps running on a full-screen overlay layer: without banners or the
+// Center it takes neither pointer nor keyboard (silica/layer).
 
 import 'dart:async';
 import 'dart:io';
@@ -31,8 +31,8 @@ import 'service.dart';
 const double columnWidth = 344;
 const double columnMargin = 16;
 
-/// La superficie copre tutto lo schermo (zona esclusiva -1): la colonna parte sotto la
-/// barra dei menu.
+/// The surface covers the whole screen (exclusive zone -1): the column starts below the
+/// menu bar.
 const double columnTop = barHeight + columnMargin;
 const double cardRadius = 20;
 const double iconSize = 32;
@@ -40,37 +40,37 @@ const double iconLeft = 14;
 const double textLeft = 58;
 const double paddingRight = 14;
 
-/// Padding misurato: 12 sopra la riga del titolo, 13 sotto l'ultima. Inter a parità di
-/// riga mette la maiuscola 2 pt più in alto: con 14 la maiuscola del titolo è a 15 pt dal
-/// bordo come nel riferimento (y 61 su 46).
+/// Measured padding: 12 above the title line, 13 below the last one. At equal line height
+/// Inter puts the capitals 2 pt higher: with 14 the title capitals are 15 pt from the edge
+/// as in the reference (y 61 over 46).
 const double paddingTop = 14;
 const double paddingBottom = 13;
 
-/// Corpo del testo: le maiuscole misurano 10 pt, Inter le ha a 0,727 em.
+/// Text size: capitals measure 10 pt, Inter has them at 0.727 em.
 const double fontSize = 13.75;
 const double lineHeight = 16.5;
 const double smallSize = 11;
 
-/// Titolo, sottotitolo e corpo hanno lo stesso colore (`#1d1d1e` nei pixel più scuri).
+/// Title, subtitle and body share the same color (`#1d1d1e` in the darkest pixels).
 const Color textColor = Color(0xFF1D1D1E);
 
-/// Ora e testi secondari (`#575759`).
+/// Time and secondary texts (`#575759`).
 const Color secondaryColor = Color(0xFF575759);
 
-/// Intestazione del Centro: bianco quasi pieno sopra lo scrim (`#e1e1e1` su `#5e5f63`).
+/// Center header: almost solid white over the scrim (`#e1e1e1` over `#5e5f63`).
 const Color headerColor = Color(0xE0FFFFFF);
 
-/// Intestazione del Centro: 21 pt, 15,5 pt sotto la carta sopra, 7,5 pt sopra la prima.
+/// Center header: 21 pt, 15.5 pt below the card above, 7.5 pt above the first.
 const double headerHeight = 21;
 const double headerSize = 18.5;
 const double headerGapBelow = 7.5;
 
-/// Spazio fra le carte nel Centro (non misurato: come il passo delle carte impilate).
+/// Space between cards in the Center (not measured: like the pitch of stacked cards).
 const double cardGap = 8;
 
-/// Gruppo espanso (sessione 8, N-03): carte a passo 64 (6 pt fra l'una e l'altra),
-/// intestazione con il titolo a 19 pt e i controlli da 20 pt; lo scambio di forma fra i
-/// due controlli e l'espansione durano ~150–200 ms.
+/// Expanded group (session 8, N-03): cards at a 64 pitch (6 pt between them), header with
+/// the title at 19 pt and 20 pt controls; the shape swap between the two controls and the
+/// expansion take ~150–200 ms.
 const double expandedGap = 6;
 const double groupHeaderHeight = 28;
 const double groupTitleSize = 19;
@@ -79,30 +79,30 @@ const double groupCollapseWidth = 102;
 const double groupClearWidth = 65;
 const Duration groupMorph = Duration(milliseconds: 180);
 
-/// Carte impilate sotto un gruppo chiuso: strisce di 7 pt a passo 8, rientrate di ~19 e
-/// ~29 pt per lato.
+/// Stacked cards under a collapsed group: 7 pt strips at an 8 pitch, inset by ~19 and
+/// ~29 pt per side.
 const double stackStep = 8;
 const double stackStrip = 7;
 const List<double> stackInsets = [19, 29];
 
-/// Sezione delle azioni: più scura di ~20 livelli, separata da una riga di 1 pt; pulsanti
-/// a capsula da 22 pt, due per riga con 8 pt fra loro, 12 pt dai bordi.
+/// Actions section: ~20 levels darker, separated by a 1 pt line; 22 pt capsule buttons,
+/// two per row with 8 pt between them, 12 pt from the edges.
 const Color actionsFill = Color(0x1E000000);
 const Color actionsDivider = Color(0x38000000);
 const Color buttonFill = Color(0x1C000000);
 const Color buttonText = Color(0xFF2F2F31);
 const double buttonHeight = 22;
 
-/// I colori delle carte, chiaro e scuro. Lo scuro è misurato su
-/// `shots/glass/notifications/gray-dark.png` (Centro aperto su grigio, pixel più chiari dei
-/// testi, fondi nei punti puliti) e su `banner-gray-dark.png` (testo `#eaeaeb`):
-/// - testo `#eaeaeb`, ora `#b4b5ba`, pulsanti `#dadbe0`;
-/// - sezione delle azioni **più chiara** della carta di ~20 livelli (`#7a7a7e` su `#66676c`,
-///   al contrario del chiaro), riga divisoria più scura (102 su 122), pulsanti +21 livelli;
-/// - cerchio × `#717277` con bordo `#36373a` e glifo `#bfc0c2`; capsule dei gruppi `#74757a`
-///   con il testo `#c2c3c8`; carte impilate ~`#68686c` con la riga in fondo `#858589`.
-/// Le trasparenze in scuro sono ricavate da quei livelli sul grigio. L'intestazione del
-/// Centro è uguale nei due aspetti (`headerColor`).
+/// The card colors, light and dark. Dark is measured on
+/// `shots/glass/notifications/gray-dark.png` (Center open over grey, lightest pixels of the
+/// texts, backgrounds in clean spots) and on `banner-gray-dark.png` (text `#eaeaeb`):
+/// - text `#eaeaeb`, time `#b4b5ba`, buttons `#dadbe0`;
+/// - actions section **lighter** than the card by ~20 levels (`#7a7a7e` over `#66676c`,
+///   the opposite of light), darker divider line (102 over 122), buttons +21 levels;
+/// - × circle `#717277` with a `#36373a` rim and a `#bfc0c2` glyph; group capsules `#74757a`
+///   with `#c2c3c8` text; stacked cards ~`#68686c` with the bottom line `#858589`.
+/// The dark translucencies are derived from those levels over grey. The Center header is
+/// the same in both appearances (`headerColor`).
 @immutable
 class NotificationColors {
   const NotificationColors({
@@ -175,21 +175,21 @@ class NotificationColors {
 
 const double actionsInset = 12;
 
-/// Pulsanti che compaiono al passaggio del puntatore sul banner (sessione 8, N-02).
+/// Buttons that appear when the pointer passes over the banner (session 8, N-02).
 const double closeSize = 21;
 const Offset closeCenter = Offset(4, 6);
 const Size detailsSize = Size(65, 21);
 const double detailsInset = 9;
 
-/// Spazio fra il testo accorciato e la capsula (non misurato).
+/// Space between the shortened text and the capsule (not measured).
 const double detailsGap = 8;
 
-/// Lo scrim del Centro scurisce lo sfondo di ~×0,75 fra gli elementi e sfuma in ~60 pt.
+/// The Center scrim darkens the background by ~×0.75 between the elements and fades in ~60 pt.
 const Color scrimColor = Color(0x40000000);
 const double scrimBlur = 44;
 
-/// Ombra del banner isolato: debolissima (−4 livelli sotto il bordo, −2 ai lati), verso
-/// il basso, ~15 pt. Solo fuori dalla carta: dentro coprirebbe il vetro.
+/// Shadow of a lone banner: very faint (−4 levels below the edge, −2 at the sides),
+/// downwards, ~15 pt. Only outside the card: inside it would cover the glass.
 const Color shadowColor = Color(0x10000000);
 const double shadowSigma = 6;
 const Offset shadowOffset = Offset(0, 4);
@@ -203,7 +203,7 @@ TextStyle _style(double size, Color color, {FontWeight? weight}) => TextStyle(
   height: size == fontSize ? lineHeight / fontSize : null,
 );
 
-/// `HH:MM` dell'ora di ricezione, come nel Centro del riferimento.
+/// `HH:MM` of the arrival time, as in the reference Center.
 String timeLabel(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
@@ -217,7 +217,7 @@ class NotificationsLayer extends StatefulWidget {
 
   final NotificationsSource source;
 
-  /// Con Non disturbare attivo le notifiche vanno nel Centro senza banner.
+  /// With Do Not Disturb on, notifications go to the Center without a banner.
   final SystemSource? system;
   final bool startOpen;
 
@@ -235,19 +235,19 @@ class _BannerEntry {
 
 class _NotificationsLayerState extends State<NotificationsLayer>
     with SingleTickerProviderStateMixin {
-  /// Apertura e chiusura del Centro: il valore è il tempo trascorso, in proporzione alla
-  /// durata della fase in corso.
+  /// Opening and closing of the Center: the value is the elapsed time, relative to the
+  /// duration of the current phase.
   late final AnimationController _center;
   final FocusNode _focus = FocusNode();
   StreamSubscription<ShellNotification>? _posted;
   StreamSubscription<String>? _commands;
 
-  /// I banner sullo schermo: al più uno che entra o resta, gli altri escono.
+  /// The banners on screen: at most one entering or staying, the others leaving.
   final List<_BannerEntry> _banners = [];
   bool _centerOpen = false;
   final Set<String> _expanded = {};
 
-  /// La dimensione della superficie all'ultimo layout.
+  /// The surface size at the last layout.
   Size? _size;
 
   @override
@@ -278,7 +278,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   }
 
   void _changed() {
-    // Chiusa altrove (dal Centro, dall'app, scaduta): il banner esce.
+    // Closed elsewhere (from the Center, by the app, expired): the banner leaves.
     for (final banner in _banners) {
       if (!widget.source.notifications.containsKey(banner.notification.id)) {
         banner.leaving = true;
@@ -294,11 +294,11 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         (b) => !b.leaving && b.notification.id == n.id,
       );
       if (same.isNotEmpty) {
-        // Sostituita dall'app (stesso id): il contenuto cambia sul posto.
+        // Replaced by the app (same id): the content changes in place.
         same.first.notification = n;
         return;
       }
-      // Una notifica nuova sostituisce il banner corrente, che esce mentre lei entra.
+      // A new notification replaces the current banner, which leaves while it enters.
       for (final banner in _banners) {
         banner.leaving = true;
       }
@@ -340,8 +340,8 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     _updateInput();
   }
 
-  /// Il puntatore serve solo dove c'è qualcosa: il banner, o tutto lo schermo con il
-  /// Centro aperto (un clic fuori lo chiude).
+  /// The pointer is needed only where there is something: the banner, or the whole screen
+  /// with the Center open (a click outside closes it).
   void _updateInput() {
     if (_centerOpen) {
       LayerControl.inputRegion(null);
@@ -354,7 +354,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
       LayerControl.inputRegion(const []);
       return;
     }
-    // La colonna in alto a destra, con lo spazio per il pulsante di chiusura.
+    // The column at the top right, with room for the close button.
     final left = size.width - columnMargin - columnWidth - 8;
     LayerControl.inputRegion([
       Rect.fromLTWH(left, barHeight, size.width - left, 260),
@@ -365,7 +365,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     if (n.hasDefault) widget.source.invoke(n.id, 'default');
   }
 
-  /// Spostamento a destra del Centro e opacità nella fase corrente; null se è chiuso.
+  /// Rightward offset of the Center and opacity in the current phase; null if closed.
   (double, double)? _centerPose() {
     final ms = _center.value * (_center.duration?.inMilliseconds ?? 0);
     if (_centerOpen) {
@@ -489,7 +489,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     ),
   );
 
-  /// Stato vuoto: un testo bianco in semibold, centrato sulla colonna.
+  /// Empty state: white semibold text, centered on the column.
   Widget _empty() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 24),
     child: Center(
@@ -555,10 +555,10 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   }
 }
 
-/// L'intestazione di un gruppo espanso: il nome dell'app a sinistra (19 pt), a destra la
-/// capsula per ridurre il gruppo (102 × 20) e il cerchio per cancellarlo (20 × 20). Con il
-/// puntatore sul cerchio le due forme si scambiano la larghezza: il cerchio diventa la
-/// capsula "Cancella" (65 × 20) e la capsula un cerchio con la freccia in su.
+/// The header of an expanded group: the app name on the left (19 pt), on the right the
+/// capsule to collapse the group (102 × 20) and the circle to clear it (20 × 20). With the
+/// pointer on the circle the two shapes swap widths: the circle becomes the "Cancella"
+/// capsule (65 × 20) and the capsule a circle with an up arrow.
 class _GroupHeader extends StatefulWidget {
   const _GroupHeader({
     required this.title,
@@ -642,7 +642,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
   );
 }
 
-/// Una carta del Centro: con l'ora, le azioni e il pulsante di chiusura al passaggio.
+/// A Center card: with the time, the actions and the close button on hover.
 class _CenterCard extends StatefulWidget {
   const _CenterCard({
     required this.notification,
@@ -683,7 +683,7 @@ class _CenterCardState extends State<_CenterCard> {
   }
 }
 
-/// La carta di una notifica: vetro, icona, titolo, corpo; nel Centro anche ora e azioni.
+/// The card of a notification: glass, icon, title, body; in the Center also time and actions.
 class NotificationCard extends StatelessWidget {
   const NotificationCard({
     super.key,
@@ -708,8 +708,8 @@ class NotificationCard extends StatelessWidget {
   final VoidCallback? onClose;
   final ValueChanged<String>? onAction;
 
-  /// La capsula "Dettagli" a destra (banner al passaggio del puntatore): il testo si
-  /// accorcia per lasciarle spazio.
+  /// The "Dettagli" capsule on the right (banner on hover): the text shortens to make room
+  /// for it.
   final bool showDetails;
   final VoidCallback? onDetails;
 
@@ -723,8 +723,8 @@ class NotificationCard extends StatelessWidget {
       children: [
         if (shadow)
           const Positioned.fill(child: CustomPaint(painter: _OutsideShadow())),
-        // La riga scura del bordo sta 1 pt fuori dalla cornice: il vetro è più largo di
-        // 1 pt per lato e Ossido ci disegna la riga.
+        // The dark border line sits 1 pt outside the frame: the glass is 1 pt wider per
+        // side and Ossido draws the line there.
         const Positioned(
           left: -1,
           top: -1,
@@ -751,8 +751,8 @@ class NotificationCard extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         card,
-        // La × al passaggio del puntatore: cerchio di 21 pt centrato 4 pt a destra e 6 pt
-        // sotto l'angolo in alto a sinistra della carta.
+        // The × on hover: a 21 pt circle centered 4 pt right of and 6 pt below the top left
+        // corner of the card.
         if (showClose)
           Positioned(
             left: closeCenter.dx - closeSize / 2,
@@ -922,8 +922,8 @@ class _OutsideShadow extends CustomPainter {
   bool shouldRepaint(_OutsideShadow old) => false;
 }
 
-/// L'icona dell'app: l'immagine della notifica, l'icona chiesta, quella della voce
-/// desktop, altrimenti una tessera con l'iniziale.
+/// The app icon: the notification image, the requested icon, the one of the desktop
+/// entry, otherwise a tile with the initial.
 class AppIcon extends StatelessWidget {
   const AppIcon(this.notification, {super.key});
 
@@ -953,7 +953,7 @@ class _InitialIcon extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    // Angoli di ~7 pt su 32, contorno di 1 px più scuro (notifications.md).
+    // Corners of ~7 pt over 32, a 1 px darker outline (notifications.md).
     final shape = RRect.fromRectAndRadius(rect, const Radius.circular(7));
     canvas.drawRRect(shape, Paint()..color = const Color(0xFFE8E8EC));
     canvas.drawRRect(
@@ -977,8 +977,8 @@ class _InitialIcon extends CustomPainter {
   bool shouldRepaint(_InitialIcon old) => old.name != name;
 }
 
-/// Il cerchio con la × (chiudi, elimina tutto): fondo `#b4b5b9`, bordo scuro di 1 pt,
-/// glifo di 2 px `#5a5b5c`.
+/// The circle with the × (close, clear all): background `#b4b5b9`, 1 pt dark rim,
+/// 2 px glyph `#5a5b5c`.
 class CloseCircle extends StatelessWidget {
   const CloseCircle({super.key, required this.size});
 
@@ -1023,7 +1023,7 @@ class _ClosePainter extends CustomPainter {
   bool shouldRepaint(_ClosePainter old) => old.colors != colors;
 }
 
-/// Una carta che sporge sotto un gruppo chiuso.
+/// A card peeking out under a collapsed group.
 class _StackStrip extends StatelessWidget {
   const _StackStrip();
 
@@ -1036,15 +1036,15 @@ class _StackStrip extends StatelessWidget {
         Expanded(
           child: Container(color: NotificationColors.of(context).stripFill),
         ),
-        // Una riga più chiara in fondo (#bc–#be contro #a7–#af).
+        // A lighter line at the bottom (#bc–#be against #a7–#af).
         Container(height: 1, color: NotificationColors.of(context).stripLine),
       ],
     ),
   );
 }
 
-/// Lo scrim del Centro: un alone scuro e morbido attorno a tutta la colonna (non per
-/// carta), che sfuma in ~60 pt.
+/// The Center scrim: a soft dark halo around the whole column (not per card), fading in
+/// ~60 pt.
 class _Scrim extends StatelessWidget {
   const _Scrim({required this.child});
 

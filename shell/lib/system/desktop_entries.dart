@@ -1,5 +1,5 @@
-// Le app installate, dai file .desktop (specifica freedesktop Desktop Entry): cartelle
-// applications/ di XDG_DATA_HOME e XDG_DATA_DIRS, la prima vince a parità di id.
+// The installed apps, from .desktop files (freedesktop Desktop Entry specification): the
+// applications/ folders of XDG_DATA_HOME and XDG_DATA_DIRS, the first one wins on equal ids.
 
 import 'dart:io';
 
@@ -7,7 +7,7 @@ import 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
 
 export 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
 
-/// Un'app avviabile.
+/// A launchable app.
 class DesktopEntry {
   const DesktopEntry({
     required this.id,
@@ -21,26 +21,26 @@ class DesktopEntry {
     this.categories = const [],
   });
 
-  /// Nome del file senza `.desktop` (es. `org.gnome.Nautilus`).
+  /// File name without `.desktop` (e.g. `org.gnome.Nautilus`).
   final String id;
   final String name;
 
-  /// Comando senza i codici di campo (`%f`, `%U`, …), pronto per `sh -c`.
+  /// Command without field codes (`%f`, `%U`, …), ready for `sh -c`.
   final String exec;
 
-  /// Exec com'è nella voce, con i codici di campo: per aprire dei file ([execWithFiles]).
+  /// Exec as written in the entry, with field codes: to open files ([execWithFiles]).
   final String? rawExec;
   final String? icon;
   final String? wmClass;
   final List<String> keywords;
 
-  /// L'icona a livelli di silica-icons scelta dall'app (`X-Silica-Icon`).
+  /// The layered silica-icons icon chosen by the app (`X-Silica-Icon`).
   final String? silicaIcon;
 
-  /// Le categorie freedesktop (`Categories`, es. `Utility`, `Office`).
+  /// The freedesktop categories (`Categories`, e.g. `Utility`, `Office`).
   final List<String> categories;
 
-  /// La finestra con questo app id appartiene a questa app.
+  /// The window with this app id belongs to this app.
   bool matchesAppId(String appId) {
     if (appId.isEmpty) return false;
     final lower = appId.toLowerCase();
@@ -51,9 +51,9 @@ class DesktopEntry {
   }
 }
 
-/// Il comando che apre `paths` con l'app (specifica Desktop Entry, "Exec"): `%f`/`%u` con il
-/// primo, `%F`/`%U` con tutti (URI `file://` per `%u`/`%U`), citati per `sh -c`. Null se Exec
-/// non prende file: l'app non li accetta.
+/// The command that opens `paths` with the app (Desktop Entry specification, "Exec"): `%f`/`%u`
+/// with the first, `%F`/`%U` with all of them (`file://` URIs for `%u`/`%U`), quoted for `sh -c`.
+/// Null if Exec takes no files: the app does not accept them.
 String? execWithFiles(String exec, List<String> paths) {
   if (paths.isEmpty) return null;
   String quote(String s) => "'${s.replaceAll("'", r"'\''")}'";
@@ -82,14 +82,14 @@ String? execWithFiles(String exec, List<String> paths) {
         takes = true;
         out.write(paths.map((p) => quote(uri(p))).join(' '));
       default:
-      // Gli altri codici si tolgono.
+      // The other codes are dropped.
     }
   }
   if (!takes) return null;
   return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
-/// Toglie i codici di campo di Exec (`%f %F %u %U %d %D %n %N %i %c %k %v %m`) e `%%`.
+/// Removes the Exec field codes (`%f %F %u %U %d %D %n %N %i %c %k %v %m`) and `%%`.
 String stripFieldCodes(String exec) {
   final out = StringBuffer();
   for (var i = 0; i < exec.length; i++) {
@@ -103,7 +103,7 @@ String stripFieldCodes(String exec) {
   return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
-/// Legge una voce; null se non è un'app da mostrare (NoDisplay, Hidden, niente Exec).
+/// Reads an entry; null if it is not an app to show (NoDisplay, Hidden, no Exec).
 DesktopEntry? parseDesktopEntry(
   String id,
   String text, {
@@ -152,7 +152,7 @@ DesktopEntry? parseDesktopEntry(
   );
 }
 
-/// Tutte le app installate, per id.
+/// All installed apps, by id.
 Map<String, DesktopEntry> loadDesktopEntries({Map<String, String>? env}) {
   final entries = <String, DesktopEntry>{};
   final seen = <String>{};
@@ -165,7 +165,7 @@ Map<String, DesktopEntry> loadDesktopEntries({Map<String, String>? env}) {
       final id = relative
           .substring(0, relative.length - '.desktop'.length)
           .replaceAll('/', '-');
-      // La prima cartella vince, anche se lì l'app è nascosta.
+      // The first folder wins, even if the app is hidden there.
       if (!seen.add(id)) continue;
       try {
         final entry = parseDesktopEntry(id, file.readAsStringSync());

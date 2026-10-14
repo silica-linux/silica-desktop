@@ -1,11 +1,11 @@
-// Le notifiche come le manda silica-daemon (dev.frascella.Silica.Notifications1,
-// docs/daemon.md), i gruppi del Centro notifiche e le curve dei banner.
+// Notifications as silica-daemon sends them (dev.frascella.Silica.Notifications1,
+// docs/daemon.md), the Notification Center groups and the banner curves.
 
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
-/// Una notifica. I campi seguono la struttura `(ussssasysssbbti)` del daemon.
+/// A notification. The fields follow the daemon's `(ussssasysssbbti)` structure.
 @immutable
 class ShellNotification {
   const ShellNotification({
@@ -29,22 +29,22 @@ class ShellNotification {
   final String summary;
   final String body;
 
-  /// Coppie (chiave, etichetta), come nella specifica freedesktop.
+  /// (key, label) pairs, as in the freedesktop specification.
   final List<(String, String)> actions;
 
-  /// 0 bassa, 1 normale, 2 critica.
+  /// 0 low, 1 normal, 2 critical.
   final int urgency;
   final String desktopEntry;
   final String imagePath;
 
-  /// Solo banner: non resta nel Centro.
+  /// Banner only: it does not stay in the Center.
   final bool transient;
   final bool resident;
   final DateTime timestamp;
 
   bool get critical => urgency >= 2;
 
-  /// Le azioni da mostrare come pulsanti: `default` è il clic sulla notifica.
+  /// The actions to show as buttons: `default` is the click on the notification.
   List<(String, String)> get buttons => [
     for (final action in actions)
       if (action.$1 != 'default') action,
@@ -52,10 +52,10 @@ class ShellNotification {
 
   bool get hasDefault => actions.any((a) => a.$1 == 'default');
 
-  /// La chiave del gruppo nel Centro: la stessa app.
+  /// The group key in the Center: the same app.
   String get group => desktopEntry.isNotEmpty ? desktopEntry : appName;
 
-  /// Dalla struttura D-Bus in JSON (una lista di 14 campi); null se non torna.
+  /// From the D-Bus structure in JSON (a list of 14 fields); null if it does not fit.
   static ShellNotification? fromDBus(Object? json) {
     if (json is! List || json.length < 14) return null;
     final id = json[0];
@@ -85,7 +85,7 @@ class ShellNotification {
   }
 }
 
-/// Le notifiche di una app nel Centro, dalla più recente.
+/// The notifications of one app in the Center, from the most recent.
 @immutable
 class NotificationGroup {
   const NotificationGroup(this.key, this.items);
@@ -96,8 +96,8 @@ class NotificationGroup {
   ShellNotification get latest => items.first;
 }
 
-/// I gruppi del Centro: notifiche non transitorie, per app, i gruppi ordinati dalla
-/// notifica più recente.
+/// The Center groups: non-transient notifications, by app, groups ordered by the most
+/// recent notification.
 List<NotificationGroup> groupNotifications(Iterable<ShellNotification> all) {
   final sorted =
       [
@@ -115,50 +115,50 @@ List<NotificationGroup> groupNotifications(Iterable<ShellNotification> all) {
   return [for (final e in groups.entries) NotificationGroup(e.key, e.value)];
 }
 
-/// Entrata del banner (notifications.md, "Ciclo di vita del banner"): scorre da destra
-/// entrando da fuori schermo; la distanza residua si riduce di ~0,83 a fotogramma (75 Hz),
-/// costante di tempo ~71 ms, arrivo entro 1 pt in ~400 ms, senza superamento.
+/// Banner entrance (notifications.md, "Banner life cycle"): it slides in from the right
+/// from off screen; the remaining distance shrinks by ~0.83 per frame (75 Hz), time
+/// constant ~71 ms, arrival within 1 pt in ~400 ms, no overshoot.
 const double bannerEnterTau = 71;
 
-/// Distanza di partenza: tutto il banner più il margine, fuori dallo schermo.
+/// Starting distance: the whole banner plus the margin, off screen.
 const double bannerEnterDistance = 344 + 16;
 
-/// Durata dell'entrata: fino a mezzo punto dall'arrivo.
+/// Entrance duration: until half a point from arrival.
 final Duration bannerEnterDuration = Duration(
   milliseconds: (bannerEnterTau * math.log(bannerEnterDistance / 0.5)).ceil(),
 );
 
-/// Spostamento a destra del banner `ms` dopo l'inizio dell'entrata.
+/// Rightward offset of the banner `ms` after the start of the entrance.
 double bannerEnterOffset(double ms) {
   if (ms <= 0) return bannerEnterDistance;
   final offset = bannerEnterDistance * math.exp(-ms / bannerEnterTau);
   return offset < 0.5 ? 0 : offset;
 }
 
-/// Mentre entra il banner compare in dissolvenza (~210 ms) ed è sfocato, a fuoco in ~215 ms.
+/// While entering the banner fades in (~210 ms) and is blurred, sharp in ~215 ms.
 const double bannerFadeInMs = 210;
 const double bannerFocusMs = 215;
 
-/// Sfocatura massima (σ in pt) del banner che entra o esce: il contorno del contenuto
-/// sparisce quasi del tutto nel primo fotogramma (gradiente massimo 4 su 118).
+/// Maximum blur (σ in pt) of the banner entering or leaving: the outline of the content
+/// almost disappears in the first frame (maximum gradient 4 over 118).
 const double bannerBlurSigma = 8;
 
-/// Opacità e sfocatura dell'entrata `ms` dopo l'inizio.
+/// Opacity and blur of the entrance `ms` after the start.
 double bannerEnterOpacity(double ms) => (ms / bannerFadeInMs).clamp(0.0, 1.0);
 double bannerEnterBlur(double ms) =>
     bannerBlurSigma * (1 - (ms / bannerFocusMs).clamp(0.0, 1.0));
 
-/// Dalla comparsa all'inizio dell'uscita: ~5,0 s. Le notifiche critiche restano finché
-/// l'utente non le chiude.
+/// From appearing to the start of the exit: ~5.0 s. Critical notifications stay until the
+/// user closes them.
 const Duration bannerDuration = Duration(seconds: 5);
 
-/// Con il puntatore sopra il banner non scade; dopo che il puntatore esce, ~1,1 s.
+/// With the pointer over it the banner does not expire; after the pointer exits, ~1.1 s.
 const Duration bannerLinger = Duration(milliseconds: 1100);
 
-/// Uscita: verso destra, ~180–190 ms, con dissolvenza fino a metà e sfocatura crescente.
+/// Exit: to the right, ~180–190 ms, fading out halfway and with growing blur.
 const Duration bannerExitDuration = Duration(milliseconds: 190);
 
-/// Spostamenti misurati dell'uscita a passi di ~13,3 ms (bordo sinistro − 2200, pt).
+/// Measured exit offsets at ~13.3 ms steps (left edge − 2200, pt).
 const List<double> bannerExitSteps = [
   0,
   37,
@@ -177,7 +177,7 @@ const List<double> bannerExitSteps = [
   356,
 ];
 
-/// Spostamento a destra `ms` dopo l'inizio dell'uscita (interpolazione delle misure).
+/// Rightward offset `ms` after the start of the exit (interpolating the measurements).
 double bannerExitOffset(double ms) {
   final step = ms / (1000 / 75);
   if (step <= 0) return 0;
@@ -192,9 +192,9 @@ double bannerExitOpacity(double ms) =>
 double bannerExitBlur(double ms) =>
     bannerBlurSigma * (ms / bannerExitDuration.inMilliseconds).clamp(0.0, 1.0);
 
-/// Apertura del Centro notifiche: scorre da destra, quasi tutto in ~35 ms e poi una coda
-/// lunga fino a ~235 ms (bordo dei contenuti 2545 → 2198 → 2158): somma di due
-/// esponenziali, una rapida e una lenta.
+/// Notification Center opening: it slides in from the right, almost all of it in ~35 ms
+/// and then a long tail up to ~235 ms (content edge 2545 → 2198 → 2158): the sum of two
+/// exponentials, a fast one and a slow one.
 const double centerDistance = 387;
 const Duration centerOpenDuration = Duration(milliseconds: 235);
 
@@ -204,8 +204,8 @@ double centerOpenOffset(double ms) {
   return ms >= centerOpenDuration.inMilliseconds || x < 0.5 ? 0 : x;
 }
 
-/// Chiusura (~300 ms, uguale con Esc, clic sull'orologio o clic fuori): un leggero
-/// spostamento lento, poi un'uscita rapida e una coda.
+/// Closing (~300 ms, the same with Esc, a click on the clock or a click outside): a slight
+/// slow shift, then a fast exit and a tail.
 const Duration centerCloseDuration = Duration(milliseconds: 300);
 const List<(double, double)> centerCloseSteps = [
   (0, 0),

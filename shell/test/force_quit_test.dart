@@ -6,7 +6,7 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
 void main() {
-  testWidgets('⌘⌥Esc: le app aperte, quella in primo piano scelta, Termina', (
+  testWidgets('⌘⌥Esc: the open apps, the frontmost one chosen, Termina', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 800);
@@ -60,22 +60,22 @@ void main() {
       (_) {},
     );
     await tester.pump();
-    final panel = tester.getRect(find.byKey(const ValueKey('uscita forzata')));
+    final panel = tester.getRect(find.byKey(const ValueKey('force quit')));
     expect(panel.size, forceQuitSize);
     expect(panel.center, const Offset(640, 400));
-    // Una riga per app, per nome.
+    // One row per app, by name.
     expect(find.text('Editor di testo'), findsOneWidget);
     expect(find.text('File'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('Editor di testo')).dy,
       lessThan(tester.getTopLeft(find.text('File')).dy),
     );
-    await tester.tap(find.byKey(const ValueKey('termina')));
+    await tester.tap(find.byKey(const ValueKey('force quit button')));
     await tester.pump();
     expect(executed.single, {
       'id': 'app.force_quit',
       'params': {'app_id': 'org.gnome.TextEditor'},
     });
-    expect(find.byKey(const ValueKey('uscita forzata')), findsNothing);
+    expect(find.byKey(const ValueKey('force quit')), findsNothing);
   });
 }

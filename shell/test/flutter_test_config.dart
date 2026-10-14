@@ -1,5 +1,5 @@
-// I test misurano con Inter vero (il font dell'interfaccia, da silica_ui), non con il font di
-// prova: larghezze e troncamenti sono quelli della finestra.
+// The tests measure with the real Inter (the interface font, from silica_ui), not with the
+// test font: widths and truncations are those of the window.
 
 import 'dart:async';
 

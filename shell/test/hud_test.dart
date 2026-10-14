@@ -23,18 +23,18 @@ Future<FakeSystem> pumpHud(
 }
 
 void main() {
-  test('comparsa e scomparsa seguono le misure', () {
+  test('appearance and disappearance follow the measurements', () {
     expect(hudAppearScale(0), hudScaleFrom);
     expect(hudAppearScale(1), 1);
     expect(hudAppearOpacity(0.5), 0.25);
-    // Calo rapido nei primi 80 ms, poi una coda fino a 550.
+    // Fast drop in the first 80 ms, then a tail up to 550.
     expect(hudVanishOpacity(80), closeTo(0.22, 1e-9));
     expect(hudVanishOpacity(550), 0);
     expect(hudVanishScale(410), hudScaleFrom);
   });
 
   testWidgets(
-    'un cambio di volume mostra l\'HUD, che resta 1,09 s e poi sparisce',
+    'a volume change shows the HUD, which stays 1.09 s and then disappears',
     (tester) async {
       final system = await pumpHud(tester);
       expect(find.text('Uscita audio'), findsNothing);
@@ -42,11 +42,11 @@ void main() {
       await tester.pump();
       await tester.pump(hudAppear);
       expect(find.text('Uscita audio'), findsOneWidget);
-      // In alto a destra: 10 pt sotto la barra dei menu e dal bordo.
+      // At the top right: 10 pt below the menu bar and from the edge.
       final panel = tester.getTopRight(find.text('Uscita audio')).dy;
       expect(panel, greaterThan(30 + 10));
 
-      // Un cambio nuovo con il pannello visibile fa ripartire l'attesa.
+      // A new change with the panel visible restarts the wait.
       await tester.pump(const Duration(milliseconds: 800));
       system.value = system.value.copyWith(volume: 0.625);
       await tester.pump(const Duration(milliseconds: 800));
@@ -57,9 +57,7 @@ void main() {
     },
   );
 
-  testWidgets('luminosità chiesta da Silica: titolo dello schermo', (
-    tester,
-  ) async {
+  testWidgets('brightness requested by Silica: display title', (tester) async {
     final system = await pumpHud(tester);
     system.value = system.value.copyWith(
       brightness: 0.25,
@@ -69,9 +67,9 @@ void main() {
     expect(find.text('Schermo'), findsOneWidget);
   });
 
-  testWidgets('la luminosità adattiva non mostra l\'HUD', (tester) async {
+  testWidgets('adaptive brightness does not show the HUD', (tester) async {
     final system = await pumpHud(tester);
-    // Il valore cambia da solo, nessuna richiesta di Silica.
+    // The value changes by itself, no request from Silica.
     for (final v in [0.4, 0.42, 0.45]) {
       system.value = system.value.copyWith(brightness: v);
       await tester.pump(const Duration(milliseconds: 200));
@@ -79,14 +77,16 @@ void main() {
     expect(find.text('Schermo'), findsNothing);
   });
 
-  testWidgets('con il Centro di controllo aperto niente HUD', (tester) async {
+  testWidgets('with the Control Center open no HUD', (tester) async {
     final system = await pumpHud(tester, suppressed: true);
     system.value = system.value.copyWith(volume: 0.1, muted: true);
     await tester.pump(hudAppear);
     expect(find.byType(Text), findsNothing);
   });
 
-  testWidgets('la prima lettura dal daemon non mostra l\'HUD', (tester) async {
+  testWidgets('the first read from the daemon does not show the HUD', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 800);
     addTearDown(tester.view.reset);
     final system = FakeSystem(const SystemSnapshot());

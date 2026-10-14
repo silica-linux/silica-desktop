@@ -1,19 +1,19 @@
-// Il launcher delle app: Faro in un'altra modalità, da plan/reference/launcher.md (aspetto
-// chiaro). Pannello di 844 × 577 pt con la cima al 30 % dello schermo, raggio 25, materiale
-// di Faro. Testata di 56 pt (icona delle app a 22 pt dal bordo, segnaposto "Applicazioni" a
-// 26 pt, "…" a destra), separatore, una riga di 7 categorie, poi la griglia: 7 colonne a passo
-// 112,5 pt, righe a passo 102, icone da 61 pt, nomi da 14 pt troncati in coda; in cima una
-// riga di app recenti separata da una linea. Barra di scorrimento sempre visibile.
+// The app launcher: Faro in another mode, from plan/reference/launcher.md (light
+// appearance). An 844 × 577 pt panel with its top at 30 % of the screen, radius 25, Faro's
+// material. A 56 pt header (apps icon 22 pt from the edge, "Applicazioni" placeholder at
+// 26 pt, "…" on the right), a separator, a row of 7 categories, then the grid: 7 columns at a
+// 112.5 pt pitch, rows at a 102 pitch, 61 pt icons, 14 pt names truncated at the end; at the
+// top a row of recent apps separated by a line. The scroll bar is always visible.
 //
-// Una categoria diventa un gettone nel campo e la griglia mostra solo quella; scrivere filtra
-// (dentro la categoria, o su tutte le app con la migliore per prima e un anello attorno).
-// Esc toglie il testo, poi la categoria, poi torna a Faro.
+// A category becomes a token in the field and the grid shows only that one; typing filters
+// (inside the category, or over all apps with the best first and a ring around it).
+// Esc removes the text, then the category, then goes back to Faro.
 //
-// Cercando su tutte le app, se il primo risultato comincia con il testo il campo lo completa
-// in linea ("cal" + "endario — Apri" in un rettangolo grigio) e mostra l'icona dell'app a destra.
+// Searching all apps, if the first result starts with the text the field completes it
+// inline ("cal" + "endario — Apri" in a grey rectangle) and shows the app icon on the right.
 //
-// Non fatti (PA-60): selezione da tastiera nella griglia, menù del "…", ondeggiamento finale
-// dell'apertura.
+// Not done (PA-60): keyboard selection in the grid, the "…" menu, the final wobble of the
+// opening.
 
 import 'dart:convert';
 import 'dart:io';
@@ -32,11 +32,11 @@ const double launcherHeight = 577;
 const double launcherRadius = 25;
 const double launcherHeader = 56;
 
-/// Margine laterale di separatori, capsule e griglia.
+/// Side margin of separators, capsules and grid.
 const double launcherMargin = 20;
 
-/// Zona delle capsule: 47 pt, capsule alte 26 a 10 pt dal separatore, 8 pt fra l'una e
-/// l'altra, larghe almeno 85,5 pt o il testo più 9 pt per lato, raggio 9.
+/// Capsule area: 47 pt, capsules 26 tall 10 pt below the separator, 8 pt apart, at least
+/// 85.5 pt wide or the text plus 9 pt per side, radius 9.
 const double categoryZone = 47;
 const double categoryTop = 10;
 const double categoryHeight = 26;
@@ -46,9 +46,9 @@ const double categoryPadding = 9;
 const double categoryRadius = 9;
 const double categoryText = 15;
 
-/// Griglia: celle 112,5 × 92, icone 61 a 7 pt dalla cima della cella, nome a 75 pt (alto 18,
-/// largo al più 110); prima cella a 11 pt dall'inizio dell'area; righe a passo 102; fra i
-/// recenti e l'elenco una linea 13 pt sotto le celle, l'elenco 12 pt sotto la linea.
+/// Grid: 112.5 × 92 cells, 61 icons 7 pt from the top of the cell, name at 75 pt (18 tall,
+/// at most 110 wide); first cell 11 pt from the start of the area; rows at a 102 pitch;
+/// between the recents and the list a line 13 pt below the cells, the list 12 pt below it.
 const int gridColumns = 7;
 const double cellWidth = 112.5;
 const double cellHeight = 92;
@@ -63,18 +63,18 @@ const double rowPitch = 102;
 const double recentGap = 13;
 const double recentAfter = 12;
 
-/// Barra di scorrimento: guida opaca di 11 pt a 3 pt dal bordo, da 40 pt sotto l'inizio
-/// dell'area a 49 pt dal fondo del pannello; estremi a semicerchio.
+/// Scroll bar: an opaque 11 pt track 3 pt from the edge, from 40 pt below the start of the
+/// area to 49 pt from the bottom of the panel; semicircular ends.
 const double scrollbarWidth = 11;
 const double scrollbarRight = 3;
 const double scrollbarTop = 40;
 const double scrollbarBottom = 49;
 
-/// Anello del primo risultato: 4 pt attorno all'icona, raggio esterno 17.
+/// Ring of the first result: 4 pt around the icon, outer radius 17.
 const double ringWidth = 4;
 const double ringRadius = 17;
 
-/// Gettone della categoria nel campo: alto 31, raggio 10, testo a 6 pt dal bordo e 11 dopo.
+/// Category token in the field: 31 tall, radius 10, text 6 pt from the edge and 11 after.
 const double tokenHeight = 31;
 const double tokenRadius = 10;
 
@@ -82,18 +82,18 @@ const Color launcherText = Color(0xFF16171C);
 const Color launcherPlaceholder = Color(0xFF494A4F);
 const Color launcherLine = Color(0x20000000);
 
-/// `#d9dadf` sopra il riempimento `#c8c9ce`: bianco al ~31 %.
+/// `#d9dadf` over the `#c8c9ce` fill: white at ~31 %.
 const Color categoryFill = Color(0x4FFFFFFF);
 const Color categoryTextColor = Color(0xFF5A5B60);
 
-/// `#afb0b5` sopra `#c8c9ce`: come la riga selezionata di Faro.
+/// `#afb0b5` over `#c8c9ce`: like Faro's selected row.
 const Color tokenFill = Color(0x20000000);
 const Color tokenText = Color(0xFF0D0E13);
 const Color scrollTrack = Color(0xFFF2F2F2);
 const Color scrollThumb = Color(0xFF808080);
 
-/// Completamento in linea: rettangolo alto 32 centrato nella testata (12 pt dalla cima), raggio 8, `#a2a3a8` sopra
-/// `#c8c9ce` (nero al ~19 %); testo `#232429`. Anteprima dell'app: 27 pt, a 18 pt dal "…".
+/// Inline completion: a rectangle 32 tall centered in the header (12 pt from the top), radius 8, `#a2a3a8` over
+/// `#c8c9ce` (black at ~19 %); text `#232429`. App preview: 27 pt, 18 pt from the "…".
 const double completionHeight = 32;
 const double completionRadius = 8;
 const Color completionFill = Color(0x30000000);
@@ -101,8 +101,8 @@ const Color completionText = Color(0xFF232429);
 const double previewSide = 27;
 const double previewRight = 60;
 
-/// Il suffisso da completare: il resto del nome del primo risultato, se comincia con il
-/// testo scritto (e non c'è una categoria).
+/// The suffix to complete: the rest of the first result's name, if it starts with the typed
+/// text (and there is no category).
 String? completionFor(String query, List<DesktopEntry> results) {
   final q = query.trimLeft();
   final first = results.firstOrNull;
@@ -111,15 +111,15 @@ String? completionFor(String query, List<DesktopEntry> results) {
   return '${first.name.substring(q.length)} — Apri';
 }
 
-/// `#838488 → #747579` sopra `#c8c9ce`.
+/// `#838488 → #747579` over `#c8c9ce`.
 const Color ringColor = Color(0x80404145);
 
-/// I colori di Faro e del launcher sopra il vetro spesso, chiaro e scuro (spotlight.md,
-/// launcher.md). In scuro il riempimento è `#717276`: i fondi misurati sopra di esso diventano
-/// bianco traslucido (riga scelta e gettone `#949599` → 25 %, capsule `#828387` → 12 %,
-/// completamento `#97989c` → 27 %, anello `#abacb0 → #98999d` → ~35 %); i testi sono pieni.
-/// L'ombra in scuro è ~1,7 volte più densa (a contatto −68 contro −39 sotto): l'opacità è
-/// *stimata* scalando quella chiara.
+/// The colors of Faro and the launcher over thick glass, light and dark (spotlight.md,
+/// launcher.md). In dark the fill is `#717276`: the backgrounds measured over it become
+/// translucent white (chosen row and token `#949599` → 25 %, capsules `#828387` → 12 %,
+/// completion `#97989c` → 27 %, ring `#abacb0 → #98999d` → ~35 %); texts are solid.
+/// The shadow in dark is ~1.7 times denser (at contact −68 against −39 below): the opacity
+/// is *estimated* by scaling the light one.
 @immutable
 class FaroColors {
   const FaroColors({
@@ -144,7 +144,7 @@ class FaroColors {
   final Color placeholder;
   final Color subtitle;
 
-  /// Riga scelta, separatori e gettone della categoria.
+  /// Chosen row, separators and category token.
   final Color selection;
   final Color categoryFill;
   final Color categoryText;
@@ -155,7 +155,7 @@ class FaroColors {
   final Color track;
   final Color thumb;
 
-  /// Fattore sull'opacità delle ombre dei pannelli.
+  /// Factor on the opacity of the panel shadows.
   final double shadowScale;
 
   static const FaroColors light = FaroColors(
@@ -197,12 +197,12 @@ class FaroColors {
       ? dark
       : light;
 
-  /// L'ombra `color` con l'opacità di questo aspetto.
+  /// The shadow `color` with the opacity of this appearance.
   Color shadow(Color color) =>
       color.withValues(alpha: (color.a * shadowScale).clamp(0.0, 1.0));
 }
 
-/// Le categorie del launcher e le categorie freedesktop che contengono, dalla prima.
+/// The launcher categories and the freedesktop categories they contain, from the first.
 const List<(String, List<String>)> launcherCategories = [
   ('Produttività e finanza', ['Office', 'Finance', 'ProjectManagement']),
   ('Utility', ['Utility', 'System', 'Settings', 'Accessibility']),
@@ -221,7 +221,7 @@ List<String> get categoryNames => [
   otherCategory,
 ];
 
-/// La categoria del launcher di un'app: la prima che corrisponde, o "Altro".
+/// The launcher category of an app: the first that matches, or "Altro".
 String categoryOf(DesktopEntry entry) {
   for (final (name, members) in launcherCategories) {
     if (entry.categories.any(members.contains)) return name;
@@ -232,8 +232,8 @@ String categoryOf(DesktopEntry entry) {
 int _byName(DesktopEntry a, DesktopEntry b) =>
     a.name.toLowerCase().compareTo(b.name.toLowerCase());
 
-/// Le app della griglia: in ordine alfabetico, nella categoria se c'è; con del testo, dentro
-/// una categoria si filtra in ordine alfabetico, su tutte le app la migliore va prima.
+/// The grid apps: alphabetical, in the category if there is one; with text, inside a
+/// category it filters alphabetically, over all apps the best goes first.
 List<DesktopEntry> launcherApps(
   Iterable<DesktopEntry> entries, {
   String? category,
@@ -249,7 +249,7 @@ List<DesktopEntry> launcherApps(
   return found;
 }
 
-/// Le app recenti (id dal più recente), da ~/.local/state/silica/recent-apps.json.
+/// The recent apps (ids from the most recent), from ~/.local/state/silica/recent-apps.json.
 class RecentApps {
   RecentApps({Map<String, String>? env}) : _env = env ?? Platform.environment;
 
@@ -267,9 +267,9 @@ class RecentApps {
       final json = jsonDecode(_file.readAsStringSync());
       if (json is List) return [for (final id in json.take(limit)) '$id'];
     } on FileSystemException {
-      // Mai salvato.
+      // Never saved.
     } on FormatException {
-      // File rovinato: si riparte.
+      // Broken file: start over.
     }
     return const [];
   }
@@ -283,7 +283,7 @@ class RecentApps {
       _file.parent.createSync(recursive: true);
       _file.writeAsStringSync(jsonEncode(list));
     } on FileSystemException {
-      // Senza stato scrivibile i recenti non si ricordano.
+      // Without a writable state the recents are not remembered.
     }
   }
 }
@@ -305,11 +305,11 @@ class Launcher extends StatefulWidget {
 
   final Map<String, DesktopEntry> entries;
 
-  /// Gli id delle app recenti, dalla più recente.
+  /// The ids of the recent apps, from the most recent.
   final List<String> recents;
   final ValueChanged<DesktopEntry> onLaunch;
 
-  /// Esc senza testo né categoria: si torna a Faro.
+  /// Esc with no text and no category: back to Faro.
   final VoidCallback onBack;
 
   @override
@@ -323,8 +323,8 @@ class LauncherState extends State<Launcher>
   final ScrollController _scroll = ScrollController();
   String? _category;
 
-  /// Il cambio di categoria: la griglia sparisce subito e torna in dissolvenza dopo un vuoto
-  /// (valore del controller = ms dal cambio).
+  /// The category change: the grid disappears at once and fades back in after a gap
+  /// (controller value = ms since the change).
   late final AnimationController _fade = AnimationController(
     vsync: this,
     upperBound: 260,
@@ -385,7 +385,7 @@ class LauncherState extends State<Launcher>
     return KeyEventResult.handled;
   }
 
-  /// Opacità della griglia dopo un cambio di categoria (vuoto di ~75 ms, poi ~155 ms).
+  /// Grid opacity after a category change (a gap of ~75 ms, then ~155 ms).
   double _gridOpacity() => categoryFade(_fade.value);
 
   FaroColors get _c => FaroColors.of(context);
@@ -448,7 +448,7 @@ class LauncherState extends State<Launcher>
               ),
             ),
           ),
-          // Con la griglia scorsa compare un secondo separatore sopra l'area.
+          // With the grid scrolled a second separator appears above the area.
           if (browsing && _scroll.hasClients && _scroll.offset > 0)
             Positioned(
               left: launcherMargin,
@@ -586,7 +586,7 @@ class LauncherState extends State<Launcher>
               height: previewSide,
               child: SilicaIcon(preview, side: previewSide, dark: false),
             ),
-          // "…": tre punti 4 × 3 a passo 7, l'ultimo a 23 pt dal bordo destro.
+          // "…": three 4 × 3 dots at a 7 pitch, the last one 23 pt from the right edge.
           Positioned(
             right: 23,
             top: (launcherHeader - 3) / 2,
@@ -600,7 +600,7 @@ class LauncherState extends State<Launcher>
   }
 
   Widget _categories() {
-    // Nomi più lunghi del previsto (altre lingue): la riga si stringe invece di uscire.
+    // Names longer than expected (other languages): the row shrinks instead of overflowing.
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
@@ -751,7 +751,7 @@ class LauncherState extends State<Launcher>
   }
 }
 
-/// Opacità della griglia `ms` dopo il cambio di categoria (misurata sul video).
+/// Grid opacity `ms` after the category change (measured on the video).
 double categoryFade(double ms) {
   const table = [
     (75.0, 0.0),
@@ -778,7 +778,7 @@ double categoryFade(double ms) {
   return 1;
 }
 
-/// Dove stanno le celle nell'area di scorrimento.
+/// Where the cells are in the scroll area.
 class GridLayout {
   const GridLayout({required this.recents, required this.apps});
 
@@ -805,7 +805,7 @@ class GridLayout {
   }
 }
 
-/// La barra di scorrimento: guida sempre, cursore solo se il contenuto non entra.
+/// The scroll bar: always the track, the thumb only if the content does not fit.
 class LauncherScrollbar extends CustomPainter {
   const LauncherScrollbar({
     required this.visible,
@@ -822,7 +822,7 @@ class LauncherScrollbar extends CustomPainter {
   final double content;
   final double offset;
 
-  /// Il cursore nella guida alta `track`, o null se non serve.
+  /// The thumb in a track `track` tall, or null if not needed.
   Rect? thumb(double track) {
     if (content <= visible || track <= 0) return null;
     final height = (track * visible / content).clamp(scrollbarWidth, track);
@@ -888,7 +888,7 @@ class _DotsPainter extends CustomPainter {
   bool shouldRepaint(_DotsPainter old) => old.color != color;
 }
 
-/// Il glifo delle app: quattro quadrati arrotondati.
+/// The apps glyph: four rounded squares.
 class AppsGlyphPainter extends CustomPainter {
   const AppsGlyphPainter(this.color);
 

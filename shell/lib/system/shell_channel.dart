@@ -1,5 +1,5 @@
-// Il canale silica/shell dell'embedder: le finestre aperte (da Ossido) e i comandi
-// activate e launch. Fuori da Silica il canale non risponde: niente finestre.
+// The embedder's silica/shell channel: the open windows (from Ossido) and the activate
+// and launch commands. Outside Silica the channel does not answer: no windows.
 
 import 'dart:async';
 import 'dart:io';
@@ -8,7 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Una finestra aperta.
+/// An open window.
 @immutable
 class Toplevel {
   const Toplevel({required this.id, required this.title, required this.appId});
@@ -77,38 +77,38 @@ class ShellChannel {
     JSONMethodCodec(),
   );
 
-  /// Le finestre aperte, aggiornate a ogni cambiamento.
+  /// The open windows, updated on every change.
   final ValueNotifier<List<Toplevel>> toplevels = ValueNotifier(const []);
 
   final StreamController<String> _commands = StreamController.broadcast();
 
-  /// I comandi che Ossido inoltra alla shell (es. `faro.toggle`).
+  /// The commands Ossido forwards to the shell (e.g. `faro.toggle`).
   Stream<String> get commands => _commands.stream;
 
-  /// Gli stati annunciati dai componenti della shell (`controlcenter.open` = "1"…), per
-  /// argomento: l'ultimo valore, anche di prima del collegamento.
+  /// The states announced by the shell components (`controlcenter.open` = "1"…), by
+  /// topic: the last value, including those from before the connection.
   final ValueNotifier<Map<String, String>> states = ValueNotifier(const {});
 
-  /// Annuncia uno stato agli altri componenti (e a sé).
+  /// Announces a state to the other components (and to itself).
   Future<bool> broadcast(String topic, String value) =>
       _call('broadcast', {'topic': topic, 'value': value});
 
   final StreamController<({String id, ui.Offset tip})> _windowMenus =
       StreamController.broadcast();
 
-  /// Pressione lunga sul pulsante verde di una finestra: il popover di disposizione, con la
-  /// punta in `tip` (coordinate dello schermo).
+  /// Long press on the green button of a window: the arrangement popover, with the tip at
+  /// `tip` (screen coordinates).
   Stream<({String id, ui.Offset tip})> get windowMenus => _windowMenus.stream;
 
-  /// L'identificatore della finestra con il focus (vuoto: nessuna).
+  /// The identifier of the focused window (empty: none).
   final ValueNotifier<String> focused = ValueNotifier('');
 
-  /// Le finestre ridotte, dalla prima ridotta (Ossido, silica-shell-v1 versione 2).
+  /// The minimized windows, from the first minimized (Ossido, silica-shell-v1 version 2).
   final ValueNotifier<List<String>> minimized = ValueNotifier(const []);
 
   final Map<String, Completer<ui.Image?>> _thumbnails = {};
 
-  /// La miniatura di una finestra ridotta (null se non c'è).
+  /// The thumbnail of a minimized window (null if there is none).
   Future<ui.Image?> thumbnail(String id) {
     final pending = _thumbnails[id];
     if (pending != null) return pending.future;
@@ -155,7 +155,7 @@ class ShellChannel {
     }
   }
 
-  /// La finestra con il focus, se è nell'elenco.
+  /// The focused window, if it is in the list.
   Toplevel? get focusedToplevel =>
       toplevels.value.where((t) => t.id == focused.value).firstOrNull;
 
@@ -166,7 +166,7 @@ class ShellChannel {
     ];
   }
 
-  /// Legge l'elenco attuale (all'avvio, per le finestre annunciate prima di Dart).
+  /// Reads the current list (at startup, for the windows announced before Dart).
   Future<void> refresh() async {
     try {
       _update(await channel.invokeMethod<Object?>('list'));
@@ -177,7 +177,7 @@ class ShellChannel {
           for (final id in list) '$id',
       ];
     } on MissingPluginException {
-      // Fuori da Silica.
+      // Outside Silica.
     }
   }
 
@@ -185,8 +185,8 @@ class ShellChannel {
 
   Future<bool> launch(String command) => _call('launch', {'command': command});
 
-  /// Esegue un comando del catalogo di Ossido (es. `faro.toggle` dalla barra).
-  /// Esegue un comando del catalogo di Ossido, con i parametri se ce ne sono.
+  /// Runs a command of Ossido's catalog (e.g. `faro.toggle` from the menu bar).
+  /// Runs a command of Ossido's catalog, with the parameters if there are any.
   Future<bool> execute(String id, [Map<String, Object?>? params]) =>
       _call('execute', {'id': id, 'params': ?params});
 

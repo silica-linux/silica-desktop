@@ -1,6 +1,6 @@
-// Icone della barra disegnate in codice (forme generiche, non asset): il marchio di
-// Silica, la rete, la ricerca (Faro), il Centro di controllo. Bianche al 90 % come le
-// icone di stato misurate; dimensioni dell'inchiostro 12–18 pt nelle caselle.
+// Bar icons drawn in code (generic shapes, not assets): the Silica mark, the network,
+// search (Faro), the Control Center. White at 90 % like the measured status icons; ink
+// size 12–18 pt in the boxes.
 
 import 'dart:math' as math;
 
@@ -8,8 +8,8 @@ import 'package:flutter/widgets.dart';
 
 import 'menubar.dart';
 
-/// Il marchio di Silica: un cristallo esagonale con una faccetta (14 × 16 pt, come
-/// l'inchiostro del logo nella casella misurata).
+/// The Silica mark: a hexagonal crystal with a facet (14 × 16 pt, like the ink of the logo
+/// in the measured box).
 class SilicaMark extends StatelessWidget {
   const SilicaMark({super.key, required this.color});
 
@@ -38,7 +38,7 @@ class _MarkPainter extends CustomPainter {
       ..lineTo(0, h * 0.25)
       ..close();
     canvas.drawPath(outline, Paint()..color = color);
-    // Faccetta: un taglio più scuro che dà il volume.
+    // Facet: a darker cut that gives volume.
     final facet = Path()
       ..moveTo(w / 2, h * 0.5)
       ..lineTo(w, h * 0.25)
@@ -69,16 +69,16 @@ class StatusIcon extends StatelessWidget {
 
   final StatusKind kind;
 
-  /// Larghezza della casella (le misure: 22–33 pt).
+  /// Box width (the measurements: 22–33 pt).
   final double cell;
 
-  /// Intensità del Wi-Fi o carica della batteria, 0–1.
+  /// Wi-Fi strength or battery charge, 0–1.
   final double level;
 
-  /// Spento (Wi-Fi disattivato): tutto al 35 %.
+  /// Off (Wi-Fi disabled): everything at 35 %.
   final bool dim;
 
-  /// Batteria in carica: un fulmine ritagliato nel riempimento.
+  /// Battery charging: a bolt cut out of the fill.
   final bool charging;
 
   @override
@@ -91,7 +91,7 @@ class StatusIcon extends StatelessWidget {
   );
 }
 
-/// Quanti archi del Wi-Fi sono accesi per un'intensità 0–1 (il punto lo è sempre).
+/// How many Wi-Fi arcs are lit for a strength 0–1 (the dot always is).
 int wifiArcs(double level) => level >= 0.67
     ? 3
     : level >= 0.34
@@ -122,7 +122,7 @@ class _StatusPainter extends CustomPainter {
     final fill = Paint()..color = statusColor;
     switch (kind) {
       case StatusKind.network:
-        // Tre archi e un punto, ~17 × 12 pt; gli archi oltre l'intensità al 35 %.
+        // Three arcs and a dot, ~17 × 12 pt; the arcs beyond the strength at 35 %.
         final base = c + const Offset(0, 5);
         final faint = statusColor.withValues(alpha: statusColor.a * 0.35);
         final lit = dim ? 0 : wifiArcs(level);
@@ -138,7 +138,7 @@ class _StatusPainter extends CustomPainter {
         }
         canvas.drawCircle(base, 1.4, dim ? (Paint()..color = faint) : fill);
       case StatusKind.wired:
-        // Rete via cavo: tre caselle collegate, ~16 × 12 pt.
+        // Wired network: three connected boxes, ~16 × 12 pt.
         final link = stroke..strokeWidth = 1.4;
         final top = Rect.fromCenter(
           center: c - const Offset(0, 3.5),
@@ -164,8 +164,8 @@ class _StatusPainter extends CustomPainter {
           link,
         );
       case StatusKind.battery:
-        // Batteria ~25 × 12 pt con il riempimento della carica (dimensioni provvisorie:
-        // il riferimento è un fisso, senza batteria).
+        // Battery ~25 × 12 pt with the charge fill (provisional sizes: the reference is a
+        // desktop, without a battery).
         final body = RRect.fromRectAndRadius(
           Rect.fromCenter(
             center: c - const Offset(1.5, 0),
@@ -210,7 +210,7 @@ class _StatusPainter extends CustomPainter {
           fill,
         );
       case StatusKind.search:
-        // Lente: 13 × 13 pt.
+        // Lens: 13 × 13 pt.
         canvas.drawCircle(c + const Offset(-1.5, -1.5), 4.6, stroke);
         canvas.drawLine(
           c + const Offset(1.8, 1.8),
@@ -218,7 +218,7 @@ class _StatusPainter extends CustomPainter {
           stroke,
         );
       case StatusKind.controls:
-        // Due interruttori sovrapposti: 14 × 14 pt.
+        // Two stacked switches: 14 × 14 pt.
         for (final (dy, knobLeft) in [(-3.5, true), (3.5, false)]) {
           final pill = RRect.fromRectAndRadius(
             Rect.fromCenter(center: c + Offset(0, dy), width: 14, height: 6),

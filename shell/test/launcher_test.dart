@@ -28,7 +28,7 @@ final entries = {
 };
 
 void main() {
-  test('le categorie freedesktop finiscono nelle sette del launcher', () {
+  test('freedesktop categories end up in the seven of the launcher', () {
     expect(categoryOf(entries['calc']!), 'Utility');
     expect(categoryOf(entries['term']!), 'Utility');
     expect(categoryOf(entries['cal']!), 'Produttività e finanza');
@@ -41,7 +41,7 @@ void main() {
   });
 
   test(
-    'ricerca: su tutte le app la migliore prima, nella categoria in ordine alfabetico',
+    'search: over all apps the best first, in the category alphabetically',
     () {
       final all = launcherApps(entries.values, query: 'cal');
       expect(
@@ -65,41 +65,34 @@ void main() {
     },
   );
 
-  test('griglia: recenti, linea e elenco alle distanze misurate', () {
+  test('grid: recents, line and list at the measured distances', () {
     const layout = GridLayout(recents: 7, apps: 30);
-    // Area da y 536: recenti a 547, linea a 652, elenco a 664, 766 (passo 102).
+    // Area from y 536: recents at 547, line at 652, list at 664, 766 (102 pitch).
     expect(layout.recentCell(2), const Offset(20 + 2 * 112.5, 11));
     expect(layout.separatorY, 652 - 536);
     expect(layout.cell(0).dy, 664 - 536);
     expect(layout.cell(7).dy, 766 - 536);
     expect(layout.cell(8).dx, 20 + 112.5);
-    // Senza recenti la prima cella sta a 11 pt dall'inizio (categoria: y 500 con area da 489).
+    // Without recents the first cell is 11 pt from the start (category: y 500 with the area from 489).
     expect(const GridLayout(recents: 0, apps: 3).cell(0).dy, 11);
   });
 
-  test(
-    'barra di scorrimento: cursore proporzionale, nessuno se il contenuto entra',
-    () {
-      const bar = LauncherScrollbar(visible: 473, content: 1255, offset: 0);
-      expect(bar.thumb(385)!.height, closeTo(145, 1));
-      const scrolled = LauncherScrollbar(
-        visible: 473,
-        content: 1255,
-        offset: 100,
-      );
-      expect(scrolled.thumb(385)!.top, closeTo(31, 1.5));
-      expect(
-        const LauncherScrollbar(
-          visible: 520,
-          content: 300,
-          offset: 0,
-        ).thumb(431),
-        isNull,
-      );
-    },
-  );
+  test('scroll bar: proportional thumb, none if the content fits', () {
+    const bar = LauncherScrollbar(visible: 473, content: 1255, offset: 0);
+    expect(bar.thumb(385)!.height, closeTo(145, 1));
+    const scrolled = LauncherScrollbar(
+      visible: 473,
+      content: 1255,
+      offset: 100,
+    );
+    expect(scrolled.thumb(385)!.top, closeTo(31, 1.5));
+    expect(
+      const LauncherScrollbar(visible: 520, content: 300, offset: 0).thumb(431),
+      isNull,
+    );
+  });
 
-  test('le app recenti si ricordano dalla più recente, al più sette', () {
+  test('recent apps are remembered from the most recent, at most seven', () {
     final dir = Directory.systemTemp.createTempSync('recenti');
     addTearDown(() => dir.deleteSync(recursive: true));
     final recents = RecentApps(env: {'HOME': dir.path});
@@ -112,7 +105,7 @@ void main() {
   });
 
   testWidgets(
-    'capsule larghe almeno 85,5 pt a 8 pt fra loro; la categoria diventa un gettone',
+    'capsules at least 85.5 pt wide 8 pt apart; the category becomes a token',
     (tester) async {
       final key = GlobalKey<LauncherState>();
       await tester.pumpWidget(
@@ -130,7 +123,7 @@ void main() {
           ),
         ),
       );
-      // Nei test il carattere è Ahem: si controllano margini e spazi, non le larghezze dei testi.
+      // In the tests the font is Ahem: margins and gaps are checked, not text widths.
       Rect capsule(String name) => tester.getRect(
         find
             .ancestor(of: find.text(name), matching: find.byType(Container))
@@ -138,7 +131,7 @@ void main() {
       );
       final first = capsule('Produttività e finanza');
       final utility = capsule('Utility');
-      // Con Ahem la riga è più larga del pannello e si stringe di k.
+      // With Ahem the row is wider than the panel and shrinks by k.
       final k = first.height / 26;
       expect(first.left, 20);
       expect(first.center.dy, closeTo(56 + 1 + 10 + 13, 0.01));
@@ -149,35 +142,32 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(key.currentState!.category, 'Utility');
       expect(find.text('Applicazioni'), findsNothing);
-      // Le capsule spariscono, il gettone resta.
+      // The capsules disappear, the token stays.
       expect(find.text('Social'), findsNothing);
       expect(find.text('Utility'), findsOneWidget);
     },
   );
 
-  test(
-    'completamento in linea: solo se il primo risultato comincia con il testo',
-    () {
-      final results = launcherApps(entries.values, query: 'cal');
-      expect(completionFor('cal', results), 'colatrice — Apri');
-      expect(completionFor('Cal', results), 'colatrice — Apri');
-      expect(
-        completionFor('lat', launcherApps(entries.values, query: 'lat')),
-        isNull,
-      );
-      expect(completionFor('', results), isNull);
-    },
-  );
+  test('inline completion: only if the first result starts with the text', () {
+    final results = launcherApps(entries.values, query: 'cal');
+    expect(completionFor('cal', results), 'colatrice — Apri');
+    expect(completionFor('Cal', results), 'colatrice — Apri');
+    expect(
+      completionFor('lat', launcherApps(entries.values, query: 'lat')),
+      isNull,
+    );
+    expect(completionFor('', results), isNull);
+  });
 
-  test('il ritorno a Faro segue l\'altezza misurata', () {
+  test('the return to Faro follows the measured height', () {
     expect(backProgress(0), 0);
-    // 577 → 234 pt a 106,7 ms: 343 / 520.
+    // 577 → 234 pt at 106.7 ms: 343 / 520.
     expect(backProgress(106.7), closeTo(343 / 520, 0.001));
     expect(backProgress(300), 1);
   });
 
   testWidgets(
-    'scrivere completa il nome e mette l\'anello sul primo risultato',
+    'typing completes the name and puts the ring on the first result',
     (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1;
@@ -199,7 +189,7 @@ void main() {
       await tester.enterText(find.byType(EditableText), 'cal');
       await tester.pump();
       expect(find.text('colatrice — Apri'), findsOneWidget);
-      // L'anello: un bordo di 4 pt attorno all'icona del primo risultato.
+      // The ring: a 4 pt border around the icon of the first result.
       final ring = find.byWidgetPredicate(
         (w) =>
             w is DecoratedBox &&

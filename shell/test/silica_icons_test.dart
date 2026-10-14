@@ -49,7 +49,7 @@ const String folderManifest = '''
 }
 ''';
 
-/// Il repo finto per la cartella generica: cartella semplice, generica e due simboli.
+/// The fake repository for the generic folder: plain folder, generic folder and two symbols.
 Directory folderTree() => iconTree({
   'files/folder': {
     'icon.json': folderManifest
@@ -69,7 +69,7 @@ Directory folderTree() => iconTree({
     'symbols/$weight': {'house.svg': symbolSvg, 'doc-text.svg': symbolSvg},
 });
 
-/// Una cartella di icone finta: `apps/<id>/` con i file indicati.
+/// A fake icon folder: `apps/<id>/` with the given files.
 Directory iconTree(Map<String, Map<String, String>> icons) {
   final root = Directory.systemTemp.createTempSync('silica-icons-');
   for (final MapEntry(key: path, value: files) in icons.entries) {
@@ -82,7 +82,7 @@ Directory iconTree(Map<String, Map<String, String>> icons) {
 }
 
 void main() {
-  test('l\'icona di un\'app: X-Silica-Icon, poi la tabella delle app note', () {
+  test('the icon of an app: X-Silica-Icon, then the table of known apps', () {
     final root = iconTree({
       for (final id in ['calculator', 'notes'])
         'apps/$id': {
@@ -97,7 +97,7 @@ void main() {
       'org.gnome.Calculator',
       '[Desktop Entry]\nType=Application\nName=Calcolatrice\nExec=gnome-calculator',
     )!;
-    // Le icone delle app sono delle app di Silica: un'app di terzi tiene la sua.
+    // App icons belong to Silica's apps: a third-party app keeps its own.
     expect(silicaIconFor(calc, env: env), isNull);
     final own = parseDesktopEntry(
       'org.silica.Notes',

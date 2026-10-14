@@ -1,14 +1,14 @@
-// Le icone delle app dai temi del sistema (specifica freedesktop Icon Theme, semplificata):
-// file dell'utente, non asset del repository.
+// App icons from the system themes (freedesktop Icon Theme specification, simplified): the
+// user's files, not repository assets.
 
 import 'dart:io';
 
 import 'desktop_entries.dart';
 
-/// Temi da provare, in ordine: quello di Ubuntu, Adwaita, poi hicolor (il ripiego).
+/// Themes to try, in order: Ubuntu's, Adwaita, then hicolor (the fallback).
 const List<String> iconThemes = ['Yaru', 'Adwaita', 'hicolor'];
 
-/// Dimensioni preferite per un'icona del Dock (48 pt, fino a 2× con l'ingrandimento).
+/// Preferred sizes for a Dock icon (48 pt, up to 2× with magnification).
 const List<String> iconSizes = [
   'scalable',
   '256x256',
@@ -19,7 +19,7 @@ const List<String> iconSizes = [
   '48x48',
 ];
 
-/// Il file dell'icona `name` (app o luogo, come la cartella o il cestino), o null.
+/// The file of icon `name` (an app or a place, like the folder or the trash), or null.
 String? findIcon(String? name, {Map<String, String>? env}) {
   if (name == null || name.isEmpty) return null;
   if (name.startsWith('/')) return File(name).existsSync() ? name : null;

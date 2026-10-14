@@ -16,9 +16,9 @@ void main() {
   });
 
   test(
-    'il ventaglio segue le misure: passo 64,6, lato che cresce, arco a destra',
+    'the fan follows the measurements: 64.6 pitch, growing side, arc to the right',
     () {
-      // Icona a x 1703,7, zona del Dock da y 1351 (dock-stacks.md, 10 file).
+      // Icon at x 1703.7, Dock area from y 1351 (dock-stacks.md, 10 files).
       Rect rect(int i) {
         final s = fanSlot(i);
         final c = const Offset(1703.7, 1351) + s.center;
@@ -35,7 +35,7 @@ void main() {
     },
   );
 
-  test('vista automatica e forma della griglia', () {
+  test('automatic view and grid shape', () {
     expect(automaticView(10), StackView.fan);
     expect(automaticView(40), StackView.grid);
     expect(gridShape(3), (2, 2));
@@ -43,22 +43,22 @@ void main() {
     expect(gridShape(40), (7, 6));
     expect(gridPanelSize(3, 2000).width, 290);
     expect(gridPanelSize(10, 2000).width, 546);
-    // Superficie ancora bassa: niente eccezioni, la riga minima.
+    // Surface still low: no exceptions, the minimum row.
     expect(gridPanelSize(40, 71).height, 32 + 128 + 11);
   });
 
-  test('ordine naturale: documento-2 prima di documento-10', () {
+  test('natural order: documento-2 before documento-10', () {
     final names = ['documento-10.txt', 'Documento-2.txt', 'documento-1.txt'];
     names.sort(naturalCompare);
     expect(names, ['documento-1.txt', 'Documento-2.txt', 'documento-10.txt']);
   });
 
-  test('un percorso con apici resta un solo argomento', () {
+  test('a path with quotes stays a single argument', () {
     expect(shellQuote("/tmp/l'uno.txt"), "'/tmp/l'\\''uno.txt'");
   });
 
   testWidgets(
-    'un clic sulla cartella apre il ventaglio; un clic su un file lo apre',
+    'a click on the folder opens the fan; a click on a file opens it',
     (tester) async {
       final dir = Directory.systemTemp.createTempSync('pila');
       addTearDown(() => dir.deleteSync(recursive: true));
@@ -82,7 +82,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      // Per nome, senza i nascosti, e in cima "Apri la cartella".
+      // By name, without the hidden ones, and "Apri la cartella" on top.
       expect(find.text('a.txt'), findsOneWidget);
       expect(find.text('b.txt'), findsOneWidget);
       expect(find.text('.nascosto'), findsNothing);
@@ -92,7 +92,7 @@ void main() {
         greaterThan(tester.getCenter(find.text('b.txt')).dy),
       );
       await tester.tap(find.text('b.txt'));
-      // La pila si chiude in ~210 ms, su più fotogrammi.
+      // The stack closes in ~210 ms, over several frames.
       for (var i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
@@ -101,7 +101,7 @@ void main() {
     },
   );
 
-  testWidgets('con 40 file la pila è una griglia con il titolo', (
+  testWidgets('with 40 files the stack is a grid with the title', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('griglia');
@@ -128,12 +128,12 @@ void main() {
     }
     expect(find.text('documento-1.txt'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);
-    // 7 colonne: 7 × 128 + 34 = 930 pt.
+    // 7 columns: 7 × 128 + 34 = 930 pt.
     final panel = tester.getRect(find.byType(LiquidGlass).last);
     expect(panel.width, closeTo(930, 1));
   });
 
-  testWidgets('celle della griglia: icona 92 da y 10, nome su una riga', (
+  testWidgets('grid cells: 92 icon from y 10, name on one line', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('griglia');
@@ -168,19 +168,19 @@ void main() {
     final label = find.textContaining('document…');
     expect(label, findsWidgets);
     final text = tester.widget<Text>(label.first);
-    // Una riga, troncata al centro: la fine del nome resta.
+    // One line, truncated in the middle: the end of the name stays.
     expect(text.maxLines, 1);
     expect(text.data, contains('…'));
     expect(text.data, endsWith('.txt'));
     final icon = tester.getRect(
       find.byKey(
-        ValueKey('icona ${dir.path}/documento con un nome molto lungo 1.txt'),
+        ValueKey('icon ${dir.path}/documento con un nome molto lungo 1.txt'),
       ),
     );
     expect(icon.width, gridIconCanvas);
   });
 
-  testWidgets('vista Elenco: un menu con i file, Opzioni e Apri', (
+  testWidgets('List view: a menu with the files, Options and Open', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('elenco');
@@ -220,11 +220,11 @@ void main() {
       lessThan(tester.getTopLeft(find.text('b.txt')).dy),
     );
     expect(find.text('Opzioni'), findsOneWidget);
-    // Nessun ventaglio.
+    // No fan.
     expect(find.text('Apri la cartella'), findsNothing);
   });
 
-  testWidgets('mostrata come pila: l\'icona sono i primi tre file', (
+  testWidgets('shown as a stack: the icon is the first three files', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('pila');
@@ -255,7 +255,7 @@ void main() {
     expect(find.byType(PileIcon), findsNothing);
   });
 
-  test('ordine della pila: per data dal più recente, per tipo', () {
+  test('stack order: by date from the most recent, by kind', () {
     final dir = Directory.systemTemp.createTempSync('ordine');
     addTearDown(() => dir.deleteSync(recursive: true));
     final old = File('${dir.path}/b.txt')..writeAsStringSync('x');
@@ -270,7 +270,7 @@ void main() {
     expect(names(StackSort.kind), ['a.md', 'b.txt', 'c.zip']);
   });
 
-  test('impostazioni delle pile salvate per percorso', () {
+  test('stack settings saved by path', () {
     final dir = Directory.systemTemp.createTempSync('config');
     addTearDown(() => dir.deleteSync(recursive: true));
     final env = {'XDG_CONFIG_HOME': dir.path, 'HOME': dir.path};
@@ -288,7 +288,7 @@ void main() {
     expect(back?.content, StackContent.list);
   });
 
-  test('la cartella Download da xdg-user-dirs in XDG_CONFIG_HOME', () {
+  test('the Download folder from xdg-user-dirs in XDG_CONFIG_HOME', () {
     final dir = Directory.systemTemp.createTempSync('dirs');
     addTearDown(() => dir.deleteSync(recursive: true));
     Directory('${dir.path}/Scaricamenti').createSync();

@@ -1,14 +1,14 @@
-// I pannelli di dettaglio del Centro di controllo (Wi-Fi, Suono, Schermo), da
-// plan/reference/controlcenter.md, "pannelli di dettaglio" e "Dal CC al dettaglio".
+// The detail panels of the Control Center (Wi-Fi, Sound, Display), from
+// plan/reference/controlcenter.md, "detail panels" and "From the CC to the detail".
 //
-// Un pannello largo 308 pt, 10 pt a sinistra della pila e 6 pt sopra il primo modulo,
-// raggio 16, margini di 14 pt; intestazione da 14 pt; righe da 32 pt con un cerchio da 26
-// e il testo a 52 pt; separatori di 1 pt; intestazioni di sezione in grassetto grigio
-// chiaro. Il modulo cliccato si trasforma nel pannello (un unico rettangolo interpolato,
-// curva lenta-veloce-lenta, più lunga se il modulo è più in basso) mentre gli altri svaniscono.
+// A 308 pt wide panel, 10 pt left of the stack and 6 pt above the first module, radius 16,
+// 14 pt margins; 14 pt header; 32 pt rows with a 26 circle and the text at 52 pt; 1 pt
+// separators; section headings in light grey bold. The clicked module turns into the panel
+// (a single interpolated rectangle, slow-fast-slow curve, longer if the module is lower)
+// while the others fade out.
 //
-// Non fatti: righe dell'hotspot e dell'avviso sulla privacy, le tessere "Modalità scura" e
-// "Night Shift" dello Schermo (non ci sono ancora), "Impostazioni…" (nessuna app).
+// Not done: the hotspot and privacy notice rows, the "Dark Mode" and "Night Shift" tiles
+// of Display (not there yet), "Impostazioni…" (no app).
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -18,7 +18,7 @@ import 'glyphs.dart';
 
 const double detailWidth = 308;
 
-/// Rispetto alla pila: 10 pt a sinistra, 6 pt sopra.
+/// Relative to the stack: 10 pt to the left, 6 pt above.
 const double detailLeft = -10;
 const double detailTop = -6;
 const double detailRadius = 16;
@@ -28,21 +28,21 @@ const double detailRow = 32;
 const double detailCircle = 26;
 const double detailTextLeft = 52;
 
-/// `#7e7f84` su `#6a6b70`: bianco al ~10 %.
+/// `#7e7f84` over `#6a6b70`: white at ~10 %.
 const Color detailSeparator = Color(0x1AFFFFFF);
 const Color detailSection = Color(0xFFB7B8BE);
 const Color detailCircleOff = Color(0xFF8F9095);
 const Color detailBlue = Color(0xFF007AFF);
 
-/// Interruttore del Wi-Fi: capsula 54 × 24 (raggio 12) a 9 pt dalla cima e a filo del
-/// margine destro, `#0074f8`; manopola bianca 32 × 20 a 2 pt dal bordo.
+/// Wi-Fi switch: 54 × 24 capsule (radius 12) 9 pt from the top and flush with the right
+/// margin, `#0074f8`; white 32 × 20 knob 2 pt from the edge.
 const Size switchSize = Size(54, 24);
 const double switchTop = 9;
 const Color switchOn = Color(0xFF0074F8);
 const Color switchOff = Color(0x40FFFFFF);
 
-/// Avanzamento della trasformazione (bordo superiore del pannello, Schermo: 338 pt in
-/// ~333 ms); per moduli più vicini la durata si accorcia (Wi-Fi, 34 pt: ~215 ms).
+/// Progress of the transformation (top edge of the panel, Display: 338 pt in ~333 ms);
+/// for closer modules the duration gets shorter (Wi-Fi, 34 pt: ~215 ms).
 const List<(double, double)> detailCurve = [
   (0, 0),
   (13, 0.08),
@@ -62,7 +62,7 @@ const List<(double, double)> detailCurve = [
 ];
 const double detailCurveEnd = 333;
 
-/// Opacità degli altri moduli mentre il pannello si apre.
+/// Opacity of the other modules while the panel opens.
 const List<(double, double)> othersFade = [
   (0, 1),
   (13, 0.94),
@@ -74,7 +74,7 @@ const List<(double, double)> othersFade = [
   (240, 0),
 ];
 
-/// Il ritorno al Centro (Esc) dura di più: ~440 ms la parte principale.
+/// The return to the Center (Esc) takes longer: ~440 ms for the main part.
 const double detailBackStretch = 1.35;
 
 double _table(List<(double, double)> table, double ms) {
@@ -89,15 +89,15 @@ double _table(List<(double, double)> table, double ms) {
   return table.last.$2;
 }
 
-/// Quanto dura la trasformazione per un modulo che sta `distance` pt sotto il pannello.
+/// How long the transformation lasts for a module `distance` pt below the panel.
 double detailTimeScale(double distance) =>
     0.65 + 0.35 * (distance / 338).clamp(0.0, 1.0);
 
-/// Avanzamento 0–1 dopo `ms`.
+/// Progress 0–1 after `ms`.
 double detailProgress(double ms, double timeScale) =>
     _table(detailCurve, ms / timeScale);
 
-/// Opacità degli altri moduli dopo `ms`.
+/// Opacity of the other modules after `ms`.
 double othersOpacity(double ms) => _table(othersFade, ms);
 
 Rect lerpRect(Rect a, Rect b, double t) => Rect.fromLTRB(
@@ -117,17 +117,17 @@ TextStyle detailText(double size, {FontWeight? weight, Color? color}) =>
       height: 1.2,
     );
 
-/// I dati di un pannello, caricati all'apertura.
+/// The data of a panel, loaded when it opens.
 class DetailData {
   const DetailData({this.networks = const [], this.outputs = const []});
   final List<WifiNetwork> networks;
   final List<AudioOutput> outputs;
 }
 
-/// Un pezzo del pannello in colonna: altezza e widget.
+/// A piece of the panel in the column: height and widget.
 typedef _Piece = (double, Widget);
 
-/// Il contenuto di un pannello e la sua altezza.
+/// The content of a panel and its height.
 class DetailContent {
   DetailContent(this.pieces);
   final List<_Piece> pieces;
@@ -147,7 +147,7 @@ Widget _separator({double inset = detailInset}) => Center(
   ),
 );
 
-/// Intestazione: titolo a sinistra (maiuscole da 16 a 25 pt), eventuale interruttore.
+/// Header: title on the left (capitals from 16 to 25 pt), optional switch.
 Widget _header(String title, {Widget? trailing}) => Stack(
   children: [
     Positioned(
@@ -204,7 +204,7 @@ class DetailSwitch extends StatelessWidget {
   );
 }
 
-/// Una riga: cerchio da 26 con il glifo, testo a 52 pt, accessori a destra.
+/// A row: a 26 circle with the glyph, text at 52 pt, accessories on the right.
 class DetailRow extends StatelessWidget {
   const DetailRow({
     super.key,
@@ -259,7 +259,7 @@ class DetailRow extends StatelessWidget {
   );
 }
 
-/// Lucchetto delle reti protette (`#b7b8bd`).
+/// Lock of protected networks (`#b7b8bd`).
 class _Lock extends StatelessWidget {
   const _Lock();
 
@@ -299,7 +299,7 @@ class _LockPainter extends CustomPainter {
   bool shouldRepaint(_LockPainter old) => false;
 }
 
-/// Freccia ">" (Altre reti, passaggio del puntatore sui moduli).
+/// ">" arrow (Other networks, hovering over the modules).
 class Chevron extends StatelessWidget {
   const Chevron({super.key, this.color = detailSection, this.down = false});
   final Color color;
@@ -343,7 +343,7 @@ class _ChevronPainter extends CustomPainter {
       old.color != color || old.down != down;
 }
 
-/// Wi-Fi: interruttore, reti conosciute, "Altre reti" espandibile.
+/// Wi-Fi: switch, known networks, expandable "Altre reti".
 DetailContent wifiDetail({
   required SystemSnapshot s,
   required List<WifiNetwork> networks,
@@ -423,7 +423,7 @@ DetailContent wifiDetail({
   return DetailContent(pieces);
 }
 
-/// Una traccia di cursore nel pannello: 4 pt, da 34 a 265 pt dal bordo.
+/// A slider track in the panel: 4 pt, from 34 to 265 pt from the edge.
 Widget _detailSlider({
   required double? value,
   required ValueChanged<double> onChanged,
@@ -451,7 +451,7 @@ Widget _detailSlider({
   );
 }
 
-/// Suono: volume e uscite.
+/// Sound: volume and outputs.
 DetailContent soundDetail({
   required SystemSnapshot s,
   required List<AudioOutput> outputs,
@@ -491,7 +491,7 @@ DetailContent soundDetail({
   return DetailContent(pieces);
 }
 
-/// Schermo: luminosità.
+/// Display: brightness.
 DetailContent displayDetail({
   required SystemSnapshot s,
   required ValueChanged<double> onBrightness,

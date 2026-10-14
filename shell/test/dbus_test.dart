@@ -10,7 +10,7 @@ void main() {
   tearDown(() => messenger.setMockMethodCallHandler(DBus.channel, null));
 
   test(
-    'call manda firma e argomenti e restituisce la lista della risposta',
+    'call sends the signature and the arguments and returns the reply list',
     () async {
       final calls = <MethodCall>[];
       messenger.setMockMethodCallHandler(DBus.channel, (call) async {
@@ -35,7 +35,7 @@ void main() {
     },
   );
 
-  test('gli errori D-Bus arrivano con il loro nome', () async {
+  test('D-Bus errors arrive with their name', () async {
     messenger.setMockMethodCallHandler(DBus.channel, (call) async {
       throw PlatformException(
         code: 'org.freedesktop.DBus.Error.ServiceUnknown',
@@ -54,43 +54,46 @@ void main() {
     );
   });
 
-  test("i segnali arrivano all'iscrizione giusta finché si ascolta", () async {
-    final calls = <MethodCall>[];
-    messenger.setMockMethodCallHandler(DBus.channel, (call) async {
-      calls.add(call);
-      return call.method == 'subscribe' ? 7 : true;
-    });
-    final received = <DBusSignal>[];
-    final subscription = DBus.instance
-        .signals(interface: 'dev.frascella.Silica.Notifications1')
-        .listen(received.add);
-    await pumpEventQueue();
-    expect(calls.single.method, 'subscribe');
+  test(
+    'signals reach the right subscription while it is listened to',
+    () async {
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(DBus.channel, (call) async {
+        calls.add(call);
+        return call.method == 'subscribe' ? 7 : true;
+      });
+      final received = <DBusSignal>[];
+      final subscription = DBus.instance
+          .signals(interface: 'dev.frascella.Silica.Notifications1')
+          .listen(received.add);
+      await pumpEventQueue();
+      expect(calls.single.method, 'subscribe');
 
-    Future<void> send(int id) => messenger.handlePlatformMessage(
-      'silica/dbus',
-      const JSONMethodCodec().encodeMethodCall(
-        MethodCall('signal', {
-          'id': id,
-          'sender': ':1.4',
-          'path': '/dev/frascella/Silica/Notifications1',
-          'interface': 'dev.frascella.Silica.Notifications1',
-          'member': 'Removed',
-          'args': [3, 2],
-        }),
-      ),
-      (_) {},
-    );
-    await send(7);
-    await send(8);
-    expect(received, hasLength(1));
-    expect(received.single.member, 'Removed');
-    expect(received.single.args, [3, 2]);
+      Future<void> send(int id) => messenger.handlePlatformMessage(
+        'silica/dbus',
+        const JSONMethodCodec().encodeMethodCall(
+          MethodCall('signal', {
+            'id': id,
+            'sender': ':1.4',
+            'path': '/dev/frascella/Silica/Notifications1',
+            'interface': 'dev.frascella.Silica.Notifications1',
+            'member': 'Removed',
+            'args': [3, 2],
+          }),
+        ),
+        (_) {},
+      );
+      await send(7);
+      await send(8);
+      expect(received, hasLength(1));
+      expect(received.single.member, 'Removed');
+      expect(received.single.args, [3, 2]);
 
-    await subscription.cancel();
-    expect(calls.last.method, 'unsubscribe');
-    expect((calls.last.arguments as Map)['id'], 7);
-    await send(7);
-    expect(received, hasLength(1));
-  });
+      await subscription.cancel();
+      expect(calls.last.method, 'unsubscribe');
+      expect((calls.last.arguments as Map)['id'], 7);
+      await send(7);
+      expect(received, hasLength(1));
+    },
+  );
 }

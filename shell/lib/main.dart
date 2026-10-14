@@ -1,5 +1,5 @@
-// La shell di Silica: un componente per processo, scelto dal primo argomento di main
-// (silica-embedder --dart-arg dock). Oggi: dock (le app vere), dock-demo (segnaposto),
+// The Silica shell: one component per process, chosen by the first argument of main
+// (silica-embedder --dart-arg dock). Today: dock (the real apps), dock-demo (placeholders),
 // menubar, wallpaper, faro, notifications, controlcenter, switcher.
 
 import 'package:flutter/widgets.dart';
@@ -19,8 +19,8 @@ import 'switcher/switcher.dart';
 import 'system/system_status.dart';
 import 'wallpaper/wallpaper.dart';
 
-/// Segnaposto del Dock per i test e il confronto con le riprese: 12 app, separatore,
-/// cartella e cestino.
+/// Dock placeholders for tests and for comparison with the recordings: 12 apps, separator,
+/// folder and trash.
 const List<Item> placeholderItems = [
   Item.app('File', running: true),
   Item.app('Navigatore', running: true),
@@ -67,7 +67,7 @@ class ShellComponent extends StatelessWidget {
         system: DBusSystem(),
       ),
       'controlcenter' => ControlCenter(system: DBusSystem()),
-      // Il selettore delle app non prende mai input: lo stesso layer ospita le istantanee.
+      // The app switcher never takes input: the same layer hosts the screenshots.
       'switcher' => Stack(
         children: [
           AppSwitcher(entries: loadDesktopEntries()),

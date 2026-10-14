@@ -1,13 +1,13 @@
-// L'HUD del volume e della luminosità, da plan/reference/hud.md (uguale in chiaro e in scuro).
+// The volume and brightness HUD, from plan/reference/hud.md (the same in light and dark).
 //
-// Un pannello di vetro `regular` 292 × 64 in alto a destra, 10 pt sotto la barra dei menu e
-// 10 pt dal bordo dello schermo, come un modulo del Centro di controllo: titolo (il nome
-// dell'uscita audio, o "Schermo"), traccia di 4 pt con 17 tacche sotto (una per passo), icona
-// a destra. Compare a ogni cambio di volume o muto e a ogni luminosità chiesta da Silica (tasti,
-// comandi; non la luminosità adattiva, che cambia il valore da sola), salvo con il Centro di
-// controllo aperto (lì cambia il cursore). Comparsa ~380 ms in scala da 0,91 e dissolvenza
-// che accelera; permanenza 1,09 s dall'ultimo cambio (un cambio nuovo la fa ripartire senza
-// ricomparire); scomparsa ~550 ms con un calo rapido nei primi ~80 ms e una coda lunga.
+// A 292 × 64 `regular` glass panel at the top right, 10 pt below the menu bar and 10 pt from
+// the screen edge, like a Control Center module: title (the name of the audio output, or
+// "Schermo"), a 4 pt track with 17 ticks below (one per step), icon on the right. It appears
+// at every volume or mute change and at every brightness requested by Silica (keys,
+// commands; not adaptive brightness, which changes the value by itself), except with the
+// Control Center open (there the slider changes). Appearance ~380 ms scaling from 0.91 with
+// an accelerating fade; it stays 1.09 s from the last change (a new change restarts it
+// without reappearing); disappearance ~550 ms with a fast drop in the first ~80 ms and a long tail.
 
 import 'dart:async';
 
@@ -24,9 +24,9 @@ const double hudRadius = 28;
 const double hudTitleLeft = 16;
 const double hudTitleSize = 14;
 
-/// Misure del riferimento (pannello a x 2258): piccolo altoparlante a 16–22 pt, traccia da
-/// 31,5 a 251,5, tacche a 35,5 + i · 13,25, il riempimento finisce sulla tacca del livello
-/// (35,5 + v · 212), grande altoparlante a 258–273, icone centrate a 41,5 pt dall'alto.
+/// Reference measurements (panel at x 2258): small speaker at 16–22 pt, track from 31.5 to
+/// 251.5, ticks at 35.5 + i · 13.25, the fill ends on the tick of the level
+/// (35.5 + v · 212), big speaker at 258–273, icons centered 41.5 pt from the top.
 const double hudTrackLeft = 31.5;
 const double hudTrackLength = 220;
 const double hudFillStart = 4;
@@ -40,7 +40,7 @@ const double hudDotsPitch = 13.25;
 const int hudDots = 17;
 const Color hudTrackRest = Color(0xFF84858B);
 
-/// Le tacche: appena più chiare del fondo (`#86878e` sul riempimento `#6f7076`).
+/// The ticks: just lighter than the background (`#86878e` over the `#6f7076` fill).
 const Color hudDot = Color(0x33FFFFFF);
 
 const Duration hudAppear = Duration(milliseconds: 380);
@@ -48,13 +48,13 @@ const Duration hudHold = Duration(milliseconds: 1090);
 const Duration hudVanish = Duration(milliseconds: 550);
 const double hudScaleFrom = 0.91;
 
-/// Opacità e scala durante la comparsa (`t` 0–1): la dissolvenza accelera verso la fine, la
-/// larghezza cresce quasi linearmente.
+/// Opacity and scale during the appearance (`t` 0–1): the fade accelerates towards the end,
+/// the width grows almost linearly.
 double hudAppearOpacity(double t) => (t * t).clamp(0.0, 1.0);
 double hudAppearScale(double t) =>
     hudScaleFrom + (1 - hudScaleFrom) * t.clamp(0.0, 1.0);
 
-/// Opacità e scala durante la scomparsa, `ms` dal suo inizio.
+/// Opacity and scale during the disappearance, `ms` from its start.
 double hudVanishOpacity(double ms) {
   if (ms <= 0) return 1;
   if (ms < 80) return 1 - 0.78 * ms / 80;
@@ -75,7 +75,7 @@ class SystemHud extends StatefulWidget {
 
   final SystemSource system;
 
-  /// Il Centro di controllo è aperto: i cambi si vedono nel suo cursore.
+  /// The Control Center is open: the changes show in its slider.
   final bool suppressed;
 
   @override
@@ -115,14 +115,14 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
     final now = widget.system.value;
     final last = _last;
     _last = now;
-    // Una sorgente che diventa disponibile (la prima lettura dal daemon) non è un cambio
-    // dell'utente: servono `available` prima e dopo.
+    // A source that becomes available (the first read from the daemon) is not a user
+    // change: `available` is needed before and after.
     if (last == null || widget.suppressed) return;
     final audio =
         now.audioAvailable &&
         last.audioAvailable &&
         (now.volume != last.volume || now.muted != last.muted);
-    // Solo la luminosità chiesta dall'utente: quella adattiva cambia il valore senza HUD.
+    // Only the brightness requested by the user: adaptive brightness changes the value without the HUD.
     final screen =
         now.brightnessAvailable &&
         last.brightnessAvailable &&
@@ -179,7 +179,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Come i moduli: il bordo scuro dei lati 1 pt fuori dal pannello.
+                    // Like the modules: the dark side edge 1 pt outside the panel.
                     const Positioned(
                       left: -1,
                       right: -1,
@@ -258,7 +258,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
 class _HudTrack extends CustomPainter {
   const _HudTrack(this.value);
 
-  /// Null: muto, la traccia resta vuota.
+  /// Null: muted, the track stays empty.
   final double? value;
 
   @override

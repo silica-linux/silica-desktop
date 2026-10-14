@@ -1,5 +1,5 @@
-// L'aspetto scuro di Centro di controllo, HUD e notifiche. Centro di controllo e HUD sono
-// identici nei due aspetti su grigio (controlcenter.md, hud.md); le notifiche cambiano
+// The dark appearance of Control Center, HUD and notifications. Control Center and HUD are
+// identical in both appearances over grey (controlcenter.md, hud.md); notifications change
 // (notifications.md, gray-dark).
 
 import 'package:flutter/widgets.dart';
@@ -20,7 +20,9 @@ Color? colorOf(WidgetTester tester, String text) =>
     tester.widget<Text>(find.text(text).first).style?.color;
 
 void main() {
-  testWidgets('notifica scura: testo, ora, azioni e pulsanti', (tester) async {
+  testWidgets('dark notification: text, time, actions and buttons', (
+    tester,
+  ) async {
     final n = ShellNotification(
       id: 1,
       appName: 'Tempo',
@@ -56,9 +58,7 @@ void main() {
     expect(section, isNotEmpty);
   });
 
-  testWidgets('Centro di controllo uguale in chiaro e in scuro', (
-    tester,
-  ) async {
+  testWidgets('Control Center the same in light and dark', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -77,7 +77,7 @@ void main() {
     expect(colors.last, colors.first);
   });
 
-  testWidgets('HUD uguale in chiaro e in scuro', (tester) async {
+  testWidgets('HUD the same in light and dark', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

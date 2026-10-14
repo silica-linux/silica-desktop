@@ -1,16 +1,16 @@
-// Icone segnaposto, generate in codice finché il Dock non legge le icone delle app dai
-// temi del sistema (M3.2): un quadrato arrotondato con un gradiente e l'iniziale.
+// Placeholder icons, generated in code until the Dock reads the app icons from the system
+// themes (M3.2): a rounded square with a gradient and the initial.
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-/// Raggio dell'icona rispetto al lato (forma da tessera, provvisoria).
+/// Icon radius relative to the side (tile shape, provisional).
 const double iconCornerRatio = 0.225;
 
 void paintIcon(Canvas canvas, Rect rect, String label, int index) {
   final radius = Radius.circular(rect.width * iconCornerRatio);
   final shape = RRect.fromRectAndRadius(rect, radius);
-  // Ombra corta sotto l'icona: scurisce ~3 pt sotto e 1–2 ai lati (dock.md).
+  // Short shadow under the icon: darkens ~3 pt below and 1–2 at the sides (dock.md).
   canvas.drawRRect(
     shape.shift(Offset(0, rect.width * 0.03)),
     Paint()

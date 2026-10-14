@@ -1,22 +1,22 @@
-// Il Centro di controllo, da plan/reference/controlcenter.md. In aspetto scuro su grigio è
-// identico pixel per pixel al chiaro (testi bianchi, stessi riempimenti): cambia solo il vetro,
-// che disegna Ossido.
+// The Control Center, from plan/reference/controlcenter.md. In the dark appearance over grey
+// it is pixel-identical to light (white texts, same fills): only the glass changes, and
+// Ossido draws it.
 //
-// Una pila di moduli di vetro `regular` separati, ancorata in alto a destra: due colonne
-// da 140 pt a 12 pt l'una dall'altra, 14 pt dal bordo destro, il primo modulo a y 42;
-// righe da 64 pt a passo 76. Capsule 140 × 64 (raggio 32) con un disco da 36 pt a 14 pt dal
-// bordo e il testo a 56 pt; il modulo multimediale 140 × 140 (raggio 35); Schermo e Suono
-// 292 × 64 (raggio ~28) con un cursore senza manopola. Ombra ampia e morbida attorno alla
-// pila; apertura e chiusura con le opacità e la scala misurate fotogramma per fotogramma.
+// A stack of separate `regular` glass modules, anchored at the top right: two 140 pt
+// columns 12 pt apart, 14 pt from the right edge, the first module at y 42; 64 pt rows at
+// a 76 pitch. 140 × 64 capsules (radius 32) with a 36 pt disc 14 pt from the edge and the
+// text at 56 pt; the media module 140 × 140 (radius 35); Display and Sound 292 × 64
+// (radius ~28) with a knobless slider. A wide soft shadow around the stack; opening and
+// closing with the opacities and the scale measured frame by frame.
 //
-// Moduli con un effetto vero: Wi-Fi, Bluetooth, Non disturbare, Schermo, Suono (da
-// silica-daemon), la batteria se c'è. Clic sul disco dell'icona: accende o spegne; clic sul
-// testo (o sul titolo dei cursori): il pannello di dettaglio (`detail.dart`), dove c'è; con
-// il puntatore sopra un modulo con dettaglio compare la freccia ">". Esc dal dettaglio torna
-// al Centro. Non c'è ancora "Modifica controlli" né il menu del clic destro.
+// Modules with a real effect: Wi-Fi, Bluetooth, Do Not Disturb, Display, Sound (from
+// silica-daemon), the battery if there is one. Click on the icon disc: on or off; click on
+// the text (or on the slider title): the detail panel (`detail.dart`), where there is one;
+// with the pointer over a module with a detail the ">" arrow appears. Esc from the detail
+// goes back to the Center. There is no "Edit controls" nor the right-click menu yet.
 //
-// Il componente resta in esecuzione su un layer overlay a schermo intero: chiuso non disegna
-// niente e non prende né puntatore né tastiera (silica/layer).
+// The component keeps running on a full-screen overlay layer: when closed it draws nothing
+// and takes neither pointer nor keyboard (silica/layer).
 
 import 'dart:async';
 import 'dart:io' show File;
@@ -45,42 +45,42 @@ const double capsuleRadius = 32;
 const double mediaRadius = 35;
 const double sliderRadius = 28;
 
-/// Disco delle capsule: 36 pt, a 14 pt dal bordo; testo a 56 pt.
+/// Capsule disc: 36 pt, 14 pt from the edge; text at 56 pt.
 const double disc = 36;
 const double discInset = 14;
 const double textLeft = 56;
 
-/// Disco attivo bianco con glifo blu, inattivo grigio freddo con glifo bianco.
+/// Active disc white with a blue glyph, inactive cool grey with a white glyph.
 const Color discOn = Color(0xFFFFFFFF);
 const Color discOff = Color(0xFF8F9094);
 const Color glyphOn = Color(0xFF007AFF);
 const Color glyphOff = Color(0xFFFFFFFF);
 
-/// Titoli (maiuscole 9 pt → ~12,4 pt) e sottotitoli (8 pt → ~11 pt), bianchi.
+/// Titles (9 pt capitals → ~12.4 pt) and subtitles (8 pt → ~11 pt), white.
 const double titleSize = 12.4;
 
-/// Il menu di stato del Wi-Fi: 1 pt sotto la barra, bordo destro 9 pt oltre l'icona.
+/// The Wi-Fi status menu: 1 pt below the bar, right edge 9 pt beyond the icon.
 const double statusMenuTop = 31;
 const double statusMenuRight = 9;
 const double subtitleSize = 11;
 const Color textColor = Color(0xFFFFFFFF);
 
-/// Cursori: traccia di 4 pt, riempimento bianco fino a `x0 + 10 + v · (L − 20)`, resto
-/// `#7e7f84`; traccia da 36 a 255 pt dal bordo del modulo, icone a 15 e 260.
+/// Sliders: 4 pt track, white fill up to `x0 + 10 + v · (L − 20)`, the rest `#7e7f84`;
+/// track from 36 to 255 pt from the module edge, icons at 15 and 260.
 const double trackLeft = 36;
 const double trackLength = 219;
 const double trackHeight = 4;
 const double trackCenter = 42;
 const Color trackRest = Color(0xFF7E7F84);
 
-/// Ombra della pila: −10 livelli sul bordo sinistro, nulla a ~130 pt, ~−12 fra la pila e
-/// il bordo destro dello schermo e sopra: una gaussiana di σ ~65 pt di un rettangolo che
-/// va dalla pila al bordo destro e dall'alto dello schermo al fondo della pila.
+/// Stack shadow: −10 levels on the left edge, nothing at ~130 pt, ~−12 between the stack
+/// and the right edge of the screen and above: a gaussian of σ ~65 pt of a rectangle going
+/// from the stack to the right edge and from the top of the screen to the bottom of the stack.
 const Color shadowColor = Color(0x2A000000);
 const double shadowSigma = 65;
 
-/// Opacità durante l'apertura e la chiusura (ms dal primo fotogramma cambiato; il primo
-/// punto è un fotogramma prima). controlcenter.md, "Animazioni".
+/// Opacity while opening and closing (ms from the first changed frame; the first point is
+/// one frame earlier). controlcenter.md, "Animations".
 const List<(double, double)> openOpacity = [
   (0, 0),
   (13, 0.09),
@@ -119,8 +119,8 @@ const List<(double, double)> closeOpacity = [
   (293, 0),
 ];
 
-/// Scala del contenuto: 1,0075 → 1 in ~107 ms all'apertura, 1 → 1,0075 in ~120 ms alla
-/// chiusura, attorno al centro della pila.
+/// Content scale: 1.0075 → 1 in ~107 ms when opening, 1 → 1.0075 in ~120 ms when closing,
+/// around the center of the stack.
 const double scaleAway = 1.0075;
 const double openScaleMs = 107;
 const double closeScaleMs = 120;
@@ -139,23 +139,23 @@ double tableAt(List<(double, double)> table, double ms) {
   return table.last.$2;
 }
 
-/// Valore di un cursore per un punto a `dx` dal bordo sinistro della traccia.
+/// Slider value for a point `dx` from the left edge of the track.
 double sliderValue(double dx, {double length = trackLength}) =>
     ((dx - 10) / (length - 20)).clamp(0.0, 1.0);
 
-/// Fine del riempimento di un cursore, dal bordo sinistro della traccia.
+/// End of a slider's fill, from the left edge of the track.
 double sliderFill(double value, {double length = trackLength}) =>
     10 + value.clamp(0, 1) * (length - 20);
 
-/// Il cerchio delle uscite audio nel modulo Suono (cc-gray-light): 26 × 26 con il centro a
-/// +265,5 dal bordo del modulo; la traccia si accorcia di 44 pt e il glifo del volume alto si
-/// sposta con lei. Fondo bianco al 24 % (`#8f9094` sul grigio dei moduli).
+/// The audio outputs circle in the Sound module (cc-gray-light): 26 × 26 with its center at
+/// +265.5 from the module edge; the track gets 44 pt shorter and the high volume glyph moves
+/// with it. White background at 24 % (`#8f9094` over the module grey).
 const double outputsShift = 44;
 const double outputsCenter = 265.5;
 const double outputsSide = 26;
 const Color outputsFill = Color(0x3DFFFFFF);
 
-/// Un modulo: rettangolo relativo alla pila e raggio.
+/// A module: rectangle relative to the stack and radius.
 @immutable
 class ModuleSlot {
   const ModuleSlot(this.rect, this.radius);
@@ -170,7 +170,7 @@ class ModuleSlot {
   int get hashCode => Object.hash(rect, radius);
 }
 
-/// La disposizione dei moduli presenti, dall'alto (coordinate relative alla pila).
+/// The layout of the present modules, from the top (coordinates relative to the stack).
 Map<String, ModuleSlot> layoutModules(SystemSnapshot s) {
   final slots = <String, ModuleSlot>{};
   const right = columnWidth + gap;
@@ -234,17 +234,17 @@ class ControlCenter extends StatefulWidget {
   State<ControlCenter> createState() => _ControlCenterState();
 }
 
-/// I moduli con un pannello di dettaglio.
+/// The modules with a detail panel.
 const Set<String> detailModules = {'wifi', 'sound', 'display'};
 
-/// Spazio attorno alla pila per il pannello di dettaglio, che sporge a sinistra e in alto.
+/// Room around the stack for the detail panel, which sticks out to the left and up.
 const Offset detailPad = Offset(-detailLeft, -detailTop);
 
 class _ControlCenterState extends State<ControlCenter>
     with TickerProviderStateMixin {
   late final AnimationController _anim;
 
-  /// Il dettaglio aperto (o in apertura o chiusura) e la sua trasformazione (valore = ms).
+  /// The open detail (or opening or closing) and its transformation (value = ms).
   String? _detail;
   bool _detailClosing = false;
   late final AnimationController _detailAnim = AnimationController(
@@ -295,11 +295,11 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _toggle() => _open ? _hide() : _show();
 
-  /// Il menu di stato del Wi-Fi aperto dalla barra: il bordo destro dell'icona.
+  /// The Wi-Fi status menu opened from the bar: the right edge of the icon.
   double? _wifiMenuRight;
   final FocusNode _menuFocus = FocusNode();
 
-  /// La barra annuncia `statusmenu` = "wifi <bordo destro dell'icona>" o "".
+  /// The bar announces `statusmenu` = "wifi <right edge of the icon>" or "".
   void _statesChanged() {
     final value = ShellChannel.instance.states.value['statusmenu'] ?? '';
     final right = value.startsWith('wifi ')
@@ -346,8 +346,8 @@ class _ControlCenterState extends State<ControlCenter>
     }
   }
 
-  /// Il pannello del Wi-Fi come menu di stato (menubar.md): 308 pt, 1 pt sotto la barra
-  /// (y 31), il bordo destro 9 pt oltre quello dell'icona; si apre in un fotogramma.
+  /// The Wi-Fi panel as a status menu (menubar.md): 308 pt, 1 pt below the bar (y 31), the
+  /// right edge 9 pt beyond the icon's; it opens in one frame.
   Widget _wifiMenu(SystemSnapshot s, double right) {
     final content = _detailContent(s);
     if (content == null) return const SizedBox.shrink();
@@ -378,7 +378,7 @@ class _ControlCenterState extends State<ControlCenter>
           Positioned.fromRect(
             rect: rect,
             child: DecoratedBox(
-              key: const ValueKey('menu di stato del Wi-Fi'),
+              key: const ValueKey('wifi status menu'),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(detailRadius),
                 boxShadow: const [
@@ -417,7 +417,7 @@ class _ControlCenterState extends State<ControlCenter>
   }
 
   void _detailTick() {
-    // Finito il ritorno, il dettaglio sparisce.
+    // Once the return is over, the detail disappears.
     if (_detailClosing && _detailProgress() <= 0) {
       _detail = null;
       _detailClosing = false;
@@ -448,7 +448,7 @@ class _ControlCenterState extends State<ControlCenter>
     _detailAnim.forward(from: 0);
   }
 
-  /// Quanto del modulo `_detail` è diventato pannello (0–1).
+  /// How much of module `_detail` has become a panel (0–1).
   double _detailProgress() {
     final key = _detail;
     if (key == null) return 0;
@@ -477,7 +477,7 @@ class _ControlCenterState extends State<ControlCenter>
       Positioned.fill(child: _center(context)),
       if (_wifiMenuRight case final right?)
         Positioned.fill(child: _wifiMenu(widget.system.value, right)),
-      // L'HUD del volume e della luminosità: non con il Centro aperto.
+      // The volume and brightness HUD: not with the Center open.
       Positioned.fill(
         child: IgnorePointer(
           child: SystemHud(system: widget.system, suppressed: _open),
@@ -503,7 +503,7 @@ class _ControlCenterState extends State<ControlCenter>
     final height = slots.values
         .map((s) => s.rect.bottom)
         .reduce((a, b) => a > b ? a : b);
-    // Il dettaglio: rettangolo e raggio fra il modulo e il pannello, e il contenuto.
+    // The detail: rectangle and radius between the module and the panel, and the content.
     final progress = _detailProgress();
     final opening = !_detailClosing;
     final othersAlpha = _detail == null
@@ -541,7 +541,7 @@ class _ControlCenterState extends State<ControlCenter>
           onKeyEvent: (node, event) {
             if (event is KeyDownEvent &&
                 event.logicalKey == LogicalKeyboardKey.escape) {
-              // Dal dettaglio si torna al Centro; dal Centro si chiude.
+              // From the detail back to the Center; from the Center it closes.
               _detail != null && !_detailClosing ? _closeDetail() : _hide();
               return KeyEventResult.handled;
             }
@@ -558,8 +558,8 @@ class _ControlCenterState extends State<ControlCenter>
               Positioned.fill(
                 child: Opacity(
                   opacity: opacity,
-                  // L'ombra cambia solo con la disposizione: si disegna una volta, poi si
-                  // cambia soltanto l'opacità del suo strato.
+                  // The shadow changes only with the layout: it is drawn once, then only the
+                  // opacity of its layer changes.
                   child: RepaintBoundary(
                     child: CustomPaint(
                       painter: _StackShadow(
@@ -583,8 +583,8 @@ class _ControlCenterState extends State<ControlCenter>
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        // Il vetro sporge di 1 pt a sinistra e a destra del riquadro del
-                        // modulo (la riga scura dei lati cade fuori), non sopra e sotto.
+                        // The glass sticks out 1 pt left and right of the module box (the
+                        // dark side line falls outside), not above and below.
                         for (final MapEntry(:key, :value) in slots.entries)
                           if (key != _detail)
                             Positioned.fromRect(
@@ -659,11 +659,11 @@ class _ControlCenterState extends State<ControlCenter>
     );
   }
 
-  /// Il vetro di un modulo: 1 pt in più a sinistra e a destra.
+  /// The glass of a module: 1 pt more on the left and right.
   Rect _glassRect(Rect r) =>
       Rect.fromLTRB(r.left - 1, r.top, r.right + 1, r.bottom);
 
-  /// Il contenuto del dettaglio aperto.
+  /// The content of the open detail.
   DetailContent? _detailContent(SystemSnapshot s) {
     final system = widget.system;
     Widget track(double? v) => CustomPaint(painter: _Track(v));
@@ -791,18 +791,18 @@ class _Capsule extends StatefulWidget {
   final String subtitle;
   final bool active;
 
-  /// Il disco dell'icona: accende o spegne.
+  /// The icon disc: on or off.
   final VoidCallback? onTap;
 
-  /// Il testo: apre il dettaglio; senza dettaglio il testo fa come il disco.
+  /// The text: opens the detail; without a detail the text acts like the disc.
   final VoidCallback? onOpen;
 
   @override
   State<_Capsule> createState() => _CapsuleState();
 }
 
-/// Freccia ">" dei moduli con dettaglio, al passaggio del puntatore: a destra, sopra il
-/// testo (che si accorcia). Posizione e misura stimate dalla cattura (CC-01).
+/// The ">" arrow of modules with a detail, on hover: on the right, above the text (which
+/// shortens). Position and size estimated from the capture (CC-01).
 const double hoverChevronRight = 16;
 
 class _CapsuleState extends State<_Capsule> {
@@ -817,7 +817,7 @@ class _CapsuleState extends State<_Capsule> {
       onExit: (_) => setState(() => _hover = false),
       child: Stack(
         children: [
-          // Testo: dettaglio (o, senza, lo stesso effetto del disco).
+          // Text: detail (or, without one, the same effect as the disc).
           Positioned.fill(
             child: GestureDetector(
               onTap: widget.onOpen ?? widget.onTap,
@@ -856,8 +856,8 @@ class _CapsuleState extends State<_Capsule> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Come nel riferimento i testi lunghi vanno a capo ("Full immersion", il
-                  // nome di una rete), al più due righe ciascuno.
+                  // As in the reference long texts wrap ("Full immersion", the name of a
+                  // network), at most two lines each.
                   Text(
                     widget.title,
                     maxLines: 2,
@@ -886,11 +886,11 @@ class _CapsuleState extends State<_Capsule> {
   }
 }
 
-/// Il modulo multimediale (cc-gray-light): la copertina 40 × 40 a 14 pt dal bordo, il testo
-/// da x 15 (maiuscole della prima riga a y 68), i pulsanti di trasporto con i centri a x
-/// 28,5 / 71 / 110,5 e y 111 (⏮ e ⏭ 22 × 12, ▶ 17 × 20). Senza riproduzione i pulsanti sono
-/// attenuati (bianco al 33 e al 51 %); con un lettore MPRIS mostra titolo e artista e li
-/// comanda.
+/// The media module (cc-gray-light): the 40 × 40 cover 14 pt from the edge, the text from
+/// x 15 (capitals of the first line at y 68), the transport buttons centered at x
+/// 28.5 / 71 / 110.5 and y 111 (⏮ and ⏭ 22 × 12, ▶ 17 × 20). With nothing playing the buttons
+/// are dimmed (white at 33 and 51 %); with an MPRIS player it shows title and artist and
+/// controls them.
 class _Media extends StatefulWidget {
   const _Media();
 
@@ -898,12 +898,12 @@ class _Media extends StatefulWidget {
   State<_Media> createState() => _MediaState();
 }
 
-/// Il modulo multimediale (controlcenter.md › "Modulo multimediale in riproduzione", CC-04):
-/// copertina 40 × 40 a (14, 14) con raggio ~8 e un'ombra leggera; titolo `#f0f0f1` semibold e
-/// sotto "artista" `#b7b8bd` (una riga ciascuno) da (14, 64); tre pulsanti 30 × 30 con il centro
-/// a y 111 e x 30 / 70 / 110. Glifi: attivi `#b7b8bd` (bianco ~52 % sul fondo `#696a6f`),
-/// disattivati `#9d9ea3` (~35 %); col puntatore sul modulo tutto si schiarisce di ~7 livelli e il
-/// glifo sotto il puntatore va a `#bebfc4`; premuto diventa bianco `#f7f7f8`, senza pillola.
+/// The media module (controlcenter.md › "Media module while playing", CC-04): 40 × 40 cover
+/// at (14, 14) with radius ~8 and a light shadow; `#f0f0f1` semibold title and below it the
+/// `#b7b8bd` artist (one line each) from (14, 64); three 30 × 30 buttons centered at y 111
+/// and x 30 / 70 / 110. Glyphs: active `#b7b8bd` (white ~52 % over the `#696a6f` background),
+/// disabled `#9d9ea3` (~35 %); with the pointer on the module everything brightens by ~7
+/// levels and the glyph under the pointer goes to `#bebfc4`; pressed it turns white `#f7f7f8`, without a pill.
 const double mediaButtonSide = 30;
 const List<double> mediaButtonCenters = [30, 70, 110];
 const double mediaArtRadius = 8;
@@ -914,7 +914,7 @@ const double mediaGlyphDisabled = 0.35;
 const double mediaGlyphHover = 0.55;
 const double mediaGlyphPressed = 0.96;
 
-/// Il modulo sotto il puntatore: +7 livelli sul fondo (`#6a6b70` → `#717277`).
+/// The module under the pointer: +7 levels on the background (`#6a6b70` → `#717277`).
 const Color mediaHover = Color(0x0CFFFFFF);
 
 class _MediaState extends State<_Media> {
@@ -1025,7 +1025,7 @@ class _MediaState extends State<_Media> {
             const Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(
-                  key: ValueKey('media sotto il puntatore'),
+                  key: ValueKey('media under pointer'),
                   decoration: BoxDecoration(
                     color: mediaHover,
                     borderRadius: BorderRadius.all(
@@ -1111,8 +1111,8 @@ class _MediaState extends State<_Media> {
 
 enum _Transport { previous, play, pause, next }
 
-/// I glifi del trasporto: due triangoli affiancati (⏮ verso sinistra, ⏭ verso destra), un
-/// triangolo (▶) o due barre (pausa).
+/// The transport glyphs: two side by side triangles (⏮ to the left, ⏭ to the right), a
+/// triangle (▶) or two bars (pause).
 class _TransportPainter extends CustomPainter {
   const _TransportPainter(this.kind, this.color);
   final _Transport kind;
@@ -1184,13 +1184,13 @@ class _SliderModule extends StatelessWidget {
   final GlyphKind high;
   final ValueChanged<double> onChanged;
 
-  /// Il titolo apre il dettaglio.
+  /// The title opens the detail.
   final VoidCallback? onOpen;
 
-  /// Il cerchio delle uscite audio (solo Suono): apre il dettaglio con le uscite.
+  /// The audio outputs circle (Sound only): opens the detail with the outputs.
   final VoidCallback? onOutputs;
 
-  /// Con il cerchio delle uscite la traccia è più corta.
+  /// With the outputs circle the track is shorter.
   double get _length =>
       onOutputs == null ? trackLength : trackLength - outputsShift;
 
@@ -1202,7 +1202,7 @@ class _SliderModule extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
     behavior: HitTestBehavior.opaque,
     onTapDown: (d) {
-      // Sopra la traccia (il titolo): il dettaglio; sulla traccia: il valore.
+      // Above the track (the title): the detail; on the track: the value.
       if (onOpen != null && d.localPosition.dy < trackCenter - 10) {
         onOpen!();
       } else if (onOutputs != null &&
@@ -1238,7 +1238,7 @@ class _SliderModule extends StatelessWidget {
         ),
         if (onOutputs != null)
           Positioned(
-            key: const ValueKey('uscite audio'),
+            key: const ValueKey('audio outputs'),
             left: outputsCenter - outputsSide / 2,
             top: trackCenter - outputsSide / 2,
             width: outputsSide,
@@ -1266,7 +1266,7 @@ class _SliderModule extends StatelessWidget {
 class _Track extends CustomPainter {
   const _Track(this.value, {this.length = trackLength});
 
-  /// Null: cursore non regolabile (solo la traccia, come nel riferimento).
+  /// Null: slider not adjustable (only the track, as in the reference).
   final double? value;
   final double length;
 
@@ -1292,7 +1292,7 @@ class _Track extends CustomPainter {
   bool shouldRepaint(_Track old) => old.value != value || old.length != length;
 }
 
-/// Il glifo del cerchio delle uscite audio: un paio di cuffie, bianco, ~13 pt.
+/// The glyph of the audio outputs circle: a pair of headphones, white, ~13 pt.
 class _OutputsGlyph extends CustomPainter {
   const _OutputsGlyph();
 
@@ -1346,7 +1346,7 @@ class _StackShadow extends CustomPainter {
         PathOperation.union,
         modules,
         Path()..addRRect(
-          // Come il vetro: 1 pt in più a sinistra e a destra.
+          // Like the glass: 1 pt more on the left and right.
           RRect.fromRectAndRadius(
             Rect.fromLTRB(
               slot.rect.left - 1,

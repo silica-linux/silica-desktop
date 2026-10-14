@@ -1,6 +1,6 @@
-// Lo stato del sistema da silica-daemon (dev.frascella.Silica.System1, docs/daemon.md):
-// Wi-Fi, Bluetooth, batteria, luminosità, volume, Non disturbare. Lo usano il Centro di
-// controllo, la barra dei menu e le notifiche (Non disturbare).
+// The system state from silica-daemon (dev.frascella.Silica.System1, docs/daemon.md):
+// Wi-Fi, Bluetooth, battery, brightness, volume, Do Not Disturb. Used by the Control
+// Center, the menu bar and the notifications (Do Not Disturb).
 
 import 'dart:async';
 
@@ -13,7 +13,7 @@ const String systemName = 'dev.frascella.Silica';
 const String systemPath = '/dev/frascella/Silica/System1';
 const String systemInterface = 'dev.frascella.Silica.System1';
 
-/// Una fotografia dello stato. Le sorgenti assenti hanno `available` falso.
+/// A snapshot of the state. Missing sources have `available` false.
 @immutable
 class SystemSnapshot {
   const SystemSnapshot({
@@ -50,14 +50,14 @@ class SystemSnapshot {
   final bool brightnessAvailable;
   final double brightness;
 
-  /// Quante volte Silica ha chiesto la luminosità (tasti, cursori): cambia solo per l'utente,
-  /// non per la luminosità adattiva.
+  /// How many times Silica asked for a brightness (keys, sliders): it changes only for the
+  /// user, not for adaptive brightness.
   final int brightnessRequests;
   final bool audioAvailable;
   final double volume;
   final bool muted;
 
-  /// Il nome dell'uscita audio predefinita (titolo dell'HUD del volume).
+  /// The name of the default audio output (title of the volume HUD).
   final String audioName;
   final bool doNotDisturb;
 
@@ -120,7 +120,7 @@ class SystemSnapshot {
   );
 }
 
-/// Una rete senza fili visibile (pannello di dettaglio del Wi-Fi).
+/// A visible wireless network (Wi-Fi detail panel).
 @immutable
 class WifiNetwork {
   const WifiNetwork({
@@ -137,11 +137,11 @@ class WifiNetwork {
   final int strength;
   final bool secure;
 
-  /// C'è una connessione salvata.
+  /// There is a saved connection.
   final bool known;
   final bool active;
 
-  /// Da `(sybbb)` di `WifiNetworks`.
+  /// From `(sybbb)` of `WifiNetworks`.
   static WifiNetwork? fromTuple(Object? tuple) {
     if (tuple is! List || tuple.length < 5) return null;
     final [ssid, strength, secure, known, active, ...] = tuple;
@@ -156,7 +156,7 @@ class WifiNetwork {
   }
 }
 
-/// Un'uscita audio (pannello di dettaglio del Suono).
+/// An audio output (Sound detail panel).
 @immutable
 class AudioOutput {
   const AudioOutput({
@@ -169,7 +169,7 @@ class AudioOutput {
   final String name;
   final bool isDefault;
 
-  /// Da `(usb)` di `AudioOutputs`.
+  /// From `(usb)` of `AudioOutputs`.
   static AudioOutput? fromTuple(Object? tuple) {
     if (tuple is! List || tuple.length < 3) return null;
     final [id, name, isDefault, ...] = tuple;
@@ -178,10 +178,10 @@ class AudioOutput {
   }
 }
 
-/// Lo stato e le azioni; le azioni aggiornano subito la fotografia (la risposta del
-/// daemon arriva poi con `Changed`).
+/// The state and the actions; actions update the snapshot right away (the daemon's
+/// answer arrives later with `Changed`).
 abstract class SystemSource implements ValueListenable<SystemSnapshot> {
-  /// Le reti visibili, quella in uso prima (vuoto se il daemon non risponde).
+  /// The visible networks, the one in use first (empty if the daemon does not answer).
   Future<List<WifiNetwork>> wifiNetworks();
   Future<void> connectWifi(String ssid);
   Future<List<AudioOutput>> audioOutputs();
@@ -195,7 +195,7 @@ abstract class SystemSource implements ValueListenable<SystemSnapshot> {
   Future<void> setDoNotDisturb(bool enabled);
 }
 
-/// [SystemSource] su D-Bus.
+/// [SystemSource] over D-Bus.
 class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   DBusSystem({DBus? dbus})
     : _dbus = dbus ?? DBus.instance,
@@ -217,7 +217,7 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
             }
           },
           onError: (Object error) {
-            debugPrint('sistema: segnali non disponibili: $error');
+            debugPrint('system: signals not available: $error');
           },
         );
     try {
@@ -225,7 +225,7 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
       final dict = reply.isEmpty ? null : reply.first;
       if (dict is Map) value = SystemSnapshot.fromDict(dict);
     } on Object catch (error) {
-      debugPrint('sistema: silica-daemon non risponde: $error');
+      debugPrint('system: silica-daemon does not answer: $error');
     }
   }
 
@@ -246,9 +246,9 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
     try {
       await _call(method, signature, [arg]);
     } on PlatformException catch (error) {
-      debugPrint('sistema: $method: ${error.code}: ${error.message}');
+      debugPrint('system: $method: ${error.code}: ${error.message}');
     } on MissingPluginException {
-      // Fuori da Silica.
+      // Outside Silica.
     }
   }
 
@@ -298,9 +298,9 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
             if (parse(item) case final T value) value,
       ];
     } on PlatformException catch (error) {
-      debugPrint('sistema: $method: ${error.code}: ${error.message}');
+      debugPrint('system: $method: ${error.code}: ${error.message}');
     } on MissingPluginException {
-      // Fuori da Silica.
+      // Outside Silica.
     }
     return const [];
   }

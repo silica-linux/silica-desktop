@@ -57,7 +57,7 @@ void main() {
     );
   }
 
-  test('il nome del file, con un numero se esiste già', () {
+  test('the file name, with a number if it already exists', () {
     final t = DateTime(2026, 10, 14, 4, 12, 33);
     expect(
       screenshotName(t, (_) => false),
@@ -69,7 +69,7 @@ void main() {
     );
   });
 
-  testWidgets('la miniatura in basso a destra, poi il file sulla Scrivania', (
+  testWidgets('the thumbnail at the bottom right, then the file on the Desktop', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('istantanee');
@@ -83,16 +83,16 @@ void main() {
     });
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    // L'immagine 256 × 144 con la cornice di 4 pt, a 12 pt dai bordi.
-    final thumb = tester.getRect(find.byKey(const ValueKey('miniatura')));
+    // The 256 × 144 image with the 4 pt frame, 12 pt from the edges.
+    final thumb = tester.getRect(find.byKey(const ValueKey('thumbnail')));
     expect(thumb.size, const Size(264, 152));
     expect(thumb.right, 1280 - 12);
     expect(thumb.bottom, 800 - 12);
-    // Angoli di raggio ~4, nessuna scala all'entrata (K-05).
+    // Corners of radius ~4, no scale on entering (K-05).
     final frame = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('miniatura')),
+            of: find.byKey(const ValueKey('thumbnail')),
             matching: find.byType(Container),
           )
           .first,
@@ -103,7 +103,7 @@ void main() {
     );
     expect(find.byType(Transform), findsNothing);
     expect(thumbnailLeave, const Duration(milliseconds: 220));
-    // Resta ~5,1 s, poi esce in ~250 ms e il file va sulla Scrivania.
+    // It stays ~5.1 s, then leaves in ~250 ms and the file goes to the Desktop.
     await tester.pump(const Duration(seconds: 5));
     expect(temp.existsSync(), isTrue);
     for (var i = 0; i < 10; i++) {
@@ -116,68 +116,64 @@ void main() {
       ).existsSync(),
       isTrue,
     );
-    expect(find.byKey(const ValueKey('miniatura')), findsNothing);
+    expect(find.byKey(const ValueKey('thumbnail')), findsNothing);
   });
 
-  testWidgets(
-    '⇧⌘4: si trascina una regione; Spazio: una finestra; Esc annulla',
-    (tester) async {
-      await pumpLayer(tester);
-      await send(tester, 'command', 'screenshot.selection');
-      await tester.pump();
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: const Offset(100, 100));
-      await mouse.moveTo(const Offset(100, 100));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('mirino')), findsOneWidget);
-      expect(find.text('100\n100'), findsOneWidget);
-      await mouse.down(const Offset(100, 100));
-      await mouse.moveTo(const Offset(300, 250));
-      await tester.pump();
-      expect(
-        tester.getRect(find.byKey(const ValueKey('selezione'))),
-        const Rect.fromLTRB(100, 100, 300, 250),
-      );
-      await mouse.up();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(executed, ['screenshot.region']);
-      expect(params.single, {
-        'x': 100.0,
-        'y': 100.0,
-        'width': 200.0,
-        'height': 150.0,
-      });
+  testWidgets('⇧⌘4: drag a region; Space: a window; Esc cancels', (
+    tester,
+  ) async {
+    await pumpLayer(tester);
+    await send(tester, 'command', 'screenshot.selection');
+    await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(100, 100));
+    await mouse.moveTo(const Offset(100, 100));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('crosshair')), findsOneWidget);
+    expect(find.text('100\n100'), findsOneWidget);
+    await mouse.down(const Offset(100, 100));
+    await mouse.moveTo(const Offset(300, 250));
+    await tester.pump();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('selection'))),
+      const Rect.fromLTRB(100, 100, 300, 250),
+    );
+    await mouse.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(executed, ['screenshot.region']);
+    expect(params.single, {
+      'x': 100.0,
+      'y': 100.0,
+      'width': 200.0,
+      'height': 150.0,
+    });
 
-      // Spazio: la finestra sotto il puntatore.
-      await send(tester, 'command', 'screenshot.selection');
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.space);
-      await mouse.moveTo(const Offset(400, 300));
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey('macchina fotografica')),
-        findsOneWidget,
-      );
-      await mouse.down(const Offset(400, 300));
-      await mouse.up();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(executed.last, 'screenshot.window_at');
-      expect(params.last, {'x': 400.0, 'y': 300.0});
+    // Space: the window under the pointer.
+    await send(tester, 'command', 'screenshot.selection');
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await mouse.moveTo(const Offset(400, 300));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('camera')), findsOneWidget);
+    await mouse.down(const Offset(400, 300));
+    await mouse.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(executed.last, 'screenshot.window_at');
+    expect(params.last, {'x': 400.0, 'y': 300.0});
 
-      // Esc: niente.
-      await send(tester, 'command', 'screenshot.selection');
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump();
-      expect(find.byKey(const ValueKey('mirino')), findsNothing);
-      expect(executed, hasLength(2));
-      await mouse.removePointer();
-    },
-  );
+    // Esc: nothing.
+    await send(tester, 'command', 'screenshot.selection');
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('crosshair')), findsNothing);
+    expect(executed, hasLength(2));
+    await mouse.removePointer();
+  });
 
-  testWidgets('⇧⌘5: la barra sopra il Dock; Acquisisci con lo schermo intero', (
+  testWidgets('⇧⌘5: the bar above the Dock; Acquisisci with the full screen', (
     tester,
   ) async {
     await pumpLayer(tester);
@@ -186,7 +182,7 @@ void main() {
     final bar = tester.getRect(
       find
           .ancestor(
-            of: find.byKey(const ValueKey('acquisisci')),
+            of: find.byKey(const ValueKey('capture')),
             matching: find.byType(Positioned),
           )
           .first,
@@ -194,14 +190,14 @@ void main() {
     expect(bar.size, toolbarSize);
     expect(bar.bottom, 800 - toolbarAboveDock);
     await tester.tap(find.byKey(const ValueKey('schermo intero')));
-    await tester.tap(find.byKey(const ValueKey('acquisisci')));
+    await tester.tap(find.byKey(const ValueKey('capture')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(executed, ['screenshot.screen']);
   });
 
   testWidgets(
-    'Spazio: velatura azzurra sul rettangolo della finestra, o su tutto',
+    'Space: light blue veil on the window rectangle, or on everything',
     (tester) async {
       const window = Rect.fromLTWH(200, 150, 500, 350);
       await pumpLayer(
@@ -215,10 +211,10 @@ void main() {
       await mouse.addPointer(location: const Offset(400, 300));
       await mouse.moveTo(const Offset(400, 300));
       await tester.pump();
-      final veil = find.byKey(const ValueKey('velatura'));
+      final veil = find.byKey(const ValueKey('veil'));
       expect(tester.getRect(veil), window);
       expect(tester.widget<ColoredBox>(veil).color, const Color(0x8288BAE7));
-      // Sulla scrivania: tutto lo schermo.
+      // On the desktop: the whole screen.
       await mouse.moveTo(const Offset(1000, 700));
       await tester.pump();
       expect(tester.getRect(veil), const Rect.fromLTWH(0, 0, 1280, 800));
@@ -228,7 +224,7 @@ void main() {
     },
   );
 
-  testWidgets('Opzioni: il menu sopra il pulsante; ritardo e miniatura', (
+  testWidgets('Opzioni: the menu above the button; delay and thumbnail', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('opzioni');
@@ -236,29 +232,29 @@ void main() {
     await pumpLayer(tester, folder: dir.path);
     await send(tester, 'command', 'screenshot.toolbar');
     await tester.pump();
-    final button = tester.getRect(find.byKey(const ValueKey('opzioni')));
-    await tester.tap(find.byKey(const ValueKey('opzioni')));
+    final button = tester.getRect(find.byKey(const ValueKey('options')));
+    await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
     final menu = tester.getRect(find.byType(MenuPanel));
-    // Sopra il pulsante, con il bordo sinistro sul pulsante.
+    // Above the button, with its left edge on the button.
     expect(menu.bottom, lessThan(button.bottom));
     expect(menu.left, closeTo(button.left, 1));
     expect(find.text('Ritardo'), findsOneWidget);
     await tester.tap(find.text('5 secondi'));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
-    // Con il ritardo lo scatto arriva 5 s dopo.
-    await tester.tap(find.byKey(const ValueKey('acquisisci')));
+    // With the delay the capture comes 5 s later.
+    await tester.tap(find.byKey(const ValueKey('capture')));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(executed, isEmpty);
     await tester.pump(const Duration(seconds: 5));
     expect(executed, ['screenshot.screen']);
 
-    // Senza miniatura il file va subito nella cartella.
+    // Without a thumbnail the file goes straight into the folder.
     await send(tester, 'command', 'screenshot.toolbar');
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('opzioni')));
+    await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
     await tester.tap(find.text('Miniatura dopo lo scatto'));
     await tester.pump(const Duration(milliseconds: 500));
@@ -269,7 +265,7 @@ void main() {
       'value': '${temp.path} 2560 1440',
     });
     await tester.pump();
-    expect(find.byKey(const ValueKey('miniatura')), findsNothing);
+    expect(find.byKey(const ValueKey('thumbnail')), findsNothing);
     expect(temp.existsSync(), isFalse);
     expect(
       File(

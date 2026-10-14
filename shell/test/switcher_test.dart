@@ -13,7 +13,7 @@ Toplevel window(String id, String app, [String title = '']) =>
     Toplevel(id: id, title: title, appId: app);
 
 void main() {
-  test('le app seguono l\'ordine d\'uso delle finestre', () {
+  test('apps follow the usage order of the windows', () {
     final model = SwitcherModel(entries: entries)
       ..toplevels([
         window('1', 'term'),
@@ -26,11 +26,11 @@ void main() {
       ..focused('4');
     final apps = model.recentApps();
     expect([for (final a in apps) a.name], ['Senza app', 'Terminale', 'File']);
-    // Le finestre dell'app dalla più recente.
+    // The app's windows from the most recent.
     expect(apps[1].windows, ['3', '1']);
   });
 
-  test('⌘Tab sceglie l\'app usata prima; ⌘ rilasciato la attiva', () {
+  test('⌘Tab picks the app used before; releasing ⌘ activates it', () {
     final model = SwitcherModel(entries: entries)
       ..toplevels([window('1', 'term'), window('2', 'files')])
       ..focused('1')
@@ -44,12 +44,12 @@ void main() {
     model.previous();
     expect(model.commit(), '1');
     expect(model.visible, isFalse);
-    // ⇧⌘Tab apre sull'ultima; Esc annulla.
+    // ⇧⌘Tab opens on the last one; Esc cancels.
     model.previous();
     expect(model.selected, 1);
     model.cancel();
     expect(model.commit(), isNull);
-    // Le finestre chiuse escono dall'ordine.
+    // Closed windows leave the order.
     model.toplevels([window('2', 'files')]);
     expect(
       [for (final a in model.recentApps()) a.windows],
@@ -60,7 +60,7 @@ void main() {
   });
 
   testWidgets(
-    'quattro app: pannello 580 × 176 centrato, riquadro 120 attorno alla scelta',
+    'four apps: 580 × 176 panel centered, 120 box around the choice',
     (tester) async {
       tester.view.physicalSize = const Size(2560, 1440);
       tester.view.devicePixelRatio = 1;
@@ -85,7 +85,7 @@ void main() {
               (w.decoration as BoxDecoration).color == selectionColor,
         ),
       );
-      // Nel riferimento x 1153–1272, y 660–779 (misure a ±1 pt).
+      // In the reference x 1153–1272, y 660–779 (measured to ±1 pt).
       expect(selection.left, closeTo(1153, 1.5));
       expect(selection.top, closeTo(660, 1.5));
       expect(selection.size, const Size(120, 120));

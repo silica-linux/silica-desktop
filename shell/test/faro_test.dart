@@ -19,7 +19,7 @@ const entries = {
 };
 
 void main() {
-  test('la ricerca mette prima i nomi che iniziano con il testo', () {
+  test('search puts first the names starting with the text', () {
     expect(
       [for (final e in searchApps(entries.values, 'te')) e.name],
       ['Terminale', 'Tetris', 'Editor di testo'],
@@ -36,13 +36,13 @@ void main() {
     expect(searchApps(twice, 'uff'), hasLength(1));
   });
 
-  test("l'opacità dell'apertura segue i fotogrammi misurati", () {
+  test('the opening opacity follows the measured frames', () {
     expect(opacityAt(0), 0.22);
     expect(opacityAt(13.3), closeTo(0.66, 0.001));
     expect(opacityAt(100), 1);
   });
 
-  testWidgets('scrivere filtra, Invio avvia la prima app e chiude Faro', (
+  testWidgets('typing filters, Enter launches the first app and closes Faro', (
     tester,
   ) async {
     final calls = <MethodCall>[];

@@ -1,18 +1,18 @@
-// Le impostazioni di una cartella nel Dock (dock.md › D-04, dock-stacks.md): ordine, come si
-// mostra l'icona (cartella o pila) e come si apre il contenuto (ventaglio, griglia, elenco,
-// automatico). Predefinite per una cartella aggiunta: per nome, pila, automatico. Salvate per
-// percorso in ~/.config/silica/dock-stacks.json.
+// The settings of a folder in the Dock (dock.md › D-04, dock-stacks.md): order, how the icon
+// shows (folder or stack) and how the content opens (fan, grid, list, automatic). Defaults
+// for an added folder: by name, stack, automatic. Saved by path in
+// ~/.config/silica/dock-stacks.json.
 
 import 'dart:convert';
 import 'dart:io';
 
-/// L'ordine dei file nella pila.
+/// The order of the files in the stack.
 enum StackSort { name, added, modified, created, kind }
 
-/// L'icona nel Dock: la cartella o i documenti sovrapposti.
+/// The icon in the Dock: the folder or the stacked documents.
 enum StackDisplay { folder, stack }
 
-/// Come si apre il contenuto.
+/// How the content opens.
 enum StackContent { fan, grid, list, automatic }
 
 class StackSettings {
@@ -64,7 +64,7 @@ File _file(Map<String, String>? env) {
   return File('$config/silica/dock-stacks.json');
 }
 
-/// Le impostazioni di tutte le cartelle, per percorso.
+/// The settings of all folders, by path.
 Map<String, StackSettings> loadStackSettings({Map<String, String>? env}) {
   final file = _file(env);
   try {
@@ -78,7 +78,7 @@ Map<String, StackSettings> loadStackSettings({Map<String, String>? env}) {
   } on FileSystemException {
     return {};
   } on FormatException {
-    // Configurazione rovinata: le predefinite.
+    // Broken configuration: the defaults.
     return {};
   }
 }
@@ -97,6 +97,6 @@ void saveStackSettings(
       }),
     );
   } on FileSystemException {
-    // Senza configurazione scrivibile la scelta vale fino alla fine della sessione.
+    // Without a writable configuration the choice lasts until the end of the session.
   }
 }

@@ -1,22 +1,22 @@
-// Le istantanee (plan/reference/screenshot-ui.md): la miniatura dopo ogni cattura, il mirino
-// di ⇧⌘4 (con Spazio: una finestra) e la barra di ⇧⌘5.
+// Screenshots (plan/reference/screenshot-ui.md): the thumbnail after every capture, the
+// ⇧⌘4 crosshair (with Space: a window) and the ⇧⌘5 bar.
 //
-// - Miniatura: in basso a destra a 12 pt dai bordi, 264 × 152 (l'immagine 256 × 144 con una
-//   cornice bianca di 4 pt), angoli di raggio ~4 e un'ombra nera morbida e simmetrica (≥ 26 pt);
-//   compare già al suo posto in dissolvenza (~400 ms, rallentando), resta ~5,1 s, poi esce a
-//   destra in ~220 ms accelerando (K-05). Il file va sulla Scrivania quando la miniatura
-//   sparisce; un clic lo salva subito e lo apre.
-// - Mirino: una croce sottile nera di ~20 pt con un disco grigio traslucido al centro e, in
-//   basso a destra, le coordinate in punti su due righe. Trascinando si sceglie la regione;
-//   Spazio passa alla finestra sotto il puntatore (una macchina fotografica) e la vela di azzurro
-//   (`#88bae7` al 51 %) sul suo rettangolo, angoli compresi e ombra esclusa; sopra la scrivania
-//   si vela tutto lo schermo (K-05). Esc annulla.
-// - Barra: vetro ~545 × 52, 4 pt sopra la zona del Dock: Chiudi, schermo intero, finestra,
-//   selezione, Opzioni (menu sopra il pulsante: dove salvare, ritardo, miniatura) e Acquisisci
-//   (blu). La registrazione non c'è.
+// - Thumbnail: at the bottom right 12 pt from the edges, 264 × 152 (the 256 × 144 image with
+//   a 4 pt white frame), corners of radius ~4 and a soft symmetric black shadow (≥ 26 pt);
+//   it appears already in place with a fade (~400 ms, slowing down), stays ~5.1 s, then
+//   leaves to the right in ~220 ms accelerating (K-05). The file goes to the Desktop when the
+//   thumbnail disappears; a click saves it at once and opens it.
+// - Crosshair: a thin black cross of ~20 pt with a translucent grey disc in the center and,
+//   at the bottom right, the coordinates in points on two lines. Dragging picks the region;
+//   Space switches to the window under the pointer (a camera) and veils it light blue
+//   (`#88bae7` at 51 %) over its rectangle, corners included and shadow excluded; over the
+//   desktop the whole screen is veiled (K-05). Esc cancels.
+// - Bar: glass ~545 × 52, 4 pt above the Dock area: Close, full screen, window, selection,
+//   Options (menu above the button: where to save, delay, thumbnail) and Capture (blue).
+//   There is no recording.
 //
-// Ossido cattura (`screenshot.screen`, `screenshot.region`, `screenshot.window_at`), scrive un
-// PNG temporaneo e lo annuncia con broadcast "screenshot" = "<percorso> <l> <a>".
+// Ossido captures (`screenshot.screen`, `screenshot.region`, `screenshot.window_at`), writes
+// a temporary PNG and announces it with the broadcast "screenshot" = "<path> <w> <h>".
 
 import 'dart:async';
 import 'dart:io';
@@ -38,15 +38,15 @@ const Duration thumbnailHold = Duration(milliseconds: 5100);
 const Duration thumbnailLeave = Duration(milliseconds: 220);
 const double thumbnailRadius = 4;
 
-/// La velatura della modalità finestra: `#88bae7` (sRGB) con opacità ~0,51 (K-05).
+/// The veil of window mode: `#88bae7` (sRGB) at opacity ~0.51 (K-05).
 const Color windowVeil = Color(0x8288BAE7);
 
 const Size toolbarSize = Size(545, 52);
 
-/// Dalla zona del Dock (zona esclusiva di 84 pt) alla barra: 4 pt.
+/// From the Dock area (84 pt exclusive zone) to the bar: 4 pt.
 const double toolbarAboveDock = 84 + 4;
 
-/// Dove vanno le istantanee: la Scrivania di xdg-user-dirs, o ~/Desktop.
+/// Where screenshots go: the xdg-user-dirs Desktop, or ~/Desktop.
 String screenshotFolder({Map<String, String>? env}) {
   final e = env ?? Platform.environment;
   final home = e['HOME'] ?? '/tmp';
@@ -65,7 +65,7 @@ String screenshotFolder({Map<String, String>? env}) {
       }
     }
   } on FileSystemException {
-    // Si prova con i nomi soliti.
+    // Try the usual names.
   }
   for (final name in ['Scrivania', 'Desktop']) {
     if (Directory('$home/$name').existsSync()) return '$home/$name';
@@ -73,7 +73,7 @@ String screenshotFolder({Map<String, String>? env}) {
   return home;
 }
 
-/// Il nome del file: "Schermata del 2026-10-14 alle 04.12.33.png" (un numero se esiste già).
+/// The file name: "Schermata del 2026-10-14 alle 04.12.33.png" (a number if it already exists).
 String screenshotName(DateTime t, bool Function(String name) exists) {
   String two(int v) => v.toString().padLeft(2, '0');
   final base =
@@ -90,13 +90,13 @@ enum _Mode { none, selection, window, toolbar }
 
 enum ToolbarChoice { screen, window, selection }
 
-/// I colori della barra (sul vetro). Scuro misurato su grigio `#7a7b80` (K-06): glifi e
-/// "Opzioni" `#c7c8cd`, separatori e pillola della modalità scelta `#8f9095` (bianco ~15 %),
-/// glifo scelto `#dbdde2`, premuta pillola −5 livelli e glifo `#c3c4c9`, filo scuro di 1 pt
-/// in cima `#595a5e` (nero ~28 %). Chiaro: misurato solo sotto la velatura della scrivania
-/// (K-05); pillola e separatori ricavati togliendo la velatura (out = 0,514 · C + 0,486 · fondo:
-/// fondo ~`#ddd8dd`, pillola ~`#b4afb4`, nero ~19 %), glifi quasi neri; la pillola premuta in
-/// chiaro è *stimata*.
+/// The bar colors (over the glass). Dark measured over grey `#7a7b80` (K-06): glyphs and
+/// "Opzioni" `#c7c8cd`, separators and the pill of the chosen mode `#8f9095` (white ~15 %),
+/// chosen glyph `#dbdde2`, pressed pill −5 levels and glyph `#c3c4c9`, a 1 pt dark rim at the
+/// top `#595a5e` (black ~28 %). Light: measured only under the desktop veil (K-05); pill and
+/// separators derived by removing the veil (out = 0.514 · C + 0.486 · background:
+/// background ~`#ddd8dd`, pill ~`#b4afb4`, black ~19 %), glyphs almost black; the pressed
+/// pill in light is *estimated*.
 @immutable
 class ShotBarColors {
   const ShotBarColors({
@@ -120,7 +120,7 @@ class ShotBarColors {
   final Color chosenPressed;
   final Color chosenPressedGlyph;
 
-  /// Il filo in cima alla barra (null: nessuno).
+  /// The rim at the top of the bar (null: none).
   final Color? topLine;
 
   static const ShotBarColors light = ShotBarColors(
@@ -156,14 +156,14 @@ class ShotBarColors {
 class ScreenshotLayer extends StatefulWidget {
   const ScreenshotLayer({super.key, this.folder, this.now, this.windowAt});
 
-  /// Il rettangolo della finestra sotto un punto (cornice senza ombra), per la velatura della
-  /// modalità finestra; null o nessuna finestra: si vela tutto lo schermo (la scrivania).
+  /// The rectangle of the window under a point (frame without shadow), for the window mode
+  /// veil; null or no window: the whole screen is veiled (the desktop).
   final Rect? Function(Offset point)? windowAt;
 
-  /// Dove salvare (test); null: la Scrivania.
+  /// Where to save (tests); null: the Desktop.
   final String? folder;
 
-  /// L'ora del nome del file (test).
+  /// The time in the file name (tests).
   final DateTime Function()? now;
 
   @override
@@ -180,7 +180,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   final FocusNode _focus = FocusNode();
   String? _folderChoice;
 
-  /// La miniatura: il file temporaneo, la sua immagine e i tempi.
+  /// The thumbnail: the temporary file, its image and the timings.
   _Shot? _shot;
   late final AnimationController _settle = AnimationController(
     vsync: this,
@@ -193,7 +193,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Timer? _hold;
   String _lastAnnounced = '';
 
-  /// Il menu "Opzioni" della barra: aperto, il ritardo dello scatto e la miniatura.
+  /// The "Opzioni" menu of the bar: open, the capture delay and the thumbnail.
   bool _optionsOpen = false;
   Duration _delay = Duration.zero;
   bool _showThumbnail = true;
@@ -220,7 +220,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     super.dispose();
   }
 
-  // --- Modalità (mirino, finestra, barra) ---------------------------------------------------
+  // --- Modes (crosshair, window, bar) ------------------------------------------------------
 
   void _start(_Mode mode) {
     setState(() {
@@ -240,8 +240,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _syncLayer();
   }
 
-  /// La regione d'input: tutto lo schermo con il mirino o la barra; solo la miniatura se c'è;
-  /// altrimenti niente (la superficie è trasparente ai clic).
+  /// The input region: the whole screen with the crosshair or the bar; only the thumbnail if
+  /// there is one; otherwise nothing (the surface lets clicks through).
   void _syncLayer() {
     final thumb = _shot == null ? null : _thumbRect(_lastSize);
     LayerArbiter.instance.set(
@@ -256,7 +256,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   Size _lastSize = Size.zero;
 
-  /// Nasconde il mirino, aspetta che Ossido ridisegni lo schermo senza, poi cattura.
+  /// Hides the crosshair, waits for Ossido to redraw the screen without it, then captures.
   Future<void> _capture(String id, [Map<String, Object?>? params]) async {
     _cancel();
     await SchedulerBinding.instance.endOfFrame;
@@ -287,7 +287,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         final start = _dragStart;
         if (start == null) return;
         final rect = Rect.fromPoints(start, at);
-        // Un clic senza trascinare non cattura niente.
+        // A click without dragging captures nothing.
         if (rect.width < 4 || rect.height < 4) {
           setState(() => _dragStart = null);
           return;
@@ -316,7 +316,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     }
   }
 
-  // --- Miniatura ------------------------------------------------------------------------
+  // --- Thumbnail ------------------------------------------------------------------------
 
   void _statesChanged() {
     final value = ShellChannel.instance.states.value['screenshot'] ?? '';
@@ -328,12 +328,12 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final width = double.tryParse(parts.removeLast());
     final path = parts.join(' ');
     if (width == null || height == null || width <= 0 || height <= 0) return;
-    // Una miniatura ancora in vista: il suo file va subito al suo posto.
+    // A thumbnail still showing: its file goes to its place right away.
     final previous = _shot;
     if (previous != null) _save(previous);
     _hold?.cancel();
     if (!_showThumbnail) {
-      // Senza miniatura il file va subito al suo posto.
+      // Without a thumbnail the file goes to its place right away.
       _save(_Shot(path, Size(width, height)));
       if (previous != null) setState(() => _shot = null);
       _syncLayer();
@@ -356,7 +356,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _syncLayer();
   }
 
-  /// Sposta il file temporaneo nella cartella delle istantanee; il percorso finale.
+  /// Moves the temporary file into the screenshots folder; the final path.
   String? _save(_Shot shot) {
     if (shot.saved != null) return shot.saved;
     final folder = _folderChoice ?? widget.folder ?? screenshotFolder();
@@ -370,7 +370,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       try {
         source.renameSync(target);
       } on FileSystemException {
-        // Su un altro disco: copia e cancella.
+        // On another disk: copy and delete.
         source.copySync(target);
         source.deleteSync();
       }
@@ -395,8 +395,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     }
   }
 
-  /// Il riquadro della miniatura: l'immagine adattata a 256 × 144 più la cornice, in basso a
-  /// destra a 12 pt.
+  /// The thumbnail box: the image fitted to 256 × 144 plus the frame, at the bottom right
+  /// 12 pt from the edges.
   Rect _thumbRect(Size screen) {
     final shot = _shot;
     if (shot == null || screen.isEmpty) return Rect.zero;
@@ -414,7 +414,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     );
   }
 
-  // --- Disegno ------------------------------------------------------------------------------
+  // --- Drawing ------------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -423,7 +423,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       final children = <Widget>[];
       if (_shot case final shot?) {
         final rect = _thumbRect(box.biggest);
-        // Compare al suo posto in dissolvenza (rallentando), poi esce a destra accelerando.
+        // It appears in place with a fade (slowing down), then leaves to the right accelerating.
         final settle = Curves.easeOut.transform(_settle.value);
         final dx =
             Curves.easeIn.transform(_leave.value) *
@@ -434,14 +434,14 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             child: Opacity(
               opacity: settle,
               child: GestureDetector(
-                key: const ValueKey('miniatura'),
+                key: const ValueKey('thumbnail'),
                 onTap: _openShot,
                 child: Container(
                   padding: const EdgeInsets.all(thumbnailBorder),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFFFFF),
                     borderRadius: BorderRadius.circular(thumbnailRadius),
-                    // −10 livelli al bordo, −5 a ~12 pt, −2 a ~25: nera, uguale su tre lati.
+                    // −10 levels at the edge, −5 at ~12 pt, −2 at ~25: black, the same on three sides.
                     boxShadow: const [
                       BoxShadow(color: Color(0x2E000000), blurRadius: 26),
                     ],
@@ -496,7 +496,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
                 Positioned.fromRect(
                   rect: Rect.fromPoints(start, end),
                   child: Container(
-                    key: const ValueKey('selezione'),
+                    key: const ValueKey('selection'),
                     decoration: BoxDecoration(
                       color: const Color(0x33808080),
                       border: Border.all(color: const Color(0x99FFFFFF)),
@@ -509,10 +509,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
               Positioned.fromRect(
                 rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
                 child: const IgnorePointer(
-                  child: ColoredBox(
-                    key: ValueKey('velatura'),
-                    color: windowVeil,
-                  ),
+                  child: ColoredBox(key: ValueKey('veil'), color: windowVeil),
                 ),
               ),
             if (_pointer case final p? when _mode == _Mode.window)
@@ -520,7 +517,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
                 left: p.dx - 14,
                 top: p.dy - 11,
                 child: const CustomPaint(
-                  key: ValueKey('macchina fotografica'),
+                  key: ValueKey('camera'),
                   size: Size(28, 22),
                   painter: _CameraPainter(),
                 ),
@@ -532,7 +529,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     ),
   );
 
-  /// Il mirino e le coordinate del punto (in punti, dall'angolo in alto a sinistra).
+  /// The crosshair and the coordinates of the point (in points, from the top left corner).
   List<Widget> _crosshair(Offset p) {
     final label = TextStyle(
       fontFamily: uiFontFamily,
@@ -547,7 +544,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         left: p.dx - 10,
         top: p.dy - 10,
         child: const CustomPaint(
-          key: ValueKey('mirino'),
+          key: ValueKey('crosshair'),
           size: Size(20, 20),
           painter: _CrosshairPainter(),
         ),
@@ -557,7 +554,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         top: p.dy + 8,
         child: Text(
           '${p.dx.round()}\n${p.dy.round()}',
-          key: const ValueKey('coordinate'),
+          key: const ValueKey('coordinates'),
           style: label,
         ),
       ),
@@ -588,7 +585,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         material: GlassMaterial.regular,
         interactive: false,
         child: Container(
-          key: const ValueKey('barra delle istantanee'),
+          key: const ValueKey('screenshot bar'),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: c.topLine == null
@@ -600,15 +597,15 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       ),
     );
     if (!_optionsOpen) return bar;
-    // Il menu "Opzioni" si apre sopra il pulsante, con il bordo sinistro sul pulsante e il
-    // fondo 16 pt sotto la cima della barra (K-05).
+    // The "Opzioni" menu opens above the button, with its left edge on the button and its
+    // bottom 16 pt below the top of the bar (K-05).
     return Positioned.fill(
       child: Stack(
         children: [
           bar,
           Positioned.fill(
             child: MenuHost(
-              key: const ValueKey('menu opzioni'),
+              key: const ValueKey('options menu'),
               entries: _optionsMenu(),
               anchor: Offset(left + _optionsLeft, top + 16),
               upwards: true,
@@ -620,10 +617,10 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     );
   }
 
-  /// Dal bordo sinistro della barra al pulsante "Opzioni".
+  /// From the left edge of the bar to the "Opzioni" button.
   static const double _optionsLeft = 12 + 18 + 14 + 3 * 44 + 10 + 1 + 10;
 
-  /// Le voci del menu "Opzioni": dove salvare, il ritardo, la miniatura (testi nostri).
+  /// The items of the "Opzioni" menu: where to save, the delay, the thumbnail (our texts).
   List<MenuEntry> _optionsMenu() {
     final home = Platform.environment['HOME'] ?? '/tmp';
     final folders = <String>{
@@ -674,7 +671,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     children: [
       const SizedBox(width: 12),
       GestureDetector(
-        key: const ValueKey('chiudi la barra'),
+        key: const ValueKey('close bar'),
         onTap: _cancel,
         child: Container(
           width: 18,
@@ -692,7 +689,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       Container(width: 1, height: 28, color: c.line),
       const SizedBox(width: 10),
       _ToolButton(
-        key: const ValueKey('opzioni'),
+        key: const ValueKey('options'),
         width: 76,
         colors: c,
         onTap: () => setState(() => _optionsOpen = !_optionsOpen),
@@ -701,7 +698,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       ),
       const Spacer(),
       GestureDetector(
-        key: const ValueKey('acquisisci'),
+        key: const ValueKey('capture'),
         onTap: _acquire,
         child: Container(
           width: 92,
@@ -730,12 +727,12 @@ class _Shot {
   final String path;
   final Size size;
 
-  /// Dove è finito il file (dopo il salvataggio).
+  /// Where the file ended up (after saving).
   String? saved;
 }
 
-/// Un pulsante della barra: la pillola della modalità scelta (più scura premuta, K-06) e il
-/// glifo nel colore dello stato. Il puntatore sopra una modalità non scelta non cambia niente.
+/// A bar button: the pill of the chosen mode (darker when pressed, K-06) and the glyph in
+/// the color of its state. The pointer over a mode that is not chosen changes nothing.
 class _ToolButton extends StatefulWidget {
   const _ToolButton({
     super.key,
@@ -795,8 +792,8 @@ class _ToolButtonState extends State<_ToolButton> {
 
 enum _Glyph { screen, window, selection }
 
-/// Le icone delle modalità: lo schermo pieno, una finestra in uno schermo, una selezione
-/// tratteggiata.
+/// The mode icons: the full screen, a window in a screen, a dashed
+/// selection.
 class _ModePainter extends CustomPainter {
   const _ModePainter(this.glyph, this.color);
   final _Glyph glyph;
@@ -842,7 +839,7 @@ class _ModePainter extends CustomPainter {
       old.glyph != glyph || old.color != color;
 }
 
-/// La croce sottile nera con il disco grigio traslucido al centro.
+/// The thin black cross with the translucent grey disc in the center.
 class _CrosshairPainter extends CustomPainter {
   const _CrosshairPainter();
 
@@ -862,7 +859,7 @@ class _CrosshairPainter extends CustomPainter {
   bool shouldRepaint(_CrosshairPainter old) => false;
 }
 
-/// La macchina fotografica della modalità finestra.
+/// The camera of window mode.
 class _CameraPainter extends CustomPainter {
   const _CameraPainter();
 

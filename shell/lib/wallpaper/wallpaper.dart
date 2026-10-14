@@ -1,7 +1,7 @@
-// Lo sfondo del desktop (layer background). Predefinito: generato in codice, originale
-// (niente immagini di Apple né asset da licenziare): un cielo al crepuscolo con dune di
-// sabbia di silice. In alternativa un colore pieno o un'immagine dell'utente, da
-// ~/.config/silica/wallpaper.json: {"color": "#7a7b80"} oppure {"image": "/percorso"}.
+// The desktop wallpaper (background layer). Default: generated in code, original (no Apple
+// images nor assets to license): a twilight sky over dunes of silica sand. Alternatively a
+// solid color or a user image, from ~/.config/silica/wallpaper.json: {"color": "#7a7b80"}
+// or {"image": "/path"}.
 
 import 'dart:convert';
 import 'dart:io';
@@ -9,7 +9,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
-/// La scelta dello sfondo.
+/// The wallpaper choice.
 sealed class WallpaperChoice {
   const WallpaperChoice();
 }
@@ -28,7 +28,7 @@ class ImageWallpaper extends WallpaperChoice {
   final String path;
 }
 
-/// `#rrggbb` in un colore opaco, o null.
+/// `#rrggbb` as an opaque color, or null.
 Color? parseHexColor(String text) {
   final hex = text.startsWith('#') ? text.substring(1) : text;
   if (hex.length != 6) return null;
@@ -36,7 +36,7 @@ Color? parseHexColor(String text) {
   return value == null ? null : Color(0xFF000000 | value);
 }
 
-/// La scelta dalla configurazione JSON; il predefinito se manca o non è valida.
+/// The choice from the JSON configuration; the default if missing or invalid.
 WallpaperChoice parseWallpaperChoice(String? json) {
   if (json == null) return const GeneratedWallpaper();
   try {
@@ -51,7 +51,7 @@ WallpaperChoice parseWallpaperChoice(String? json) {
       }
     }
   } on FormatException {
-    // Configurazione rovinata: il predefinito.
+    // Broken configuration: the default.
   }
   return const GeneratedWallpaper();
 }
@@ -80,8 +80,8 @@ class Wallpaper extends StatelessWidget {
   };
 }
 
-/// Crepuscolo sulle dune: cielo a gradiente con un bagliore basso, tre file di dune
-/// morbide sempre più scure verso il primo piano.
+/// Twilight over the dunes: a gradient sky with a low glow, three rows of soft dunes
+/// darker and darker towards the foreground.
 class DunesPainter extends CustomPainter {
   const DunesPainter();
 
@@ -148,7 +148,7 @@ class DunesPainter extends CustomPainter {
     }
   }
 
-  // Un'onda morbida asimmetrica (dune, non sinusoidi).
+  // A soft asymmetric wave (dunes, not sinusoids).
   static double _wave(double x) {
     final s = x - x.floorToDouble();
     final up = s < 0.65 ? s / 0.65 : (1 - s) / 0.35;

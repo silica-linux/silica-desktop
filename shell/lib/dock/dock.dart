@@ -1,6 +1,6 @@
-// Il Dock della shell: disposizione e ingrandimento da model.dart (misure in
-// plan/reference/dock.md), fondo di Liquid Glass calcolato da Ossido, icone, separatore,
-// indicatori ed etichetta disegnati qui.
+// The shell's Dock: layout and magnification from model.dart (measurements in
+// plan/reference/dock.md), Liquid Glass background computed by Ossido, icons, separator,
+// indicators and label drawn here.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -32,7 +32,7 @@ import 'stack_settings.dart';
 import 'trash_alert.dart';
 import 'model.dart';
 
-/// Il Dock con le app vere: installate (.desktop), fissate e aperte (da Ossido).
+/// The Dock with the real apps: installed (.desktop), pinned and open (from Ossido).
 class LiveDock extends StatefulWidget {
   const LiveDock({super.key});
 
@@ -44,24 +44,24 @@ class _LiveDockState extends State<LiveDock> {
   late final Map<String, DesktopEntry> _entries = loadDesktopEntries();
   late final List<String> _pinned = pinnedIds(_entries);
 
-  /// Opzioni del Dock (dock.json): ingrandimento e sezione delle app recenti (D-08).
+  /// Dock options (dock.json): magnification and the recent apps section (D-08).
   bool _magnify = dockFlag('magnify', fallback: true);
   bool _recentsOn = dockFlag('recents', fallback: false);
 
-  /// Le app aperte all'ultimo cambio e quelle chiuse da poco, dalla più recente.
+  /// The apps open at the last change and those closed recently, from the most recent.
   Set<String> _running = {};
   final List<String> _closed = [];
 
-  /// Le finestre dalla più recente (focus): un clic sull'app porta in cima l'ultima usata.
+  /// Windows from the most recent (focus): a click on the app raises the last one used.
   final List<String> _recent = [];
 
-  /// L'avviso "Svuota il Cestino" aperto.
+  /// The "Svuota il Cestino" alert is open.
   bool _confirmEmpty = false;
 
-  /// Le miniature delle finestre ridotte, chieste a Ossido alla riduzione.
+  /// The thumbnails of minimized windows, requested from Ossido when minimizing.
   final Map<String, ui.Image> _thumbnails = {};
 
-  /// Le impostazioni delle pile, per percorso della cartella.
+  /// The stack settings, by folder path.
   final Map<String, StackSettings> _stacks = loadStackSettings();
 
   StackSettings _stackOf(String folder) =>
@@ -75,8 +75,8 @@ class _LiveDockState extends State<LiveDock> {
   void _openPath(String path) =>
       ShellChannel.instance.launch('xdg-open ${shellQuote(path)}');
 
-  /// Le impostazioni di una pila come voci di menu (D-04): "Ordina per", "Mostra come",
-  /// "Visualizza contenuto come", con la spunta sulla scelta.
+  /// The settings of a stack as menu items (D-04): "Ordina per", "Mostra come",
+  /// "Visualizza contenuto come", with the check mark on the choice.
   List<MenuEntry> _stackOptions(String folder) {
     final s = _stackOf(folder);
     MenuAction pick(String label, bool checked, StackSettings next) =>
@@ -114,7 +114,7 @@ class _LiveDockState extends State<LiveDock> {
     ];
   }
 
-  /// Il menu di una cartella: le impostazioni della pila, Opzioni, Apri.
+  /// The menu of a folder: the stack settings, Options, Open.
   List<MenuEntry> _folderMenu(Item item, String folder) => [
     ..._stackOptions(folder),
     const MenuDivider(),
@@ -131,8 +131,8 @@ class _LiveDockState extends State<LiveDock> {
     MenuAction('Apri "${item.label}"', onSelected: () => _openPath(folder)),
   ];
 
-  /// La vista Elenco di una pila: un menu con un'icona piccola e il nome di ogni file, poi
-  /// Opzioni (le impostazioni della pila) e Apri (dock-stacks.md › Elenco).
+  /// The List view of a stack: a menu with a small icon and the name of every file, then
+  /// Options (the stack settings) and Open (dock-stacks.md › List).
   List<MenuEntry> _stackListMenu(Item item, List<FileSystemEntity> entries) {
     final folder = item.folder;
     if (folder == null) return const [];
@@ -198,7 +198,7 @@ class _LiveDockState extends State<LiveDock> {
   }
 
   void _changed() {
-    // Un'app che non ha più finestre entra fra le chiuse da poco.
+    // An app with no more windows joins the recently closed ones.
     final now = {
       for (final t in ShellChannel.instance.toplevels.value)
         if (_entries.values.where((e) => e.matchesAppId(t.appId)).firstOrNull
@@ -224,8 +224,8 @@ class _LiveDockState extends State<LiveDock> {
     saveDockOption(key, value);
   }
 
-  /// Il menu del separatore (D-04): le opzioni che il Dock ha. Nascondi, la posizione e
-  /// l'effetto di riduzione arrivano con quelle funzioni.
+  /// The separator menu (D-04): the options the Dock has. Hide, position and the minimize
+  /// effect arrive with those features.
   List<MenuEntry> _separatorMenu() => [
     MenuAction(
       _magnify ? 'Disattiva l\'ingrandimento' : 'Attiva l\'ingrandimento',
@@ -246,7 +246,7 @@ class _LiveDockState extends State<LiveDock> {
       ..insert(0, id);
   }
 
-  /// La finestra dell'app usata per ultima.
+  /// The window of the app used last.
   String _latest(Item item) {
     for (final id in _recent) {
       if (item.windows.contains(id)) return id;
@@ -255,8 +255,8 @@ class _LiveDockState extends State<LiveDock> {
   }
 
   void _activate(Item item) {
-    // Una finestra ridotta torna lei; un'app con tutte le finestre ridotte riporta l'ultima
-    // ridotta (D-03); un'app aperta torna in primo piano; altrimenti si avvia.
+    // A minimized window comes back itself; an app with all windows minimized brings back
+    // the last minimized (D-03); an open app comes to the front; otherwise it launches.
     final minimized = ShellChannel.instance.minimized.value;
     if (item.minimizedWindow case final window?) {
       ShellChannel.instance.activate(window);
@@ -272,8 +272,8 @@ class _LiveDockState extends State<LiveDock> {
     }
   }
 
-  /// File rilasciati da un'altra app (dock.md D-05, MU-40): sul Cestino vi finiscono, su una
-  /// pila si spostano nella cartella, su un'app si aprono con lei.
+  /// Files dropped from another app (dock.md D-05, MU-40): on the Trash they end up there, on a
+  /// stack they move into the folder, on an app they open with it.
   Future<void> _dropFiles(Item item, List<String> paths) async {
     if (item.trash) {
       await moveToTrash(paths);
@@ -281,7 +281,7 @@ class _LiveDockState extends State<LiveDock> {
       try {
         await Process.run('mv', ['--', ...paths, folder]);
       } on ProcessException {
-        // Niente mv: i file restano dove sono.
+        // No mv: the files stay where they are.
       }
     } else if (item.openFiles case final exec?) {
       final command = execWithFiles(exec, paths);
@@ -300,7 +300,7 @@ class _LiveDockState extends State<LiveDock> {
     savePinned(_pinned);
   }
 
-  /// Il menu di un'icona (dock.md, D-04): le finestre aperte, Opzioni, poi le azioni.
+  /// The menu of an icon (dock.md, D-04): the open windows, Options, then the actions.
   List<MenuEntry> _menu(Item item) {
     final shell = ShellChannel.instance;
     final toplevels = shell.toplevels.value;
@@ -314,7 +314,7 @@ class _LiveDockState extends State<LiveDock> {
     }
     if (item.kind == ItemKind.separator) return _separatorMenu();
     if (item.folder case final folder?) return _folderMenu(item, folder);
-    // Cestino: Apri; pieno anche Svuota (D-07).
+    // Trash: Open; when full also Empty (D-07).
     if (item.id == null) {
       return [
         if (item.command case final command?)
@@ -400,7 +400,7 @@ class _LiveDockState extends State<LiveDock> {
           )
         : null,
     onReorder: (order, dropped) {
-      // Le fissate nel nuovo ordine; un'app aperta lasciata cadere fra loro diventa fissata.
+      // The pinned ones in the new order; an open app dropped among them becomes pinned.
       final ids = [
         for (final item in order)
           if (item.id case final id?
@@ -417,36 +417,36 @@ class _LiveDockState extends State<LiveDock> {
   );
 }
 
-/// Colori dell'aspetto chiaro (dock.md).
+/// Colors of the light appearance (dock.md).
 const Color separatorColor = Color(0xFF484950);
 const Color indicatorColor = Color(0xFF03040B);
 const Color labelBody = Color(0xFFBDBEC3);
 
-/// Menu dell'icona (D-04): compare dopo ~575 ms di pressione (550–600 misurati), si trascina
-/// oltre 5 pt; la punta tocca ~11 pt sopra il fondo del Dock.
+/// Icon menu (D-04): it appears after ~575 ms of pressing (550–600 measured), it drags
+/// beyond 5 pt; the tip touches ~11 pt above the bottom of the Dock.
 const Duration longPressMenu = Duration(milliseconds: 575);
 const double dragThreshold = 5;
 const double menuTipAboveDock = 11;
 
-/// Spazio sopra il menu per la sua ombra quando la superficie si allunga.
+/// Room above the menu for its shadow when the surface grows.
 const double menuShadowRoom = 30;
 
-/// La regione d'input del Dock: il fondo, più quanto serve all'ingrandimento e all'isteresi.
+/// The Dock input region: the background, plus what magnification and hysteresis need.
 const double dockInputMargin = 60;
 const double dockInputAbove = 60;
 
-/// Trascinamento (D-05): il posto vuoto, lo scorrimento delle vicine (~265 ms, a S),
-/// "Rimuovi" a ~130 pt sopra la presa, dissolvenza dell'elemento tolto (~250 ms). Il
-/// puntatore conta come "nel Dock" fino a 20 pt sopra il fondo.
+/// Dragging (D-05): the empty slot, the neighbours sliding (~265 ms, S-shaped), "Rimuovi"
+/// at ~130 pt above the grab point, fade of the removed item (~250 ms). The pointer counts
+/// as "in the Dock" up to 20 pt above the bottom.
 const Duration gapSlide = Duration(milliseconds: 265);
 const double removeAbove = 130;
 const Duration removeFade = Duration(milliseconds: 250);
 const double dragInsideAbove = 20;
 
-/// Il posto vuoto dove cadrebbe l'icona trascinata.
+/// The empty slot where the dragged icon would fall.
 const Item gapItem = Item.app('');
 
-/// Un trascinamento: l'elemento preso, il punto di presa nell'icona, dove è il puntatore.
+/// A drag: the item taken, the grab point in the icon, where the pointer is.
 class _DockDrag {
   _DockDrag({
     required this.index,
@@ -468,7 +468,7 @@ class _DockDrag {
   bool remove = false;
 }
 
-/// L'elemento tolto che sfuma: icona, posizione, lato e inizio.
+/// The removed item fading out: icon, position, side and start.
 class _Ghost {
   _Ghost(this.item, this.at, this.side);
   final Item item;
@@ -477,27 +477,27 @@ class _Ghost {
   Duration elapsed = Duration.zero;
 }
 
-/// Un argomento per `sh -c`, fra apici singoli.
+/// An argument for `sh -c`, in single quotes.
 String shellQuote(String text) => "'${text.replaceAll("'", r"'\''")}'";
 
-/// Finestre ridotte nel Dock (D-08): miniatura 57 × 47 nella cella da 63, icona dell'app da
-/// 18 pt che sporge 4 pt sotto la miniatura.
+/// Minimized windows in the Dock (D-08): 57 × 47 thumbnail in the 63 cell, an 18 pt app icon
+/// sticking out 4 pt below the thumbnail.
 const double minimizedThumbWidth = 57;
 const double minimizedThumbHeight = 47;
 const double minimizedBadge = 18;
 const double minimizedBadgeBelow = 4;
 
-/// Icona premuta: scurita (stima, il valore non è misurato).
+/// Pressed icon: darkened (estimate, the value is not measured).
 const Color pressedShade = Color(0x40000000);
 const Color labelBodyTop = Color(0xFFD7D8DE);
 const Color labelBodyBottom = Color(0xFFC1C2C8);
 const Color labelBorder = Color(0xFF3C3D41);
 const Color labelText = Color(0xFF1C1C1D);
 
-/// I colori del Dock disegnati dalla shell, chiaro e scuro (dock.md: separatore `#a9aaaf`,
-/// indicatore `#e5e6eb`, etichetta `#7f8086` con la prima riga `#8e8f96` e il testo `#f9f9f9`;
-/// il bordo `#3c3d41` è uguale). Il fondo dell'etichetta in basso, in scuro, è *stimato*
-/// uguale al corpo.
+/// The Dock colors drawn by the shell, light and dark (dock.md: separator `#a9aaaf`,
+/// indicator `#e5e6eb`, label `#7f8086` with the first row `#8e8f96` and text `#f9f9f9`;
+/// the `#3c3d41` border is the same). The bottom of the label background in dark is
+/// *estimated* equal to the body.
 @immutable
 class DockColors {
   const DockColors({
@@ -544,9 +544,9 @@ class DockColors {
       : light;
 }
 
-/// Etichetta: corpo alto 27 pt (y 1325–1351), punta larga ~7 pt e alta ~3 pt, con la cima
-/// ~13 pt sopra l'icona (icona da 1367, punta a 1354), margine orizzontale ~15,5 pt, testo
-/// di ~14 pt (dalle maiuscole di 10 pt in Inter).
+/// Label: body 27 pt tall (y 1325–1351), tip ~7 pt wide and ~3 pt tall, with its top
+/// ~13 pt above the icon (icon from 1367, tip at 1354), horizontal margin ~15.5 pt, text
+/// of ~14 pt (from the 10 pt capitals in Inter).
 const double labelHeight = 27;
 const double labelTip = 3;
 const double labelTipHalfWidth = 3.5;
@@ -572,31 +572,31 @@ class Dock extends StatefulWidget {
   final List<Item> items;
   final double magnification;
 
-  /// Clic su un'app.
+  /// Click on an app.
   final void Function(Item item)? onActivate;
 
-  /// File rilasciati da un'altra app su un elemento che li accetta ([Item.acceptsFiles]).
+  /// Files dropped from another app on an item that accepts them ([Item.acceptsFiles]).
   final void Function(Item item, List<String> paths)? onDropFiles;
 
-  /// Un avviso modale sopra lo schermo (Svuota il Cestino), grande [trashAlertSize].
+  /// A modal alert above the screen (Svuota il Cestino), [trashAlertSize] large.
   final Widget? alert;
 
-  /// Un file della pila aperta, o la cartella intera ("Apri la cartella").
+  /// A file of the open stack, or the whole folder ("Apri la cartella").
   final ValueChanged<String>? onOpenPath;
 
-  /// Il menu di un elemento (clic destro, pressione lunga); null o vuoto: niente menu.
+  /// The menu of an item (right click, long press); null or empty: no menu.
   final List<MenuEntry> Function(Item item)? menuFor;
 
-  /// Le impostazioni della pila di una cartella (ordine, icona, vista); null: le predefinite.
+  /// The stack settings of a folder (order, icon, view); null: the defaults.
   final StackSettings Function(String folder)? stackSettingsFor;
 
-  /// Il menu della vista Elenco di una pila: i file, Opzioni, Apri (dock-stacks.md › Elenco).
+  /// The menu of a stack's List view: the files, Options, Open (dock-stacks.md › List).
   final List<MenuEntry> Function(Item item, List<FileSystemEntity> entries)?
   stackListMenu;
 
-  /// Trascinamento (D-05): il nuovo ordine delle app a sinistra del separatore e l'elemento
-  /// lasciato cadere (null se è stato tolto con "Rimuovi", e allora manca dall'ordine).
-  /// Null: le icone non si trascinano.
+  /// Dragging (D-05): the new order of the apps left of the separator and the item dropped
+  /// (null if it was removed with "Rimuovi", and then it is missing from the order).
+  /// Null: the icons do not drag.
   final void Function(List<Item> order, Item? dropped)? onReorder;
 
   @override
@@ -606,17 +606,17 @@ class Dock extends StatefulWidget {
 class _DockState extends State<Dock> with TickerProviderStateMixin {
   late final Ticker _ticker = createTicker(_tick);
 
-  /// L'etichetta: l'elemento a cui appartiene e la sua opacità.
+  /// The label: the item it belongs to and its opacity.
   int? _labelIndex;
   late final AnimationController _labelAnim = AnimationController(vsync: this)
     ..addListener(() => setState(() {}));
   Timer? _labelTimer;
 
-  /// Il menu aperto: l'elemento, le voci, se è nato da una pressione lunga.
+  /// The open menu: the item, the entries, whether it came from a long press.
   int? _menuIndex;
   List<MenuEntry> _menuEntries = const [];
 
-  /// I sottomenu aperti (fuori dal rettangolo del menu principale), per la regione d'input.
+  /// The open submenus (outside the main menu rectangle), for the input region.
   List<Rect> _submenuRects = const [];
   bool _menuByLongPress = false;
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
@@ -624,7 +624,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   Offset? _downAt;
   int? _downIndex;
 
-  /// Il trascinamento in corso e l'icona tolta che sfuma sul posto.
+  /// The drag in progress and the removed icon fading out in place.
   _DockDrag? _drag;
   _Ghost? _ghost;
   DateTime? _settleUntil;
@@ -638,7 +638,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   });
 
-  /// La pila aperta (D-06): l'elemento, i file, la vista e l'animazione (0 chiusa, 1 aperta).
+  /// The open stack (D-06): the item, the files, the view and the animation (0 closed, 1 open).
   int? _stackIndex;
   List<FileSystemEntity> _stackEntries = const [];
   StackView _stackView = StackView.fan;
@@ -649,17 +649,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   )..addListener(() => setState(() {}));
   final FocusNode _stackFocus = FocusNode();
 
-  /// L'altezza di partenza della superficie e lo schermo (per centrare l'avviso).
+  /// The starting height of the surface and the screen (to center the alert).
   double? _baseHeight;
   Size? _screen;
 
-  /// Dove sta la pila aperta nella superficie, per la regione d'input e i clic.
+  /// Where the open stack is in the surface, for the input region and clicks.
   Rect? _stackRect;
 
-  /// Quello che si è chiesto al layer per ultimo (regione d'input, altezza, tastiera).
+  /// What was last asked of the layer (input region, height, keyboard).
   String _layerState = '';
 
-  /// L'app premuta (icona scurita) e quelle che rimbalzano, con l'istante d'inizio.
+  /// The pressed app (darkened icon) and those bouncing, with their start time.
   int? _pressed;
   final Map<String, DateTime> _bounces = {};
   late final Ticker _bounceTicker = createTicker((_) {
@@ -669,11 +669,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   double? _pointerX;
   double _amount = 0;
   bool _inside = false;
-  // Animazione dell'entrata o dell'uscita: da dove parte e quando.
+  // Entrance or exit animation: where it starts and when.
   double _from = 0;
   Duration? _start;
 
-  /// Un trascinamento di file da un'altra app: la cella sotto, scurita come alla pressione.
+  /// A drag of files from another app: the cell under it, darkened as when pressed.
   StreamSubscription<SilicaDragEvent>? _fileDrags;
   int? _dropIndex;
 
@@ -729,7 +729,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _fileDrags = SilicaDrag.events.listen(_fileDrag);
-    // Lo schermo serve già al primo menu (la superficie lo copre per prendere il clic fuori).
+    // The screen is needed by the first menu already (the surface covers it to catch the click outside).
     LayerControl.outputSize().then((size) {
       if (mounted && size != null && _screen == null) {
         setState(() => _screen = size);
@@ -751,7 +751,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  /// L'ultimo elemento a sinistra del separatore (dove si può trascinare).
+  /// The last item left of the separator (where one can drag).
   int get _leftEnd {
     final separator = widget.items.indexWhere(
       (i) => i.kind == ItemKind.separator,
@@ -759,8 +759,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return separator < 0 ? widget.items.length : separator;
   }
 
-  /// Gli elementi da disporre: durante il trascinamento senza quello preso e, se il puntatore
-  /// è nel Dock, con un posto vuoto dove cadrebbe.
+  /// The items to lay out: while dragging without the one taken and, if the pointer is in
+  /// the Dock, with an empty slot where it would fall.
   List<Item> _displayItems(Size size) {
     final drag = _drag;
     if (drag == null || !drag.started) return widget.items;
@@ -770,7 +770,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return [...rest]..insert(slot, gapItem);
   }
 
-  /// Dove cadrebbe l'icona: il primo elemento a sinistra il cui centro è oltre il puntatore.
+  /// Where the icon would fall: the first item on the left whose center is past the pointer.
   int _dropSlot(List<Item> rest, Size size, double x) {
     final l = layout(rest, width: size.width, height: size.height);
     final end = rest.indexWhere((i) => i.kind == ItemKind.separator);
@@ -820,7 +820,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       drag.inside =
           inActiveZone(rest, p.dx, p.dy, size.height) ||
           p.dy >= size.height - bottomGap - backgroundHeight - dragInsideAbove;
-      // "Rimuovi" compare 125–135 pt sopra il punto di presa.
+      // "Rimuovi" appears 125–135 pt above the grab point.
       drag.remove = p.dy < drag.downY - removeAbove;
     });
   }
@@ -832,7 +832,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final left = rest.indexWhere((i) => i.kind == ItemKind.separator);
     final leftItems = rest.sublist(0, left < 0 ? rest.length : left);
     if (drag.remove) {
-      // Tolta: l'icona e la capsula sfumano sul posto (~250 ms), senza altri effetti.
+      // Removed: the icon and the capsule fade out in place (~250 ms), with no other effects.
       _ghost = _Ghost(drag.item, drag.pointer - drag.grab, drag.side);
       _ghostTicker.start();
       widget.onReorder?.call(leftItems, null);
@@ -848,7 +848,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     });
   }
 
-  /// Apre il menu di un elemento (D-04): l'icona resta premuta, l'etichetta sparisce.
+  /// Opens the menu of an item (D-04): the icon stays pressed, the label disappears.
   void _openMenu(int index, {required bool longPress}) {
     final entries = widget.menuFor?.call(widget.items[index]) ?? const [];
     if (entries.isEmpty) return;
@@ -875,7 +875,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   void _pointerDown(PointerDownEvent e, Layout l, Size size) {
     final p = e.localPosition;
-    // Con la pila aperta un clic fuori da lei e dalla sua icona la chiude.
+    // With the stack open a click outside it and its icon closes it.
     if (_stackIndex != null &&
         !(_stackRect?.contains(p) ?? false) &&
         itemAt(l, widget.items, p.dx) != _stackIndex) {
@@ -893,7 +893,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final rest = layout(widget.items, width: size.width, height: size.height);
     final inZone = inActiveZone(rest, p.dx, p.dy, size.height) || _inside;
     final index = inZone ? itemAt(l, widget.items, p.dx) : null;
-    // Il separatore ha il suo menu (clic destro), ma non si preme né si trascina.
+    // The separator has its menu (right click), but is neither pressed nor dragged.
     if (index == null && inZone && e.buttons & kSecondaryButton != 0) {
       final cell = cellAt(l, p.dx);
       if (cell != null && widget.items[cell].kind == ItemKind.separator) {
@@ -924,7 +924,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (_longPress != null &&
         _downAt != null &&
         (p - _downAt!).distance > dragThreshold) {
-      // Oltre 5 pt la pressione diventa trascinamento.
+      // Beyond 5 pt the press becomes a drag.
       _startDrag(p, size);
       _longPress?.cancel();
       _longPress = null;
@@ -939,7 +939,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       return;
     }
     if (_longPress != null) {
-      // Un clic: l'elemento sotto il puntatore, se è lo stesso della pressione.
+      // A click: the item under the pointer, if it is the same as at the press.
       _longPress?.cancel();
       _longPress = null;
       final index = itemAt(l, widget.items, p.dx);
@@ -948,7 +948,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       return;
     }
     if (_menuIndex != null && _menuByLongPress) {
-      // Dopo la pressione lunga: rilascio su una voce la sceglie, sull'icona chiude.
+      // After the long press: releasing on an entry chooses it, on the icon closes.
       _menuByLongPress = false;
       if (_menuContains(p)) {
         _menuKey.currentState?.pointerUp(p);
@@ -958,19 +958,19 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   }
 
-  /// Regione d'input, altezza della superficie e tastiera: solo quando cambiano.
+  /// Input region, surface height and keyboard: only when they change.
   void _syncLayer(Rect dock, Rect? menu, Rect? alert, Size size) {
     final stack = _stackIndex != null;
-    // La pila aperta occupa la superficie alta quanto lo schermo, come l'avviso.
+    // The open stack takes a surface as tall as the screen, like the alert.
     alert ??= stack ? _stackRect ?? Rect.zero : null;
     _baseHeight ??= size.height;
     final base = _baseHeight ?? size.height;
     final screen = _screen?.height;
-    // Con un menu o la pila la superficie copre lo schermo e prende tutto il puntatore: un
-    // clic fuori (sulla scrivania, su una finestra) li chiude invece di passare sotto.
+    // With a menu or the stack the surface covers the screen and takes the whole pointer: a
+    // click outside (on the desktop, on a window) closes them instead of going through.
     final catchAll = (menu != null || stack) && screen != null;
-    // Con l'avviso a tutto lo schermo; fuori da Silica, con un menu fin sopra il menu; senza,
-    // torna all'altezza di partenza.
+    // With the alert, the whole screen; outside Silica, with a menu up to the top of the menu;
+    // without, back to the starting height.
     final height = alert != null || catchAll
         ? screen ?? size.height
         : menu != null
@@ -1000,7 +1000,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   static String _key(Item item) => '${item.label}\u0000${item.command}';
 
-  /// Un salto in corso finisce a terra quando l'app ha una finestra, o dopo il limite.
+  /// A bounce in progress lands when the app has a window, or after the limit.
   void _endBounces() {
     final now = DateTime.now();
     _bounces.removeWhere((key, start) {
@@ -1022,8 +1022,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
 
-  /// I primi file di una cartella mostrata come pila, per l'icona: letti di nuovo solo quando
-  /// la cartella cambia (data di modifica) o cambia l'ordine.
+  /// The first files of a folder shown as a stack, for the icon: read again only when the
+  /// folder changes (modification time) or the order changes.
   final Map<String, (DateTime, StackSort, List<IconSource>)> _piles = {};
 
   List<IconSource>? _pileOf(Item item) {
@@ -1057,7 +1057,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final settings =
         widget.stackSettingsFor?.call(folder) ?? const StackSettings();
     final entries = stackEntries(folder, sort: settings.sort);
-    // Vista Elenco: un menu con i file; l'icona resta la cartella, premuta.
+    // List view: a menu with the files; the icon stays the folder, pressed.
     if (settings.content == StackContent.list) {
       final menu = widget.stackListMenu?.call(item, entries) ?? const [];
       if (menu.isEmpty) return;
@@ -1101,7 +1101,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   }
 
-  /// Un file della pila: la pila si chiude subito, poi il file si apre.
+  /// A file of the stack: the stack closes at once, then the file opens.
   void _openFromStack(String path) {
     _closeStack();
     widget.onOpenPath?.call(path);
@@ -1120,7 +1120,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     widget.onActivate?.call(item);
   }
 
-  /// L'etichetta segue la cella sotto il puntatore: subito da un'icona all'altra.
+  /// The label follows the cell under the pointer: immediately from one icon to the next.
   void _showLabel(int? index) {
     if (index != null) {
       _labelTimer?.cancel();
@@ -1175,7 +1175,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       amount: _amount,
       magnification: widget.magnification,
     );
-    // Si entra dalla soglia fissa; si esce solo lasciando la cella ingrandita (isteresi).
+    // Entering uses the fixed threshold; exiting only by leaving the magnified cell (hysteresis).
     final inside = _inside
         ? staysInActiveZone(
             rest,
@@ -1187,7 +1187,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           )
         : inActiveZone(rest, position.dx, position.dy, size.height);
     setState(() {
-      // L'ingrandimento segue il puntatore senza inerzia; uscendo resta l'ultima x.
+      // Magnification follows the pointer without inertia; on exit the last x stays.
       if (inside) _pointerX = position.dx;
     });
     _setInside(inside);
@@ -1215,14 +1215,14 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             !dragging && label != null && label < widget.items.length
             ? label
             : null;
-        // Durante e subito dopo il trascinamento le icone scorrono al loro posto (~265 ms).
+        // During and right after the drag the icons slide into place (~265 ms).
         final settle = _settleUntil;
         final sliding =
             dragging || (settle != null && DateTime.now().isBefore(settle));
         if (sliding && !dragging) {
           WidgetsBinding.instance.scheduleFrame();
         }
-        // La punta del menu: sopra l'icona, ~11 pt sopra il fondo del Dock (D-04).
+        // The menu tip: above the icon, ~11 pt above the bottom of the Dock (D-04).
         final menuIndex = _menuIndex;
         final tip = menuIndex == null || menuIndex >= l.cells.length
             ? null
@@ -1238,15 +1238,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   m.height + MenuMetrics.tipHeight,
                 );
               }();
-        // Fuori dal Dock (e dal menu) il puntatore va alle finestre sotto.
+        // Outside the Dock (and the menu) the pointer goes to the windows below.
         final dockRect = Rect.fromLTRB(
           bx - dockInputMargin,
           by - dockInputAbove,
           bx + bw + dockInputMargin,
           size.height,
         );
-        // L'avviso (D-07): centrato in orizzontale, la cima al ~20 % dello schermo, quando
-        // la superficie è alta quanto lo schermo.
+        // The alert (D-07): centered horizontally, the top at ~20 % of the screen, when
+        // the surface is as tall as the screen.
         final screen = _screen;
         final alert = widget.alert;
         if (alert != null && screen == null) {
@@ -1263,7 +1263,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                 trashAlertSize.width,
                 trashAlertSize.height,
               );
-        // La pila: serve lo schermo intero sopra il Dock.
+        // The stack: it needs the whole screen above the Dock.
         final stackIndex = _stackIndex;
         if (stackIndex != null && screen == null) {
           LayerControl.outputSize().then((value) {
@@ -1429,8 +1429,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  /// L'icona trascinata: a grandezza piena, opaca, agganciata al punto di presa; sopra, la
-  /// capsula "Rimuovi" quando è abbastanza in alto.
+  /// The dragged icon: full size, opaque, hooked to the grab point; above it, the "Rimuovi"
+  /// capsule when it is high enough.
   List<Widget> _dragged(_DockDrag drag) {
     final source = drag.item.icon;
     final at = drag.pointer - drag.grab;
@@ -1448,7 +1448,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     ];
   }
 
-  /// L'elemento tolto sfuma sul posto con la sua capsula.
+  /// The removed item fades out in place with its capsule.
   Widget _faded(_Ghost ghost) {
     final t = ghost.elapsed.inMicroseconds / removeFade.inMicroseconds;
     final opacity = (1 - t).clamp(0.0, 1.0);
@@ -1480,7 +1480,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  /// Una capsula come l'etichetta, con la punta in (`centerX`, `tipY`).
+  /// A capsule like the label, with its tip at (`centerX`, `tipY`).
   Widget _capsule(String text, double centerX, double tipY, double opacity) {
     final style = uiText(
       size: labelFontSize,
@@ -1509,9 +1509,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  /// Una finestra ridotta (D-08): la miniatura 57 × 47 centrata nella cella, a filo con la
-  /// cima dell'icona, con l'icona dell'app da 18 pt nell'angolo in basso a destra, 4 pt
-  /// più in basso della miniatura.
+  /// A minimized window (D-08): the 57 × 47 thumbnail centered in the cell, flush with the
+  /// top of the icon, with the 18 pt app icon in the bottom right corner, 4 pt lower than
+  /// the thumbnail.
   Widget _windowCell(
     Layout l,
     int index,
@@ -1560,7 +1560,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  /// L'icona di un'app: a livelli da silica-icons, o dal tema del sistema.
+  /// The icon of an app: layered from silica-icons, or from the system theme.
   Widget _icon(
     Layout l,
     int index,
@@ -1570,12 +1570,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     bool sliding,
   ) {
     final (x, y, side) = iconRect(l, index, height);
-    // Con la pila aperta l'icona della cartella diventa il pulsante che la chiude (D-06).
+    // With the stack open the folder icon becomes the button that closes it (D-06).
     final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
     final pile = closer == null ? _pileOf(item) : null;
     final icon = closer != null
-        // Il pulsante di chiusura segue l'aspetto (dock-stacks.md, scuro: nero traslucido
-        // sopra il Dock, chevron bianco); le icone delle app no.
+        // The close button follows the appearance (dock-stacks.md, dark: translucent black
+        // over the Dock, white chevron); app icons do not.
         ? SilicaIcon(
             LayeredSource(closer),
             side: side,
@@ -1595,7 +1595,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       top: y - _bounceOf(item),
       width: side,
       height: side,
-      // Premuta: l'icona si scurisce (D-02).
+      // Pressed: the icon darkens (D-02).
       child: !sliding && _pressed == index
           ? ColorFiltered(
               colorFilter: const ColorFilter.mode(
@@ -1610,7 +1610,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   Widget _label(Layout l, int index, double height, double opacity) {
     final (_, iconTop, _) = iconRect(l, index, height);
-    // Durante il rimbalzo l'etichetta sale con l'icona.
+    // During the bounce the label rises with the icon.
     final iconTopY = iconTop - _bounce(index);
     final tipY = iconTopY - labelGap;
     final style = uiText(
@@ -1706,8 +1706,8 @@ class _LabelPainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          // La prima riga chiara (#d7d8de) e quella sotto ancora quasi uguale (215 nella
-          // ripresa), poi il corpo.
+          // The first light row (#d7d8de) and the one below still almost the same (215 in the
+          // recording), then the body.
           colors: [
             colors.labelTop,
             colors.labelTop,

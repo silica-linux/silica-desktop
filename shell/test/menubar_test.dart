@@ -12,13 +12,13 @@ import 'package:silica_shell/system/system_status.dart';
 import 'controlcenter_test.dart' show FakeSystem;
 
 void main() {
-  test("l'orologio come nella barra: giorno, data, doppio spazio, ora", () {
+  test('the clock as in the bar: day, date, double space, time', () {
     expect(clockText(DateTime(2026, 10, 12, 22, 34)), 'Lun 12 ott  22:34');
     expect(clockText(DateTime(2026, 1, 4, 9, 5)), 'Dom 4 gen  09:05');
   });
 
   testWidgets(
-    "il nome dell'app con il focus, in grassetto, dalle voci .desktop",
+    'the name of the focused app, in bold, from the .desktop entries',
     (tester) async {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         ShellChannel.channel,
@@ -52,13 +52,13 @@ void main() {
     },
   );
 
-  test('gli archi accesi seguono l\'intensità del Wi-Fi', () {
+  test('the lit arcs follow the Wi-Fi strength', () {
     expect(wifiArcs(0.9), 3);
     expect(wifiArcs(0.5), 2);
     expect(wifiArcs(0.1), 1);
   });
 
-  testWidgets('batteria e rete dallo stato del sistema', (tester) async {
+  testWidgets('battery and network from the system state', (tester) async {
     final system = FakeSystem(
       const SystemSnapshot(
         wifiAvailable: true,
@@ -84,7 +84,7 @@ void main() {
     expect(icon(StatusKind.network).level, 0.79);
     expect(icon(StatusKind.network).dim, isFalse);
 
-    // Wi-Fi spento: l'icona resta, attenuata; via cavo: l'icona della rete cablata.
+    // Wi-Fi off: the icon stays, dimmed; wired: the wired network icon.
     system.value = system.value.copyWith(wifiEnabled: false);
     await tester.pump();
     expect(icon(StatusKind.network).dim, isTrue);
@@ -104,58 +104,57 @@ void main() {
     );
   });
 
-  testWidgets(
-    'alla pressione su Finestra si apre il menu; la scelta esegue il comando',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final executed = <String>[];
-      final layer = <String>[];
-      tester.binding.defaultBinaryMessenger
-        ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
-          if (call.method == 'execute') {
-            executed.add('${(call.arguments as Map)['id']}');
-          }
-          return null;
-        })
-        ..setMockMethodCallHandler(
-          const MethodChannel('silica/layer', JSONMethodCodec()),
-          (call) async {
-            layer.add(call.method);
-            return true;
-          },
-        );
-      await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
-        ),
+  testWidgets('pressing Finestra opens the menu; the choice runs the command', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final executed = <String>[];
+    final layer = <String>[];
+    tester.binding.defaultBinaryMessenger
+      ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+        if (call.method == 'execute') {
+          executed.add('${(call.arguments as Map)['id']}');
+        }
+        return null;
+      })
+      ..setMockMethodCallHandler(
+        const MethodChannel('silica/layer', JSONMethodCodec()),
+        (call) async {
+          layer.add(call.method);
+          return true;
+        },
       );
-      await tester.pump();
-      final finestra = tester.getRect(find.text('Finestra'));
-      await tester.tapAt(finestra.center);
-      await tester.pump();
-      expect(find.text('Riduci'), findsOneWidget);
-      // La superficie si allunga e la tastiera passa al menu.
-      expect(
-        layer,
-        containsAll(['setSize', 'setInputRegion', 'setKeyboardInteractivity']),
-      );
-      // Il corpo del menu 5 pt a sinistra della casella (che ha ~10,75 pt prima del testo).
-      final riduci = tester.getTopLeft(find.text('Riduci'));
-      expect(riduci.dx, closeTo(finestra.left - itemPadding - 5 + 17, 1));
-      await tester.tapAt(tester.getCenter(find.text('Riduci')));
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(executed, ['window.minimize']);
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('Riduci'), findsNothing);
-    },
-  );
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+      ),
+    );
+    await tester.pump();
+    final finestra = tester.getRect(find.text('Finestra'));
+    await tester.tapAt(finestra.center);
+    await tester.pump();
+    expect(find.text('Riduci'), findsOneWidget);
+    // The surface grows and the keyboard goes to the menu.
+    expect(
+      layer,
+      containsAll(['setSize', 'setInputRegion', 'setKeyboardInteractivity']),
+    );
+    // The menu body 5 pt left of the box (which has ~10.75 pt before the text).
+    final riduci = tester.getTopLeft(find.text('Riduci'));
+    expect(riduci.dx, closeTo(finestra.left - itemPadding - 5 + 17, 1));
+    await tester.tapAt(tester.getCenter(find.text('Riduci')));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(executed, ['window.minimize']);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Riduci'), findsNothing);
+  });
 
   testWidgets(
-    'pressione lunga sul pulsante verde: il popover sotto il pulsante esegue la disposizione',
+    'long press on the green button: the popover below the button runs the arrangement',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -195,13 +194,13 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('Metà dello schermo'), findsOneWidget);
-      // Il corpo sotto la punta: 8 pt sotto il vertice, 27 a sinistra.
+      // The body below the tip: 8 pt below the apex, 27 to the left.
       final panel = tester.getRect(find.byType(MenuPanel));
       expect(panel.top, 208);
       expect(panel.left, 273);
       expect(panel.width, windowMenuWidth);
       await tester.tap(find.byKey(const ValueKey('window.tile_left')));
-      // Lampeggio e dissolvenza della chiusura (~380 ms).
+      // Blink and fade of the closing (~380 ms).
       for (var i = 0; i < 12; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
@@ -211,7 +210,7 @@ void main() {
   );
 
   testWidgets(
-    'capsule sull\'icona dei controlli e sull\'orologio a Centri aperti',
+    'capsules on the controls icon and on the clock with the Centers open',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 400);
       tester.view.devicePixelRatio = 1;
@@ -235,8 +234,8 @@ void main() {
             ),
             (_) {},
           );
-      const controls = ValueKey('capsula del Centro di controllo');
-      const clock = ValueKey("capsula dell'orologio");
+      const controls = ValueKey('control center capsule');
+      const clock = ValueKey('clock capsule');
       expect(find.byKey(controls), findsNothing);
       await announce('controlcenter.open', '1');
       await tester.pump();

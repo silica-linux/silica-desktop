@@ -5,7 +5,7 @@ import 'package:silica_shell/system/media.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('NowPlaying dalle proprietà MPRIS', () {
+  test('NowPlaying from the MPRIS properties', () {
     final now = NowPlaying.fromProperties('org.mpris.MediaPlayer2.vlc', {
       'PlaybackStatus': 'Playing',
       'Metadata': {
@@ -23,7 +23,7 @@ void main() {
     expect(now.canPrevious, isFalse);
   });
 
-  test('sceglie il lettore che suona e lo comanda', () async {
+  test('picks the player that is playing and controls it', () async {
     final calls = <String>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(DBus.channel, (call) async {
@@ -59,7 +59,7 @@ void main() {
     expect(calls, contains('PlayPause org.mpris.MediaPlayer2.musica'));
   });
 
-  test('senza bus: nessun lettore, nessuna eccezione', () async {
+  test('without a bus: no player, no exception', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(DBus.channel, null);
     final players = MediaPlayers();

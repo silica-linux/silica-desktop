@@ -1,16 +1,16 @@
-// Il canale silica/dbus dell'embedder: chiamate D-Bus e segnali con valori JSON
-// (crates/embedder/src/dbus). I valori vanno con la firma degli argomenti; le risposte
-// arrivano come liste di argomenti (strutture come liste, dizionari come mappe).
+// The embedder's silica/dbus channel: D-Bus calls and signals with JSON values
+// (crates/embedder/src/dbus). Values go with the argument signature; replies arrive as
+// argument lists (structs as lists, dictionaries as maps).
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Un bus D-Bus.
+/// A D-Bus bus.
 enum DBusBus { session, system }
 
-/// Un segnale ricevuto.
+/// A received signal.
 @immutable
 class DBusSignal {
   const DBusSignal({
@@ -45,8 +45,8 @@ class DBus {
 
   final Map<int, StreamController<DBusSignal>> _subscriptions = {};
 
-  /// Chiama un metodo; restituisce gli argomenti della risposta. Un errore D-Bus è una
-  /// [PlatformException] con il nome dell'errore come `code`.
+  /// Calls a method; returns the reply arguments. A D-Bus error is a
+  /// [PlatformException] with the error name as `code`.
   Future<List<Object?>> call({
     DBusBus bus = DBusBus.session,
     required String destination,
@@ -68,7 +68,7 @@ class DBus {
     return reply ?? const [];
   }
 
-  /// Una proprietà (`org.freedesktop.DBus.Properties.Get`).
+  /// A property (`org.freedesktop.DBus.Properties.Get`).
   Future<Object?> getProperty({
     DBusBus bus = DBusBus.session,
     required String destination,
@@ -88,7 +88,7 @@ class DBus {
     return reply.isEmpty ? null : reply.first;
   }
 
-  /// Tutte le proprietà di un'interfaccia (`org.freedesktop.DBus.Properties.GetAll`).
+  /// All properties of an interface (`org.freedesktop.DBus.Properties.GetAll`).
   Future<Map<String, Object?>> getAll({
     DBusBus bus = DBusBus.session,
     required String destination,
@@ -108,8 +108,8 @@ class DBus {
     return first is Map ? first.cast<String, Object?>() : const {};
   }
 
-  /// I segnali che corrispondono ai filtri. L'iscrizione sul bus si chiude quando
-  /// l'ultimo ascoltatore cancella la sottoscrizione dello stream.
+  /// The signals matching the filters. The bus match is removed when the last
+  /// listener cancels its stream subscription.
   Stream<DBusSignal> signals({
     DBusBus bus = DBusBus.session,
     String? sender,
@@ -134,7 +134,7 @@ class DBus {
           await controller.close();
           return;
         } on MissingPluginException catch (error, stack) {
-          // Fuori da Silica (test, altro embedder): nessun segnale.
+          // Outside Silica (tests, another embedder): no signals.
           controller.addError(error, stack);
           await controller.close();
           return;
@@ -154,7 +154,7 @@ class DBus {
         try {
           await channel.invokeMethod<bool>('unsubscribe', {'id': subscribed});
         } on PlatformException {
-          // L'iscrizione è già chiusa.
+          // The match is already removed.
         }
       },
     );

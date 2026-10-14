@@ -1,9 +1,9 @@
-// L'uscita forzata (⌘⌥⎋, plan/reference/screenshot-ui.md): un pannello 370 × 310 al centro,
-// con la barra e i pulsanti della finestra (la riduzione disattivata), due righe di
-// spiegazione, l'elenco delle app aperte (313 pt di larghezza utile, righe da 22, icona 18 a
-// +8, nome a +28; l'app in primo piano già scelta), un aiuto piccolo in basso a sinistra e il
-// pulsante blu in basso a destra (115 × 30). Il pulsante termina l'app con `app.force_quit`.
-// I testi sono nostri; la posizione del riferimento era ricordata, qui si centra.
+// Force quit (⌘⌥⎋, plan/reference/screenshot-ui.md): a 370 × 310 panel in the center,
+// with the bar and the window buttons (minimize disabled), two lines of explanation, the
+// list of open apps (313 pt usable width, 22 pt rows, 18 pt icon at +8, name at +28; the
+// frontmost app already chosen), a small help text at the bottom left and the blue button
+// at the bottom right (115 × 30). The button kills the app with `app.force_quit`.
+// The texts are our own; the reference position was remembered, here it is centered.
 
 import 'dart:async';
 
@@ -23,12 +23,12 @@ const double forceQuitRow = 22;
 const Rect forceQuitButton = Rect.fromLTWH(240, 265, 115, 30);
 const Color forceQuitBlue = Color(0xFF0A62E0);
 
-/// I colori del pannello. Scuro misurato (screenshot-ui.md › K-06): fondo `#272727` con la
-/// barra `#2f2f2f`, filo di 1 pt `#060606` fuori e `#3d3d3d` dentro, titolo `#9e9e9e` (finestra
-/// non chiave), testi e nomi `#dedede`, elenco sul fondo del pannello con filo `#353535`, riga
-/// scelta sRGB `#0059d1`, pulsante sRGB `#007aff`, ombra scura di ~50 pt. Restano *stimati*
-/// in scuro il pulsante disattivato (mai visto: c'è sempre una riga scelta) e la riduzione
-/// disattivata (windows.md `#4d4d4d`).
+/// The panel colors. Dark measured (screenshot-ui.md › K-06): background `#272727` with the
+/// bar `#2f2f2f`, 1 pt rim `#060606` outside and `#3d3d3d` inside, title `#9e9e9e` (non-key
+/// window), texts and names `#dedede`, list on the panel background with a `#353535` rim,
+/// chosen row sRGB `#0059d1`, button sRGB `#007aff`, a dark shadow of ~50 pt. Still *estimated*
+/// in dark: the disabled button (never seen: a row is always chosen) and the disabled
+/// minimize button (windows.md `#4d4d4d`).
 @immutable
 class ForceQuitColors {
   const ForceQuitColors({
@@ -51,10 +51,10 @@ class ForceQuitColors {
 
   final Color fill;
 
-  /// La fascia della barra del titolo (in chiaro uguale al fondo).
+  /// The title bar band (in light the same as the background).
   final Color bar;
 
-  /// Il filo attorno al pannello, fuori e dentro (null: nessuno).
+  /// The rim around the panel, outside and inside (null: none).
   final Color? borderOuter;
   final Color? borderInner;
   final Color button;
@@ -102,7 +102,7 @@ class ForceQuitColors {
     disabledButton: Color(0xFF2F2F30),
     disabledButtonText: Color(0xFF626263),
     minimize: Color(0xFF4D4D4D),
-    // Sotto: −69 livelli a 1 pt, −50 a 13, −30 a 25, −14 a 37, −5 a 49 (su `#7a7b80`).
+    // Below: −69 levels at 1 pt, −50 at 13, −30 at 25, −14 at 37, −5 at 49 (over `#7a7b80`).
     shadow: Color(0xE6000000),
   );
 
@@ -112,7 +112,7 @@ class ForceQuitColors {
       : light;
 }
 
-/// Un'app aperta nell'elenco.
+/// An open app in the list.
 class ForceQuitApp {
   const ForceQuitApp(this.appId, this.name, this.icon);
   final String appId;
@@ -156,7 +156,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
     if (_open) setState(() {});
   }
 
-  /// Le app aperte, per nome, una volta ciascuna.
+  /// The open apps, by name, once each.
   List<ForceQuitApp> _apps() {
     final seen = <String>{};
     final apps = <ForceQuitApp>[];
@@ -186,7 +186,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
   }
 
   void _show() {
-    // Scelta: l'app in primo piano.
+    // Chosen: the frontmost app.
     final focused = ShellChannel.instance.focused.value;
     final top = ShellChannel.instance.toplevels.value
         .where((t) => t.id == focused)
@@ -228,7 +228,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
       },
       child: Center(
         child: Container(
-          key: const ValueKey('uscita forzata'),
+          key: const ValueKey('force quit'),
           width: forceQuitSize.width,
           height: forceQuitSize.height,
           decoration: BoxDecoration(
@@ -253,7 +253,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
           ),
           child: Stack(
             children: [
-              // La barra del titolo (in scuro più chiara del fondo) e il filo interno.
+              // The title bar (in dark lighter than the background) and the inner rim.
               Positioned(
                 left: 0,
                 right: 0,
@@ -277,7 +277,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                     ),
                   ),
                 ),
-              // I pulsanti della finestra: chiudi, riduci disattivato, schermo intero.
+              // The window buttons: close, minimize disabled, full screen.
               for (final (x, color) in [
                 (26.0, const Color(0xFFFF5F57)),
                 (49.0, c.minimize),
@@ -298,7 +298,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                     ),
                   ),
                 ),
-              // Il titolo: semibold ~13 (maiuscole di 9 pt), `#595959`, da x 85.
+              // The title: semibold ~13 (9 pt capitals), `#595959`, from x 85.
               Positioned(
                 left: 85,
                 right: 20,
@@ -347,7 +347,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
               Positioned.fromRect(
                 rect: forceQuitButton,
                 child: GestureDetector(
-                  key: const ValueKey('termina'),
+                  key: const ValueKey('force quit button'),
                   onTap: _chosen == null ? null : _quit,
                   child: Container(
                     decoration: BoxDecoration(

@@ -1,6 +1,6 @@
-// Gli elementi del Dock: le app fissate (~/.config/silica/dock.json), poi quelle aperte
-// e non fissate, il separatore, la cartella Download e il cestino. Le finestre aperte
-// arrivano da Ossido (ShellChannel).
+// The Dock items: the pinned apps (~/.config/silica/dock.json), then the open ones that are
+// not pinned, the separator, the Download folder and the trash. The open windows come from
+// Ossido (ShellChannel).
 
 import 'dart:convert';
 import 'dart:io';
@@ -19,7 +19,7 @@ File _dockConfig(Map<String, String>? env) {
   return File('$config/silica/dock.json');
 }
 
-/// La configurazione del Dock ($XDG_CONFIG_HOME/silica/dock.json, di solito ~/.config):
+/// The Dock configuration ($XDG_CONFIG_HOME/silica/dock.json, usually ~/.config):
 /// `pinned`, `magnify`, `recents`.
 Map<String, Object?> readDockConfig({Map<String, String>? env}) {
   final file = _dockConfig(env);
@@ -32,12 +32,12 @@ Map<String, Object?> readDockConfig({Map<String, String>? env}) {
   } on FileSystemException {
     return {};
   } on FormatException {
-    // Configurazione rovinata: le predefinite.
+    // Broken configuration: the defaults.
     return {};
   }
 }
 
-/// Cambia una chiave della configurazione lasciando le altre.
+/// Changes one key of the configuration leaving the others.
 void saveDockOption(String key, Object? value, {Map<String, String>? env}) {
   final file = _dockConfig(env);
   final config = readDockConfig(env: env)..[key] = value;
@@ -45,21 +45,21 @@ void saveDockOption(String key, Object? value, {Map<String, String>? env}) {
     file.parent.createSync(recursive: true);
     file.writeAsStringSync(jsonEncode(config));
   } on FileSystemException {
-    // Senza configurazione scrivibile la scelta vale fino alla fine della sessione.
+    // Without a writable configuration the choice lasts until the end of the session.
   }
 }
 
-/// Un'opzione sì/no del Dock.
+/// A yes/no Dock option.
 bool dockFlag(String key, {required bool fallback, Map<String, String>? env}) {
   final value = readDockConfig(env: env)[key];
   return value is bool ? value : fallback;
 }
 
-/// Salva le app fissate ("Mantieni nel Dock" e "Rimuovi").
+/// Saves the pinned apps ("Mantieni nel Dock" and "Rimuovi").
 void savePinned(List<String> ids, {Map<String, String>? env}) =>
     saveDockOption('pinned', ids, env: env);
 
-/// App fissate quando manca la configurazione: le prime installate di questo elenco.
+/// Apps pinned when the configuration is missing: the first installed ones of this list.
 const List<List<String>> defaultPinned = [
   ['dev.frascella.Mustache', 'org.gnome.Nautilus'],
   [
@@ -77,10 +77,10 @@ const List<List<String>> defaultPinned = [
   ['org.gnome.Settings', 'gnome-control-center'],
 ];
 
-/// Quante app chiuse di recente stanno nella sezione delle recenti (D-08: 3 osservate).
+/// How many recently closed apps the recents section holds (D-08: 3 observed).
 const int recentAppsMax = 3;
 
-/// Le app fissate: dalla configurazione, o dall'elenco predefinito.
+/// The pinned apps: from the configuration, or from the default list.
 List<String> pinnedIds(
   Map<String, DesktopEntry> entries, {
   Map<String, String>? env,
@@ -109,7 +109,7 @@ Item _appItem(
   pinned: pinned,
 );
 
-/// Gli elementi del Dock per queste app e queste finestre.
+/// The Dock items for these apps and these windows.
 List<Item> dockItems(
   Map<String, DesktopEntry> entries,
   List<String> pinned,
@@ -130,11 +130,11 @@ List<Item> dockItems(
     items.add(_appItem(entry, windowsOf(entry), pinned: true));
     shown.add(id);
   }
-  // Con le app recenti (D-08) un secondo separatore dopo le fissate: fra i due le app aperte
-  // non fissate, poi le ultime chiuse finché la sezione ne ha 3.
+  // With recent apps (D-08) a second separator after the pinned ones: between the two the
+  // open apps that are not pinned, then the last closed ones until the section has 3.
   final recentSection = recents != null;
   final before = items.length;
-  // App aperte e non fissate, nell'ordine in cui sono comparse.
+  // Open apps that are not pinned, in the order they appeared.
   for (final window in toplevels) {
     final entry = entries.values
         .where((e) => e.matchesAppId(window.appId))
@@ -163,7 +163,7 @@ List<Item> dockItems(
       layered: findSilicaIcon('folder'),
       command: 'xdg-open "$home/Download" || xdg-open "$home/Downloads"',
     ),
-    // Le finestre ridotte, dalla prima ridotta, prima del Cestino (D-08).
+    // The minimized windows, from the first minimized, before the Trash (D-08).
     for (final id in minimized)
       if (toplevels.where((t) => t.id == id).firstOrNull case final window?)
         _windowItem(window, entries, thumbnails[id]),
@@ -194,10 +194,10 @@ Item _windowItem(
   );
 }
 
-/// La cartella dei download: quella di xdg-user-dirs, altrimenti ~/Download o ~/Downloads.
+/// The downloads folder: the xdg-user-dirs one, otherwise ~/Download or ~/Downloads.
 String downloadDir(String home, {Map<String, String>? env}) {
   try {
-    // xdg-user-dirs: in $XDG_CONFIG_HOME, se c'è.
+    // xdg-user-dirs: in $XDG_CONFIG_HOME, if there.
     final config =
         (env ?? Platform.environment)['XDG_CONFIG_HOME'] ?? '$home/.config';
     final dirs = File('$config/user-dirs.dirs');
@@ -213,7 +213,7 @@ String downloadDir(String home, {Map<String, String>? env}) {
       }
     }
   } on FileSystemException {
-    // Si prova con i nomi soliti.
+    // Try the usual names.
   }
   for (final name in ['Download', 'Downloads', 'Scaricati']) {
     if (Directory('$home/$name').existsSync()) return '$home/$name';
@@ -221,7 +221,7 @@ String downloadDir(String home, {Map<String, String>? env}) {
   return '$home/Download';
 }
 
-/// Il cestino dell'utente contiene qualcosa (specifica freedesktop Trash).
+/// The user's trash contains something (freedesktop Trash specification).
 bool trashHasFiles(String home) {
   try {
     final files = Directory('$home/.local/share/Trash/files');

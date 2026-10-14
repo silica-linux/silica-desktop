@@ -1,5 +1,5 @@
-// I glifi del Centro di controllo, disegnati in codice (nessun asset): Wi-Fi, Bluetooth,
-// luna (Non disturbare), batteria, sole e altoparlante agli estremi dei cursori.
+// The Control Center glyphs, drawn in code (no assets): Wi-Fi, Bluetooth, moon (Do Not
+// Disturb), battery, sun and speaker at the ends of the sliders.
 
 import 'dart:math' as math;
 
@@ -29,7 +29,7 @@ class Glyph extends StatelessWidget {
   final Color color;
   final double size;
 
-  /// Livello per la batteria (0–1).
+  /// Level for the battery (0–1).
   final double level;
 
   @override
@@ -59,7 +59,7 @@ class _GlyphPainter extends CustomPainter {
     final fill = Paint()..color = color;
     switch (kind) {
       case GlyphKind.wifi:
-        // Tre archi e un punto, ~20 × 15 pt sul disco da 36 (controlcenter.md).
+        // Three arcs and a dot, ~20 × 15 pt on the 36 disc (controlcenter.md).
         final base = c + Offset(0, 6 * s);
         for (final r in [4.5, 8.5, 12.5]) {
           canvas.drawArc(
@@ -72,7 +72,7 @@ class _GlyphPainter extends CustomPainter {
         }
         canvas.drawCircle(base, 1.8 * s, fill);
       case GlyphKind.bluetooth:
-        // La runa: 11 × 18 pt.
+        // The rune: 11 × 18 pt.
         final path = Path()
           ..moveTo(c.dx - 4.5 * s, c.dy - 4.5 * s)
           ..lineTo(c.dx + 4.5 * s, c.dy + 4.5 * s)

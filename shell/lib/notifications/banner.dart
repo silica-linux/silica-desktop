@@ -1,15 +1,15 @@
-// Un banner di notifica, dall'entrata all'uscita (plan/reference/notifications.md,
-// "Comportamenti", sessione 8):
-// - entra da destra scorrendo (~400 ms), in dissolvenza (~210 ms) e sfocato, a fuoco mentre
-//   rallenta;
-// - resta ~5 s dalla comparsa; con il puntatore sopra non scade, e se ne va ~1,1 s dopo che il
-//   puntatore esce; le notifiche critiche restano;
-// - al passaggio del puntatore compaiono la × sull'angolo in alto a sinistra e la capsula
-//   "Dettagli" a destra (il testo si accorcia);
-// - trascinato verso destra segue il puntatore 1:1 e al rilascio esce comunque, senza aprire
-//   l'app; un clic apre l'app (azione `default`);
-// - esce verso destra in ~190 ms, in dissolvenza fino a metà e sfocandosi. Quando arriva una
-//   notifica nuova il banner corrente esce mentre il nuovo entra.
+// A notification banner, from entering to leaving (plan/reference/notifications.md,
+// "Behaviors", session 8):
+// - it slides in from the right (~400 ms), fading in (~210 ms) and blurred, sharpening as it
+//   slows down;
+// - it stays ~5 s from appearing; with the pointer over it it does not expire, and it leaves
+//   ~1.1 s after the pointer exits; critical notifications stay;
+// - on hover the × appears on the top left corner and the "Dettagli" capsule on the right
+//   (the text shortens);
+// - dragged to the right it follows the pointer 1:1 and on release it leaves anyway, without
+//   opening the app; a click opens the app (`default` action);
+// - it leaves to the right in ~190 ms, fading out halfway and blurring. When a new
+//   notification arrives the current banner leaves while the new one enters.
 
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -32,19 +32,19 @@ class BannerSlot extends StatefulWidget {
 
   final ShellNotification notification;
 
-  /// Sostituito da un banner più recente: esce subito.
+  /// Replaced by a more recent banner: it leaves at once.
   final bool leaving;
 
-  /// L'uscita è finita: il banner si toglie.
+  /// The exit is over: the banner is removed.
   final VoidCallback onGone;
 
-  /// Clic sul banner.
+  /// Click on the banner.
   final VoidCallback onActivate;
 
-  /// Clic sulla ×.
+  /// Click on the ×.
   final VoidCallback onDismiss;
 
-  /// Il puntatore entra o esce (per la regione d'input).
+  /// The pointer enters or exits (for the input region).
   final ValueChanged<bool>? onHover;
 
   @override
@@ -97,7 +97,7 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
     _timer = Timer(after, _leave);
   }
 
-  /// Esce verso destra dalla posizione in cui si trova (anche trascinato).
+  /// Leaves to the right from where it is (even when dragged).
   void leave() => _leave();
 
   Future<void> _leave() async {

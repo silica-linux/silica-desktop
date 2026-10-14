@@ -1,7 +1,7 @@
-// I lettori multimediali sul bus di sessione (MPRIS, `org.mpris.MediaPlayer2.*`): il modulo
-// multimediale del Centro di controllo mostra quello che suona (o il primo) e lo comanda con
-// PlayPause, Previous e Next. Si aggiorna con PropertiesChanged e con i lettori che
-// compaiono o se ne vanno (NameOwnerChanged).
+// The media players on the session bus (MPRIS, `org.mpris.MediaPlayer2.*`): the media
+// module of the Control Center shows the one playing (or the first) and controls it with
+// PlayPause, Previous and Next. It updates with PropertiesChanged and with players that
+// appear or go away (NameOwnerChanged).
 
 import 'dart:async';
 
@@ -14,7 +14,7 @@ const String mprisPrefix = 'org.mpris.MediaPlayer2.';
 const String mprisPath = '/org/mpris/MediaPlayer2';
 const String mprisPlayer = 'org.mpris.MediaPlayer2.Player';
 
-/// Quello che suona ora.
+/// What is playing now.
 @immutable
 class NowPlaying {
   const NowPlaying({
@@ -27,18 +27,18 @@ class NowPlaying {
     this.canNext = false,
   });
 
-  /// Il nome sul bus (`org.mpris.MediaPlayer2.…`).
+  /// The name on the bus (`org.mpris.MediaPlayer2.…`).
   final String player;
   final String title;
   final String artist;
 
-  /// La copertina (`mpris:artUrl`); solo `file://` si disegna.
+  /// The cover (`mpris:artUrl`); only `file://` is drawn.
   final String artUrl;
   final bool playing;
   final bool canPrevious;
   final bool canNext;
 
-  /// Dalle proprietà di `org.mpris.MediaPlayer2.Player`.
+  /// From the properties of `org.mpris.MediaPlayer2.Player`.
   static NowPlaying fromProperties(String player, Map<String, Object?> props) {
     final metadata = props['Metadata'];
     final meta = metadata is Map ? metadata : const {};
@@ -69,10 +69,10 @@ class MediaPlayers extends ChangeNotifier {
   final List<StreamSubscription<DBusSignal>> _signals = [];
   bool _started = false;
 
-  /// Il lettore mostrato: quello che suona, altrimenti il primo; null se non ce ne sono.
+  /// The player shown: the one playing, otherwise the first; null if there are none.
   NowPlaying? get now => _now;
 
-  /// Comincia a seguire i lettori (una volta).
+  /// Starts following the players (once).
   void start() {
     if (_started) return;
     _started = true;
@@ -101,7 +101,7 @@ class MediaPlayers extends ChangeNotifier {
     refresh();
   }
 
-  /// Rilegge i lettori e le loro proprietà.
+  /// Re-reads the players and their properties.
   Future<void> refresh() async {
     try {
       final reply = await _dbus.call(
@@ -124,14 +124,14 @@ class MediaPlayers extends ChangeNotifier {
           );
           players.add(NowPlaying.fromProperties(name, props));
         } on PlatformException {
-          // Un lettore che non risponde: si salta.
+          // A player that does not answer: skipped.
         }
       }
       _set(players.where((p) => p.playing).firstOrNull ?? players.firstOrNull);
     } on PlatformException {
       _set(null);
     } on MissingPluginException {
-      // Fuori da Silica: nessun bus.
+      // Outside Silica: no bus.
       _set(null);
     }
   }
@@ -162,7 +162,7 @@ class MediaPlayers extends ChangeNotifier {
         method: method,
       );
     } on PlatformException {
-      // Il lettore se n'è andato: lo dirà NameOwnerChanged.
+      // The player went away: NameOwnerChanged will say so.
     }
     await refresh();
   }

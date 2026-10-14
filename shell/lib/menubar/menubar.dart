@@ -1,7 +1,7 @@
-// La barra dei menu, da plan/reference/menubar.md (identica in chiaro e in scuro): alta
-// 30 pt, senza fondo (il gradiente che comprime le luci sotto di lei lo fa Ossido), testo
-// bianco in Inter 13 pt con la linea di base a y 19, nome dell'app in grassetto, area di
-// stato e orologio in bianco al 90 %.
+// The menu bar, from plan/reference/menubar.md (identical in light and dark): 30 pt tall,
+// with no background (the gradient that compresses the lights under it is done by Ossido),
+// white text in Inter 13 pt with the baseline at y 19, app name in bold, status area and
+// clock in white at 90 %.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -20,40 +20,40 @@ import 'window_menu.dart';
 const double barHeight = 30;
 const double fontSize = 13;
 
-/// Linea di base del testo: y 19,0.
+/// Text baseline: y 19.0.
 const double baseline = 19;
 
-/// Casella del logo: x 10, larga 34 pt; le caselle si sovrappongono di 1 pt.
+/// Logo box: x 10, 34 pt wide; boxes overlap by 1 pt.
 const double logoLeft = 10;
 const double logoCell = 34;
 
-/// Spazio attorno al testo di una voce: casella = testo + ~21,5 pt (~10,75 per lato).
+/// Space around the text of an item: box = text + ~21.5 pt (~10.75 per side).
 const double itemPadding = 10.75;
 
-/// Orologio: il testo finisce 20 pt prima del bordo destro; 16 pt fra il Centro di
-/// controllo e l'orologio; 7 pt fra le caselle delle icone.
+/// Clock: the text ends 20 pt before the right edge; 16 pt between the Control Center and
+/// the clock; 7 pt between the icon boxes.
 const double clockRightMargin = 20;
 const double clockGap = 16;
 const double statusGap = 7;
 
 const Color itemColor = Color(0xFFFFFFFF);
 
-/// Menu aperto (menubar.md): corpo 5 pt a sinistra della casella della voce, 1 pt sotto la
-/// barra; la voce ha una capsula alta 24, 3,5 pt oltre la casella per lato (`#7e7f84` su
-/// `#6f7075`: bianco al ~10 %). Passando su un'altra voce il menu cambia dopo ~85 ms.
+/// Open menu (menubar.md): body 5 pt left of the item's box, 1 pt below the bar; the item
+/// has a capsule 24 tall, 3.5 pt beyond the box per side (`#7e7f84` over `#6f7075`: white
+/// at ~10 %). Moving onto another item the menu changes after ~85 ms.
 const double menuLeftOfItem = 5;
 const double capsuleHeight = 24;
 const double capsuleOutset = 3.5;
 const Color capsuleFill = Color(0x1AFFFFFF);
 const Duration menuSwitchDelay = Duration(milliseconds: 85);
 
-/// Spazio sotto il menu per la sua ombra, quando la superficie si allunga.
+/// Room below the menu for its shadow, when the surface grows.
 const double menuShadowRoom = 40;
 
-/// Bianco al 90 % (icone di stato e orologio: 241 su 112).
+/// White at 90 % (status icons and clock: 241 over 112).
 const Color statusColor = Color(0xE6FFFFFF);
 
-/// Le voci dei menu dell'app finché il menu globale non arriva (M7): generiche.
+/// The app menu items until the global menu arrives (M7): generic.
 const List<String> genericMenus = [
   'File',
   'Modifica',
@@ -78,9 +78,9 @@ const List<String> months = [
   'dic',
 ];
 
-/// Data e ora come nella barra: "Lun 12 ott  22:15" (doppio spazio fra data e ora).
-/// La capsula sull'icona del Centro di controllo aperto: 46 × 24, appena più chiara della
-/// barra (`#727478` su `#6f7075`, controlcenter.md).
+/// Date and time as in the bar: "Lun 12 ott  22:15" (double space between date and time).
+/// The capsule on the icon of the open Control Center: 46 × 24, just lighter than the bar
+/// (`#727478` over `#6f7075`, controlcenter.md).
 const Size controlsCapsule = Size(46, 24);
 const Color controlsCapsuleFill = Color(0x05FFFFFF);
 
@@ -101,22 +101,22 @@ class MenuBar extends StatefulWidget {
     this.now,
   });
 
-  /// Le app installate, per il nome dell'app con il focus.
+  /// The installed apps, for the name of the focused app.
   final Map<String, DesktopEntry>? entries;
 
-  /// Clic sull'icona di Faro.
+  /// Click on the Faro icon.
   final VoidCallback? onSearch;
 
-  /// Clic sull'orologio: il Centro notifiche.
+  /// Click on the clock: the Notification Center.
   final VoidCallback? onClock;
 
-  /// Clic sull'icona dei controlli: il Centro di controllo.
+  /// Click on the controls icon: the Control Center.
   final VoidCallback? onControls;
 
-  /// Stato del sistema: Wi-Fi o rete via cavo, batteria.
+  /// System state: Wi-Fi or wired network, battery.
   final SystemSource? system;
 
-  /// Orologio fisso (test).
+  /// Fixed clock (tests).
   final DateTime? now;
 
   @override
@@ -126,7 +126,7 @@ class MenuBar extends StatefulWidget {
 class _MenuBarState extends State<MenuBar> {
   Timer? _timer;
 
-  /// Il menu aperto (`logo`, `app` o il nome della voce) e i rettangoli delle voci.
+  /// The open menu (`logo`, `app` or the item name) and the item rectangles.
   String? _open;
   final Map<String, GlobalKey> _itemKeys = {};
   final GlobalKey _rootKey = GlobalKey();
@@ -141,7 +141,7 @@ class _MenuBarState extends State<MenuBar> {
   List<MenuEntry> _entries(String name) =>
       barMenu(name, _appName, (id) => ShellChannel.instance.execute(id));
 
-  /// Il rettangolo di una voce della barra (la sua casella), nella superficie.
+  /// The rectangle of a bar item (its box), in the surface.
   Rect? _rectOf(String name) {
     final box = _itemKeys[name]?.currentContext?.findRenderObject();
     final root = _rootKey.currentContext?.findRenderObject();
@@ -157,8 +157,8 @@ class _MenuBarState extends State<MenuBar> {
     return null;
   }
 
-  /// Apre un menu sotto la sua voce: il corpo 5 pt a sinistra della casella, 1 pt sotto la
-  /// barra. La superficie si allunga fino al menu e alla sua ombra.
+  /// Opens a menu below its item: the body 5 pt left of the box, 1 pt below the bar. The
+  /// surface grows down to the menu and its shadow.
   void _openMenu(String name) {
     final entries = _entries(name);
     final rect = _rectOf(name);
@@ -184,7 +184,7 @@ class _MenuBarState extends State<MenuBar> {
     LayerControl.size(0, barHeight);
   }
 
-  /// → e ←: il menu accanto (solo quelli con voci).
+  /// → and ←: the neighbouring menu (only those with items).
   void _neighbour(int delta) {
     final withMenu = [
       for (final name in _menuNames)
@@ -198,7 +198,7 @@ class _MenuBarState extends State<MenuBar> {
   void _pointerDown(PointerDownEvent e) {
     final item = _itemAt(e.localPosition);
     if (item != null && _entries(item).isNotEmpty) {
-      // Il menu si apre alla pressione; sulla voce già aperta si chiude.
+      // The menu opens on press; on the item already open it closes.
       item == _open ? _menuKey.currentState?.close() : _openMenu(item);
       return;
     }
@@ -207,7 +207,7 @@ class _MenuBarState extends State<MenuBar> {
 
   void _pointerMoved(Offset p) {
     if (_open == null) return;
-    // Con un menu aperto, passando su un'altra voce il menu cambia dopo ~85 ms.
+    // With a menu open, moving onto another item the menu changes after ~85 ms.
     final item = _itemAt(p);
     if (item != null && item != _open && _entries(item).isNotEmpty) {
       _switchTimer?.cancel();
@@ -234,9 +234,9 @@ class _MenuBarState extends State<MenuBar> {
     );
   }
 
-  /// Il popover di disposizione di una finestra (pressione lunga sul pulsante verde): la
-  /// punta nel punto indicato da Ossido. Finché è aperto la superficie copre lo schermo e
-  /// prende tutti i clic: uno fuori lo chiude (come nel riferimento, nel documento).
+  /// The arrangement popover of a window (long press on the green button): the tip at the
+  /// point given by Ossido. While it is open the surface covers the screen and takes all
+  /// clicks: one outside closes it (as in the reference, in the document).
   StreamSubscription<({String id, Offset tip})>? _windowMenus;
   Offset? _windowMenuTip;
 
@@ -258,7 +258,7 @@ class _MenuBarState extends State<MenuBar> {
     LayerControl.size(0, barHeight);
   }
 
-  // Il minuto successivo, allineato all'orologio.
+  // The next minute, aligned with the clock.
   void _scheduleTick() {
     if (widget.now != null) return;
     final now = DateTime.now();
@@ -314,14 +314,14 @@ class _MenuBarState extends State<MenuBar> {
     final status = uiText(size: fontSize, color: statusColor);
     final open = _open == null ? null : _rectOf(_open!);
     final states = ShellChannel.instance.states.value;
-    // Centro di controllo aperto: capsula 46 × 24 sull'icona, appena più chiara della barra
-    // (controlcenter.md: +3 livelli). Centro notifiche aperto: l'orologio con la capsula
-    // delle voci aperte (notifications.md, N-03).
+    // Control Center open: 46 × 24 capsule on the icon, just lighter than the bar
+    // (controlcenter.md: +3 levels). Notification Center open: the clock with the capsule
+    // of the open items (notifications.md, N-03).
     final controls = states['controlcenter.open'] == '1'
         ? _rectOf('controls')
         : null;
     final clock = states['notifications.open'] == '1' ? _rectOf('clock') : null;
-    // Un menu di stato aperto: la sua icona con la capsula delle voci aperte.
+    // A status menu open: its icon with the capsule of the open items.
     final statusMenu = (states['statusmenu'] ?? '').startsWith('wifi')
         ? _rectOf('wifi')
         : null;
@@ -336,7 +336,7 @@ class _MenuBarState extends State<MenuBar> {
               width: controlsCapsule.width,
               height: controlsCapsule.height,
               child: const DecoratedBox(
-                key: ValueKey('capsula del Centro di controllo'),
+                key: ValueKey('control center capsule'),
                 decoration: BoxDecoration(
                   color: controlsCapsuleFill,
                   borderRadius: BorderRadius.all(
@@ -352,7 +352,7 @@ class _MenuBarState extends State<MenuBar> {
               width: statusMenu.width + 2 * capsuleOutset,
               height: capsuleHeight,
               child: const DecoratedBox(
-                key: ValueKey('capsula del menu di stato'),
+                key: ValueKey('status menu capsule'),
                 decoration: BoxDecoration(
                   color: capsuleFill,
                   borderRadius: BorderRadius.all(
@@ -368,7 +368,7 @@ class _MenuBarState extends State<MenuBar> {
               width: clock.width + 2 * capsuleOutset,
               height: capsuleHeight,
               child: const DecoratedBox(
-                key: ValueKey("capsula dell'orologio"),
+                key: ValueKey('clock capsule'),
                 decoration: BoxDecoration(
                   color: capsuleFill,
                   borderRadius: BorderRadius.all(
@@ -377,7 +377,7 @@ class _MenuBarState extends State<MenuBar> {
                 ),
               ),
             ),
-          // La voce col menu aperto: capsula alta 24, ~3,5 pt oltre la casella per lato.
+          // The item with the open menu: capsule 24 tall, ~3.5 pt beyond the box per side.
           if (open != null)
             Positioned(
               left: open.left - capsuleOutset,
@@ -496,7 +496,7 @@ class _MenuBarState extends State<MenuBar> {
                       onDismissed: _closeMenu,
                       onNext: () => _neighbour(1),
                       onPrevious: () => _neighbour(-1),
-                      // Con un sottomenu aperto la regione d'input lo comprende.
+                      // With a submenu open the input region includes it.
                       onRectsChanged: (rects) {
                         final bottom = rects.fold(
                           barHeight,
@@ -518,7 +518,7 @@ class _MenuBarState extends State<MenuBar> {
     );
   }
 
-  /// Batteria (se c'è) e rete, dallo stato del sistema; senza, l'icona del Wi-Fi piena.
+  /// Battery (if any) and network, from the system state; without it, the full Wi-Fi icon.
   List<Widget> _systemIcons() {
     final s = widget.system?.value;
     if (s == null) {
@@ -551,8 +551,8 @@ class _MenuBarState extends State<MenuBar> {
     ];
   }
 
-  /// Il menu di stato del Wi-Fi (menubar.md › Menu di stato): il pannello del Wi-Fi del Centro
-  /// di controllo sotto l'icona, che lo disegna quando la barra annuncia `statusmenu`.
+  /// The Wi-Fi status menu (menubar.md › Status menu): the Wi-Fi panel of the Control Center
+  /// below the icon, which draws it when the bar announces `statusmenu`.
   void _toggleWifiMenu() {
     final shell = ShellChannel.instance;
     final rect = _rectOf('wifi');
@@ -561,14 +561,14 @@ class _MenuBarState extends State<MenuBar> {
     shell.broadcast('statusmenu', open ? '' : 'wifi ${rect.right}');
   }
 
-  /// Una voce: il testo con ~10,75 pt per lato.
+  /// An item: the text with ~10.75 pt per side.
   Widget _item(String text, TextStyle style, {Key? key}) => Padding(
     key: key,
     padding: const EdgeInsets.symmetric(horizontal: itemPadding),
     child: _baselined(text, style),
   );
 
-  /// Testo con la linea di base a y 19.
+  /// Text with the baseline at y 19.
   Widget _baselined(String text, TextStyle style) => SizedBox(
     height: barHeight,
     child: Baseline(

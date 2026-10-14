@@ -1,12 +1,12 @@
-// Più widget nello stesso layer (il selettore delle app, le istantanee, l'uscita forzata):
-// ognuno dice quale parte della superficie vuole e se vuole la tastiera, l'arbitro unisce le
-// richieste e parla con l'embedder una volta. Tutta la superficie vince sui rettangoli.
+// Several widgets in the same layer (the app switcher, the screenshots, force quit): each
+// says which part of the surface it wants and whether it wants the keyboard; the arbiter
+// merges the requests and talks to the embedder once. The whole surface wins over rectangles.
 
 import 'dart:ui';
 
 import 'layer_control.dart';
 
-/// Quello che un widget chiede: niente, dei rettangoli o tutta la superficie (null).
+/// What a widget asks for: nothing, some rectangles or the whole surface (null).
 class LayerWish {
   const LayerWish.none() : rects = const [], keyboard = false;
   const LayerWish.rects(this.rects) : keyboard = false;
