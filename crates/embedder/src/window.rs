@@ -13,7 +13,9 @@ use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
 use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, DragOffer};
-use smithay_client_toolkit::data_device_manager::data_source::{DataSourceHandler, DragSource};
+use smithay_client_toolkit::data_device_manager::data_source::{
+    CopyPasteSource, DataSourceHandler, DragSource,
+};
 use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
@@ -227,6 +229,12 @@ struct App {
     data_device: Option<DataDevice>,
     drag_out: Option<DragOut>,
     drag_in: bool,
+    /// The selection this window owns (`Clipboard.setData`) and its text.
+    clipboard: Option<(CopyPasteSource, Arc<Vec<u8>>)>,
+    /// The serial of the last key or button press: setting the selection needs one.
+    input_serial: u32,
+    /// To send requests before waiting on another client (a paste).
+    conn: Connection,
     dropped: Option<DragOffer>,
     /// Pseudo-terminals of the app (`silica/pty`), their sources in the loop and whether the
     /// frame timer runs.
@@ -552,6 +560,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         data_device: None,
         drag_out: None,
         drag_in: false,
+        clipboard: None,
+        input_serial: 0,
+        conn: conn.clone(),
         dropped: None,
         ptys: crate::pty::PtyHost::default(),
         pty_sources: BTreeMap::new(),
@@ -771,6 +782,12 @@ impl App {
             return Vec::new();
         };
         match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("Clipboard.setData") => {
+                self.copy(crate::clipboard::set_data_text(call.get("args")));
+                b"[null]".to_vec()
+            }
+            Some("Clipboard.getData") => crate::clipboard::get_data_reply(self.paste().as_deref()),
+            Some("Clipboard.hasStrings") => crate::clipboard::has_strings_reply(self.has_strings()),
             Some("SystemChrome.setApplicationSwitcherDescription") => {
                 let label = call
                     .get("args")
@@ -785,6 +802,41 @@ impl App {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// `Clipboard.setData`: this window becomes the selection owner with `text`.
+    fn copy(&mut self, text: Option<String>) {
+        let (Some(text), Some(manager), Some(device)) =
+            (text, &self.data_manager, &self.data_device)
+        else {
+            return;
+        };
+        let source = manager.create_copy_paste_source(&self.qh, crate::clipboard::TEXT_TYPES);
+        source.set_selection(device, self.input_serial);
+        self.clipboard = Some((source, Arc::new(text.into_bytes())));
+    }
+
+    /// `Clipboard.getData`: the selection's text, from this window or from its owner.
+    fn paste(&mut self) -> Option<String> {
+        if let Some((_, text)) = &self.clipboard {
+            return Some(String::from_utf8_lossy(text).into_owned());
+        }
+        let offer = self.data_device.as_ref()?.data().selection_offer()?;
+        let mime = offer.with_mime_types(crate::clipboard::text_type)?;
+        let pipe = offer.receive(mime).ok()?;
+        // The request must reach the owner before waiting for its answer.
+        let _ = self.conn.flush();
+        crate::clipboard::read_text(pipe.into(), crate::clipboard::READ_TIMEOUT)
+    }
+
+    /// `Clipboard.hasStrings`: is there text to paste?
+    fn has_strings(&self) -> bool {
+        self.clipboard.is_some()
+            || self
+                .data_device
+                .as_ref()
+                .and_then(|device| device.data().selection_offer())
+                .is_some_and(|offer| offer.with_mime_types(crate::clipboard::text_type).is_some())
     }
 
     /// Joins the app registry: the socket in the loop, the idle check on a timer (#142).
@@ -1734,6 +1786,7 @@ impl PointerHandler for App {
                 }
                 PointerEventKind::Press { button, serial, .. } => {
                     self.press_serial = serial;
+                    self.input_serial = serial;
                     let was_up = self.buttons == 0;
                     self.buttons |= button_mask(button);
                     let phase = if was_up {
@@ -1803,9 +1856,10 @@ impl KeyboardHandler for App {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
-        _: u32,
+        serial: u32,
         event: SeatKeyEvent,
     ) {
+        self.input_serial = serial;
         let keysym = event.keysym.raw();
         let utf8 = event.utf8.as_deref();
         let micros = self.now_micros();
@@ -1988,6 +2042,18 @@ impl DataSourceHandler for App {
         mime: String,
         mut pipe: WritePipe,
     ) {
+        if let Some((copied, text)) = &self.clipboard
+            && copied.inner() == source
+        {
+            if crate::clipboard::TEXT_TYPES.contains(&mime.as_str()) {
+                let text = Arc::clone(text);
+                // On a thread: the reader may be this very window.
+                std::thread::spawn(move || {
+                    let _ = std::io::Write::write_all(&mut pipe, &text);
+                });
+            }
+            return;
+        }
         let Some(drag) = self
             .drag_out
             .as_ref()
@@ -2008,6 +2074,16 @@ impl DataSourceHandler for App {
     }
 
     fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
+        // Another client took the selection.
+        if self
+            .clipboard
+            .as_ref()
+            .is_some_and(|(copied, _)| copied.inner() == source)
+        {
+            self.clipboard = None;
+            source.destroy();
+            return;
+        }
         if self
             .drag_out
             .as_ref()
