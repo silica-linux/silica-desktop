@@ -52,6 +52,8 @@ pub struct State {
     /// The icon of a drag between apps (`wl_data_device.start_drag`): it follows the pointer
     /// until the drop.
     pub drag_icon: Option<WlSurface>,
+    /// The cursor asked by the focused client: drawn by Ossido only in the real session.
+    pub cursor_status: smithay::input::pointer::CursorImageStatus,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
     pub loop_signal: LoopSignal,
@@ -261,6 +263,7 @@ impl State {
             system: crate::system::SystemLink::disconnected(),
             appearance: None,
             drag_icon: None,
+            cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             display_handle: dh,
             loop_handle,
             loop_signal,

@@ -1,4 +1,5 @@
-//! Ossido's backends: winit (nested, for development) and headless (tests and CI).
+//! Ossido's backends: winit (nested, for development), headless (tests and CI) and, in
+//! `drm.rs`, the real session.
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -23,6 +24,22 @@ pub enum Backend {
     /// No window: it draws only when a capture is needed, with GLES on an EGL device (the
     /// GPU or llvmpipe) if there is one, otherwise with pixman.
     Headless(Headless),
+    /// The real session: DRM/KMS, libinput, libseat (`drm.rs`).
+    #[cfg(feature = "drm")]
+    Drm(Box<crate::drm::DrmBackend>),
+}
+
+impl Backend {
+    /// The GLES renderer, if the backend has one (all except headless on pixman).
+    pub fn gles(&mut self) -> Option<&mut GlesRenderer> {
+        match self {
+            Backend::Winit(backend) => Some(backend.graphics.renderer()),
+            Backend::Headless(Headless::Gles(renderer)) => Some(renderer.as_mut()),
+            Backend::Headless(Headless::Pixman(_)) => None,
+            #[cfg(feature = "drm")]
+            Backend::Drm(backend) => Some(&mut backend.renderer),
+        }
+    }
 }
 
 pub enum Headless {
@@ -180,56 +197,31 @@ impl State {
         let alt = self.alt_held();
         let dark = self.dark();
         let drag_icon = self.drag_icon_view();
+        if let Some(renderer) = self.backend.gles() {
+            let context = RenderContext {
+                buttons,
+                alt,
+                clear_color: self.clear_color,
+                animation_speed: self.animation_speed,
+                closing: &self.closing,
+                genies: &self.genies,
+                now: Instant::now(),
+                glass_quality,
+                space_shift,
+                panorama,
+                spaces,
+                dark,
+                drag_icon,
+            };
+            let elements = output_elements(renderer, &self.space, &self.output, &context);
+            return capture_elements::<_, GlesTexture, _>(
+                renderer,
+                &self.output,
+                &elements,
+                self.clear_color,
+            );
+        }
         match &mut self.backend {
-            Backend::Winit(backend) => {
-                let renderer = backend.graphics.renderer();
-                let context = RenderContext {
-                    buttons: buttons.clone(),
-                    alt,
-                    clear_color: self.clear_color,
-                    animation_speed: self.animation_speed,
-                    closing: &self.closing,
-                    genies: &self.genies,
-                    now: Instant::now(),
-                    glass_quality,
-                    space_shift,
-                    panorama: panorama.clone(),
-                    spaces,
-                    dark,
-                    drag_icon: drag_icon.clone(),
-                };
-                let elements = output_elements(renderer, &self.space, &self.output, &context);
-                capture_elements::<_, GlesTexture, _>(
-                    renderer,
-                    &self.output,
-                    &elements,
-                    self.clear_color,
-                )
-            }
-            Backend::Headless(Headless::Gles(renderer)) => {
-                let context = RenderContext {
-                    buttons: buttons.clone(),
-                    alt,
-                    clear_color: self.clear_color,
-                    animation_speed: self.animation_speed,
-                    closing: &self.closing,
-                    genies: &self.genies,
-                    now: Instant::now(),
-                    glass_quality,
-                    space_shift,
-                    panorama: panorama.clone(),
-                    spaces,
-                    dark,
-                    drag_icon: drag_icon.clone(),
-                };
-                let elements = output_elements(renderer, &self.space, &self.output, &context);
-                capture_elements::<_, GlesTexture, _>(
-                    renderer.as_mut(),
-                    &self.output,
-                    &elements,
-                    self.clear_color,
-                )
-            }
             Backend::Headless(Headless::Pixman(renderer)) => {
                 capture::<_, pixman::Image<'static, 'static>>(
                     renderer,
@@ -238,6 +230,7 @@ impl State {
                     self.clear_color,
                 )
             }
+            _ => Err("no renderer for the screenshot".to_owned()),
         }
     }
 
@@ -306,16 +299,23 @@ impl State {
 }
 
 impl State {
+    /// Switches to another virtual terminal (Ctrl+Alt+F1…F12): only the real session has
+    /// VTs, the other backends ignore it.
+    pub fn change_vt(&mut self, vt: i32) {
+        #[cfg(feature = "drm")]
+        self.drm_change_vt(vt);
+        #[cfg(not(feature = "drm"))]
+        let _ = vt;
+    }
+
     /// The snapshot of the closing window, to fade it out (only with GLES).
     pub fn start_closing(&mut self, window: &smithay::desktop::Window) {
         if self.animation_speed <= 0.0 {
             return;
         }
         let dark = self.dark();
-        let renderer = match &mut self.backend {
-            Backend::Winit(backend) => backend.graphics.renderer(),
-            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
-            Backend::Headless(Headless::Pixman(_)) => return,
+        let Some(renderer) = self.backend.gles() else {
+            return;
         };
         let now = Instant::now();
         let speed = self.animation_speed;
@@ -340,10 +340,8 @@ impl State {
             return;
         };
         let dark = self.dark();
-        let renderer = match &mut self.backend {
-            Backend::Winit(backend) => backend.graphics.renderer(),
-            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
-            Backend::Headless(Headless::Pixman(_)) => return,
+        let Some(renderer) = self.backend.gles() else {
+            return;
         };
         let now = Instant::now();
         let speed = self.animation_speed;
@@ -399,12 +397,8 @@ impl State {
     ) -> Result<crate::capture::Capture, String> {
         use smithay::backend::renderer::ExportMem;
         let dark = self.dark();
-        let renderer = match &mut self.backend {
-            Backend::Winit(backend) => backend.graphics.renderer(),
-            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
-            Backend::Headless(Headless::Pixman(_)) => {
-                return Err("window capture not available with pixman".to_owned());
-            }
+        let Some(renderer) = self.backend.gles() else {
+            return Err("window capture not available with pixman".to_owned());
         };
         let snapshot =
             crate::render::snapshot_window(renderer, &self.space, &self.output, window, dark)

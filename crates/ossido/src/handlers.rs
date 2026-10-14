@@ -253,7 +253,9 @@ impl SeatHandler for State {
         self.announce_focus(focused);
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        self.cursor_status = image;
+    }
 }
 
 impl SelectionHandler for State {

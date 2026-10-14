@@ -1,11 +1,14 @@
 //! Ossido startup.
 //!
 //! ```text
-//! ossido [--backend winit|headless] [--size WxH] [--scale N] [--control PORT]
+//! ossido [--backend winit|headless|drm] [--size WxH] [--scale N] [--control PORT]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
 //!     [--session-bus] [--logo-key none|rightctrl|rightalt] [--appearance light|dark]
 //!     [--spawn COMMAND]... [--spawn-shell COMMAND]...
 //! ```
+//!
+//! Without `--backend`: winit inside a host session, `drm` on a TTY (no `WAYLAND_DISPLAY` and
+//! no `DISPLAY`).
 
 use std::process::ExitCode;
 
@@ -36,15 +39,18 @@ fn main() -> ExitCode {
 
 fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut options = Options::default();
+    let mut backend = None;
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
             "--backend" => {
-                options.backend = match value()?.as_str() {
+                backend = Some(match value()?.as_str() {
                     "winit" => BackendKind::Winit,
                     "headless" => BackendKind::Headless,
+                    #[cfg(feature = "drm")]
+                    "drm" => BackendKind::Drm,
                     other => return Err(format!("unknown backend: {other}")),
-                }
+                })
             }
             "--size" => {
                 let size = value()?;
@@ -113,6 +119,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             _ => return Err(format!("unknown argument: {arg}")),
         }
     }
+    options.backend = backend.unwrap_or_else(|| {
+        let set = |name| std::env::var_os(name).is_some_and(|value| !value.is_empty());
+        BackendKind::from_environment(set("WAYLAND_DISPLAY"), set("DISPLAY"))
+    });
     Ok(options)
 }
 

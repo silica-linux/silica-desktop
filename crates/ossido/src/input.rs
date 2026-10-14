@@ -3,11 +3,11 @@
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
     GestureEndEvent, GesturePinchUpdateEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
-    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::input::keyboard::{FilterResult, Keycode, xkb};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
-use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
 
@@ -191,6 +191,7 @@ impl State {
         // Esc closes the open view: its own command is run.
         let switcher = self.switcher_active;
         let logo_released = std::cell::Cell::new(false);
+        let vt = std::cell::Cell::new(None);
         let close_view = self.panorama_mode().map(|mode| match mode {
             crate::panorama::Mode::Panorama => silica_control::commands::PANORAMA_TOGGLE,
             crate::panorama::Mode::App => silica_control::commands::PANORAMA_APP,
@@ -208,6 +209,13 @@ impl State {
                         .raw_latin_sym_or_raw_current_sym()
                         .unwrap_or(keysym.modified_sym()),
                 );
+                // Ctrl+Alt+Fn: another VT (only the real session has VTs).
+                if let Some(n) = vt_switch(keysym.modified_sym()) {
+                    if pressed {
+                        vt.set(Some(n));
+                    }
+                    return FilterResult::Intercept(VT_SWITCH);
+                }
                 // App switcher: Esc cancels, the released Logo key confirms
                 // (the release reaches the app anyway, which saw the press).
                 if switcher {
@@ -239,6 +247,12 @@ impl State {
                 }
             },
         );
+        if command == Some(VT_SWITCH) {
+            if let Some(n) = vt.get() {
+                self.change_vt(n);
+            }
+            return;
+        }
         let command = match command {
             None if logo_released.get() => Some(silica_control::commands::SWITCHER_COMMIT),
             other => other,
@@ -267,6 +281,18 @@ impl State {
                     return;
                 };
                 let location = event.position_transformed(geometry.size) + geometry.loc.to_f64();
+                self.pointer_move_to(location, event.time_msec());
+            }
+            // Relative motion (a mouse or touchpad through libinput): from where the pointer
+            // is, kept inside the output.
+            InputEvent::PointerMotion { event } => {
+                let (Some(pointer), Some(geometry)) = (
+                    self.seat.get_pointer(),
+                    self.space.output_geometry(&self.output),
+                ) else {
+                    return;
+                };
+                let location = clamp_to(pointer.current_location() + event.delta(), geometry);
                 self.pointer_move_to(location, event.time_msec());
             }
             InputEvent::PointerButton { event } => {
@@ -316,5 +342,48 @@ impl State {
             }
             _ => {}
         }
+    }
+}
+
+/// The marker returned by the key filter for a VT switch: not a command.
+const VT_SWITCH: &str = "session.vt";
+
+/// A point kept inside `area` (the last pixel included).
+fn clamp_to(point: Point<f64, Logical>, area: Rectangle<i32, Logical>) -> Point<f64, Logical> {
+    let (x0, y0) = (f64::from(area.loc.x), f64::from(area.loc.y));
+    let x1 = x0 + f64::from(area.size.w.max(1)) - 1.0;
+    let y1 = y0 + f64::from(area.size.h.max(1)) - 1.0;
+    (point.x.clamp(x0, x1), point.y.clamp(y0, y1)).into()
+}
+
+/// The VT of the XF86Switch_VT_1…12 keysyms (Ctrl+Alt+F1…F12 in the default keymaps).
+fn vt_switch(keysym: xkb::Keysym) -> Option<i32> {
+    let first = xkb::Keysym::XF86_Switch_VT_1.raw();
+    let last = xkb::Keysym::XF86_Switch_VT_12.raw();
+    let raw = keysym.raw();
+    (first..=last)
+        .contains(&raw)
+        .then(|| i32::try_from(raw - first + 1).ok())
+        .flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_to, vt_switch};
+    use smithay::input::keyboard::xkb;
+    use smithay::utils::Rectangle;
+
+    #[test]
+    fn relative_motion_stays_on_the_output() {
+        let area = Rectangle::new((0, 0).into(), (1280, 800).into());
+        assert_eq!(clamp_to((-5.0, 900.0).into(), area), (0.0, 799.0).into());
+        assert_eq!(clamp_to((10.5, 20.0).into(), area), (10.5, 20.0).into());
+    }
+
+    #[test]
+    fn switch_keysyms_name_their_vt() {
+        assert_eq!(vt_switch(xkb::Keysym::XF86_Switch_VT_1), Some(1));
+        assert_eq!(vt_switch(xkb::Keysym::XF86_Switch_VT_12), Some(12));
+        assert_eq!(vt_switch(xkb::Keysym::F1), None);
     }
 }

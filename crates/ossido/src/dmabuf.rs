@@ -2,7 +2,7 @@
 //!
 //! The feedback (version 4) tells clients the render node of Ossido's GPU: without it,
 //! Mesa does not know which device to use for a Wayland surface and falls back to llvmpipe.
-//! Only with the winit backend; in headless (pixman) the protocol is not there.
+//! Only with the winit and drm backends; in headless the protocol is not there.
 
 use std::os::unix::fs::MetadataExt;
 
@@ -66,12 +66,10 @@ impl DmabufHandler for State {
         notifier: ImportNotifier,
     ) {
         let imported = match &mut self.backend {
-            Backend::Winit(backend) => backend
-                .graphics
-                .renderer()
-                .import_dmabuf(&dmabuf, None)
-                .is_ok(),
             Backend::Headless(_) => false,
+            backend => backend
+                .gles()
+                .is_some_and(|renderer| renderer.import_dmabuf(&dmabuf, None).is_ok()),
         };
         if imported {
             // If the client is already gone there is nobody to notify.

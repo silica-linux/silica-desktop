@@ -7,6 +7,18 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+default = ["drm"]
+# The real-session backend (`--backend drm`): udev, DRM/KMS, GBM, libinput and libseat.
+# Building it needs the libudev, libinput, libseat and libgbm development packages.
+drm = [
+    "smithay/backend_drm",
+    "smithay/backend_gbm",
+    "smithay/backend_libinput",
+    "smithay/backend_session_libseat",
+    "smithay/backend_udev",
+]
+
 [dependencies]
 base64 = "0.22"
 ossido-render = { path = "../ossido-render" }

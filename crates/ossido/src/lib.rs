@@ -4,8 +4,12 @@ pub mod backend;
 mod capture;
 pub mod commands;
 mod control;
+#[cfg(feature = "drm")]
+mod cursor;
 mod decorations;
 mod dmabuf;
+#[cfg(feature = "drm")]
+mod drm;
 mod egl;
 mod gestures;
 mod glass;
@@ -41,6 +45,22 @@ pub enum BackendKind {
     Winit,
     /// No window: automated tests, CI, agent loops.
     Headless,
+    /// The real session on a TTY or in a VM: DRM/KMS, libinput, libseat.
+    #[cfg(feature = "drm")]
+    Drm,
+}
+
+impl BackendKind {
+    /// Without `--backend`: winit inside a host session (`WAYLAND_DISPLAY` or `DISPLAY` set),
+    /// otherwise the real session.
+    pub fn from_environment(wayland: bool, x11: bool) -> Self {
+        #[cfg(feature = "drm")]
+        if !wayland && !x11 {
+            return BackendKind::Drm;
+        }
+        let _ = (wayland, x11);
+        BackendKind::Winit
+    }
 }
 
 #[derive(Debug)]
@@ -96,6 +116,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut ossido = match options.backend {
         BackendKind::Winit => backend::init_winit(&mut event_loop, display, options.size)?,
         BackendKind::Headless => backend::init_headless(&mut event_loop, display, options.size)?,
+        #[cfg(feature = "drm")]
+        BackendKind::Drm => drm::init_drm(&mut event_loop, display)?,
     };
 
     ossido.state.clear_color = options.background;
@@ -105,6 +127,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     ossido.state.logo_key = options.logo_key.unwrap_or(match options.backend {
         BackendKind::Winit => keys::LogoKey::RightCtrl,
         BackendKind::Headless => keys::LogoKey::None,
+        #[cfg(feature = "drm")]
+        BackendKind::Drm => keys::LogoKey::None,
     });
     if options.scale != 1 {
         ossido.state.output.change_current_state(
@@ -153,4 +177,30 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BackendKind;
+
+    #[test]
+    fn a_host_session_means_winit() {
+        assert_eq!(
+            BackendKind::from_environment(true, false),
+            BackendKind::Winit
+        );
+        assert_eq!(
+            BackendKind::from_environment(false, true),
+            BackendKind::Winit
+        );
+    }
+
+    #[cfg(feature = "drm")]
+    #[test]
+    fn a_tty_means_drm() {
+        assert_eq!(
+            BackendKind::from_environment(false, false),
+            BackendKind::Drm
+        );
+    }
 }
