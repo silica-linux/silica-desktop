@@ -355,6 +355,7 @@ trait System {
     fn set_muted(&self, muted: bool) -> zbus::Result<()>;
     fn set_brightness(&self, brightness: f64) -> zbus::Result<()>;
     fn set_dark(&self, dark: bool) -> zbus::Result<()>;
+    fn set_appearance_mode(&self, mode: &str) -> zbus::Result<()>;
     fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
     fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
@@ -420,6 +421,7 @@ fn reads_and_changes_the_system() {
                 nightlight_file: Some(dir.join("nightlight.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
+                utc_offset: Some(0),
                 schedule_tick: Duration::from_millis(100),
             },
         )
@@ -562,6 +564,7 @@ fn missing_sources_are_absent_not_errors() {
                 nightlight_file: Some(dir.join("nightlight.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
+                utc_offset: Some(0),
                 schedule_tick: Duration::from_millis(100),
             },
         )
@@ -657,6 +660,7 @@ fn displays_and_night_light_go_through_ossido() {
                 nightlight_file: Some(dir.join("nightlight.json")),
                 actions_socket: Some(socket.clone()),
                 place: None,
+                utc_offset: Some(0),
                 schedule_tick: Duration::from_millis(100),
             },
         )
@@ -730,6 +734,86 @@ fn displays_and_night_light_go_through_ossido() {
                 async_io::Timer::after(Duration::from_millis(20)).await;
             }
             assert!(sent(6500));
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn automatic_appearance_follows_the_sun() {
+    let session = Bus::start();
+    let dir = temp_dir("appearance");
+    // A file from before the modes: dark.
+    std::fs::write(dir.join("appearance.json"), r#"{"dark": true}"#).unwrap();
+    let place = silica_daemon::sun::Place {
+        lat: 41.9,
+        lon: 12.48,
+    };
+    zbus::block_on(async {
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: None,
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: Some(place),
+                utc_offset: Some(0),
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let state = proxy.state().await.unwrap();
+            assert_eq!(get::<String>(&state, "appearance.mode"), "dark");
+            assert!(get::<bool>(&state, "appearance.dark"));
+
+            proxy.set_appearance_mode("auto").await.unwrap();
+            let night =
+                silica_daemon::sun::is_night(Some(place), silica_daemon::sun::unix_now(), 0);
+            let state = wait_for(&proxy, |s| get::<String>(s, "appearance.mode") == "auto").await;
+            assert_eq!(get::<bool>(&state, "appearance.dark"), night);
+            let saved: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("appearance.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved["mode"], "auto");
+            assert!(proxy.set_appearance_mode("sepia").await.is_err());
+
+            // SetDark fixes the mode again.
+            proxy.set_dark(!night).await.unwrap();
+            let state = proxy.state().await.unwrap();
+            assert_eq!(
+                get::<String>(&state, "appearance.mode"),
+                if night { "light" } else { "dark" }
+            );
+            // Written by Settings into the file: picked up by the next check.
+            std::fs::write(
+                dir.join("appearance.json"),
+                r#"{"mode": "light", "dark": false}"#,
+            )
+            .unwrap();
+            wait_for(&proxy, |s| {
+                get::<String>(s, "appearance.mode") == "light" && !get::<bool>(s, "appearance.dark")
+            })
+            .await;
         };
         future::or(test, async {
             let result = service.run().await;

@@ -188,10 +188,10 @@ pub(super) async fn night_light_tick(shared: &Shared, last: &mut Option<u32>, fo
         .unwrap_or_else(|| shared.state().night_light.clone());
     let active = light.enabled && {
         // The local offset only matters to a schedule.
-        let offset = if light.schedule == "off" {
-            0
-        } else {
-            sun::local_offset().await
+        let offset = match (light.schedule.as_str(), shared.config.utc_offset) {
+            ("off", _) => 0,
+            (_, Some(offset)) => offset,
+            (_, None) => sun::local_offset().await,
         };
         light.active(shared.config.place, sun::unix_now(), offset)
     };

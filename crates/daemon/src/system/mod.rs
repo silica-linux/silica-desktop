@@ -47,6 +47,8 @@ pub struct SystemConfig {
     pub actions_socket: Option<PathBuf>,
     /// Where the sun is computed from; `None` at start is filled from the time zone.
     pub place: Option<crate::sun::Place>,
+    /// The local UTC offset in seconds; `None`: from `date +%z` at every check.
+    pub utc_offset: Option<i64>,
     /// How often the schedules (night light) are checked.
     pub schedule_tick: Duration,
 }
@@ -57,6 +59,31 @@ pub fn default_appearance_file() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     Some(config.join("silica").join("appearance.json"))
+}
+
+/// The appearance modes: fixed light or dark, or `auto` (dark from sunset to sunrise).
+pub const APPEARANCE_MODES: &[&str] = &["light", "dark", "auto"];
+
+/// The saved mode: `"mode"` in `appearance.json`, otherwise from `"dark"` (files written
+/// before the mode existed).
+pub fn read_appearance_mode(file: &std::path::Path) -> String {
+    let json = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let mode = json
+        .as_ref()
+        .and_then(|j| j.get("mode"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|m| APPEARANCE_MODES.contains(m));
+    match mode {
+        Some(mode) => mode.to_owned(),
+        None if read_appearance(file) => "dark".to_owned(),
+        None => "light".to_owned(),
+    }
+}
+
+fn write_appearance(file: &std::path::Path, mode: &str, dark: bool) -> Result<(), String> {
+    display::write_json(file, &serde_json::json!({ "mode": mode, "dark": dark }))
 }
 
 /// The saved appearance: `{"dark": true}`; without the file or unreadable, light.
@@ -79,6 +106,7 @@ impl Default for SystemConfig {
             nightlight_file: display::config_file("nightlight.json"),
             actions_socket: None,
             place: crate::sun::local_place(),
+            utc_offset: None,
             schedule_tick: Duration::from_secs(30),
         }
     }
@@ -168,6 +196,8 @@ pub struct SystemState {
     pub do_not_disturb: bool,
     /// Dark appearance (the whole system: Ossido, shell, apps through the Settings portal).
     pub dark: bool,
+    /// `light`, `dark` or `auto` (follows the sun).
+    pub appearance_mode: String,
     /// The apps recording now or recently, the ones in use first (the privacy pill).
     pub privacy: Vec<PrivacyUse>,
     /// The keyboard backlight, 0–1; `None` without a backlit keyboard.
@@ -218,6 +248,7 @@ impl SystemState {
         put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
         put("appearance.dark", Value::Bool(self.dark));
+        put("appearance.mode", Value::from(self.appearance_mode.clone()));
         // "app<US>kind<US>1|0" per app: a flat list the shell splits.
         let privacy: Vec<String> = self
             .privacy
@@ -295,6 +326,10 @@ impl SystemService {
         let shared = Shared {
             state: Arc::new(Mutex::new(SystemState {
                 dark,
+                appearance_mode: config
+                    .appearance_file
+                    .as_deref()
+                    .map_or_else(|| "light".to_owned(), read_appearance_mode),
                 ..SystemState::default()
             })),
             changed: Arc::new(Event::new()),
@@ -340,6 +375,7 @@ impl SystemService {
             loop {
                 let listener = self.shared.schedule.listen();
                 display::night_light_tick(&self.shared, &mut last, first).await;
+                appearance_tick(&self.shared).await;
                 first = false;
                 future::or(
                     async {
@@ -363,6 +399,46 @@ impl SystemService {
 
 struct System {
     shared: Shared,
+}
+
+/// Whether it is night now at the configured place.
+async fn night_now(shared: &Shared) -> bool {
+    let offset = match shared.config.utc_offset {
+        Some(offset) => offset,
+        None => crate::sun::local_offset().await,
+    };
+    crate::sun::is_night(shared.config.place, crate::sun::unix_now(), offset)
+}
+
+/// The automatic appearance: the mode is read again from its file (Settings may write it),
+/// and in `auto` the dark appearance follows the sun; a change is saved for the portal.
+async fn appearance_tick(shared: &Shared) {
+    let file = shared.config.appearance_file.clone();
+    let mode = match &file {
+        Some(file) => read_appearance_mode(file),
+        None => shared.state().appearance_mode.clone(),
+    };
+    let dark = match mode.as_str() {
+        "auto" => night_now(shared).await,
+        "dark" => true,
+        _ => false,
+    };
+    let changed = {
+        let state = shared.state();
+        state.dark != dark || state.appearance_mode != mode
+    };
+    if !changed {
+        return;
+    }
+    if let Some(file) = &file
+        && let Err(err) = write_appearance(file, &mode, dark)
+    {
+        tracing::warn!("appearance: {err}");
+    }
+    shared.update(|state| {
+        state.dark = dark;
+        state.appearance_mode = mode;
+    });
 }
 
 fn failed(error: impl std::fmt::Display) -> zbus::fdo::Error {
@@ -493,15 +569,40 @@ impl System {
     }
 
     /// Dark or light appearance, for the whole system; it is saved (`appearance.json`).
+    /// Also fixes the mode to `light` or `dark` (it leaves `auto`).
     fn set_dark(&self, dark: bool) -> zbus::fdo::Result<()> {
+        let mode = if dark { "dark" } else { "light" };
         if let Some(file) = &self.shared.config.appearance_file {
-            if let Some(dir) = file.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| failed(e.to_string()))?;
-            }
-            std::fs::write(file, format!("{{\"dark\": {dark}}}\n"))
-                .map_err(|e| failed(e.to_string()))?;
+            write_appearance(file, mode, dark).map_err(failed)?;
         }
-        self.shared.update(|state| state.dark = dark);
+        self.shared.update(|state| {
+            state.dark = dark;
+            state.appearance_mode = mode.to_owned();
+        });
+        Ok(())
+    }
+
+    /// `light`, `dark` or `auto`: in `auto` the daemon turns the dark appearance on at sunset
+    /// and off at sunrise (the time zone's coordinates; 19:00–07:00 without them). Saved in
+    /// `appearance.json` (`mode`).
+    async fn set_appearance_mode(&self, mode: &str) -> zbus::fdo::Result<()> {
+        if !APPEARANCE_MODES.contains(&mode) {
+            return Err(zbus::fdo::Error::InvalidArgs(format!(
+                "appearance mode: light, dark or auto, not {mode:?}"
+            )));
+        }
+        let dark = match mode {
+            "dark" => true,
+            "light" => false,
+            _ => night_now(&self.shared).await,
+        };
+        if let Some(file) = &self.shared.config.appearance_file {
+            write_appearance(file, mode, dark).map_err(failed)?;
+        }
+        self.shared.update(|state| {
+            state.dark = dark;
+            state.appearance_mode = mode.to_owned();
+        });
         Ok(())
     }
 

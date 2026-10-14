@@ -158,8 +158,16 @@ output with `wpctl`, read again every second. If a service is missing the source
 
 ## Light and dark appearance
 
-- `System1` has the `appearance.dark` key and the `SetDark(b)` method, which saves the choice
-  in `$XDG_CONFIG_HOME/silica/appearance.json` (`{"dark": true}`) for the next start.
+- `System1` has the `appearance.dark` and `appearance.mode` keys and the `SetDark(b)` and
+  `SetAppearanceMode(s)` methods, which save the choice in
+  `$XDG_CONFIG_HOME/silica/appearance.json` (`{"mode": "auto", "dark": true}`) for the next
+  start. The mode is `light`, `dark` or `auto`; `SetDark` sets it to `light` or `dark`, any
+  other mode is `InvalidArgs`. A file without `mode` (older) means `dark` or `light` from
+  `dark`.
+- In `auto` the daemon turns `appearance.dark` on at sunset and off at sunrise, checked every
+  30 s (the same sun as the night light: the time zone's coordinates, 19:00–07:00 without them),
+  emits `Changed` and keeps `dark` in the file up to date. The file is read again at every
+  check, so Settings may also write `mode` there directly.
 - `silica-portal` offers `org.freedesktop.impl.portal.Settings` with
   `org.freedesktop.appearance` › `color-scheme` (1 dark, 2 light): it reads it from the daemon
   and follows its `Changed` (without the daemon, from the file), and emits `SettingChanged`.
