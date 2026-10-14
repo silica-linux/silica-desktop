@@ -19,7 +19,7 @@ in a VM first) and runs in CI on every push (`.github/workflows/vm.yml`).
    the tarball over HTTP from xtask itself: QEMU's user network reaches the host's loopback at
    `10.0.2.2`. No ISO tools or 9p shares are needed.
 5. The guest installs the runtime libraries (seatd, Mesa, libinput, libseat, …), unpacks the
-   session into `/opt/silica` and starts `seatd-launch -- ossido --backend drm` with the shell
+   session into `/opt/silica` and starts `ossido --backend drm` on the guest's seatd service with the shell
    components (embedder with `--renderer software`).
 6. Ossido's control channel listens on the guest's loopback (7991); socat exposes it on 7990,
    which QEMU forwards to the host (default 7990, never 7979/7980, used by the sessions on the

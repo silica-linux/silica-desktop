@@ -290,7 +290,11 @@ mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
 export RUST_LOG=info
 # The control channel stays on the guest's loopback; socat exposes it for QEMU's forward.
 socat TCP-LISTEN:{GUEST_FORWARD},fork,reuseaddr TCP:127.0.0.1:{GUEST_CONTROL} &
-exec seatd-launch -- /opt/silica/bin/ossido --backend drm --control {GUEST_CONTROL} \
+# The seatd package starts its own daemon (seatd-launch would refuse the existing socket):
+# use it; the session runs as root, which seatd lets in.
+systemctl start seatd.service || true
+export LIBSEAT_BACKEND=seatd
+exec /opt/silica/bin/ossido --backend drm --control {GUEST_CONTROL} \
   --session-bus \
 {spawn}
 "#
