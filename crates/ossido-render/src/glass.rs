@@ -344,32 +344,45 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
 /// edge as in light ("same identical look in light and dark over gray", controlcenter.md).
 pub const REGULAR_DARK: MaterialParams = REGULAR_LIGHT;
 
-/// The Liquid Glass lens, measured on the Control Center modules: between ~6 and ~24 pt from
-/// the edge it magnifies (up to ~4 pt inwards), in the outer ~6 pt it samples the background
-/// outside the module, up to ~25 pt past the edge, squeezed. On top the outer band is ~2 pt.
-/// The bottom side is not measured: like the top one. Uncertainty ±3 pt in the outer band
-/// (glass.md, "Refraction, much stronger").
+/// The Liquid Glass lens, measured on the Control Center modules from the displacement maps
+/// with the edge's own light taken out (the gray capture subtracted: a glow of 10 levels
+/// would read as ~20 px; `xtask/tools/glass_parity.py`). Near the edge the glass shows the
+/// background from well inside, folded: at 2 pt from the top or bottom edge the background
+/// ~43 pt inwards, at 6 pt ~23 pt, flattening to ~18 pt around 10 pt, then nothing past
+/// ~24 pt. The sides fold less (~34 pt at 2 pt). The same in pixels on the 64 pt and the
+/// 140 pt modules: on the narrow ones the fold reaches past the middle. The point at 0 is
+/// extrapolated (the rim covers it). glass.md's first measure (the outer band sampling the
+/// background outside) read the glow as displacement.
 const LIQUID_LENS: Lens = Lens {
     side: &[
-        (0.0, -25.0),
-        (6.0, -4.0),
-        (10.0, 14.2),
-        (24.0, 25.5),
-        (30.0, 30.0),
+        (0.0, 42.0),
+        (2.0, 34.0),
+        (4.0, 25.0),
+        (6.0, 18.5),
+        (8.0, 15.3),
+        (11.0, 12.5),
+        (16.0, 16.3),
+        (22.0, 22.0),
     ],
     top: &[
-        (0.0, -27.0),
-        (2.0, -5.0),
-        (6.0, 9.6),
-        (19.0, 21.3),
-        (28.0, 28.0),
+        (0.0, 50.0),
+        (2.0, 43.0),
+        (4.0, 33.0),
+        (6.0, 23.5),
+        (8.0, 20.5),
+        (12.0, 18.0),
+        (18.0, 19.5),
+        (24.0, 24.0),
     ],
     bottom: &[
-        (0.0, -27.0),
-        (2.0, -5.0),
-        (6.0, 9.6),
-        (19.0, 21.3),
-        (28.0, 28.0),
+        (0.0, 50.0),
+        (2.0, 43.0),
+        (4.0, 33.0),
+        (6.0, 23.5),
+        (8.0, 20.5),
+        (12.0, 18.0),
+        (18.0, 19.5),
+        (24.0, 24.0),
     ],
 };
 

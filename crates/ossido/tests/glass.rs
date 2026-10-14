@@ -397,76 +397,62 @@ fn regular_glass_is_the_liquid_lens_of_the_control_center() {
     drop(glass);
     drop(ossido);
 
-    // Lens: 12 px stripes behind (edges at x 32 + 12k), glass from x 64 to 363.
-    let ossido = Headless::start_with("glass-liquid-lens", SHOT, &[]);
-    let back = (500, 200);
-    let mut pixels = Vec::new();
-    for _ in 0..back.1 {
-        for x in 0..back.0 {
-            let level = if x % 24 < 12 { 0 } else { 255 };
-            pixels.extend_from_slice(&[level, level, level, 255]);
+    // Lens: a horizontal ramp behind (level = x up to 255: the blur does not change a linear
+    // ramp), glass from x 64 to 363; the same glass over gray gives the edge's own light,
+    // taken out before reading the source position from the level.
+    let row_over = |name: &str, level: fn(u32) -> u8| {
+        let ossido = Headless::start_with(name, SHOT, &[]);
+        let back = (500, 200);
+        let mut pixels = Vec::new();
+        for _ in 0..back.1 {
+            for x in 0..back.0 {
+                let l = level(x);
+                pixels.extend_from_slice(&[l, l, l, 255]);
+            }
         }
-    }
-    let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &pixels);
-    let size = (300, 100);
-    let mut glass = TestWindow::open_pixels(&ossido.wayland, "liquid", size, &transparent(size));
-    glass
-        .set_glass(&[(0, 0, 300, 100, 0.0, Material::Regular)])
-        .unwrap();
-    let shot = shot(&ossido, "glass-liquid-lens.png");
-    let row: Vec<f64> = (64..364)
-        .map(|x| f64::from(rgb(&shot, x, 114)[1]))
-        .collect();
-    let low = row.iter().cloned().fold(f64::MAX, f64::min);
-    let high = row.iter().cloned().fold(0.0, f64::max);
-    let mid = (low + high) / 2.0;
-    // Crossings of the mid level in the left half, at distance t from the edge.
-    let mut crossings = Vec::new();
-    for i in 1..row.len() / 2 {
-        let (a, b) = (row[i - 1], row[i]);
-        if (a - mid) * (b - mid) <= 0.0 && a != b {
-            crossings.push((i - 1) as f64 + 0.5 + (mid - a) / (b - a));
-        }
-    }
-    // Beyond ~30 pt the lens does not act: the last crossing falls on a true edge, and the
-    // curve is monotonic, so the previous ones fall on the edges before, one at a time.
-    let last = *crossings.last().unwrap();
-    let last_edge = (32.0 + 12.0 * ((64.0 + last - 32.0) / 12.0).round()) - 64.0;
-    let count = crossings.len();
-    // Curve measured at the sides of the modules (glass.md): (distance from the edge, source) in pt.
-    let measured = [
-        (0.0, -25.0),
-        (6.0, -4.0),
-        (10.0, 14.2),
-        (24.0, 25.5),
-        (30.0, 30.0),
-    ];
-    let reference = |t: f64| match measured.windows(2).find(|w| t <= w[1].0) {
-        Some(w) => w[0].1 + (w[1].1 - w[0].1) * (t - w[0].0) / (w[1].0 - w[0].0),
-        None => t,
+        let _back = TestWindow::open_pixels(&ossido.wayland, "back", back, &pixels);
+        let size = (300, 100);
+        let mut glass =
+            TestWindow::open_pixels(&ossido.wayland, "liquid", size, &transparent(size));
+        glass
+            .set_glass(&[(0, 0, 300, 100, 0.0, Material::Regular)])
+            .unwrap();
+        let shot = shot(&ossido, &format!("{name}.png"));
+        (64..164)
+            .map(|x| f64::from(rgb(&shot, x, 114)[1]))
+            .collect::<Vec<f64>>()
     };
+    let ramp = row_over("glass-liquid-ramp", |x| x.min(255) as u8);
+    let gray = row_over("glass-liquid-gray", |_| 0x7b);
+    // Past ~24 pt the glass shows what is behind it: there the level gives the scale.
+    let (t0, t1) = (40, 90);
+    let gain = (ramp[t1] - ramp[t0]) / (t1 - t0) as f64;
+    let source = |t: usize| {
+        let edge = gray[t] - gray[t1];
+        t1 as f64 + (ramp[t] - edge - ramp[t1]) / gain
+    };
+    // The fold measured on the modules' top and bottom edges and the sides (glass.md,
+    // `xtask/tools/glass_parity.py`): (distance from the edge, source) in pt.
+    let measured = [
+        (4, 25.0),
+        (6, 18.5),
+        (8, 15.3),
+        (12, 13.4),
+        (16, 16.3),
+        (30, 30.0),
+    ];
     let mut worst: f64 = 0.0;
-    let mut outside = 0;
-    for (k, t) in crossings.iter().enumerate() {
-        let source = last_edge - 12.0 * (count - 1 - k) as f64;
-        let expected = reference(*t);
-        eprintln!("t {t:.1} pt → source {source:.1} pt (measured curve {expected:.1})");
-        if *t <= 30.0 {
-            worst = worst.max((source - expected).abs());
-        }
-        if *t < 6.0 && source < -2.0 {
-            outside += 1;
-        }
+    for (t, expected) in measured {
+        let got = source(t);
+        eprintln!("t {t} pt → source {got:.1} pt (measured {expected:.1})");
+        worst = worst.max((got - expected).abs());
     }
-    // Measurement uncertainty in the outer band: ±3 pt.
     assert!(
         worst <= 3.0,
         "lens far from the measured curve: {worst:.1} pt"
     );
-    assert!(
-        outside >= 1,
-        "the lens does not sample the background outside the edge"
-    );
+    // Near the edge the glass shows the background from well inside.
+    assert!(source(2) > 25.0, "the edge does not fold: {:.1}", source(2));
 }
 
 #[test]

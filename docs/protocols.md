@@ -18,7 +18,7 @@ top.
   notifications: windows instead have superellipse corners).
 - Materials: `clear` (clear glass, like the Dock), `thick` (thick glass, like menus and
   search) and `regular` (the Liquid Glass of the controls, like the Control Center modules:
-  a strong lens that at the edge also samples the outside background), from the measurements
+  a strong lens that near the edge folds in the background from well inside), from the measurements
   in `plan/reference/glass.md`. Since version 2 also `notification` (banners and Notification
   Center: very wide blur, almost opaque, dark edge line on the first pixel of the region,
   which the client widens by 1 pt per side; the regions do not merge). A client bound to
