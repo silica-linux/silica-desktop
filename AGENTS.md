@@ -107,7 +107,7 @@ crates/control/        JSON control channel + MCP server
 crates/cli/            silica-cli
 shell/                 the shell in Flutter: Dock, menu bar, Faro, notifications, Control Center
 testapps/demo/         test app for the embedder tests
-xtask/                 cargo xtask: ci, layers, assets, run, bundle
+xtask/                 cargo xtask: ci, layers, assets, run, bundle, vm, os
 plan/                  gitignored: status, plan, macOS references
 ```
 
@@ -133,6 +133,15 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 
 Faro and the other shell components are not apps: they stay in `shell/`. A change to
 `silica-ui` is released with a tag before using it here (`ref` in `shell/pubspec.yaml`).
+
+## Develop and test in Silica OS
+
+Every change is built here and checked inside the real Silica OS before it goes to CI: one
+VM, started with `cargo xtask os start` and kept open on the user's screen (they watch the
+work), updated with `cargo xtask os deploy [--apps]`, inspected with `cargo xtask os shot`,
+`cmd`, `ssh` and `log` (docs/vm.md, "Development loop"). Push only after the change works
+there; a release is booted and looked at in the VM (icons, Dock, menus, apps) before it is
+tagged. The nested and headless sessions below remain for quick checks and CI.
 
 ## Harness
 

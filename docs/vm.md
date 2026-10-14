@@ -60,3 +60,56 @@ cargo xtask vm [--port N] [--timeout SECONDS] [--out PATH] [--show] [--keep] [--
 - Network access for the image download and the guest's packages.
 - To build Ossido with the `drm` feature (default): `libudev-dev libinput-dev libseat-dev
   libgbm-dev` (already in CI's dependencies).
+
+## Development loop: `cargo xtask os`
+
+All development and testing happens inside the real Silica OS, not only in the nested session
+on the host: build here, check in the VM, then push to CI. `cargo xtask os` runs a released
+Silica OS disk (the qcow2 of a silica-os release, in `~/silica-vm/`) under QEMU/KVM, in a
+window on the user's screen, so the work can be watched while it happens. Keep one VM running
+for the whole session: `deploy` restarts the Silica session inside it.
+
+```bash
+gh release download -R silica-linux/silica-os -p '*.qcow2' -D ~/silica-vm   # once
+cargo xtask os start          # the VM in a full-screen window ("Silica OS (dev)")
+cargo xtask os deploy         # build Ossido, the embedder, the services and the shell, run them
+cargo xtask os deploy --apps  # the apps too (mustache, mail, terminal, clock, calculator)
+cargo xtask os shot out.png   # screenshot through Ossido's control channel
+cargo xtask os cmd window.list            # any silica-cli command
+cargo xtask os ssh 'journalctl -b -p warning'   # a root shell in the guest
+cargo xtask os log            # the deployed session's log (Ossido, the embedders)
+cargo xtask os restart        # restart the session (automatic login again)
+cargo xtask os status | stop
+```
+
+`start` options: `--image PATH`, `--fresh` (a new overlay disk), `--size WxH` (default
+1920x1200), `--headless` (no window, for CI), and the graphics:
+
+| Option | Device | Ossido | Shell and apps |
+| --- | --- | --- | --- |
+| (default) | `virtio-vga-gl` with virgl and Venus | GLES on the host's GPU | Impeller on Vulkan (Venus) |
+| `--virgl` | `virtio-vga-gl` with virgl | GLES on the host's GPU | Impeller on GLES |
+| `--software` | `virtio-vga` | llvmpipe | software |
+
+How it works, without root on the host and without changing the image:
+
+- **Credentials.** systemd credentials passed through SMBIOS (`-smbios type=11`) give the
+  guest root's SSH key, `/etc/silica/session.env.d/50-dev.env` (Ossido's control channel on
+  the guest's loopback, the embedder's renderer, `RUST_LOG`) and a service that mounts the
+  share. Nothing persists in the image: the overlay disk holds the guest's state.
+- **Ports.** SSH on 127.0.0.1:7998 (guest 22), Ossido's control channel on 127.0.0.1:7993
+  through an SSH tunnel (guest 7991: SELinux keeps socket proxies from binding a port),
+  QEMU's monitor on 127.0.0.1:7996. Never 7979/7980, the sessions on the host.
+- **The share.** `~/build/silica-os-dev/share` is mounted read-only with 9p on
+  `/run/silica-dev`: `bin/` (Ossido, embedder, services, CLI), `engine/`, `shell/`, `apps/`,
+  `share/applications/` (the apps' `.desktop` entries, before the installed ones), `icons/`
+  (silica-icons) and `session.sh`. The hook in `50-dev.env` runs `session.sh` instead of the
+  installed session when it exists; silica-session also has `SILICA_PREFIX` for the same.
+- **Binaries.** Built on the host: its glibc must not be newer than Fedora 44's (2.43),
+  which `deploy` checks.
+- **Restart.** greetd logs in automatically only once per boot (its run file in `/run`):
+  `deploy` and `restart` remove it and restart greetd.
+- **The window.** QEMU runs with `GDK_BACKEND=x11`; with `wmctrl` installed `start` moves it
+  to the second workspace.
+
+The work directory is `~/build/silica-os-dev` (`SILICA_OS_DIR`).

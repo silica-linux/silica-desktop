@@ -8,6 +8,8 @@
 //!   bus with `silica-daemon`, in release.
 //! - `vm`: the real session (Ossido on DRM/KMS with the shell) in a QEMU/KVM virtual machine,
 //!   checked with a screenshot (`vm.rs`, docs/vm.md).
+//! - `os`: development and tests inside the real Silica OS, in a VM on the user's screen:
+//!   `start`, `deploy`, `shot`, `cmd`, `ssh`, `log`, `status`, `stop` (`os.rs`, docs/vm.md).
 //! - `unsafe`: `unsafe` allowed only in the embedder FFI.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter for the embedder (see `flutter.rs`).
 
@@ -15,6 +17,7 @@ mod bench;
 mod bench_glass;
 mod flutter;
 mod install;
+mod os;
 mod vm;
 
 use std::collections::{BTreeSet, HashMap};
@@ -71,8 +74,9 @@ fn main() -> ExitCode {
         },
         Some("install-portal") => install::install_portal(),
         Some("vm") => vm::vm(args.get(1..).unwrap_or_default()),
+        Some("os") => os::os(args.get(1..).unwrap_or_default()),
         _ => Err(
-            "usage: cargo xtask <ci|layers|assets|unsafe|run|vm|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
+            "usage: cargo xtask <ci|layers|assets|unsafe|run|vm|os|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
                 .to_owned(),
         ),
     };
