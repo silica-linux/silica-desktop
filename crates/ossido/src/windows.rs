@@ -22,14 +22,68 @@ pub fn is_fullscreen(window: &Window) -> bool {
 }
 
 impl State {
+    /// Dove finisce la miniatura di una finestra ridotta, in punti dell'output: la cella prima
+    /// del Cestino nel Dock (il pannello di vetro più largo del layer `dock`). Dalla ripresa
+    /// della riduzione (`windows.md`): il Dock si allarga di una cella (816–1743 → 784–1775) e
+    /// la miniatura si ferma centrata a x 1672, cioè 71 pt a sinistra del bordo destro di prima;
+    /// in verticale al centro del Dock. Miniatura larga 57 e alta al più 47 (`dock.md`, D-08).
+    /// Senza Dock: in basso al centro dello schermo.
+    pub fn minimize_target(&self, window: &Window) -> Option<Rectangle<f64, Logical>> {
+        const FROM_RIGHT: f64 = 71.0;
+        const WIDTH: f64 = 57.0;
+        const MAX_HEIGHT: f64 = 47.0;
+        let geometry = self.space.element_geometry(window)?;
+        let frame = crate::decorations::frame_of(window, geometry).to_f64();
+        let height = if frame.size.w > 0.0 {
+            (WIDTH * frame.size.h / frame.size.w).min(MAX_HEIGHT)
+        } else {
+            MAX_HEIGHT
+        };
+        let map = smithay::desktop::layer_map_for_output(&self.output);
+        let panel = map
+            .layers()
+            .filter(|layer| layer.namespace() == "dock")
+            .filter_map(|layer| {
+                let origin = map.layer_geometry(layer)?.loc.to_f64();
+                crate::glass::current_regions(layer.wl_surface())
+                    .into_iter()
+                    .map(|r| {
+                        Rectangle::<f64, Logical>::new(
+                            (origin.x + f64::from(r.x), origin.y + f64::from(r.y)).into(),
+                            (f64::from(r.width), f64::from(r.height)).into(),
+                        )
+                    })
+                    .max_by(|a, b| a.size.w.total_cmp(&b.size.w))
+            })
+            .next();
+        let output = self.space.output_geometry(&self.output)?.to_f64();
+        let center: Point<f64, Logical> = match panel {
+            Some(panel) => (
+                panel.loc.x + panel.size.w - FROM_RIGHT,
+                panel.loc.y + panel.size.h / 2.0,
+            )
+                .into(),
+            None => (
+                output.loc.x + output.size.w / 2.0,
+                output.loc.y + output.size.h - 40.0,
+            )
+                .into(),
+        };
+        Some(Rectangle::new(
+            (center.x - WIDTH / 2.0, center.y - height / 2.0).into(),
+            (WIDTH, height).into(),
+        ))
+    }
+
     /// Toglie la finestra dallo schermo e dà il focus a quella sotto.
     pub fn minimize_window(&mut self, window: &Window) -> Result<(), String> {
         let location = self
             .space
             .element_location(window)
             .ok_or("finestra non sullo schermo")?;
-        // La miniatura per il Dock, finché la finestra è ancora sullo schermo.
+        // La miniatura per il Dock e il genio, finché la finestra è ancora sullo schermo.
         self.capture_thumbnail(window);
+        self.start_genie(window, false);
         self.space.unmap_elem(window);
         self.minimized.push((window.clone(), location));
         self.announce_minimized(window, true);
@@ -45,7 +99,9 @@ impl State {
         };
         let (window, location) = self.minimized.remove(index);
         self.announce_minimized(&window, false);
-        self.space.map_element(window, location, true);
+        self.space.map_element(window.clone(), location, true);
+        // Esce dal Dock a genio; finché il genio non finisce la finestra resta nascosta.
+        self.start_genie(&window, true);
         true
     }
 

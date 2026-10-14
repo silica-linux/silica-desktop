@@ -122,6 +122,8 @@ pub struct State {
     pub animation_speed: f64,
     /// Finestre chiuse che stanno svanendo.
     pub closing: Vec<crate::render::Closing>,
+    /// Finestre che si riducono nel Dock o ne escono (genio).
+    pub genies: Vec<crate::render::Genie>,
     /// Qualità del vetro scelta (`--glass`, `ui.glass_quality`).
     pub glass_setting: GlassSetting,
     /// Il renderer gira su un rasterizzatore software (llvmpipe): il vetro automatico è
@@ -274,6 +276,7 @@ impl State {
             press_serial: None,
             animation_speed: 1.0,
             closing: Vec::new(),
+            genies: Vec::new(),
             glass_setting: GlassSetting::Auto,
             software_renderer: false,
         })

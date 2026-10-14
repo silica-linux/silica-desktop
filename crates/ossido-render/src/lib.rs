@@ -8,6 +8,7 @@ pub mod animation;
 pub mod backdrop;
 pub mod cache;
 pub mod corners;
+pub mod genie;
 pub mod glass;
 pub mod shadow;
 pub mod sprite;
@@ -28,6 +29,8 @@ pub struct Shaders {
     pub titlebar: Option<GlesPixelProgram>,
     pub glass: Option<glass::GlassPrograms>,
     pub tone: Option<GlesTexProgram>,
+    /// La deformazione a imbuto della riduzione nel Dock.
+    pub genie: Option<GlesTexProgram>,
 }
 
 /// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
@@ -64,12 +67,14 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         backdrop::SHADER,
         &backdrop::UNIFORMS,
     );
+    let genie = compile_texture(renderer, "genio", genie::SHADER, &genie::UNIFORMS);
     let shaders = Shaders {
         corners,
         shadow,
         titlebar,
         glass,
         tone,
+        genie,
     };
     renderer
         .egl_context()

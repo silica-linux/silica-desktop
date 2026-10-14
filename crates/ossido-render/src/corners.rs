@@ -41,7 +41,7 @@ pub const UNIFORMS: [(&str, smithay::backend::renderer::gles::UniformType); 5] =
 /// Le due righe della trasformazione affine da gl_FragCoord alla posizione nella finestra.
 /// Il frame disegna l'output con `transform` (winit: Flipped180, cattura: Normal), quindi
 /// le coordinate del framebuffer si riportano all'output con l'inversa.
-fn frag_to_local(
+pub(crate) fn frag_to_local(
     output: Size<i32, Physical>,
     window: Rectangle<f64, Physical>,
     transform: Transform,

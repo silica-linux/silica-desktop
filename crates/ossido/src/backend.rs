@@ -167,6 +167,9 @@ pub fn init_winit(
 impl State {
     /// Disegna l'output corrente fuori schermo e lo restituisce in RGBA.
     pub fn screenshot(&mut self) -> Result<Capture, String> {
+        let speed = self.animation_speed;
+        let now = Instant::now();
+        self.genies.retain(|genie| !genie.finished(now, speed));
         let glass_quality = self.glass_quality();
         self.advance_spaces(Instant::now());
         self.advance_panorama(Instant::now());
@@ -184,6 +187,7 @@ impl State {
                     clear_color: self.clear_color,
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
+                    genies: &self.genies,
                     now: Instant::now(),
                     glass_quality,
                     space_shift,
@@ -205,6 +209,7 @@ impl State {
                     clear_color: self.clear_color,
                     animation_speed: self.animation_speed,
                     closing: &self.closing,
+                    genies: &self.genies,
                     now: Instant::now(),
                     glass_quality,
                     space_shift,
@@ -235,6 +240,7 @@ impl State {
         let speed = self.animation_speed;
         let glass_quality = self.glass_quality();
         self.closing.retain(|closing| !closing.finished(now, speed));
+        self.genies.retain(|genie| !genie.finished(now, speed));
         self.advance_spaces(now);
         self.advance_panorama(now);
         let space_shift = self.space_shift();
@@ -254,6 +260,7 @@ impl State {
             clear_color,
             animation_speed: speed,
             closing: &self.closing,
+            genies: &self.genies,
             now,
             glass_quality,
             space_shift,
@@ -306,6 +313,40 @@ impl State {
             crate::render::snapshot_window(renderer, &self.space, &self.output, window)
         {
             self.closing.push(closing);
+        }
+    }
+}
+
+impl State {
+    /// Il genio di una finestra ancora nello spazio: verso il Dock (riduzione) o dal Dock
+    /// (ripristino, la finestra appena rimappata resta nascosta finché il genio non finisce).
+    /// Niente con le animazioni spente o senza GLES.
+    pub fn start_genie(&mut self, window: &smithay::desktop::Window, restoring: bool) {
+        if self.animation_speed <= 0.0 {
+            return;
+        }
+        let Some(target) = self.minimize_target(window) else {
+            return;
+        };
+        let renderer = match &mut self.backend {
+            Backend::Winit(backend) => backend.graphics.renderer(),
+            Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
+            Backend::Headless(Headless::Pixman(_)) => return,
+        };
+        let now = Instant::now();
+        let speed = self.animation_speed;
+        // Una finestra ha un solo genio: quello nuovo sostituisce il vecchio.
+        self.genies
+            .retain(|genie| !genie.finished(now, speed) && !genie.hides(window));
+        if let Some(genie) = crate::render::snapshot_genie(
+            renderer,
+            &self.space,
+            &self.output,
+            window,
+            target,
+            restoring,
+        ) {
+            self.genies.push(genie);
         }
     }
 }

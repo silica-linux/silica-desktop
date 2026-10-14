@@ -47,6 +47,8 @@ render_elements! {
     Tone=ossido_render::backdrop::ToneElement,
     /// Texture: titoli delle barre, istantanee delle finestre che si chiudono.
     Texture=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
+    /// Una finestra che si riduce nel Dock o ne esce, deformata a genio.
+    Genie=ossido_render::genie::GenieElement,
     /// La fascia nera fra due spazi che scorrono.
     Solid=SolidColorRenderElement,
 }
@@ -67,6 +69,8 @@ pub struct RenderContext<'a> {
     /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
     pub animation_speed: f64,
     pub closing: &'a [Closing],
+    /// Finestre che si riducono nel Dock o ne escono.
+    pub genies: &'a [Genie],
     pub now: Instant,
     pub glass_quality: GlassQuality,
     /// Cambio di spazio in corso: sfondo e barra dei menu scorrono con le finestre.
@@ -125,6 +129,58 @@ pub struct Closing {
 impl Closing {
     pub fn finished(&self, now: Instant, speed: f64) -> bool {
         animation::progress(now - self.start, animation::CLOSE, speed) >= 1.0
+    }
+}
+
+/// Una finestra che si riduce nel Dock o ne esce: l'istantanea che si deforma a genio.
+pub struct Genie {
+    pub id: Id,
+    /// Cambia a ogni frame: la forma cambia anche se l'istantanea è la stessa.
+    pub commit: std::cell::Cell<smithay::backend::renderer::utils::CommitCounter>,
+    pub texture: GlesTexture,
+    /// L'istantanea nell'output, in pixel fisici.
+    pub snapshot: Rectangle<i32, Physical>,
+    /// La cornice della finestra (senza ombra) e la miniatura, in pixel fisici.
+    pub frame: Rectangle<f64, Physical>,
+    pub target: Rectangle<f64, Physical>,
+    pub start: Instant,
+    /// Il ripristino: la finestra è già mappata ma resta nascosta finché il genio non finisce.
+    pub restoring: Option<Window>,
+}
+
+impl Genie {
+    fn duration(&self) -> std::time::Duration {
+        if self.restoring.is_some() {
+            animation::RESTORE
+        } else {
+            animation::MINIMIZE
+        }
+    }
+
+    pub fn finished(&self, now: Instant, speed: f64) -> bool {
+        let gone = self
+            .restoring
+            .as_ref()
+            .is_some_and(|w| !smithay::utils::IsAlive::alive(w));
+        gone || animation::progress(now - self.start, self.duration(), speed) >= 1.0
+    }
+
+    /// La forma all'istante `now`.
+    pub fn shape(&self, now: Instant, speed: f64) -> animation::GenieShape {
+        let duration = self.duration();
+        let progress =
+            animation::progress(now.saturating_duration_since(self.start), duration, speed);
+        let ms = progress * duration.as_secs_f64() * 1000.0;
+        if self.restoring.is_some() {
+            animation::genie_restore(ms)
+        } else {
+            animation::genie_minimize(ms)
+        }
+    }
+
+    /// La finestra in ripristino che il genio nasconde ancora.
+    pub fn hides(&self, window: &Window) -> bool {
+        self.restoring.as_ref() == Some(window)
     }
 }
 
@@ -408,6 +464,34 @@ fn window_elements(
     elements
 }
 
+/// Il genio di una finestra ancora nello spazio, verso (o da) `target` in punti dell'output.
+pub fn snapshot_genie(
+    renderer: &mut GlesRenderer,
+    space: &Space<Window>,
+    output: &Output,
+    window: &Window,
+    target: Rectangle<f64, Logical>,
+    restoring: bool,
+) -> Option<Genie> {
+    let snapshot = snapshot_window(renderer, space, output, window)?;
+    let scale = output.current_scale().fractional_scale();
+    let origin = space.output_geometry(output)?.loc.to_f64();
+    let mut frame = frame_rect(window, space.element_geometry(window)?);
+    frame.loc -= origin;
+    let mut target = target;
+    target.loc -= origin;
+    Some(Genie {
+        id: Id::new(),
+        commit: std::cell::Cell::default(),
+        texture: snapshot.texture,
+        snapshot: snapshot.bbox,
+        frame: frame.to_physical(scale),
+        target: target.to_physical(scale),
+        start: Instant::now(),
+        restoring: restoring.then(|| window.clone()),
+    })
+}
+
 /// L'istantanea di una finestra (superfici, barra e ombra) per l'animazione di chiusura.
 pub fn snapshot_window(
     renderer: &mut GlesRenderer,
@@ -629,6 +713,7 @@ pub fn output_elements(
             )));
         }
     }
+    let top_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Top);
 
     // Le finestre chiuse svaniscono sopra le altre.
@@ -659,6 +744,34 @@ pub fn output_elements(
         )));
     }
 
+    // Le finestre che vanno nel Dock o ne escono, sopra le altre (e sopra il Dock: la coda
+    // dell'imbuto si vede dentro la cella).
+    let genie_program = ossido_render::shaders(renderer).genie;
+    for genie in context.genies {
+        let mut commit = genie.commit.get();
+        commit.increment();
+        genie.commit.set(commit);
+        if let Some(element) =
+            ossido_render::genie::GenieElement::new(ossido_render::genie::GenieParts {
+                id: genie.id.clone(),
+                commit,
+                context_id: context_id.clone(),
+                texture: genie.texture.clone(),
+                snapshot: genie.snapshot,
+                window: genie.frame,
+                target: genie.target,
+                shape: genie.shape(context.now, context.animation_speed),
+                output: output_size,
+                program: genie_program.clone(),
+            })
+        {
+            elements.insert(top_start, OutputElement::Genie(element));
+            for anchor in &mut anchors {
+                anchor.index = after_insert(anchor.index, top_start);
+            }
+        }
+    }
+
     for window in space.elements().rev() {
         // La finestra trascinata in Panorama è già in cima.
         if context
@@ -675,6 +788,10 @@ pub fn output_elements(
             && panorama.progress > 0.0
             && !panorama.placements.iter().any(|p| &p.window == window)
         {
+            continue;
+        }
+        // Una finestra che esce dal Dock si vede solo nel genio, fino alla fine.
+        if context.genies.iter().any(|genie| genie.hides(window)) {
             continue;
         }
         let mut factor = open_scale(window, context);
