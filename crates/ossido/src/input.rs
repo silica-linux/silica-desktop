@@ -70,7 +70,12 @@ impl State {
             self.window_hit(location)
         };
         let hover = match &hit {
-            Some(Hit::Titlebar(window, _, local)) if titlebar::over_buttons(*local) => {
+            Some(Hit::Titlebar(window, _, local))
+                if titlebar::over_buttons(
+                    *local,
+                    crate::decorations::button_bar_height(window),
+                ) =>
+            {
                 Some(window.clone())
             }
             _ => None,

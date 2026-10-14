@@ -32,7 +32,8 @@ uniform float alt;
 uniform float disabled;
 // 0 = full-size content: no background or row, only the buttons over the app.
 uniform float bar;
-// Vertical center of the buttons.
+// Center of the first button (the others are 23 pt apart) and the vertical center of all.
+uniform float button_x;
 uniform float button_y;
 // 1 = dark appearance (windows.md: "Dark" tables of the buttons).
 uniform float dark;
@@ -162,9 +163,9 @@ void main() {
     vec3 min_s = pressed == 1.0 && !min_off ? min_p : no_shift;
     vec3 zoom_s = pressed == 2.0 && !zoom_off ? zoom_p : no_shift;
 
-    vec2 c1 = vec2(26.0, button_y);
-    vec2 c2 = vec2(49.0, button_y);
-    vec2 c3 = vec2(72.0, button_y);
+    vec2 c1 = vec2(button_x, button_y);
+    vec2 c2 = vec2(button_x + 23.0, button_y);
+    vec2 c3 = vec2(button_x + 46.0, button_y);
     color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s),
                  color);
     if (min_off) {

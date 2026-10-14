@@ -472,8 +472,8 @@ fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
     let list: Vec<WindowInfo> =
         serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
     let info = &list[0];
-    // The green button: center x 72, y 26 of the bar, which sits above the content.
-    let (bx, by) = (info.x + 72, info.y - 52 + 26);
+    // The green button: center x 62, y 16 of the bar, which sits above the content.
+    let (bx, by) = (info.x + 62, info.y - 32 + 16);
     c.call(INPUT_POINTER_MOVE, json!({"x": bx, "y": by}))
         .unwrap();
     c.call(

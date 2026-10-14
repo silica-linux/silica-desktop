@@ -172,10 +172,32 @@ Groups of buttons sit in glass capsules.
 
 - **Size and spacing:** **14 pt** discs, plus a 1 pt antialiased halo, with a **23 pt**
   pitch (9 pt between discs).
-- **Position:**
-  - With a toolbar, the first centre is **26 pt** from the left edge, at the bar's vertical
-    centre (y 26).
-  - With only a title bar, the centres sit **16 pt** from the left and top edges.
+- **Position (rule, TITLEBAR-GLASS #86):** the discs are always **vertically centred** on
+  the bar, and the left margin depends only on the bar height:
+  - Plain **32 pt** title bar (also title + tab bar, as in the Terminal; the tab bar below
+    does not move them): centres at x 16, 39 and 62, y 16, so the first disc edge is
+    **9 pt** from the window's left edge.
+  - **52 pt** unified toolbar (with or without a full-height sidebar): centres at x 26, 49
+    and 72, y 26, so the edge is **19 pt** from the left edge. There is no shorter "compact"
+    toolbar.
+  - Other heights (an app that declares its own band): y = height / 2; the margin is 9 pt up
+    to 32 pt, 19 pt from 52 pt, and in between a linear blend rounded to a whole point
+    (not measured). Ossido implements this in `ossido_render::titlebar::button_centers`.
+  - **Narrow windows:** the buttons never move or shrink; margin and centre stay constant.
+    Apps declare a minimum window width that keeps them clear (`SilicaWindow.setSizeLimits`):
+    115 pt for a plain document window, 177 pt for a terminal (20 columns), 516 pt for a
+    file manager, 574 pt for a browser.
+  - **Where the height comes from:** the app tells Ossido its band with
+    `SilicaWindow.setFullSizeContent(toolbarHeight)` (`silica-window-v1`); without it Ossido
+    draws its own 32 pt bar. Hit areas, hover symbols and the zoom menu use the same
+    geometry.
+  - **Disabled button:** a grey disc, even in an active window.
+- **Title in Ossido's 32 pt bar:** left-aligned (not centred), the document icon at x 81 and
+  the text from x 100 (Ossido draws no icon), about 13 pt bold, centred on the bar, and
+  truncated with an ellipsis that stays 10 pt from the right edge. Colours: light active
+  `#4c4c4c`, inactive `#bfbfbf`; dark active `#aaa9a8`, inactive `#6f6e6d`. In 52 pt
+  toolbars the app draws the title (about 15 pt bold after the leading items, centred on
+  y 26) and Ossido draws none.
 
 At rest in an active window. Each disc has a vertical gradient, more saturated at the top:
 

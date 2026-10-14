@@ -1,11 +1,10 @@
 //! The title in the server-side decorations bar.
 //!
-//! Toolbar measurements (`plan/reference/windows.md`): cap height 10.75 pt → Inter at
-//! ~15 pt (inference: the system font cannot be identified), semibold weight, baseline at
-//! ~31 pt from the top, `#4d4d4d` active and `#bebebe` inactive; in dark `#e9e9e9` and
-//! `#646464`.
-//! In the reference file manager the title follows the navigation buttons; a window with only the title is
-//! not measured: here it is centered, provisional.
+//! Plain 32 pt bar (`plan/reference/titlebar.md` §1): the title is LEFT-aligned, the text
+//! starts at x 100 (the document icon sits at x 81), about 13 pt bold (Inter semibold here:
+//! the system font cannot be identified), ink centred on the bar, and when it does not fit
+//! it is shortened with an ellipsis that stays 10 pt from the right edge. In 52 pt toolbars
+//! the app draws the title itself (Ossido draws none).
 
 use std::cell::RefCell;
 
@@ -19,16 +18,22 @@ use tracing::warn;
 
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.ttf");
 
-/// Title size in points.
-pub const SIZE: f32 = 15.0;
-/// Baseline from the top of the frame, in points.
-pub const BASELINE: f64 = 31.0;
-/// Margin from the button group (which ends at x 80) and from the right edge.
-const MARGIN: f64 = 92.0;
-const ACTIVE: [u8; 3] = [0x4d, 0x4d, 0x4d];
-const INACTIVE: [u8; 3] = [0xbe, 0xbe, 0xbe];
-const ACTIVE_DARK: [u8; 3] = [0xe9, 0xe9, 0xe9];
-const INACTIVE_DARK: [u8; 3] = [0x64, 0x64, 0x64];
+/// Title size in points (32 pt bar: ascender ink 10 px, x-height 7 px, about 13 pt bold).
+pub const SIZE: f32 = 13.0;
+/// Baseline from the top of the frame, in points: the ink is centred on the 32 pt bar
+/// (rows 11-20).
+pub const BASELINE: f64 = 21.0;
+/// Where the text starts, from the left edge (after the buttons and the document icon at
+/// x 81; Ossido draws no icon).
+const LEFT: f64 = 100.0;
+/// Distance of the ellipsis from the right edge.
+const RIGHT: f64 = 10.0;
+// Ink colors of the measured title (titlebar.md §1): light #4c4c4c / #bfbfbf, dark #aaa9a8 /
+// #6f6e6d.
+const ACTIVE: [u8; 3] = [0x4c, 0x4c, 0x4c];
+const INACTIVE: [u8; 3] = [0xbf, 0xbf, 0xbf];
+const ACTIVE_DARK: [u8; 3] = [0xaa, 0xa9, 0xa8];
+const INACTIVE_DARK: [u8; 3] = [0x6f, 0x6e, 0x6d];
 
 /// The title color according to state and appearance.
 pub fn color(active: bool, dark: bool) -> [u8; 3] {
@@ -144,7 +149,6 @@ struct Cached {
     buffer: TextureBuffer<GlesTexture>,
     /// Position of the baseline in the raster, in points.
     ascent: f64,
-    size: Size<i32, Logical>,
 }
 
 impl Title {
@@ -163,7 +167,7 @@ impl Title {
             return None;
         }
         let buffer_scale = scale.round().max(1.0) as i32;
-        let available = f64::from(frame.size.w) - 2.0 * MARGIN;
+        let available = f64::from(frame.size.w) - LEFT - RIGHT;
         if available < f64::from(SIZE) {
             return None;
         }
@@ -206,14 +210,11 @@ impl Title {
                 key,
                 buffer,
                 ascent: f64::from(raster.ascent) / f64::from(buffer_scale),
-                size: size.to_logical(buffer_scale, Transform::Normal),
             });
         }
         let cached = state.as_ref()?;
-        // Centered in the frame, without touching the buttons.
-        let x = (f64::from(frame.loc.x)
-            + (f64::from(frame.size.w) - f64::from(cached.size.w)) / 2.0)
-            .max(f64::from(frame.loc.x) + MARGIN);
+        // Left-aligned, after the buttons.
+        let x = f64::from(frame.loc.x) + LEFT;
         let y = f64::from(frame.loc.y) + BASELINE - cached.ascent;
         let location: Point<i32, smithay::utils::Physical> =
             Point::<f64, Logical>::from((x, y)).to_physical_precise_round(scale);
