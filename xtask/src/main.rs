@@ -185,6 +185,12 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: SILICA_ICONS_DIR={}", icons.display());
         command.env("SILICA_ICONS_DIR", icons);
     }
+    // The interface sounds (silica-daemon's Sound1): this repository's data/sounds.
+    if std::env::var_os("SILICA_SOUNDS_DIR").is_none() {
+        let sounds = root()?.join("data/sounds");
+        eprintln!("xtask: SILICA_SOUNDS_DIR={}", sounds.display());
+        command.env("SILICA_SOUNDS_DIR", sounds);
+    }
     // The cursors: the silica-cursors clone next to this repository, for Ossido.
     if std::env::var_os("SILICA_CURSORS_DIR").is_none()
         && let Some(cursors) = root()?.parent().map(|dir| dir.join("silica-cursors"))

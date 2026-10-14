@@ -1,8 +1,8 @@
 # silica-daemon
 
-Silica's system services on D-Bus (`crates/daemon`, binary `silica-daemon`). Today the
-notifications; the Control Center (network, Bluetooth, battery, brightness, audio) arrives in
-M4.4.
+Silica's system services on D-Bus (`crates/daemon`, binary `silica-daemon`): notifications,
+the system state for the Control Center, the clipboard history, Faro's actions and the
+interface sound effects.
 
 ```
 silica-daemon [--address ADDRESS] [--replace]
@@ -165,6 +165,38 @@ The system actions of Faro's actions scope (`crates/daemon/src/actions.rs`), on
 - `List() → s`: `[{id, label, description, shortcut}]` from Ossido's command catalog
   (`silica-control`), for the commands a person runs by name. Faro runs them with
   `engine.execute`.
+
+## dev.frascella.Silica.Sound1
+
+The interface sound effects (`crates/daemon/src/sound.rs`), on `/dev/frascella/Silica/Sound1`,
+for apps and the shell.
+
+- `PlaySound(s name)`: plays `<name>.wav` (or `.oga`, `.ogg`) with PipeWire's `pw-play` and
+  returns at once. The name is 1–64 characters among `a-z`, `0-9` and `-`; anything else is
+  `InvalidArgs`, a name with no file `FileNotFound`. At most 4 sounds play at once (more are
+  dropped, not an error); without `pw-play` nothing plays and nothing fails.
+- `UiSoundsEnabled() → b` and `SetUiSoundsEnabled(b)`: "Play user interface sound effects", on
+  by default, saved as `{"ui_sounds": false}` in `$XDG_CONFIG_HOME/silica/sound.json`. The file
+  is read again on each sound, so a change made elsewhere applies at once. Signal
+  `UiSoundsChanged(b)`.
+
+Where the sounds are looked for, first match wins: `$SILICA_SOUNDS_DIR`, then
+`$XDG_DATA_HOME/silica/sounds`, then `silica/sounds` in each of `$XDG_DATA_DIRS`. The sounds
+are original, synthesized by `tools/sounds/synth.py` into `data/sounds/`; `cargo xtask run`
+points `SILICA_SOUNDS_DIR` there, `cargo xtask os deploy` copies them into the share's
+`share/silica/sounds`, and a package installs them in `/usr/share/silica/sounds`.
+
+| Name | When |
+| --- | --- |
+| `trash-move` | items moved to the Trash from a menu or the keyboard (file manager windows and desktop) |
+| `trash-drag` | items dropped on the Dock's Trash |
+| `trash-empty` | the Trash emptied |
+| `file-transfer` | a copy or move finished (drag and drop, paste, a drop on a Dock folder) |
+
+```
+gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \
+  -m dev.frascella.Silica.Sound1.PlaySound trash-empty
+```
 
 ## Replacement
 

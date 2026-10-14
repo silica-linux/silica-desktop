@@ -28,6 +28,7 @@ import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
 import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
+import '../system/sounds.dart';
 import 'apps.dart';
 import 'autostart.dart';
 import 'launcher_entry.dart';
@@ -409,10 +410,13 @@ class _LiveDockState extends State<LiveDock> {
   /// stack they move into the folder, on an app they open with it.
   Future<void> _dropFiles(Item item, List<String> paths) async {
     if (item.trash) {
+      // The sound on release, as the items go in (MU-40, FILE-SOUNDS).
+      unawaited(playUiSound(UiSound.trashDrag));
       await moveToTrash(paths);
     } else if (item.folder case final folder?) {
       try {
-        await Process.run('mv', ['--', ...paths, folder]);
+        final moved = await Process.run('mv', ['--', ...paths, folder]);
+        if (moved.exitCode == 0) unawaited(playUiSound(UiSound.fileTransfer));
       } on ProcessException {
         // No mv: the files stay where they are.
       }
@@ -663,6 +667,8 @@ class _LiveDockState extends State<LiveDock> {
             onEmpty: () async {
               setState(() => _confirmEmpty = false);
               await emptyTrash();
+              // Once emptied (MU-42: the sound follows the emptying).
+              unawaited(playUiSound(UiSound.trashEmpty));
               if (mounted) setState(() {});
             },
             onCancel: () => setState(() => _confirmEmpty = false),
