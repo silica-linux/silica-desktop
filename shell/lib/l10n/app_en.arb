@@ -754,6 +754,14 @@
   "@desktopQuickPreview": {
     "description": "Desktop item context menu (not available yet)"
   },
+  "desktopCustomizeFolder": "Customize Folder…",
+  "@desktopCustomizeFolder": {
+    "description": "Desktop item context menu, on one folder: Get Info on its Customize Folder section (as the file manager's window menu)"
+  },
+  "desktopTags": "Tags…",
+  "@desktopTags": {
+    "description": "Desktop item context menu, when the selection is not one folder (not available yet)"
+  },
   "desktopSortSize": "Size",
   "@desktopSortSize": {
     "description": "Desktop context menu › Sort By"
