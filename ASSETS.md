@@ -24,3 +24,4 @@ generated in code are preferred.
 | `docs/spec/diagrams/tip-popover.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/windows-corner.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
 | `docs/spec/diagrams/spaces-switch.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
+| `docs/spec/diagrams/panorama-bar.svg` | Silica project | MIT OR Apache-2.0 | original, drawn from the measurements in `docs/spec/` |
