@@ -238,6 +238,20 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   bool _launcher = false;
   bool _hovered = false;
 
+  /// The round buttons coming out on hover: the panel narrows from 640 to 384 pt with a
+  /// damped spring (~390 ms, small undershoot) and the buttons slide out from behind it from
+  /// +80 ms, overshooting ~7 % (spotlight › animation, measured on the first-run layout).
+  late final AnimationController _reveal = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 670),
+  )..addListener(() => setState(() {}));
+
+  void _setHovered(bool hovered) {
+    if (hovered == _hovered) return;
+    _hovered = hovered;
+    hovered ? _reveal.forward() : _reveal.reverse();
+  }
+
   /// The chosen row; with an answer card, 0 is the card and the rows start at 1.
   int _selected = 0;
   DateTime? _openedAt;
@@ -285,6 +299,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     _commands?.cancel();
     _open.dispose();
     _back.dispose();
+    _reveal.dispose();
     _query.dispose();
     _focus.dispose();
     super.dispose();
@@ -326,6 +341,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       _launcher = false;
       _openedAt = DateTime.now();
       _hovered = false;
+      _reveal.value = 0;
       // It reopens with the previous query, selected (SH-SP-04).
       _query.selection = TextSelection(
         baseOffset: 0,
@@ -462,8 +478,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     if (elapsed < 70) WidgetsBinding.instance.scheduleFrame();
     // Steady state: one 640 pt capsule, empty or with results (SH-SP-04). The round buttons
     // come out only while the pointer is on the empty panel (provisional, not measured).
-    final buttons = !searching && _hovered;
-    final width = buttons ? narrowWidth : wideWidth;
+    final t = searching ? 0.0 : _reveal.value * 670;
+    // Panel width: spring settling in ~390 ms; buttons: from +80 ms, settling by ~670 ms.
+    final narrow = Curves.easeOutBack.transform((t / 390).clamp(0.0, 1.0));
+    final slide = Curves.easeOutBack.transform(
+      ((t - 80) / 590).clamp(0.0, 1.0),
+    );
+    final buttons = t > 0;
+    final width = wideWidth + (narrowWidth - wideWidth) * narrow;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -491,14 +513,28 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 behavior: HitTestBehavior.opaque,
               ),
             ),
+            if (buttons && back >= 1)
+              for (var i = 3; i >= 0; i--)
+                Positioned(
+                  // From behind the panel (all overlapped at its right end) out to the
+                  // 64 pt pitch.
+                  left:
+                      left +
+                      narrowWidth -
+                      circle +
+                      (10 + circle + i * circlePitch) * slide,
+                  top: top + (headerHeight - circle) / 2,
+                  width: circle,
+                  height: circle,
+                  child: Opacity(opacity: opacity, child: _circleButton(i)),
+                ),
             Positioned(
               left: left,
               top: top,
               width: panelWidth,
               height: panelHeight,
               child: MouseRegion(
-                onEnter: (_) => setState(() => _hovered = true),
-                onExit: (_) => setState(() => _hovered = false),
+                onEnter: (_) => _setHovered(true),
                 child: Transform(
                   alignment: Alignment.center,
                   transform: Matrix4.diagonal3Values(1, scaleY, 1),
@@ -515,19 +551,21 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            if (buttons && back >= 1)
-              for (var i = 0; i < 4; i++)
-                Positioned(
-                  left: left + narrowWidth + 10 + i * circlePitch,
-                  top: top + (headerHeight - circle) / 2,
-                  width: circle,
-                  height: circle,
-                  child: MouseRegion(
-                    onEnter: (_) => setState(() => _hovered = true),
-                    onExit: (_) => setState(() => _hovered = false),
-                    child: Opacity(opacity: opacity, child: _circleButton(i)),
-                  ),
+            // The hover zone is the whole 640 pt frame, buttons included: the panel narrowing
+            // under the pointer must not count as leaving it.
+            if (!searching && back >= 1)
+              Positioned(
+                left: left,
+                top: top,
+                width: wideWidth,
+                height: headerHeight,
+                child: MouseRegion(
+                  opaque: false,
+                  hitTestBehavior: HitTestBehavior.translucent,
+                  onEnter: (_) => _setHovered(true),
+                  onExit: (_) => _setHovered(false),
                 ),
+              ),
           ],
         );
       },
