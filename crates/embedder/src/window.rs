@@ -112,6 +112,11 @@ use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
 
 /// The app state channel (StringCodec).
+/// A window side requested by the app, in logical pixels: 1–8192, rounded.
+fn window_side(value: f64) -> Option<u32> {
+    (value.is_finite() && value >= 1.0).then(|| value.round().min(8192.0) as u32)
+}
+
 const LIFECYCLE_CHANNEL: &str = "flutter/lifecycle";
 
 /// The `flutter/lifecycle` message for an active window or not.
@@ -662,7 +667,10 @@ impl App {
     /// The `silica/window` channel (JSONMethodCodec):
     /// - `setFullSizeContent {toolbarHeight}`: full-size content (0 goes back to Ossido's
     ///   bar); answers whether Ossido offers it;
-    /// - `startMove`: moves the window with the pointer (from the app's toolbar).
+    /// - `startMove`: moves the window with the pointer (from the app's toolbar);
+    /// - `setSize {width, height}`: the app chooses its window size (logical pixels);
+    /// - `setSizeLimits {minWidth?, minHeight?, maxWidth?, maxHeight?}`: limits for resizing;
+    ///   min = max makes the window fixed-size (Ossido then disables the zoom button).
     fn handle_window_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -692,6 +700,38 @@ impl App {
                     window.move_(seat, self.press_serial);
                 }
                 crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("setSizeLimits") => {
+                let limit = |key: &str| {
+                    call.pointer(&format!("/args/{key}"))
+                        .and_then(serde_json::Value::as_f64)
+                        .and_then(window_side)
+                };
+                let pair = |w, h| match (limit(w), limit(h)) {
+                    (Some(w), Some(h)) => Some((w, h)),
+                    _ => None,
+                };
+                window.set_min_size(pair("minWidth", "minHeight"));
+                window.set_max_size(pair("maxWidth", "maxHeight"));
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("setSize") => {
+                let side = |key: &str| {
+                    call.pointer(&format!("/args/{key}"))
+                        .and_then(serde_json::Value::as_f64)
+                        .and_then(window_side)
+                };
+                let (Some(width), Some(height)) = (side("width"), side("height")) else {
+                    return crate::text_input::success(serde_json::json!(false));
+                };
+                // A floating window may choose its own size: the next buffer has it and Ossido
+                // follows the committed geometry.
+                self.size = (width, height);
+                self.send_metrics();
+                let qh = self.qh.clone();
+                self.present(&qh);
+                crate::text_input::success(serde_json::json!(true))
             }
             _ => Vec::new(),
         }
@@ -1896,6 +1936,16 @@ impl wayland_client::Dispatch<ExtForeignToplevelHandleV1, ()> for App {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::lifecycle_message;
+
+    #[test]
+    fn window_sides_from_the_app_are_bounded() {
+        use super::window_side;
+        assert_eq!(window_side(230.4), Some(230));
+        assert_eq!(window_side(0.5), None);
+        assert_eq!(window_side(-3.0), None);
+        assert_eq!(window_side(f64::NAN), None);
+        assert_eq!(window_side(1e9), Some(8192));
+    }
 
     #[test]
     fn the_active_window_is_resumed_the_others_inactive() {
