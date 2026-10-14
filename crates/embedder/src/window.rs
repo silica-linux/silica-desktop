@@ -11,10 +11,17 @@ use silica_protocols::shell::client::silica_shell_manager_v1::SilicaShellManager
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
+use smithay_client_toolkit::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
+use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, DragOffer};
+use smithay_client_toolkit::data_device_manager::data_source::{DataSourceHandler, DragSource};
+use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
+use smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice;
+use smithay_client_toolkit::reexports::client::protocol::wl_data_device_manager::DndAction;
+use smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent as SeatKeyEvent, KeyboardHandler, Keysym, Modifiers,
@@ -35,9 +42,9 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{
-    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
-    delegate_registry, delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
-    registry_handlers,
+    delegate_compositor, delegate_data_device, delegate_keyboard, delegate_layer, delegate_output,
+    delegate_pointer, delegate_registry, delegate_seat, delegate_shm, delegate_xdg_shell,
+    delegate_xdg_window, registry_handlers,
 };
 use tracing::{info, warn};
 use wayland_client::globals::registry_queue_init;
@@ -51,6 +58,17 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 };
 
 use crate::{LayerKeyboard, LayerKind, Options, Renderer};
+
+/// Un trascinamento uscito da questa finestra (`silica/drag` › `start`).
+struct DragOut {
+    source: DragSource,
+    /// Il corpo `text/uri-list` da mandare a chi lo chiede.
+    body: Arc<Vec<u8>>,
+    /// L'icona e il suo buffer, vivi fino alla fine.
+    icon: Option<(wl_surface::WlSurface, Buffer)>,
+    /// L'ultima azione scelta dal compositor.
+    action: DndAction,
+}
 
 /// La superficie che ospita l'app: una finestra normale o un layer della shell.
 enum Shell {
@@ -194,6 +212,14 @@ struct App {
     appearance: Option<SilicaWindowV1>,
     /// La finestra attiva per Ossido (`activated` di xdg_toplevel), come l'ha saputo Flutter.
     activated: Option<bool>,
+    /// Trascinamento fra app: il gestore, il dispositivo del seat, quello uscito da qui e
+    /// l'offerta rilasciata qui (i dati arrivano da un thread su `drops`).
+    data_manager: Option<DataDeviceManagerState>,
+    data_device: Option<DataDevice>,
+    drag_out: Option<DragOut>,
+    drag_in: bool,
+    dropped: Option<DragOffer>,
+    drops: Option<channel::Sender<(f64, f64, Vec<u8>)>>,
     /// Il seat del puntatore e il seriale dell'ultima pressione (per spostare la finestra).
     seat: Option<wl_seat::WlSeat>,
     press_serial: u32,
@@ -490,6 +516,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         appearance: None,
         activated: None,
+        data_manager: DataDeviceManagerState::bind(&globals, &qh).ok(),
+        data_device: None,
+        drag_out: None,
+        drag_in: false,
+        dropped: None,
+        drops: None,
         seat: None,
         press_serial: 0,
         glass: Glass::new(
@@ -539,6 +571,18 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("canale dell'aspetto: {e}"))?;
     let _appearance = crate::appearance::watch(appearance_sender);
 
+    // I dati di un rilascio, letti su un thread (la sorgente può essere questa finestra).
+    let (drop_sender, drop_channel) = channel::channel::<(f64, f64, Vec<u8>)>();
+    event_loop
+        .handle()
+        .insert_source(drop_channel, |event, _, app: &mut App| {
+            if let Event::Msg((x, y, data)) = event {
+                app.deliver_drop(x, y, &data);
+            }
+        })
+        .map_err(|e| format!("canale dei rilasci: {e}"))?;
+    app.drops = Some(drop_sender);
+
     while !app.exit {
         let timeout = app.run_due_tasks();
         event_loop.dispatch(Some(timeout), &mut app)?;
@@ -566,6 +610,7 @@ impl App {
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
             LAYER_CHANNEL => self.handle_layer_call(&message.data),
             WINDOW_CHANNEL => self.handle_window_call(&message.data),
+            crate::drag::CHANNEL => self.handle_drag_call(&message.data),
             glass::CHANNEL => {
                 let (reply, changed) =
                     self.glass
@@ -663,6 +708,100 @@ impl App {
                 engine.send_message(LIFECYCLE_CHANNEL, lifecycle_message(active).as_bytes())
         {
             warn!("flutter/lifecycle: {err}");
+        }
+    }
+
+    /// Il canale `silica/drag` (vedi `drag.rs`): `start` comincia un trascinamento.
+    fn handle_drag_call(&mut self, data: &[u8]) -> Vec<u8> {
+        let reply = |started: bool| crate::text_input::success(serde_json::json!(started));
+        let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
+            return Vec::new();
+        };
+        if call.get("method").and_then(serde_json::Value::as_str) != Some("start") {
+            return Vec::new();
+        }
+        let Some(start) = call.get("args").and_then(crate::drag::parse_start) else {
+            return reply(false);
+        };
+        let (Some(manager), Some(device)) = (&self.data_manager, &self.data_device) else {
+            return reply(false);
+        };
+        let source = manager.create_drag_and_drop_source(
+            &self.qh,
+            [crate::drag::URI_LIST],
+            DndAction::Copy | DndAction::Move,
+        );
+        let icon = start.icon.as_ref().and_then(|icon| {
+            let side = |v: u32| i32::try_from(v).ok();
+            let (width, height) = (side(icon.width)?, side(icon.height)?);
+            let (buffer, canvas) = self
+                .pool
+                .create_buffer(width, height, width * 4, wl_shm::Format::Argb8888)
+                .ok()?;
+            canvas
+                .get_mut(..icon.bgra.len())?
+                .copy_from_slice(&icon.bgra);
+            let surface = self.compositor.create_surface(&self.qh);
+            Some((surface, buffer, width, height))
+        });
+        source.start_drag(
+            device,
+            self.surface.wl_surface(),
+            icon.as_ref().map(|(surface, ..)| surface),
+            self.press_serial,
+        );
+        let icon = icon.and_then(|(surface, buffer, width, height)| {
+            buffer.attach_to(&surface).ok()?;
+            surface.damage_buffer(0, 0, width, height);
+            surface.commit();
+            Some((surface, buffer))
+        });
+        self.drag_out = Some(DragOut {
+            source,
+            body: Arc::new(crate::drag::uri_list(&start.uris)),
+            icon,
+            action: DndAction::empty(),
+        });
+        reply(true)
+    }
+
+    /// Una chiamata verso l'app su `silica/drag`.
+    fn send_drag(&self, method: &str, args: serde_json::Value) {
+        if let Some(engine) = &self.engine
+            && let Err(err) =
+                engine.send_message(crate::drag::CHANNEL, &crate::drag::call(method, args))
+        {
+            warn!("silica/drag: {err}");
+        }
+    }
+
+    /// Il trascinamento uscito da qui è finito: l'app sa con quale azione.
+    fn finish_drag_out(&mut self, completed: bool) {
+        let Some(drag) = self.drag_out.take() else {
+            return;
+        };
+        let action = if !completed {
+            "none"
+        } else if drag.action.contains(DndAction::Move) {
+            "move"
+        } else if drag.action.contains(DndAction::Copy) {
+            "copy"
+        } else {
+            "none"
+        };
+        if let Some((surface, _)) = &drag.icon {
+            surface.destroy();
+        }
+        self.send_drag("finished", serde_json::json!({ "action": action }));
+    }
+
+    /// I dati di un rilascio sono arrivati: all'app gli URI, poi l'offerta si chiude.
+    fn deliver_drop(&mut self, x: f64, y: f64, data: &[u8]) {
+        let uris = crate::drag::parse_uri_list(data);
+        self.send_drag("drop", serde_json::json!({ "x": x, "y": y, "uris": uris }));
+        if let Some(offer) = self.dropped.take() {
+            offer.finish();
+            offer.destroy();
         }
     }
 
@@ -1140,6 +1279,11 @@ impl SeatHandler for App {
         }
         if capability == Capability::Pointer {
             self.seat = Some(seat.clone());
+            if self.data_device.is_none()
+                && let Some(manager) = &self.data_manager
+            {
+                self.data_device = Some(manager.get_data_device(qh, &seat));
+            }
         }
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seat_state.get_pointer(qh, &seat) {
@@ -1198,6 +1342,11 @@ impl PointerHandler for App {
                     self.send_pointer(PointerPhase::Add, position, None);
                 }
                 PointerEventKind::Leave { .. } => {
+                    // Con un pulsante premuto (un trascinamento passato a Ossido) il gesto in
+                    // corso si annulla prima di togliere il puntatore.
+                    if self.buttons != 0 {
+                        self.send_pointer(PointerPhase::Cancel, position, None);
+                    }
                     self.buttons = 0;
                     self.send_pointer(PointerPhase::Remove, position, None);
                 }
@@ -1344,6 +1493,185 @@ impl ProvidesRegistryState for App {
     registry_handlers![OutputState, SeatState];
 }
 
+impl DataDeviceHandler for App {
+    fn enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        device: &WlDataDevice,
+        x: f64,
+        y: f64,
+        surface: &wl_surface::WlSurface,
+    ) {
+        if surface != self.surface.wl_surface() {
+            return;
+        }
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .filter(|d| d.inner() == device)
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let files = offer.with_mime_types(|mimes| mimes.iter().any(|m| m == crate::drag::URI_LIST));
+        if !files {
+            offer.accept_mime_type(offer.serial, None);
+            return;
+        }
+        offer.accept_mime_type(offer.serial, Some(crate::drag::URI_LIST.to_owned()));
+        offer.set_actions(DndAction::Copy | DndAction::Move, DndAction::Copy);
+        self.drag_in = true;
+        self.send_drag("enter", serde_json::json!({ "x": x, "y": y }));
+    }
+
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
+        if std::mem::take(&mut self.drag_in) {
+            self.send_drag("leave", serde_json::Value::Null);
+        }
+    }
+
+    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, x: f64, y: f64) {
+        if self.drag_in {
+            self.send_drag("motion", serde_json::json!({ "x": x, "y": y }));
+        }
+    }
+
+    fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+
+    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, device: &WlDataDevice) {
+        if !std::mem::take(&mut self.drag_in) {
+            return;
+        }
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .filter(|d| d.inner() == device)
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let (x, y) = (offer.x, offer.y);
+        let pipe = match offer.receive(crate::drag::URI_LIST.to_owned()) {
+            Ok(pipe) => pipe,
+            Err(err) => {
+                warn!("rilascio illeggibile: {err}");
+                return;
+            }
+        };
+        let Some(sender) = self.drops.clone() else {
+            return;
+        };
+        self.dropped = Some(offer);
+        std::thread::spawn(move || {
+            let mut data = Vec::new();
+            let mut file = std::fs::File::from(std::os::fd::OwnedFd::from(pipe));
+            // Al più 16 MB di URI: oltre si tronca.
+            let _ = std::io::Read::read_to_end(
+                &mut std::io::Read::take(&mut file, 16 << 20),
+                &mut data,
+            );
+            let _ = sender.send((x, y, data));
+        });
+    }
+}
+
+impl DataOfferHandler for App {
+    fn source_actions(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &mut DragOffer,
+        _: DndAction,
+    ) {
+    }
+
+    fn selected_action(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &mut DragOffer,
+        _: DndAction,
+    ) {
+    }
+}
+
+impl DataSourceHandler for App {
+    fn accept_mime(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlDataSource,
+        _: Option<String>,
+    ) {
+    }
+
+    fn send_request(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        source: &WlDataSource,
+        mime: String,
+        mut pipe: WritePipe,
+    ) {
+        let Some(drag) = self
+            .drag_out
+            .as_ref()
+            .filter(|d| d.source.inner() == source)
+        else {
+            return;
+        };
+        if mime != crate::drag::URI_LIST {
+            return;
+        }
+        // Su un thread: chi legge può essere questa stessa finestra.
+        let body = Arc::clone(&drag.body);
+        std::thread::spawn(move || {
+            if let Err(err) = std::io::Write::write_all(&mut pipe, &body) {
+                warn!("trascinamento: dati non mandati: {err}");
+            }
+        });
+    }
+
+    fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
+        if self
+            .drag_out
+            .as_ref()
+            .is_some_and(|d| d.source.inner() == source)
+        {
+            self.finish_drag_out(false);
+        }
+    }
+
+    fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataSource) {}
+
+    fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
+        if self
+            .drag_out
+            .as_ref()
+            .is_some_and(|d| d.source.inner() == source)
+        {
+            self.finish_drag_out(true);
+        }
+    }
+
+    fn action(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        source: &WlDataSource,
+        action: DndAction,
+    ) {
+        if let Some(drag) = self
+            .drag_out
+            .as_mut()
+            .filter(|d| d.source.inner() == source)
+        {
+            drag.action = action;
+        }
+    }
+}
+
 delegate_compositor!(App);
 delegate_output!(App);
 delegate_shm!(App);
@@ -1354,6 +1682,7 @@ delegate_xdg_shell!(App);
 delegate_xdg_window!(App);
 delegate_layer!(App);
 delegate_registry!(App);
+delegate_data_device!(App);
 wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaWindowManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaWindowV1);

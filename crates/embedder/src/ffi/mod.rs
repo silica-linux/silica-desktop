@@ -168,6 +168,8 @@ pub enum PointerPhase {
     Down,
     Move,
     Up,
+    /// Un gesto interrotto (il puntatore portato via da un trascinamento fra app).
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -818,6 +820,7 @@ impl Engine {
             PointerPhase::Down => FlutterPointerPhase::kDown,
             PointerPhase::Move => FlutterPointerPhase::kMove,
             PointerPhase::Up => FlutterPointerPhase::kUp,
+            PointerPhase::Cancel => FlutterPointerPhase::kCancel,
         };
         let (signal_kind, (scroll_delta_x, scroll_delta_y)) = match event.scroll {
             Some(delta) => (

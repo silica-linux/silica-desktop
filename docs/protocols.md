@@ -77,3 +77,19 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
 - `silica_shell_manager_v1.execute_with(id, params)` (versione 5): come `execute`, con i
   parametri in un oggetto JSON (le istantanee: `screenshot.region`, `screenshot.window_at`).
   Ossido annuncia ogni istantanea con il broadcast `screenshot` = "<percorso> <l> <a>".
+
+## Trascinamento fra app (`wl_data_device`)
+
+Protocollo standard, nessuna estensione. Ossido disegna l'icona del trascinamento
+(`start_drag`) con l'angolo sul puntatore, sopra tutto, fino al rilascio.
+
+L'embedder lo offre alle app sul canale `silica/drag` (JSONMethodCodec, `SilicaDrag` in
+silica_ui ≥ 0.16):
+
+- `start {uris, icon?: {width, height, rgba}}` dall'app: una sorgente `text/uri-list`
+  (azioni copia e sposta) con il seriale dell'ultima pressione. Quando Ossido prende il
+  puntatore, il gesto di Flutter in corso riceve un annullamento.
+- Verso l'app: `enter`/`motion {x, y}` e `leave` per i trascinamenti con `text/uri-list`
+  sopra la finestra (accettati, copia preferita), `drop {x, y, uris}` con i dati già letti
+  (su un thread: la sorgente può essere la finestra stessa), `finished {action}` per quelli
+  usciti dalla finestra.

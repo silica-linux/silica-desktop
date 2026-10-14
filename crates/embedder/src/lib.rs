@@ -12,6 +12,7 @@
 mod appearance;
 mod codec;
 pub mod dbus;
+mod drag;
 mod ffi;
 mod glass;
 mod keyboard;
