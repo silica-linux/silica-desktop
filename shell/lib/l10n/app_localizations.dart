@@ -985,6 +985,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reply'**
   String get replyPlaceholder;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Restart your computer now?'**
+  String get powerRestartTitle;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Silica will restart automatically in {seconds} seconds.'**
+  String powerRestartBody(int seconds);
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get powerRestartButton;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Shut down your computer now?'**
+  String get powerShutDownTitle;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Silica will shut down automatically in {seconds} seconds.'**
+  String powerShutDownBody(int seconds);
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Shut Down'**
+  String get powerShutDownButton;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Log out {user} and quit all apps?'**
+  String powerLogOutTitle(String user);
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'You will be logged out automatically in {seconds} seconds.'**
+  String powerLogOutBody(int seconds);
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Log Out'**
+  String get powerLogOutButton;
+
+  /// Power confirmation card (SH-MB-05)
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen windows when logging back in'**
+  String get powerReopenWindows;
 }
 
 class _AppLocalizationsDelegate

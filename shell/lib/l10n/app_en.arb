@@ -674,5 +674,65 @@
   "replyPlaceholder": "Reply",
   "@replyPlaceholder": {
     "description": "Placeholder of a notification's reply field."
+  },
+  "powerRestartTitle": "Restart your computer now?",
+  "@powerRestartTitle": {
+    "description": "Power confirmation card (SH-MB-05)"
+  },
+  "powerRestartBody": "Silica will restart automatically in {seconds} seconds.",
+  "@powerRestartBody": {
+    "description": "Power confirmation card (SH-MB-05)",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "powerRestartButton": "Restart",
+  "@powerRestartButton": {
+    "description": "Power confirmation card (SH-MB-05)"
+  },
+  "powerShutDownTitle": "Shut down your computer now?",
+  "@powerShutDownTitle": {
+    "description": "Power confirmation card (SH-MB-05)"
+  },
+  "powerShutDownBody": "Silica will shut down automatically in {seconds} seconds.",
+  "@powerShutDownBody": {
+    "description": "Power confirmation card (SH-MB-05)",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "powerShutDownButton": "Shut Down",
+  "@powerShutDownButton": {
+    "description": "Power confirmation card (SH-MB-05)"
+  },
+  "powerLogOutTitle": "Log out {user} and quit all apps?",
+  "@powerLogOutTitle": {
+    "description": "Power confirmation card (SH-MB-05)",
+    "placeholders": {
+      "user": {
+        "type": "String"
+      }
+    }
+  },
+  "powerLogOutBody": "You will be logged out automatically in {seconds} seconds.",
+  "@powerLogOutBody": {
+    "description": "Power confirmation card (SH-MB-05)",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "powerLogOutButton": "Log Out",
+  "@powerLogOutButton": {
+    "description": "Power confirmation card (SH-MB-05)"
+  },
+  "powerReopenWindows": "Reopen windows when logging back in",
+  "@powerReopenWindows": {
+    "description": "Power confirmation card (SH-MB-05)"
   }
 }

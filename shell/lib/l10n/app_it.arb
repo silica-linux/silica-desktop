@@ -147,5 +147,15 @@
   "ccNightLight": "Luce notturna",
   "chooseWidgets": "Scegli i widget",
   "clearAllNotifications": "Elimina tutte le notifiche",
-  "replyPlaceholder": "Rispondi"
+  "replyPlaceholder": "Rispondi",
+  "powerRestartTitle": "Riavviare il computer adesso?",
+  "powerRestartBody": "Silica si riavvierà automaticamente tra {seconds} secondi.",
+  "powerRestartButton": "Riavvia",
+  "powerShutDownTitle": "Spegnere il computer adesso?",
+  "powerShutDownBody": "Silica si spegnerà automaticamente tra {seconds} secondi.",
+  "powerShutDownButton": "Spegni",
+  "powerLogOutTitle": "Disconnettere {user} e chiudere tutte le app?",
+  "powerLogOutBody": "La disconnessione avverrà automaticamente tra {seconds} secondi.",
+  "powerLogOutButton": "Esci",
+  "powerReopenWindows": "Riapri le finestre al prossimo accesso"
 }

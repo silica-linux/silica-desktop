@@ -5,8 +5,10 @@
 // Down", the log out item loses its ellipsis and its shortcut becomes ⌥⇧⌘Q. The menu keeps
 // its size.
 //
-// Not done yet: Sleep, Restart, Shut Down and Lock Screen (they need the login manager
-// and the lock screen of the real session), so they are shown disabled.
+// Sleep, Restart, Shut Down and Log Out go through `power` (power.dart: the confirmation
+// card, logind). Outside a real Silica session the power items are disabled, so a nested or
+// test session never powers off its host. Lock Screen stays disabled until the lock screen
+// exists (SH-LK).
 
 import 'dart:io';
 import 'dart:math' as math;
@@ -19,6 +21,7 @@ import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/silica_icons.dart';
+import 'power.dart';
 
 /// Recent apps and documents for the "Recent Items" submenu (at most 10 each).
 class RecentItems {
@@ -119,6 +122,8 @@ List<MenuEntry> logoMenu({
   DesktopEntry? settings,
   RecentItems recent = const RecentItems(),
   VoidCallback? clearRecent,
+  void Function(PowerAction action, {required bool now})? power,
+  bool powerEnabled = false,
 }) {
   final hasRecent = recent.apps.isNotEmpty || recent.documents.isNotEmpty;
   return [
@@ -170,15 +175,29 @@ List<MenuEntry> logoMenu({
       onSelected: () => run('app.force_quit_panel'),
     ),
     const MenuDivider(),
-    MenuAction(l.sleep, enabled: false),
-    MenuAction(option ? l.restartNow : l.restart, enabled: false),
-    MenuAction(option ? l.shutDownNow : l.shutDown, enabled: false),
+    MenuAction(
+      l.sleep,
+      enabled: powerEnabled && power != null,
+      onSelected: () => power?.call(PowerAction.sleep, now: true),
+    ),
+    MenuAction(
+      option ? l.restartNow : l.restart,
+      enabled: powerEnabled && power != null,
+      onSelected: () => power?.call(PowerAction.restart, now: option),
+    ),
+    MenuAction(
+      option ? l.shutDownNow : l.shutDown,
+      enabled: powerEnabled && power != null,
+      onSelected: () => power?.call(PowerAction.shutDown, now: option),
+    ),
     const MenuDivider(),
     MenuAction(l.lockScreen, shortcut: '⌃⌘Q', enabled: false),
     MenuAction(
       option ? l.logOutUserNow(user) : l.logOutUser(user),
       shortcut: option ? '⌥⇧⌘Q' : '⇧⌘Q',
-      onSelected: () => run('session.quit'),
+      onSelected: power == null
+          ? () => run('session.quit')
+          : () => power(PowerAction.logOut, now: option),
     ),
   ];
 }

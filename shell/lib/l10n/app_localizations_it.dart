@@ -502,4 +502,42 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get replyPlaceholder => 'Rispondi';
+
+  @override
+  String get powerRestartTitle => 'Riavviare il computer adesso?';
+
+  @override
+  String powerRestartBody(int seconds) {
+    return 'Silica si riavvierà automaticamente tra $seconds secondi.';
+  }
+
+  @override
+  String get powerRestartButton => 'Riavvia';
+
+  @override
+  String get powerShutDownTitle => 'Spegnere il computer adesso?';
+
+  @override
+  String powerShutDownBody(int seconds) {
+    return 'Silica si spegnerà automaticamente tra $seconds secondi.';
+  }
+
+  @override
+  String get powerShutDownButton => 'Spegni';
+
+  @override
+  String powerLogOutTitle(String user) {
+    return 'Disconnettere $user e chiudere tutte le app?';
+  }
+
+  @override
+  String powerLogOutBody(int seconds) {
+    return 'La disconnessione avverrà automaticamente tra $seconds secondi.';
+  }
+
+  @override
+  String get powerLogOutButton => 'Esci';
+
+  @override
+  String get powerReopenWindows => 'Riapri le finestre al prossimo accesso';
 }

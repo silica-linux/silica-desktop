@@ -23,6 +23,7 @@ import '../system/media.dart';
 import '../system/system_status.dart';
 import 'desktop_menu.dart';
 import 'logo_menu.dart';
+import 'power.dart';
 import 'menus.dart';
 import 'status_icons.dart';
 import 'window_menu.dart';
@@ -152,6 +153,8 @@ class _MenuBarState extends State<MenuBar> {
             RecentApps().clear();
             RecentItems.clearDocuments();
           },
+          power: (action, {required now}) => _requestPower(action, now: now),
+          powerEnabled: powerAvailable(),
         )
       : barMenu(
           name,
@@ -368,6 +371,37 @@ class _MenuBarState extends State<MenuBar> {
           newFolder(desktopFolder(), l10nOf(context).desktopUntitledFolder),
       onChangeWallpaper: settings == null ? null : () => _launch(settings),
     );
+  }
+
+  /// The power confirmation on screen (SH-MB-05), above everything: the surface covers the
+  /// screen while it is up.
+  PowerAction? _power;
+
+  Future<void> _requestPower(PowerAction action, {required bool now}) async {
+    _closeMenu();
+    if (now || action == PowerAction.sleep) {
+      unawaited(_runPower(action));
+      return;
+    }
+    final screen = await LayerControl.outputSize();
+    if (!mounted) return;
+    setState(() => _power = action);
+    LayerControl.size(0, screen?.height ?? 800);
+    LayerControl.inputRegion(null);
+    LayerControl.keyboard('exclusive');
+  }
+
+  Future<void> _runPower(PowerAction action) => runPower(
+    action,
+    logOut: () => ShellChannel.instance.execute('session.quit'),
+  );
+
+  void _closePower() {
+    if (_power == null) return;
+    setState(() => _power = null);
+    LayerControl.keyboard('none');
+    LayerControl.inputRegion(null);
+    LayerControl.size(0, barHeight);
   }
 
   void _closeWindowMenu() {
@@ -610,6 +644,34 @@ class _MenuBarState extends State<MenuBar> {
                       tip: tip,
                       tipUp: true,
                       onDismissed: _closeWindowMenu,
+                    ),
+                  ),
+                if (_power case final action?)
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, box) => Stack(
+                        children: [
+                          // Clicks outside the card do nothing (it is modal); the
+                          // menu bar stays visible above it.
+                          const Positioned.fill(
+                            child: AbsorbPointer(child: SizedBox.expand()),
+                          ),
+                          Positioned(
+                            left: (box.maxWidth - powerCardSize.width) / 2,
+                            // Upper third: the measured card's top at ~20 % of the height.
+                            top: box.maxHeight * 0.205,
+                            child: PowerConfirmation(
+                              action: action,
+                              user: _user,
+                              onCancel: _closePower,
+                              onConfirm: () {
+                                _closePower();
+                                unawaited(_runPower(action));
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 if (_desktopMenuAt case final at?)
