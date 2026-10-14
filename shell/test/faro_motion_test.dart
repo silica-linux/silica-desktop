@@ -237,5 +237,26 @@ void main() {
         expect(find.byKey(const ValueKey('faro panel')), findsNothing);
       },
     );
+
+    testWidgets('the buttons coming out keep the field focused', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.pumpAndSettle();
+      final frame = panel();
+      final mouse = await hover(frame.center);
+      await tester.pumpAndSettle();
+      expect(button(0), findsOneWidget);
+      await mouse.moveTo(Offset(frame.center.dx, frame.bottom + 300));
+      await tester.pumpAndSettle();
+      // Typed, not tapped: the focus must still be in the field.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      tester.testTextInput.enterText('c');
+      await tester.pumpAndSettle();
+      final field = tester.widget<EditableText>(find.byType(EditableText));
+      expect(field.focusNode.hasFocus, isTrue);
+      expect(field.controller.text, 'c');
+      await mouse.removePointer();
+    });
   });
 }

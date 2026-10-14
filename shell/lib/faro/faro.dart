@@ -796,6 +796,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
             // here, left of its right edge (their glass merges with the panel's, as drops).
             if (buttons && back >= 1)
               Positioned(
+                // Keyed, like the panel: the buttons coming and going must not shift the
+                // panel to another element (its field would lose focus and the typed text).
+                key: const ValueKey('faro buttons'),
                 left: left + width,
                 top: top + (headerHeight - circle) / 2 - 2,
                 width: (frameLeft + wideWidth + 40 - (left + width)).clamp(
@@ -833,6 +836,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 ),
               ),
             Positioned(
+              key: const ValueKey('faro panel slot'),
               left: left,
               top: top,
               width: panelWidth,
