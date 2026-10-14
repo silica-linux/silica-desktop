@@ -24,6 +24,7 @@ use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
     set_data_device_focus,
 };
+use smithay::wayland::selection::ext_data_control::{DataControlHandler, DataControlState};
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
 };
@@ -313,6 +314,25 @@ impl DataDeviceHandler for State {
     }
 }
 
+impl DataControlHandler for State {
+    fn data_control_state(&self) -> &DataControlState {
+        &self.data_control_state
+    }
+}
+
+/// The only client that may read and set the selection without focus: silica-daemon, the
+/// clipboard history (by its executable, from the pid read when the client connected: a
+/// global filter must not query the display, which the dispatch holds locked). Every other
+/// client keeps the usual rule (only the focused one reads the clipboard).
+pub fn clipboard_manager_client(client: &Client) -> bool {
+    client
+        .get_data::<ClientState>()
+        .and_then(|state| state.pid)
+        .and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok())
+        .and_then(|exe| exe.file_name().map(|name| name == "silica-daemon"))
+        .unwrap_or(false)
+}
+
 impl ClientDndGrabHandler for State {
     fn started(
         &mut self,
@@ -339,6 +359,7 @@ delegate_shm!(State);
 delegate_xdg_shell!(State);
 delegate_seat!(State);
 delegate_data_device!(State);
+smithay::delegate_ext_data_control!(State);
 delegate_output!(State);
 delegate_viewporter!(State);
 smithay::delegate_cursor_shape!(State);

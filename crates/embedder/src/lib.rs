@@ -11,6 +11,7 @@
 
 mod app_lifecycle;
 mod appearance;
+mod clipboard;
 mod codec;
 pub mod dbus;
 mod drag;

@@ -13,7 +13,9 @@ use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
 use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, DragOffer};
-use smithay_client_toolkit::data_device_manager::data_source::{DataSourceHandler, DragSource};
+use smithay_client_toolkit::data_device_manager::data_source::{
+    CopyPasteSource, DataSourceHandler, DragSource,
+};
 use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Event};
@@ -202,6 +204,10 @@ impl Ord for Queued {
     }
 }
 
+/// How long the glass regions must stay the same before they are committed on their own
+/// (two frames): while they change every frame, the frames' commits carry them.
+const GLASS_SETTLE: Duration = Duration::from_millis(34);
+
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -233,6 +239,14 @@ struct App {
     data_device: Option<DataDevice>,
     drag_out: Option<DragOut>,
     drag_in: bool,
+    /// The selection this window owns (`Clipboard.setData`) and its text.
+    clipboard: Option<(CopyPasteSource, Arc<Vec<u8>>)>,
+    /// The serial of the last key or button press: setting the selection needs one.
+    input_serial: u32,
+    /// The commit that applies the glass regions once they stop changing.
+    glass_commit: Option<RegistrationToken>,
+    /// To send requests before waiting on another client (a paste).
+    conn: Connection,
     dropped: Option<DragOffer>,
     /// Pseudo-terminals of the app (`silica/pty`), their sources in the loop and whether the
     /// frame timer runs.
@@ -586,6 +600,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         data_device: None,
         drag_out: None,
         drag_in: false,
+        clipboard: None,
+        input_serial: 0,
+        glass_commit: None,
+        conn: conn.clone(),
         dropped: None,
         ptys: crate::pty::PtyHost::default(),
         pty_sources: BTreeMap::new(),
@@ -727,9 +745,13 @@ impl App {
                 let (reply, changed) =
                     self.glass
                         .handle_call(&message.data, self.surface.wl_surface(), &self.qh);
-                // The regions apply from the commit: without a new frame it is needed here.
+                // The regions apply from the next commit. Committing now would show them with
+                // the buffer already on screen, a frame ahead of the content they were
+                // measured on (a double edge while a panel animates). The frame they belong to
+                // is still being rasterized: its own commit carries them. Only once the
+                // regions stop changing, a commit makes sure they apply without a new frame.
                 if changed {
-                    self.surface.commit();
+                    self.commit_glass_later();
                 }
                 reply
             }
@@ -839,6 +861,12 @@ impl App {
             return Vec::new();
         };
         match call.get("method").and_then(serde_json::Value::as_str) {
+            Some("Clipboard.setData") => {
+                self.copy(crate::clipboard::set_data_text(call.get("args")));
+                b"[null]".to_vec()
+            }
+            Some("Clipboard.getData") => crate::clipboard::get_data_reply(self.paste().as_deref()),
+            Some("Clipboard.hasStrings") => crate::clipboard::has_strings_reply(self.has_strings()),
             Some("SystemChrome.setApplicationSwitcherDescription") => {
                 let label = call
                     .get("args")
@@ -853,6 +881,56 @@ impl App {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Commits the pending glass regions if they do not change for [GLASS_SETTLE].
+    fn commit_glass_later(&mut self) {
+        if let Some(token) = self.glass_commit.take() {
+            self.loop_handle.remove(token);
+        }
+        self.glass_commit = self
+            .loop_handle
+            .insert_source(Timer::from_duration(GLASS_SETTLE), |_, _, app: &mut App| {
+                app.glass_commit = None;
+                app.surface.commit();
+                TimeoutAction::Drop
+            })
+            .ok();
+    }
+
+    /// `Clipboard.setData`: this window becomes the selection owner with `text`.
+    fn copy(&mut self, text: Option<String>) {
+        let (Some(text), Some(manager), Some(device)) =
+            (text, &self.data_manager, &self.data_device)
+        else {
+            return;
+        };
+        let source = manager.create_copy_paste_source(&self.qh, crate::clipboard::TEXT_TYPES);
+        source.set_selection(device, self.input_serial);
+        self.clipboard = Some((source, Arc::new(text.into_bytes())));
+    }
+
+    /// `Clipboard.getData`: the selection's text, from this window or from its owner.
+    fn paste(&mut self) -> Option<String> {
+        if let Some((_, text)) = &self.clipboard {
+            return Some(String::from_utf8_lossy(text).into_owned());
+        }
+        let offer = self.data_device.as_ref()?.data().selection_offer()?;
+        let mime = offer.with_mime_types(crate::clipboard::text_type)?;
+        let pipe = offer.receive(mime).ok()?;
+        // The request must reach the owner before waiting for its answer.
+        let _ = self.conn.flush();
+        crate::clipboard::read_text(pipe.into(), crate::clipboard::READ_TIMEOUT)
+    }
+
+    /// `Clipboard.hasStrings`: is there text to paste?
+    fn has_strings(&self) -> bool {
+        self.clipboard.is_some()
+            || self
+                .data_device
+                .as_ref()
+                .and_then(|device| device.data().selection_offer())
+                .is_some_and(|offer| offer.with_mime_types(crate::clipboard::text_type).is_some())
     }
 
     /// Joins the app registry: the socket in the loop, the idle check on a timer (#142).
@@ -1987,6 +2065,7 @@ impl PointerHandler for App {
                 }
                 PointerEventKind::Press { button, serial, .. } => {
                     self.press_serial = serial;
+                    self.input_serial = serial;
                     let was_up = self.buttons == 0;
                     self.buttons |= button_mask(button);
                     let phase = if was_up {
@@ -2075,9 +2154,10 @@ impl KeyboardHandler for App {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
-        _: u32,
+        serial: u32,
         event: SeatKeyEvent,
     ) {
+        self.input_serial = serial;
         self.key_down(event);
     }
 
@@ -2249,6 +2329,18 @@ impl DataSourceHandler for App {
         mime: String,
         mut pipe: WritePipe,
     ) {
+        if let Some((copied, text)) = &self.clipboard
+            && copied.inner() == source
+        {
+            if crate::clipboard::TEXT_TYPES.contains(&mime.as_str()) {
+                let text = Arc::clone(text);
+                // On a thread: the reader may be this very window.
+                std::thread::spawn(move || {
+                    let _ = std::io::Write::write_all(&mut pipe, &text);
+                });
+            }
+            return;
+        }
         let Some(drag) = self
             .drag_out
             .as_ref()
@@ -2269,6 +2361,16 @@ impl DataSourceHandler for App {
     }
 
     fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
+        // Another client took the selection.
+        if self
+            .clipboard
+            .as_ref()
+            .is_some_and(|(copied, _)| copied.inner() == source)
+        {
+            self.clipboard = None;
+            source.destroy();
+            return;
+        }
         if self
             .drag_out
             .as_ref()

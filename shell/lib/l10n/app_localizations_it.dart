@@ -730,4 +730,129 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get dockAssignTo => 'Assegna alla scrivania';
+
+  @override
+  String get faroScopeApps => 'Applicazioni';
+
+  @override
+  String get faroScopeFiles => 'File';
+
+  @override
+  String get faroScopeActions => 'Azioni';
+
+  @override
+  String get faroScopeClipboard => 'Appunti';
+
+  @override
+  String get faroSearchFiles => 'Cerca nei file';
+
+  @override
+  String get faroSearchActions => 'Cerca nelle azioni';
+
+  @override
+  String get faroSearchClipboard => 'Cerca negli appunti';
+
+  @override
+  String get faroClearHistory => 'Cancella cronologia';
+
+  @override
+  String get faroImage => 'Immagine';
+
+  @override
+  String get faroSystemAction => 'Sistema';
+
+  @override
+  String faroCopied(String time) {
+    return 'Copiato $time';
+  }
+
+  @override
+  String get faroActionScreenshotScreen => 'Istantanea dello schermo';
+
+  @override
+  String get faroActionScreenshotSelection => 'Istantanea di una parte';
+
+  @override
+  String get faroActionScreenshotToolbar => 'Strumenti istantanea';
+
+  @override
+  String get faroActionSystemDarkToggle => 'Cambia aspetto chiaro/scuro';
+
+  @override
+  String get faroActionSystemMuteToggle => 'Attiva/disattiva audio';
+
+  @override
+  String get faroActionSystemVolumeUp => 'Alza il volume';
+
+  @override
+  String get faroActionSystemVolumeDown => 'Abbassa il volume';
+
+  @override
+  String get faroActionSystemBrightnessUp => 'Aumenta la luminosità';
+
+  @override
+  String get faroActionSystemBrightnessDown => 'Diminuisci la luminosità';
+
+  @override
+  String get faroActionPanoramaToggle => 'Panorama';
+
+  @override
+  String get faroActionPanoramaApp => 'Finestre dell\'app';
+
+  @override
+  String get faroActionDesktopShow => 'Mostra la scrivania';
+
+  @override
+  String get faroActionSpaceAdd => 'Nuova scrivania';
+
+  @override
+  String get faroActionSpaceNext => 'Scrivania successiva';
+
+  @override
+  String get faroActionSpacePrevious => 'Scrivania precedente';
+
+  @override
+  String get faroActionLauncherToggle => 'App';
+
+  @override
+  String get faroActionNotificationsToggle => 'Centro Notifiche';
+
+  @override
+  String get faroActionControlcenterToggle => 'Centro di Controllo';
+
+  @override
+  String get faroActionWindowMinimize => 'Riduci la finestra';
+
+  @override
+  String get faroActionWindowFullscreen => 'Schermo intero';
+
+  @override
+  String get faroActionWindowTileLeft => 'Metà sinistra';
+
+  @override
+  String get faroActionWindowTileRight => 'Metà destra';
+
+  @override
+  String get faroActionWindowTileTop => 'Metà superiore';
+
+  @override
+  String get faroActionWindowTileBottom => 'Metà inferiore';
+
+  @override
+  String get faroActionWindowTileFill => 'Riempi';
+
+  @override
+  String get faroActionWindowArrange2 => 'Disponi due finestre';
+
+  @override
+  String get faroActionWindowArrange3 => 'Disponi tre finestre';
+
+  @override
+  String get faroActionWindowArrange4 => 'Disponi quattro finestre';
+
+  @override
+  String get faroActionAppForceQuitPanel => 'Uscita forzata';
+
+  @override
+  String get faroActionSessionQuit => 'Esci dalla sessione';
 }

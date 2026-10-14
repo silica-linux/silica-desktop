@@ -19,6 +19,7 @@ class DesktopEntry {
     this.keywords = const [],
     this.silicaIcon,
     this.categories = const [],
+    this.actions = const [],
   });
 
   /// File name without `.desktop` (e.g. `org.gnome.Nautilus`).
@@ -40,6 +41,9 @@ class DesktopEntry {
   /// The freedesktop categories (`Categories`, e.g. `Utility`, `Office`).
   final List<String> categories;
 
+  /// The entry's own actions (`Actions` and their `[Desktop Action …]` groups).
+  final List<DesktopAction> actions;
+
   /// The window with this app id belongs to this app.
   bool matchesAppId(String appId) {
     if (appId.isEmpty) return false;
@@ -49,6 +53,23 @@ class DesktopEntry {
         id.toLowerCase().split('.').last == lower ||
         exec.split(' ').first.split('/').last.toLowerCase() == lower;
   }
+}
+
+/// An action of an app (a `[Desktop Action <id>]` group): a name and its command.
+class DesktopAction {
+  const DesktopAction({
+    required this.id,
+    required this.name,
+    required this.exec,
+    this.icon,
+  });
+
+  final String id;
+  final String name;
+
+  /// Command without field codes, ready for `sh -c`.
+  final String exec;
+  final String? icon;
 }
 
 /// The command that opens `paths` with the app (Desktop Entry specification, "Exec"): `%f`/`%u`
@@ -119,17 +140,26 @@ DesktopEntry? parseDesktopEntry(
   String locale = 'en',
 }) {
   final values = <String, String>{};
-  var inEntry = false;
+  final groups = <String, Map<String, String>>{};
+  const actionHeader = '[Desktop Action ';
+  Map<String, String>? group;
   for (final raw in text.split('\n')) {
     final line = raw.trim();
     if (line.startsWith('[')) {
-      inEntry = line == '[Desktop Entry]';
+      group = line == '[Desktop Entry]'
+          ? values
+          : line.startsWith(actionHeader) && line.endsWith(']')
+          ? groups.putIfAbsent(
+              line.substring(actionHeader.length, line.length - 1),
+              () => {},
+            )
+          : null;
       continue;
     }
-    if (!inEntry || line.startsWith('#')) continue;
+    if (group == null || line.startsWith('#')) continue;
     final eq = line.indexOf('=');
     if (eq <= 0) continue;
-    values.putIfAbsent(
+    group.putIfAbsent(
       line.substring(0, eq).trim(),
       () => line.substring(eq + 1).trim(),
     );
@@ -158,6 +188,18 @@ DesktopEntry? parseDesktopEntry(
         .split(';')
         .where((c) => c.isNotEmpty)
         .toList(),
+    actions: [
+      for (final action in (values['Actions'] ?? '').split(';'))
+        if (groups[action] case final g?)
+          if ((g['Name[$locale]'] ?? g['Name']) case final actionName?)
+            if (g['Exec'] case final actionExec?)
+              DesktopAction(
+                id: action,
+                name: actionName,
+                exec: stripFieldCodes(actionExec),
+                icon: g['Icon'],
+              ),
+    ],
   );
 }
 

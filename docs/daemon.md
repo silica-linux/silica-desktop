@@ -139,3 +139,34 @@ output with `wpctl`, read again every second. If a service is missing the source
   backend and sends Flutter `flutter/settings` with `platformBrightness`.
 - Ossido starts `silica-portal` together with `silica-daemon` on its private bus; the
   commands `system.dark` and `system.dark_toggle` call `SetDark`.
+
+## dev.frascella.Silica.Clipboard1
+
+The clipboard history, for Faro's clipboard scope (`crates/daemon/src/clipboard.rs`), on
+`/dev/frascella/Silica/Clipboard1`.
+
+- `History() → s`: the entries as JSON, newest first: `[{id, kind, text, image?, time}]`. `kind`
+  is `text`, `image` (a PNG kept in `$XDG_RUNTIME_DIR/silica/clipboard/`) or `files`, a
+  `text/uri-list`.
+- `Copy(t id) → b`: puts the entry back on the clipboard, from the daemon's own source.
+- `Remove(t id) → b` and `Clear()`.
+- Signal `Changed()` on every change.
+
+How it watches the selection: over `ext-data-control-v1`. Ossido offers that global only to
+`silica-daemon`, recognised by its executable through the pid of its socket. A selection that
+carries the `x-kde-passwordManagerHint` type is never read. The history lives in memory and is
+bounded (50 entries, 8 hours, both provisional).
+
+## dev.frascella.Silica.Actions1
+
+The system actions of Faro's actions scope (`crates/daemon/src/actions.rs`), on
+`/dev/frascella/Silica/Actions1`.
+
+- `List() → s`: `[{id, label, description, shortcut}]` from Ossido's command catalog
+  (`silica-control`), for the commands a person runs by name. Faro runs them with
+  `engine.execute`.
+
+## Replacement
+
+When a newer daemon takes `dev.frascella.Silica` (`--replace`, from a new session on the same
+bus), the old one exits instead of polling the system next to it.

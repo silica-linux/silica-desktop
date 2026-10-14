@@ -1,7 +1,7 @@
 // Faro's instant answers: calculations ("12*3" → 36) and unit conversions ("10 km in miles"
 // → 6.21 miles), shown as a card under the field and completed inline ("= 36").
-// spotlight.md › Inventory INV-A3 (SH-SP-13, SH-SP-14). Currency conversions need exchange
-// rates from the network: not done.
+// spotlight.md › Inventory INV-A3 (SH-SP-13, SH-SP-14). Currency conversions use the ECB's
+// daily rates (rates.dart).
 
 import 'dart:math' as math;
 
@@ -18,9 +18,21 @@ class FaroAnswer {
 
 /// The answer for `query`, or null: a conversion first, then a calculation. `decimal` is the
 /// decimal separator of the shell's language.
-FaroAnswer? answerFor(String query, {String decimal = '.'}) {
+FaroAnswer? answerFor(
+  String query, {
+  String decimal = '.',
+  Map<String, double> rates = const {},
+}) {
   final q = query.trim();
   if (q.isEmpty) return null;
+  final money = convertCurrency(q, rates);
+  if (money != null) {
+    return FaroAnswer(
+      expression: '$q =',
+      result:
+          '${money.$1.toStringAsFixed(2).replaceAll('.', decimal)} ${money.$2}',
+    );
+  }
   final conversion = convertUnits(q);
   if (conversion != null) {
     return FaroAnswer(
@@ -444,4 +456,53 @@ final RegExp _conversion = RegExp(
   if (from.quantity != to.quantity) return null;
   final base = value * from.factor + from.offset;
   return ((base - to.offset) / to.factor, targetText);
+}
+
+/// Names and symbols of currencies, besides the ISO codes ("eur", "usd").
+const Map<String, String> _currencyNames = {
+  '€': 'EUR',
+  'euro': 'EUR',
+  'euros': 'EUR',
+  r'$': 'USD',
+  'dollar': 'USD',
+  'dollars': 'USD',
+  'dollaro': 'USD',
+  'dollari': 'USD',
+  '£': 'GBP',
+  'pound': 'GBP',
+  'pounds': 'GBP',
+  'sterlina': 'GBP',
+  'sterline': 'GBP',
+  '¥': 'JPY',
+  'yen': 'JPY',
+  'franc': 'CHF',
+  'francs': 'CHF',
+  'franco': 'CHF',
+  'franchi': 'CHF',
+};
+
+final RegExp _money = RegExp(
+  r'^(?:([€$£¥])\s*)?(\d+(?:[.,]\d+)?)\s*([a-zA-Z€$£¥]+)?\s+(?:in|to|into|a|→|->)\s+([a-zA-Z€$£¥]+)$',
+  caseSensitive: false,
+);
+
+String? _currency(String? text, Map<String, double> rates) {
+  if (text == null) return null;
+  final upper = text.toUpperCase();
+  if (rates.containsKey(upper)) return upper;
+  final named = _currencyNames[text.toLowerCase()];
+  return named != null && rates.containsKey(named) ? named : null;
+}
+
+/// "100 EUR in USD", "€20 to dollars" → (the value, the target ISO code), with `rates` per
+/// euro. Null if it is not a conversion between two known currencies.
+(double, String)? convertCurrency(String text, Map<String, double> rates) {
+  if (rates.isEmpty) return null;
+  final match = _money.firstMatch(text.trim());
+  if (match == null) return null;
+  final value = double.tryParse(match[2]!.replaceAll(',', '.'));
+  final from = _currency(match[1] ?? match[3], rates);
+  final to = _currency(match[4], rates);
+  if (value == null || from == null || to == null || from == to) return null;
+  return (value / rates[from]! * rates[to]!, to);
 }
