@@ -28,6 +28,8 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1:
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
     self, ZxdgToplevelDecorationV1,
 };
+use wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
+use wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
 use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
@@ -50,6 +52,10 @@ struct App {
     pointer: Option<WlPointer>,
     /// The serial of the last button press on the window.
     press_serial: Option<u32>,
+    /// What the pointer did on the window (`TestWindow::pointer_log`).
+    pointer_log: PointerLog,
+    /// Ossido closed the window's popup (`xdg_popup.popup_done`).
+    popup_done: bool,
     configured: bool,
     /// The last size requested by Ossido (`xdg_toplevel.configure`).
     configured_size: Option<(i32, i32)>,
@@ -181,13 +187,23 @@ impl Dispatch<WlPointer, ()> for App {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Button {
-            serial,
-            state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
-            ..
-        } = event
-        {
-            state.press_serial = Some(serial);
+        match event {
+            wl_pointer::Event::Button {
+                serial,
+                state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
+                ..
+            } => {
+                state.press_serial = Some(serial);
+                state.pointer_log.presses += 1;
+            }
+            wl_pointer::Event::Enter { .. } => {
+                state.pointer_log.inside = true;
+                state.pointer_log.enters += 1;
+            }
+            wl_pointer::Event::Leave { .. } => state.pointer_log.inside = false,
+            wl_pointer::Event::Motion { .. } => state.pointer_log.motions += 1,
+            wl_pointer::Event::Axis { .. } => state.pointer_log.axes += 1,
+            _ => {}
         }
     }
 }
@@ -270,6 +286,22 @@ delegate_noop!(App: ignore SilicaGlassManagerV1);
 delegate_noop!(App: ignore SilicaGlassV1);
 delegate_noop!(App: ignore SilicaWindowManagerV1);
 delegate_noop!(App: ignore SilicaWindowV1);
+delegate_noop!(App: XdgPositioner);
+
+impl Dispatch<XdgPopup, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &XdgPopup,
+        event: xdg_popup::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_popup::Event::PopupDone = event {
+            state.popup_done = true;
+        }
+    }
+}
 
 impl Dispatch<ZxdgToplevelDecorationV1, ()> for App {
     fn event(
@@ -308,11 +340,25 @@ impl Dispatch<XdgToplevel, ()> for App {
     }
 }
 
+/// The pointer events a window received since it opened.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PointerLog {
+    /// The pointer is on the window now.
+    pub inside: bool,
+    pub enters: u32,
+    pub motions: u32,
+    pub presses: u32,
+    pub axes: u32,
+}
+
 /// A window open on Ossido; it stays alive as long as this value exists.
 pub struct TestWindow {
     queue: EventQueue<App>,
     app: App,
     surface: WlSurface,
+    xdg_surface: XdgSurface,
+    /// An open popup: its surface, xdg role objects and buffer.
+    popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
     _toplevel: XdgToplevel,
     _decoration: Option<ZxdgToplevelDecorationV1>,
     glass: Option<SilicaGlassV1>,
@@ -417,12 +463,67 @@ impl TestWindow {
             queue,
             app,
             surface,
+            xdg_surface,
+            popup: None,
             _toplevel: toplevel,
             _decoration: decoration,
             glass: None,
             appearance: None,
             buffer,
         }
+    }
+
+    /// Opens a `size` popup with a grab (an app's menu) at `at` in the window, as after a
+    /// press on it (the serial of the last press; the window must have been clicked).
+    #[allow(dead_code)]
+    pub fn open_grabbing_popup(&mut self, at: (i32, i32), (w, h): (u32, u32)) {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let qh = self.queue.handle();
+        let compositor = self.app.compositor.clone().expect("wl_compositor");
+        let shm = self.app.shm.clone().expect("wl_shm");
+        let wm_base = self.app.wm_base.clone().expect("xdg_wm_base");
+        let seat = self.app.seat.clone().expect("wl_seat");
+        let serial = self.app.press_serial.expect("no press on the window");
+        let positioner = wm_base.create_positioner(&qh, ());
+        positioner.set_size(w as i32, h as i32);
+        positioner.set_anchor_rect(at.0, at.1, 1, 1);
+        let surface = compositor.create_surface(&qh, ());
+        let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
+        let popup = xdg_surface.get_popup(Some(&self.xdg_surface), &positioner, &qh, ());
+        popup.grab(&seat, serial);
+        surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&RED_BGRA.repeat((w * h) as usize)).unwrap();
+        let pool = shm.create_pool(file.as_fd(), (w * h * 4) as i32, &qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            w as i32,
+            h as i32,
+            (w * 4) as i32,
+            wl_shm::Format::Argb8888,
+            &qh,
+            (),
+        );
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, w as i32, h as i32);
+        surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.popup = Some((surface, xdg_surface, popup, buffer));
+    }
+
+    /// Ossido closed the popup.
+    #[allow(dead_code)]
+    pub fn popup_done(&mut self) -> bool {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.popup_done
+    }
+
+    /// The pointer events received so far (after a roundtrip).
+    #[allow(dead_code)]
+    pub fn pointer_log(&mut self) -> PointerLog {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.pointer_log
     }
 
     /// Recommits the same buffer `count` times, every `every`: frames at a known pace.

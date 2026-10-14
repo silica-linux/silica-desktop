@@ -1,5 +1,8 @@
 //! Transient UI (#149): while a shell menu or panel is open the windows keep the pointer, and
-//! a press outside ends it (`dismissed`); per transient the press stops there or goes on.
+//! a press outside ends it (`dismissed`). Since silica-shell-v1 version 7 the outside is split
+//! between the owner app and the other surfaces, each with its rule (the reference's
+//! INPUT-01): a menu is modal only for its app, the Dock menu only reactivates the app that
+//! was active, a panel never blocks; the wheel never ends anything.
 
 #![allow(
     clippy::unwrap_used,
@@ -10,17 +13,19 @@
 
 mod common;
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 
 use common::Headless;
-use common::client::{FIRST_WINDOW_AT, TestWindow};
+use common::client::{APP_ID, PointerLog, TestWindow};
 use serde_json::{Value, json};
-use silica_control::commands::{INPUT_CLICK, WINDOW_LIST, WindowInfo};
+use silica_control::commands::{
+    INPUT_CLICK, INPUT_POINTER_MOVE, INPUT_SCROLL, WINDOW_LIST, WindowInfo,
+};
 use silica_protocols::shell::client::silica_shell_manager_v1::{
-    self, Outside, SilicaShellManagerV1,
+    self, Outside, Rule, SilicaShellManagerV1,
 };
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
@@ -35,10 +40,19 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
 };
 
 const CHILD_SOCKET: &str = "SILICA_TEST_TRANSIENT_SOCKET";
-const CHILD_PRESS: &str = "SILICA_TEST_TRANSIENT_PRESS";
+const CHILD_MODE: &str = "SILICA_TEST_TRANSIENT_MODE";
 
 /// The menu: a small overlay in the bottom right corner, away from the windows.
 const MENU: (u32, u32) = (60, 40);
+
+/// The owner app ("front", on top and focused) and another app ("back", below it).
+const OWNER_APP: &str = "dev.test.Owner";
+const OTHER_APP: &str = "dev.test.Other";
+
+/// Only on "back" (the first window, at 32, 32, partly under "front" at 64, 64).
+const ON_BACK: (f64, f64) = (45.0, 80.0);
+/// Only on "front".
+const ON_FRONT: (f64, f64) = (150.0, 115.0);
 
 #[derive(Default)]
 struct App {
@@ -60,14 +74,18 @@ impl Dispatch<WlRegistry, ()> for App {
         qh: &QueueHandle<Self>,
     ) {
         if let wl_registry::Event::Global {
-            name, interface, ..
+            name,
+            interface,
+            version,
         } = event
         {
             match interface.as_str() {
                 "wl_compositor" => app.compositor = Some(registry.bind(name, 4, qh, ())),
                 "wl_shm" => app.shm = Some(registry.bind(name, 1, qh, ())),
                 "zwlr_layer_shell_v1" => app.layer_shell = Some(registry.bind(name, 1, qh, ())),
-                "silica_shell_manager_v1" => app.manager = Some(registry.bind(name, 6, qh, ())),
+                "silica_shell_manager_v1" => {
+                    app.manager = Some(registry.bind(name, version.min(7), qh, ()));
+                }
                 _ => {}
             }
         }
@@ -128,9 +146,33 @@ delegate_noop!(App: ignore WlBuffer);
 delegate_noop!(App: WlShmPool);
 delegate_noop!(App: ignore ZwlrLayerShellV1);
 
-/// The shell component: opens the menu with its transient, prints READY, then listens for a
-/// while and prints how many `dismissed` it received.
-fn menu_client(socket: &str, press: Outside) {
+/// How the child opens its transient.
+#[derive(Clone, Copy)]
+enum Mode {
+    /// Version 6: one rule for every surface.
+    V6(Outside),
+    /// Version 7: the owner app and the two rules.
+    V7(&'static str, Rule, Rule),
+}
+
+impl Mode {
+    fn encode(self) -> String {
+        let rule = |rule: Rule| match rule {
+            Rule::Pass => "pass",
+            Rule::Activate => "activate",
+            _ => "modal",
+        };
+        match self {
+            Mode::V6(Outside::PassThrough) => "v6 pass_through".to_owned(),
+            Mode::V6(_) => "v6 consume".to_owned(),
+            Mode::V7(owner, a, b) => format!("v7 {} {} {owner}", rule(a), rule(b)),
+        }
+    }
+}
+
+/// The shell component: opens the menu with its transient, prints READY, then listens until
+/// its stdin closes and prints how many `dismissed` it received.
+fn menu_client(socket: &str, mode: &str) {
     let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
     let mut queue = conn.new_event_queue();
     let qh = queue.handle();
@@ -171,46 +213,82 @@ fn menu_client(socket: &str, press: Outside) {
     );
     surface.attach(Some(&buffer), 0, 0);
     surface.commit();
-    let manager = app
-        .manager
-        .clone()
-        .expect("silica_shell_manager_v1 version 6");
-    manager.set_transient(&surface, None, press, Outside::PassThrough);
+    let manager = app.manager.clone().expect("silica_shell_manager_v1");
+    let words: Vec<&str> = mode.split(' ').collect();
+    let rule = |word: &str| match word {
+        "pass" => Rule::Pass,
+        "activate" => Rule::Activate,
+        _ => Rule::Modal,
+    };
+    match words.as_slice() {
+        ["v7", owner_rule, other_rule, owner @ ..] => {
+            assert!(wayland_client::Proxy::version(&manager) >= 7);
+            manager.set_owned_transient(
+                &surface,
+                None,
+                owner.join(" "),
+                rule(owner_rule),
+                rule(other_rule),
+            );
+        }
+        ["v6", "pass_through"] => {
+            manager.set_transient(&surface, None, Outside::PassThrough, Outside::PassThrough);
+        }
+        _ => manager.set_transient(&surface, None, Outside::Consume, Outside::PassThrough),
+    }
     queue.roundtrip(&mut app).unwrap();
     println!("READY");
     std::io::stdout().flush().unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2500);
-    while std::time::Instant::now() < deadline {
+    // The parent closes stdin when it is done.
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = done.clone();
+    std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let _ = std::io::stdin().read_to_end(&mut sink);
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !done.load(std::sync::atomic::Ordering::SeqCst) && std::time::Instant::now() < deadline {
         queue.roundtrip(&mut app).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    queue.roundtrip(&mut app).unwrap();
     println!("DISMISSED {}", app.dismissed);
 }
 
 /// The child process: runs only when the parent test launches it.
 #[test]
 fn transient_child() {
-    if let Ok(socket) = std::env::var(CHILD_SOCKET) {
-        let press = match std::env::var(CHILD_PRESS).as_deref() {
-            Ok("pass_through") => Outside::PassThrough,
-            _ => Outside::Consume,
-        };
-        menu_client(&socket, press);
+    if let (Ok(socket), Ok(mode)) = (std::env::var(CHILD_SOCKET), std::env::var(CHILD_MODE)) {
+        menu_client(&socket, &mode);
     }
 }
 
-/// On the first window, outside the menu.
-fn on_first() -> (f64, f64) {
-    let at = FIRST_WINDOW_AT as f64;
-    (at + 5.0, at + 30.0)
+/// What the windows saw and whether the transient ended.
+struct Outcome {
+    dismissed: u32,
+    back: PointerLog,
+    front: PointerLog,
+    back_focused: bool,
+    front_focused: bool,
 }
 
-/// Opens two windows ("second" on top, focused), the menu with this policy, clicks at `at`;
-/// returns the child's output and whether "first" got the focus.
-fn click_at(name: &str, press: &str, at: (f64, f64)) -> (String, bool) {
+/// One of the control channel's input commands.
+enum Act {
+    Click((f64, f64), &'static str),
+    Scroll((f64, f64)),
+    Move((f64, f64)),
+}
+
+/// Opens "back" (app `OTHER_APP` unless `back_app`) and "front" (`OWNER_APP`, on top and
+/// focused), the menu in this mode, then runs the actions.
+fn run(name: &str, mode: Mode, back_app: &str, acts: &[Act]) -> Outcome {
     let ossido = Headless::start(name);
-    let _first = TestWindow::open(&ossido.wayland, "first");
-    let _second = TestWindow::open(&ossido.wayland, "second");
+    APP_ID.with(|id| *id.borrow_mut() = back_app.to_owned());
+    let mut back = TestWindow::open(&ossido.wayland, "back");
+    APP_ID.with(|id| *id.borrow_mut() = OWNER_APP.to_owned());
+    let mut front = TestWindow::open(&ossido.wayland, "front");
+    APP_ID.with(|id| id.borrow_mut().clear());
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -220,8 +298,9 @@ fn click_at(name: &str, press: &str, at: (f64, f64)) -> (String, bool) {
             "1",
         ])
         .env(CHILD_SOCKET, &ossido.wayland)
-        .env(CHILD_PRESS, press)
+        .env(CHILD_MODE, mode.encode())
         .env("SILICA_SHELL", "1")
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
@@ -237,41 +316,303 @@ fn click_at(name: &str, press: &str, at: (f64, f64)) -> (String, bool) {
             break;
         }
     }
-    ossido
-        .client()
-        .call(INPUT_CLICK, json!({"x": at.0, "y": at.1}))
+    // The pointer starts away from both windows (and the menu).
+    let mut control = ossido.client();
+    control
+        .call(INPUT_POINTER_MOVE, json!({"x": 5.0, "y": 190.0}))
         .unwrap();
+    let base_back = back.pointer_log();
+    let base_front = front.pointer_log();
+    for act in acts {
+        match act {
+            Act::Click(at, button) => control
+                .call(INPUT_CLICK, json!({"x": at.0, "y": at.1, "button": button}))
+                .unwrap(),
+            Act::Scroll(at) => control
+                .call(INPUT_SCROLL, json!({"x": at.0, "y": at.1, "dy": 15.0}))
+                .unwrap(),
+            Act::Move(at) => control
+                .call(INPUT_POINTER_MOVE, json!({"x": at.0, "y": at.1}))
+                .unwrap(),
+        };
+    }
     let list: Vec<WindowInfo> =
-        serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
-    let first_focused = list
-        .iter()
-        .any(|w| w.title.as_deref() == Some("first") && w.focused);
+        serde_json::from_value(control.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let focused = |title: &str| {
+        list.iter()
+            .any(|w| w.title.as_deref() == Some(title) && w.focused)
+    };
+    let since = |now: PointerLog, base: PointerLog| PointerLog {
+        inside: now.inside,
+        enters: now.enters - base.enters,
+        motions: now.motions - base.motions,
+        presses: now.presses - base.presses,
+        axes: now.axes - base.axes,
+    };
+    let back_log = since(back.pointer_log(), base_back);
+    let front_log = since(front.pointer_log(), base_front);
+    drop(child.stdin.take());
     for line in lines {
         out.push_str(&line.unwrap());
         out.push('\n');
     }
     child.wait().unwrap();
-    (out, first_focused)
+    let dismissed = out
+        .lines()
+        .find_map(|line| line.split("DISMISSED ").nth(1))
+        .and_then(|n| n.trim().parse().ok())
+        .unwrap_or_else(|| panic!("no count from the child: {out}"));
+    Outcome {
+        dismissed,
+        back: back_log,
+        front: front_log,
+        back_focused: focused("back"),
+        front_focused: focused("front"),
+    }
+}
+
+/// A menu of the frontmost app (INPUT-01 (a), (b)).
+const APP_MENU: Mode = Mode::V7(OWNER_APP, Rule::Modal, Rule::Pass);
+/// A system panel (Faro, Control Center, status menus…).
+const PANEL: Mode = Mode::V7("", Rule::Pass, Rule::Pass);
+/// The Dock menu, with the app that was active as owner.
+const DOCK_MENU: Mode = Mode::V7(OTHER_APP, Rule::Activate, Rule::Pass);
+
+#[test]
+fn a_menu_click_in_another_app_closes_it_and_goes_through() {
+    let o = run(
+        "t-menu-other",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 1, "the click did not reach the other app");
+    assert!(o.back_focused, "the other app did not activate");
 }
 
 #[test]
-fn a_press_outside_a_menu_closes_it_and_stops_there() {
-    let (out, first_focused) = click_at("transient-consume", "consume", on_first());
-    assert!(out.contains("DISMISSED 1"), "{out}");
-    assert!(!first_focused, "the press reached the window: {out}");
+fn a_menu_click_in_its_own_app_only_closes_it() {
+    let o = run(
+        "t-menu-owner",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_FRONT, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.front.presses, 0, "the click reached the menu's own app");
 }
 
 #[test]
-fn a_press_outside_a_panel_closes_it_and_goes_through() {
-    let (out, first_focused) = click_at("transient-pass", "pass_through", on_first());
-    assert!(out.contains("DISMISSED 1"), "{out}");
-    assert!(first_focused, "the press did not reach the window: {out}");
+fn a_menu_right_click_in_another_app_goes_through() {
+    let o = run(
+        "t-menu-right",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "right")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 1);
+    assert!(o.back_focused);
+}
+
+#[test]
+fn a_menu_lets_the_other_app_scroll_but_not_its_own_and_stays_open() {
+    let o = run(
+        "t-menu-scroll",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Scroll(ON_BACK), Act::Scroll(ON_FRONT)],
+    );
+    assert_eq!(o.dismissed, 0, "the wheel closed the menu");
+    assert_eq!(o.back.axes, 1, "the other app did not scroll");
+    assert_eq!(o.front.axes, 0, "the menu's own app scrolled");
+}
+
+#[test]
+fn a_menu_keeps_the_hover_of_other_apps_only() {
+    let o = run(
+        "t-menu-hover",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Move(ON_FRONT), Act::Move(ON_BACK), Act::Move(ON_BACK)],
+    );
+    assert_eq!(o.dismissed, 0);
+    assert_eq!(o.front.enters, 0, "the menu's own app got the pointer");
+    assert!(o.back.inside && o.back.enters == 1, "{:?}", o.back);
+}
+
+#[test]
+fn the_dock_menu_only_reactivates_the_app_that_was_active() {
+    // "back" is the owner here: the app the Dock menu found active.
+    let o = run(
+        "t-dock-owner",
+        DOCK_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert!(o.back_focused, "the window was not activated");
+    assert_eq!(o.back.presses, 0, "the click reached the window's content");
+}
+
+#[test]
+fn the_dock_menu_lets_clicks_through_elsewhere_and_right_clicks_everywhere() {
+    let o = run(
+        "t-dock-other",
+        DOCK_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_FRONT, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.front.presses, 1);
+    let o = run(
+        "t-dock-right",
+        DOCK_MENU,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "right")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 1);
+}
+
+#[test]
+fn the_dock_menu_lets_every_window_scroll() {
+    let o = run(
+        "t-dock-scroll",
+        DOCK_MENU,
+        OTHER_APP,
+        &[Act::Scroll(ON_BACK), Act::Scroll(ON_FRONT)],
+    );
+    assert_eq!(o.dismissed, 0);
+    assert_eq!((o.back.axes, o.front.axes), (1, 1));
+}
+
+#[test]
+fn a_panel_never_blocks() {
+    let o = run(
+        "t-panel",
+        PANEL,
+        OTHER_APP,
+        &[Act::Scroll(ON_FRONT), Act::Move(ON_FRONT)],
+    );
+    assert_eq!(o.dismissed, 0, "the wheel closed the panel");
+    assert_eq!(o.front.axes, 1);
+    assert!(o.front.inside);
+    let o = run(
+        "t-panel-click",
+        PANEL,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 1);
+    assert!(o.back_focused && !o.front_focused);
 }
 
 #[test]
 fn a_press_on_the_menu_itself_keeps_it_open() {
     let x = f64::from(common::WIDTH - MENU.0 / 2);
     let y = f64::from(common::HEIGHT - MENU.1 / 2);
-    let (out, _) = click_at("transient-inside", "consume", (x, y));
-    assert!(out.contains("DISMISSED 0"), "{out}");
+    let o = run(
+        "t-inside",
+        APP_MENU,
+        OTHER_APP,
+        &[Act::Click((x, y), "left")],
+    );
+    assert_eq!(o.dismissed, 0);
+}
+
+#[test]
+fn version_6_still_consumes_or_lets_through() {
+    let o = run(
+        "t-v6-consume",
+        Mode::V6(Outside::Consume),
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 0);
+    assert!(!o.back_focused);
+    let o = run(
+        "t-v6-pass",
+        Mode::V6(Outside::PassThrough),
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 1);
+    assert!(o.back_focused);
+}
+
+/// An app's popup with a grab (INPUT-01 (a)): Ossido closes it on a click outside; the click
+/// stops in its own app and goes through in another one. Returns (back, front, done).
+fn popup_click(name: &str, at: (f64, f64)) -> (PointerLog, PointerLog, bool, bool) {
+    let ossido = Headless::start(name);
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let mut back = TestWindow::open(&ossido.wayland, "back");
+    APP_ID.with(|id| *id.borrow_mut() = OWNER_APP.to_owned());
+    let mut front = TestWindow::open(&ossido.wayland, "front");
+    APP_ID.with(|id| id.borrow_mut().clear());
+    let mut control = ossido.client();
+    // The right click that opens the context menu.
+    control
+        .call(
+            INPUT_CLICK,
+            json!({"x": ON_FRONT.0, "y": ON_FRONT.1, "button": "right"}),
+        )
+        .unwrap();
+    // Away from ON_FRONT and ON_BACK: at about (69, 69) on the screen.
+    front.open_grabbing_popup((5, 5), (40, 30));
+    let base_back = back.pointer_log();
+    let base_front = front.pointer_log();
+    // The wheel on the own window is dropped and leaves the popup open.
+    control
+        .call(
+            INPUT_SCROLL,
+            json!({"x": ON_FRONT.0, "y": ON_FRONT.1, "dy": 15.0}),
+        )
+        .unwrap();
+    assert!(!front.popup_done(), "the wheel closed the popup");
+    control
+        .call(INPUT_CLICK, json!({"x": at.0, "y": at.1}))
+        .unwrap();
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(control.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let back_focused = list
+        .iter()
+        .any(|w| w.title.as_deref() == Some("back") && w.focused);
+    let back_log = back.pointer_log();
+    let front_log = front.pointer_log();
+    assert_eq!(
+        front_log.axes, base_front.axes,
+        "the popup's own app scrolled"
+    );
+    (
+        PointerLog {
+            presses: back_log.presses - base_back.presses,
+            ..back_log
+        },
+        PointerLog {
+            presses: front_log.presses - base_front.presses,
+            ..front_log
+        },
+        front.popup_done(),
+        back_focused,
+    )
+}
+
+#[test]
+fn an_app_popup_click_in_its_own_app_only_closes_it() {
+    let (_, front, done, _) = popup_click("t-popup-owner", ON_FRONT);
+    assert!(done, "the popup stayed open");
+    assert_eq!(front.presses, 0, "the click reached the popup's own window");
+}
+
+#[test]
+fn an_app_popup_click_in_another_app_closes_it_and_goes_through() {
+    let (back, _, done, back_focused) = popup_click("t-popup-other", ON_BACK);
+    assert!(done, "the popup stayed open");
+    assert_eq!(back.presses, 1, "the click did not reach the other app");
+    assert!(back_focused);
 }

@@ -167,6 +167,11 @@ class ShellChannel {
   Toplevel? get focusedToplevel =>
       toplevels.value.where((t) => t.id == focused.value).firstOrNull;
 
+  /// The frontmost app: the focused window's, or the windowless one Ossido announces
+  /// (`app.frontmost`, #142); empty if none.
+  String get frontmostAppId =>
+      focusedToplevel?.appId ?? states.value['app.frontmost'] ?? '';
+
   void _update(Object? list) {
     toplevels.value = [
       if (list is List)

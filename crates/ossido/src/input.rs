@@ -60,7 +60,11 @@ impl State {
         if self.panorama.is_some() {
             self.panorama_pointer(location, std::time::Instant::now());
         }
-        let hit = if over_layer || in_panorama {
+        // An open menu or panel (#149): its own app's windows lose the pointer (no hover, no
+        // tooltips), and everything outside it shows the arrow (the window below does not
+        // have the keyboard, so no text cursor).
+        let (hover_blocked, outside_transients) = self.hover_on_transients(location);
+        let hit = if over_layer || in_panorama || hover_blocked {
             None
         } else {
             self.window_hit(location)
@@ -104,7 +108,7 @@ impl State {
         // and the desktop have the arrow; elsewhere the client's choice.
         let edges = if let Some(resize) = &self.resizing {
             Some(resize.edges)
-        } else if !over_layer && !in_panorama && self.moving.is_none() {
+        } else if !over_layer && !in_panorama && !hover_blocked && self.moving.is_none() {
             self.resize_hit(location).map(|(_, edges)| edges)
         } else {
             None
@@ -113,12 +117,12 @@ impl State {
         // On the bar the pointer is not on any client surface.
         let under = match hit {
             Some(Hit::Titlebar(..)) => None,
-            _ if in_panorama => None,
+            _ if in_panorama || hover_blocked => None,
             _ => self.surface_under(location),
         };
         self.cursor_override = match edges {
             Some(edges) => Some(crate::cursor_theme::resize_icon(edges)),
-            None if on_bar || under.is_none() || self.moving.is_some() => {
+            None if on_bar || under.is_none() || self.moving.is_some() || outside_transients => {
                 Some(smithay::input::pointer::CursorIcon::Default)
             }
             None => None,
@@ -154,14 +158,24 @@ impl State {
             self.panorama_release(location, std::time::Instant::now());
             return;
         }
-        // An open menu or panel (#149): a press outside it ends it; per transient the press
-        // stops there, and then its release too.
-        if state == ButtonState::Pressed
-            && !pointer.is_grabbed()
-            && self.press_on_transients(location)
-        {
-            self.transient_press = true;
-            return;
+        // An open menu or panel (#149): a press outside it ends it; per transient and target
+        // the press goes on, only activates the window or stops there, and then its release
+        // (and the drag in between) too.
+        if state == ButtonState::Pressed && !pointer.is_grabbed() {
+            match self.press_on_transients(location, button == BTN_LEFT) {
+                crate::transient::Press::Pass => {}
+                crate::transient::Press::Activate => {
+                    self.activate_under(location);
+                    self.transient_press = true;
+                    self.refresh_pointer();
+                    return;
+                }
+                crate::transient::Press::Close => {
+                    self.transient_press = true;
+                    self.refresh_pointer();
+                    return;
+                }
+            }
         }
         if state == ButtonState::Released && self.transient_press {
             self.transient_press = false;
@@ -226,6 +240,19 @@ impl State {
                 time,
             },
         );
+        pointer.frame(self);
+    }
+
+    /// The wheel or the touchpad, real or synthetic (`input.scroll`), where the pointer is.
+    /// An open menu drops it on its own app's windows; it never closes anything (#149).
+    pub fn pointer_axis(&mut self, frame: AxisFrame) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        if self.scroll_on_transients(pointer.current_location()) {
+            return;
+        }
+        pointer.axis(self, frame);
         pointer.frame(self);
     }
 
@@ -349,13 +376,6 @@ impl State {
                 self.pointer_button(event.button_code(), event.state(), event.time_msec());
             }
             InputEvent::PointerAxis { event } => {
-                let Some(pointer) = self.seat.get_pointer() else {
-                    return;
-                };
-                // Scrolling outside an open transient that consumes it (#149).
-                if self.scroll_on_transients(pointer.current_location()) {
-                    return;
-                }
                 let source = event.source();
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 for axis in [Axis::Horizontal, Axis::Vertical] {
@@ -372,8 +392,7 @@ impl State {
                         frame = frame.stop(axis);
                     }
                 }
-                pointer.axis(self, frame);
-                pointer.frame(self);
+                self.pointer_axis(frame);
             }
             InputEvent::GestureSwipeBegin { event } => {
                 self.gesture_begin(crate::gestures::GestureKind::Swipe, event.fingers());
@@ -398,6 +417,9 @@ impl State {
         }
     }
 }
+
+/// The primary button (linux/input-event-codes.h).
+const BTN_LEFT: u32 = 0x110;
 
 /// The marker returned by the key filter for a VT switch: not a command.
 const VT_SWITCH: &str = "session.vt";

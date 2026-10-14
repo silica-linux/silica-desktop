@@ -12,7 +12,7 @@
     what the shell asks of the compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="6">
+  <interface name="silica_shell_manager_v1" version="7">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -129,9 +129,9 @@
     </request>
     <enum name="outside" since="6">
       <description summary="what an input outside an open transient does">
-        Provisional defaults (until the reference's INPUT-01 measurement): presses outside a
-        menu are consumed, presses outside a panel (Faro, Control Center, Notification
-        Center) reach what is below. The pointer's hover always reaches the surfaces below.
+        The version 6 rule, the same for every surface outside the transient: the pointer's
+        hover always reaches the surfaces below. Since version 7 set_owned_transient
+        replaces it with a rule for the owner app and one for the other surfaces.
       </description>
       <entry name="consume" value="0" summary="it closes the transient and does nothing else"/>
       <entry name="pass_through" value="1" summary="it closes the transient and also reaches what is below"/>
@@ -160,6 +160,47 @@
         The shell closed it itself (Esc, a choice, a toggle): no dismissed event follows.
       </description>
       <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <enum name="rule" since="7">
+      <description summary="what the surfaces outside an open transient receive">
+        Whatever the rule, the wheel never ends a transient, and while one is open Ossido
+        shows the arrow over every surface outside it (the text cursor is not shown: the
+        window below does not have the keyboard).
+      </description>
+      <entry name="modal" value="0"
+             summary="no hover and no wheel; a press closes the transient and stops there"/>
+      <entry name="pass" value="1"
+             summary="hover and wheel reach the surface; a press closes the transient and reaches it too"/>
+      <entry name="activate" value="2"
+             summary="hover and wheel reach the surface; a primary press closes the transient and only activates the window under it, other buttons close it and reach the surface"/>
+    </enum>
+
+    <request name="set_owned_transient" since="7">
+      <description summary="a menu or panel of this surface is open, with an owner app">
+        Like set_transient (the same surface, region, replacement, clear_transient and
+        dismissed), with the outside split in two targets: the surfaces of the owner app
+        follow owner_rule, every other surface follows other_rule. The owner is an app id
+        (its windows, their popups and subsurfaces, and its desktop surface
+        "desktop-icons:app-id"), "desktop-icons" for whichever app owns the desktop surface,
+        "desktop-icons:app-id" for that app, or an empty string for the system (no owner app:
+        every surface follows other_rule).
+
+        With a modal rule the pointer leaves the surfaces of that target while the
+        transient is open (no hover, no tooltips) and wheel events there are dropped; a
+        press there ends the transient and nothing else. An activate press ends the
+        transient and gives the keyboard focus to the window under the pointer, raising it,
+        without delivering the press or its drag: the window becomes active again and its
+        content does not see the click.
+
+        When a press is outside several transients, the strictest outcome wins: modal,
+        then activate, then pass.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="region" type="object" interface="wl_region" allow-null="true"/>
+      <arg name="owner" type="string"/>
+      <arg name="owner_rule" type="uint" enum="rule"/>
+      <arg name="other_rule" type="uint" enum="rule"/>
     </request>
 
     <event name="dismissed" since="6">

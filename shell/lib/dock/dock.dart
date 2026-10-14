@@ -1441,9 +1441,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       );
       if (open) {
         _transientActive = true;
+        // INPUT-01 (c): a left click on the app that was active only makes it active again
+        // (its caret does not move); elsewhere clicks, right clicks and the wheel pass.
         LayerControl.transient(
           rects: rects,
-          policy: TransientPolicy.menu,
+          policy: TransientPolicy.dockMenu,
+          owner: ShellChannel.instance.frontmostAppId,
         ).then((supported) {
           // Older Ossido: from now on the surface covers the screen while something is open.
           if (!supported && mounted && _transientSupported) {

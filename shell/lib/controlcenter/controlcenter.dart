@@ -343,10 +343,7 @@ class _ControlCenterState extends State<ControlCenter>
   /// the windows below keep the pointer (#149).
   Rect? _region;
 
-  void _setRegion(
-    Rect rect,
-    ({TransientOutside press, TransientOutside scroll}) policy,
-  ) {
+  void _setRegion(Rect rect, TransientPolicy policy) {
     if (rect == _region) return;
     _region = rect;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -448,8 +445,9 @@ class _ControlCenterState extends State<ControlCenter>
       detailWidth,
       content.height,
     );
-    // A status menu is a menu: a press outside closes it and stops there (provisional).
-    _setRegion(rect.inflate(2), TransientPolicy.menu);
+    // A status menu is a system panel (INPUT-01 (f)): clicks, drags and the wheel outside
+    // pass; the keys stay here.
+    _setRegion(rect.inflate(2), TransientPolicy.panel);
     return Focus(
       focusNode: _menuFocus,
       onKeyEvent: (node, event) {

@@ -142,8 +142,18 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final layer = <MethodCall>[];
+      // The frontmost app: the focused window's.
       tester.binding.defaultBinaryMessenger
-        ..setMockMethodCallHandler(ShellChannel.channel, (call) async => null)
+        ..setMockMethodCallHandler(
+          ShellChannel.channel,
+          (call) async => switch (call.method) {
+            'list' => [
+              {'id': 'w1', 'title': 'Notes', 'app_id': 'dev.frascella.Note'},
+            ],
+            'focused' => 'w1',
+            _ => null,
+          },
+        )
         ..setMockMethodCallHandler(
           const MethodChannel('silica/layer', JSONMethodCodec()),
           (call) async {
@@ -151,6 +161,10 @@ void main() {
             return true;
           },
         );
+      addTearDown(() {
+        ShellChannel.instance.toplevels.value = const [];
+        ShellChannel.instance.focused.value = '';
+      });
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -162,8 +176,14 @@ void main() {
       await tester.pump();
       await tester.pump();
       final transient = layer.lastWhere((c) => c.method == 'setTransient');
-      // A menu: the press outside stops there (provisional, INPUT-01).
-      expect((transient.arguments as Map)['press'], 'consume');
+      // A menu of the frontmost app (INPUT-01 (b)): modal for that app, a click in
+      // another app closes it and goes through.
+      final args = transient.arguments as Map;
+      expect(args['owner'], 'dev.frascella.Note');
+      expect(args['ownerRule'], 'modal');
+      expect(args['otherRule'], 'pass');
+      // An older Ossido (version 6): consumed outside, as before.
+      expect(args['press'], 'consume');
       final region = layer.lastWhere((c) => c.method == 'setInputRegion');
       final rects = (region.arguments as Map)['rects'] as List;
       expect(rects.length, 2); // the bar and the menu, not the whole screen
