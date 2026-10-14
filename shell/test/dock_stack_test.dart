@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/dock/apps.dart' show downloadDir;
 import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
+import 'package:silica_shell/dock/stack_settings.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 void main() {
@@ -129,5 +131,173 @@ void main() {
     // 7 colonne: 7 × 128 + 34 = 930 pt.
     final panel = tester.getRect(find.byType(LiquidGlass).last);
     expect(panel.width, closeTo(930, 1));
+  });
+
+  testWidgets('celle della griglia: icona 92 da y 10, nome su una riga', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('griglia');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    for (var i = 1; i <= 20; i++) {
+      File(
+        '${dir.path}/documento con un nome molto lungo $i.txt',
+      ).writeAsStringSync('x');
+    }
+    tester.view.physicalSize = const Size(2560, 1440);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final items = [Item.app('Download', command: 'x', folder: dir.path)];
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: items,
+          onOpenPath: (_) {},
+          stackSettingsFor: (_) =>
+              const StackSettings(content: StackContent.grid),
+        ),
+      ),
+    );
+    final rest = layout(items, width: 2560, height: 1440);
+    await tester.tapAt(
+      Offset(rest.center(0), 1440 - bottomGap - backgroundHeight / 2),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final label = find.textContaining('document…');
+    expect(label, findsWidgets);
+    final text = tester.widget<Text>(label.first);
+    // Una riga, troncata al centro: la fine del nome resta.
+    expect(text.maxLines, 1);
+    expect(text.data, contains('…'));
+    expect(text.data, endsWith('.txt'));
+    final icon = tester.getRect(
+      find.byKey(
+        ValueKey('icona ${dir.path}/documento con un nome molto lungo 1.txt'),
+      ),
+    );
+    expect(icon.width, gridIcon);
+  });
+
+  testWidgets('vista Elenco: un menu con i file, Opzioni e Apri', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('elenco');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    for (final name in ['b.txt', 'a.txt']) {
+      File('${dir.path}/$name').writeAsStringSync('x');
+    }
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final items = [Item.app('Pila', command: 'x', folder: dir.path)];
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: items,
+          onOpenPath: (_) {},
+          stackSettingsFor: (_) =>
+              const StackSettings(content: StackContent.list),
+          stackListMenu: (item, entries) => [
+            for (final e in entries) MenuAction(fileName(e.path)),
+            const MenuDivider(),
+            const MenuAction('Opzioni'),
+          ],
+        ),
+      ),
+    );
+    final rest = layout(items, width: 1280, height: 1000);
+    await tester.tapAt(
+      Offset(rest.center(0), 1000 - bottomGap - backgroundHeight / 2),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(MenuPanel), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('a.txt')).dy,
+      lessThan(tester.getTopLeft(find.text('b.txt')).dy),
+    );
+    expect(find.text('Opzioni'), findsOneWidget);
+    // Nessun ventaglio.
+    expect(find.text('Apri la cartella'), findsNothing);
+  });
+
+  testWidgets('mostrata come pila: l\'icona sono i primi tre file', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('pila');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    for (final name in ['a.txt', 'b.txt', 'c.txt', 'd.txt']) {
+      File('${dir.path}/$name').writeAsStringSync('x');
+    }
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Widget dock(StackDisplay display) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Dock(
+        items: [Item.app('Pila', command: 'x', folder: dir.path)],
+        onOpenPath: (_) {},
+        stackSettingsFor: (_) => StackSettings(display: display),
+      ),
+    );
+    await tester.pumpWidget(dock(StackDisplay.stack));
+    await tester.pump();
+    final pile = find.byType(PileIcon);
+    if (resolveFileIcon('${dir.path}/a.txt') != null) {
+      expect(pile, findsOneWidget);
+      expect(tester.widget<PileIcon>(pile).sources, hasLength(3));
+    }
+    await tester.pumpWidget(dock(StackDisplay.folder));
+    await tester.pump();
+    expect(find.byType(PileIcon), findsNothing);
+  });
+
+  test('ordine della pila: per data dal più recente, per tipo', () {
+    final dir = Directory.systemTemp.createTempSync('ordine');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final old = File('${dir.path}/b.txt')..writeAsStringSync('x');
+    old.setLastModifiedSync(DateTime(2020));
+    File('${dir.path}/a.md').writeAsStringSync('x');
+    File('${dir.path}/c.zip').writeAsStringSync('x');
+    List<String> names(StackSort sort) => [
+      for (final e in stackEntries(dir.path, sort: sort)) fileName(e.path),
+    ];
+    expect(names(StackSort.name), ['a.md', 'b.txt', 'c.zip']);
+    expect(names(StackSort.modified).last, 'b.txt');
+    expect(names(StackSort.kind), ['a.md', 'b.txt', 'c.zip']);
+  });
+
+  test('impostazioni delle pile salvate per percorso', () {
+    final dir = Directory.systemTemp.createTempSync('config');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final env = {'XDG_CONFIG_HOME': dir.path, 'HOME': dir.path};
+    expect(loadStackSettings(env: env), isEmpty);
+    saveStackSettings({
+      '/home/io/Download': const StackSettings(
+        sort: StackSort.added,
+        display: StackDisplay.folder,
+        content: StackContent.list,
+      ),
+    }, env: env);
+    final back = loadStackSettings(env: env)['/home/io/Download'];
+    expect(back?.sort, StackSort.added);
+    expect(back?.display, StackDisplay.folder);
+    expect(back?.content, StackContent.list);
+  });
+
+  test('la cartella Download da xdg-user-dirs in XDG_CONFIG_HOME', () {
+    final dir = Directory.systemTemp.createTempSync('dirs');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    Directory('${dir.path}/Scaricamenti').createSync();
+    File('${dir.path}/cfg/user-dirs.dirs')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('XDG_DOWNLOAD_DIR="\$HOME/Scaricamenti"\n');
+    expect(
+      downloadDir(dir.path, env: {'XDG_CONFIG_HOME': '${dir.path}/cfg'}),
+      '${dir.path}/Scaricamenti',
+    );
   });
 }

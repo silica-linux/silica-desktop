@@ -19,6 +19,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
+import 'stack_settings.dart';
 
 const int fanMax = 15;
 const double fanPitch = 64.6;
@@ -50,6 +51,21 @@ const List<double> fanShift = [
 const double fanFirstOffset = 2.3;
 
 const double gridCell = 128;
+
+/// L'icona nella cella: cartella 92 × 74 a 19 pt dalla cima (riquadro di 92 da y 10).
+const double gridIcon = 92;
+const double gridIconTop = 10;
+
+/// L'etichetta: una riga, maiuscole da y 109 (base a ~118), larga al più ~104.
+const double gridLabelBaseline = 118;
+const double gridLabelWidth = 104;
+const Color gridLabelText = Color(0xFF212122);
+TextStyle get gridLabelStyle =>
+    uiText(size: 12, color: gridLabelText).copyWith(height: 1);
+
+/// La punta verso l'icona: base ~22, alta ~8 (misc.md). Come nei menu, il vertice arrotondato
+/// e l'unione morbida allargano la base di ~14 pt.
+const double gridTipBase = 22;
 const double gridLeft = 17;
 
 /// 16 pt fino al bordo più 1 di filo: 2 colonne fanno 290 pt, 4 ne fanno 546.
@@ -74,8 +90,14 @@ enum StackView { fan, grid }
 StackView automaticView(int count) =>
     count <= fanMax ? StackView.fan : StackView.grid;
 
-/// I file della cartella, per nome, senza quelli nascosti.
-List<FileSystemEntity> stackEntries(String path) {
+/// I file della cartella senza quelli nascosti, nell'ordine scelto: per nome; per data dal più
+/// recente (come le pile dei download); per tipo (estensione, poi nome). Su Linux la "data di
+/// aggiunta" è il cambio di stato (ctime: spostare o copiare un file nella cartella lo
+/// aggiorna) e non c'è una data di creazione affidabile: si usa la modifica.
+List<FileSystemEntity> stackEntries(
+  String path, {
+  StackSort sort = StackSort.name,
+}) {
   try {
     final list = Directory(path)
         .listSync()
@@ -86,7 +108,35 @@ List<FileSystemEntity> stackEntries(String path) {
               .startsWith('.'),
         )
         .toList();
-    list.sort((a, b) => naturalCompare(fileName(a.path), fileName(b.path)));
+    int byName(FileSystemEntity a, FileSystemEntity b) =>
+        naturalCompare(fileName(a.path), fileName(b.path));
+    final stats = {for (final e in list) e.path: e.statSync()};
+    DateTime when(FileSystemEntity e) {
+      final stat = stats[e.path];
+      if (stat == null) return DateTime(0);
+      return sort == StackSort.added ? stat.changed : stat.modified;
+    }
+
+    String extension(FileSystemEntity e) {
+      if (e is Directory) return '';
+      final name = fileName(e.path);
+      final dot = name.lastIndexOf('.');
+      return dot <= 0 ? '' : name.substring(dot + 1).toLowerCase();
+    }
+
+    list.sort(
+      (a, b) => switch (sort) {
+        StackSort.name => byName(a, b),
+        StackSort.kind => () {
+          final c = extension(a).compareTo(extension(b));
+          return c != 0 ? c : byName(a, b);
+        }(),
+        _ => () {
+          final c = when(b).compareTo(when(a));
+          return c != 0 ? c : byName(a, b);
+        }(),
+      },
+    );
     return list;
   } on FileSystemException {
     return const [];
@@ -340,6 +390,11 @@ class GridStack extends StatelessWidget {
               radius: gridRadius,
               material: GlassMaterial.thick,
               interactive: false,
+              tip: GlassTip(
+                x: tipX,
+                width: gridTipBase - 14,
+                height: gridTipHeight + 2,
+              ),
               child: Stack(
                 children: [
                   Positioned(
@@ -381,6 +436,9 @@ class GridStack extends StatelessWidget {
     );
   }
 
+  /// Una cella da 128 (misc.md › Pila di cartella): l'icona di ~92 centrata con la cima della
+  /// cartella a 19 pt (riquadro da y 10), il nome su una riga troncato al centro con le
+  /// maiuscole da y 109, `#212122`.
   Widget _cell(FileSystemEntity entry) {
     final icon = fileIcon(entry);
     return GestureDetector(
@@ -388,25 +446,39 @@ class GridStack extends StatelessWidget {
       child: SizedBox(
         width: gridCell,
         height: gridCell,
-        child: Column(
+        child: Stack(
           children: [
-            const SizedBox(height: 14),
-            SizedBox(
-              width: 80,
-              height: 80,
+            Positioned(
+              key: ValueKey('icona ${entry.path}'),
+              left: (gridCell - gridIcon) / 2,
+              top: gridIconTop,
+              width: gridIcon,
+              height: gridIcon,
               child: icon == null
-                  ? null
-                  : SilicaIcon(icon, side: 64, dark: false),
+                  ? const SizedBox.shrink()
+                  : SilicaIcon(icon, side: gridIcon, dark: false),
             ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: gridCell - 12,
-              child: Text(
-                fileName(entry.path),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: uiText(size: 12, color: stackText),
+            Positioned(
+              left: (gridCell - gridLabelWidth) / 2,
+              width: gridLabelWidth,
+              top: 0,
+              child: Baseline(
+                baseline: gridLabelBaseline,
+                baselineType: TextBaseline.alphabetic,
+                child: SizedBox(
+                  width: gridLabelWidth,
+                  child: Text(
+                    middleEllipsis(
+                      fileName(entry.path),
+                      gridLabelStyle,
+                      gridLabelWidth,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: gridLabelStyle,
+                  ),
+                ),
               ),
             ),
           ],
@@ -420,18 +492,109 @@ class GridStack extends StatelessWidget {
     child: SizedBox(
       width: gridCell,
       height: gridCell,
-      child: Column(
+      child: Stack(
         children: [
-          const SizedBox(height: 14),
-          SizedBox(
-            width: 80,
-            height: 80,
+          Positioned(
+            left: (gridCell - gridIcon) / 2,
+            top: gridIconTop,
+            width: gridIcon,
+            height: gridIcon,
             child: CustomPaint(painter: _OpenFolderPainter()),
           ),
-          const SizedBox(height: 4),
-          Text('Apri la cartella', style: uiText(size: 12, color: stackText)),
+          Positioned(
+            left: (gridCell - gridLabelWidth) / 2,
+            width: gridLabelWidth,
+            top: 0,
+            child: Baseline(
+              baseline: gridLabelBaseline,
+              baselineType: TextBaseline.alphabetic,
+              child: SizedBox(
+                width: gridLabelWidth,
+                child: Text(
+                  'Apri la cartella',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: gridLabelStyle,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),
   );
+}
+
+/// L'icona "pila" di una cartella nel Dock (d06-icon-pila-10-light): il primo file davanti, i
+/// due dopo dietro, più piccoli (0,89 e 0,73) e con la cima 4 pt più in alto ciascuno, senza
+/// rotazione. Misure su un'icona di 54 pt: foglio davanti 37 × 46, cime a +0, −4, −8.
+class PileIcon extends StatelessWidget {
+  const PileIcon({super.key, required this.sources, required this.side});
+
+  /// Dal primo (davanti) al terzo.
+  final List<IconSource> sources;
+  final double side;
+
+  static const List<double> scales = [1, 0.89, 0.73];
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = side / 54;
+    // Il foglio davanti: alto ~46 su 54, appoggiato in basso (2 pt di margine).
+    final front = side * 0.88;
+    final bottom = side - 2 * unit;
+    return SizedBox(
+      width: side,
+      height: side,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = math.min(sources.length, 3) - 1; i >= 0; i--)
+            Positioned(
+              left: (side - front * scales[i]) / 2,
+              top: bottom - front - 4 * unit * i,
+              width: front * scales[i],
+              height: front * scales[i],
+              child: SilicaIcon(sources[i], side: front * scales[i]),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tronca al centro con "…" perché `text` stia in `width` (le etichette della griglia).
+String middleEllipsis(String text, TextStyle style, double width) {
+  double measure(String s) {
+    final painter = TextPainter(
+      text: TextSpan(text: s, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final w = painter.width;
+    painter.dispose();
+    return w;
+  }
+
+  if (measure(text) <= width) return text;
+  final runes = text.runes.toList();
+  var lo = 0;
+  var hi = runes.length;
+  var best = '…';
+  while (lo <= hi) {
+    final keep = (lo + hi) ~/ 2;
+    final head = (keep + 1) ~/ 2;
+    final tail = keep - head;
+    final candidate =
+        '${String.fromCharCodes(runes.take(head)).trimRight()}…'
+        '${String.fromCharCodes(runes.skip(runes.length - tail)).trimLeft()}';
+    if (measure(candidate) <= width) {
+      best = candidate;
+      lo = keep + 1;
+    } else {
+      hi = keep - 1;
+    }
+  }
+  return best;
 }

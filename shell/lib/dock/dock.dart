@@ -4,7 +4,8 @@
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:io' show FileSystemEntity, Platform;
+import 'dart:io'
+    show Directory, File, FileSystemEntity, FileSystemException, Platform;
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
@@ -20,6 +21,7 @@ import '../system/shell_channel.dart';
 import 'apps.dart';
 import 'icons.dart';
 import 'stack.dart';
+import 'stack_settings.dart';
 import 'trash_alert.dart';
 import 'model.dart';
 
@@ -43,6 +45,101 @@ class _LiveDockState extends State<LiveDock> {
 
   /// Le miniature delle finestre ridotte, chieste a Ossido alla riduzione.
   final Map<String, ui.Image> _thumbnails = {};
+
+  /// Le impostazioni delle pile, per percorso della cartella.
+  final Map<String, StackSettings> _stacks = loadStackSettings();
+
+  StackSettings _stackOf(String folder) =>
+      _stacks[folder] ?? const StackSettings();
+
+  void _setStack(String folder, StackSettings settings) {
+    setState(() => _stacks[folder] = settings);
+    saveStackSettings(_stacks);
+  }
+
+  void _openPath(String path) =>
+      ShellChannel.instance.launch('xdg-open ${shellQuote(path)}');
+
+  /// Le impostazioni di una pila come voci di menu (D-04): "Ordina per", "Mostra come",
+  /// "Visualizza contenuto come", con la spunta sulla scelta.
+  List<MenuEntry> _stackOptions(String folder) {
+    final s = _stackOf(folder);
+    MenuAction pick(String label, bool checked, StackSettings next) =>
+        MenuAction(
+          label,
+          checked: checked,
+          onSelected: () => _setStack(folder, next),
+        );
+    return [
+      const MenuSection('Ordina per'),
+      for (final (sort, label) in const [
+        (StackSort.name, 'Nome'),
+        (StackSort.added, 'Data di aggiunta'),
+        (StackSort.modified, 'Data di modifica'),
+        (StackSort.created, 'Data di creazione'),
+        (StackSort.kind, 'Tipo'),
+      ])
+        pick(label, s.sort == sort, s.copyWith(sort: sort)),
+      const MenuDivider(),
+      const MenuSection('Mostra come'),
+      for (final (display, label) in const [
+        (StackDisplay.folder, 'Cartella'),
+        (StackDisplay.stack, 'Pila'),
+      ])
+        pick(label, s.display == display, s.copyWith(display: display)),
+      const MenuDivider(),
+      const MenuSection('Visualizza contenuto come'),
+      for (final (content, label) in const [
+        (StackContent.fan, 'Ventaglio'),
+        (StackContent.grid, 'Griglia'),
+        (StackContent.list, 'Elenco'),
+        (StackContent.automatic, 'Automatico'),
+      ])
+        pick(label, s.content == content, s.copyWith(content: content)),
+    ];
+  }
+
+  /// Il menu di una cartella: le impostazioni della pila, Opzioni, Apri.
+  List<MenuEntry> _folderMenu(Item item, String folder) => [
+    ..._stackOptions(folder),
+    const MenuDivider(),
+    MenuAction(
+      'Opzioni',
+      submenu: [
+        MenuAction(
+          'Mostra nella cartella che la contiene',
+          onSelected: () => _openPath(File(folder).parent.path),
+        ),
+      ],
+    ),
+    const MenuDivider(),
+    MenuAction('Apri "${item.label}"', onSelected: () => _openPath(folder)),
+  ];
+
+  /// La vista Elenco di una pila: un menu con un'icona piccola e il nome di ogni file, poi
+  /// Opzioni (le impostazioni della pila) e Apri (dock-stacks.md › Elenco).
+  List<MenuEntry> _stackListMenu(Item item, List<FileSystemEntity> entries) {
+    final folder = item.folder;
+    if (folder == null) return const [];
+    return [
+      for (final entry in entries)
+        MenuAction(
+          fileName(entry.path),
+          icon: (color) => SizedBox(
+            width: 16,
+            height: 16,
+            child: switch (fileIcon(entry)) {
+              final source? => SilicaIcon(source, side: 16),
+              null => null,
+            },
+          ),
+          onSelected: () => _openPath(entry.path),
+        ),
+      if (entries.isNotEmpty) const MenuDivider(),
+      MenuAction('Opzioni', submenu: _stackOptions(folder)),
+      MenuAction('Apri "${item.label}"', onSelected: () => _openPath(folder)),
+    ];
+  }
 
   @override
   void initState() {
@@ -143,7 +240,8 @@ class _LiveDockState extends State<LiveDock> {
         ),
       ];
     }
-    // Cartelle e cestino: Apri; il Cestino pieno anche Svuota (D-07).
+    if (item.folder case final folder?) return _folderMenu(item, folder);
+    // Cestino: Apri; pieno anche Svuota (D-07).
     if (item.id == null) {
       return [
         if (item.command case final command?)
@@ -212,8 +310,9 @@ class _LiveDockState extends State<LiveDock> {
     ),
     onActivate: _activate,
     menuFor: _menu,
-    onOpenPath: (path) =>
-        ShellChannel.instance.launch('xdg-open ${shellQuote(path)}'),
+    onOpenPath: _openPath,
+    stackSettingsFor: _stackOf,
+    stackListMenu: _stackListMenu,
     alert: _confirmEmpty
         ? TrashAlert(
             onEmpty: () async {
@@ -339,6 +438,8 @@ class Dock extends StatefulWidget {
     this.onReorder,
     this.alert,
     this.onOpenPath,
+    this.stackSettingsFor,
+    this.stackListMenu,
   });
 
   final List<Item> items;
@@ -355,6 +456,13 @@ class Dock extends StatefulWidget {
 
   /// Il menu di un elemento (clic destro, pressione lunga); null o vuoto: niente menu.
   final List<MenuEntry> Function(Item item)? menuFor;
+
+  /// Le impostazioni della pila di una cartella (ordine, icona, vista); null: le predefinite.
+  final StackSettings Function(String folder)? stackSettingsFor;
+
+  /// Il menu della vista Elenco di una pila: i file, Opzioni, Apri (dock-stacks.md › Elenco).
+  final List<MenuEntry> Function(Item item, List<FileSystemEntity> entries)?
+  stackListMenu;
 
   /// Trascinamento (D-05): il nuovo ordine delle app a sinistra del separatore e l'elemento
   /// lasciato cadere (null se è stato tolto con "Rimuovi", e allora manca dall'ordine).
@@ -723,14 +831,62 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
 
+  /// I primi file di una cartella mostrata come pila, per l'icona: letti di nuovo solo quando
+  /// la cartella cambia (data di modifica) o cambia l'ordine.
+  final Map<String, (DateTime, StackSort, List<IconSource>)> _piles = {};
+
+  List<IconSource>? _pileOf(Item item) {
+    final folder = item.folder;
+    if (folder == null) return null;
+    final settings =
+        widget.stackSettingsFor?.call(folder) ?? const StackSettings();
+    if (settings.display != StackDisplay.stack) return null;
+    DateTime changed;
+    try {
+      changed = Directory(folder).statSync().modified;
+    } on FileSystemException {
+      return null;
+    }
+    final cached = _piles[folder];
+    if (cached != null && cached.$1 == changed && cached.$2 == settings.sort) {
+      return cached.$3;
+    }
+    final sources = [
+      for (final entry in stackEntries(folder, sort: settings.sort).take(3))
+        ?fileIcon(entry),
+    ];
+    _piles[folder] = (changed, settings.sort, sources);
+    return sources;
+  }
+
   void _openStack(int index) {
-    final folder = widget.items[index].folder;
+    final item = widget.items[index];
+    final folder = item.folder;
     if (folder == null) return;
-    final entries = stackEntries(folder);
+    final settings =
+        widget.stackSettingsFor?.call(folder) ?? const StackSettings();
+    final entries = stackEntries(folder, sort: settings.sort);
+    // Vista Elenco: un menu con i file; l'icona resta la cartella, premuta.
+    if (settings.content == StackContent.list) {
+      final menu = widget.stackListMenu?.call(item, entries) ?? const [];
+      if (menu.isEmpty) return;
+      setState(() {
+        _menuIndex = index;
+        _menuEntries = menu;
+        _menuByLongPress = false;
+        _pressed = index;
+      });
+      _showLabel(null);
+      return;
+    }
     setState(() {
       _stackIndex = index;
       _stackEntries = entries;
-      _stackView = automaticView(entries.length);
+      _stackView = switch (settings.content) {
+        StackContent.fan => StackView.fan,
+        StackContent.grid => StackView.grid,
+        _ => automaticView(entries.length),
+      };
       _stackClosing = false;
     });
     _showLabel(null);
@@ -1217,8 +1373,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final (x, y, side) = iconRect(l, index, height);
     // Con la pila aperta l'icona della cartella diventa il pulsante che la chiude (D-06).
     final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
+    final pile = closer == null ? _pileOf(item) : null;
     final icon = closer != null
         ? SilicaIcon(LayeredSource(closer), side: side)
+        : pile != null && pile.isNotEmpty
+        ? PileIcon(sources: pile, side: side)
         : SilicaIcon(source, side: side);
     return AnimatedPositioned(
       key: ValueKey(_key(item)),

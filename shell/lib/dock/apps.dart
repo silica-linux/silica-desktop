@@ -151,9 +151,12 @@ Item _windowItem(
 }
 
 /// La cartella dei download: quella di xdg-user-dirs, altrimenti ~/Download o ~/Downloads.
-String downloadDir(String home) {
+String downloadDir(String home, {Map<String, String>? env}) {
   try {
-    final dirs = File('$home/.config/user-dirs.dirs');
+    // xdg-user-dirs: in $XDG_CONFIG_HOME, se c'è.
+    final config =
+        (env ?? Platform.environment)['XDG_CONFIG_HOME'] ?? '$home/.config';
+    final dirs = File('$config/user-dirs.dirs');
     if (dirs.existsSync()) {
       for (final line in dirs.readAsLinesSync()) {
         if (line.startsWith('XDG_DOWNLOAD_DIR=')) {
