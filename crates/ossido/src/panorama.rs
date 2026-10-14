@@ -510,8 +510,38 @@ struct BarItem {
     rect: Rectangle<f64, Logical>,
 }
 
+/// The label of a space in the spaces bar, in the system language (English source, Italian
+/// translation; `LANGUAGE`, then `LC_ALL`, `LC_MESSAGES`, `LANG`).
 fn space_label(index: usize) -> String {
-    format!("Spazio {}", index.saturating_add(1))
+    space_label_in(index, &system_language(|key| std::env::var(key).ok()))
+}
+
+fn space_label_in(index: usize, language: &str) -> String {
+    let n = index.saturating_add(1);
+    match language {
+        "it" => format!("Spazio {n}"),
+        _ => format!("Space {n}"),
+    }
+}
+
+/// The first language code of the environment (`it_IT.UTF-8` → `it`); `en` if unknown.
+fn system_language(get: impl Fn(&str) -> Option<String>) -> String {
+    let single = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .find_map(|key| get(key).filter(|v| !v.is_empty()));
+    let c_locale = single.as_deref().is_some_and(|v| v == "C" || v == "POSIX");
+    let first = (!c_locale)
+        .then(|| get("LANGUAGE"))
+        .flatten()
+        .and_then(|list| list.split(':').find(|s| !s.is_empty()).map(str::to_owned))
+        .or(single);
+    first
+        .as_deref()
+        .and_then(|name| name.split(['_', '-', '.', '@']).next())
+        .filter(|code| !code.is_empty() && code.chars().all(|c| c.is_ascii_alphabetic()))
+        .map(str::to_ascii_lowercase)
+        .filter(|code| code != "c" && code != "posix")
+        .unwrap_or_else(|| "en".to_owned())
 }
 
 fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
@@ -1209,6 +1239,35 @@ pub fn bar_element(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn space_labels_follow_the_system_language() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |key: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == key)
+                    .map(|(_, v)| (*v).to_owned())
+            }
+        };
+        assert_eq!(
+            super::system_language(env(&[("LANG", "it_IT.UTF-8")])),
+            "it"
+        );
+        assert_eq!(
+            super::system_language(env(&[("LANGUAGE", "en:it"), ("LANG", "it_IT.UTF-8")])),
+            "en"
+        );
+        assert_eq!(
+            super::system_language(env(&[("LANG", "C"), ("LANGUAGE", "it")])),
+            "en"
+        );
+        assert_eq!(super::system_language(env(&[])), "en");
+        assert_eq!(super::space_label_in(0, "it"), "Spazio 1");
+        assert_eq!(super::space_label_in(1, "en"), "Space 2");
+        assert_eq!(super::space_label_in(2, "de"), "Space 3");
+    }
+
     use super::*;
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> Rectangle<f64, Logical> {
