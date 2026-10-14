@@ -42,11 +42,12 @@ uniform float scale_px;
 // Columns of every mat4: t0, s0, t1, s1. lens_reach: how far the lens reaches.
 uniform mat4 lens[3];
 uniform float lens_reach;
-// Edge: 1 pt luminous row on top and at the bottom (added per channel), inner glow (added on
-// the first pixel and decaying in pixels), dark row on the sides (alpha of black).
-uniform vec3 rim;
-uniform vec2 edge;
-uniform float side_dark;
+// Edge, measured: per orientation (0 top, 1 sides, 2 bottom) the offsets inside the edge,
+// one per point (0–11, levels 0–1 relative to the fill on gray), and the alpha of black on
+// the first two points outside (slots 12, 13). Lights (> 0) add less over lighter colors,
+// shadows (< 0) multiply. `fill_gray`: the fill over the reference gray.
+uniform mat4 edges[3];
+uniform float fill_gray;
 
 float rounded_distance(vec2 p, vec4 rect, float r) {
     vec2 half_size = rect.zw * 0.5;
@@ -60,23 +61,41 @@ float rounded_distance(vec2 p, vec4 rect, float r) {
     return max(d.x, d.y) - max(r, 0.0);
 }
 
-// Downward tip in the rectangle: base on the top side, apex at the middle of the bottom side
-// (distance from an isosceles triangle). The apex is rounded (~3.5 pt: in misc.md the tip is
-// ~5 pt wide at 1 pt from the top). The triangle continues inside the body, twice as tall
-// with the same sides: at the base the shape is thick enough that the body edge does not show
-// through the tip.
-float tip_distance(vec2 p, vec4 rect) {
-    float round_px = 3.5 * scale_px;
-    float apex = rect.y + rect.w - round_px;
-    vec2 q = vec2(rect.z, 2.0 * (rect.w - round_px));
-    vec2 local = vec2(abs(p.x - rect.x - rect.z * 0.5), apex - p.y);
-    // Triangle with the apex at the origin, open upwards in `local` (iquilezles).
-    vec2 a = local - q * clamp(dot(local, q) / dot(q, q), 0.0, 1.0);
-    vec2 b = local - q * vec2(clamp(local.x / q.x, 0.0, 1.0), 1.0);
+// Downward tip in the rectangle: base (its width) on the top side, at the body's edge, and a
+// rounded apex touching the bottom side. A rounded isosceles triangle: apex radius ~2 pt, the
+// sides' angle solved so that the rounded bottom lands on the rectangle's bottom
+// (misc.md, Dock context menu: base ~22 pt, ~9 pt deep, round bottom). The triangle goes on
+// into the body, so its base never shows.
+float iso_triangle(vec2 p, vec2 q) {
+    // Apex at the origin, opening towards +y, half-width q.x at height q.y (iquilezles).
+    p.x = abs(p.x);
+    vec2 a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
+    vec2 b = p - q * vec2(clamp(p.x / q.x, 0.0, 1.0), 1.0);
     float s = -sign(q.y);
-    vec2 d = min(vec2(dot(a, a), s * (local.x * q.y - local.y * q.x)),
-                 vec2(dot(b, b), s * (local.y - q.y)));
-    return -sqrt(d.x) * sign(d.y) - round_px;
+    vec2 d = min(vec2(dot(a, a), s * (p.x * q.y - p.y * q.x)),
+                 vec2(dot(b, b), s * (p.y - q.y)));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+// p in the tip's own frame: the base along y = 0 (x from 0 to `size.x`), the apex towards +y
+// at depth `size.y`.
+float tip_distance(vec2 p, vec2 size) {
+    float ra = min(2.5 * scale_px, size.x * 0.25);
+    float half_base = size.x * 0.5;
+    float height = size.y;
+    // Depth of the sharp apex so that the rounded bottom sits at `height`.
+    float depth = height;
+    for (int i = 0; i < 4; i++) {
+        float sin_t = half_base / sqrt(half_base * half_base + depth * depth);
+        depth = height + ra * (1.0 / max(sin_t, 0.05) - 1.0);
+    }
+    float tan_t = half_base / depth;
+    float sin_t = half_base / sqrt(half_base * half_base + depth * depth);
+    // The triangle inset by ra: apex ra / sin(t) higher; rounded back by subtracting ra.
+    float apex = depth - ra / max(sin_t, 0.05);
+    float reach = apex + 2.0 * height;
+    vec2 local = vec2(p.x - half_base, apex - p.y);
+    return iso_triangle(local, vec2(reach * tan_t, reach)) - ra;
 }
 
 // Smooth (polynomial) minimum: the bridge between two nearby shapes.
@@ -97,13 +116,43 @@ float union_distance(vec2 p, float min_radius) {
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
-        // −1: downward tip; −2: upward (the same one mirrored on the horizontal axis).
-        float shape = r < -1.5 ? tip_distance(vec2(p.x, 2.0 * rect.y + rect.w - p.y), rect)
-                    : r < 0.0 ? tip_distance(p, rect)
-                              : rounded_distance(p, rect, max(r, min_radius));
-        d = smooth_min(d, shape, merge);
+        // A tip: −1 points down, −2 up, turned into the downward frame (a reflection, which
+        // keeps distances). A tip joins its body with a
+        // small fillet (~2 pt, the concave sides of the reference), not with the merge
+        // distance of separate shapes.
+        bool tip = r < 0.0;
+        vec2 near = p - rect.xy;
+        vec2 far = rect.xy + rect.zw - p;
+        float shape = r > -0.5 ? rounded_distance(p, rect, max(r, min_radius))
+                    : r > -1.5 ? tip_distance(near, rect.zw)
+                               : tip_distance(vec2(near.x, far.y), rect.zw);
+        d = smooth_min(d, shape, tip ? 2.0 * scale_px : merge);
     }
     return d;
+}
+
+// A measured edge profile at position s (points from the edge, 0 = the first one).
+float profile_at(mat4 m, float s) {
+    s = max(s, 0.0);
+    float i0 = floor(s);
+    float a = 0.0;
+    float b = 0.0;
+    for (int i = 0; i < 12; i++) {
+        float v = m[i / 4][i - (i / 4) * 4];
+        if (float(i) == i0) {
+            a = v;
+        }
+        if (float(i) == i0 + 1.0) {
+            b = v;
+        }
+    }
+    return mix(a, b, s - i0);
+}
+
+// The dark outline just outside: alpha at position u (points from the edge, 0 = the first).
+float outline_at(mat4 m, float u) {
+    u = max(u, 0.0);
+    return u < 1.0 ? mix(m[3][0], m[3][1], u) : mix(m[3][1], 0.0, clamp(u - 1.0, 0.0, 1.0));
 }
 
 // The source distance for a pixel at distance t, interpolating the curve.
@@ -148,15 +197,29 @@ void main() {
     vec3 background = texture2D(tex, sample_at).rgb;
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
 
-    // Edge: 1 light pt on top and at the bottom with the inner glow, 1 dark pt on the sides.
-    float on_rim = clamp(scale_px + 0.5 - t, 0.0, 1.0);
-    float glow = edge.x * exp(-max(t - scale_px - 0.5, 0.0) / edge.y) * (1.0 - on_rim);
-    color += (rim * on_rim + vec3(glow)) * vertical;
-    color = mix(color, vec3(0.0), side_dark * on_rim * (1.0 - vertical));
+    // Edge: the measured profiles, weighted by the orientation of the true shape's normal
+    // (top, sides, bottom), so corners, tips and merged bridges blend continuously.
+    vec2 m = vec2(union_distance(p + e.xy, 0.0) - union_distance(p - e.xy, 0.0),
+                  union_distance(p + e.yx, 0.0) - union_distance(p - e.yx, 0.0));
+    m = length(m) > 0.0 ? normalize(m) : vec2(0.0, -1.0);
+    float w_top = max(-m.y, 0.0) * max(-m.y, 0.0);
+    float w_bottom = max(m.y, 0.0) * max(m.y, 0.0);
+    float w_side = m.x * m.x;
+    float s_in = t / scale_px - 0.5;
+    float offset_in = w_top * profile_at(edges[0], s_in) + w_side * profile_at(edges[1], s_in)
+                    + w_bottom * profile_at(edges[2], s_in);
+    if (offset_in > 0.0) {
+        color += offset_in * min(vec3(1.0), (vec3(1.0) - color) / max(1.0 - fill_gray, 0.05));
+    } else {
+        color *= 1.0 + offset_in / max(fill_gray, 0.05);
+    }
+    float u_out = sd / scale_px - 0.5;
+    float outline = w_top * outline_at(edges[0], u_out) + w_side * outline_at(edges[1], u_out)
+                  + w_bottom * outline_at(edges[2], u_out);
 
     color = clamp(color, 0.0, 1.0);
-    float coverage = clamp(0.5 - sd, 0.0, 1.0) * alpha;
-    vec4 result = vec4(color, 1.0) * coverage;
+    float coverage = clamp(0.5 - sd, 0.0, 1.0);
+    vec4 result = (vec4(color, 1.0) * coverage + vec4(0.0, 0.0, 0.0, outline * (1.0 - coverage))) * alpha;
 #if defined(DEBUG_FLAGS)
     if (tint == 1.0)
         result = vec4(0.0, 0.2, 0.0, 0.2) + result * 0.8;

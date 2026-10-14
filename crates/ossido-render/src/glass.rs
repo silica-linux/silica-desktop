@@ -37,14 +37,183 @@ pub struct MaterialParams {
     pub merge_pt: f32,
 }
 
-/// The glass edge: on top and at the bottom the 1 pt `rim` row is added to the material, then
-/// a glow `glow · e^(−t/decay)`; on the sides the row is black with alpha `side_dark`.
+/// The glass edge, measured across the edges of the reference captures on gray
+/// (`xtask/tools/glass_parity.py`): for each orientation (top, sides, bottom) a profile of
+/// offsets inside the shape and the darkening just outside it. The shader picks the
+/// orientation from the shape's own normal (SDF), so corners, tips and the bridges between
+/// merged shapes blend continuously.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Edge {
-    pub rim: [f32; 3],
-    pub glow: f32,
-    pub glow_decay_pt: f32,
-    pub side_dark: f32,
+    pub top: EdgeProfile,
+    pub side: EdgeProfile,
+    pub bottom: EdgeProfile,
+}
+
+/// One orientation of the edge.
+/// - `inner[i]`: offset in levels (0–255) of the i-th point inside the edge, relative to the
+///   fill, as measured on the reference gray. Positive offsets are lights: they add the same
+///   amount over darker backgrounds and less over lighter ones (over white the Dock's +61
+///   row is +8, over black +60: glass.md › Luminous edge), scaled by
+///   min(1, (1 − c) / (1 − c_gray)). Negative offsets are shadows: they multiply.
+/// - `outer[i]`: alpha of black on the i-th point outside the edge (a dark outline drawn over
+///   whatever is behind).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EdgeProfile {
+    pub inner: [f32; 12],
+    pub outer: [f32; 2],
+}
+
+const fn profile(inner: [f32; 12], outer: [f32; 2]) -> EdgeProfile {
+    EdgeProfile { inner, outer }
+}
+
+const NONE: [f32; 2] = [0.0, 0.0];
+
+/// Dock, light: 1 pt light row on top and at the bottom (+61 over the `#818289` fill, the
+/// same on both sides in the gray capture) with an inner glow, 1 dark pt on the sides
+/// (61 over the fill's 132), nothing outside. `dock-gray-light.png`, columns x 1095–1408 and
+/// rows 1380–1410 (medians).
+const DOCK_EDGE: Edge = Edge {
+    top: profile(
+        [61.0, 13.3, 8.0, 5.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+    side: profile(
+        [-71.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+    bottom: profile(
+        [61.0, 13.3, 8.0, 5.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+};
+
+/// Dock, dark: +38 rows on top and at the bottom over the `#6a6a6f` fill, glow, sides 49 over
+/// the fill's 106 (`dock-gray-dark`).
+const DOCK_DARK_EDGE: Edge = Edge {
+    top: profile(
+        [38.0, 8.3, 5.0, 3.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+    side: profile(
+        [-58.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+    bottom: profile(
+        [38.0, 8.3, 5.0, 3.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        NONE,
+    ),
+};
+
+/// Control Center modules (`regular`): a strong light row on top and at the bottom (+94 /
+/// +90 over the `#6a6b70` fill) with a glow over ~6 pt; on the sides the dark line is
+/// **outside** the module (black ~0.63, the "1 pt border sticking out" of
+/// controlcenter.md), nothing inside. `cc/gray-dark.png`, the middle rows and columns of the
+/// eleven modules (identical in light).
+const REGULAR_EDGE: Edge = Edge {
+    top: profile(
+        [
+            94.0, 22.8, 13.8, 8.4, 5.8, 3.8, 1.1, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        NONE,
+    ),
+    side: profile(
+        [-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.63, 0.0],
+    ),
+    bottom: profile(
+        [
+            90.0, 19.0, 11.0, 7.7, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        NONE,
+    ),
+};
+
+/// Menus, light: a dark outline all around, outside the body (black ~0.2: menubar.md
+/// "outer line ~24 %", 0.16–0.30 over the shadowed gray of the captures), and inside a light
+/// row, stronger at the bottom (+30) than on top (+14) and faint on the sides (+4, then a
+/// slightly darker band of ~3 levels). `menubar/gray-light.png` (top),
+/// `misc/dock-context-light.png` (bottom and sides).
+const MENU_EDGE: Edge = Edge {
+    top: profile(
+        [14.2, 5.7, 4.8, 3.7, 2.8, 1.8, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.2, 0.015],
+    ),
+    side: profile(
+        [
+            3.7, -3.0, -3.0, -3.0, -3.0, -2.0, -2.0, -1.3, -1.0, -0.3, 0.0, 0.0,
+        ],
+        [0.2, 0.015],
+    ),
+    bottom: profile(
+        [30.4, 5.8, 3.1, 2.1, 1.4, 1.4, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.2, 0.015],
+    ),
+};
+
+/// Menus, dark: an almost black outline outside (black ~0.85, menubar.md `#111112` over the
+/// gray), inside +51 on top, +39 at the bottom, +10 on the sides followed by a darker band
+/// (−12 … −4 over 4 pt). `menubar/gray-dark.png`, `misc/dock-context-dark.png`.
+const MENU_DARK_EDGE: Edge = Edge {
+    top: profile(
+        [50.9, 6.2, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.85, 0.025],
+    ),
+    side: profile(
+        [
+            9.5, -12.2, -10.8, -9.2, -4.0, -0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        [0.85, 0.025],
+    ),
+    bottom: profile(
+        [38.7, 9.2, 3.3, 2.0, 1.7, 0.7, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.85, 0.025],
+    ),
+};
+
+/// Notifications: the 1 pt row is dark all around and is **outside** the frame (the client
+/// widens the region by 1 pt per side): `#5e6064` on top and `#636367` at the bottom over a
+/// ~`#c0` fill (−98), `#393a3d` on the sides (black ~0.70). Inside, the first row on top and at
+/// the bottom is ~22 levels lighter, absorbed in 2 pt (`d6 c3 c1 bf`). `notifications.md`,
+/// "Banner · material over gray". Not yet in the parity harness.
+const NOTIFICATION_EDGE: Edge = Edge {
+    top: profile(
+        [
+            -98.0, 22.0, 3.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        NONE,
+    ),
+    side: profile(
+        [
+            -135.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        NONE,
+    ),
+    bottom: profile(
+        [
+            -97.0, 22.0, 3.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        NONE,
+    ),
+};
+
+impl Edge {
+    /// The three profiles as `mat4`s: inner 0–11 (0–1 levels), outer 0–1 in 12–13.
+    fn uniform(&self) -> UniformValue {
+        let pack = |p: &EdgeProfile| {
+            let mut m = [0.0_f32; 16];
+            for (slot, value) in m.iter_mut().zip(p.inner) {
+                *slot = value / 255.0;
+            }
+            m[12] = p.outer[0];
+            m[13] = p.outer[1];
+            m
+        };
+        UniformValue::Matrix4x4 {
+            matrices: vec![pack(&self.top), pack(&self.side), pack(&self.bottom)],
+            transpose: false,
+        }
+    }
 }
 
 /// The edge lens: for every side, from which distance from the edge (s) the glass samples the
@@ -85,50 +254,6 @@ impl Lens {
     }
 }
 
-/// Edge shared by the measured glasses (Dock, modules, HUD, notifications, Spotlight): on the
-/// Dock's gray the 1 pt row on top and at the bottom is +60, +60, +63 over the fill, the
-/// inner glow +13, +8, +5, +3, +2, +1 (≈ 13·e^(−t/2.2)), additive even over black;
-/// on the sides 1 dark pt (`#3c3c40` over `#818289`: black with alpha 0.535). `dock.md`, `glass.md`.
-const EDGE: Edge = Edge {
-    rim: [60.0 / 255.0, 60.0 / 255.0, 63.0 / 255.0],
-    glow: 13.0 / 255.0,
-    glow_decay_pt: 2.2,
-    side_dark: 0.535,
-};
-
-/// Edge of the Control Center modules (`regular` Liquid Glass): stronger than the Dock's.
-/// Top row `#bfc0c7`–`#c7c8cf` over a `#6a6b70`–`#6e6f73` fill (+86), glow +18, +9, +4, +2
-/// (decay ~1.4 pt), sides `#27282c` (black with alpha ~0.63). `controlcenter.md`,
-/// "CC · luminous edge and fill".
-const REGULAR_EDGE: Edge = Edge {
-    rim: [86.0 / 255.0, 86.0 / 255.0, 88.0 / 255.0],
-    glow: 18.0 / 255.0,
-    glow_decay_pt: 1.4,
-    side_dark: 0.63,
-};
-
-/// Edge of notifications: the 1 pt row is dark all around and is **outside** the frame (the
-/// client widens the region by 1 pt per side): `#5e6064` on top and `#636367` at the bottom
-/// over a ~`#c0` fill (−98), `#393a3d` on the sides (black with alpha ~0.70). Inside, the
-/// first row on top and at the bottom is ~22 levels lighter and the glow is absorbed in
-/// 2 pt (`d6 c3 c1 bf`). `notifications.md`, "Banner · material over gray".
-const NOTIFICATION_EDGE: Edge = Edge {
-    rim: [-98.0 / 255.0, -97.0 / 255.0, -98.0 / 255.0],
-    glow: 22.0 / 255.0,
-    glow_decay_pt: 0.5,
-    side_dark: 0.70,
-};
-
-/// Dock edge in dark: row on top and at the bottom `#8e8f95` over the `#68696e` fill
-/// (+38, +38, +39), inner glow +8, +5, +3, +2, +1, +1 (≈ 8·e^(−t/2.2)), sides
-/// `#2f3033` (black with alpha ~0.545). `dock.md`, background table.
-const DARK_EDGE: Edge = Edge {
-    rim: [38.0 / 255.0, 38.0 / 255.0, 39.0 / 255.0],
-    glow: 8.0 / 255.0,
-    glow_decay_pt: 2.2,
-    side_dark: 0.545,
-};
-
 /// Dock background, light: σ 2.5–3.25 pt (2.75 is used), w 0.28, free matrix
 /// (rmse 2.45) with b = (37.3; 39.3; 36.8).
 pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
@@ -141,7 +266,7 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     ],
     offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
     lens: DOCK_LENS,
-    edge: EDGE,
+    edge: DOCK_EDGE,
     merge_pt: MERGE_PT,
 };
 
@@ -157,7 +282,7 @@ pub const CLEAR_DARK: MaterialParams = MaterialParams {
     ],
     offset: [16.2 / 255.0, 15.7 / 255.0, 16.3 / 255.0],
     lens: DOCK_LENS,
-    edge: DARK_EDGE,
+    edge: DOCK_DARK_EDGE,
     merge_pt: MERGE_PT,
 };
 
@@ -272,7 +397,7 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
         top: &[],
         bottom: &[],
     },
-    edge: EDGE,
+    edge: MENU_EDGE,
     merge_pt: MERGE_PT,
 };
 
@@ -289,6 +414,7 @@ pub const THICK_DARK: MaterialParams = MaterialParams {
         [-0.177, -0.391, 1.001],
     ],
     offset: [59.4 / 255.0, 59.0 / 255.0, 58.6 / 255.0],
+    edge: MENU_DARK_EDGE,
     ..THICK_LIGHT
 };
 
@@ -296,7 +422,7 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 16] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 15] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -310,10 +436,24 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 16] = [
     ("scale_px", UniformType::_1f),
     ("lens", UniformType::Matrix4x4),
     ("lens_reach", UniformType::_1f),
-    ("rim", UniformType::_3f),
-    ("edge", UniformType::_2f),
-    ("side_dark", UniformType::_1f),
+    ("edges", UniformType::Matrix4x4),
+    ("fill_gray", UniformType::_1f),
 ];
+
+impl MaterialParams {
+    /// The fill over the reference gray (`#7a7b80`), 0–1 luminance: the level the edge
+    /// offsets were measured against.
+    pub fn fill_on_gray(&self) -> f32 {
+        let gray = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.0];
+        let channel = |row: [f32; 3], offset: f32| {
+            row[0] * gray[0] + row[1] * gray[1] + row[2] * gray[2] + offset
+        };
+        let r = channel(self.matrix[0], self.offset[0]);
+        let g = channel(self.matrix[1], self.offset[1]);
+        let b = channel(self.matrix[2], self.offset[2]);
+        ((r + g + b) / 3.0).clamp(0.01, 0.99)
+    }
+}
 
 /// How far the lens reaches inside the glass (the last point of the curves), in points: the
 /// normal is computed on corners at least this wide, so that it does not jump on the diagonal
@@ -900,15 +1040,11 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("scale_px", UniformValue::_1f(px)),
             Uniform::new("lens", lens.uniform(px)),
             Uniform::new("lens_reach", UniformValue::_1f(lens_extent(&lens) * px)),
+            Uniform::new("edges", edge.uniform()),
             Uniform::new(
-                "rim",
-                UniformValue::_3f(edge.rim[0], edge.rim[1], edge.rim[2]),
+                "fill_gray",
+                UniformValue::_1f(first.material.fill_on_gray()),
             ),
-            Uniform::new(
-                "edge",
-                UniformValue::_2f(edge.glow, edge.glow_decay_pt * px),
-            ),
-            Uniform::new("side_dark", UniformValue::_1f(edge.side_dark)),
         ];
         frame.render_texture_from_to(
             &self.texture,
