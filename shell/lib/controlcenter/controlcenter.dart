@@ -24,9 +24,7 @@
 
 import 'dart:async';
 import 'dart:io' show File;
-import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -35,6 +33,7 @@ import '../l10n/l10n.dart';
 import '../menubar/menubar.dart' show barHeight;
 import '../system/layer_control.dart';
 import '../system/media.dart';
+import '../system/shadow_image.dart';
 import '../system/shell_channel.dart';
 import '../system/desktop_entries.dart';
 import '../system/system_status.dart';
@@ -645,6 +644,11 @@ class _ControlCenterState extends State<ControlCenter>
         final left = constraints.maxWidth - rightMargin - stackWidth;
         final top = stackTop + (snapshot.privacy.isEmpty ? 0 : pillShift);
         final origin = Offset(left, top);
+        final shadow = _StackShadow(
+          origin: origin,
+          height: totalHeight,
+          slots: shadowSlots,
+        );
         if (_open) {
           _setRegion(
             Rect.fromLTWH(
@@ -685,18 +689,15 @@ class _ControlCenterState extends State<ControlCenter>
                       : null,
                 ),
               ),
-              // The shadow fades in its own paint, not under an Opacity: Impeller cannot pass
-              // an inherited opacity to a blurred draw under a clip, and drew it at full
-              // strength until the panel was gone (the tiles' outline left on screen).
+              // The shadow is an image (CachedShadow): drawn once per layout, it fades with the
+              // panel under Impeller, which cannot fade a blurred draw under a clip.
               Positioned.fill(
                 child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _StackShadow(
-                      origin: origin,
-                      height: totalHeight,
-                      slots: shadowSlots,
-                      opacity: opacity,
-                    ),
+                  child: CachedShadow(
+                    cacheKey: shadow.cacheKey,
+                    paintShadow: shadow.paintShadow,
+                    opacity: opacity,
+                    hittable: false,
                   ),
                 ),
               ),
@@ -2285,58 +2286,21 @@ class _EditButton extends StatelessWidget {
   );
 }
 
-class _StackShadow extends CustomPainter {
+/// The shadow of the module stack: drawn outside the modules only.
+class _StackShadow {
   const _StackShadow({
     required this.origin,
     required this.height,
     required this.slots,
-    this.opacity = 1,
   });
 
   final Offset origin;
   final double height;
   final List<ModuleSlot> slots;
 
-  /// The panel's opacity while it opens and closes.
-  final double opacity;
+  Object get cacheKey => Object.hash(origin, height, Object.hashAll(slots));
 
-  /// The shadow drawn once for a layout, as an image: while the panel fades only the opacity
-  /// of the image changes. Drawing the blur at every frame of the fade costs ~250 ms a frame
-  /// on a virtual GPU; under an Opacity ancestor instead Impeller cannot pass the opacity to
-  /// a blurred draw under a clip and drew it at full strength until the panel was gone (the
-  /// tiles' outline and shadow left on screen after their content).
-  static (Object, ui.Image)? _cached;
-
-  ui.Image _image(Size size) {
-    final key = Object.hashAll([size, origin, height, ...slots]);
-    final cached = _cached;
-    if (cached != null && cached.$1 == key) return cached.$2;
-    final recorder = ui.PictureRecorder();
-    _paintShadow(Canvas(recorder), size);
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(
-      size.width.ceil().clamp(1, 16384),
-      size.height.ceil().clamp(1, 16384),
-    );
-    picture.dispose();
-    cached?.$2.dispose();
-    _cached = (key, image);
-    return image;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (opacity <= 0 || size.isEmpty) return;
-    canvas.drawImage(
-      _image(size),
-      Offset.zero,
-      Paint()
-        ..color = Color.fromRGBO(0, 0, 0, opacity.clamp(0.0, 1.0))
-        ..filterQuality = FilterQuality.low,
-    );
-  }
-
-  void _paintShadow(Canvas canvas, Size size) {
+  void paintShadow(Canvas canvas, Size size) {
     var modules = Path();
     for (final slot in slots) {
       modules = Path.combine(
@@ -2374,16 +2338,4 @@ class _StackShadow extends CustomPainter {
       )
       ..restore();
   }
-
-  // Decoration only: without this, a full-screen CustomPaint counts as hit and swallows the
-  // clicks outside the modules that should close the Control Center.
-  @override
-  bool? hitTest(Offset position) => false;
-
-  @override
-  bool shouldRepaint(_StackShadow old) =>
-      old.origin != origin ||
-      old.height != height ||
-      old.opacity != opacity ||
-      !listEquals(old.slots, slots);
 }
