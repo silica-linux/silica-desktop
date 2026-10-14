@@ -34,6 +34,10 @@ use silica_control::commands::{
 use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
+use silica_control::commands::{
+    SCREENSHOT_REGION, SCREENSHOT_SCREEN, SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR,
+    SCREENSHOT_WINDOW_AT,
+};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -97,6 +101,42 @@ impl State {
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
+            SCREENSHOT_SCREEN => {
+                let capture = self.screenshot()?;
+                self.publish_screenshot(&capture)
+            }
+            SCREENSHOT_REGION => {
+                let region: silica_control::RegionParams = parse_required(params)?;
+                let capture = self.screenshot()?;
+                let scale = self.output.current_scale().fractional_scale();
+                let origin = self
+                    .space
+                    .output_geometry(&self.output)
+                    .map(|g| g.loc.to_f64())
+                    .unwrap_or_default();
+                let crop = crate::capture::crop(
+                    &capture,
+                    (region.x - origin.x) * scale,
+                    (region.y - origin.y) * scale,
+                    region.width * scale,
+                    region.height * scale,
+                )
+                .ok_or("regione vuota o fuori dallo schermo")?;
+                self.publish_screenshot(&crop)
+            }
+            SCREENSHOT_WINDOW_AT => {
+                let point: silica_control::PointParams = parse_required(params)?;
+                let window = match self.window_hit(Point::from((point.x, point.y))) {
+                    Some(crate::decorations::Hit::Titlebar(window, _, _))
+                    | Some(crate::decorations::Hit::Content(window)) => window,
+                    None => return Err("nessuna finestra in quel punto".to_owned()),
+                };
+                let capture = self.window_capture(&window)?;
+                self.publish_screenshot(&capture)
+            }
+            SCREENSHOT_SELECTION | SCREENSHOT_TOOLBAR => {
+                Ok(json!({ "forwarded": self.forward_to_shell(id) }))
+            }
             UI_GLASS_QUALITY => {
                 let GlassQualityParams { quality } = parse_required(params)?;
                 self.glass_setting =
@@ -707,6 +747,28 @@ impl State {
                 })
             })
             .collect()
+    }
+
+    /// Scrive l'istantanea in un file temporaneo e la annuncia alla shell (`broadcast`
+    /// "screenshot" = "<percorso> <larghezza> <altezza>"): la miniatura, poi la Scrivania.
+    fn publish_screenshot(&mut self, capture: &crate::capture::Capture) -> Result<Value, String> {
+        let png = capture.to_png()?;
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        self.screenshot_count = self.screenshot_count.wrapping_add(1);
+        let path = dir.join(format!(
+            "silica-istantanea-{}-{}.png",
+            std::process::id(),
+            self.screenshot_count
+        ));
+        std::fs::write(&path, &png).map_err(|e| format!("scrittura di {}: {e}", path.display()))?;
+        let path = path.to_string_lossy().into_owned();
+        self.broadcast_to_shell(
+            "screenshot".to_owned(),
+            format!("{path} {} {}", capture.width, capture.height),
+        );
+        Ok(json!({ "path": path, "width": capture.width, "height": capture.height }))
     }
 
     fn command_screenshot(&mut self, params: ScreenshotParams) -> Result<Value, String> {

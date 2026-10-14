@@ -115,6 +115,8 @@ pub struct State {
     /// Quante pressioni sui pulsanti ci sono state: il timer della pressione lunga sul
     /// pulsante verde agisce solo se la pressione è ancora quella che l'ha avviato.
     pub titlebar_press_count: u64,
+    /// Quante istantanee sono state scritte (il nome del file temporaneo).
+    pub screenshot_count: u64,
     /// Simboli dei pulsanti: quando il puntatore è entrato nel gruppo e quando ne è uscito.
     pub buttons_hover: Option<ButtonsHover>,
     /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
@@ -278,6 +280,7 @@ impl State {
             titlebar_press: None,
             titlebar_press_inside: false,
             titlebar_press_count: 0,
+            screenshot_count: 0,
             buttons_hover: None,
             moving: None,
             press_serial: None,

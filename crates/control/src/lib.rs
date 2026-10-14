@@ -69,6 +69,24 @@ pub struct ScreenshotParams {
     pub path: Option<String>,
 }
 
+/// Una regione dello schermo in punti logici (`screenshot.region`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegionParams {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Un punto dello schermo in punti logici (`screenshot.window_at`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointParams {
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Screenshot {
     pub width: u32,

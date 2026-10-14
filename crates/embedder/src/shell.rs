@@ -248,10 +248,22 @@ impl ShellLink {
             }
             Some("execute") => {
                 let id = text("id");
+                // Con i parametri (un oggetto JSON) serve la versione 5.
+                let params = call
+                    .pointer("/args/params")
+                    .filter(|p| p.is_object())
+                    .map(ToString::to_string);
                 let sent = !id.is_empty()
-                    && self.manager.as_ref().is_some_and(|manager| {
-                        manager.execute(id);
-                        true
+                    && self.manager.as_ref().is_some_and(|manager| match params {
+                        Some(params) if manager.version() >= 5 => {
+                            manager.execute_with(id, params);
+                            true
+                        }
+                        Some(_) => false,
+                        None => {
+                            manager.execute(id);
+                            true
+                        }
                     });
                 success(json!(sent))
             }

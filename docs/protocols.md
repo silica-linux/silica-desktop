@@ -74,3 +74,6 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
   di un componente per gli altri (`controlcenter.open`, `notifications.open`: le capsule
   nella barra). Ossido lo rimanda a tutti, mittente compreso, e manda l'ultimo valore di ogni
   argomento a chi si collega dopo.
+- `silica_shell_manager_v1.execute_with(id, params)` (versione 5): come `execute`, con i
+  parametri in un oggetto JSON (le istantanee: `screenshot.region`, `screenshot.window_at`).
+  Ossido annuncia ogni istantanea con il broadcast `screenshot` = "<percorso> <l> <a>".

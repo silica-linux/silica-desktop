@@ -12,7 +12,7 @@
     questo protocollo aggiunge quello che la shell chiede al compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="4">
+  <interface name="silica_shell_manager_v1" version="5">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -119,5 +119,14 @@
       <arg name="topic" type="string"/>
       <arg name="value" type="string"/>
     </event>
+
+    <request name="execute_with" since="5">
+      <description summary="esegue un comando del catalogo con i parametri">
+        Come execute, con i parametri in JSON (un oggetto): per esempio screenshot.region
+        con il rettangolo scelto nel mirino.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="params" type="string"/>
+    </request>
   </interface>
 </protocol>

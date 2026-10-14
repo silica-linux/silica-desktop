@@ -186,9 +186,11 @@ class ShellChannel {
   Future<bool> launch(String command) => _call('launch', {'command': command});
 
   /// Esegue un comando del catalogo di Ossido (es. `faro.toggle` dalla barra).
-  Future<bool> execute(String id) => _call('execute', {'id': id});
+  /// Esegue un comando del catalogo di Ossido, con i parametri se ce ne sono.
+  Future<bool> execute(String id, [Map<String, Object?>? params]) =>
+      _call('execute', {'id': id, 'params': ?params});
 
-  Future<bool> _call(String method, Map<String, String> args) async {
+  Future<bool> _call(String method, Map<String, Object?> args) async {
     try {
       return await channel.invokeMethod<bool>(method, args) ?? false;
     } on MissingPluginException {

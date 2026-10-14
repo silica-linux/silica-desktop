@@ -31,6 +31,34 @@ impl Capture {
     }
 }
 
+/// Il rettangolo dato (pixel, arrotondato e tagliato ai bordi) di una cattura; None se vuoto.
+pub fn crop(capture: &Capture, x: f64, y: f64, width: f64, height: f64) -> Option<Capture> {
+    if ![x, y, width, height].iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let clamp = |v: f64, max: u32| v.round().clamp(0.0, f64::from(max)) as u32;
+    let (x0, y0) = (clamp(x, capture.width), clamp(y, capture.height));
+    let (x1, y1) = (
+        clamp(x + width, capture.width),
+        clamp(y + height, capture.height),
+    );
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let (w, h) = (x1 - x0, y1 - y0);
+    let stride = capture.width as usize * 4;
+    let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in y0..y1 {
+        let start = row as usize * stride + x0 as usize * 4;
+        rgba.extend_from_slice(capture.rgba.get(start..start + w as usize * 4)?);
+    }
+    Some(Capture {
+        width: w,
+        height: h,
+        rgba,
+    })
+}
+
 /// Disegna lo spazio in un buffer fuori schermo e lo rilegge (renderer senza effetti).
 pub fn capture<R, T>(
     renderer: &mut R,

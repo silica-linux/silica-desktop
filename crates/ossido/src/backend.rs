@@ -361,30 +361,52 @@ pub const THUMBNAIL_MAX: u32 = 256;
 impl State {
     /// Fotografa la cornice della finestra (senza ombra) e la tiene, ridotta, nei suoi dati.
     pub fn capture_thumbnail(&mut self, window: &smithay::desktop::Window) {
+        let capture = match self.window_capture(window) {
+            Ok(capture) => capture,
+            Err(err) => {
+                warn!("miniatura non letta: {err}");
+                return;
+            }
+        };
+        let small = shrink(&capture.rgba, capture.width, capture.height, THUMBNAIL_MAX);
+        window
+            .user_data()
+            .insert_if_missing_threadsafe(Thumbnail::default);
+        if let Some(slot) = window.user_data().get::<Thumbnail>()
+            && let Ok(mut slot) = slot.0.lock()
+        {
+            *slot = small;
+        }
+    }
+
+    /// La finestra da sola (cornice e barra comprese), a piena risoluzione.
+    pub fn window_capture(
+        &mut self,
+        window: &smithay::desktop::Window,
+    ) -> Result<crate::capture::Capture, String> {
         use smithay::backend::renderer::ExportMem;
         let renderer = match &mut self.backend {
             Backend::Winit(backend) => backend.graphics.renderer(),
             Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
-            Backend::Headless(Headless::Pixman(_)) => return,
+            Backend::Headless(Headless::Pixman(_)) => {
+                return Err("cattura di una finestra non disponibile con pixman".to_owned());
+            }
         };
-        let Some(snapshot) =
-            crate::render::snapshot_window(renderer, &self.space, &self.output, window)
-        else {
-            return;
-        };
+        let snapshot = crate::render::snapshot_window(renderer, &self.space, &self.output, window)
+            .ok_or("finestra non disegnabile")?;
         let scale = self.output.current_scale().fractional_scale();
         let (Some(geometry), Some(origin)) = (
             self.space.element_geometry(window),
             self.space.output_geometry(&self.output),
         ) else {
-            return;
+            return Err("finestra non sullo schermo".to_owned());
         };
         let mut frame = crate::decorations::frame_of(window, geometry);
         frame.loc -= origin.loc;
         let frame = frame.to_physical_precise_round(scale);
-        let Some(visible) = frame.intersection(snapshot.bbox) else {
-            return;
-        };
+        let visible = frame
+            .intersection(snapshot.bbox)
+            .ok_or("finestra fuori dallo schermo")?;
         let region = Rectangle::<i32, smithay::utils::Buffer>::new(
             (visible.loc - snapshot.bbox.loc).to_logical(1).to_buffer(
                 1,
@@ -399,26 +421,18 @@ impl State {
                 region,
                 smithay::backend::allocator::Fourcc::Abgr8888,
             )
-            .and_then(|mapping| renderer.map_texture(&mapping).map(<[u8]>::to_vec));
-        let pixels = match pixels {
-            Ok(pixels) => pixels,
-            Err(err) => {
-                warn!("miniatura non letta: {err:?}");
-                return;
-            }
+            .and_then(|mapping| renderer.map_texture(&mapping).map(<[u8]>::to_vec))
+            .map_err(|err| format!("lettura: {err:?}"))?;
+        let (Ok(width), Ok(height)) =
+            (u32::try_from(visible.size.w), u32::try_from(visible.size.h))
+        else {
+            return Err("dimensione non valida".to_owned());
         };
-        let (Ok(w), Ok(h)) = (u32::try_from(visible.size.w), u32::try_from(visible.size.h)) else {
-            return;
-        };
-        let small = shrink(&pixels, w, h, THUMBNAIL_MAX);
-        window
-            .user_data()
-            .insert_if_missing_threadsafe(Thumbnail::default);
-        if let Some(slot) = window.user_data().get::<Thumbnail>()
-            && let Ok(mut slot) = slot.0.lock()
-        {
-            *slot = small;
-        }
+        Ok(crate::capture::Capture {
+            width,
+            height,
+            rgba: pixels,
+        })
     }
 }
 

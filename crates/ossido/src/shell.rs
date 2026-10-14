@@ -52,7 +52,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            4,
+            5,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -370,6 +370,18 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
             },
             silica_shell_manager_v1::Request::Execute { id } => {
                 if let Err(err) = state.execute_command(&id, serde_json::Value::Null) {
+                    warn!("shell: {id}: {err}");
+                }
+            }
+            silica_shell_manager_v1::Request::ExecuteWith { id, params } => {
+                let params = match serde_json::from_str::<serde_json::Value>(&params) {
+                    Ok(value @ serde_json::Value::Object(_)) => value,
+                    Ok(_) | Err(_) => {
+                        warn!("shell: {id}: parametri non validi");
+                        return;
+                    }
+                };
+                if let Err(err) = state.execute_command(&id, params) {
                     warn!("shell: {id}: {err}");
                 }
             }

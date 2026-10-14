@@ -9,6 +9,11 @@ use serde_json::{Value, json};
 
 /// Cattura l'output come PNG.
 pub const UI_SCREENSHOT: &str = "ui.screenshot";
+pub const SCREENSHOT_SCREEN: &str = "screenshot.screen";
+pub const SCREENSHOT_SELECTION: &str = "screenshot.selection";
+pub const SCREENSHOT_TOOLBAR: &str = "screenshot.toolbar";
+pub const SCREENSHOT_REGION: &str = "screenshot.region";
+pub const SCREENSHOT_WINDOW_AT: &str = "screenshot.window_at";
 pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
 pub const UI_GLASS_QUALITY: &str = "ui.glass_quality";
 pub const PERF_RENDER: &str = "perf.render";
@@ -170,6 +175,58 @@ pub const CATALOG: &[CommandSpec] = &[
                 "properties": {
                     "path": {"type": "string", "description": "Dove scrivere il PNG; senza, torna in png_base64"}
                 },
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: SCREENSHOT_SCREEN,
+        label: "Istantanea dello schermo",
+        description: "Cattura tutto lo schermo; la miniatura compare in basso a destra e il file va sulla Scrivania.",
+        shortcut: Some("Logo+Shift+3"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SCREENSHOT_SELECTION,
+        label: "Istantanea di una parte",
+        description: "Il mirino per scegliere una regione (Spazio: una finestra); componente della shell.",
+        shortcut: Some("Logo+Shift+4"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SCREENSHOT_TOOLBAR,
+        label: "Strumenti per le istantanee",
+        description: "La barra delle istantanee: schermo, finestra o selezione; componente della shell.",
+        shortcut: Some("Logo+Shift+5"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: SCREENSHOT_REGION,
+        label: "Istantanea di una regione",
+        description: "Cattura un rettangolo dello schermo, in punti.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"}, "y": {"type": "number"},
+                    "width": {"type": "number"}, "height": {"type": "number"}
+                },
+                "required": ["x", "y", "width", "height"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: SCREENSHOT_WINDOW_AT,
+        label: "Istantanea di una finestra",
+        description: "Cattura la finestra sotto il punto dato, da sola.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                "required": ["x", "y"],
                 "additionalProperties": false
             })
         },

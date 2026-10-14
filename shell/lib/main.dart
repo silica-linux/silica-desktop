@@ -13,6 +13,7 @@ import 'notifications/notifications.dart';
 import 'notifications/service.dart';
 import 'system/desktop_entries.dart';
 import 'system/shell_channel.dart';
+import 'screenshot/screenshot.dart';
 import 'switcher/switcher.dart';
 import 'system/system_status.dart';
 import 'wallpaper/wallpaper.dart';
@@ -65,7 +66,13 @@ class ShellComponent extends StatelessWidget {
         system: DBusSystem(),
       ),
       'controlcenter' => ControlCenter(system: DBusSystem()),
-      'switcher' => AppSwitcher(entries: loadDesktopEntries()),
+      // Il selettore delle app non prende mai input: lo stesso layer ospita le istantanee.
+      'switcher' => Stack(
+        children: [
+          AppSwitcher(entries: loadDesktopEntries()),
+          const ScreenshotLayer(),
+        ],
+      ),
       _ => const LiveDock(),
     };
     return Directionality(textDirection: TextDirection.ltr, child: child);
