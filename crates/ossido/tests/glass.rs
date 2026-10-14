@@ -281,8 +281,8 @@ fn clear_glass_edge_matches_the_dock_border() {
     check((32, mid), DOCK_SIDE, "left edge");
     check((331, mid), DOCK_SIDE, "right edge");
     // The measured edge offsets are neutral: the top row's slight blue tint (B +4 over R and
-    // G more than the fill's) is not modelled, and glass.md's matrix is ~1 level off.
-    assert!(worst <= 5, "edge far from the Dock: {worst} levels");
+    // G more than the fill's) is not modelled.
+    assert!(worst <= 4, "edge far from the Dock: {worst} levels");
 }
 
 #[test]

@@ -30,11 +30,14 @@ uniform mat4 radii;
 uniform float shape_count;
 uniform float merge;
 uniform float exponent;
-// Material color on the encoded sRGB values: out = M · in + b (rows of M).
+// Material color on the encoded sRGB values: out = M · in + b + q2 · l² + q3 · l³ (rows of M,
+// l the mean of the input channels).
 uniform vec3 row_r;
 uniform vec3 row_g;
 uniform vec3 row_b;
 uniform vec3 offset;
+uniform vec3 curve2;
+uniform vec3 curve3;
 // Physical pixels per point.
 uniform float scale_px;
 // Edge lens: per side (0 sides, 1 top, 2 bottom) the (t, s) points in pixels: a pixel at
@@ -196,6 +199,8 @@ void main() {
 
     vec3 background = texture2D(tex, sample_at).rgb;
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
+    float luminance = (background.r + background.g + background.b) / 3.0;
+    color += (curve2 + curve3 * luminance) * luminance * luminance;
 
     // Edge: the measured profiles, weighted by the orientation of the true shape's normal
     // (top, sides, bottom), so corners, tips and merged bridges blend continuously.

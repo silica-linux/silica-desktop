@@ -19,8 +19,8 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-/// Parameters of a material: blur, sharp share and color (`out = M · in + b` on the encoded
-/// sRGB values, 0–1).
+/// Parameters of a material: blur, sharp share and color (`out = M · in + b + q₂ · l² + q₃ · l³`
+/// on the encoded sRGB values, 0–1, l the mean of the input channels).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MaterialParams {
     /// σ of the Gaussian in points.
@@ -29,6 +29,8 @@ pub struct MaterialParams {
     pub sharp: f32,
     pub matrix: [[f32; 3]; 3],
     pub offset: [f32; 3],
+    /// Quadratic and cubic terms on the input luminance (`q₂`, `q₃`): some transfers bend.
+    pub curve: [[f32; 3]; 2],
     /// The edge lens.
     pub lens: Lens,
     /// The edge row and the inner glow.
@@ -254,33 +256,38 @@ impl Lens {
     }
 }
 
-/// Dock background, light: σ 2.5–3.25 pt (2.75 is used), w 0.28, free matrix
-/// (rmse 2.45) with b = (37.3; 39.3; 36.8).
+/// Dock background, light: σ 2.5–3.25 pt (2.75 is used), w 0.28, free matrix with
+/// b = (37.3; 39.1; 36.9), fitted on the gray and ramp captures converted to sRGB with their
+/// display profile (`xtask/tools/glass_parity.py`; rmse 1.88, 2.03 with glass.md's matrix).
 pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     sigma: 2.75,
     sharp: 0.28,
     matrix: [
-        [1.100, -0.314, -0.033],
-        [-0.146, 0.805, 0.087],
-        [-0.158, -0.328, 1.242],
+        [1.107, -0.331, -0.022],
+        [-0.148, 0.822, 0.068],
+        [-0.152, -0.345, 1.257],
     ],
-    offset: [37.3 / 255.0, 39.3 / 255.0, 36.8 / 255.0],
+    offset: [37.3 / 255.0, 39.1 / 255.0, 36.9 / 255.0],
+    curve: [[0.0; 3]; 2],
     lens: DOCK_LENS,
     edge: DOCK_EDGE,
     merge_pt: MERGE_PT,
 };
 
-/// Dock background, dark: σ 2.5–3.25 pt (2.875 is used, halfway), w 0.28, free matrix
-/// (rmse 4.71) with b = (16.2; 15.7; 16.3) (glass.md, "Glass · Dock", "Dark" tables).
+/// Dock background, dark: σ 2.5–3.25 pt (2.875 is used, halfway), w 0.28. The transfer bends
+/// (darker over light backgrounds than a matrix gives): free matrix with b = (11.4; 12.7; 11.9)
+/// and a quadratic term on the luminance, fitted on the sRGB-converted gray and ramp captures
+/// (`xtask/tools/glass_parity.py`; rmse 1.08, 4.7 with glass.md's matrix alone).
 pub const CLEAR_DARK: MaterialParams = MaterialParams {
     sigma: 2.875,
     sharp: 0.28,
     matrix: [
-        [1.058, -0.307, -0.083],
-        [-0.199, 0.729, 0.141],
-        [-0.164, -0.327, 1.159],
+        [1.157, -0.259, -0.022],
+        [-0.154, 0.858, 0.147],
+        [-0.082, -0.273, 1.215],
     ],
-    offset: [16.2 / 255.0, 15.7 / 255.0, 16.3 / 255.0],
+    offset: [11.4 / 255.0, 12.7 / 255.0, 11.9 / 255.0],
+    curve: [[-0.232, -0.212, -0.218], [0.0; 3]],
     lens: DOCK_LENS,
     edge: DOCK_DARK_EDGE,
     merge_pt: MERGE_PT,
@@ -315,34 +322,27 @@ const DOCK_LENS: Lens = Lens {
     ],
 };
 
-/// Control Center modules, light: σ 4.5 pt, w 0.04, free matrix (rmse 3.33)
-/// with b = (30.6; 32.0; 30.3); identical in dark (glass.md, "Control Center").
+/// Control Center modules, light: σ 4.5 pt, w 0.04, free matrix with b = (34.2; 31.6; 32.0),
+/// fitted on the sRGB-converted gray and ramp captures (`xtask/tools/glass_parity.py`;
+/// rmse 1.41, 2.5 with glass.md's matrix); identical in dark (glass.md, "Control Center").
 pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     sigma: 4.5,
     sharp: 0.04,
     matrix: [
-        [0.946, -0.285, -0.037],
-        [-0.126, 0.651, 0.094],
-        [-0.140, -0.297, 1.064],
+        [0.907, -0.248, -0.064],
+        [-0.140, 0.637, 0.110],
+        [-0.166, -0.278, 1.049],
     ],
-    offset: [30.6 / 255.0, 32.0 / 255.0, 30.3 / 255.0],
+    offset: [34.2 / 255.0, 31.6 / 255.0, 32.0 / 255.0],
+    curve: [[0.0; 3]; 2],
     lens: LIQUID_LENS,
     edge: REGULAR_EDGE,
     merge_pt: MERGE_PT,
 };
 
-/// Control Center modules, dark: same blur, dark matrix (rmse 1.82) with
-/// b = (31.2; 32.5; 30.8), almost the same as the light one; edge as in light ("same
-/// identical look in light and dark over gray", controlcenter.md).
-pub const REGULAR_DARK: MaterialParams = MaterialParams {
-    matrix: [
-        [0.942, -0.289, -0.041],
-        [-0.130, 0.646, 0.090],
-        [-0.144, -0.304, 1.061],
-    ],
-    offset: [31.2 / 255.0, 32.5 / 255.0, 30.8 / 255.0],
-    ..REGULAR_LIGHT
-};
+/// Control Center modules, dark: the same fit gives the same matrix within 0.004 (rmse 1.41);
+/// edge as in light ("same identical look in light and dark over gray", controlcenter.md).
+pub const REGULAR_DARK: MaterialParams = REGULAR_LIGHT;
 
 /// The Liquid Glass lens, measured on the Control Center modules: between ~6 and ~24 pt from
 /// the edge it magnifies (up to ~4 pt inwards), in the outer ~6 pt it samples the background
@@ -373,17 +373,21 @@ const LIQUID_LENS: Lens = Lens {
     ],
 };
 
-/// Menus, light: σ ≈ 9 pt, negligible sharp component, matrix (rmse 4.1) with
-/// b = (142, 140, 140).
+/// Menus, light: σ ≈ 9 pt, negligible sharp component. The transfer flattens towards black
+/// and white: the ramps, which only span the middle levels, want a steeper matrix than the
+/// stripes. Matrix with b = (158.3, 158.3, 158.4) and quadratic and cubic terms, fitted on the
+/// sRGB-converted gray, ramp and stripe captures together (`xtask/tools/glass_parity.py`;
+/// rmse 2.62; 2.95 with a matrix alone, 3.15 with menubar.md's).
 pub const THICK_LIGHT: MaterialParams = MaterialParams {
     sigma: 9.0,
     sharp: 0.0,
     matrix: [
-        [0.781, -0.200, -0.124],
-        [-0.079, 0.579, -0.034],
-        [-0.166, -0.263, 0.899],
+        [0.644, -0.333, -0.186],
+        [-0.223, 0.417, -0.109],
+        [-0.322, -0.423, 0.825],
     ],
-    offset: [142.0 / 255.0, 140.0 / 255.0, 140.0 / 255.0],
+    offset: [158.3 / 255.0, 158.3 / 255.0, 158.4 / 255.0],
+    curve: [[0.739, 0.866, 0.889], [-0.548, -0.643, -0.663]],
     // In menus the blur hides the refraction: ≤ 1–2 pt on the sides.
     lens: Lens {
         side: &[
@@ -401,19 +405,21 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Menus, dark: σ ≈ 9 pt as in light (8.7 from the stripes), dark matrix (menubar.md,
-/// "Color"). The dark transfer is an S-curve the matrix follows poorly (rmse 9.9; with
-/// b = (44, 47, 45) the gray `#7a7b80` would give ~96 instead of 111): the offset is
-/// recomputed so that over gray the fill is the measured one, `#6f7075`; black then gives
-/// ~59, like the stripes (58). Edge as in light (the dark menu's rim is not measured in the
-/// model's form).
+/// Menus, dark: σ ≈ 9 pt as in light (8.7 from the stripes). The dark transfer bends: black
+/// gives ~56, the gray `#7a7b80` the measured `#6f7075`, white only ~127 (the stripes'
+/// plateaus). The chroma of menubar.md's dark matrix ("Color") with its luminance gain raised
+/// from 110 to 152 levels, b = (55.5, 55.8, 56.4) and a quadratic term of −80 levels, fitted
+/// on the sRGB-converted gray and stripe captures (`xtask/tools/glass_parity.py`; rmse 2.2,
+/// 6.5 with a matrix alone). The ramp captures of the series have windows behind the menu.
+/// Edge as in light (the dark menu's rim is not measured in the model's form).
 pub const THICK_DARK: MaterialParams = MaterialParams {
     matrix: [
-        [0.891, -0.347, -0.113],
-        [-0.150, 0.580, 0.000],
-        [-0.177, -0.391, 1.001],
+        [0.946, -0.292, -0.058],
+        [-0.095, 0.635, 0.055],
+        [-0.122, -0.336, 1.056],
     ],
-    offset: [59.4 / 255.0, 59.0 / 255.0, 58.6 / 255.0],
+    offset: [55.5 / 255.0, 55.8 / 255.0, 56.4 / 255.0],
+    curve: [[-0.315, -0.315, -0.313], [0.0; 3]],
     edge: MENU_DARK_EDGE,
     ..THICK_LIGHT
 };
@@ -422,7 +428,7 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 15] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 17] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -433,6 +439,8 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 15] = [
     ("row_g", UniformType::_3f),
     ("row_b", UniformType::_3f),
     ("offset", UniformType::_3f),
+    ("curve2", UniformType::_3f),
+    ("curve3", UniformType::_3f),
     ("scale_px", UniformType::_1f),
     ("lens", UniformType::Matrix4x4),
     ("lens_reach", UniformType::_1f),
@@ -445,12 +453,14 @@ impl MaterialParams {
     /// offsets were measured against.
     pub fn fill_on_gray(&self) -> f32 {
         let gray = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.0];
-        let channel = |row: [f32; 3], offset: f32| {
-            row[0] * gray[0] + row[1] * gray[1] + row[2] * gray[2] + offset
+        let l = (gray[0] + gray[1] + gray[2]) / 3.0;
+        let [q2, q3] = self.curve;
+        let channel = |row: [f32; 3], offset: f32, q2: f32, q3: f32| {
+            row[0] * gray[0] + row[1] * gray[1] + row[2] * gray[2] + offset + (q2 + q3 * l) * l * l
         };
-        let r = channel(self.matrix[0], self.offset[0]);
-        let g = channel(self.matrix[1], self.offset[1]);
-        let b = channel(self.matrix[2], self.offset[2]);
+        let r = channel(self.matrix[0], self.offset[0], q2[0], q3[0]);
+        let g = channel(self.matrix[1], self.offset[1], q2[1], q3[1]);
+        let b = channel(self.matrix[2], self.offset[2], q2[2], q3[2]);
         ((r + g + b) / 3.0).clamp(0.01, 0.99)
     }
 }
@@ -501,6 +511,7 @@ pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
         [-0.132, -0.202, 0.731],
     ],
     offset: [145.6 / 255.0, 144.6 / 255.0, 145.3 / 255.0],
+    curve: [[0.0; 3]; 2],
     lens: Lens {
         side: &[],
         top: &[],
@@ -973,6 +984,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
         };
         let m = first.material.matrix;
         let b = first.material.offset;
+        let [q2, q3] = first.material.curve;
         let lens = first.material.lens;
         let edge = first.material.edge;
         let px = first.scale as f32;
@@ -1037,6 +1049,8 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("row_g", UniformValue::_3f(m[1][0], m[1][1], m[1][2])),
             Uniform::new("row_b", UniformValue::_3f(m[2][0], m[2][1], m[2][2])),
             Uniform::new("offset", UniformValue::_3f(b[0], b[1], b[2])),
+            Uniform::new("curve2", UniformValue::_3f(q2[0], q2[1], q2[2])),
+            Uniform::new("curve3", UniformValue::_3f(q3[0], q3[1], q3[2])),
             Uniform::new("scale_px", UniformValue::_1f(px)),
             Uniform::new("lens", lens.uniform(px)),
             Uniform::new("lens_reach", UniformValue::_1f(lens_extent(&lens) * px)),
