@@ -56,6 +56,10 @@ const Color glyphOff = Color(0xFFFFFFFF);
 
 /// Titoli (maiuscole 9 pt → ~12,4 pt) e sottotitoli (8 pt → ~11 pt), bianchi.
 const double titleSize = 12.4;
+
+/// Il menu di stato del Wi-Fi: 1 pt sotto la barra, bordo destro 9 pt oltre l'icona.
+const double statusMenuTop = 31;
+const double statusMenuRight = 9;
 const double subtitleSize = 11;
 const Color textColor = Color(0xFFFFFFFF);
 
@@ -264,6 +268,7 @@ class _ControlCenterState extends State<ControlCenter>
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'controlcenter.toggle') _toggle();
     });
+    ShellChannel.instance.states.addListener(_statesChanged);
     if (widget.startOpen) {
       _show();
     } else {
@@ -275,10 +280,12 @@ class _ControlCenterState extends State<ControlCenter>
   @override
   void dispose() {
     widget.system.removeListener(_changed);
+    ShellChannel.instance.states.removeListener(_statesChanged);
     _commands?.cancel();
     _anim.dispose();
     _detailAnim.dispose();
     _focus.dispose();
+    _menuFocus.dispose();
     super.dispose();
   }
 
@@ -286,7 +293,118 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _toggle() => _open ? _hide() : _show();
 
+  /// Il menu di stato del Wi-Fi aperto dalla barra: il bordo destro dell'icona.
+  double? _wifiMenuRight;
+  final FocusNode _menuFocus = FocusNode();
+
+  /// La barra annuncia `statusmenu` = "wifi <bordo destro dell'icona>" o "".
+  void _statesChanged() {
+    final value = ShellChannel.instance.states.value['statusmenu'] ?? '';
+    final right = value.startsWith('wifi ')
+        ? double.tryParse(value.substring(5))
+        : null;
+    if (right == _wifiMenuRight) return;
+    if (right == null) {
+      _closeWifiMenu(announce: false);
+    } else {
+      _openWifiMenu(right);
+    }
+  }
+
+  Future<void> _openWifiMenu(double right) async {
+    if (_open) _hide();
+    setState(() {
+      _wifiMenuRight = right;
+      _detail = 'wifi';
+      _detailClosing = false;
+      _othersOpen = false;
+      _detailData = const DetailData();
+    });
+    LayerControl.inputRegion(null);
+    LayerControl.keyboard('exclusive');
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _menuFocus.requestFocus(),
+    );
+    final networks = await widget.system.wifiNetworks();
+    if (mounted && _wifiMenuRight != null) {
+      setState(() => _detailData = DetailData(networks: networks));
+    }
+  }
+
+  void _closeWifiMenu({bool announce = true}) {
+    if (_wifiMenuRight == null) return;
+    setState(() {
+      _wifiMenuRight = null;
+      _detail = null;
+    });
+    if (announce) ShellChannel.instance.broadcast('statusmenu', '');
+    if (!_open) {
+      LayerControl.keyboard('none');
+      LayerControl.inputRegion(const []);
+    }
+  }
+
+  /// Il pannello del Wi-Fi come menu di stato (menubar.md): 308 pt, 1 pt sotto la barra
+  /// (y 31), il bordo destro 9 pt oltre quello dell'icona; si apre in un fotogramma.
+  Widget _wifiMenu(SystemSnapshot s, double right) {
+    final content = _detailContent(s);
+    if (content == null) return const SizedBox.shrink();
+    final rect = Rect.fromLTWH(
+      right + statusMenuRight - detailWidth,
+      statusMenuTop,
+      detailWidth,
+      content.height,
+    );
+    return Focus(
+      focusNode: _menuFocus,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          _closeWifiMenu();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeWifiMenu,
+            ),
+          ),
+          Positioned.fromRect(
+            rect: rect,
+            child: DecoratedBox(
+              key: const ValueKey('menu di stato del Wi-Fi'),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(detailRadius),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 30,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: LiquidGlass(
+                radius: detailRadius,
+                material: GlassMaterial.regular,
+                interactive: false,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(detailRadius),
+                  child: content.build(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _show() {
+    _closeWifiMenu();
     setState(() => _open = true);
     ShellChannel.instance.broadcast('controlcenter.open', '1');
     LayerControl.inputRegion(null);
@@ -355,6 +473,8 @@ class _ControlCenterState extends State<ControlCenter>
   Widget build(BuildContext context) => Stack(
     children: [
       Positioned.fill(child: _center(context)),
+      if (_wifiMenuRight case final right?)
+        Positioned.fill(child: _wifiMenu(widget.system.value, right)),
       // L'HUD del volume e della luminosità: non con il Centro aperto.
       Positioned.fill(
         child: IgnorePointer(

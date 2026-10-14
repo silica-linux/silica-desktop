@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
+import 'package:silica_shell/controlcenter/detail.dart' show detailWidth;
+import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
 class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
@@ -236,4 +238,56 @@ void main() {
     await tester.pump();
     expect(system.calls.last, 'output 62');
   });
+
+  testWidgets(
+    'menu di stato del Wi-Fi: sotto l\'icona, Esc lo chiude e lo annuncia',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final broadcasts = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        ShellChannel.channel,
+        (call) async {
+          if (call.method == 'broadcast') {
+            final args = call.arguments as Map;
+            broadcasts.add('${args['topic']}=${args['value']}');
+          }
+          return null;
+        },
+      );
+      final system = FakeSystem(laptop);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(system: system),
+        ),
+      );
+      Future<void> announce(String value) =>
+          tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+            'silica/shell',
+            const JSONMethodCodec().encodeMethodCall(
+              MethodCall('broadcast', {'topic': 'statusmenu', 'value': value}),
+            ),
+            (_) {},
+          );
+      await announce('wifi 1200');
+      await tester.pump();
+      await tester.pump();
+      final menu = tester.getRect(
+        find.byKey(const ValueKey('menu di stato del Wi-Fi')),
+      );
+      expect(menu.top, statusMenuTop);
+      expect(menu.right, 1200 + statusMenuRight);
+      expect(menu.width, detailWidth);
+      expect(find.text('Wi-Fi'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('menu di stato del Wi-Fi')),
+        findsNothing,
+      );
+      expect(broadcasts, contains('statusmenu='));
+    },
+  );
 }

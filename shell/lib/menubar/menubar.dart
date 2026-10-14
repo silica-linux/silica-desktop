@@ -321,6 +321,10 @@ class _MenuBarState extends State<MenuBar> {
         ? _rectOf('controls')
         : null;
     final clock = states['notifications.open'] == '1' ? _rectOf('clock') : null;
+    // Un menu di stato aperto: la sua icona con la capsula delle voci aperte.
+    final statusMenu = (states['statusmenu'] ?? '').startsWith('wifi')
+        ? _rectOf('wifi')
+        : null;
     final bar = SizedBox(
       height: barHeight,
       child: Stack(
@@ -335,6 +339,22 @@ class _MenuBarState extends State<MenuBar> {
                 key: ValueKey('capsula del Centro di controllo'),
                 decoration: BoxDecoration(
                   color: controlsCapsuleFill,
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(capsuleHeight / 2),
+                  ),
+                ),
+              ),
+            ),
+          if (statusMenu != null)
+            Positioned(
+              left: statusMenu.left - capsuleOutset,
+              top: (barHeight - capsuleHeight) / 2,
+              width: statusMenu.width + 2 * capsuleOutset,
+              height: capsuleHeight,
+              child: const DecoratedBox(
+                key: ValueKey('capsula del menu di stato'),
+                decoration: BoxDecoration(
+                  color: capsuleFill,
                   borderRadius: BorderRadius.all(
                     Radius.circular(capsuleHeight / 2),
                   ),
@@ -517,13 +537,28 @@ class _MenuBarState extends State<MenuBar> {
       if (s.wired && s.wifiSsid.isEmpty)
         const StatusIcon(kind: StatusKind.wired, cell: 22)
       else if (s.wifiAvailable)
-        StatusIcon(
-          kind: StatusKind.network,
-          cell: 22,
-          level: s.wifiStrength / 100,
-          dim: !s.wifiEnabled || s.wifiSsid.isEmpty,
+        GestureDetector(
+          key: _keyFor('wifi'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggleWifiMenu,
+          child: StatusIcon(
+            kind: StatusKind.network,
+            cell: 22,
+            level: s.wifiStrength / 100,
+            dim: !s.wifiEnabled || s.wifiSsid.isEmpty,
+          ),
         ),
     ];
+  }
+
+  /// Il menu di stato del Wi-Fi (menubar.md › Menu di stato): il pannello del Wi-Fi del Centro
+  /// di controllo sotto l'icona, che lo disegna quando la barra annuncia `statusmenu`.
+  void _toggleWifiMenu() {
+    final shell = ShellChannel.instance;
+    final rect = _rectOf('wifi');
+    if (rect == null) return;
+    final open = shell.states.value['statusmenu']?.startsWith('wifi') ?? false;
+    shell.broadcast('statusmenu', open ? '' : 'wifi ${rect.right}');
   }
 
   /// Una voce: il testo con ~10,75 pt per lato.
