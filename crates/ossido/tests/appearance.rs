@@ -1,5 +1,5 @@
-//! Aspetto scuro delle finestre (`--appearance dark`): barra del titolo, pulsanti, bordo
-//! interno di 1 pt e ombra, con i colori misurati su macOS 27 (`plan/reference/windows.md`).
+//! Dark appearance of windows (`--appearance dark`): title bar, buttons, 1 pt inner border
+//! and shadow, with the colors measured on macOS 27 (`plan/reference/windows.md`).
 
 #![allow(
     clippy::unwrap_used,
@@ -48,17 +48,17 @@ fn rgb(shot: &[u8], (x, y): (i32, i32)) -> [u8; 3] {
     [p[0], p[1], p[2]]
 }
 
-/// Il pixel è entro `tolerance` dal colore atteso, canale per canale.
+/// The pixel is within `tolerance` of the expected color, channel by channel.
 fn assert_near(shot: &[u8], at: (i32, i32), expected: [u8; 3], tolerance: u8, what: &str) {
     let got = rgb(shot, at);
     let close = got
         .iter()
         .zip(expected)
         .all(|(g, e)| g.abs_diff(e) <= tolerance);
-    assert!(close, "{what} in {at:?}: {got:?}, atteso {expected:?}");
+    assert!(close, "{what} at {at:?}: {got:?}, expected {expected:?}");
 }
 
-/// Centro di un pulsante della barra (0 chiudi, 1 riduci, 2 schermo intero).
+/// Center of a bar button (0 close, 1 minimize, 2 full screen).
 fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
     (window.x + 26 + 23 * index, window.y - BAR + 26)
 }
@@ -66,60 +66,54 @@ fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
 #[test]
 fn dark_windows_use_the_measured_bar_buttons_and_inner_border() {
     let ossido = start("dark-active", "dark");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "scura", (240, 140));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "dark", (240, 140));
     let info = windows(&ossido).remove(0);
     let shot = shot(&ossido, "appearance-dark");
 
-    // Barra attiva: come il contenuto in scuro, `#272728`.
-    assert_near(&shot, (info.x + 150, info.y - 26), [39, 39, 40], 1, "fondo");
-    // Pulsanti attivi scuri al centro: `#f26056`, `#fdc002`, `#39c101`.
-    assert_near(&shot, button(&info, 0), [0xf2, 0x60, 0x56], 8, "chiusura");
-    assert_near(&shot, button(&info, 1), [0xfd, 0xc0, 0x02], 8, "riduzione");
+    // Active bar: like the content in dark, `#272728`.
+    assert_near(
+        &shot,
+        (info.x + 150, info.y - 26),
+        [39, 39, 40],
+        1,
+        "background",
+    );
+    // Dark active buttons at the center: `#f26056`, `#fdc002`, `#39c101`.
+    assert_near(&shot, button(&info, 0), [0xf2, 0x60, 0x56], 8, "close");
+    assert_near(&shot, button(&info, 1), [0xfd, 0xc0, 0x02], 8, "minimize");
     assert_near(
         &shot,
         button(&info, 2),
         [0x39, 0xc1, 0x01],
         8,
-        "schermo intero",
+        "full screen",
     );
-    // Bordo interno di 1 pt `#3d3d3d`: sopra la barra, a sinistra e in fondo sul contenuto.
+    // 1 pt inner border `#3d3d3d`: above the bar, on the left and at the bottom on the content.
     assert_near(
         &shot,
         (info.x + 150, info.y - BAR),
         [0x3d; 3],
         2,
-        "bordo sopra",
+        "top border",
     );
-    assert_near(
-        &shot,
-        (info.x, info.y + 70),
-        [0x3d; 3],
-        2,
-        "bordo a sinistra",
-    );
+    assert_near(&shot, (info.x, info.y + 70), [0x3d; 3], 2, "left border");
     assert_near(
         &shot,
         (info.x + 120, info.y + 139),
         [0x3d; 3],
         2,
-        "bordo sotto",
+        "bottom border",
     );
-    // Subito dentro il contenuto resta quello del client.
-    assert_near(
-        &shot,
-        (info.x + 1, info.y + 70),
-        [255, 0, 0],
-        0,
-        "contenuto",
-    );
+    // Right inside the content the client's color stays.
+    assert_near(&shot, (info.x + 1, info.y + 70), [255, 0, 0], 0, "content");
 }
 
 #[test]
 fn inactive_dark_windows_have_their_own_bar_and_gray_buttons() {
     let ossido = start("dark-inactive", "dark");
-    let _first = TestWindow::open_decorated(&ossido.wayland, "prima", (240, 140));
+    let _first = TestWindow::open_decorated(&ossido.wayland, "first", (240, 140));
     let first = windows(&ossido).remove(0);
-    let _second = TestWindow::open_decorated(&ossido.wayland, "seconda", (120, 80));
+    let _second = TestWindow::open_decorated(&ossido.wayland, "second", (120, 80));
     let second = windows(&ossido).remove(0);
     let mut client = ossido.client();
     client
@@ -130,45 +124,45 @@ fn inactive_dark_windows_have_their_own_bar_and_gray_buttons() {
         .unwrap();
     let shot = shot(&ossido, "appearance-dark-inactive");
 
-    // Barra inattiva `#2f2f30`, separatore di 1 pt `#363636` sopra il contenuto.
+    // Inactive bar `#2f2f30`, 1 pt separator `#363636` above the content.
     assert_near(
         &shot,
         (first.x + 150, first.y - 26),
         [47, 47, 48],
         1,
-        "fondo",
+        "background",
     );
     assert_near(
         &shot,
         (first.x + 150, first.y - 1),
         [54, 54, 54],
         1,
-        "separatore",
+        "separator",
     );
-    // Pulsanti inattivi: centro `#4d4d4d`.
+    // Inactive buttons: center `#4d4d4d`.
     for index in 0..3 {
         assert_near(
             &shot,
             button(&first, index),
             [0x4d; 3],
             4,
-            "pulsante inattivo",
+            "inactive button",
         );
     }
-    // Bordo inattivo: `#404041` sopra, `#3a3a3b` ai lati.
+    // Inactive border: `#404041` on top, `#3a3a3b` on the sides.
     assert_near(
         &shot,
         (first.x + 150, first.y - BAR),
         [0x40, 0x40, 0x41],
         2,
-        "bordo sopra",
+        "top border",
     );
     assert_near(
         &shot,
         (first.x, first.y + 70),
         [0x3a, 0x3a, 0x3b],
         2,
-        "bordo a sinistra",
+        "left border",
     );
 }
 
@@ -177,35 +171,35 @@ fn the_dark_shadow_is_stronger_than_the_light_one() {
     let mut below = Vec::new();
     for appearance in ["light", "dark"] {
         let ossido = start(&format!("shadow-{appearance}"), appearance);
-        let _window = TestWindow::open_decorated(&ossido.wayland, "ombra", (240, 140));
+        let _window = TestWindow::open_decorated(&ossido.wayland, "shadow", (240, 140));
         let info = windows(&ossido).remove(0);
         let shot = shot(&ossido, &format!("appearance-shadow-{appearance}"));
-        // Sotto la finestra (ombra spostata in basso) e a lato, sul grigio.
+        // Below the window (shadow shifted down) and on the side, over gray.
         let under = rgb(&shot, (info.x + 120, info.y + 140 + 8))[1];
         let side = rgb(&shot, (info.x - 6, info.y + 70))[1];
-        // L'anello di contatto: in scuro quasi un bordo nero (alfa 0,95 contro 0,32).
+        // The contact ring: in dark almost a black border (alpha 0.95 against 0.32).
         let ring = rgb(&shot, (info.x - 1, info.y + 70))[1];
         below.push((under, side, ring));
     }
     let (light, dark) = (below[0], below[1]);
     assert!(
         dark.0 + 10 < light.0,
-        "sotto: chiaro {light:?}, scuro {dark:?}"
+        "below: light {light:?}, dark {dark:?}"
     );
     assert!(
         dark.1 + 5 < light.1,
-        "a lato: chiaro {light:?}, scuro {dark:?}"
+        "beside: light {light:?}, dark {dark:?}"
     );
     assert!(
         dark.2 < 20 && light.2 > 60,
-        "anello: chiaro {light:?}, scuro {dark:?}"
+        "ring: light {light:?}, dark {dark:?}"
     );
 }
 
 #[test]
 fn appearance_flag_is_validated() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ossido"))
-        .args(["--appearance", "seppia"])
+        .args(["--appearance", "sepia"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));

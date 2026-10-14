@@ -1,5 +1,5 @@
-//! Riduzione nel Dock a genio, ripristino e schermo intero (`plan/reference/windows.md`,
-//! "Animazioni"), rallentati con `ui.animation_scale` per leggerli negli screenshot.
+//! Minimizing into the Dock as a genie, restore and full screen (`plan/reference/windows.md`,
+//! "Animations"), slowed down with `ui.animation_scale` to read them in the screenshots.
 
 #![allow(
     clippy::unwrap_used,
@@ -20,7 +20,7 @@ use silica_control::commands::{
 };
 
 const SIZE: (u32, u32) = (640, 400);
-/// Senza Dock la miniatura va in basso al centro: centro (320, 360), larga 57.
+/// Without a Dock the thumbnail goes to the bottom center: center (320, 360), 57 wide.
 const TARGET: (i32, i32) = (320, 360);
 
 fn start(name: &str) -> Headless {
@@ -58,7 +58,7 @@ fn is_red(shot: &[u8], x: i32, y: i32) -> bool {
     r > 180 && g < 90 && b < 90
 }
 
-/// I pixel rossi (il contenuto della finestra di prova) su una riga: primo e ultimo.
+/// The red pixels (the content of the test window) on a row: first and last.
 fn red_span(shot: &[u8], y: i32) -> Option<(i32, i32)> {
     let xs: Vec<i32> = (0..SIZE.0 as i32).filter(|&x| is_red(shot, x, y)).collect();
     Some((*xs.first()?, *xs.last()?))
@@ -74,76 +74,76 @@ fn red_count(shot: &[u8]) -> usize {
 #[test]
 fn minimize_bends_the_window_into_the_dock_and_restore_brings_it_back() {
     let ossido = start("genie");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "genio", (240, 140));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "genie", (240, 140));
     let info = windows(&ossido).remove(0);
     let (left, right) = (info.x, info.x + 239);
     let mid_row = info.y + 120;
     assert_eq!(
-        red_span(&shot(&ossido, "prima"), mid_row),
+        red_span(&shot(&ossido, "before"), mid_row),
         Some((left, right))
     );
 
-    // ×20: la riduzione dura 9,6 s.
+    // ×20: minimizing lasts 9.6 s.
     set_speed(&ossido, 20.0);
     ossido
         .client()
         .call(WINDOW_MINIMIZE, json!({ "id": info.id }))
         .unwrap();
-    // All'inizio l'istantanea è la finestra com'era: barra bianca sopra, rosso sotto (il
-    // verso della texture è giusto).
-    let at_start = shot(&ossido, "inizio");
-    // (Cambiare velocità ricalcola anche l'apertura: la finestra può essere ancora al 98 %.)
-    let (a, b) = red_span(&at_start, mid_row).expect("finestra all'inizio");
+    // At the start the snapshot is the window as it was: white bar on top, red below (the
+    // texture orientation is right).
+    let at_start = shot(&ossido, "start");
+    // (Changing the speed also recomputes the opening: the window may still be at 98 %.)
+    let (a, b) = red_span(&at_start, mid_row).expect("window at the start");
     assert!((a - left).abs() <= 4 && (b - right).abs() <= 4, "{a}–{b}");
     let [r, g, b, _] = pixel_in(&at_start, SIZE.0, (left + 210) as u32, (info.y - 26) as u32);
-    assert!(r > 230 && g > 230 && b > 230, "barra in alto: {r} {g} {b}");
+    assert!(r > 230 && g > 230 && b > 230, "bar on top: {r} {g} {b}");
 
-    // A metà (~215 ms su 480): il fondo della finestra è piegato verso la miniatura, che sta
-    // a destra e in basso; la cima si è staccata dal posto di prima.
+    // Halfway (~215 ms of 480): the bottom of the window is bent towards the thumbnail, which
+    // is to the right and below; the top has left its previous place.
     std::thread::sleep(Duration::from_millis(4300));
-    let middle = shot(&ossido, "meta");
+    let middle = shot(&ossido, "middle");
     let bottom = info.y + 135;
-    let (bent_left, bent_right) = red_span(&middle, bottom).expect("il fondo è ancora visibile");
+    let (bent_left, bent_right) = red_span(&middle, bottom).expect("the bottom is still visible");
     assert!(
         bent_left > left + 30,
-        "il bordo sinistro in basso va verso la miniatura: {bent_left} (prima {left})"
+        "the left edge at the bottom goes towards the thumbnail: {bent_left} (before {left})"
     );
-    assert!(bent_right - bent_left < 239 - 40, "l'imbuto si stringe");
+    assert!(bent_right - bent_left < 239 - 40, "the funnel narrows");
     assert!(
         !is_red(&middle, left + 5, info.y + 2),
-        "la cima della finestra è scesa"
+        "the top of the window came down"
     );
-    // Il genio è rivolto alla miniatura: c'è rosso più in basso della finestra di prima.
+    // The genie faces the thumbnail: there is red lower than the window was.
     let lowest = (info.y + 140..SIZE.1 as i32)
         .rev()
         .find(|&y| red_span(&middle, y).is_some());
-    assert!(lowest.is_some(), "niente imbuto sotto la finestra");
+    assert!(lowest.is_some(), "no funnel below the window");
 
-    // Alla fine la finestra non c'è più.
+    // At the end the window is gone.
     set_speed(&ossido, 0.0);
-    assert_eq!(red_count(&shot(&ossido, "fine")), 0);
+    assert_eq!(red_count(&shot(&ossido, "end")), 0);
 
-    // Ripristino lento: la finestra è mappata ma si vede solo il genio, che parte dalla
-    // miniatura (il posto della finestra è ancora vuoto).
+    // Slow restore: the window is mapped but only the genie shows, starting from the
+    // thumbnail (the window's place is still empty).
     set_speed(&ossido, 20.0);
     ossido
         .client()
         .call(WINDOW_FOCUS, json!({ "id": info.id }))
         .unwrap();
-    let restoring = shot(&ossido, "ripristino");
+    let restoring = shot(&ossido, "restoring");
     assert!(
         !is_red(&restoring, left + 120, info.y + 40),
-        "la finestra ripristinata resta nascosta finché il genio non finisce"
+        "the restored window stays hidden until the genie ends"
     );
     let near_target = (TARGET.1 - 30..SIZE.1 as i32).any(|y| {
         red_span(&restoring, y).is_some_and(|(a, b)| a <= TARGET.0 + 40 && b >= TARGET.0 - 40)
     });
-    assert!(near_target, "il ripristino parte dalla miniatura");
+    assert!(near_target, "the restore starts from the thumbnail");
 
-    // Finito il genio, la finestra è al suo posto.
+    // Once the genie is over, the window is in its place.
     set_speed(&ossido, 0.0);
     assert_eq!(
-        red_span(&shot(&ossido, "ripristinata"), mid_row),
+        red_span(&shot(&ossido, "restored"), mid_row),
         Some((left, right))
     );
 }
@@ -151,7 +151,7 @@ fn minimize_bends_the_window_into_the_dock_and_restore_brings_it_back() {
 #[test]
 fn speed_zero_minimizes_and_restores_at_once() {
     let ossido = start("genie-zero");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "subito", (240, 140));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "immediate", (240, 140));
     let info = windows(&ossido).remove(0);
     set_speed(&ossido, 0.0);
     ossido
@@ -164,33 +164,33 @@ fn speed_zero_minimizes_and_restores_at_once() {
         .call(WINDOW_FOCUS, json!({ "id": info.id }))
         .unwrap();
     assert_eq!(
-        red_span(&shot(&ossido, "zero-ripristino"), info.y + 120),
+        red_span(&shot(&ossido, "zero-restore"), info.y + 120),
         Some((info.x, info.x + 239))
     );
 }
 
 #[test]
 fn the_genie_lasts_as_measured() {
-    let ossido = start("genie-durata");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "durata", (240, 140));
+    let ossido = start("genie-duration");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "duration", (240, 140));
     let info = windows(&ossido).remove(0);
-    // A velocità normale: 480 ms. A 300 ms c'è ancora qualcosa, a 600 ms niente.
+    // At normal speed: 480 ms. At 300 ms there is still something, at 600 ms nothing.
     set_speed(&ossido, 1.0);
     ossido
         .client()
         .call(WINDOW_MINIMIZE, json!({ "id": info.id }))
         .unwrap();
     std::thread::sleep(Duration::from_millis(250));
-    let during = red_count(&shot(&ossido, "durata-250"));
-    assert!(during > 0, "a 250 ms il genio è ancora in corso");
+    let during = red_count(&shot(&ossido, "duration-250"));
+    assert!(during > 0, "at 250 ms the genie is still in progress");
     std::thread::sleep(Duration::from_millis(400));
-    assert_eq!(red_count(&shot(&ossido, "durata-650")), 0);
+    assert_eq!(red_count(&shot(&ossido, "duration-650")), 0);
 }
 
 #[test]
 fn closing_a_window_while_it_comes_out_of_the_dock_does_not_crash() {
-    let ossido = start("genie-chiusa");
-    let mut window = TestWindow::open_decorated(&ossido.wayland, "chiusa", (240, 140));
+    let ossido = start("genie-closed");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "closed", (240, 140));
     let info = windows(&ossido).remove(0);
     set_speed(&ossido, 0.0);
     ossido
@@ -202,73 +202,73 @@ fn closing_a_window_while_it_comes_out_of_the_dock_does_not_crash() {
         .client()
         .call(WINDOW_FOCUS, json!({ "id": info.id }))
         .unwrap();
-    shot(&ossido, "chiusa-prima");
+    shot(&ossido, "closed-before");
     window.destroy_toplevel();
     drop(window);
     std::thread::sleep(Duration::from_millis(100));
-    // Ossido risponde ancora e il genio della finestra che non c'è più sparisce.
-    let after = shot(&ossido, "chiusa-dopo");
+    // Ossido still answers and the genie of the window that is gone disappears.
+    let after = shot(&ossido, "closed-after");
     assert!(windows(&ossido).is_empty());
     set_speed(&ossido, 0.0);
     let _ = after;
-    assert_eq!(red_count(&shot(&ossido, "chiusa-fine")), 0);
+    assert_eq!(red_count(&shot(&ossido, "closed-end")), 0);
 }
 
 #[test]
 fn fullscreen_grows_the_window_to_the_screen() {
-    let ossido = start("genie-schermo-intero");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "intero", (240, 140));
+    let ossido = start("genie-full-screen");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "full", (240, 140));
     let info = windows(&ossido).remove(0);
     let width = 240;
-    // ×20: l'entrata dura 10,4 s; a ~2,6 s (130 ms) il rettangolo è a ~0,55.
+    // ×20: entering lasts 10.4 s; at ~2.6 s (130 ms) the rectangle is at ~0.55.
     set_speed(&ossido, 20.0);
     ossido
         .client()
         .call(WINDOW_FULLSCREEN, json!({ "id": info.id }))
         .unwrap();
-    let start = shot(&ossido, "intero-inizio");
+    let start = shot(&ossido, "full-start");
     let row = info.y + 70;
-    // (Cambiare velocità ricalcola anche l'apertura: la finestra può essere ancora al 98 %.)
-    let (a, b) = red_span(&start, row).expect("finestra all'inizio");
+    // (Changing the speed also recomputes the opening: the window may still be at 98 %.)
+    let (a, b) = red_span(&start, row).expect("window at the start");
     assert!(
         (b - a + 1 - width).abs() <= 6,
-        "all'inizio è com'era: {}",
+        "at the start it is as it was: {}",
         b - a + 1
     );
     std::thread::sleep(Duration::from_millis(2600));
-    let middle = shot(&ossido, "intero-meta");
+    let middle = shot(&ossido, "full-middle");
     let widest = (0..SIZE.1 as i32)
         .filter_map(|y| red_span(&middle, y))
         .map(|(a, b)| b - a + 1)
         .max()
-        .expect("finestra a metà");
+        .expect("window halfway");
     assert!(
         widest > width + 60 && widest < SIZE.0 as i32,
-        "a metà la finestra cresce verso lo schermo: {widest}"
+        "halfway the window grows towards the screen: {widest}"
     );
 
-    // Finita l'entrata, l'uscita lenta (×20: 9 s): a ~2,4 s (120 ms, frazione ~0,56) la
-    // cornice sta fra lo schermo e la cornice di prima.
+    // Once entering is over, the slow exit (×20: 9 s): at ~2.4 s (120 ms, fraction ~0.56) the
+    // frame is between the screen and the previous frame.
     set_speed(&ossido, 0.0);
-    shot(&ossido, "intero-fatto");
+    shot(&ossido, "full-done");
     set_speed(&ossido, 20.0);
     ossido
         .client()
         .call(WINDOW_FULLSCREEN, json!({ "id": info.id }))
         .unwrap();
     std::thread::sleep(Duration::from_millis(2400));
-    let leaving = shot(&ossido, "intero-uscita");
+    let leaving = shot(&ossido, "full-exiting");
     let widest = (0..SIZE.1 as i32)
         .filter_map(|y| red_span(&leaving, y))
         .map(|(a, b)| b - a + 1)
         .max()
-        .expect("finestra in uscita");
+        .expect("window exiting");
     assert!(
         widest > width + 20 && widest < SIZE.0 as i32 - 20,
-        "in uscita la finestra torna alla sua cornice: {widest}"
+        "while exiting the window goes back to its frame: {widest}"
     );
-    // Alla fine è di nuovo com'era.
+    // At the end it is as it was again.
     set_speed(&ossido, 0.0);
-    let (a, b) = red_span(&shot(&ossido, "intero-tornata"), row).expect("finestra tornata");
+    let (a, b) = red_span(&shot(&ossido, "full-back"), row).expect("window back");
     assert_eq!(b - a + 1, width);
 }

@@ -1,4 +1,4 @@
-//! Esecuzione dei comandi del catalogo (`silica_control::commands`).
+//! Execution of the catalog commands (`silica_control::commands`).
 
 use std::process::Command;
 
@@ -51,11 +51,11 @@ use tracing::{info, warn};
 use crate::state::State;
 use crate::system::Call;
 
-/// Id stabile di una finestra, salvato nei suoi user data.
+/// Stable id of a window, saved in its user data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowId(pub u64);
 
-/// Le scorciatoie del catalogo, già lette.
+/// The catalog shortcuts, already parsed.
 pub fn shortcuts() -> Vec<(Shortcut, &'static str)> {
     commands::CATALOG
         .iter()
@@ -64,7 +64,7 @@ pub fn shortcuts() -> Vec<(Shortcut, &'static str)> {
             match Shortcut::parse(text) {
                 Ok(shortcut) => Some((shortcut, spec.id)),
                 Err(err) => {
-                    warn!("scorciatoia di {} ignorata: {err}", spec.id);
+                    warn!("shortcut of {} ignored: {err}", spec.id);
                     None
                 }
             }
@@ -76,11 +76,11 @@ fn parse<T: DeserializeOwned + Default>(params: Value) -> Result<T, String> {
     if params.is_null() {
         return Ok(T::default());
     }
-    serde_json::from_value(params).map_err(|e| format!("parametri: {e}"))
+    serde_json::from_value(params).map_err(|e| format!("parameters: {e}"))
 }
 
 fn parse_required<T: DeserializeOwned>(params: Value) -> Result<T, String> {
-    serde_json::from_value(params).map_err(|e| format!("parametri: {e}"))
+    serde_json::from_value(params).map_err(|e| format!("parameters: {e}"))
 }
 
 fn to_value<T: serde::Serialize>(value: T) -> Result<Value, String> {
@@ -88,7 +88,7 @@ fn to_value<T: serde::Serialize>(value: T) -> Result<Value, String> {
 }
 
 impl State {
-    /// Esegue una richiesta del canale di controllo.
+    /// Runs a request of the control channel.
     pub fn execute(&mut self, request: Request) -> Response {
         match self.execute_command(&request.command, request.params) {
             Ok(value) => Response::ok(request.id, value),
@@ -96,8 +96,8 @@ impl State {
         }
     }
 
-    /// Esegue un comando del catalogo: lo stesso punto d'ingresso per canale,
-    /// scorciatoie e, più avanti, UI e MCP.
+    /// Runs a catalog command: the same entry point for the channel, shortcuts and, later,
+    /// UI and MCP.
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
@@ -121,7 +121,7 @@ impl State {
                     region.width * scale,
                     region.height * scale,
                 )
-                .ok_or("regione vuota o fuori dallo schermo")?;
+                .ok_or("empty region or off screen")?;
                 self.publish_screenshot(&crop)
             }
             SCREENSHOT_WINDOW_AT => {
@@ -129,7 +129,7 @@ impl State {
                 let window = match self.window_hit(Point::from((point.x, point.y))) {
                     Some(crate::decorations::Hit::Titlebar(window, _, _))
                     | Some(crate::decorations::Hit::Content(window)) => window,
-                    None => return Err("nessuna finestra in quel punto".to_owned()),
+                    None => return Err("no window at that point".to_owned()),
                 };
                 let capture = self.window_capture(&window)?;
                 self.publish_screenshot(&capture)
@@ -146,9 +146,7 @@ impl State {
                 let GlassQualityParams { quality } = parse_required(params)?;
                 self.glass_setting =
                     crate::state::GlassSetting::parse(&quality).ok_or_else(|| {
-                        format!(
-                            "qualità del vetro sconosciuta (auto, full, frosted, opaque): {quality}"
-                        )
+                        format!("unknown glass quality (auto, full, frosted, opaque): {quality}")
                     })?;
                 Ok(json!({ "quality": self.glass_quality().name() }))
             }
@@ -159,9 +157,7 @@ impl State {
             UI_ANIMATION_SCALE => {
                 let AnimationScale { scale } = parse_required(params)?;
                 if !scale.is_finite() || !(0.0..=1000.0).contains(&scale) {
-                    return Err(format!(
-                        "scala delle animazioni non valida (0–1000): {scale}"
-                    ));
+                    return Err(format!("invalid animation scale (0–1000): {scale}"));
                 }
                 self.animation_speed = scale;
                 Ok(Value::Null)
@@ -170,21 +166,21 @@ impl State {
             ENGINE_EXECUTE => {
                 let ExecuteParams { id, params } = parse_required(params)?;
                 if id == ENGINE_EXECUTE {
-                    return Err("engine.execute non si annida".to_owned());
+                    return Err("engine.execute does not nest".to_owned());
                 }
                 self.execute_command(&id, params)
             }
             WINDOW_LIST => to_value(self.window_list()),
             LAYER_LIST => to_value(self.layer_list()),
             GLASS_LIST => to_value(self.glass_list()),
-            // Comandi dei componenti della shell: Ossido li inoltra.
+            // Commands of the shell components: Ossido forwards them.
             SPACE_LIST => to_value(self.space_list()),
             SPACE_NEXT | SPACE_PREVIOUS => {
                 let active = self.workspaces.active;
                 let to = if id == SPACE_NEXT {
                     active.saturating_add(1)
                 } else {
-                    // Prima del primo spazio non si fa niente (nessun rimbalzo).
+                    // Before the first space nothing happens (no bounce).
                     match active.checked_sub(1) {
                         Some(to) => to,
                         None => return Ok(json!({ "switched": false })),
@@ -195,7 +191,7 @@ impl State {
             SPACE_GOTO => {
                 let IndexParams { index } = parse_required(params)?;
                 if index >= self.workspaces.count() {
-                    return Err(format!("spazio {index} assente"));
+                    return Err(format!("space {index} absent"));
                 }
                 Ok(json!({ "switched": self.switch_space(index, std::time::Instant::now()) }))
             }
@@ -216,7 +212,7 @@ impl State {
             PANORAMA_SPACES_BAR => {
                 let EnabledParams { enabled } = parse_required(params)?;
                 if !self.panorama_open() {
-                    return Err("Panorama non è aperto".to_owned());
+                    return Err("Panorama is not open".to_owned());
                 }
                 self.expand_spaces_bar(enabled, std::time::Instant::now());
                 Ok(Value::Null)
@@ -239,7 +235,7 @@ impl State {
             SYSTEM_STATUS => self
                 .system
                 .status()
-                .ok_or_else(|| "silica-daemon non raggiungibile".to_owned()),
+                .ok_or_else(|| "silica-daemon unreachable".to_owned()),
             SYSTEM_DARK_TOGGLE => Ok(json!({ "queued": self.system.dark_toggle() })),
             SYSTEM_WIFI | SYSTEM_BLUETOOTH | SYSTEM_MUTE | SYSTEM_DND | SYSTEM_DARK => {
                 let EnabledParams { enabled } = parse_required(params)?;
@@ -255,7 +251,7 @@ impl State {
             SYSTEM_VOLUME | SYSTEM_BRIGHTNESS => {
                 let ValueParams { value } = parse_required(params)?;
                 if !value.is_finite() {
-                    return Err("valore non finito".to_owned());
+                    return Err("non-finite value".to_owned());
                 }
                 let value = value.clamp(0.0, 1.0);
                 let call = if id == SYSTEM_VOLUME {
@@ -298,7 +294,7 @@ impl State {
             }
             WINDOW_FOCUS => {
                 let target: WindowTarget = parse(params)?;
-                // Una finestra di un altro spazio: si passa a quello spazio.
+                // A window of another space: switch to that space.
                 if let Some(id) = target.id
                     && let Some(space) = self.stored_window_space(id)
                 {
@@ -354,7 +350,7 @@ impl State {
             WINDOW_CLOSE => {
                 let target: WindowTarget = parse(params)?;
                 let window = self.target_window(target.id)?;
-                let toplevel = window.toplevel().ok_or("finestra senza toplevel")?;
+                let toplevel = window.toplevel().ok_or("window without a toplevel")?;
                 toplevel.send_close();
                 Ok(Value::Null)
             }
@@ -418,7 +414,7 @@ impl State {
                 let (code, shift) = self
                     .keys
                     .find(&key)
-                    .ok_or_else(|| format!("tasto sconosciuto: {key}"))?;
+                    .ok_or_else(|| format!("unknown key: {key}"))?;
                 let states: &[KeyState] = match pressed {
                     Some(true) => &[KeyState::Pressed],
                     Some(false) => &[KeyState::Released],
@@ -434,7 +430,7 @@ impl State {
                 let kind = match p.kind.as_str() {
                     "swipe" => crate::gestures::GestureKind::Swipe,
                     "pinch" => crate::gestures::GestureKind::Pinch,
-                    other => return Err(format!("gesto sconosciuto: {other}")),
+                    other => return Err(format!("unknown gesture: {other}")),
                 };
                 let phase = p.phase.as_deref();
                 if matches!(phase, None | Some("begin")) {
@@ -443,7 +439,7 @@ impl State {
                 match phase {
                     None | Some("update") => self.gesture_update(p.dx, p.dy, p.scale),
                     Some("begin" | "end") => {}
-                    Some(other) => return Err(format!("fase sconosciuta: {other}")),
+                    Some(other) => return Err(format!("unknown phase: {other}")),
                 }
                 if matches!(phase, None | Some("end")) {
                     let command = self.gesture_end(p.cancelled);
@@ -453,13 +449,13 @@ impl State {
             }
             INPUT_TYPE => {
                 let TypeText { text } = parse_required(params)?;
-                // Si controlla tutto prima di premere qualcosa: niente testo a metà.
+                // Everything is checked before pressing anything: no half-typed text.
                 let codes = text
                     .chars()
                     .map(|ch| {
                         self.keys
                             .find(&ch.to_string())
-                            .ok_or_else(|| format!("carattere non digitabile: {ch:?}"))
+                            .ok_or_else(|| format!("character cannot be typed: {ch:?}"))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 for (code, shift) in codes {
@@ -481,19 +477,19 @@ impl State {
                 to_value(crate::perf::process_info(pid)?)
             }
             SESSION_QUIT => {
-                info!("uscita richiesta");
+                info!("quit requested");
                 self.loop_signal.stop();
                 Ok(Value::Null)
             }
-            other => Err(format!("comando sconosciuto: {other}")),
+            other => Err(format!("unknown command: {other}")),
         }
     }
 
-    /// Un tasto sintetico verso la finestra con il focus, con Maiusc attorno se serve.
-    /// Passa dallo stesso filtro dei tasti veri, quindi anche le scorciatoie funzionano.
+    /// A synthetic key to the focused window, with Shift around it if needed.
+    /// It goes through the same filter as real keys, so shortcuts work too.
     fn synthetic_key(&mut self, code: u32, shift: bool, state: KeyState) {
         let time = self.now_msec();
-        // Come un tasto vero: anche le scorciatoie del catalogo.
+        // Like a real key: catalog shortcuts too.
         let press = |state: &mut Self, code: u32, key_state: KeyState| {
             state.handle_key(Keycode::new(code), key_state, time);
         };
@@ -506,18 +502,18 @@ impl State {
         }
     }
 
-    /// Tempo per gli eventi di input sintetici, in millisecondi dall'avvio.
+    /// Time for synthetic input events, in milliseconds since start.
     fn now_msec(&self) -> u32 {
         u32::try_from(self.start_time.elapsed().as_millis()).unwrap_or(u32::MAX)
     }
 
-    /// Avvia un comando di shell come client di questa sessione.
+    /// Starts a shell command as a client of this session.
     pub fn launch(&mut self, command: &str) -> Result<u32, String> {
         self.launch_with(command, false)
     }
 
-    /// Come `launch`; con `shell` il processo è un componente della shell e vede i suoi
-    /// protocolli (`shell.rs`).
+    /// Like `launch`; with `shell` the process is a shell component and sees its
+    /// protocols (`shell.rs`).
     pub fn launch_with(&mut self, command: &str, shell: bool) -> Result<u32, String> {
         let mut process = Command::new("sh");
         process
@@ -534,13 +530,13 @@ impl State {
         }
         let child = process
             .spawn()
-            .map_err(|e| format!("avvio di {command}: {e}"))?;
-        info!("avviato {command} (pid {})", child.id());
+            .map_err(|e| format!("starting {command}: {e}"))?;
+        info!("started {command} (pid {})", child.id());
         self.perf.launched(child.id(), std::time::Instant::now());
         Ok(child.id())
     }
 
-    /// Le misure dei frame, con le superfici chiamate come in `window.list` e `layer.list`.
+    /// The frame measurements, with the surfaces named as in `window.list` and `layer.list`.
     fn perf_frames(&mut self) -> Vec<silica_control::commands::SurfaceFrames> {
         let mut names = std::collections::HashMap::new();
         for window in self.space.elements() {
@@ -559,7 +555,7 @@ impl State {
             .current_mode()
             .map_or(0, |mode| mode.refresh)
             .max(1);
-        // refresh è in mHz; senza un valore sensato si assume 60 Hz.
+        // refresh is in mHz; without a sensible value 60 Hz is assumed.
         let period = if refresh < 1000 {
             std::time::Duration::from_micros(16_667)
         } else {
@@ -584,7 +580,7 @@ impl State {
         window.user_data().get::<WindowId>().map(|id| id.0)
     }
 
-    /// La finestra con quell'id, oppure quella con il focus.
+    /// The window with that id, or the focused one.
     fn target_window(&self, id: Option<u64>) -> Result<Window, String> {
         match id {
             Some(id) => self
@@ -592,14 +588,14 @@ impl State {
                 .elements()
                 .find(|w| Self::window_id(w) == Some(id))
                 .cloned()
-                .ok_or_else(|| format!("nessuna finestra con id {id}")),
+                .ok_or_else(|| format!("no window with id {id}")),
             None => self
                 .focused_window()
-                .ok_or_else(|| "nessuna finestra ha il focus".to_owned()),
+                .ok_or_else(|| "no window has the focus".to_owned()),
         }
     }
 
-    /// Gli spazi con le loro finestre (`space.list`).
+    /// The spaces with their windows (`space.list`).
     fn space_list(&self) -> Vec<SpaceInfo> {
         (0..self.workspaces.count())
             .map(|index| {
@@ -631,7 +627,7 @@ impl State {
             .collect()
     }
 
-    /// Una finestra di uno spazio non attivo.
+    /// A window of a non-active space.
     fn stored_window(&self, id: u64) -> Option<Window> {
         self.workspaces
             .stored
@@ -641,7 +637,7 @@ impl State {
             .map(|(w, _)| w.clone())
     }
 
-    /// Lo spazio non attivo che contiene la finestra `id`.
+    /// The non-active space containing window `id`.
     fn stored_window_space(&self, id: u64) -> Option<usize> {
         self.workspaces
             .stored
@@ -658,8 +654,8 @@ impl State {
         {
             return Some(window.clone());
         }
-        // Con la tastiera a un componente della shell (un menu della barra aperto) l'app attiva
-        // resta quella in cima: i comandi dei menu agiscono su di lei.
+        // With the keyboard on a shell component (an open menu of the bar) the active app
+        // stays the one on top: the menu commands act on it.
         let on_layer = smithay::desktop::layer_map_for_output(&self.output)
             .layers()
             .any(|layer| layer.wl_surface() == &focus);
@@ -669,7 +665,7 @@ impl State {
         None
     }
 
-    /// Dà il focus a una finestra (o a nessuna) e la porta in cima.
+    /// Gives the focus to a window (or to none) and brings it to the top.
     pub fn focus_window(&mut self, window: Option<Window>) {
         for other in self.space.elements() {
             other.set_activated(false);
@@ -680,7 +676,7 @@ impl State {
         if let Some(window) = &window {
             self.space.raise_element(window, true);
         }
-        // Un layer con tastiera esclusiva sopra le finestre tiene il focus (wlr-layer-shell).
+        // A layer with exclusive keyboard above the windows keeps the focus (wlr-layer-shell).
         let focus = self.exclusive_layer_surface().or(focus);
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
@@ -694,11 +690,11 @@ impl State {
 
     fn window_list(&self) -> Vec<WindowInfo> {
         let focused = self.focused_window();
-        // Space elenca dal basso verso l'alto: si rovescia per avere la cima prima.
+        // Space lists from bottom to top: it is reversed to have the top first.
         let mut windows: Vec<(&Window, bool)> =
             self.space.elements().rev().map(|w| (w, false)).collect();
         windows.extend(self.minimized.iter().map(|(w, _)| (w, true)));
-        // Poi le finestre degli altri spazi, ciascuna con la sua posizione nello spazio.
+        // Then the windows of the other spaces, each with its position in the space.
         let stored: Vec<(&Window, Point<i32, Logical>)> = self
             .workspaces
             .stored
@@ -756,8 +752,8 @@ impl State {
             .collect()
     }
 
-    /// Termina (SIGKILL) i processi delle finestre di un'app: tutte quelle con quell'app_id, sullo
-    /// schermo, ridotte o in altri spazi. Mai un componente della shell né Ossido stesso.
+    /// Kills (SIGKILL) the processes of an app's windows: all those with that app_id, on
+    /// screen, minimized or in other spaces. Never a shell component nor Ossido itself.
     fn force_quit(&mut self, app_id: &str) -> Result<usize, String> {
         let pids: std::collections::BTreeSet<i32> = self
             .space
@@ -774,24 +770,21 @@ impl State {
             .filter(|pid| *pid != std::process::id() as i32)
             .collect();
         if pids.is_empty() {
-            return Err(format!("nessun processo per {app_id}"));
+            return Err(format!("no process for {app_id}"));
         }
         for pid in &pids {
             let Some(pid) = rustix::process::Pid::from_raw(*pid) else {
                 continue;
             };
             if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::KILL) {
-                warn!(
-                    "uscita forzata di {app_id} ({}): {err}",
-                    pid.as_raw_nonzero()
-                );
+                warn!("force quit of {app_id} ({}): {err}", pid.as_raw_nonzero());
             }
         }
         Ok(pids.len())
     }
 
-    /// Scrive l'istantanea in un file temporaneo e la annuncia alla shell (`broadcast`
-    /// "screenshot" = "<percorso> <larghezza> <altezza>"): la miniatura, poi la Scrivania.
+    /// Writes the screenshot to a temporary file and announces it to the shell (`broadcast`
+    /// "screenshot" = "<path> <width> <height>"): the thumbnail, then the Desktop.
     fn publish_screenshot(&mut self, capture: &crate::capture::Capture) -> Result<Value, String> {
         let png = capture.to_png()?;
         let dir = std::env::var_os("XDG_RUNTIME_DIR")
@@ -799,11 +792,11 @@ impl State {
             .unwrap_or_else(std::env::temp_dir);
         self.screenshot_count = self.screenshot_count.wrapping_add(1);
         let path = dir.join(format!(
-            "silica-istantanea-{}-{}.png",
+            "silica-screenshot-{}-{}.png",
             std::process::id(),
             self.screenshot_count
         ));
-        std::fs::write(&path, &png).map_err(|e| format!("scrittura di {}: {e}", path.display()))?;
+        std::fs::write(&path, &png).map_err(|e| format!("writing {}: {e}", path.display()))?;
         let path = path.to_string_lossy().into_owned();
         self.broadcast_to_shell(
             "screenshot".to_owned(),
@@ -823,7 +816,7 @@ impl State {
         };
         match params.path {
             Some(path) => {
-                std::fs::write(&path, &png).map_err(|e| format!("scrittura di {path}: {e}"))?;
+                std::fs::write(&path, &png).map_err(|e| format!("writing {path}: {e}"))?;
                 shot.path = Some(path);
             }
             None => shot.png_base64 = Some(base64::engine::general_purpose::STANDARD.encode(&png)),

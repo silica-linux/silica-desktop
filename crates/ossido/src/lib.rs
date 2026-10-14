@@ -1,4 +1,4 @@
-//! Ossido, il compositor Wayland di Silica.
+//! Ossido, the Wayland compositor of Silica.
 
 pub mod backend;
 mod capture;
@@ -33,41 +33,41 @@ use tracing::warn;
 
 use crate::state::State;
 
-/// Opzioni di avvio, lette dalla riga di comando in `main.rs`.
+/// Startup options, read from the command line in `main.rs`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
-    /// Finestra dentro il compositor ospite (WSLg, una sessione Wayland o X11).
+    /// Window inside the host compositor (WSLg, a Wayland or X11 session).
     #[default]
     Winit,
-    /// Nessuna finestra: test automatici, CI, loop degli agenti.
+    /// No window: automated tests, CI, agent loops.
     Headless,
 }
 
 #[derive(Debug)]
 pub struct Options {
     pub backend: BackendKind,
-    /// Dimensione dell'output headless, in pixel.
+    /// Size of the headless output, in pixels.
     pub size: (i32, i32),
-    /// Fattore di scala intero dell'output (HiDPI).
+    /// Integer scale factor of the output (HiDPI).
     pub scale: i32,
-    /// Porta del canale di controllo su 127.0.0.1; 0 sceglie una porta libera.
+    /// Port of the control channel on 127.0.0.1; 0 picks a free port.
     pub control: Option<u16>,
-    /// Comandi da avviare come client una volta aperto il socket Wayland.
+    /// Commands to start as clients once the Wayland socket is open.
     pub spawn: Vec<String>,
-    /// Componenti della shell da avviare (`--spawn-shell`): vedono i protocolli della shell.
+    /// Shell components to start (`--spawn-shell`): they see the shell protocols.
     pub spawn_shell: Vec<String>,
-    /// Colore del desktop finché non c'è uno sfondo (RGBA 0–1, valori sRGB).
+    /// Desktop color until there is a wallpaper (RGBA 0–1, sRGB values).
     pub background: [f32; 4],
-    /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
+    /// Multiplier of the animation durations (0: no animation).
     pub animation_scale: f64,
-    /// Qualità del vetro (`--glass auto|full|frosted|opaque`).
+    /// Glass quality (`--glass auto|full|frosted|opaque`).
     pub glass: state::GlassSetting,
-    /// Avvia un bus di sessione privato con `silica-daemon` (`--session-bus`).
+    /// Starts a private session bus with `silica-daemon` (`--session-bus`).
     pub session_bus: bool,
-    /// Un tasto che fa da Logo (`--logo-key`): annidato in un altro desktop, le combinazioni
-    /// con Super le prende quel desktop. `None`: predefinito del backend (Ctrl destro annidato).
+    /// A key acting as Logo (`--logo-key`): nested in another desktop, the combinations with
+    /// Super are taken by that desktop. `None`: backend default (right Ctrl when nested).
     pub logo_key: Option<keys::LogoKey>,
-    /// Aspetto imposto (`--appearance light|dark`): vero = scuro. `None` segue silica-daemon.
+    /// Forced appearance (`--appearance light|dark`): true = dark. `None` follows silica-daemon.
     pub appearance: Option<bool>,
 }
 
@@ -115,10 +115,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Le righe su stdout sono l'interfaccia per script e test: una per variabile.
+    // The lines on stdout are the interface for scripts and tests: one per variable.
     let socket = ossido.state.socket_name.clone();
     println!("WAYLAND_DISPLAY={}", socket.to_string_lossy());
-    // Vive fino alla fine di `run`: chiude il bus e il daemon all'uscita.
+    // Lives until the end of `run`: closes the bus and the daemon on exit.
     let _session_bus = if options.session_bus {
         let bus = session_bus::SessionBus::start()?;
         println!("DBUS_SESSION_BUS_ADDRESS={}", bus.address);
@@ -149,7 +149,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ossido.state.forget_dead_windows();
         ossido.state.popups.cleanup();
         if let Err(err) = ossido.display.flush_clients() {
-            warn!("flush dei client fallito: {err}");
+            warn!("client flush failed: {err}");
         }
     })?;
     Ok(())

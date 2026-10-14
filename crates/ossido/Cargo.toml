@@ -1,6 +1,6 @@
 [package]
 name = "ossido"
-description = "Ossido, il compositor Wayland di Silica"
+description = "Ossido, the Wayland compositor of Silica"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

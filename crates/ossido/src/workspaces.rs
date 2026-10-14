@@ -1,16 +1,16 @@
-//! Gli spazi di lavoro (M5.1): più scrivanie, ogni finestra nella sua.
+//! Workspaces (M5.1): several desktops, every window in its own.
 //!
-//! Le finestre dello spazio attivo stanno nello `Space` di Smithay; quelle degli altri spazi
-//! sono tenute qui con la loro posizione, fuori dalla scena. Nel cambio di spazio
-//! (plan/reference/spaces.md) le due scrivanie scorrono in orizzontale insieme, rigidamente:
-//! finestre, sfondo e barra dei menu dello spazio; il Dock e i pannelli della shell restano
-//! fermi. Fra le due scrivanie una fascia nera di 64 pt; la corsa è la larghezza dello schermo
-//! più la fascia. Il movimento segue una molla smorzata criticamente (ω = 0,0132 rad/ms,
-//! nessun superamento). Oltre il primo o l'ultimo spazio il comando si ignora, senza rimbalzo.
+//! The windows of the active space are in Smithay's `Space`; those of the other spaces are
+//! kept here with their position, out of the scene. During a space switch
+//! (plan/reference/spaces.md) the two desktops scroll horizontally together, rigidly: the
+//! space's windows, wallpaper and menu bar; the Dock and the shell panels stay still. Between
+//! the two desktops a 64 pt black band; the travel is the screen width plus the band. The
+//! movement follows a critically damped spring (ω = 0.0132 rad/ms, no overshoot). Past the
+//! first or the last space the command is ignored, without a bounce.
 //!
-//! Durante la transizione le finestre dei due spazi restano mappate insieme e si spostano a
-//! ogni frame: ombre, vetro e animazioni funzionano come sempre. Alla fine quelle dello spazio
-//! lasciato escono dalla scena.
+//! During the transition the windows of the two spaces stay mapped together and move on
+//! every frame: shadows, glass and animations work as always. At the end those of the space
+//! left behind go out of the scene.
 
 use std::time::Instant;
 
@@ -19,16 +19,16 @@ use smithay::utils::{IsAlive, Logical, Point};
 
 use crate::state::State;
 
-/// La fascia nera fra due spazi durante lo scorrimento, in pt.
+/// The black band between two spaces while scrolling, in pt.
 pub const SPACE_GAP: i32 = 64;
 
-/// Pulsazione della molla del cambio di spazio, in rad/ms (adattamento delle misure).
+/// Pulsation of the space-switch spring, in rad/ms (fit of the measurements).
 pub const SPRING_OMEGA: f64 = 0.0132;
 
-/// Spazi al più: oltre, `space.add` rifiuta.
+/// Spaces at most: beyond that, `space.add` refuses.
 pub const MAX_SPACES: usize = 16;
 
-/// Avanzamento del cambio di spazio `ms` dopo l'inizio: `1 − (1 + ωt) e^(−ωt)`.
+/// Progress of the space switch `ms` after the start: `1 − (1 + ωt) e^(−ωt)`.
 pub fn spring_progress(ms: f64) -> f64 {
     if ms <= 0.0 {
         return 0.0;
@@ -37,37 +37,37 @@ pub fn spring_progress(ms: f64) -> f64 {
     (1.0 - (1.0 + x) * (-x).exp()).clamp(0.0, 1.0)
 }
 
-/// Finestre con la posizione nello spazio, dal basso verso l'alto.
+/// Windows with their position in the space, from bottom to top.
 pub type Placed = Vec<(Window, Point<i32, Logical>)>;
 
-/// Uno scorrimento in corso fra due spazi.
+/// A scroll in progress between two spaces.
 pub struct Transition {
     pub from: usize,
     pub to: usize,
     pub start: Instant,
-    /// +1 verso destra (lo spazio nuovo entra da destra), −1 verso sinistra.
+    /// +1 to the right (the new space enters from the right), −1 to the left.
     pub direction: i32,
-    /// La corsa: larghezza dell'output più la fascia.
+    /// The travel: output width plus the band.
     pub travel: i32,
     pub outgoing: Placed,
     pub incoming: Placed,
-    /// Avanzamento all'ultimo frame (0–1).
+    /// Progress at the last frame (0–1).
     pub progress: f64,
 }
 
-/// Lo scostamento delle due scrivanie in questo momento, in pt.
+/// The offset of the two desktops at this moment, in pt.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpaceShift {
-    /// Di quanto è spostata la scrivania che esce.
+    /// How far the leaving desktop is moved.
     pub outgoing: f64,
-    /// Di quanto è spostata la scrivania che entra.
+    /// How far the entering desktop is moved.
     pub incoming: f64,
-    /// Dove comincia la fascia nera.
+    /// Where the black band starts.
     pub gap: f64,
 }
 
 pub struct Workspaces {
-    /// Le finestre degli spazi non attivi; la voce dello spazio attivo resta vuota.
+    /// The windows of the non-active spaces; the active space's entry stays empty.
     pub stored: Vec<Placed>,
     pub active: usize,
     pub transition: Option<Transition>,
@@ -88,7 +88,7 @@ impl Workspaces {
         self.stored.len()
     }
 
-    /// Lo scostamento per il frame, se uno scorrimento è in corso.
+    /// The offset for the frame, if a scroll is in progress.
     pub fn shift(&self, output_width: f64) -> Option<SpaceShift> {
         let t = self.transition.as_ref()?;
         let travel = f64::from(t.travel);
@@ -109,7 +109,7 @@ impl Workspaces {
 }
 
 impl State {
-    /// In quale spazio sta una finestra.
+    /// Which space a window is in.
     pub fn window_space(&self, window: &Window) -> Option<usize> {
         if self.space.elements().any(|w| w == window) {
             let in_transition = self
@@ -129,8 +129,8 @@ impl State {
             .position(|placed| placed.iter().any(|(w, _)| w == window))
     }
 
-    /// Passa allo spazio `to` con lo scorrimento. Falso se è già quello attivo o non esiste
-    /// (oltre il bordo non si rimbalza: come nel riferimento, il comando si ignora).
+    /// Switches to space `to` with the scroll. False if it is already the active one or does
+    /// not exist (past the edge there is no bounce: as in the reference, the command is ignored).
     pub fn switch_space(&mut self, to: usize, now: Instant) -> bool {
         self.settle_transition();
         let from = self.workspaces.active;
@@ -181,7 +181,7 @@ impl State {
         true
     }
 
-    /// Fa avanzare lo scorrimento in corso (a ogni frame).
+    /// Advances the scroll in progress (on every frame).
     pub fn advance_spaces(&mut self, now: Instant) {
         let speed = self.animation_speed;
         let Some(t) = self.workspaces.transition.as_mut() else {
@@ -195,7 +195,7 @@ impl State {
         };
         t.progress = progress;
         let travel = f64::from(t.travel);
-        // Mezzo punto dall'arrivo: fermo.
+        // Half a point from the end: still.
         if (1.0 - progress) * travel < 0.5 {
             self.settle_transition();
             return;
@@ -216,14 +216,14 @@ impl State {
         }
     }
 
-    /// Chiude lo scorrimento: le finestre dello spazio lasciato escono dalla scena.
+    /// Ends the scroll: the windows of the space left behind go out of the scene.
     pub fn settle_transition(&mut self) {
         let Some(t) = self.workspaces.transition.take() else {
             return;
         };
         let mut left = Placed::new();
         for (window, base) in t.outgoing {
-            // Una finestra chiusa durante lo scorrimento è già uscita dallo Space.
+            // A window closed during the scroll has already left the Space.
             if self.space.element_location(&window).is_some() {
                 self.space.unmap_elem(&window);
                 left.push((window, base));
@@ -239,28 +239,28 @@ impl State {
         }
     }
 
-    /// Aggiunge uno spazio in fondo e ne restituisce l'indice.
+    /// Adds a space at the end and returns its index.
     pub fn add_space(&mut self) -> Result<usize, String> {
         if self.workspaces.count() >= MAX_SPACES {
-            return Err(format!("al più {MAX_SPACES} spazi"));
+            return Err(format!("at most {MAX_SPACES} spaces"));
         }
         self.workspaces.stored.push(Vec::new());
         Ok(self.workspaces.count() - 1)
     }
 
-    /// Toglie uno spazio: le sue finestre passano a quello prima (o al primo). Togliere lo
-    /// spazio attivo porta subito in quello che riceve le finestre.
+    /// Removes a space: its windows move to the previous one (or to the first). Removing the
+    /// active space switches right away to the one receiving the windows.
     pub fn remove_space(&mut self, index: usize) -> Result<(), String> {
         self.settle_transition();
         let count = self.workspaces.count();
         if count <= 1 {
-            return Err("c'è un solo spazio".to_owned());
+            return Err("there is only one space".to_owned());
         }
         if index >= count {
-            return Err(format!("spazio {index} assente (ce ne sono {count})"));
+            return Err(format!("space {index} absent (there are {count})"));
         }
         let active = self.workspaces.active;
-        // Le finestre dello spazio tolto (fuori dalla scena se era l'attivo).
+        // The windows of the removed space (out of the scene if it was the active one).
         let moving: Placed = if index == active {
             let placed: Placed = self
                 .space
@@ -279,7 +279,7 @@ impl State {
                 .unwrap_or_default()
         };
         self.workspaces.stored.remove(index);
-        // Chi riceve le finestre, con gli indici già scalati dopo la rimozione.
+        // The space receiving the windows, with the indices already shifted after the removal.
         let receiver = index.saturating_sub(1);
         let new_active = match active.cmp(&index) {
             std::cmp::Ordering::Equal => receiver,
@@ -287,7 +287,7 @@ impl State {
             std::cmp::Ordering::Less => active,
         };
         if receiver == new_active {
-            // Chi riceve è (o diventa) l'attivo: tutto in scena.
+            // The receiver is (or becomes) the active one: everything in the scene.
             let mut placed = if index == active {
                 self.workspaces
                     .stored
@@ -310,15 +310,15 @@ impl State {
         Ok(())
     }
 
-    /// Sposta una finestra in un altro spazio, alla stessa posizione.
+    /// Moves a window to another space, at the same position.
     pub fn move_window_to_space(&mut self, window: &Window, to: usize) -> Result<(), String> {
         self.settle_transition();
         if to >= self.workspaces.count() {
-            return Err(format!("spazio {to} assente"));
+            return Err(format!("space {to} absent"));
         }
         let from = self
             .window_space(window)
-            .ok_or("finestra non in uno spazio (ridotta?)")?;
+            .ok_or("window not in a space (minimized?)")?;
         if from == to {
             return Ok(());
         }
@@ -327,19 +327,15 @@ impl State {
             let location = self
                 .space
                 .element_location(window)
-                .ok_or("finestra non sullo schermo")?;
+                .ok_or("window not on screen")?;
             self.space.unmap_elem(window);
             location
         } else {
-            let slot = self
-                .workspaces
-                .stored
-                .get_mut(from)
-                .ok_or("spazio assente")?;
+            let slot = self.workspaces.stored.get_mut(from).ok_or("space absent")?;
             let index = slot
                 .iter()
                 .position(|(w, _)| w == window)
-                .ok_or("finestra assente dallo spazio")?;
+                .ok_or("window absent from the space")?;
             slot.remove(index).1
         };
         if to == active {
@@ -357,7 +353,7 @@ impl State {
         Ok(())
     }
 
-    /// Lo scostamento delle scrivanie per il frame, in pt.
+    /// The desktop offset for the frame, in pt.
     pub fn space_shift(&self) -> Option<SpaceShift> {
         let width = self
             .space
@@ -366,7 +362,7 @@ impl State {
         self.workspaces.shift(width)
     }
 
-    /// Le finestre chiuse escono anche dagli spazi non attivi.
+    /// Closed windows leave the non-active spaces too.
     pub fn forget_dead_windows(&mut self) {
         for slot in &mut self.workspaces.stored {
             slot.retain(|(window, _)| window.alive());
@@ -380,7 +376,7 @@ mod tests {
 
     #[test]
     fn the_spring_follows_the_measured_curve() {
-        // Misure (spaces.md): 50 % a ~115–127 ms, 90 % a ~284–296 ms, 99 % a ~503–508 ms.
+        // Measurements (spaces.md): 50 % at ~115–127 ms, 90 % at ~284–296 ms, 99 % at ~503–508 ms.
         let at = |p: f64| {
             let mut ms = 0.0;
             while spring_progress(ms) < p {
@@ -391,7 +387,7 @@ mod tests {
         assert!((115.0..=130.0).contains(&at(0.5)), "{}", at(0.5));
         assert!((280.0..=300.0).contains(&at(0.9)), "{}", at(0.9));
         assert!((495.0..=515.0).contains(&at(0.99)), "{}", at(0.99));
-        // Nessun superamento.
+        // No overshoot.
         assert!((0..3000).all(|ms| spring_progress(f64::from(ms)) <= 1.0));
     }
 
@@ -412,7 +408,7 @@ mod tests {
         let shift = spaces.shift(2560.0).unwrap();
         assert_eq!(shift.outgoing, -656.0);
         assert_eq!(shift.incoming, 2624.0 - 656.0);
-        // La fascia comincia dove finisce la scrivania che esce, larga 64.
+        // The band starts where the leaving desktop ends, 64 wide.
         assert_eq!(shift.gap, -656.0 + 2560.0);
         assert_eq!(shift.incoming - shift.gap, 64.0);
     }

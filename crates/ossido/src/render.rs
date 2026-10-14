@@ -1,6 +1,6 @@
-//! La lista degli elementi di un output con GLES: layer, finestre ed effetti di
-//! `ossido-render`, dal primo piano allo sfondo. Con pixman (headless senza EGL) si usa
-//! ancora `space_render_elements`, senza effetti.
+//! The list of the elements of an output with GLES: layers, windows and `ossido-render`
+//! effects, from the front to the back. With pixman (headless without EGL)
+//! `space_render_elements` is still used, without effects.
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -44,52 +44,52 @@ render_elements! {
     pub OutputElement<=GlesRenderer>;
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Rounded=RoundedSurface,
-    /// Elementi a pixel shader della finestra: barra del titolo e ombra.
+    /// Pixel-shader elements of the window: title bar and shadow.
     Shader=RescaleRenderElement<PixelShaderElement>,
     Glass=GlassElement,
-    /// Il gradiente sotto la barra dei menu, sopra lo sfondo del desktop.
+    /// The gradient below the menu bar, above the desktop wallpaper.
     Tone=ossido_render::backdrop::ToneElement,
-    /// Texture: titoli delle barre, istantanee delle finestre che si chiudono.
+    /// Textures: bar titles, snapshots of closing windows.
     Texture=RescaleRenderElement<TextureRenderElement<GlesTexture>>,
-    /// Una finestra che si riduce nel Dock o ne esce, deformata a genio.
+    /// A window minimizing into the Dock or coming out of it, deformed as a genie.
     Genie=ossido_render::genie::GenieElement,
-    /// La fascia nera fra due spazi che scorrono.
+    /// The black band between two scrolling spaces.
     Solid=SolidColorRenderElement,
 }
 
-/// Gli strati che appartengono allo spazio e scorrono con lui: lo sfondo e la barra dei
-/// menu (nel riferimento il Dock e i pannelli della shell restano fermi).
+/// The layers that belong to the space and scroll with it: the wallpaper and the menu bar
+/// (in the reference the Dock and the shell panels stay still).
 fn moves_with_space(layer: &LayerSurface, level: Layer) -> bool {
     matches!(level, Layer::Background | Layer::Bottom) || layer.namespace() == "menubar"
 }
 
-/// Quello che serve al frame oltre allo spazio.
+/// What the frame needs besides the space.
 pub struct RenderContext<'a> {
-    /// I pulsanti della barra di una finestra: simboli e pulsante premuto.
+    /// The bar buttons of a window: symbols and pressed button.
     pub buttons: Option<ButtonsView>,
-    /// ⌥ tenuto: il verde mostra "+".
+    /// ⌥ held: the green one shows "+".
     pub alt: bool,
     pub clear_color: [f32; 4],
-    /// Moltiplicatore delle durate delle animazioni (0: nessuna animazione).
+    /// Multiplier of the animation durations (0: no animation).
     pub animation_speed: f64,
     pub closing: &'a [Closing],
-    /// Finestre che si riducono nel Dock o ne escono.
+    /// Windows minimizing into the Dock or coming out of it.
     pub genies: &'a [Genie],
     pub now: Instant,
     pub glass_quality: GlassQuality,
-    /// Cambio di spazio in corso: sfondo e barra dei menu scorrono con le finestre.
+    /// Space switch in progress: wallpaper and menu bar scroll with the windows.
     pub space_shift: Option<crate::workspaces::SpaceShift>,
-    /// Panorama aperto o in chiusura: finestre disposte, barra degli spazi.
+    /// Panorama open or closing: arranged windows, spaces bar.
     pub panorama: Option<crate::panorama::PanoramaView>,
-    /// Numero di spazi e spazio attivo, per la barra di Panorama.
+    /// Number of spaces and active space, for Panorama's bar.
     pub spaces: (usize, usize),
-    /// Aspetto scuro: finestre, barre, ombre e vetri.
+    /// Dark appearance: windows, bars, shadows and glass.
     pub dark: bool,
-    /// L'icona di un trascinamento fra app e il punto del puntatore: sopra tutto.
+    /// The icon of a drag between apps and the pointer position: above everything.
     pub drag_icon: Option<(WlSurface, Point<f64, Logical>)>,
 }
 
-/// I pulsanti della barra di una finestra nel frame.
+/// The bar buttons of a window in the frame.
 #[derive(Clone)]
 pub struct ButtonsView {
     pub window: Window,
@@ -97,7 +97,7 @@ pub struct ButtonsView {
     pub pressed: Option<u8>,
 }
 
-/// Come disegnare i pulsanti di una finestra.
+/// How to draw a window's buttons.
 #[derive(Clone, Copy, Default)]
 struct ButtonsLook {
     symbols: f32,
@@ -105,8 +105,8 @@ struct ButtonsLook {
     alt: bool,
 }
 
-/// Riduzione e schermo intero non hanno senso: dialogo (ha un genitore) o finestra di
-/// dimensione fissa (minima uguale alla massima).
+/// Minimize and full screen make no sense: a dialog (it has a parent) or a fixed-size window
+/// (minimum equal to maximum).
 fn buttons_disabled(window: &Window) -> bool {
     let Some(toplevel) = window.toplevel() else {
         return false;
@@ -123,13 +123,13 @@ fn buttons_disabled(window: &Window) -> bool {
     })
 }
 
-/// Una finestra chiusa che svanisce: l'istantanea dell'ultimo aspetto.
+/// A closed window fading out: the snapshot of its last look.
 pub struct Closing {
     pub id: Id,
     pub texture: GlesTexture,
-    /// Dove sta l'istantanea nell'output, in pixel fisici.
+    /// Where the snapshot is in the output, in physical pixels.
     pub bbox: Rectangle<i32, Physical>,
-    /// Centro della cornice, attorno a cui la finestra si riduce.
+    /// Center of the frame, around which the window shrinks.
     pub center: Point<i32, Physical>,
     pub start: Instant,
 }
@@ -140,19 +140,19 @@ impl Closing {
     }
 }
 
-/// Una finestra che si riduce nel Dock o ne esce: l'istantanea che si deforma a genio.
+/// A window minimizing into the Dock or coming out of it: the snapshot deformed as a genie.
 pub struct Genie {
     pub id: Id,
-    /// Cambia a ogni frame: la forma cambia anche se l'istantanea è la stessa.
+    /// It changes on every frame: the shape changes even if the snapshot is the same.
     pub commit: std::cell::Cell<smithay::backend::renderer::utils::CommitCounter>,
     pub texture: GlesTexture,
-    /// L'istantanea nell'output, in pixel fisici.
+    /// The snapshot in the output, in physical pixels.
     pub snapshot: Rectangle<i32, Physical>,
-    /// La cornice della finestra (senza ombra) e la miniatura, in pixel fisici.
+    /// The window frame (without shadow) and the thumbnail, in physical pixels.
     pub frame: Rectangle<f64, Physical>,
     pub target: Rectangle<f64, Physical>,
     pub start: Instant,
-    /// Il ripristino: la finestra è già mappata ma resta nascosta finché il genio non finisce.
+    /// The restore: the window is already mapped but stays hidden until the genie ends.
     pub restoring: Option<Window>,
 }
 
@@ -173,7 +173,7 @@ impl Genie {
         gone || animation::progress(now - self.start, self.duration(), speed) >= 1.0
     }
 
-    /// La forma all'istante `now`.
+    /// The shape at instant `now`.
     pub fn shape(&self, now: Instant, speed: f64) -> animation::GenieShape {
         let duration = self.duration();
         let progress =
@@ -186,14 +186,14 @@ impl Genie {
         }
     }
 
-    /// La finestra in ripristino che il genio nasconde ancora.
+    /// The restoring window that the genie still hides.
     pub fn hides(&self, window: &Window) -> bool {
         self.restoring.as_ref() == Some(window)
     }
 }
 
-/// Lo schermo intero che entra o esce: il rettangolo della cornice va da `from` a `to`, nei
-/// dati della finestra.
+/// Full screen entering or exiting: the frame rectangle goes from `from` to `to`, in the
+/// window data.
 #[derive(Default)]
 pub struct FullscreenMorph(pub std::cell::Cell<Option<Morph>>);
 
@@ -214,7 +214,7 @@ impl Morph {
         }
     }
 
-    /// Il rettangolo all'istante `now`; None a animazione finita.
+    /// The rectangle at instant `now`; None once the animation is over.
     pub fn rect(&self, now: Instant, speed: f64) -> Option<Rectangle<f64, Logical>> {
         let duration = self.duration();
         let progress =
@@ -244,7 +244,7 @@ impl Morph {
     }
 }
 
-/// Il rettangolo dello schermo intero in corso per una finestra (e toglie quello finito).
+/// The rectangle of the full screen in progress for a window (and removes a finished one).
 fn morph_rect(window: &Window, context: &RenderContext<'_>) -> Option<Rectangle<f64, Logical>> {
     let morph = window.user_data().get::<FullscreenMorph>()?;
     let current = morph.0.get()?;
@@ -255,7 +255,7 @@ fn morph_rect(window: &Window, context: &RenderContext<'_>) -> Option<Rectangle<
     rect
 }
 
-/// Id stabile della fascia nera, nei dati dell'output.
+/// Stable id of the black band, in the output data.
 struct SpaceGapId(Id);
 
 impl Default for SpaceGapId {
@@ -264,15 +264,15 @@ impl Default for SpaceGapId {
     }
 }
 
-/// La sfumatura in alto di App Exposé, nei dati dell'output.
+/// The gradient at the top of App Exposé, in the output data.
 #[derive(Default)]
 struct AppShade(ossido_render::sprite::Sprite);
 
-/// L'etichetta di App Exposé di una finestra, nei suoi dati.
+/// App Exposé's label of a window, in its data.
 #[derive(Default)]
 struct AppLabel(ossido_render::sprite::Sprite);
 
-/// I titoli delle finestre di App Exposé, sotto le cornici disposte.
+/// The titles of App Exposé's windows, below the arranged frames.
 fn app_labels(
     renderer: &mut GlesRenderer,
     elements: &mut Vec<OutputElement>,
@@ -289,7 +289,7 @@ fn app_labels(
         let rect = crate::panorama::interpolate(placement, panorama.progress);
         let width = f64::from(text_width(&title, size, Weight::Regular)).ceil() + 4.0;
         let height = f64::from(size) + 8.0;
-        // Maiuscole (~9 pt) che cominciano 14 pt sotto la cornice.
+        // Capitals (~9 pt) starting 14 pt below the frame.
         let baseline = f64::from(size) * 0.75 + 2.0;
         let location = Point::from((
             rect.loc.x + (rect.size.w - width) / 2.0,
@@ -310,7 +310,7 @@ fn app_labels(
             scale,
             panorama.progress as f32,
             |canvas| {
-                // Bianco con un'ombra scura sotto.
+                // White with a dark shadow below.
                 canvas.text(
                     [2.0, baseline as f32 + 1.0],
                     &title,
@@ -337,28 +337,28 @@ fn app_labels(
     }
 }
 
-/// Quando la finestra ha mostrato il primo buffer: l'apertura parte da lì.
+/// When the window showed its first buffer: the opening starts from there.
 #[derive(Default)]
 struct Opened(Cell<Option<Instant>>);
 
-/// Dove va il vetro di una superficie: subito dietro le sue superfici nella lista.
+/// Where the glass of a surface goes: right behind its surfaces in the list.
 struct GlassAnchor {
     index: usize,
     surface: WlSurface,
-    /// Origine della superficie nell'output, in pixel fisici.
+    /// Origin of the surface in the output, in physical pixels.
     origin: Point<i32, Physical>,
-    /// Opacità dello strato (la barra dei menu svanisce con Panorama).
+    /// Opacity of the layer (the menu bar fades with Panorama).
     opacity: f32,
 }
 
-/// La finestra ha lo stato attivo (focus), anche se il configure non è ancora partito.
+/// The window has the active state (focus), even if the configure has not left yet.
 fn is_active(window: &Window) -> bool {
     window.toplevel().is_some_and(|toplevel| {
         toplevel.with_pending_state(|state| state.states.contains(xdg_toplevel::State::Activated))
     })
 }
 
-/// Il titolo della finestra (`xdg_toplevel.set_title`), vuoto se non c'è.
+/// The window title (`xdg_toplevel.set_title`), empty if none.
 fn window_title(window: &Window) -> String {
     window
         .toplevel()
@@ -374,7 +374,7 @@ fn window_title(window: &Window) -> String {
         .unwrap_or_default()
 }
 
-/// La scala dell'apertura in questo momento (1 a riposo).
+/// The opening scale at this moment (1 at rest).
 fn open_scale(window: &Window, context: &RenderContext<'_>) -> f64 {
     window.user_data().insert_if_missing(Opened::default);
     let Some(opened) = window.user_data().get::<Opened>() else {
@@ -382,7 +382,7 @@ fn open_scale(window: &Window, context: &RenderContext<'_>) -> f64 {
     };
     let start = match opened.0.get() {
         Some(start) => start,
-        // Senza contenuto non c'è ancora niente da mostrare.
+        // Without content there is nothing to show yet.
         None if window.geometry().size.is_empty() => return 1.0,
         None => {
             opened.0.set(Some(context.now));
@@ -397,7 +397,7 @@ fn open_scale(window: &Window, context: &RenderContext<'_>) -> f64 {
     animation::open_scale(progress)
 }
 
-/// Un rettangolo scalato attorno a `center`.
+/// A rectangle scaled around `center`.
 fn scale_rect(
     rect: Rectangle<f64, Physical>,
     center: Point<f64, Physical>,
@@ -407,7 +407,7 @@ fn scale_rect(
     Rectangle::new(loc, rect.size.upscale(factor))
 }
 
-/// Dove sta una finestra dello Space: posizione e geometria.
+/// Where a window of the Space is: position and geometry.
 fn placed(
     space: &Space<Window>,
     window: &Window,
@@ -418,12 +418,12 @@ fn placed(
     ))
 }
 
-/// La cornice di una finestra in punti, dalla sua geometria.
+/// The frame of a window in points, from its geometry.
 fn frame_rect(window: &Window, geometry: Rectangle<i32, Logical>) -> Rectangle<f64, Logical> {
     decorations::frame_of(window, geometry).to_f64()
 }
 
-/// Spostamento e scala che portano la cornice `from` su `to` (scala attorno al centro).
+/// Offset and scale that bring the frame `from` onto `to` (scale around the center).
 fn fit(from: Rectangle<f64, Logical>, to: Rectangle<f64, Logical>) -> (Point<i32, Logical>, f64) {
     let center = |r: Rectangle<f64, Logical>| r.loc + r.size.downscale(2.0).to_point();
     let offset = (center(to) - center(from)).to_i32_round();
@@ -435,8 +435,8 @@ fn fit(from: Rectangle<f64, Logical>, to: Rectangle<f64, Logical>) -> (Point<i32
     (offset, factor)
 }
 
-/// Gli elementi di una finestra, dal primo piano allo sfondo (superfici, barra, ombra),
-/// spostati di `offset` e scalati di `factor` attorno al centro della cornice.
+/// The elements of a window, from the front to the back (surfaces, bar, shadow), moved by
+/// `offset` and scaled by `factor` around the center of the frame.
 #[allow(clippy::too_many_arguments)]
 fn window_elements(
     renderer: &mut GlesRenderer,
@@ -459,7 +459,7 @@ fn window_elements(
         scale.into(),
         1.0,
     );
-    // A schermo intero niente angoli, barra, ombra né animazione (come nelle riprese).
+    // Full screen: no corners, bar, shadow or animation (as in the recordings).
     if crate::windows::is_fullscreen(window) {
         return surfaces.into_iter().map(OutputElement::Surface).collect();
     }
@@ -487,7 +487,7 @@ fn window_elements(
     {
         let full_size = decorations::full_size_toolbar(window);
         window.user_data().insert_if_missing(Title::default);
-        // A tutta finestra il titolo lo scrive l'app nella sua barra.
+        // With full-size content the app writes the title in its own bar.
         if full_size.is_none()
             && let Some(title) = window.user_data().get::<Title>()
             && let Some(text) = title.element(
@@ -520,8 +520,8 @@ fn window_elements(
                 center,
                 factor,
             ));
-            // A tutta finestra i pulsanti stanno sopra il contenuto dell'app (la lista va dal
-            // primo piano in giù).
+            // With full-size content the buttons sit above the app's content (the list goes
+            // from the front down).
             if full_size.is_some() {
                 elements.insert(0, element);
             } else {
@@ -529,7 +529,7 @@ fn window_elements(
             }
         }
     }
-    // Il bordo interno di 1 pt (solo in scuro), sopra il contenuto.
+    // The 1 pt inner border (only in dark), above the content.
     if let Some(style) = ossido_render::border::style(active, dark)
         && let Some(program) = &shaders.border
     {
@@ -559,7 +559,7 @@ fn window_elements(
     elements
 }
 
-/// Il genio di una finestra ancora nello spazio, verso (o da) `target` in punti dell'output.
+/// The genie of a window still in the space, towards (or from) `target` in output points.
 pub fn snapshot_genie(
     renderer: &mut GlesRenderer,
     space: &Space<Window>,
@@ -588,7 +588,7 @@ pub fn snapshot_genie(
     })
 }
 
-/// L'istantanea di una finestra (superfici, barra e ombra) per l'animazione di chiusura.
+/// The snapshot of a window (surfaces, bar and shadow) for the closing animation.
 pub fn snapshot_window(
     renderer: &mut GlesRenderer,
     space: &Space<Window>,
@@ -633,21 +633,21 @@ pub fn snapshot_window(
             start: Instant::now(),
         }),
         Err(err) => {
-            warn!("istantanea della finestra chiusa non riuscita: {err:?}");
+            warn!("snapshot of the closed window failed: {err:?}");
             None
         }
     }
 }
 
-/// L'indice di un vetro dopo che un elemento è stato inserito in `at`, davanti allo sfondo:
-/// si sposta solo il vetro degli strati di sfondo (indice oltre `at`). Quello di uno strato
-/// che finisce proprio dove comincia lo sfondo (nessuna finestra in mezzo, come la barra dei
-/// menu su un desktop vuoto) resta davanti all'elemento inserito.
+/// The index of a glass after an element was inserted at `at`, in front of the wallpaper:
+/// only the glass of the background layers moves (index beyond `at`). That of a layer ending
+/// exactly where the wallpaper begins (no window in between, like the menu bar on an empty
+/// desktop) stays in front of the inserted element.
 fn after_insert(index: usize, at: usize) -> usize {
     if index > at { index + 1 } else { index }
 }
 
-/// Gli elementi dell'output, dal primo piano allo sfondo.
+/// The output elements, from the front to the back.
 pub fn output_elements(
     renderer: &mut GlesRenderer,
     space: &Space<Window>,
@@ -676,8 +676,8 @@ pub fn output_elements(
             let Some(geometry) = layer_map.layer_geometry(layer) else {
                 continue;
             };
-            // Nel cambio di spazio gli strati dello spazio si disegnano due volte: con la
-            // scrivania che esce e con quella che entra.
+            // During a space switch the space layers are drawn twice: with the desktop
+            // leaving and with the one entering.
             let offsets: Vec<f64> = match context.space_shift {
                 Some(shift) if moves_with_space(layer, level) => {
                     vec![shift.outgoing, shift.incoming]
@@ -719,8 +719,8 @@ pub fn output_elements(
         }
     };
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
-    // Panorama: la finestra trascinata, le miniature degli spazi e la barra degli spazi, che
-    // scende sopra la barra dei menu che svanisce.
+    // Panorama: the dragged window, the space thumbnails and the spaces bar, which comes
+    // down over the fading menu bar.
     if let Some(panorama) = &context.panorama {
         let output_logical = output_size.to_f64().to_logical(scale);
         if let Some((window, rect)) = &panorama.drag
@@ -765,7 +765,7 @@ pub fn output_elements(
                     context.dark,
                 ));
             }
-            // Lo sfondo del desktop in piccolo.
+            // The desktop wallpaper, small.
             for layer in layer_map.layers_on(Layer::Background).rev() {
                 let Some(geometry) = layer_map.layer_geometry(layer) else {
                     continue;
@@ -816,7 +816,7 @@ pub fn output_elements(
     let top_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Top);
 
-    // Le finestre chiuse svaniscono sopra le altre.
+    // Closed windows fade out above the others.
     let context_id = renderer.context_id();
     for closing in context.closing {
         let progress = animation::progress(
@@ -844,8 +844,8 @@ pub fn output_elements(
         )));
     }
 
-    // Le finestre che vanno nel Dock o ne escono, sopra le altre (e sopra il Dock: la coda
-    // dell'imbuto si vede dentro la cella).
+    // Windows going into the Dock or coming out of it, above the others (and above the Dock:
+    // the tail of the funnel shows inside the cell).
     let genie_program = ossido_render::shaders(renderer).genie;
     for genie in context.genies {
         let mut commit = genie.commit.get();
@@ -873,7 +873,7 @@ pub fn output_elements(
     }
 
     for window in space.elements().rev() {
-        // La finestra trascinata in Panorama è già in cima.
+        // The window dragged in Panorama is already on top.
         if context
             .panorama
             .as_ref()
@@ -882,7 +882,7 @@ pub fn output_elements(
         {
             continue;
         }
-        // App Exposé: le finestre delle altre app spariscono.
+        // App Exposé: the windows of the other apps disappear.
         if let Some(panorama) = &context.panorama
             && panorama.mode == crate::panorama::Mode::App
             && panorama.progress > 0.0
@@ -890,13 +890,13 @@ pub fn output_elements(
         {
             continue;
         }
-        // Una finestra che esce dal Dock si vede solo nel genio, fino alla fine.
+        // A window coming out of the Dock shows only in the genie, until the end.
         if context.genies.iter().any(|genie| genie.hides(window)) {
             continue;
         }
         let mut factor = open_scale(window, context);
         let mut offset = Point::<i32, Logical>::default();
-        // Schermo intero in corso: la cornice di adesso va sul rettangolo dell'animazione.
+        // Full screen in progress: the current frame goes onto the animation rectangle.
         if let Some(rect) = morph_rect(window, context)
             && let Some(geometry) = space.element_geometry(window)
         {
@@ -904,7 +904,7 @@ pub fn output_elements(
             offset = shift;
             factor *= scale;
         }
-        // In Panorama la cornice va dalla sua posizione a quella disposta.
+        // In Panorama the frame goes from its position to the arranged one.
         if let Some(panorama) = &context.panorama
             && let Some(placement) = panorama.placements.iter().find(|p| &p.window == window)
             && placement.from.size.w > 0.0
@@ -951,13 +951,13 @@ pub fn output_elements(
         }
     }
 
-    // Da qui in giù solo lo sfondo del desktop: è quello che vede il vetro smerigliato.
+    // From here down only the desktop wallpaper: it is what the frosted glass sees.
     let static_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Bottom);
     let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
 
-    // App Exposé: in alto lo sfondo si scurisce (sopra lo sfondo, sotto le finestre).
+    // App Exposé: at the top the wallpaper darkens (above the wallpaper, below the windows).
     if let Some(panorama) = &context.panorama
         && panorama.mode == crate::panorama::Mode::App
     {
@@ -993,8 +993,8 @@ pub fn output_elements(
         }
     }
 
-    // La fascia nera fra le due scrivanie, sotto tutto: le due scrivanie non la coprono.
-    // Prima del fondale della barra, che deve vederla dietro di sé.
+    // The black band between the two desktops, below everything: the two desktops do not cover it.
+    // Before the bar backdrop, which must see it behind itself.
     if let Some(shift) = context.space_shift {
         let gap = Rectangle::<f64, Logical>::new(
             (shift.gap, 0.0).into(),
@@ -1018,7 +1018,7 @@ pub fn output_elements(
         )));
     }
 
-    // Con la barra dei menu, il gradiente che comprime le luci in cima allo sfondo.
+    // With the menu bar, the gradient that compresses the highlights at the top of the wallpaper.
     let has_menubar = layer_map
         .layers()
         .any(|layer| layer.namespace() == "menubar");
@@ -1041,11 +1041,11 @@ pub fn output_elements(
                     anchor.index = after_insert(anchor.index, background_start);
                 }
             }
-            Err(err) => warn!("fondale della barra saltato: {err:?}"),
+            Err(err) => warn!("bar backdrop skipped: {err:?}"),
         }
     }
 
-    // Il vetro dallo sfondo verso il primo piano: un vetro più in alto vede quelli sotto.
+    // The glass from the back towards the front: a higher glass sees those below.
     if let Some(programs) = &shaders.glass {
         let output_rect = Rectangle::from_size(output_size);
         for anchor in anchors.iter().rev() {
@@ -1101,13 +1101,13 @@ pub fn output_elements(
             });
             match glass {
                 Some(Ok(glass)) => {
-                    // Le regioni dichiarate dopo stanno sopra (un sottomenu sul suo menu):
-                    // nella lista, dal primo piano in giù, vengono prima.
+                    // The regions declared later are on top (a submenu on its menu): in the
+                    // list, from the front down, they come first.
                     let glass: Vec<OutputElement> =
                         glass.into_iter().rev().map(OutputElement::Glass).collect();
                     elements.splice(index..index, glass);
                 }
-                Some(Err(err)) => warn!("vetro saltato in questo frame: {err:?}"),
+                Some(Err(err)) => warn!("glass skipped in this frame: {err:?}"),
                 None => {}
             }
         }
@@ -1136,9 +1136,9 @@ mod tests {
 
     #[test]
     fn glass_ending_where_the_background_starts_stays_in_front() {
-        // Barra dei menu senza finestre: il suo vetro va in 1 e il fondale si inserisce in 1.
+        // Menu bar without windows: its glass goes at 1 and the backdrop is inserted at 1.
         assert_eq!(after_insert(1, 1), 1);
-        // Il vetro di uno strato di sfondo, dietro il fondale, scala di uno.
+        // The glass of a background layer, behind the backdrop, moves by one.
         assert_eq!(after_insert(3, 1), 4);
         assert_eq!(after_insert(0, 1), 0);
     }

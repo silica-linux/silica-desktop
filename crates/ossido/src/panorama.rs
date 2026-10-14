@@ -1,17 +1,17 @@
-//! Panorama (M5.2): tutte le finestre dello spazio, una accanto all'altra, e la barra degli
-//! spazi in alto (plan/reference/missioncontrol.md).
+//! Panorama (M5.2): all the windows of the space, side by side, and the spaces bar at the
+//! top (plan/reference/missioncontrol.md).
 //!
-//! - Le finestre si spostano (e rimpiccioliscono solo se non entrano) fino a non
-//!   sovrapporsi: con due finestre e spazio a sufficienza la scala resta 1, si allontanano
-//!   lungo la retta dei centri e fra loro ci sono 16 pt. La regola con molte finestre non è
-//!   ancora misurata (RICHIESTE-panorama.md, PA-10): se non entrano a grandezza piena, righe
-//!   bilanciate in scala, gruppo centrato.
-//! - Lo sfondo non si oscura; la barra dei menu sparisce e al suo posto scende la barra degli
-//!   spazi, alta 40 pt (`#9e9fa5`, bordo `#58595c`, ombra di ~62 pt); il Dock resta.
-//! - Apertura e chiusura: rallentamento progressivo con coda lunga, 50 % in ~40–54 ms, 90 % in
-//!   ~130–140 ms, fine in ~300 ms (tabelle misurate fotogramma per fotogramma).
-//! - Un clic su una finestra la porta in primo piano e chiude Panorama; Esc o un clic sul vuoto
-//!   chiudono; un clic su uno spazio della barra ci passa; "+" aggiunge uno spazio.
+//! - Windows move (and shrink only if they do not fit) until they no longer overlap: with
+//!   two windows and enough room the scale stays 1, they move apart along the line through
+//!   their centers and there are 16 pt between them. The rule with many windows is not
+//!   measured yet (RICHIESTE-panorama.md, PA-10): if they do not fit at full size, balanced
+//!   scaled rows, centered group.
+//! - The wallpaper does not darken; the menu bar disappears and the spaces bar comes down in
+//!   its place, 40 pt tall (`#9e9fa5`, border `#58595c`, ~62 pt shadow); the Dock stays.
+//! - Opening and closing: progressive slowdown with a long tail, 50 % in ~40–54 ms, 90 % in
+//!   ~130–140 ms, done in ~300 ms (tables measured frame by frame).
+//! - A click on a window brings it to the front and closes Panorama; Esc or a click on the
+//!   empty area close it; a click on a space of the bar switches to it; "+" adds a space.
 
 use std::time::Instant;
 
@@ -22,69 +22,69 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::state::State;
 
-/// Barra degli spazi compatta.
+/// Compact spaces bar.
 pub const BAR_HEIGHT: f64 = 40.0;
 pub const BAR_SHADOW: f64 = 62.0;
 const BAR_FILL: [u8; 4] = [0x9e, 0x9f, 0xa5, 0xff];
 const BAR_BORDER: [u8; 4] = [0x58, 0x59, 0x5c, 0xff];
-/// L'ombra sotto la barra scurisce lo sfondo di ~24 livelli su 122 al bordo.
+/// The shadow below the bar darkens the wallpaper by ~24 levels out of 122 at the edge.
 const BAR_SHADOW_ALPHA: f32 = 0.2;
 const CAPSULE_FILL: [u8; 4] = [0x87, 0x88, 0x8e, 0xff];
 const CAPSULE_BORDER: [u8; 4] = [0x8d, 0x8e, 0x94, 0xff];
 const LABEL_COLOR: [u8; 4] = [0, 0, 0, 0xff];
 const PLUS_COLOR: [u8; 4] = [0x4c, 0x4c, 0x4c, 0xff];
-/// Etichette: corpo ~13–14 pt; capsula dello spazio corrente alta 24 a 7 pt dal bordo, con
-/// ~11 pt di margine attorno al testo; fra una voce e l'altra 2 pt.
+/// Labels: size ~13–14 pt; capsule of the current space 24 tall at 7 pt from the edge, with
+/// ~11 pt of margin around the text; 2 pt between one entry and the next.
 const LABEL_SIZE: f32 = 13.5;
 const CAPSULE_TOP: f64 = 7.0;
 const CAPSULE_HEIGHT: f64 = 24.0;
 const CAPSULE_RADIUS: f32 = 6.5;
 const LABEL_PADDING: f64 = 11.0;
 const LABEL_GAP: f64 = 2.0;
-/// Il "+": croce 20 × 20, tratto 2, centro a 26 pt dal bordo destro e 20 dall'alto.
+/// The "+": 20 × 20 cross, 2 stroke, center at 26 pt from the right edge and 20 from the top.
 const PLUS_SIZE: f64 = 20.0;
 const PLUS_RIGHT: f64 = 26.0;
 
-/// Spazio fra le finestre disposte.
+/// Gap between the arranged windows.
 pub const WINDOW_GAP: f64 = 16.0;
-/// Margini dell'area delle finestre (provvisori: PA-10).
+/// Margins of the window area (provisional: PA-10).
 const MARGIN_SIDE: f64 = 48.0;
 const MARGIN_TOP: f64 = 48.0;
 const MARGIN_BOTTOM: f64 = 24.0;
 
-/// Barra espansa (puntatore in alto): alta 170 pt con bordo `#5f6063` e ~40 pt d'ombra; il
-/// riempimento scende da `#9e9fa5` a `#a4a5ab` (y 114 in giù).
+/// Expanded bar (pointer at the top): 170 pt tall with border `#5f6063` and ~40 pt of shadow;
+/// the fill goes from `#9e9fa5` to `#a4a5ab` (y 114 and below).
 pub const EXPANDED_HEIGHT: f64 = 170.0;
 const EXPANDED_SHADOW: f64 = 40.0;
 const EXPANDED_FILL_BOTTOM: [u8; 4] = [0xa4, 0xa5, 0xab, 0xff];
 const EXPANDED_FILL_FROM: f64 = 114.0;
 const EXPANDED_BORDER: [u8; 4] = [0x5f, 0x60, 0x63, 0xff];
-/// Miniature: 160 pt di larghezza (16:9 sullo schermo di riferimento), a 52 pt dal bordo,
-/// 32 pt fra l'una e l'altra; il gruppo lascia un posto vuoto a destra (con due spazi la
-/// seconda miniatura è al centro dello schermo).
+/// Thumbnails: 160 pt wide (16:9 on the reference screen), 52 pt from the edge, 32 pt
+/// between them; the group leaves an empty slot on the right (with two spaces the second
+/// thumbnail is at the center of the screen).
 const THUMB_WIDTH: f64 = 160.0;
 const THUMB_TOP: f64 = 52.0;
 const THUMB_GAP: f64 = 32.0;
-/// Anello dello spazio corrente: 3 pt, 1 pt di barra fra anello e miniatura, sRGB `#3b99fd`.
+/// Ring of the current space: 3 pt, 1 pt of bar between ring and thumbnail, sRGB `#3b99fd`.
 const RING_WIDTH: f64 = 3.0;
 const RING_GAP: f64 = 1.0;
 const RING_COLOR: [u8; 4] = [0x3b, 0x99, 0xfd, 0xff];
-/// Etichette sotto le miniature: corpo ~12 pt, linea di base 18 pt sotto la miniatura.
+/// Labels below the thumbnails: size ~12 pt, baseline 18 pt below the thumbnail.
 const THUMB_LABEL_SIZE: f32 = 12.0;
 const THUMB_LABEL_BASELINE: f64 = 18.0;
-/// Il "+" scende con la barra: centro a y 20 compatta, 101,5 espansa.
+/// The "+" comes down with the bar: center at y 20 compact, 101.5 expanded.
 const PLUS_Y: f64 = 20.0;
 const PLUS_Y_EXPANDED: f64 = 101.5;
-/// Le miniature compaiono a metà espansione (nel video fra il 63 % e l'80 %).
+/// The thumbnails appear halfway through the expansion (in the video between 63 % and 80 %).
 const THUMBS_FROM: f64 = 0.6;
 const THUMBS_FULL: f64 = 0.8;
-/// Oltre questa distanza dalla pressione il clic su una finestra diventa trascinamento.
+/// Beyond this distance from the press, a click on a window becomes a drag.
 const DRAG_THRESHOLD: f64 = 4.0;
-/// La finestra trascinata sopra la barra si riduce a questa scala.
+/// The window dragged over the bar shrinks to this scale.
 const DRAG_OVER_BAR_SCALE: f64 = 0.25;
 
-/// Espansione della barra (ms, 0–1): altezza da 40 a 169 pt nel video, fotogramma per
-/// fotogramma. La chiusura non è misurata: stessa curva.
+/// Bar expansion (ms, 0–1): height from 40 to 169 pt in the video, frame by frame. Closing is
+/// not measured: same curve.
 pub const EXPAND_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (13.0, 0.29),
@@ -104,7 +104,7 @@ pub const EXPAND_CURVE: &[(f64, f64)] = &[
     (440.0, 1.0),
 ];
 
-/// Avanzamento dell'apertura (ms, 0–1): spostamento del Terminale nel video.
+/// Opening progress (ms, 0–1): movement of the Terminal in the video.
 pub const OPEN_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (13.0, 0.26),
@@ -118,7 +118,7 @@ pub const OPEN_CURVE: &[(f64, f64)] = &[
     (320.0, 1.0),
 ];
 
-/// Avanzamento della chiusura (ms, 0–1): bordo del Finder nella raffica dopo Esc.
+/// Closing progress (ms, 0–1): edge of the Finder in the burst after Esc.
 pub const CLOSE_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (13.0, 0.054),
@@ -142,7 +142,7 @@ pub const CLOSE_CURVE: &[(f64, f64)] = &[
     (319.0, 1.0),
 ];
 
-/// App Exposé, apertura (ms, 0–1): bordo superiore della finestra da y 300 a 388 nel video.
+/// App Exposé, opening (ms, 0–1): top edge of the window from y 300 to 388 in the video.
 pub const APP_OPEN_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (6.0, 0.05),
@@ -161,7 +161,7 @@ pub const APP_OPEN_CURVE: &[(f64, f64)] = &[
     (273.0, 1.0),
 ];
 
-/// App Exposé, chiusura (ms, 0–1): da y 388 a 300 dopo Esc.
+/// App Exposé, closing (ms, 0–1): from y 388 to 300 after Esc.
 pub const APP_CLOSE_CURVE: &[(f64, f64)] = &[
     (0.0, 0.0),
     (13.0, 0.045),
@@ -181,24 +181,24 @@ pub const APP_CLOSE_CURVE: &[(f64, f64)] = &[
     (320.0, 1.0),
 ];
 
-/// App Exposé: le finestre dell'app al centro, sotto ciascuna il titolo. Con una finestra
-/// 900 × 600 sullo schermo di riferimento la scala è 0,947 e il centro sta a y 671,5: area da
-/// 48 pt dall'alto a 61 pt sopra il Dock (posto per l'etichetta). La regola con più finestre
-/// non è misurata.
+/// App Exposé: the app windows in the middle, each with its title below. With one 900 × 600
+/// window on the reference screen the scale is 0.947 and the center is at y 671.5: area from
+/// 48 pt from the top to 61 pt above the Dock (room for the label). The rule with more windows
+/// is not measured.
 const APP_MARGIN_TOP: f64 = 48.0;
 const APP_MARGIN_BOTTOM: f64 = 61.0;
 const APP_MAX_SCALE: f64 = 0.947;
-/// Etichetta: corpo ~12 pt, bianca, maiuscole a 14 pt sotto la finestra.
+/// Label: size ~12 pt, white, capitals 14 pt below the window.
 pub const APP_LABEL_SIZE: f32 = 12.0;
 pub const APP_LABEL_GAP: f64 = 14.0;
-/// In alto lo sfondo si scurisce: da `#6f7075` a y 0 a `#7a7b80` a y 102.
+/// At the top the wallpaper darkens: from `#6f7075` at y 0 to `#7a7b80` at y 102.
 pub const APP_SHADE_HEIGHT: f64 = 102.0;
 pub const APP_SHADE_ALPHA: f32 = 0.09;
-/// Mostra scrivania (non misurato, PA-31): le finestre escono verso il bordo più vicino e ne
-/// resta visibile una striscia.
+/// Show Desktop (not measured, PA-31): the windows go out towards the nearest edge and a
+/// strip of them stays visible.
 const DESKTOP_PEEK: f64 = 24.0;
 
-/// Valore di una tabella (tempo, avanzamento) all'istante `ms`, interpolato.
+/// Value of a (time, progress) table at instant `ms`, interpolated.
 pub fn curve_at(table: &[(f64, f64)], ms: f64) -> f64 {
     let mut previous = (0.0, 0.0);
     for &(t, p) in table {
@@ -214,9 +214,9 @@ pub fn curve_at(table: &[(f64, f64)], ms: f64) -> f64 {
     1.0
 }
 
-/// Dispone le cornici in `area` senza sovrapporle. Se a grandezza piena c'è posto, le
-/// finestre si allontanano a coppie lungo la retta dei loro centri ([`spread`]), come nel
-/// riferimento; altrimenti righe in scala ([`grid`]).
+/// Arranges the frames in `area` without overlapping them. If there is room at full size,
+/// the windows move apart in pairs along the line through their centers ([`spread`]), as in
+/// the reference; otherwise scaled rows ([`grid`]).
 pub fn layout(
     frames: &[Rectangle<f64, Logical>],
     area: Rectangle<f64, Logical>,
@@ -234,11 +234,11 @@ fn center(r: &Rectangle<f64, Logical>) -> (f64, f64) {
     (r.loc.x + r.size.w / 2.0, r.loc.y + r.size.h / 2.0)
 }
 
-/// Le finestre che si sovrappongono (contando i 16 pt di distanza) si allontanano in parti
-/// uguali lungo la retta dei centri, di quanto basta a separarle su uno dei due assi. Nel
-/// riferimento: Finder (700,300 900 × 600) e Terminale (1283,308 597 × 422) si spostano di
-/// (−167, +32) e (+166, −32). Poi il gruppo rientra nell'area, se ne esce. `None` se non
-/// entra a grandezza piena.
+/// Overlapping windows (counting the 16 pt gap) move apart in equal parts along the line
+/// through their centers, by as much as needed to separate them on one of the two axes. In
+/// the reference: Finder (700,300 900 × 600) and Terminal (1283,308 597 × 422) move by
+/// (−167, +32) and (+166, −32). Then the group comes back into the area, if it goes out. `None`
+/// if it does not fit at full size.
 fn spread(
     frames: &[Rectangle<f64, Logical>],
     area: Rectangle<f64, Logical>,
@@ -261,7 +261,7 @@ fn spread(
                     continue;
                 }
                 settled = false;
-                // Centri coincidenti: a destra la seconda.
+                // Coinciding centers: the second one to the right.
                 if dx.abs() + dy.abs() < 1e-6 {
                     (dx, dy) = (1.0, 0.0);
                 }
@@ -307,8 +307,8 @@ fn spread(
     Some(out)
 }
 
-/// Righe bilanciate nell'ordine verticale, ogni riga in ordine orizzontale, una scala
-/// comune al più 1 (la più grande fra le divisioni in righe), righe e gruppo centrati.
+/// Rows balanced in vertical order, every row in horizontal order, a common scale at most 1
+/// (the largest among the row splits), rows and group centered.
 fn grid(
     frames: &[Rectangle<f64, Logical>],
     area: Rectangle<f64, Logical>,
@@ -316,7 +316,7 @@ fn grid(
     grid_scaled(frames, area, 1.0)
 }
 
-/// Come [`grid`], con la scala al più `max_scale`.
+/// Like [`grid`], with the scale at most `max_scale`.
 fn grid_scaled(
     frames: &[Rectangle<f64, Logical>],
     area: Rectangle<f64, Logical>,
@@ -340,7 +340,7 @@ fn grid_scaled(
             row.sort_by(|&a, &b| at(a).loc.x.total_cmp(&at(b).loc.x));
             grouped.push(row);
         }
-        // Gli spazi fra le finestre non si scalano: restano 16 pt.
+        // The gaps between windows are not scaled: they stay 16 pt.
         let width_scale = grouped
             .iter()
             .map(|row| {
@@ -389,7 +389,7 @@ fn grid_scaled(
     out
 }
 
-/// L'app di una finestra (`app_id` di xdg-toplevel).
+/// The app of a window (xdg-toplevel `app_id`).
 pub fn window_app(window: &Window) -> Option<String> {
     let toplevel = window.toplevel()?;
     smithay::wayland::compositor::with_states(toplevel.wl_surface(), |states| {
@@ -401,8 +401,8 @@ pub fn window_app(window: &Window) -> Option<String> {
     })
 }
 
-/// Mostra scrivania: la cornice spinta oltre il bordo dello schermo più vicino al suo
-/// centro, con una striscia di `DESKTOP_PEEK` punti ancora dentro.
+/// Show Desktop: the frame pushed past the screen edge nearest to its center, with a strip of
+/// `DESKTOP_PEEK` points still inside.
 fn out_of_screen(
     frame: Rectangle<f64, Logical>,
     output: Rectangle<f64, Logical>,
@@ -426,7 +426,7 @@ fn out_of_screen(
     out
 }
 
-/// Una finestra in Panorama: la cornice vera e quella disposta.
+/// A window in Panorama: the real frame and the arranged one.
 #[derive(Clone)]
 pub struct Placement {
     pub window: Window,
@@ -434,25 +434,25 @@ pub struct Placement {
     pub to: Rectangle<f64, Logical>,
 }
 
-/// Una finestra presa con il puntatore: clic se non si muove, trascinamento altrimenti.
+/// A window grabbed with the pointer: a click if it does not move, a drag otherwise.
 #[derive(Clone)]
 pub struct Drag {
     pub window: Window,
-    /// Punto di presa dentro la cornice disposta, in proporzione (0–1).
+    /// Grab point inside the arranged frame, as a proportion (0–1).
     pub grab: (f64, f64),
     pub press: Point<f64, Logical>,
     pub pointer: Point<f64, Logical>,
     pub moved: bool,
 }
 
-/// Le tre viste che spostano le finestre.
+/// The three views that move the windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// Tutte le finestre dello spazio, con la barra degli spazi.
+    /// All the windows of the space, with the spaces bar.
     Panorama,
-    /// Le finestre di un'app (App Exposé).
+    /// The windows of an app (App Exposé).
     App,
-    /// Le finestre fuori dallo schermo: si vede la scrivania.
+    /// The windows off screen: the desktop shows.
     Desktop,
 }
 
@@ -470,11 +470,11 @@ pub struct Panorama {
     pub mode: Mode,
     pub opening: bool,
     pub start: Instant,
-    /// Avanzamento da cui riparte la fase (un Esc a metà apertura non salta).
+    /// Progress the phase restarts from (an Esc halfway through opening does not jump).
     pub from: f64,
     pub progress: f64,
     pub placements: Vec<Placement>,
-    /// Barra degli spazi espansa (o in espansione), con la sua animazione.
+    /// Spaces bar expanded (or expanding), with its animation.
     pub expanded: bool,
     pub expand_start: Instant,
     pub expand_from: f64,
@@ -482,28 +482,28 @@ pub struct Panorama {
     pub drag: Option<Drag>,
 }
 
-/// Una miniatura di spazio nel frame: dove sta e le finestre dello spazio (dal basso
-/// verso l'alto, alle loro posizioni sulla scrivania).
+/// A space thumbnail in the frame: where it is and the windows of the space (from bottom to
+/// top, at their positions on the desktop).
 #[derive(Clone)]
 pub struct Thumbnail {
     pub rect: Rectangle<f64, Logical>,
     pub windows: Vec<(Window, Point<i32, Logical>)>,
 }
 
-/// Quello che il frame deve sapere di Panorama.
+/// What the frame needs to know about Panorama.
 #[derive(Clone)]
 pub struct PanoramaView {
     pub mode: Mode,
     pub progress: f64,
     pub placements: Vec<Placement>,
     pub expansion: f64,
-    /// Le miniature, solo quando si vedono.
+    /// The thumbnails, only when visible.
     pub thumbnails: Vec<Thumbnail>,
-    /// La finestra trascinata e la sua cornice in questo momento.
+    /// The dragged window and its frame at this moment.
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
 }
 
-/// Una voce della barra degli spazi, in punti nell'output.
+/// An entry of the spaces bar, in points in the output.
 struct BarItem {
     index: usize,
     label: String,
@@ -537,15 +537,15 @@ fn bar_items(count: usize, width: f64) -> Vec<BarItem> {
     items
 }
 
-/// Le miniature degli spazi nella barra espansa: `count` miniature più un posto vuoto,
-/// centrate; se non entrano si stringono tutte insieme.
+/// The space thumbnails in the expanded bar: `count` thumbnails plus an empty slot,
+/// centered; if they do not fit they all shrink together.
 pub fn thumbnail_rects(count: usize, output: Size<f64, Logical>) -> Vec<Rectangle<f64, Logical>> {
     if output.w <= 0.0 || output.h <= 0.0 {
         return Vec::new();
     }
     let slots = count.saturating_add(1) as f64;
     let natural = slots * THUMB_WIDTH + (slots - 1.0) * THUMB_GAP;
-    // Margine per il "+" a destra e simmetrico a sinistra.
+    // Margin for the "+" on the right and symmetric on the left.
     let room = output.w - 4.0 * PLUS_RIGHT;
     let shrink = (room / natural).clamp(0.05, 1.0);
     let width = THUMB_WIDTH * shrink;
@@ -570,12 +570,12 @@ fn plus_rect(width: f64, expansion: f64) -> Rectangle<f64, Logical> {
     )
 }
 
-/// Altezza della barra per un'espansione 0–1.
+/// Bar height for an expansion 0–1.
 pub fn bar_height(expansion: f64) -> f64 {
     BAR_HEIGHT + (EXPANDED_HEIGHT - BAR_HEIGHT) * expansion.clamp(0.0, 1.0)
 }
 
-/// La cornice in questo momento dell'animazione.
+/// The frame at this moment of the animation.
 pub fn interpolate(p: &Placement, progress: f64) -> Rectangle<f64, Logical> {
     let lerp = |a: f64, b: f64| a + (b - a) * progress;
     Rectangle::new(
@@ -592,8 +592,8 @@ pub fn interpolate(p: &Placement, progress: f64) -> Rectangle<f64, Logical> {
     )
 }
 
-/// La cornice della finestra trascinata: segue il puntatore dal punto di presa; sopra la
-/// barra si riduce.
+/// The frame of the dragged window: it follows the pointer from the grab point; over the
+/// bar it shrinks.
 fn drag_rect(drag: &Drag, frame: Rectangle<f64, Logical>, bar: f64) -> Rectangle<f64, Logical> {
     let scale = if drag.pointer.y < bar {
         DRAG_OVER_BAR_SCALE
@@ -622,17 +622,17 @@ impl State {
             .map_or_else(Size::default, |geo| geo.size.to_f64())
     }
 
-    /// La vista aperta (non in chiusura).
+    /// The open view (not closing).
     pub fn panorama_mode(&self) -> Option<Mode> {
         self.panorama.as_ref().filter(|p| p.opening).map(|p| p.mode)
     }
 
-    /// Apre Panorama, o lo chiude se è aperto.
+    /// Opens Panorama, or closes it if it is open.
     pub fn toggle_panorama(&mut self, now: Instant) {
         self.toggle_view(Mode::Panorama, now);
     }
 
-    /// Apre una vista; se è già aperta la chiude, se ne è aperta un'altra passa a questa.
+    /// Opens a view; if it is already open it closes it, if another one is open it switches to this.
     pub fn toggle_view(&mut self, mode: Mode, now: Instant) {
         if self.panorama_mode() == Some(mode) {
             self.close_panorama(now, None);
@@ -641,8 +641,8 @@ impl State {
         }
     }
 
-    /// Le finestre dello spazio (per App Exposé solo quelle dell'app in primo piano) con la
-    /// cornice vera e quella disposta.
+    /// The windows of the space (for App Exposé only those of the frontmost app) with the
+    /// real frame and the arranged one.
     fn panorama_placements(&self, mode: Mode) -> Vec<Placement> {
         let mut windows: Vec<Window> = self.space.elements().cloned().collect();
         if mode == Mode::App {
@@ -703,7 +703,7 @@ impl State {
 
     fn open_view(&mut self, mode: Mode, now: Instant) {
         self.settle_transition();
-        // Da un'altra vista si riparte da zero (le finestre tornano al loro posto di colpo).
+        // From another view it restarts from zero (the windows go back to their place at once).
         let from = self
             .panorama
             .as_ref()
@@ -729,7 +729,7 @@ impl State {
         }
     }
 
-    /// Chiude Panorama; con `focus` porta quella finestra in primo piano.
+    /// Closes Panorama; with `focus` it brings that window to the front.
     pub fn close_panorama(&mut self, now: Instant, focus: Option<Window>) {
         let Some(panorama) = self.panorama.as_mut() else {
             return;
@@ -748,7 +748,7 @@ impl State {
         }
     }
 
-    /// Espande o richiude la barra degli spazi.
+    /// Expands or collapses the spaces bar.
     pub fn expand_spaces_bar(&mut self, expanded: bool, now: Instant) {
         let Some(panorama) = self.panorama.as_mut() else {
             return;
@@ -764,7 +764,7 @@ impl State {
         }
     }
 
-    /// Fa avanzare le animazioni (a ogni frame); chiuso del tutto, Panorama sparisce.
+    /// Advances the animations (on every frame); once fully closed, Panorama disappears.
     pub fn advance_panorama(&mut self, now: Instant) {
         let speed = self.animation_speed;
         let Some(panorama) = self.panorama.as_mut() else {
@@ -795,7 +795,7 @@ impl State {
         }
     }
 
-    /// Le finestre di ogni spazio alle loro posizioni (quelle dello spazio attivo dallo Space).
+    /// The windows of every space at their positions (those of the active space from the Space).
     fn space_contents(&self) -> Vec<Vec<(Window, Point<i32, Logical>)>> {
         (0..self.workspaces.count())
             .map(|index| {
@@ -846,8 +846,8 @@ impl State {
         })
     }
 
-    /// Il puntatore si muove con Panorama aperto: in alto la barra si espande, sotto la barra
-    /// espansa (fuori dalla barra) si richiude; una finestra presa segue il puntatore.
+    /// The pointer moves with Panorama open: at the top the bar expands, below the expanded
+    /// bar (outside the bar) it collapses; a grabbed window follows the pointer.
     pub fn panorama_pointer(&mut self, location: Point<f64, Logical>, now: Instant) {
         let Some(panorama) = self.panorama.as_mut() else {
             return;
@@ -873,7 +873,7 @@ impl State {
         }
     }
 
-    /// Lo spazio della miniatura sotto il punto, con la barra espansa.
+    /// The space of the thumbnail under the point, with the bar expanded.
     fn thumbnail_at(&self, location: Point<f64, Logical>) -> Option<usize> {
         let panorama = self.panorama.as_ref()?;
         if panorama.expansion < THUMBS_FROM {
@@ -884,8 +884,8 @@ impl State {
             .position(|rect| rect.contains(location))
     }
 
-    /// Pressione con Panorama aperto: una voce della barra, il "+", una miniatura, una
-    /// finestra (che si può trascinare) o il vuoto.
+    /// Press with Panorama open: an entry of the bar, the "+", a thumbnail, a window (which
+    /// can be dragged) or the empty area.
     pub fn panorama_press_at(&mut self, location: Point<f64, Logical>, now: Instant) {
         let Some(panorama) = self.panorama.as_ref() else {
             return;
@@ -896,14 +896,14 @@ impl State {
         let expansion = panorama.expansion;
         let progress = panorama.progress;
         let width = self.output_size().w;
-        // Con la scrivania in vista un clic rimette le finestre al loro posto.
+        // With the desktop in view a click puts the windows back in their place.
         if panorama.mode == Mode::Desktop {
             self.close_panorama(now, None);
             return;
         }
         if panorama.mode == Mode::Panorama && location.y < bar_height(expansion) {
             if plus_rect(width, expansion).contains(location) {
-                // La barra si ridisegna da sola: la sua chiave è il numero di spazi.
+                // The bar redraws by itself: its key is the number of spaces.
                 if let Err(err) = self.add_space() {
                     tracing::info!("panorama: {err}");
                 }
@@ -949,8 +949,8 @@ impl State {
         }
     }
 
-    /// Rilascio: una finestra non mossa va in primo piano e Panorama si chiude; una
-    /// trascinata su una miniatura passa a quello spazio, altrove torna al suo posto.
+    /// Release: a window not moved goes to the front and Panorama closes; one dragged onto a
+    /// thumbnail moves to that space, elsewhere it goes back to its place.
     pub fn panorama_release(&mut self, location: Point<f64, Logical>, now: Instant) {
         let Some(drag) = self.panorama.as_mut().and_then(|p| p.drag.take()) else {
             return;
@@ -976,14 +976,14 @@ impl State {
             tracing::info!("panorama: {err}");
             return;
         }
-        // Le finestre rimaste si ridispongono subito.
+        // The remaining windows are rearranged right away.
         let placements = self.panorama_placements(Mode::Panorama);
         if let Some(panorama) = self.panorama.as_mut() {
             panorama.placements = placements;
         }
     }
 
-    /// Per `panorama.state`.
+    /// For `panorama.state`.
     pub fn panorama_state(&self) -> PanoramaState {
         let Some(panorama) = self.panorama.as_ref() else {
             return PanoramaState {
@@ -1050,25 +1050,25 @@ fn faded(color: [u8; 4], alpha: f64) -> [u8; 4] {
     ]
 }
 
-/// Quello che serve per disegnare la barra.
+/// What is needed to draw the bar.
 pub struct BarLook {
     pub width: f64,
     pub output: Size<f64, Logical>,
     pub count: usize,
     pub active: usize,
     pub expansion: f64,
-    /// Colore delle miniature dietro lo sfondo (quello del desktop).
+    /// Color of the thumbnails behind the wallpaper (the desktop's).
     pub backdrop: [u8; 4],
 }
 
 impl BarLook {
-    /// Altezza dello sprite: barra, bordo e ombra.
+    /// Height of the sprite: bar, border and shadow.
     fn sprite_height(&self) -> f64 {
         let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * self.expansion;
         bar_height(self.expansion) + 1.0 + shadow
     }
 
-    /// Chiave della cache: cambia con quello che si vede (altezza al punto intero).
+    /// Cache key: it changes with what is visible (height at the whole point).
     fn key(&self) -> String {
         format!(
             "{}:{}:{}:{:?}",
@@ -1080,12 +1080,12 @@ impl BarLook {
     }
 }
 
-/// Disegna la barra degli spazi (compatta, espansa o a metà) con l'ombra sotto.
+/// Draws the spaces bar (compact, expanded or halfway) with the shadow below.
 pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     let e = look.expansion.clamp(0.0, 1.0);
     let w = look.width as f32;
     let height = bar_height(e);
-    // Riempimento: uniforme da compatta, con la sfumatura in basso da espansa.
+    // Fill: uniform when compact, with the gradient at the bottom when expanded.
     let rows = height.ceil() as usize;
     for row in 0..rows {
         let y = row as f64;
@@ -1096,7 +1096,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     }
     let bar = height as f32;
     canvas.fill_rect([0.0, bar, w, 1.0], mix(BAR_BORDER, EXPANDED_BORDER, e));
-    // Ombra: nero che sfuma a zero.
+    // Shadow: black fading to zero.
     let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * e;
     let rows = shadow as usize;
     for row in 0..rows {
@@ -1104,7 +1104,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
         let alpha = (BAR_SHADOW_ALPHA * t * t * 255.0).round() as u8;
         canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
-    // Le voci compatte svaniscono all'inizio dell'espansione.
+    // The compact entries vanish at the start of the expansion.
     let compact = 1.0 - e / 0.3;
     if compact > 0.0 {
         for item in bar_items(look.count, look.width) {
@@ -1119,7 +1119,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                 canvas.fill_rounded(rect, CAPSULE_RADIUS, faded(CAPSULE_FILL, compact));
                 canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, faded(CAPSULE_BORDER, compact));
             }
-            // Linea di base: maiuscole di ~10 pt centrate nella capsula.
+            // Baseline: ~10 pt capitals centered in the capsule.
             let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 5.0) as f32;
             canvas.text(
                 [(r.loc.x + LABEL_PADDING) as f32, baseline],
@@ -1130,8 +1130,8 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
             );
         }
     }
-    // Le miniature: il fondo (lo sfondo del desktop ci si disegna sopra), l'anello e
-    // l'etichetta.
+    // The thumbnails: the background (the desktop wallpaper is drawn over it), the ring and
+    // the label.
     let shown = (e - THUMBS_FROM) / (THUMBS_FULL - THUMBS_FROM);
     if shown > 0.0 {
         for (index, r) in thumbnail_rects(look.count, look.output)
@@ -1181,7 +1181,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     canvas.line([cx, cy - half], [cx, cy + half], 2.0, PLUS_COLOR);
 }
 
-/// La barra degli spazi come elemento, già spostata in alto quanto serve all'apertura.
+/// The spaces bar as an element, already moved up as much as the opening needs.
 pub fn bar_element(
     renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
     sprite: &Sprite,
@@ -1193,8 +1193,8 @@ pub fn bar_element(
         smithay::backend::renderer::gles::GlesTexture,
     >,
 > {
-    // Il bordo inferiore della barra scende da 0 a 40 pt sulla curva delle finestre;
-    // l'ombra, che a riposo sta sotto, compare nel primo fotogramma.
+    // The bottom edge of the bar comes down from 0 to 40 pt on the window curve; the
+    // shadow, which at rest is below, appears on the first frame.
     let y = -(1.0 - progress) * (bar_height(look.expansion) + 1.0);
     sprite.element(
         renderer,
@@ -1217,8 +1217,8 @@ mod tests {
 
     #[test]
     fn two_windows_that_fit_keep_their_size() {
-        // Il riferimento: Finder 900 × 600 e Terminale 597 × 422 vanno a (533,332) e
-        // (1449,276), scala 1, 16 pt fra loro (misure a ±1 pt).
+        // The reference: Finder 900 × 600 and Terminal 597 × 422 go to (533,332) and
+        // (1449,276), scale 1, 16 pt between them (measurements at ±1 pt).
         let area = rect(48.0, 88.0, 2464.0, 1220.0);
         let out = layout(
             &[
@@ -1233,10 +1233,10 @@ mod tests {
         for (got, want) in [(out[0].loc, (533.0, 332.0)), (out[1].loc, (1449.0, 276.0))] {
             assert!(
                 (got.x - want.0).abs() <= 1.5 && (got.y - want.1).abs() <= 1.5,
-                "{got:?} invece di {want:?}"
+                "{got:?} instead of {want:?}"
             );
         }
-        // Già separate: restano dove sono.
+        // Already separate: they stay where they are.
         let apart = [
             rect(100.0, 100.0, 300.0, 200.0),
             rect(900.0, 500.0, 300.0, 200.0),
@@ -1261,7 +1261,7 @@ mod tests {
         assert_eq!(out.len(), 12);
         for (i, a) in out.iter().enumerate() {
             assert!(a.size.w <= 700.0 && a.size.w > 100.0);
-            assert!(area.contains_rect(*a), "{a:?} fuori da {area:?}");
+            assert!(area.contains_rect(*a), "{a:?} outside {area:?}");
             for b in out.iter().skip(i + 1) {
                 assert!(!a.overlaps(*b), "{a:?} {b:?}");
             }
@@ -1272,7 +1272,7 @@ mod tests {
     #[test]
     fn curves_follow_the_measurements() {
         assert_eq!(curve_at(OPEN_CURVE, 0.0), 0.0);
-        // Metà strada fra 40 e 54 ms.
+        // Halfway between 40 and 54 ms.
         assert!(curve_at(OPEN_CURVE, 40.0) < 0.5 && curve_at(OPEN_CURVE, 54.0) > 0.5);
         assert!((curve_at(CLOSE_CURVE, 67.0) - 0.497).abs() < 1e-9);
         assert_eq!(curve_at(CLOSE_CURVE, 1000.0), 1.0);

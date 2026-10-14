@@ -1,4 +1,4 @@
-//! Server del canale di controllo: righe JSON su TCP locale (vedi `silica-control`).
+//! Control channel server: JSON lines over local TCP (see `silica-control`).
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -11,10 +11,10 @@ use tracing::{info, warn};
 
 use crate::state::Ossido;
 
-/// Tempo massimo per consegnare una risposta prima di chiudere il client.
+/// Maximum time to deliver a response before closing the client.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Apre il canale su `127.0.0.1:port` (0 = porta libera) e restituisce l'indirizzo.
+/// Opens the channel on `127.0.0.1:port` (0 = free port) and returns the address.
 pub fn listen(handle: &LoopHandle<'static, Ossido>, port: u16) -> std::io::Result<SocketAddr> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     listener.set_nonblocking(true)?;
@@ -27,12 +27,12 @@ pub fn listen(handle: &LoopHandle<'static, Ossido>, port: u16) -> std::io::Resul
                     match listener.accept() {
                         Ok((stream, peer)) => {
                             if let Err(err) = serve(&data.state.loop_handle, stream) {
-                                warn!("client di controllo {peer} rifiutato: {err}");
+                                warn!("control client {peer} refused: {err}");
                             }
                         }
                         Err(err) if err.kind() == ErrorKind::WouldBlock => break,
                         Err(err) => {
-                            warn!("accept sul canale di controllo: {err}");
+                            warn!("accept on the control channel: {err}");
                             break;
                         }
                     }
@@ -41,7 +41,7 @@ pub fn listen(handle: &LoopHandle<'static, Ossido>, port: u16) -> std::io::Resul
             },
         )
         .map_err(|err| std::io::Error::other(err.to_string()))?;
-    info!("canale di controllo su {addr}");
+    info!("control channel on {addr}");
     Ok(addr)
 }
 
@@ -75,7 +75,7 @@ fn serve(handle: &LoopHandle<'static, Ossido>, stream: TcpStream) -> std::io::Re
                     for line in requests {
                         let response = match serde_json::from_str::<Request>(&line) {
                             Ok(request) => data.state.execute(request),
-                            Err(err) => Response::err(0, format!("richiesta non valida: {err}")),
+                            Err(err) => Response::err(0, format!("invalid request: {err}")),
                         };
                         if reply(stream, &response).is_err() {
                             return Ok(PostAction::Remove);

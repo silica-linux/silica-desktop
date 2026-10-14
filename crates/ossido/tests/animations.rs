@@ -1,5 +1,5 @@
-//! Animazioni di apertura e chiusura delle finestre (`plan/reference/windows.md`), rese
-//! lente con `ui.animation_scale` per leggerle negli screenshot.
+//! Window opening and closing animations (`plan/reference/windows.md`), slowed down with
+//! `ui.animation_scale` to read them in the screenshots.
 
 #![allow(
     clippy::unwrap_used,
@@ -15,7 +15,7 @@ use common::{Headless, pixel, screenshot};
 use serde_json::json;
 use silica_control::commands::UI_ANIMATION_SCALE;
 
-/// Larghezza della parte rossa (la finestra) sulla riga `y`.
+/// Width of the red part (the window) on row `y`.
 fn red_width(shot: &[u8], y: u32) -> u32 {
     (0..common::WIDTH)
         .filter(|&x| {
@@ -34,18 +34,18 @@ fn set_speed(ossido: &Headless, scale: f64) {
 
 #[test]
 fn windows_open_from_98_percent() {
-    // Durate ×100: l'apertura dura 10 s, il primo screenshot la coglie all'inizio.
+    // Durations ×100: the opening lasts 10 s, the first screenshot catches it at the start.
     let ossido = Headless::start_with(
         "anim-open",
         (common::WIDTH, common::HEIGHT),
         &["--animation-scale", "100"],
     );
-    let _window = TestWindow::open_sized(&ossido.wayland, "apre", (200, 120));
+    let _window = TestWindow::open_sized(&ossido.wayland, "opens", (200, 120));
     let y = FIRST_WINDOW_AT + 60;
     let opening = red_width(&screenshot(&ossido), y);
-    eprintln!("in apertura: {opening} px su 200");
-    // Scala 0,98 → 196 px, al più qualche centesimo di avanzamento in più.
-    assert!((195..=198).contains(&opening), "in apertura: {opening} px");
+    eprintln!("opening: {opening} px of 200");
+    // Scale 0.98 → 196 px, at most a few hundredths of progress more.
+    assert!((195..=198).contains(&opening), "opening: {opening} px");
 
     set_speed(&ossido, 0.0);
     assert_eq!(red_width(&screenshot(&ossido), y), 200);
@@ -54,21 +54,21 @@ fn windows_open_from_98_percent() {
 #[test]
 fn closed_windows_fade_out() {
     let ossido = Headless::start("anim-close");
-    let mut window = TestWindow::open_sized(&ossido.wayland, "chiude", (200, 120));
+    let mut window = TestWindow::open_sized(&ossido.wayland, "closes", (200, 120));
     let (x, y) = (FIRST_WINDOW_AT + 100, FIRST_WINDOW_AT + 60);
     assert_eq!(pixel(&screenshot(&ossido), x, y), [255, 0, 0, 255]);
 
-    // Chiusura lenta: subito dopo, l'istantanea è ancora quasi opaca.
+    // Slow closing: right after, the snapshot is still almost opaque.
     set_speed(&ossido, 100.0);
     window.destroy_toplevel();
     let [r, ..] = pixel(&screenshot(&ossido), x, y);
-    eprintln!("in chiusura: rosso {r}");
+    eprintln!("closing: red {r}");
     assert!(
         r > 200,
-        "la finestra chiusa non svanisce dall'ultima immagine: rosso {r}"
+        "the closed window does not fade out from its last image: red {r}"
     );
 
-    // A fine animazione resta il fondo.
+    // At the end of the animation the background stays.
     set_speed(&ossido, 0.0);
     common::assert_clear_color(&screenshot(&ossido), x, y);
 }

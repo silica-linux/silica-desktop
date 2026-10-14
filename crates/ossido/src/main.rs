@@ -1,10 +1,10 @@
-//! Avvio di Ossido.
+//! Ossido startup.
 //!
 //! ```text
-//! ossido [--backend winit|headless] [--size LxA] [--scale N] [--control PORTA]
+//! ossido [--backend winit|headless] [--size WxH] [--scale N] [--control PORT]
 //!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
 //!     [--session-bus] [--logo-key none|rightctrl|rightalt] [--appearance light|dark]
-//!     [--spawn COMANDO]... [--spawn-shell COMANDO]...
+//!     [--spawn COMMAND]... [--spawn-shell COMMAND]...
 //! ```
 
 use std::process::ExitCode;
@@ -37,24 +37,24 @@ fn main() -> ExitCode {
 fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut options = Options::default();
     while let Some(arg) = args.next() {
-        let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
+        let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
             "--backend" => {
                 options.backend = match value()?.as_str() {
                     "winit" => BackendKind::Winit,
                     "headless" => BackendKind::Headless,
-                    other => return Err(format!("backend sconosciuto: {other}")),
+                    other => return Err(format!("unknown backend: {other}")),
                 }
             }
             "--size" => {
                 let size = value()?;
                 let (w, h) = size
                     .split_once('x')
-                    .ok_or(format!("dimensione non valida: {size}"))?;
+                    .ok_or(format!("invalid size: {size}"))?;
                 let parse = |n: &str| n.parse::<i32>().ok().filter(|n| (1..=16384).contains(n));
                 options.size = parse(w)
                     .zip(parse(h))
-                    .ok_or(format!("dimensione non valida: {size}"))?;
+                    .ok_or(format!("invalid size: {size}"))?;
             }
             "--scale" => {
                 let scale = value()?;
@@ -62,14 +62,11 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .parse()
                     .ok()
                     .filter(|s| (1..=4).contains(s))
-                    .ok_or(format!("scala non valida (1-4): {scale}"))?;
+                    .ok_or(format!("invalid scale (1-4): {scale}"))?;
             }
             "--control" => {
                 let port = value()?;
-                options.control = Some(
-                    port.parse()
-                        .map_err(|_| format!("porta non valida: {port}"))?,
-                );
+                options.control = Some(port.parse().map_err(|_| format!("invalid port: {port}"))?);
             }
             "--animation-scale" => {
                 let text = value()?;
@@ -77,20 +74,18 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .parse::<f64>()
                     .ok()
                     .filter(|scale| scale.is_finite() && (0.0..=1000.0).contains(scale))
-                    .ok_or(format!(
-                        "scala delle animazioni non valida (0–1000): {text}"
-                    ))?;
+                    .ok_or(format!("invalid animation scale (0–1000): {text}"))?;
             }
             "--glass" => {
                 let text = value()?;
                 options.glass = ossido::state::GlassSetting::parse(&text).ok_or(format!(
-                    "qualità del vetro sconosciuta (auto, full, frosted, opaque): {text}"
+                    "unknown glass quality (auto, full, frosted, opaque): {text}"
                 ))?;
             }
             "--background" => {
                 let hex = value()?;
                 options.background =
-                    parse_color(&hex).ok_or(format!("colore non valido (RRGGBB): {hex}"))?;
+                    parse_color(&hex).ok_or(format!("invalid color (RRGGBB): {hex}"))?;
             }
             "--spawn" => {
                 let command = value()?;
@@ -108,20 +103,20 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 options.appearance = match value()?.as_str() {
                     "light" => Some(false),
                     "dark" => Some(true),
-                    other => return Err(format!("aspetto sconosciuto (light, dark): {other}")),
+                    other => return Err(format!("unknown appearance (light, dark): {other}")),
                 }
             }
             "--spawn-shell" => {
                 let command = value()?;
                 options.spawn_shell.push(command);
             }
-            _ => return Err(format!("argomento sconosciuto: {arg}")),
+            _ => return Err(format!("unknown argument: {arg}")),
         }
     }
     Ok(options)
 }
 
-/// `RRGGBB` (con o senza `#`) in RGBA 0–1.
+/// `RRGGBB` (with or without `#`) as RGBA 0–1.
 fn parse_color(text: &str) -> Option<[f32; 4]> {
     let hex = text.strip_prefix('#').unwrap_or(text);
     if hex.len() != 6 || !hex.is_ascii() {

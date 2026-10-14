@@ -1,4 +1,4 @@
-//! Input: tastiera e puntatore verso le finestre.
+//! Input: keyboard and pointer to the windows.
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
@@ -17,7 +17,7 @@ use crate::decorations::{self, Hit};
 use crate::state::State;
 
 impl State {
-    /// Muove il puntatore in un punto del desktop (pixel logici).
+    /// Moves the pointer to a point of the desktop (logical pixels).
     pub fn pointer_move_to(&mut self, location: Point<f64, Logical>, time: u32) {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
@@ -25,7 +25,7 @@ impl State {
         if self.resizing.is_some() {
             self.resize_to(location);
         }
-        // Trascinamento per la barra: la cornice segue il punto di presa.
+        // Dragging by the bar: the frame follows the grab point.
         if let Some((window, grab)) = self.moving.clone() {
             let bar = decorations::titlebar_height(&window);
             let frame = (location - grab).to_i32_round::<i32>();
@@ -35,7 +35,7 @@ impl State {
         let over_layer = self
             .layer_under(&[Layer::Overlay, Layer::Top], location)
             .is_some();
-        // In Panorama le finestre non ricevono il puntatore (sono disegnate altrove).
+        // In Panorama the windows do not receive the pointer (they are drawn elsewhere).
         let in_panorama = self.panorama.is_some() && !self.over_dock_layer(location);
         if self.panorama.is_some() {
             self.panorama_pointer(location, std::time::Instant::now());
@@ -51,7 +51,7 @@ impl State {
             }
             _ => None,
         };
-        // Simboli: compaiono all'ingresso, spariscono poco dopo l'uscita.
+        // Symbols: they appear on entering, they disappear shortly after leaving.
         let now = std::time::Instant::now();
         let same = matches!((&hover, &self.buttons_hover),
             (Some(w), Some(h)) if *w == h.window && h.left.is_none());
@@ -80,7 +80,7 @@ impl State {
             _ => false,
         };
         self.titlebar_hover = hover;
-        // Sulla barra il puntatore non è su nessuna superficie del client.
+        // On the bar the pointer is not on any client surface.
         let under = match hit {
             Some(Hit::Titlebar(..)) => None,
             _ if in_panorama => None,
@@ -98,14 +98,14 @@ impl State {
         pointer.frame(self);
     }
 
-    /// Preme o rilascia un pulsante; la pressione dà il focus alla finestra sotto.
+    /// Presses or releases a button; the press gives the focus to the window below.
     pub fn pointer_button(&mut self, button: u32, state: ButtonState, time: u32) {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
-        // Panorama prende i clic, tranne quelli sul Dock e sui pannelli.
+        // Panorama takes the clicks, except those on the Dock and on the panels.
         if state == ButtonState::Pressed && self.panorama_open() && !self.over_dock_layer(location)
         {
             self.panorama_press = true;
@@ -119,13 +119,13 @@ impl State {
         }
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
             match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
-                // Un clic su un layer non tocca le finestre; il focus solo se lo chiede.
+                // A click on a layer does not touch the windows; the focus only if it asks for it.
                 Some((layer, _)) => {
                     if layer.can_receive_keyboard_focus() {
                         self.focus_layer(&layer);
                     }
                 }
-                // I bordi della cornice ridimensionano, anche appena fuori (MU-08).
+                // The frame edges resize, even just outside (MU-08).
                 None if !self.panorama_open()
                     && let Some((window, edges)) = self.resize_hit(location) =>
                 {
@@ -177,9 +177,8 @@ impl State {
         pointer.frame(self);
     }
 
-    /// Un tasto, vero o sintetico (`input.key`): prima le scorciatoie del catalogo, che
-    /// eseguono il loro comando e non arrivano all'app; il resto va alla superficie con il
-    /// focus.
+    /// A key, real or synthetic (`input.key`): first the catalog shortcuts, which run their
+    /// command and do not reach the app; the rest goes to the focused surface.
     pub fn handle_key(&mut self, code: Keycode, state: KeyState, time: u32) {
         let code = self.logo_key.remap(code);
         let Some(keyboard) = self.seat.get_keyboard() else {
@@ -187,7 +186,7 @@ impl State {
         };
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
-        // Esc chiude la vista aperta: si esegue il suo stesso comando.
+        // Esc closes the open view: its own command is run.
         let switcher = self.switcher_active;
         let logo_released = std::cell::Cell::new(false);
         let close_view = self.panorama_mode().map(|mode| match mode {
@@ -207,8 +206,8 @@ impl State {
                         .raw_latin_sym_or_raw_current_sym()
                         .unwrap_or(keysym.modified_sym()),
                 );
-                // Selettore delle app: Esc annulla, il tasto Logo rilasciato conferma
-                // (il rilascio arriva comunque all'app, che ne ha visto la pressione).
+                // App switcher: Esc cancels, the released Logo key confirms
+                // (the release reaches the app anyway, which saw the press).
                 if switcher {
                     if pressed && key == "Escape" {
                         return FilterResult::Intercept(silica_control::commands::SWITCHER_CANCEL);
@@ -245,12 +244,12 @@ impl State {
         if let Some(id) = command {
             let response = self.execute_command(id, serde_json::Value::Null);
             if let Err(err) = response {
-                warn!("scorciatoia {id}: {err}");
+                warn!("shortcut {id}: {err}");
             }
         }
     }
 
-    /// Il puntatore è su uno strato in primo piano che non è la barra dei menu (il Dock).
+    /// The pointer is on a front layer that is not the menu bar (the Dock).
     fn over_dock_layer(&self, location: Point<f64, Logical>) -> bool {
         self.layer_under(&[Layer::Overlay, Layer::Top], location)
             .is_some_and(|(layer, _)| layer.namespace() != "menubar")

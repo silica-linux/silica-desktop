@@ -1,7 +1,7 @@
-//! `silica-glass-v1` lato server: i client dichiarano regioni di vetro sulle loro
-//! superfici. Lo stato è doppio (si applica al `wl_surface.commit`) e le richieste sono
-//! input ostile: dimensioni, raggio e materiale si controllano, e un client che sbaglia
-//! riceve un errore di protocollo (disconnesso), mai un crash di Ossido.
+//! Server-side `silica-glass-v1`: clients declare glass regions on their surfaces. The state
+//! is double-buffered (it applies on `wl_surface.commit`) and the requests are hostile
+//! input: sizes, radius and material are checked, and a client that gets it wrong receives a
+//! protocol error (disconnected), never an Ossido crash.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,7 +16,7 @@ use smithay::wayland::compositor::{Cacheable, with_states};
 
 use crate::state::State;
 
-/// Le due famiglie di vetro misurate (`plan/reference/glass.md`).
+/// The two measured glass families (`plan/reference/glass.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Material {
@@ -26,20 +26,20 @@ pub enum Material {
     Notification,
 }
 
-/// La forma di una regione.
+/// The shape of a region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Shape {
-    /// Rettangolo con angoli ad arco di cerchio.
+    /// Rectangle with circular-arc corners.
     Rounded,
-    /// Punta rivolta in basso (`add_tip`, versione 4): base sul lato superiore, vertice al
-    /// centro del lato inferiore.
+    /// Downward tip (`add_tip`, version 4): base on the top side, apex at the middle of the
+    /// bottom side.
     Tip,
-    /// Punta rivolta in alto (`add_upward_tip`, versione 5).
+    /// Upward tip (`add_upward_tip`, version 5).
     UpwardTip,
 }
 
-/// Una regione di vetro, in pixel logici relativi alla superficie.
+/// A glass region, in logical pixels relative to the surface.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct GlassRegion {
     pub x: i32,
@@ -48,19 +48,19 @@ pub struct GlassRegion {
     pub height: i32,
     pub radius: f64,
     pub material: Material,
-    /// Opacità con cui si compone il vetro (dalla versione 3; 1 con `add_region`).
+    /// Opacity the glass is composed with (since version 3; 1 with `add_region`).
     pub opacity: f64,
     pub shape: Shape,
-    /// Le regioni si fondono solo nello stesso gruppo; un gruppo dopo si disegna sopra
-    /// (`separate`, versione 4).
+    /// Regions merge only within the same group; a later group is drawn on top
+    /// (`separate`, version 4).
     pub group: u32,
 }
 
-/// Lo stato doppio del vetro di una superficie.
+/// The double-buffered glass state of a surface.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GlassState {
     pub regions: Vec<GlassRegion>,
-    /// Il gruppo delle prossime regioni.
+    /// The group of the next regions.
     pub group: u32,
 }
 
@@ -74,11 +74,11 @@ impl Cacheable for GlassState {
     }
 }
 
-/// La superficie ha già un oggetto vetro (uno solo per superficie).
+/// The surface already has a glass object (only one per surface).
 #[derive(Default)]
 struct HasGlass(AtomicBool);
 
-/// Le regioni correnti di una superficie.
+/// The current regions of a surface.
 pub fn current_regions(surface: &WlSurface) -> Vec<GlassRegion> {
     with_states(surface, |states| {
         states
@@ -136,7 +136,7 @@ impl Dispatch<SilicaGlassManagerV1, ()> for State {
                 if already {
                     manager.post_error(
                         silica_glass_manager_v1::Error::AlreadyHasGlass,
-                        "la superficie ha già un oggetto vetro",
+                        "the surface already has a glass object",
                     );
                     return;
                 }
@@ -158,7 +158,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, Self>,
     ) {
-        // Superficie già distrutta: le richieste non hanno più effetto.
+        // Surface already destroyed: the requests have no effect anymore.
         let Ok(surface) = surface.upgrade() else {
             return;
         };
@@ -237,7 +237,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                     WEnum::Value(silica_glass_v1::Material::Clear) => Some(Material::Clear),
                     WEnum::Value(silica_glass_v1::Material::Thick) => Some(Material::Thick),
                     WEnum::Value(silica_glass_v1::Material::Regular) => Some(Material::Regular),
-                    // Dalla versione 2 del protocollo.
+                    // Since version 2 of the protocol.
                     WEnum::Value(silica_glass_v1::Material::Notification)
                         if glass.version() >= 2 =>
                     {
@@ -254,7 +254,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                     glass.post_error(
                         silica_glass_v1::Error::InvalidRegion,
                         format!(
-                            "regione non valida: {width}x{height}, raggio {radius}, opacità {opacity}"
+                            "invalid region: {width}x{height}, radius {radius}, opacity {opacity}"
                         ),
                     );
                     return;
@@ -280,7 +280,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                 if too_many {
                     glass.post_error(
                         silica_glass_v1::Error::TooManyRegions,
-                        format!("oltre {MAX_REGIONS} regioni"),
+                        format!("over {MAX_REGIONS} regions"),
                     );
                 }
             }
@@ -297,19 +297,19 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
     }
 }
 
-/// Una superficie con vetro in `glass.list`.
+/// A surface with glass in `glass.list`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GlassSurface {
-    /// Come in `perf.frames`: `window <id>` o `layer <namespace>`.
+    /// As in `perf.frames`: `window <id>` or `layer <namespace>`.
     pub surface: String,
-    /// Origine della superficie nell'output, in pixel logici.
+    /// Origin of the surface in the output, in logical pixels.
     pub x: i32,
     pub y: i32,
     pub regions: Vec<GlassRegion>,
 }
 
 impl State {
-    /// Finestre e layer con regioni di vetro correnti.
+    /// Windows and layers with current glass regions.
     pub fn glass_list(&self) -> Vec<GlassSurface> {
         let mut list = Vec::new();
         for window in self.space.elements().rev() {

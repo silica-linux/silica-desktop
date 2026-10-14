@@ -1,5 +1,5 @@
-//! wlr-layer-shell: superfici della shell (barra dei menu, Dock, sfondo) ancorate
-//! ai bordi dell'output, sopra o sotto le finestre.
+//! wlr-layer-shell: shell surfaces (menu bar, Dock, wallpaper) anchored to the output
+//! edges, above or below the windows.
 
 use smithay::delegate_layer_shell;
 use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
@@ -32,10 +32,10 @@ impl WlrLayerShellHandler for State {
             .as_ref()
             .and_then(Output::from_resource)
             .unwrap_or_else(|| self.output.clone());
-        info!("nuovo layer {namespace:?} ({layer:?})");
+        info!("new layer {namespace:?} ({layer:?})");
         let mut map = layer_map_for_output(&output);
         if let Err(err) = map.map_layer(&LayerSurface::new(surface, namespace)) {
-            warn!("layer non mappato: {err}");
+            warn!("layer not mapped: {err}");
         }
     }
 
@@ -54,8 +54,8 @@ impl WlrLayerShellHandler for State {
 delegate_layer_shell!(State);
 
 impl State {
-    /// Al commit di un layer: ridispone i layer e manda il primo configure. Un layer
-    /// con tastiera esclusiva sopra le finestre prende il focus.
+    /// On a layer's commit: rearranges the layers and sends the first configure. A layer
+    /// with exclusive keyboard above the windows takes the focus.
     pub fn layer_commit(&mut self, surface: &WlSurface) {
         let (layer, first) = {
             let mut map = layer_map_for_output(&self.output);
@@ -81,8 +81,8 @@ impl State {
         let exclusive = layer.cached_state().keyboard_interactivity
             == KeyboardInteractivity::Exclusive
             && matches!(layer.layer(), Layer::Top | Layer::Overlay);
-        // Un layer può chiedere la tastiera dopo il primo commit (Faro che si apre) e
-        // lasciarla (Faro che si chiude): conta il passaggio, non solo l'inizio.
+        // A layer may ask for the keyboard after the first commit (Faro opening) and
+        // release it (Faro closing): the transition counts, not only the start.
         layer
             .user_data()
             .insert_if_missing(|| WasExclusive(std::cell::Cell::new(false)));
@@ -104,7 +104,7 @@ impl State {
         }
     }
 
-    /// Il layer Top o Overlay che chiede la tastiera in esclusiva, se c'è.
+    /// The Top or Overlay layer asking for the keyboard exclusively, if any.
     pub fn exclusive_layer_surface(&self) -> Option<WlSurface> {
         let map = layer_map_for_output(&self.output);
         map.layers()
@@ -124,7 +124,7 @@ impl State {
         }
     }
 
-    /// Il layer di quel livello sotto un punto, con la sua posizione.
+    /// The layer of that level under a point, with its position.
     pub fn layer_under(
         &self,
         layers: &[Layer],
@@ -132,8 +132,8 @@ impl State {
     ) -> Option<(LayerSurface, Point<i32, Logical>)> {
         let map = layer_map_for_output(&self.output);
         let origin = self.space.output_geometry(&self.output)?.loc;
-        // Conta la regione d'input, non il rettangolo: un componente della shell nascosto
-        // (Faro chiuso) è trasparente e a schermo intero ma con la regione vuota.
+        // The input region counts, not the rectangle: a hidden shell component (a closed
+        // Faro) is transparent and full screen but with an empty region.
         layers.iter().find_map(|level| {
             map.layers_on(*level).rev().find_map(|layer| {
                 let geometry = map.layer_geometry(layer)?;
@@ -184,7 +184,7 @@ impl State {
             .collect()
     }
 
-    /// L'area libera dai layer con zona esclusiva: lì vanno le finestre.
+    /// The area free of layers with an exclusive zone: the windows go there.
     pub fn usable_area(&self) -> Rectangle<i32, Logical> {
         let map = layer_map_for_output(&self.output);
         let mut zone = map.non_exclusive_zone();
@@ -195,5 +195,5 @@ impl State {
     }
 }
 
-/// Se il layer chiedeva la tastiera in esclusiva al commit precedente.
+/// Whether the layer asked for the keyboard exclusively on the previous commit.
 struct WasExclusive(std::cell::Cell<bool>);

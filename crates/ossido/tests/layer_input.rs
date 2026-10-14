@@ -1,5 +1,5 @@
-//! Un layer con la regione d'input vuota (un componente della shell nascosto, come Faro
-//! chiuso) non deve prendere i clic diretti alle finestre sotto.
+//! A layer with an empty input region (a hidden shell component, like Faro when closed) must
+//! not take the clicks meant for the windows below.
 
 #![allow(
     clippy::unwrap_used,
@@ -105,10 +105,10 @@ delegate_noop!(App: ignore ZwlrLayerShellV1);
 #[test]
 fn a_layer_with_an_empty_input_region_lets_clicks_through() {
     let ossido = Headless::start("layer-input");
-    let _first = TestWindow::open(&ossido.wayland, "prima");
-    let _second = TestWindow::open(&ossido.wayland, "seconda");
+    let _first = TestWindow::open(&ossido.wayland, "first");
+    let _second = TestWindow::open(&ossido.wayland, "second");
 
-    // Overlay a schermo intero, trasparente, con la regione d'input vuota.
+    // Full-screen overlay, transparent, with an empty input region.
     let conn = Connection::from_socket(UnixStream::connect(&ossido.wayland).unwrap()).unwrap();
     let mut queue = conn.new_event_queue();
     let qh = queue.handle();
@@ -120,7 +120,7 @@ fn a_layer_with_an_empty_input_region_lets_clicks_through() {
         &surface,
         None,
         zwlr_layer_shell_v1::Layer::Overlay,
-        "nascosto".to_owned(),
+        "hidden".to_owned(),
         &qh,
         (),
     );
@@ -152,7 +152,7 @@ fn a_layer_with_an_empty_input_region_lets_clicks_through() {
     surface.commit();
     queue.roundtrip(&mut app).unwrap();
 
-    // Il clic sulla prima finestra (sotto la seconda solo in parte) le dà il focus.
+    // The click on the first window (only partly below the second) gives it the focus.
     let at = FIRST_WINDOW_AT as f64;
     ossido
         .client()
@@ -160,10 +160,10 @@ fn a_layer_with_an_empty_input_region_lets_clicks_through() {
         .unwrap();
     let list: Vec<WindowInfo> =
         serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
-    assert_eq!(list[0].title.as_deref(), Some("prima"), "{list:?}");
+    assert_eq!(list[0].title.as_deref(), Some("first"), "{list:?}");
     assert!(list[0].focused);
 
-    // Il layer chiede la tastiera dopo il primo commit (Faro che si apre): la prende...
+    // The layer asks for the keyboard after the first commit (Faro opening): it takes it...
     layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive);
     surface.commit();
     queue.roundtrip(&mut app).unwrap();
@@ -172,7 +172,7 @@ fn a_layer_with_an_empty_input_region_lets_clicks_through() {
         .call(silica_control::commands::LAYER_LIST, Value::Null)
         .unwrap();
     assert_eq!(layers[0]["focused"], true, "{layers}");
-    // ...e la lascia: torna alla finestra in cima.
+    // ...and releases it: back to the top window.
     layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::None);
     surface.commit();
     queue.roundtrip(&mut app).unwrap();

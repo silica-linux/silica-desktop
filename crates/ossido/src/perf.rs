@@ -1,9 +1,9 @@
-//! Misure dei client, uguali per ogni toolkit: ritmo dei frame visto dal compositor,
-//! tempo di avvio e memoria dei processi (`perf.frames`, `perf.process`).
+//! Client measurements, the same for every toolkit: frame pace as seen by the compositor,
+//! startup time and process memory (`perf.frames`, `perf.process`).
 //!
-//! Un frame è un commit con un buffer nuovo; l'intervallo è il tempo fra due frame della
-//! stessa superficie. Si misura in Ossido perché il confronto fra toolkit (M1.5) non può
-//! dipendere da contatori interni a ciascuno.
+//! A frame is a commit with a new buffer; the interval is the time between two frames of the
+//! same surface. It is measured in Ossido because the comparison between toolkits (M1.5)
+//! cannot depend on counters internal to each of them.
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -13,11 +13,11 @@ use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Resource, Weak};
 
-/// Intervalli tenuti per superficie: più di 2 minuti a 60 Hz.
+/// Intervals kept per surface: more than 2 minutes at 60 Hz.
 const MAX_INTERVALS: usize = 8192;
-/// Intervalli oltre questa soglia finiscono nel log di debug, per vedere quando cadono.
+/// Intervals over this threshold end up in the debug log, to see when they happen.
 const SLOW_LOG: Duration = Duration::from_millis(25);
-/// Quanti antenati risalire per legare un client a un processo lanciato (sh -c, wrapper).
+/// How many ancestors to walk up to tie a client to a launched process (sh -c, wrapper).
 const MAX_ANCESTORS: usize = 8;
 
 #[derive(Debug)]
@@ -34,17 +34,17 @@ struct Track {
 pub struct Perf {
     surfaces: HashMap<ObjectId, Track>,
     launches: HashMap<u32, Instant>,
-    /// Durata dei rendering di Ossido (backend winit), gli ultimi `MAX_INTERVALS`.
+    /// Duration of Ossido's renders (winit backend), the last `MAX_INTERVALS`.
     renders: VecDeque<Duration>,
 }
 
 impl Perf {
-    /// Un processo avviato da Ossido: il suo primo buffer misura il tempo di avvio.
+    /// A process started by Ossido: its first buffer measures the startup time.
     pub fn launched(&mut self, pid: u32, at: Instant) {
         self.launches.insert(pid, at);
     }
 
-    /// Un commit con un buffer nuovo su `surface`, del client `pid`.
+    /// A commit with a new buffer on `surface`, from client `pid`.
     pub fn frame(&mut self, surface: &WlSurface, pid: Option<u32>, now: Instant) {
         let track = self.surfaces.entry(surface.id()).or_insert_with(|| Track {
             surface: surface.downgrade(),
@@ -69,7 +69,7 @@ impl Perf {
             let interval = now.saturating_duration_since(last);
             if interval > SLOW_LOG {
                 tracing::debug!(
-                    "frame lento: {:.1} ms dopo {} frame (pid {:?})",
+                    "slow frame: {:.1} ms after {} frames (pid {:?})",
                     millis(interval),
                     track.frames,
                     track.pid
@@ -81,7 +81,7 @@ impl Perf {
         track.frames = track.frames.saturating_add(1);
     }
 
-    /// Le misure delle superfici ancora vive; `label` dà il nome di una superficie.
+    /// The measurements of the surfaces still alive; `label` gives a surface its name.
     pub fn report(
         &mut self,
         period: Duration,
@@ -114,7 +114,7 @@ impl Perf {
         report
     }
 
-    /// Un rendering di Ossido durato `duration`.
+    /// An Ossido render that lasted `duration`.
     pub fn rendered(&mut self, duration: Duration) {
         if self.renders.len() >= MAX_INTERVALS {
             self.renders.pop_front();
@@ -122,11 +122,11 @@ impl Perf {
         self.renders.push_back(duration);
     }
 
-    /// Le durate dei rendering dall'ultimo azzeramento.
+    /// The render durations since the last reset.
     pub fn render_times(&mut self, reset: bool) -> silica_control::commands::RenderTimes {
         let durations: Vec<Duration> = self.renders.iter().copied().collect();
-        // Il conteggio dei lenti non serve qui: un periodo lungo ma finito (mul_f64 su
-        // Duration::MAX andrebbe in overflow).
+        // Counting the slow ones is not needed here: a long but finite period (mul_f64 on
+        // Duration::MAX would overflow).
         let stats = Stats::of(&durations, Duration::from_secs(3600));
         if reset {
             self.renders.clear();
@@ -141,7 +141,7 @@ impl Perf {
         }
     }
 
-    /// Azzera i frame contati; il tempo di avvio resta, non si ripete.
+    /// Resets the counted frames; the startup time stays, it does not repeat.
     pub fn reset(&mut self) {
         for track in self.surfaces.values_mut() {
             track.last = None;
@@ -155,7 +155,7 @@ fn millis(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
 
-/// Statistiche degli intervalli, in millisecondi.
+/// Interval statistics, in milliseconds.
 #[derive(Debug, Default, PartialEq)]
 struct Stats {
     mean: f64,
@@ -173,7 +173,7 @@ impl Stats {
         }
         let mut sorted = intervals.to_vec();
         sorted.sort_unstable();
-        // Percentile per rango più vicino: il più piccolo valore con almeno p% dei campioni.
+        // Nearest-rank percentile: the smallest value with at least p% of the samples.
         let percentile = |p: f64| {
             let rank = (p / 100.0 * sorted.len() as f64).ceil() as usize;
             sorted
@@ -194,7 +194,7 @@ impl Stats {
     }
 }
 
-/// Il primo processo lanciato da Ossido fra `pid` e i suoi antenati.
+/// The first process launched by Ossido among `pid` and its ancestors.
 fn launched_ancestor(pid: u32, launches: &HashMap<u32, Instant>) -> Option<Instant> {
     let mut current = pid;
     for _ in 0..MAX_ANCESTORS {
@@ -209,22 +209,22 @@ fn launched_ancestor(pid: u32, launches: &HashMap<u32, Instant>) -> Option<Insta
     None
 }
 
-/// Il genitore di un processo, dal quarto campo di `/proc/<pid>/stat`.
+/// The parent of a process, from the fourth field of `/proc/<pid>/stat`.
 fn parent_pid(pid: u32) -> Option<u32> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     parse_parent(&stat)
 }
 
 fn parse_parent(stat: &str) -> Option<u32> {
-    // Il nome del comando è fra parentesi e può contenerne altre: si parte dall'ultima.
+    // The command name is in parentheses and may contain others: start from the last one.
     let (_, rest) = stat.rsplit_once(')')?;
     rest.split_whitespace().nth(1)?.parse().ok()
 }
 
-/// RSS e PSS di un processo da `/proc/<pid>/smaps_rollup`.
+/// RSS and PSS of a process from `/proc/<pid>/smaps_rollup`.
 pub fn process_info(pid: u32) -> Result<ProcessInfo, String> {
     let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup"))
-        .map_err(|e| format!("processo {pid}: {e}"))?;
+        .map_err(|e| format!("process {pid}: {e}"))?;
     parse_rollup(pid, &rollup)
 }
 
@@ -240,7 +240,7 @@ fn parse_rollup(pid: u32, rollup: &str) -> Result<ProcessInfo, String> {
                     .parse::<u64>()
                     .ok()
             })
-            .ok_or_else(|| format!("{name} assente in smaps_rollup"))
+            .ok_or_else(|| format!("{name} missing in smaps_rollup"))
     };
     Ok(ProcessInfo {
         pid,
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(stats.p50, 16.0);
         assert_eq!(stats.p99, 30.0);
         assert_eq!(stats.max, 50.0);
-        // Oltre 24 ms: 30 e 50.
+        // Over 24 ms: 30 and 50.
         assert_eq!(stats.slow, 2);
         assert!((stats.mean - 16.48).abs() < 1e-9);
         assert_eq!(Stats::of(&[], ms(16)), Stats::default());

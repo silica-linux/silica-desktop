@@ -1,5 +1,5 @@
-//! Protocolli della shell: solo i componenti della shell (`SILICA_SHELL=1`) vedono
-//! l'elenco delle finestre e `silica_shell_manager_v1`, che attiva una finestra.
+//! Shell protocols: only the shell components (`SILICA_SHELL=1`) see the window list and
+//! `silica_shell_manager_v1`, which activates a window.
 
 #![allow(
     clippy::unwrap_used,
@@ -37,18 +37,18 @@ struct Shell {
     globals: Vec<String>,
     list: Option<ExtForeignToplevelListV1>,
     manager: Option<SilicaShellManagerV1>,
-    /// (identificatore, titolo) delle finestre annunciate.
+    /// (identifier, title) of the announced windows.
     toplevels: Vec<(String, String)>,
-    /// Gli identificatori annunciati con `focused`.
+    /// The identifiers announced with `focused`.
     focused: Vec<String>,
-    /// Gli eventi `minimized` (identificatore, stato) e la miniatura ricevuta.
+    /// The `minimized` events (identifier, state) and the thumbnail received.
     minimized: Vec<(String, u32)>,
     thumbnail: Option<(u32, u32)>,
-    /// I comandi inoltrati da Ossido.
+    /// The commands forwarded by Ossido.
     commands: Vec<String>,
-    /// I popover di disposizione chiesti (identificatore, x, y).
+    /// The arrangement popovers requested (identifier, x, y).
     window_menus: Vec<(String, i32, i32)>,
-    /// Gli stati annunciati dai componenti (argomento, valore).
+    /// The states announced by the components (topic, value).
     broadcasts: Vec<(String, String)>,
 }
 
@@ -148,8 +148,8 @@ impl Dispatch<SilicaShellManagerV1, ()> for Shell {
     }
 }
 
-/// Si collega, legge i global e le finestre; se è un componente della shell attiva la
-/// finestra "prima". Stampa i global trovati, uno per riga.
+/// Connects, reads the globals and the windows; if it is a shell component it activates the
+/// window "first". Prints the globals found, one per line.
 fn shell_client(socket: &str) {
     let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
     let mut queue = conn.new_event_queue();
@@ -158,7 +158,7 @@ fn shell_client(socket: &str) {
     conn.display().get_registry(&qh, ());
     queue.roundtrip(&mut shell).unwrap();
     queue.roundtrip(&mut shell).unwrap();
-    // Un annuncio: lo manda (se c'è un valore) e stampa quelli ricevuti, anche al collegamento.
+    // An announcement: sends it (if there is a value) and prints the received ones, also on connection.
     if let Ok(value) = std::env::var(CHILD_BROADCAST) {
         if let (Some(manager), false) = (shell.manager.clone(), value.is_empty()) {
             manager.broadcast("controlcenter.open".to_owned(), value);
@@ -169,7 +169,7 @@ fn shell_client(socket: &str) {
         }
         return;
     }
-    // Le finestre ridotte annunciate al collegamento e la miniatura della prima.
+    // The minimized windows announced on connection and the thumbnail of the first.
     if std::env::var_os(CHILD_THUMBNAIL).is_some() {
         if let (Some(manager), Some((identifier, _))) =
             (shell.manager.clone(), shell.minimized.first().cloned())
@@ -198,7 +198,7 @@ fn shell_client(socket: &str) {
         }
         return;
     }
-    // In ascolto per qualche secondo: il test padre intanto preme i tasti.
+    // Listening for a few seconds: meanwhile the parent test presses the keys.
     if let Ok(ms) = std::env::var(CHILD_LISTEN) {
         println!("READY");
         let deadline =
@@ -218,12 +218,12 @@ fn shell_client(socket: &str) {
     let target = shell
         .toplevels
         .iter()
-        .find(|(_, title)| title == "prima")
+        .find(|(_, title)| title == "first")
         .map(|(identifier, _)| identifier.clone());
     if let (Some(manager), Some(identifier)) = (shell.manager.clone(), target) {
         manager.activate(identifier);
         queue.roundtrip(&mut shell).unwrap();
-        // Un comando del catalogo chiesto dalla shell torna a tutta la shell.
+        // A catalog command requested by the shell goes back to the whole shell.
         manager.execute("faro.toggle".to_owned());
         manager.execute("notifications.toggle".to_owned());
         manager.execute("launcher.toggle".to_owned());
@@ -248,7 +248,7 @@ fn shell_client(socket: &str) {
     }
 }
 
-/// Il processo figlio: gira solo quando il test padre lo lancia con il socket.
+/// The child process: runs only when the parent test launches it with the socket.
 #[test]
 fn shell_child() {
     if let Ok(socket) = std::env::var(CHILD_SOCKET) {
@@ -279,8 +279,8 @@ fn run_child(socket: &std::path::Path, shell: bool) -> String {
 #[test]
 fn only_shell_components_see_the_window_list_and_can_activate() {
     let ossido = Headless::start("shell");
-    let _first = TestWindow::open(&ossido.wayland, "prima");
-    let _second = TestWindow::open(&ossido.wayland, "seconda");
+    let _first = TestWindow::open(&ossido.wayland, "first");
+    let _second = TestWindow::open(&ossido.wayland, "second");
 
     let outsider = run_child(&ossido.wayland, false);
     assert!(outsider.contains("GLOBAL wl_compositor"), "{outsider}");
@@ -293,22 +293,22 @@ fn only_shell_components_see_the_window_list_and_can_activate() {
     let shell = run_child(&ossido.wayland, true);
     assert!(shell.contains("GLOBAL silica_shell_manager_v1"), "{shell}");
     assert!(
-        shell.contains("TOPLEVEL prima") && shell.contains("TOPLEVEL seconda"),
+        shell.contains("TOPLEVEL first") && shell.contains("TOPLEVEL second"),
         "{shell}"
     );
 
-    // Al collegamento il focus era su "seconda"; dopo l'attivazione su "prima".
+    // On connection the focus was on "second"; after the activation on "first".
     let focused: Vec<&str> = shell.lines().filter(|l| l.starts_with("FOCUSED")).collect();
-    assert_eq!(focused, ["FOCUSED seconda", "FOCUSED prima"], "{shell}");
+    assert_eq!(focused, ["FOCUSED second", "FOCUSED first"], "{shell}");
 
     assert!(shell.contains("COMMAND faro.toggle"), "{shell}");
     assert!(shell.contains("COMMAND notifications.toggle"), "{shell}");
     assert!(shell.contains("COMMAND launcher.toggle"), "{shell}");
 
-    // Il figlio della shell ha attivato "prima": ora ha il focus ed è in cima.
+    // The shell's child activated "first": now it has the focus and is on top.
     let list: Vec<WindowInfo> =
         serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
-    assert_eq!(list[0].title.as_deref(), Some("prima"), "{list:?}");
+    assert_eq!(list[0].title.as_deref(), Some("first"), "{list:?}");
     assert!(list[0].focused);
 }
 
@@ -338,12 +338,12 @@ fn the_logo_key_drives_the_app_switcher() {
         };
         c.call(INPUT_KEY, params).unwrap();
     };
-    // ⌘Tab Tab, poi ⌘ rilasciato: due passi e la conferma.
+    // ⌘Tab Tab, then ⌘ released: two steps and the confirmation.
     key("Super_L", Some(true));
     key("Tab", None);
     key("Tab", None);
     key("Super_L", Some(false));
-    // ⌘⇧Tab ed Esc: indietro e annullato; il rilascio dopo non conferma niente.
+    // ⌘⇧Tab and Esc: back and cancelled; the release afterwards confirms nothing.
     key("Super_L", Some(true));
     key("Shift_L", Some(true));
     key("Tab", None);
@@ -374,12 +374,12 @@ fn activating_a_window_brings_all_the_windows_of_its_app() {
     use common::client::APP_ID;
     use silica_control::commands::WINDOW_FOCUS;
     let ossido = Headless::start("shell-app");
-    APP_ID.with(|id| *id.borrow_mut() = "uno".to_owned());
-    let _first = TestWindow::open(&ossido.wayland, "prima");
+    APP_ID.with(|id| *id.borrow_mut() = "one".to_owned());
+    let _first = TestWindow::open(&ossido.wayland, "first");
     APP_ID.with(|id| *id.borrow_mut() = "due".to_owned());
-    let _other = TestWindow::open(&ossido.wayland, "altra");
-    APP_ID.with(|id| *id.borrow_mut() = "uno".to_owned());
-    let _third = TestWindow::open(&ossido.wayland, "terza");
+    let _other = TestWindow::open(&ossido.wayland, "other");
+    APP_ID.with(|id| *id.borrow_mut() = "one".to_owned());
+    let _third = TestWindow::open(&ossido.wayland, "third");
     APP_ID.with(|id| id.borrow_mut().clear());
     let titles = |ossido: &Headless| -> Vec<String> {
         let list: Vec<WindowInfo> =
@@ -387,30 +387,30 @@ fn activating_a_window_brings_all_the_windows_of_its_app() {
                 .unwrap();
         list.iter().filter_map(|w| w.title.clone()).collect()
     };
-    // "altra" in cima: prima < terza < altra.
+    // "other" on top: first < third < other.
     let other = {
         let list: Vec<WindowInfo> =
             serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap())
                 .unwrap();
         list.into_iter()
-            .find(|w| w.title.as_deref() == Some("altra"))
+            .find(|w| w.title.as_deref() == Some("other"))
             .unwrap()
     };
     ossido
         .client()
         .call(WINDOW_FOCUS, json!({"id": other.id}))
         .unwrap();
-    assert_eq!(titles(&ossido), ["altra", "terza", "prima"]);
-    // Il figlio della shell attiva "prima": vengono davanti tutte e due le finestre di "uno",
-    // con "prima" (quella chiesta) in cima.
+    assert_eq!(titles(&ossido), ["other", "third", "first"]);
+    // The shell's child activates "first": both windows of "one" come to the front, with
+    // "first" (the requested one) on top.
     run_child(&ossido.wayland, true);
-    assert_eq!(titles(&ossido), ["prima", "terza", "altra"]);
+    assert_eq!(titles(&ossido), ["first", "third", "other"]);
 }
 
 #[test]
 fn minimized_windows_are_announced_with_a_thumbnail() {
     let ossido = Headless::start_with("shell-thumbnail", (640, 400), &["--animation-scale", "1"]);
-    let _window = TestWindow::open_sized(&ossido.wayland, "ridotta", (300, 200));
+    let _window = TestWindow::open_sized(&ossido.wayland, "minimized", (300, 200));
     ossido
         .client()
         .call(silica_control::commands::WINDOW_MINIMIZE, Value::Null)
@@ -430,7 +430,7 @@ fn minimized_windows_are_announced_with_a_thumbnail() {
         .unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
     assert!(out.contains("MINIMIZED 1"), "{out}");
-    // La cornice 300 × 200 (senza ombra) sta nei 256 pt: ridotta a 256 × ~171.
+    // The 300 × 200 frame (without shadow) fits in the 256 pt: reduced to 256 × ~171.
     let line = out
         .lines()
         .find(|l| l.starts_with("THUMBNAIL"))
@@ -442,17 +442,17 @@ fn minimized_windows_are_announced_with_a_thumbnail() {
         .collect();
     assert_eq!(numbers[0], 256, "{line}");
     assert!((160..=180).contains(&numbers[1]), "{line}");
-    // Quasi tutti i pixel sono pieni (la finestra rossa, senza ombra intorno).
+    // Almost all the pixels are full (the red window, without a shadow around it).
     assert!(numbers[2] > 256 * 160 * 9 / 10, "{line}");
 }
 
-/// Pressione lunga sul pulsante verde: la shell riceve il popover di disposizione con la
-/// punta sotto il pulsante, e il rilascio non porta la finestra a schermo intero.
+/// Long press on the green button: the shell receives the arrangement popover with the tip
+/// below the button, and the release does not take the window to full screen.
 #[test]
 fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
     use silica_control::commands::{INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE};
     let ossido = Headless::start("shell-window-menu");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "disponi", (300, 200));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "arrange", (300, 200));
     let child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -472,7 +472,7 @@ fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
     let list: Vec<WindowInfo> =
         serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
     let info = &list[0];
-    // Il pulsante verde: centro x 72, y 26 della barra, che sta sopra il contenuto.
+    // The green button: center x 72, y 26 of the bar, which sits above the content.
     let (bx, by) = (info.x + 72, info.y - 52 + 26);
     c.call(INPUT_POINTER_MOVE, json!({"x": bx, "y": by}))
         .unwrap();
@@ -492,16 +492,16 @@ fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
     let menu = out
         .lines()
         .find(|l| l.starts_with("WINDOW_MENU"))
-        .unwrap_or_else(|| panic!("nessun popover: {out}"));
-    // La punta sotto il pulsante: x del centro, y della base del disco (raggio 7).
+        .unwrap_or_else(|| panic!("no popover: {out}"));
+    // The tip below the button: x of the center, y of the base of the disc (radius 7).
     assert_eq!(menu, format!("WINDOW_MENU {} {}", bx, by + 7));
     let list: Vec<WindowInfo> =
         serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
     assert!(!list[0].fullscreen, "{list:?}");
 }
 
-/// Uno stato annunciato da un componente torna a tutti (anche al mittente) e chi si collega
-/// dopo riceve l'ultimo valore.
+/// A state announced by a component goes back to everyone (the sender too) and whoever
+/// connects later receives the last value.
 #[test]
 fn shell_components_share_their_state_with_broadcast() {
     let ossido = Headless::start("shell-broadcast");
@@ -526,7 +526,7 @@ fn shell_components_share_their_state_with_broadcast() {
         sender.contains("BROADCAST controlcenter.open=1"),
         "{sender}"
     );
-    // Un componente che si collega dopo, senza annunciare niente.
+    // A component connecting later, without announcing anything.
     let later = run("");
     assert!(later.contains("BROADCAST controlcenter.open=1"), "{later}");
 }

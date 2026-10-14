@@ -1,10 +1,10 @@
-//! I protocolli della shell: `ext-foreign-toplevel-list` (le finestre aperte, per il Dock)
-//! e `silica-shell-v1` (attivare una finestra, avviare un'app).
+//! The shell protocols: `ext-foreign-toplevel-list` (the open windows, for the Dock) and
+//! `silica-shell-v1` (activating a window, starting an app).
 //!
-//! Solo i componenti della shell li vedono: processi con `SILICA_SHELL=1` nell'ambiente,
-//! che Ossido mette quando li lancia (`--shell`, `app.launch` con `shell: true`). Non è
-//! una barriera contro altri processi dello stesso utente, che possono mettere la stessa
-//! variabile: quella arriverà con security-context (sandbox delle app).
+//! Only the shell components see them: processes with `SILICA_SHELL=1` in the environment,
+//! which Ossido sets when it launches them (`--shell`, `app.launch` with `shell: true`). It is
+//! not a barrier against other processes of the same user, which can set the same variable:
+//! that will come with security-context (app sandboxing).
 
 use silica_protocols::shell::SHELL_ENV;
 use silica_protocols::shell::server::silica_shell_manager_v1::{self, SilicaShellManagerV1};
@@ -24,8 +24,8 @@ use tracing::{info, warn};
 
 use crate::state::State;
 
-/// Il processo all'altro capo del socket è un componente della shell (vedi il commento
-/// del modulo): pid da SO_PEERCRED, ambiente da `/proc/<pid>/environ`.
+/// The process at the other end of the socket is a shell component (see the module comment):
+/// pid from SO_PEERCRED, environment from `/proc/<pid>/environ`.
 pub fn stream_is_shell(stream: &std::os::unix::net::UnixStream) -> bool {
     let Ok(credentials) = rustix::net::sockopt::socket_peercred(stream) else {
         return false;
@@ -40,7 +40,7 @@ pub fn stream_is_shell(stream: &std::os::unix::net::UnixStream) -> bool {
         .any(|entry| entry == marker.as_bytes())
 }
 
-/// Il client è un componente della shell (deciso alla connessione).
+/// The client is a shell component (decided on connection).
 pub fn is_shell_client(client: &Client) -> bool {
     client
         .get_data::<crate::state::ClientState>()
@@ -65,12 +65,12 @@ pub struct ShellGlobal {
     filter: Box<dyn Fn(&Client) -> bool + Send + Sync>,
 }
 
-/// La lista delle finestre per la shell, con lo stesso filtro.
+/// The window list for the shell, with the same filter.
 pub fn toplevel_list(dh: &DisplayHandle) -> ForeignToplevelListState {
     ForeignToplevelListState::new_with_filter::<State>(dh, is_shell_client)
 }
 
-/// Titolo e app id di un toplevel.
+/// Title and app id of a toplevel.
 fn title_and_app_id(toplevel: &ToplevelSurface) -> (String, String) {
     with_states(toplevel.wl_surface(), |states| {
         states
@@ -88,7 +88,7 @@ fn title_and_app_id(toplevel: &ToplevelSurface) -> (String, String) {
 }
 
 impl State {
-    /// Una finestra nuova entra nell'elenco della shell.
+    /// A new window enters the shell's list.
     pub fn publish_toplevel(&mut self, window: &Window) {
         let Some(toplevel) = window.toplevel() else {
             return;
@@ -100,7 +100,7 @@ impl State {
         window.user_data().insert_if_missing(|| handle);
     }
 
-    /// Titolo o app id cambiati: la shell li riceve.
+    /// Title or app id changed: the shell receives them.
     pub fn update_toplevel(&mut self, surface: &ToplevelSurface) {
         let Some(window) = self
             .space
@@ -119,7 +119,7 @@ impl State {
         handle.send_done();
     }
 
-    /// La finestra è chiusa: esce dall'elenco.
+    /// The window is closed: it leaves the list.
     pub fn unpublish_toplevel(&mut self, surface: &ToplevelSurface) {
         let window = self
             .space
@@ -137,7 +137,7 @@ impl State {
             .retain(|(w, _)| w.toplevel() != Some(surface));
     }
 
-    /// L'identificatore della finestra di questa superficie, vuoto se non è una finestra.
+    /// The identifier of this surface's window, empty if it is not a window.
     fn identifier_of(&self, focus: Option<&WlSurface>) -> String {
         focus
             .and_then(|focus| {
@@ -150,15 +150,15 @@ impl State {
             .unwrap_or_default()
     }
 
-    /// L'identificatore della finestra con il focus, vuoto se nessuna.
+    /// The identifier of the focused window, empty if none.
     pub fn focused_identifier(&self) -> String {
         let focus = self.seat.get_keyboard().and_then(|k| k.current_focus());
         self.identifier_of(focus.as_ref())
     }
 
-    /// Manda la finestra con il focus ai componenti della shell (se è cambiata). Si chiama
-    /// dal callback del cambio di focus, con la superficie: rileggere il focus dalla
-    /// tastiera lì dentro ne riprenderebbe il lock.
+    /// Sends the focused window to the shell components (if it changed). It is called from
+    /// the focus change callback, with the surface: reading the focus from the keyboard in
+    /// there would take its lock again.
     pub fn announce_focus(&mut self, focus: Option<&WlSurface>) {
         let identifier = self.identifier_of(focus);
         if self.announced_focus.as_deref() == Some(identifier.as_str()) {
@@ -171,7 +171,7 @@ impl State {
         self.announced_focus = Some(identifier);
     }
 
-    /// Inoltra un comando ai componenti della shell; quanti l'hanno ricevuto.
+    /// Forwards a command to the shell components; how many received it.
     pub fn forward_to_shell(&mut self, id: &str) -> usize {
         self.shell_managers.retain(|manager| manager.is_alive());
         for manager in &self.shell_managers {
@@ -180,7 +180,7 @@ impl State {
         self.shell_managers.len()
     }
 
-    /// Annuncia ai componenti della shell che una finestra è stata ridotta o è tornata.
+    /// Announces to the shell components that a window was minimized or restored.
     pub fn announce_minimized(&mut self, window: &Window, minimized: bool) {
         let Some(identifier) = window
             .user_data()
@@ -197,15 +197,15 @@ impl State {
         }
     }
 
-    /// Uno stato annunciato da un componente della shell, rimandato a tutti e ricordato per
-    /// chi si collega dopo (al più 64 argomenti, testi di al più 256 byte).
+    /// A state announced by a shell component, sent back to all of them and remembered for
+    /// whoever binds later (at most 64 topics, texts of at most 256 bytes).
     pub fn broadcast_to_shell(&mut self, topic: String, value: String) {
         if topic.len() > 256 || value.len() > 256 {
-            warn!("shell: broadcast troppo lungo, ignorato");
+            warn!("shell: broadcast too long, ignored");
             return;
         }
         if !self.shell_states.contains_key(&topic) && self.shell_states.len() >= 64 {
-            warn!("shell: troppi argomenti di broadcast, ignorato {topic}");
+            warn!("shell: too many broadcast topics, ignored {topic}");
             return;
         }
         self.shell_managers.retain(|manager| manager.is_alive());
@@ -217,8 +217,8 @@ impl State {
         self.shell_states.insert(topic, value);
     }
 
-    /// Chiede ai componenti della shell il popover di disposizione della finestra, con la
-    /// punta verso `point` (sotto il pulsante dello schermo intero). Quanti l'hanno ricevuto.
+    /// Asks the shell components for the arrangement popover of the window, with the tip
+    /// towards `point` (below the full-screen button). How many received it.
     pub fn announce_window_menu(&mut self, window: &Window, point: Point<i32, Logical>) -> usize {
         let Some(identifier) = window
             .user_data()
@@ -238,8 +238,8 @@ impl State {
         sent
     }
 
-    /// Scrive nel file la miniatura della finestra ridotta con questo identificatore;
-    /// restituisce la sua dimensione (0 × 0 se non c'è).
+    /// Writes the thumbnail of the minimized window with this identifier into the file;
+    /// returns its size (0 × 0 if there is none).
     fn write_thumbnail(&self, identifier: &str, fd: std::os::fd::OwnedFd) -> (u32, u32) {
         use std::io::{Seek, Write};
         let Some(window) = self.minimized.iter().map(|(w, _)| w).find(|w| {
@@ -266,13 +266,13 @@ impl State {
         match written {
             Ok(()) => (*w, *h),
             Err(err) => {
-                warn!("miniatura: {err}");
+                warn!("thumbnail: {err}");
                 (0, 0)
             }
         }
     }
 
-    /// La finestra con questo identificatore della lista: focus, e torna se era ridotta.
+    /// The window with this list identifier: focus, and it comes back if it was minimized.
     pub fn activate_identifier(&mut self, identifier: &str) {
         let window = self
             .space
@@ -287,9 +287,9 @@ impl State {
         let Some(window) = window else {
             return;
         };
-        // Come un clic sull'app nel Dock (dock.md, D-03): tutte le finestre dell'app sullo
-        // schermo vengono davanti nel loro ordine, con quella chiesta in cima. Una finestra
-        // ridotta torna da sola (il Dock, se sono tutte ridotte, chiede l'ultima ridotta).
+        // Like a click on the app in the Dock (dock.md, D-03): all the app windows on screen
+        // come forward in their order, with the requested one on top. A minimized window
+        // comes back by itself (the Dock, if they are all minimized, asks for the last one).
         if self.space.elements().any(|w| *w == window)
             && let Some(app) = crate::panorama::window_app(&window)
         {
@@ -302,7 +302,7 @@ impl State {
             for w in &same {
                 self.space.raise_element(w, false);
             }
-            // La finestra chiesta in cima (il Dock passa quella dell'app usata per ultima).
+            // The requested window on top (the Dock passes the app's most recently used one).
             self.focus_window(Some(window));
             return;
         }
@@ -365,7 +365,7 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
                 state.activate_identifier(&identifier);
             }
             silica_shell_manager_v1::Request::Launch { command } => match state.launch(&command) {
-                Ok(pid) => info!("shell: avviato {command} (pid {pid})"),
+                Ok(pid) => info!("shell: started {command} (pid {pid})"),
                 Err(err) => warn!("shell: {err}"),
             },
             silica_shell_manager_v1::Request::Execute { id } => {
@@ -377,7 +377,7 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
                 let params = match serde_json::from_str::<serde_json::Value>(&params) {
                     Ok(value @ serde_json::Value::Object(_)) => value,
                     Ok(_) | Err(_) => {
-                        warn!("shell: {id}: parametri non validi");
+                        warn!("shell: {id}: invalid parameters");
                         return;
                     }
                 };

@@ -1,11 +1,11 @@
-//! Gesti del trackpad (M5.6): scorrimento a tre o quattro dita fra gli spazi, in alto per
-//! Panorama, in basso per le finestre dell'app (o per chiudere la vista aperta); pizzico con
-//! pollice e tre dita: allargando Mostra scrivania, stringendo il launcher.
+//! Trackpad gestures (M5.6): three- or four-finger swipes between spaces, up for
+//! Panorama, down for the app windows (or to close the open view); pinch with thumb and
+//! three fingers: spreading Show Desktop, pinching the launcher.
 //!
-//! Logica provvisoria: le soglie e il gesto che segue le dita (lo spazio che scorre insieme
-//! alle dita, Panorama che si apre a metà) aspettano le misure PA-20…PA-22. Qui il gesto si
-//! decide alla fine, come una scorciatoia. Arrivano dagli eventi di libinput o da
-//! `input.gesture`.
+//! Provisional logic: the thresholds and the gesture that follows the fingers (the space
+//! scrolling with the fingers, Panorama opening halfway) wait for the PA-20…PA-22
+//! measurements. Here the gesture is decided at the end, like a shortcut. They come from
+//! libinput events or from `input.gesture`.
 
 use silica_control::commands::{
     DESKTOP_SHOW, LAUNCHER_TOGGLE, PANORAMA_APP, PANORAMA_TOGGLE, SPACE_NEXT, SPACE_PREVIOUS,
@@ -14,9 +14,9 @@ use silica_control::commands::{
 use crate::panorama::Mode;
 use crate::state::State;
 
-/// Spostamento minimo (in punti, come lo riporta libinput) per uno scorrimento.
+/// Minimum movement (in points, as libinput reports it) for a swipe.
 pub const SWIPE_THRESHOLD: f64 = 80.0;
-/// Scala oltre la quale un pizzico conta (allargando, o stringendo sotto l'inverso).
+/// Scale beyond which a pinch counts (spreading, or pinching below the inverse).
 pub const PINCH_THRESHOLD: f64 = 1.3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub enum GestureKind {
     Pinch,
 }
 
-/// Un gesto in corso: dita e movimento accumulato.
+/// A gesture in progress: fingers and accumulated movement.
 #[derive(Clone, Copy, Debug)]
 pub struct Gesture {
     pub kind: GestureKind,
@@ -35,7 +35,7 @@ pub struct Gesture {
     pub scale: f64,
 }
 
-/// Il comando di un gesto finito, se ce n'è uno; `view` è la vista aperta.
+/// The command of a finished gesture, if any; `view` is the open view.
 pub fn command_for(gesture: &Gesture, view: Option<Mode>) -> Option<&'static str> {
     match gesture.kind {
         GestureKind::Swipe if gesture.fingers >= 3 => {
@@ -44,19 +44,19 @@ pub fn command_for(gesture: &Gesture, view: Option<Mode>) -> Option<&'static str
                 if dx.abs() < SWIPE_THRESHOLD || view.is_some() {
                     return None;
                 }
-                // Le dita verso sinistra portano lo spazio a destra.
+                // Fingers moving left bring the space on the right.
                 Some(if dx < 0.0 { SPACE_NEXT } else { SPACE_PREVIOUS })
             } else if dy.abs() < SWIPE_THRESHOLD {
                 None
             } else if dy < 0.0 {
-                // In alto: Panorama (già aperto, niente).
+                // Up: Panorama (already open, nothing).
                 (view != Some(Mode::Panorama)).then_some(PANORAMA_TOGGLE)
             } else {
-                // In basso: chiude la vista aperta, altrimenti le finestre dell'app.
+                // Down: closes the open view, otherwise the app windows.
                 Some(match view {
                     Some(Mode::Panorama) => PANORAMA_TOGGLE,
                     Some(Mode::Desktop) => DESKTOP_SHOW,
-                    // Aperte le finestre dell'app, lo stesso comando le chiude.
+                    // With the app windows open, the same command closes them.
                     Some(Mode::App) | None => PANORAMA_APP,
                 })
             }
@@ -85,7 +85,7 @@ impl State {
         });
     }
 
-    /// Movimento (scorrimento) o scala assoluta (pizzico) dall'inizio del gesto.
+    /// Movement (swipe) or absolute scale (pinch) since the start of the gesture.
     pub fn gesture_update(&mut self, dx: f64, dy: f64, scale: Option<f64>) {
         if let Some(gesture) = self.gesture.as_mut() {
             if dx.is_finite() && dy.is_finite() {
@@ -98,7 +98,7 @@ impl State {
         }
     }
 
-    /// Fine del gesto: esegue il suo comando (se non annullato) e lo restituisce.
+    /// End of the gesture: runs its command (unless cancelled) and returns it.
     pub fn gesture_end(&mut self, cancelled: bool) -> Option<&'static str> {
         let gesture = self.gesture.take()?;
         if cancelled {
@@ -106,7 +106,7 @@ impl State {
         }
         let id = command_for(&gesture, self.panorama_mode())?;
         if let Err(err) = self.execute_command(id, serde_json::Value::Null) {
-            tracing::warn!("gesto {id}: {err}");
+            tracing::warn!("gesture {id}: {err}");
         }
         Some(id)
     }

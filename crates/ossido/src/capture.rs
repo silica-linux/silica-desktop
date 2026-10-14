@@ -1,4 +1,4 @@
-//! Cattura dell'output in memoria, per `ui.screenshot`.
+//! Capture of the output into memory, for `ui.screenshot`.
 
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -9,7 +9,7 @@ use smithay::desktop::{Space, Window};
 use smithay::output::Output;
 use smithay::utils::{Rectangle, Transform};
 
-/// Un frame in RGBA a 8 bit, righe dall'alto in basso.
+/// An 8-bit RGBA frame, rows from top to bottom.
 pub struct Capture {
     pub width: u32,
     pub height: u32,
@@ -31,7 +31,7 @@ impl Capture {
     }
 }
 
-/// Il rettangolo dato (pixel, arrotondato e tagliato ai bordi) di una cattura; None se vuoto.
+/// The given rectangle (pixels, rounded and clipped to the edges) of a capture; None if empty.
 pub fn crop(capture: &Capture, x: f64, y: f64, width: f64, height: f64) -> Option<Capture> {
     if ![x, y, width, height].iter().all(|v| v.is_finite()) {
         return None;
@@ -59,7 +59,7 @@ pub fn crop(capture: &Capture, x: f64, y: f64, width: f64, height: f64) -> Optio
     })
 }
 
-/// Disegna lo spazio in un buffer fuori schermo e lo rilegge (renderer senza effetti).
+/// Draws the space into an offscreen buffer and reads it back (renderer without effects).
 pub fn capture<R, T>(
     renderer: &mut R,
     output: &Output,
@@ -75,7 +75,7 @@ where
     capture_elements(renderer, output, &elements, clear_color)
 }
 
-/// Disegna gli elementi dati in un buffer fuori schermo e lo rilegge.
+/// Draws the given elements into an offscreen buffer and reads it back.
 pub fn capture_elements<R, T, E>(
     renderer: &mut R,
     output: &Output,
@@ -86,15 +86,15 @@ where
     R: Renderer + Offscreen<T> + ExportMem,
     E: RenderElement<R>,
 {
-    let mode = output.current_mode().ok_or("output senza modo")?;
+    let mode = output.current_mode().ok_or("output without a mode")?;
     let size = mode.size;
-    let width = u32::try_from(size.w).map_err(|_| "larghezza non valida")?;
-    let height = u32::try_from(size.h).map_err(|_| "altezza non valida")?;
+    let width = u32::try_from(size.w).map_err(|_| "invalid width")?;
+    let height = u32::try_from(size.h).map_err(|_| "invalid height")?;
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
 
     let mut target = renderer
         .create_buffer(Fourcc::Abgr8888, buffer_size)
-        .map_err(|e| format!("buffer fuori schermo: {e:?}"))?;
+        .map_err(|e| format!("offscreen buffer: {e:?}"))?;
     let mut framebuffer = renderer
         .bind(&mut target)
         .map_err(|e| format!("bind: {e:?}"))?;
@@ -109,20 +109,18 @@ where
             Rectangle::from_size(buffer_size),
             Fourcc::Abgr8888,
         )
-        .map_err(|e| format!("copia: {e:?}"))?;
+        .map_err(|e| format!("copy: {e:?}"))?;
     let bytes = renderer
         .map_texture(&mapping)
-        .map_err(|e| format!("lettura: {e:?}"))?;
+        .map_err(|e| format!("readback: {e:?}"))?;
 
-    let stride = (width as usize)
-        .checked_mul(4)
-        .ok_or("frame troppo grande")?;
+    let stride = (width as usize).checked_mul(4).ok_or("frame too large")?;
     let expected = stride
         .checked_mul(height as usize)
-        .ok_or("frame troppo grande")?;
+        .ok_or("frame too large")?;
     if bytes.len() < expected {
         return Err(format!(
-            "il renderer ha restituito {} byte, ne servono {expected}",
+            "the renderer returned {} bytes, {expected} are needed",
             bytes.len()
         ));
     }

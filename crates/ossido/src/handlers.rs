@@ -1,4 +1,4 @@
-//! Gestori dei protocolli Wayland: compositor, xdg-shell, shm, seat, output.
+//! Wayland protocol handlers: compositor, xdg-shell, shm, seat, output.
 
 use std::os::fd::OwnedFd;
 
@@ -36,7 +36,7 @@ use tracing::{info, warn};
 
 use crate::state::{ClientState, State};
 
-/// Distanza tra una finestra e la successiva nella cascata, in pixel logici.
+/// Distance between a window and the next one in the cascade, in logical pixels.
 const CASCADE_STEP: i32 = 32;
 const CASCADE_SLOTS: u32 = 8;
 
@@ -48,13 +48,13 @@ impl CompositorHandler for State {
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         match client.get_data::<ClientState>() {
             Some(data) => &data.compositor_state,
-            // Tutti i client sono inseriti con ClientState (state.rs): non accade.
+            // Every client is inserted with ClientState (state.rs): it does not happen.
             None => &FALLBACK_CLIENT_STATE,
         }
     }
 
     fn commit(&mut self, surface: &WlSurface) {
-        // Va letto prima del buffer handler, che consuma il buffer appena assegnato.
+        // It must be read before the buffer handler, which consumes the buffer just assigned.
         let new_buffer = with_states(surface, |states| {
             matches!(
                 states
@@ -88,7 +88,7 @@ impl CompositorHandler for State {
         {
             toplevel.send_configure();
         }
-        // Con la barra di Ossido la cornice cresce verso l'alto: resta nell'area utile.
+        // With Ossido's bar the frame grows upwards: it stays in the usable area.
         if let Some(window) = self.window_for(surface)
             && crate::decorations::is_server_side(&window)
         {
@@ -102,7 +102,7 @@ impl CompositorHandler for State {
             && !popup.is_initial_configure_sent()
             && let Err(err) = popup.send_configure()
         {
-            warn!("configure del popup fallito: {err}");
+            warn!("popup configure failed: {err}");
         }
     }
 }
@@ -145,7 +145,7 @@ impl XdgShellHandler for State {
         let window = Window::new_wayland_window(surface);
         let id = self.assign_window_id(&window);
         self.publish_toplevel(&window);
-        info!("nuova finestra {id} a ({offset}, {offset})");
+        info!("new window {id} at ({offset}, {offset})");
         self.space.map_element(
             window.clone(),
             self.usable_area().loc + Point::<i32, Logical>::from((offset, offset)),
@@ -159,7 +159,7 @@ impl XdgShellHandler for State {
             state.geometry = positioner.get_geometry();
         });
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
-            warn!("popup non tracciato: {err}");
+            warn!("popup not tracked: {err}");
         }
     }
 
@@ -177,7 +177,7 @@ impl XdgShellHandler for State {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        // La finestra svanisce dall'ultima immagine: la superficie ha ancora il buffer.
+        // The window fades out from its last image: the surface still has the buffer.
         if let Some(window) = self.window_for(surface.wl_surface()) {
             self.start_closing(&window);
         }
@@ -192,8 +192,8 @@ impl XdgShellHandler for State {
         self.update_toplevel(&surface);
     }
 
-    /// L'app sposta la finestra dalla sua barra degli strumenti (contenuto a tutta finestra):
-    /// come trascinare la barra di Ossido, solo con il pulsante ancora premuto.
+    /// The app moves the window from its toolbar (full-size content): like dragging Ossido's
+    /// bar, only with the button still pressed.
     fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
         if self.press_serial != Some(serial) || self.moving.is_some() {
             return;
@@ -209,8 +209,8 @@ impl XdgShellHandler for State {
         self.moving = Some((window, grab));
     }
 
-    /// Il client ridimensiona la finestra da un suo bordo (decorazioni lato client), con il
-    /// pulsante ancora premuto.
+    /// The client resizes the window from one of its edges (client-side decorations), with
+    /// the button still pressed.
     fn resize_request(
         &mut self,
         surface: ToplevelSurface,
@@ -234,7 +234,7 @@ impl XdgShellHandler for State {
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
-        // I grab dei popup arrivano con i menu (M3); per ora il popup resta aperto.
+        // Popup grabs come with the menus (M3); for now the popup stays open.
     }
 }
 

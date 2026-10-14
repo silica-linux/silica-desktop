@@ -1,4 +1,4 @@
-//! Un client Wayland minimo per i test: una finestra xdg-shell con un colore pieno.
+//! A minimal Wayland client for the tests: an xdg-shell window with a solid color.
 
 use std::io::Write;
 use std::os::fd::AsFd;
@@ -32,10 +32,10 @@ use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 
-/// Dimensione e colore della finestra del client (ARGB8888 in memoria: B, G, R, A).
+/// Size and color of the client window (ARGB8888 in memory: B, G, R, A).
 pub const WINDOW: (u32, u32) = (100, 60);
 pub const RED_BGRA: [u8; 4] = [0, 0, 255, 255];
-/// Posizione della prima finestra nella cascata di Ossido (handlers.rs).
+/// Position of the first window in Ossido's cascade (handlers.rs).
 pub const FIRST_WINDOW_AT: u32 = 32;
 
 #[derive(Default)]
@@ -48,22 +48,22 @@ struct App {
     appearance: Option<SilicaWindowManagerV1>,
     seat: Option<WlSeat>,
     pointer: Option<WlPointer>,
-    /// Il serial dell'ultima pressione di un pulsante sulla finestra.
+    /// The serial of the last button press on the window.
     press_serial: Option<u32>,
     configured: bool,
-    /// L'ultima dimensione chiesta da Ossido (`xdg_toplevel.configure`).
+    /// The last size requested by Ossido (`xdg_toplevel.configure`).
     configured_size: Option<(i32, i32)>,
     close_requested: bool,
-    /// Modo delle decorazioni scelto da Ossido.
+    /// Decoration mode chosen by Ossido.
     decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
     data_manager: Option<WlDataDeviceManager>,
     data_device: Option<WlDataDevice>,
-    /// Trascinamento in partenza da qui: la sorgente e i dati che manda.
+    /// Drag leaving from here: the source and the data it sends.
     drag_source: Option<WlDataSource>,
     drag_payload: Vec<u8>,
     drag_finished: bool,
     drag_cancelled: bool,
-    /// Trascinamento in arrivo: l'offerta con i suoi tipi, l'ingresso e il rilascio.
+    /// Incoming drag: the offer with its types, the enter and the drop.
     offer: Option<WlDataOffer>,
     offer_mimes: Vec<String>,
     drag_entered: Option<u32>,
@@ -308,7 +308,7 @@ impl Dispatch<XdgToplevel, ()> for App {
     }
 }
 
-/// Una finestra aperta su Ossido; resta viva finché esiste questo valore.
+/// A window open on Ossido; it stays alive as long as this value exists.
 pub struct TestWindow {
     queue: EventQueue<App>,
     app: App,
@@ -320,34 +320,34 @@ pub struct TestWindow {
     buffer: WlBuffer,
 }
 
-/// Una regione di vetro per `TestWindow::set_glass`: x, y, larghezza, altezza, raggio,
-/// materiale.
+/// A glass region for `TestWindow::set_glass`: x, y, width, height, radius,
+/// material.
 pub type Region = (i32, i32, i32, i32, f64, silica_glass_v1::Material);
 
 thread_local! {
-    /// Versione di silica-glass-v1 che le finestre di questo thread (un test) chiedono.
+    /// Version of silica-glass-v1 that the windows of this thread (a test) ask for.
     pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(4) };
-    /// L'app_id delle finestre che questo thread apre (nessuno se vuoto).
+    /// The app_id of the windows this thread opens (none if empty).
     pub static APP_ID: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 impl TestWindow {
-    /// Apre una finestra `WINDOW` piena di `RED_BGRA` e aspetta che Ossido la riceva.
+    /// Opens a `WINDOW` window filled with `RED_BGRA` and waits for Ossido to receive it.
     pub fn open(socket: &Path, title: &str) -> Self {
         Self::open_sized(socket, title, WINDOW)
     }
 
-    /// Come `open`, con una dimensione a scelta (in pixel, a scala 1).
+    /// Like `open`, with a size of choice (in pixels, at scale 1).
     pub fn open_sized(socket: &Path, title: &str, size: (u32, u32)) -> Self {
         Self::open_with(socket, title, size, false)
     }
 
-    /// Una finestra che chiede le decorazioni a Ossido (`xdg-decoration`).
+    /// A window asking Ossido for decorations (`xdg-decoration`).
     pub fn open_decorated(socket: &Path, title: &str, size: (u32, u32)) -> Self {
         Self::open_with(socket, title, size, true)
     }
 
-    /// Una finestra con pixel a scelta (BGRA premoltiplicato, righe dall'alto).
+    /// A window with pixels of choice (premultiplied BGRA, rows from the top).
     #[allow(dead_code)]
     pub fn open_pixels(socket: &Path, title: &str, size: (u32, u32), pixels: &[u8]) -> Self {
         Self::open_full(socket, title, size, false, pixels)
@@ -372,9 +372,9 @@ impl TestWindow {
         conn.display().get_registry(&qh, ());
         queue.roundtrip(&mut app).unwrap();
 
-        let compositor = app.compositor.clone().expect("wl_compositor assente");
-        let shm = app.shm.clone().expect("wl_shm assente");
-        let wm_base = app.wm_base.clone().expect("xdg_wm_base assente");
+        let compositor = app.compositor.clone().expect("wl_compositor missing");
+        let shm = app.shm.clone().expect("wl_shm missing");
+        let wm_base = app.wm_base.clone().expect("xdg_wm_base missing");
 
         let surface = compositor.create_surface(&qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
@@ -387,7 +387,7 @@ impl TestWindow {
         let decoration = decorated.then(|| {
             app.decorations
                 .clone()
-                .expect("zxdg_decoration_manager_v1 assente")
+                .expect("zxdg_decoration_manager_v1 missing")
                 .get_toplevel_decoration(&toplevel, &qh, ())
         });
         surface.commit();
@@ -397,7 +397,7 @@ impl TestWindow {
 
         let stride = w * 4;
         let mut file = tempfile::tempfile().unwrap();
-        assert_eq!(pixels.len(), (w * h * 4) as usize, "pixel della finestra");
+        assert_eq!(pixels.len(), (w * h * 4) as usize, "window pixels");
         file.write_all(pixels).unwrap();
         let pool = shm.create_pool(file.as_fd(), (stride * h) as i32, &qh, ());
         let buffer = pool.create_buffer(
@@ -425,7 +425,7 @@ impl TestWindow {
         }
     }
 
-    /// Ricommitta lo stesso buffer `count` volte, ogni `every`: frame a ritmo noto.
+    /// Recommits the same buffer `count` times, every `every`: frames at a known pace.
     #[allow(dead_code)]
     pub fn commit_frames(&mut self, count: u32, every: std::time::Duration) {
         let (w, h) = WINDOW;
@@ -439,8 +439,8 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
-    /// Dichiara le regioni di vetro e fa il commit. Errore se Ossido ha rifiutato le
-    /// richieste (errore di protocollo: il client viene disconnesso).
+    /// Declares the glass regions and commits. Error if Ossido refused the requests
+    /// (protocol error: the client is disconnected).
     #[allow(dead_code)]
     pub fn set_glass(&mut self, regions: &[Region]) -> Result<(), String> {
         let qh = self.queue.handle();
@@ -448,7 +448,7 @@ impl TestWindow {
             .app
             .glass
             .clone()
-            .expect("silica_glass_manager_v1 assente");
+            .expect("silica_glass_manager_v1 missing");
         let glass = self
             .glass
             .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
@@ -463,7 +463,7 @@ impl TestWindow {
             .map_err(|e| e.to_string())
     }
 
-    /// Come `set_glass`, con un'opacità per regione (`add_translucent_region`, versione 3).
+    /// Like `set_glass`, with an opacity per region (`add_translucent_region`, version 3).
     #[allow(dead_code)]
     pub fn set_translucent_glass(&mut self, regions: &[(Region, f64)]) -> Result<(), String> {
         let qh = self.queue.handle();
@@ -471,7 +471,7 @@ impl TestWindow {
             .app
             .glass
             .clone()
-            .expect("silica_glass_manager_v1 assente");
+            .expect("silica_glass_manager_v1 missing");
         let glass = self
             .glass
             .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
@@ -486,8 +486,8 @@ impl TestWindow {
             .map_err(|e| e.to_string())
     }
 
-    /// Richieste di vetro libere (versione 4: `separate`, `add_tip`) dopo un `clear`, poi
-    /// il commit.
+    /// Free glass requests (version 4: `separate`, `add_tip`) after a `clear`, then the
+    /// commit.
     #[allow(dead_code)]
     pub fn set_glass_with(
         &mut self,
@@ -498,7 +498,7 @@ impl TestWindow {
             .app
             .glass
             .clone()
-            .expect("silica_glass_manager_v1 assente");
+            .expect("silica_glass_manager_v1 missing");
         let glass = self
             .glass
             .get_or_insert_with(|| manager.get_glass(&self.surface, &qh, ()));
@@ -511,8 +511,8 @@ impl TestWindow {
             .map_err(|e| e.to_string())
     }
 
-    /// Contenuto a tutta finestra (`silica-window-v1`) con una barra degli strumenti alta
-    /// `toolbar` (0: torna alla barra di Ossido), poi il commit.
+    /// Full-size content (`silica-window-v1`) with a toolbar `toolbar` tall (0: back to
+    /// Ossido's bar), then the commit.
     #[allow(dead_code)]
     pub fn set_full_size_content(&mut self, toolbar: u32) {
         let qh = self.queue.handle();
@@ -520,7 +520,7 @@ impl TestWindow {
             .app
             .appearance
             .clone()
-            .expect("silica_window_manager_v1 assente");
+            .expect("silica_window_manager_v1 missing");
         let window = self
             .appearance
             .get_or_insert_with(|| manager.get_window(&self.surface, &qh, ()));
@@ -529,13 +529,13 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
-    /// Chiede a Ossido di spostare la finestra (`xdg_toplevel.move`) con il serial dell'ultima
-    /// pressione ricevuta, come fa l'embedder dalla barra degli strumenti dell'app.
+    /// Asks Ossido to move the window (`xdg_toplevel.move`) with the serial of the last press
+    /// received, as the embedder does from the app's toolbar.
     #[allow(dead_code)]
     pub fn start_move(&mut self) {
         self.queue.roundtrip(&mut self.app).unwrap();
-        let seat = self.app.seat.clone().expect("wl_seat assente");
-        let serial = self.app.press_serial.expect("nessuna pressione ricevuta");
+        let seat = self.app.seat.clone().expect("wl_seat missing");
+        let serial = self.app.press_serial.expect("no press received");
         self._toplevel._move(&seat, serial);
         self.queue.roundtrip(&mut self.app).unwrap();
     }
@@ -548,22 +548,22 @@ impl TestWindow {
                 .app
                 .data_manager
                 .clone()
-                .expect("data_device_manager assente");
-            let seat = self.app.seat.clone().expect("wl_seat assente");
+                .expect("data_device_manager missing");
+            let seat = self.app.seat.clone().expect("wl_seat missing");
             self.app.data_device = Some(manager.get_data_device(&seat, &qh, ()));
             self.queue.roundtrip(&mut self.app).unwrap();
         }
         self.app.data_device.clone().unwrap()
     }
 
-    /// Si prepara a ricevere trascinamenti (crea il wl_data_device).
+    /// Gets ready to receive drags (creates the wl_data_device).
     #[allow(dead_code)]
     pub fn accept_drops(&mut self) {
         self.data_device();
     }
 
-    /// Comincia un trascinamento (`start_drag`) con il serial dell'ultima pressione: offre
-    /// `mime` con `payload`, e un'icona `side` × `side` di un colore pieno (BGRA).
+    /// Starts a drag (`start_drag`) with the serial of the last press: offers `mime` with
+    /// `payload`, and a `side` × `side` icon of a solid color (BGRA).
     #[allow(dead_code)]
     pub fn start_drag(&mut self, mime: &str, payload: &[u8], side: u32, color: [u8; 4]) {
         let device = self.data_device();
@@ -592,7 +592,7 @@ impl TestWindow {
             &qh,
             (),
         );
-        let serial = self.app.press_serial.expect("nessuna pressione ricevuta");
+        let serial = self.app.press_serial.expect("no press received");
         device.start_drag(Some(&source), &self.surface, Some(&icon), serial);
         icon.attach(Some(&buffer), 0, 0);
         icon.damage_buffer(0, 0, side as i32, side as i32);
@@ -601,8 +601,8 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
-    /// Legge gli eventi (per la sorgente: manda i dati chiesti) e dice se il trascinamento è
-    /// finito (true) o annullato (false); None se è ancora in corso.
+    /// Reads the events (for the source: sends the requested data) and tells whether the drag
+    /// finished (true) or was cancelled (false); None if it is still in progress.
     #[allow(dead_code)]
     pub fn drag_outcome(&mut self) -> Option<bool> {
         self.queue.roundtrip(&mut self.app).unwrap();
@@ -615,7 +615,7 @@ impl TestWindow {
         }
     }
 
-    /// Il trascinamento sopra questa finestra: i tipi offerti (None se non è entrato).
+    /// The drag over this window: the offered types (None if it did not enter).
     #[allow(dead_code)]
     pub fn drag_over(&mut self) -> Option<Vec<String>> {
         self.queue.roundtrip(&mut self.app).unwrap();
@@ -623,11 +623,11 @@ impl TestWindow {
         Some(self.app.offer_mimes.clone())
     }
 
-    /// Accetta `mime` con la copia, come fa un'app sopra una destinazione valida.
+    /// Accepts `mime` with copy, as an app does over a valid target.
     #[allow(dead_code)]
     pub fn accept_offer(&mut self, mime: &str) {
-        let serial = self.app.drag_entered.expect("nessun trascinamento");
-        let offer = self.app.offer.clone().expect("nessuna offerta");
+        let serial = self.app.drag_entered.expect("no drag");
+        let offer = self.app.offer.clone().expect("no offer");
         offer.accept(serial, Some(mime.to_owned()));
         offer.set_actions(
             wl_data_device_manager::DndAction::Copy,
@@ -636,13 +636,13 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
-    /// Dopo il rilascio: chiede i dati in `mime` (la sorgente li scrive dal suo lato con
-    /// `pump`, chiamata in mezzo) e chiude l'offerta.
+    /// After the drop: asks for the data in `mime` (the source writes it on its side with
+    /// `pump`, called in between) and closes the offer.
     #[allow(dead_code)]
     pub fn receive_drop(&mut self, mime: &str, pump: impl FnOnce()) -> Vec<u8> {
         self.queue.roundtrip(&mut self.app).unwrap();
-        assert!(self.app.dropped, "nessun rilascio");
-        let offer = self.app.offer.clone().expect("nessuna offerta");
+        assert!(self.app.dropped, "no drop");
+        let offer = self.app.offer.clone().expect("no offer");
         let (mut reader, writer) = std::io::pipe().unwrap();
         offer.receive(mime.to_owned(), std::os::fd::AsFd::as_fd(&writer));
         self.queue.roundtrip(&mut self.app).unwrap();
@@ -655,28 +655,28 @@ impl TestWindow {
         data
     }
 
-    /// Distrugge il toplevel (la finestra si chiude) lasciando viva la superficie.
+    /// Destroys the toplevel (the window closes) leaving the surface alive.
     #[allow(dead_code)]
     pub fn destroy_toplevel(&mut self) {
         self._toplevel.destroy();
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
-    /// Il modo delle decorazioni che Ossido ha scelto, dopo aver letto gli eventi.
+    /// The decoration mode Ossido chose, after reading the events.
     #[allow(dead_code)]
     pub fn decoration_mode(&mut self) -> Option<zxdg_toplevel_decoration_v1::Mode> {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.decoration_mode
     }
 
-    /// L'ultima dimensione del contenuto chiesta da Ossido, dopo aver letto gli eventi.
+    /// The last content size requested by Ossido, after reading the events.
     #[allow(dead_code)]
     pub fn configured_size(&mut self) -> Option<(i32, i32)> {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.configured_size
     }
 
-    /// Legge gli eventi in arrivo e dice se Ossido ha chiesto la chiusura.
+    /// Reads the incoming events and tells whether Ossido asked to close.
     pub fn close_requested(&mut self) -> bool {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.close_requested

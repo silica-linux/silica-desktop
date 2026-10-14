@@ -1,4 +1,4 @@
-//! Finestre ridotte e a schermo intero.
+//! Minimized and full-screen windows.
 
 use std::cell::Cell;
 
@@ -8,8 +8,8 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::state::State;
 
-/// Dove era la finestra prima dello schermo intero, nei suoi dati: la geometria e la cornice
-/// (con la barra), per tornare e per l'animazione dell'uscita.
+/// Where the window was before full screen, in its data: the geometry and the frame (with
+/// the bar), to go back and for the exit animation.
 #[derive(Default)]
 struct BeforeFullscreen(
     Cell<Option<Rectangle<i32, Logical>>>,
@@ -25,8 +25,8 @@ pub fn is_fullscreen(window: &Window) -> bool {
     })
 }
 
-/// Una disposizione del popover del pulsante verde (windows.md, W-08): una metà dell'area
-/// utile o tutta. Margini fra le finestre: nessuno finché W-08 non li misura.
+/// An arrangement of the green button's popover (windows.md, W-08): a half of the usable area
+/// or all of it. Margins between the windows: none until W-08 measures them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tile {
     Left,
@@ -36,8 +36,8 @@ pub enum Tile {
     Fill,
 }
 
-/// Le cornici di `count` finestre disposte nell'area (la prima è quella con il focus): 2 a
-/// metà, 3 con la prima a sinistra e due impilate a destra, 4 nei quarti.
+/// The frames of `count` windows arranged in the area (the first is the focused one): 2 in
+/// halves, 3 with the first on the left and two stacked on the right, 4 in quarters.
 pub fn arrangement(area: Rectangle<i32, Logical>, count: usize) -> Vec<Rectangle<i32, Logical>> {
     let (x, y) = (area.loc.x, area.loc.y);
     let (w, h) = (area.size.w, area.size.h);
@@ -62,7 +62,7 @@ pub fn arrangement(area: Rectangle<i32, Logical>, count: usize) -> Vec<Rectangle
 }
 
 impl State {
-    /// Porta la finestra in una metà dell'area utile, o in tutta (fuori dallo schermo intero).
+    /// Moves the window to a half of the usable area, or to all of it (outside full screen).
     pub fn tile_window(&mut self, window: &Window, tile: Tile) -> Result<(), String> {
         let area = self.usable_area();
         let (x, y) = (area.loc.x, area.loc.y);
@@ -78,8 +78,8 @@ impl State {
         self.place_frame(window, frame)
     }
 
-    /// Dispone la finestra e le `count − 1` usate più di recente dello spazio (dall'alto della
-    /// pila) secondo [`arrangement`].
+    /// Arranges the window and the `count − 1` most recently used ones of the space (from the
+    /// top of the stack) according to [`arrangement`].
     pub fn arrange_windows(&mut self, first: &Window, count: usize) -> Result<(), String> {
         let mut windows = vec![first.clone()];
         windows.extend(
@@ -98,8 +98,8 @@ impl State {
         Ok(())
     }
 
-    /// Mette la cornice della finestra (barra compresa) in `frame`: posizione e dimensione del
-    /// contenuto chiesta al client.
+    /// Puts the window frame (bar included) in `frame`: position, and content size requested
+    /// from the client.
     fn place_frame(
         &mut self,
         window: &Window,
@@ -108,7 +108,7 @@ impl State {
         if is_fullscreen(window) {
             self.toggle_fullscreen(window)?;
         }
-        let toplevel = window.toplevel().ok_or("finestra senza toplevel")?;
+        let toplevel = window.toplevel().ok_or("window without a toplevel")?;
         let bar = crate::decorations::titlebar_height(window);
         let size = (frame.size.w, frame.size.h.saturating_sub(bar).max(1));
         toplevel.with_pending_state(|state| {
@@ -120,12 +120,12 @@ impl State {
         Ok(())
     }
 
-    /// Dove finisce la miniatura di una finestra ridotta, in punti dell'output: la cella prima
-    /// del Cestino nel Dock (il pannello di vetro più largo del layer `dock`). Dalla ripresa
-    /// della riduzione (`windows.md`): il Dock si allarga di una cella (816–1743 → 784–1775) e
-    /// la miniatura si ferma centrata a x 1672, cioè 71 pt a sinistra del bordo destro di prima;
-    /// in verticale al centro del Dock. Miniatura larga 57 e alta al più 47 (`dock.md`, D-08).
-    /// Senza Dock: in basso al centro dello schermo.
+    /// Where the thumbnail of a minimized window ends up, in output points: the cell before
+    /// the Trash in the Dock (the widest glass panel of the `dock` layer). From the minimize
+    /// recording (`windows.md`): the Dock grows by one cell (816–1743 → 784–1775) and the
+    /// thumbnail stops centered at x 1672, that is 71 pt to the left of the previous right
+    /// edge; vertically at the center of the Dock. Thumbnail 57 wide and at most 47 tall
+    /// (`dock.md`, D-08). Without a Dock: at the bottom center of the screen.
     pub fn minimize_target(&self, window: &Window) -> Option<Rectangle<f64, Logical>> {
         const FROM_RIGHT: f64 = 71.0;
         const WIDTH: f64 = 57.0;
@@ -173,13 +173,13 @@ impl State {
         ))
     }
 
-    /// Toglie la finestra dallo schermo e dà il focus a quella sotto.
+    /// Removes the window from the screen and gives the focus to the one below.
     pub fn minimize_window(&mut self, window: &Window) -> Result<(), String> {
         let location = self
             .space
             .element_location(window)
-            .ok_or("finestra non sullo schermo")?;
-        // La miniatura per il Dock e il genio, finché la finestra è ancora sullo schermo.
+            .ok_or("window not on screen")?;
+        // The thumbnail for the Dock and the genie, while the window is still on screen.
         self.capture_thumbnail(window);
         self.start_genie(window, false);
         self.space.unmap_elem(window);
@@ -190,7 +190,7 @@ impl State {
         Ok(())
     }
 
-    /// Riporta una finestra ridotta dov'era. Falso se non era ridotta.
+    /// Brings a minimized window back where it was. False if it was not minimized.
     pub fn restore_window(&mut self, window: &Window) -> bool {
         let Some(index) = self.minimized.iter().position(|(w, _)| w == window) else {
             return false;
@@ -198,25 +198,25 @@ impl State {
         let (window, location) = self.minimized.remove(index);
         self.announce_minimized(&window, false);
         self.space.map_element(window.clone(), location, true);
-        // Esce dal Dock a genio; finché il genio non finisce la finestra resta nascosta.
+        // It comes out of the Dock as a genie; until the genie ends the window stays hidden.
         self.start_genie(&window, true);
         true
     }
 
-    /// Schermo intero sull'output, o ritorno alla geometria di prima.
+    /// Full screen on the output, or back to the previous geometry.
     pub fn toggle_fullscreen(&mut self, window: &Window) -> Result<(), String> {
-        let toplevel = window.toplevel().ok_or("finestra senza toplevel")?;
+        let toplevel = window.toplevel().ok_or("window without a toplevel")?;
         window
             .user_data()
             .insert_if_missing(BeforeFullscreen::default);
         let before = window
             .user_data()
             .get::<BeforeFullscreen>()
-            .ok_or("stato della finestra assente")?;
+            .ok_or("window state missing")?;
         let output = self
             .space
             .output_geometry(&self.output)
-            .ok_or("output senza geometria")?;
+            .ok_or("output without geometry")?;
         if is_fullscreen(window) {
             let previous = before.0.take();
             let frame = before.1.take();
@@ -235,7 +235,7 @@ impl State {
             let current = self
                 .space
                 .element_geometry(window)
-                .ok_or("finestra non sullo schermo")?;
+                .ok_or("window not on screen")?;
             let frame = crate::decorations::frame_of(window, current).to_f64();
             before.0.set(Some(current));
             before.1.set(Some(frame));
@@ -250,8 +250,8 @@ impl State {
         Ok(())
     }
 
-    /// L'animazione dello schermo intero: la cornice va da `from` a `to` (spenta con le
-    /// animazioni a 0).
+    /// The full-screen animation: the frame goes from `from` to `to` (off with animations
+    /// at 0).
     fn start_morph(
         &mut self,
         window: &Window,
@@ -275,7 +275,7 @@ impl State {
         }
     }
 
-    /// Una finestra ridotta con quell'id.
+    /// A minimized window with that id.
     pub fn minimized_window(&self, id: u64) -> Option<Window> {
         self.minimized
             .iter()
@@ -284,7 +284,7 @@ impl State {
     }
 }
 
-/// Posizione salvata di una finestra ridotta.
+/// Saved position of a minimized window.
 pub type Minimized = (Window, Point<i32, Logical>);
 
 #[cfg(test)]

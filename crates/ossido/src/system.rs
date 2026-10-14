@@ -1,10 +1,10 @@
-//! I comandi `system.*`: Wi-Fi, Bluetooth, volume, luminosità, Non disturbare.
+//! The `system.*` commands: Wi-Fi, Bluetooth, volume, brightness, Do Not Disturb.
 //!
-//! Lo stato e le azioni sono di `silica-daemon` (`dev.frascella.Silica.System1` sul bus di
-//! sessione, `docs/daemon.md`). Ossido non aspetta mai il daemon nel ciclo degli eventi: un
-//! thread tiene in cache lo stato (lettura iniziale, poi i segnali `Changed`), un altro
-//! esegue le chiamate in coda. I comandi rispondono subito: `system.status` dalla cache, le
-//! azioni con `queued`.
+//! The state and the actions belong to `silica-daemon` (`dev.frascella.Silica.System1` on the
+//! session bus, `docs/daemon.md`). Ossido never waits for the daemon in the event loop: one
+//! thread keeps the state cached (initial read, then the `Changed` signals), another runs the
+//! queued calls. The commands answer right away: `system.status` from the cache, the actions
+//! with `queued`.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -22,14 +22,14 @@ const PATH: &str = "/dev/frascella/Silica/System1";
 const INTERFACE: &str = "dev.frascella.Silica.System1";
 const RETRY: Duration = Duration::from_secs(2);
 
-/// Passo dei tasti di volume e luminosità: 16 tacche fra 0 e il massimo (misurato: 16
-/// pressioni da 0 al massimo).
+/// Step of the volume and brightness keys: 16 notches between 0 and the maximum (measured: 16
+/// presses from 0 to the maximum).
 pub const STEP: f64 = 1.0 / 16.0;
 
-/// Con ⌥⇧ il passo è un quarto (misurato: 50 → 52, 53, 55, 56, 58).
+/// With ⌥⇧ the step is a quarter (measured: 50 → 52, 53, 55, 56, 58).
 pub const FINE_STEP: f64 = STEP / 4.0;
 
-/// Una chiamata al daemon.
+/// A call to the daemon.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Call {
     Wifi(bool),
@@ -64,15 +64,15 @@ where
         .map(|_| ())
 }
 
-/// Il collegamento con `silica-daemon`.
+/// The link with `silica-daemon`.
 pub struct SystemLink {
     calls: Sender<Call>,
     cache: Arc<Mutex<Option<Json>>>,
 }
 
 impl SystemLink {
-    /// Parte con il bus di sessione `address` (quello privato di Ossido) o, senza, con
-    /// quello dell'ambiente.
+    /// Starts with the session bus `address` (Ossido's private one) or, without it, with the
+    /// environment's.
     pub fn start(address: Option<String>) -> Self {
         let cache = Arc::new(Mutex::new(None));
         let (calls, receiver) = mpsc::channel();
@@ -87,12 +87,12 @@ impl SystemLink {
                     .spawn(move || serve_calls(address, &receiver))
             });
         if let Err(err) = spawned {
-            warn!("thread di system.*: {err}");
+            warn!("system.* thread: {err}");
         }
         Self { calls, cache }
     }
 
-    /// Prima dell'avvio del ciclo: nessun thread, ogni comando fallisce.
+    /// Before the loop starts: no thread, every command fails.
     pub fn disconnected() -> Self {
         let (calls, _) = mpsc::channel();
         Self {
@@ -101,7 +101,7 @@ impl SystemLink {
         }
     }
 
-    /// L'ultimo stato noto, se il daemon ha risposto almeno una volta.
+    /// The last known state, if the daemon answered at least once.
     pub fn status(&self) -> Option<Json> {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -118,7 +118,7 @@ impl SystemLink {
         self.status()?.get(key)?.as_bool()
     }
 
-    /// Volume più o meno un passo (o un quarto con `fine`); alzarlo toglie il muto.
+    /// Volume up or down one step (or a quarter with `fine`); raising it unmutes.
     pub fn volume_step(&self, up: bool, fine: bool) -> bool {
         let Some(volume) = self.number("audio.volume") else {
             return false;
@@ -130,7 +130,7 @@ impl SystemLink {
         self.queue(Call::Volume(target))
     }
 
-    /// L'aspetto scuro, dalla cache dello stato del daemon (chiaro se non si sa).
+    /// The dark appearance, from the cache of the daemon state (light if unknown).
     pub fn dark(&self) -> bool {
         self.flag("appearance.dark").unwrap_or(false)
     }
@@ -155,13 +155,13 @@ impl SystemLink {
     }
 }
 
-/// Un passo di 1/16 verso l'alto o il basso, agganciato alle tacche.
+/// A 1/16 step up or down, snapped to the notches.
 #[cfg(test)]
 fn step(value: f64, up: bool) -> f64 {
     step_by(value, up, STEP)
 }
 
-/// Un passo di `size` agganciato alle sue tacche.
+/// A step of `size` snapped to its notches.
 pub fn step_by(value: f64, up: bool, size: f64) -> f64 {
     let notch = (value / size).round();
     let next = if up { notch + 1.0 } else { notch - 1.0 };
@@ -175,8 +175,8 @@ fn connect(address: Option<&str>) -> zbus::Result<Connection> {
     }
 }
 
-/// Lo stato in cache: `State` all'inizio, poi ogni `Changed`. Se il daemon o il bus
-/// spariscono si riprova.
+/// The cached state: `State` at the start, then every `Changed`. If the daemon or the bus
+/// disappear it retries.
 fn listen(address: Option<String>, cache: &Mutex<Option<Json>>) {
     let store = |state: Option<Json>| {
         *cache.lock().unwrap_or_else(|e| e.into_inner()) = state;
@@ -214,7 +214,7 @@ fn serve_calls(address: Option<String>, calls: &Receiver<Call>) {
     while let Ok(call) = calls.recv() {
         if connection.is_none() {
             connection = connect(address.as_deref())
-                .map_err(|err| warn!("system.*: bus di sessione: {err}"))
+                .map_err(|err| warn!("system.*: session bus: {err}"))
                 .ok();
         }
         let Some(conn) = &connection else { continue };
@@ -252,11 +252,11 @@ mod tests {
     fn steps_snap_to_sixteenths() {
         assert_eq!(step(0.5, true), 0.5625);
         assert_eq!(step(0.5, false), 0.4375);
-        // 0,46 sta fra due tacche: si aggancia alla più vicina (0,4375) e poi si muove.
+        // 0.46 lies between two notches: it snaps to the nearest (0.4375) and then moves.
         assert_eq!(step(0.46, true), 0.5);
         assert_eq!(step(1.0, true), 1.0);
         assert_eq!(step(0.0, false), 0.0);
-        // Un quarto di passo con ⌥⇧: 50 → 51,6 (il riferimento arrotonda a 52).
+        // A quarter step with ⌥⇧: 50 → 51.6 (the reference rounds to 52).
         assert_eq!(step_by(0.5, true, FINE_STEP), 0.515625);
     }
 }

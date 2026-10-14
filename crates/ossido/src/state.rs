@@ -1,4 +1,4 @@
-//! Stato del compositor: protocolli Wayland, spazio delle finestre, seat.
+//! Compositor state: Wayland protocols, window space, seat.
 
 use std::ffi::OsString;
 use std::sync::Arc;
@@ -30,10 +30,10 @@ use silica_control::Shortcut;
 
 use crate::backend::Backend;
 
-/// Colore di fondo del desktop finché non c'è uno sfondo (RGBA lineare).
+/// Desktop background color until there is a wallpaper (linear RGBA).
 pub const CLEAR_COLOR: [f32; 4] = [0.11, 0.12, 0.16, 1.0];
 
-/// Dati del ciclo di eventi: lo stato e il `Display` che lo serve.
+/// Event loop data: the state and the `Display` it serves.
 pub struct Ossido {
     pub state: State,
     pub display: Display<State>,
@@ -42,15 +42,15 @@ pub struct Ossido {
 pub struct State {
     pub start_time: Instant,
     pub socket_name: OsString,
-    /// Indirizzo del bus di sessione privato (`--session-bus`), passato ai client.
+    /// Address of the private session bus (`--session-bus`), passed to the clients.
     pub session_bus: Option<String>,
-    /// I comandi `system.*` verso silica-daemon.
+    /// The `system.*` commands towards silica-daemon.
     pub system: crate::system::SystemLink,
-    /// L'aspetto imposto con `--appearance` (test, sessioni senza daemon): vince sullo
-    /// stato di silica-daemon.
+    /// The appearance forced with `--appearance` (tests, sessions without the daemon): it wins
+    /// over silica-daemon's state.
     pub appearance: Option<bool>,
-    /// L'icona di un trascinamento fra app (`wl_data_device.start_drag`): segue il puntatore
-    /// fino al rilascio.
+    /// The icon of a drag between apps (`wl_data_device.start_drag`): it follows the pointer
+    /// until the drop.
     pub drag_icon: Option<WlSurface>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, Ossido>,
@@ -68,86 +68,86 @@ pub struct State {
     pub seat_state: SeatState<State>,
     pub data_device_state: DataDeviceState,
     pub layer_shell_state: WlrLayerShellState,
-    /// wp_viewporter: superfici scalate o ritagliate (iced lo richiede per l'HiDPI).
+    /// wp_viewporter: scaled or cropped surfaces (iced needs it for HiDPI).
     pub viewporter_state: ViewporterState,
-    /// linux-dmabuf: buffer dalla GPU dei client (solo winit, vedi `dmabuf.rs`).
+    /// linux-dmabuf: buffers from the clients' GPU (winit only, see `dmabuf.rs`).
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
     pub xdg_decoration_state: XdgDecorationState,
     pub glass_manager_state: crate::glass::GlassManagerState,
     pub window_manager_state: crate::window_appearance::WindowManagerState,
-    /// Le finestre per la shell (`ext-foreign-toplevel-list`, solo ai suoi componenti).
+    /// The windows for the shell (`ext-foreign-toplevel-list`, only to its components).
     pub foreign_toplevel_list: smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
     pub shell_manager_state: crate::shell::ShellManagerState,
-    /// I componenti della shell collegati a `silica_shell_manager_v1`.
+    /// The shell components bound to `silica_shell_manager_v1`.
     pub shell_managers:
         Vec<silica_protocols::shell::server::silica_shell_manager_v1::SilicaShellManagerV1>,
-    /// Gli stati annunciati dai componenti della shell (`broadcast`), per argomento.
+    /// The states announced by the shell components (`broadcast`), by topic.
     pub shell_states: std::collections::BTreeMap<String, String>,
-    /// L'ultima finestra con il focus annunciata alla shell.
+    /// The last focused window announced to the shell.
     pub announced_focus: Option<String>,
     pub seat: Seat<State>,
 
-    /// Numero di finestre aperte finora, per disporle a cascata.
+    /// Number of windows opened so far, to cascade them.
     pub mapped: u32,
-    /// Ultimo id assegnato a una finestra.
+    /// Last id assigned to a window.
     pub next_window_id: u64,
     pub shortcuts: Vec<(Shortcut, &'static str)>,
-    /// Keycode per i tasti sintetici (`input.key`, `input.type`).
+    /// Keycodes for the synthetic keys (`input.key`, `input.type`).
     pub keys: crate::keys::KeyLookup,
-    /// Ritmo dei frame, avvio e memoria dei client (`perf.*`).
+    /// Frame pace, startup and memory of the clients (`perf.*`).
     pub perf: crate::perf::Perf,
-    /// Colore del desktop finché non c'è uno sfondo (`--background`).
+    /// Desktop color until there is a wallpaper (`--background`).
     pub clear_color: [f32; 4],
-    /// Finestre ridotte, con la posizione a cui tornano.
+    /// Minimized windows, with the position they go back to.
     pub minimized: Vec<crate::windows::Minimized>,
-    /// Gli spazi di lavoro e lo scorrimento in corso (`workspaces.rs`).
+    /// The workspaces and the scroll in progress (`workspaces.rs`).
     pub workspaces: crate::workspaces::Workspaces,
-    /// Panorama aperto o in chiusura (`panorama.rs`).
+    /// Panorama open or closing (`panorama.rs`).
     pub panorama: Option<crate::panorama::Panorama>,
-    /// Il clic che ha aperto o usato Panorama: il rilascio non va al client.
+    /// The click that opened or used Panorama: the release does not go to the client.
     pub panorama_press: bool,
-    /// Il selettore delle app è aperto: il rilascio del tasto Logo lo conferma.
+    /// The app switcher is open: releasing the Logo key confirms it.
     pub switcher_active: bool,
-    /// Il tasto che fa da Logo (`--logo-key`).
+    /// The key acting as Logo (`--logo-key`).
     pub logo_key: crate::keys::LogoKey,
-    /// Gesto del trackpad in corso (`gestures.rs`).
+    /// Trackpad gesture in progress (`gestures.rs`).
     pub gesture: Option<crate::gestures::Gesture>,
-    /// Finestra con il puntatore sul gruppo dei pulsanti della barra.
+    /// Window with the pointer on the bar's button group.
     pub titlebar_hover: Option<Window>,
-    /// Pulsante della barra premuto: l'azione parte al rilascio sullo stesso pulsante.
+    /// Bar button pressed: the action starts on release over the same button.
     pub titlebar_press: Option<(Window, ossido_render::titlebar::Part)>,
-    /// Il puntatore è ancora sul pulsante premuto (uscendo l'azione si annulla).
+    /// The pointer is still on the pressed button (leaving it cancels the action).
     pub titlebar_press_inside: bool,
-    /// Quante pressioni sui pulsanti ci sono state: il timer della pressione lunga sul
-    /// pulsante verde agisce solo se la pressione è ancora quella che l'ha avviato.
+    /// How many button presses there have been: the long-press timer on the green button
+    /// acts only if the press is still the one that started it.
     pub titlebar_press_count: u64,
-    /// Quante istantanee sono state scritte (il nome del file temporaneo).
+    /// How many screenshots were written (the temporary file name).
     pub screenshot_count: u64,
-    /// Simboli dei pulsanti: quando il puntatore è entrato nel gruppo e quando ne è uscito.
+    /// Button symbols: when the pointer entered the group and when it left it.
     pub buttons_hover: Option<ButtonsHover>,
-    /// Finestra trascinata per la barra, con il punto di presa relativo alla cornice.
+    /// Window dragged by the bar, with the grab point relative to the frame.
     pub moving: Option<(Window, Point<f64, Logical>)>,
-    /// Finestra ridimensionata da un bordo (MU-08) o su richiesta del client.
+    /// Window resized from an edge (MU-08) or at the client's request.
     pub resizing: Option<crate::resize::Resize>,
-    /// Il serial dell'ultima pressione di un pulsante del mouse, finché non viene rilasciato:
-    /// `xdg_toplevel.move` vale solo con questo serial.
+    /// The serial of the last mouse button press, until it is released:
+    /// `xdg_toplevel.move` applies only with this serial.
     pub press_serial: Option<smithay::utils::Serial>,
-    /// Moltiplicatore delle durate delle animazioni; 0 le spegne (`--animation-scale`,
+    /// Multiplier of the animation durations; 0 turns them off (`--animation-scale`,
     /// `ui.animation_scale`).
     pub animation_speed: f64,
-    /// Finestre chiuse che stanno svanendo.
+    /// Closed windows fading out.
     pub closing: Vec<crate::render::Closing>,
-    /// Finestre che si riducono nel Dock o ne escono (genio).
+    /// Windows minimizing into the Dock or coming out of it (genie).
     pub genies: Vec<crate::render::Genie>,
-    /// Qualità del vetro scelta (`--glass`, `ui.glass_quality`).
+    /// Chosen glass quality (`--glass`, `ui.glass_quality`).
     pub glass_setting: GlassSetting,
-    /// Il renderer gira su un rasterizzatore software (llvmpipe): il vetro automatico è
-    /// smerigliato.
+    /// The renderer runs on a software rasterizer (llvmpipe): the automatic glass is
+    /// frosted.
     pub software_renderer: bool,
 }
 
-/// Qualità del vetro chiesta: una fissa o la scelta automatica.
+/// Requested glass quality: a fixed one or the automatic choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GlassSetting {
     #[default]
@@ -169,16 +169,16 @@ impl GlassSetting {
 }
 
 impl State {
-    /// L'aspetto scuro: quello imposto con `--appearance`, altrimenti quello di silica-daemon
-    /// (`appearance.dark`, chiaro se non si sa). Si legge a ogni frame, quindi un cambio
-    /// del daemon si vede al frame successivo.
+    /// The dark appearance: the one forced with `--appearance`, otherwise silica-daemon's
+    /// (`appearance.dark`, light if unknown). It is read on every frame, so a daemon change
+    /// shows on the next frame.
     pub fn dark(&self) -> bool {
         self.appearance.unwrap_or_else(|| self.system.dark())
     }
 }
 
 impl State {
-    /// La qualità del vetro in uso.
+    /// The glass quality in use.
     pub fn glass_quality(&self) -> ossido_render::glass::GlassQuality {
         use ossido_render::glass::GlassQuality;
         match self.glass_setting {
@@ -190,7 +190,7 @@ impl State {
 }
 
 impl State {
-    /// Crea lo stato, apre il socket Wayland e registra il `Display` nel ciclo.
+    /// Creates the state, opens the Wayland socket and registers the `Display` in the loop.
     pub fn new(
         display: &mut Display<State>,
         loop_handle: LoopHandle<'static, Ossido>,
@@ -223,9 +223,9 @@ impl State {
         let socket = ListeningSocketSource::new_auto()?;
         let socket_name = socket.socket_name().to_os_string();
         loop_handle.insert_source(socket, |stream, _, data| {
-            // Il processo dall'altra parte del socket dice se è un componente della shell:
-            // si legge qui, una volta, perché i filtri dei global non possono interrogare il
-            // display mentre è bloccato dal dispatch.
+            // The process on the other side of the socket tells whether it is a shell
+            // component: it is read here, once, because the global filters cannot query the
+            // display while it is locked by the dispatch.
             let shell = crate::shell::stream_is_shell(&stream);
             let pid = rustix::net::sockopt::socket_peercred(&stream)
                 .ok()
@@ -238,7 +238,7 @@ impl State {
                     ..ClientState::default()
                 }),
             ) {
-                warn!("client Wayland rifiutato: {err}");
+                warn!("Wayland client refused: {err}");
             }
         })?;
 
@@ -247,7 +247,7 @@ impl State {
             Generic::new(poll_fd, Interest::READ, Mode::Level),
             |_, _, data| {
                 if let Err(err) = data.display.dispatch_clients(&mut data.state) {
-                    warn!("dispatch dei client fallito: {err}");
+                    warn!("client dispatch failed: {err}");
                 }
                 Ok(PostAction::Continue)
             },
@@ -317,8 +317,8 @@ impl State {
         })
     }
 
-    /// La superficie sotto un punto del desktop, con la sua origine: prima i layer
-    /// sopra le finestre, poi le finestre, poi i layer sotto.
+    /// The surface under a point of the desktop, with its origin: first the layers above
+    /// the windows, then the windows, then the layers below.
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
@@ -343,7 +343,7 @@ impl State {
             .or_else(|| in_layer(&[Layer::Bottom, Layer::Background]))
     }
 
-    /// Manda i frame callback a tutte le finestre visibili.
+    /// Sends the frame callbacks to every visible window.
     pub fn send_frames(&self) {
         let output = &self.output;
         let now = self.start_time.elapsed();
@@ -364,7 +364,7 @@ impl State {
         }
     }
 
-    /// L'icona del trascinamento e dove disegnarla: il suo angolo sul puntatore.
+    /// The drag icon and where to draw it: its corner on the pointer.
     pub fn drag_icon_view(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
         let icon = self.drag_icon.as_ref()?;
         if !smithay::reexports::wayland_server::Resource::is_alive(icon) {
@@ -378,9 +378,9 @@ impl State {
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
-    /// Componente della shell (`shell.rs`): vede i protocolli della shell.
+    /// Shell component (`shell.rs`): sees the shell protocols.
     pub shell: bool,
-    /// Il processo del client (SO_PEERCRED), per l'uscita forzata.
+    /// The client process (SO_PEERCRED), for force quit.
     pub pid: Option<i32>,
 }
 
@@ -389,7 +389,7 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
-/// Il puntatore sul gruppo dei pulsanti di una finestra.
+/// The pointer on a window's button group.
 #[derive(Clone)]
 pub struct ButtonsHover {
     pub window: Window,

@@ -1,4 +1,4 @@
-//! Supporto ai test: un Ossido headless pilotato dal canale di controllo.
+//! Test support: a headless Ossido driven through the control channel.
 
 #![allow(
     dead_code,
@@ -21,12 +21,12 @@ use silica_control::{Client, ScreenshotParams};
 pub const WIDTH: u32 = 320;
 pub const HEIGHT: u32 = 200;
 
-/// Un Ossido headless con la sua directory runtime; muore con il test.
+/// A headless Ossido with its runtime directory; it dies with the test.
 pub struct Headless {
     child: Child,
     pub dir: PathBuf,
     pub control: String,
-    /// Percorso assoluto del socket Wayland di Ossido.
+    /// Absolute path of Ossido's Wayland socket.
     pub wayland: PathBuf,
 }
 
@@ -35,7 +35,7 @@ impl Headless {
         Self::start_with(name, (WIDTH, HEIGHT), &[])
     }
 
-    /// Come `start`, con un'altra dimensione dell'output e argomenti in più per Ossido.
+    /// Like `start`, with another output size and more arguments for Ossido.
     pub fn start_with(name: &str, (width, height): (u32, u32), extra: &[&str]) -> Self {
         let dir = std::env::temp_dir().join(format!("ossido-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -48,9 +48,9 @@ impl Headless {
                 "--size",
                 &format!("{width}x{height}"),
             ])
-            // Screenshot deterministici: niente animazioni, salvo chi le riaccende.
+            // Deterministic screenshots: no animations, unless a test turns them back on.
             .args(["--animation-scale", "0"])
-            // Vetro pieno anche su llvmpipe (l'automatico lì sarebbe smerigliato).
+            // Full glass even on llvmpipe (the automatic level there would be frosted).
             .args(["--glass", "full"])
             .args(extra)
             .args(["--control", "0"])
@@ -74,8 +74,8 @@ impl Headless {
         }
         Self {
             child,
-            wayland: wayland.expect("Ossido non ha annunciato il socket Wayland"),
-            control: control.expect("Ossido è uscito senza aprire il canale di controllo"),
+            wayland: wayland.expect("Ossido did not announce the Wayland socket"),
+            control: control.expect("Ossido exited without opening the control channel"),
             dir,
         }
     }
@@ -113,33 +113,33 @@ pub fn assert_clear_color(pixels: &[u8], x: u32, y: u32) {
         let expected = (expected * 255.0).round() as i32;
         assert!(
             (i32::from(*channel) - expected).abs() <= 1,
-            "pixel ({x}, {y}) = {pixel:?}, atteso il colore di fondo {CLEAR_COLOR:?}"
+            "pixel ({x}, {y}) = {pixel:?}, expected the background color {CLEAR_COLOR:?}"
         );
     }
 }
 
-/// Il pixel è fuori dalla finestra di prova (rossa): fondo, ombra o anello d'ombra.
+/// The pixel is outside the test window (red): background, shadow or shadow ring.
 pub fn assert_outside_window(pixels: &[u8], x: u32, y: u32) {
     let [r, g, b, _] = pixel(pixels, x, y);
     assert!(
         r < 64 && r.abs_diff(g) < 32 && r.abs_diff(b) < 32,
-        "pixel ({x}, {y}) = {:?}: atteso fuori dalla finestra",
+        "pixel ({x}, {y}) = {:?}: expected outside the window",
         [r, g, b]
     );
 }
 
-/// RGBA del pixel (x, y) in uno screenshot `WIDTH`×`HEIGHT`.
+/// RGBA of the pixel (x, y) in a `WIDTH`×`HEIGHT` screenshot.
 pub fn pixel(shot: &[u8], x: u32, y: u32) -> [u8; 4] {
     pixel_in(shot, WIDTH, x, y)
 }
 
-/// RGBA del pixel (x, y) in uno screenshot largo `width`.
+/// RGBA of the pixel (x, y) in a screenshot `width` wide.
 pub fn pixel_in(shot: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     let offset = ((y * width + x) * 4) as usize;
     shot[offset..offset + 4].try_into().unwrap()
 }
 
-/// Uno screenshot su file, decodificato in RGBA.
+/// A screenshot on file, decoded to RGBA.
 pub fn screenshot(ossido: &Headless) -> Vec<u8> {
     let path = ossido.dir.join("shot.png");
     ossido

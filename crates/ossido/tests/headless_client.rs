@@ -1,5 +1,5 @@
-//! Un vero client Wayland apre una finestra xdg-shell su Ossido headless,
-//! e la finestra compare nello screenshot del canale di controllo.
+//! A real Wayland client opens an xdg-shell window on headless Ossido, and the window shows
+//! up in the control channel's screenshot.
 
 #![allow(
     clippy::unwrap_used,
@@ -21,7 +21,7 @@ fn xdg_toplevel_appears_in_screenshot() {
 
     let (w, h) = WINDOW;
     let at = FIRST_WINDOW_AT;
-    // Centro e metà dei lati: gli angoli sono tagliati (window_corners_follow_the_reference).
+    // Center and the middle of the sides: the corners are cut (window_corners_follow_the_reference).
     for (x, y) in [
         (at + w / 2, at + h / 2),
         (at, at + h / 2),
@@ -32,7 +32,7 @@ fn xdg_toplevel_appears_in_screenshot() {
         assert_eq!(
             pixel(&shot, x, y),
             [255, 0, 0, 255],
-            "finestra assente in ({x}, {y})"
+            "window missing at ({x}, {y})"
         );
     }
     assert_outside_window(&shot, at - 1, at + h / 2);

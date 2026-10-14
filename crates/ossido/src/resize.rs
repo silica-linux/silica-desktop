@@ -1,9 +1,8 @@
-//! Ridimensionamento dai bordi della cornice (mustache-spec 1.1, "Zone di trascinamento e
-//! bordi", MU-08): il bordo sinistro e quello alto prendono il puntatore da 2 pt fuori a 3 pt
-//! dentro la cornice, il destro e il basso da 4 pt fuori a 3 dentro; vicino a un angolo, per
-//! 16 pt lungo ciascun bordo, il ridimensionamento è diagonale. Vale anche per le finestre a
-//! contenuto a tutta finestra (la cornice comprende la barra dell'app) e per le richieste
-//! `xdg_toplevel.resize` dei client.
+//! Resizing from the frame edges (mustache-spec 1.1, "Drag zones and edges", MU-08): the left
+//! and top edges take the pointer from 2 pt outside to 3 pt inside the frame, the right and
+//! bottom ones from 4 pt outside to 3 inside; near a corner, for 16 pt along each edge, the
+//! resize is diagonal. It applies to full-size content windows too (the frame includes the
+//! app's bar) and to the clients' `xdg_toplevel.resize` requests.
 
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -13,18 +12,18 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use crate::state::State;
 
-/// Fuori dalla cornice a sinistra e in alto.
+/// Outside the frame on the left and at the top.
 pub const OUTSIDE_LEADING: f64 = 2.0;
-/// Fuori dalla cornice a destra e in basso.
+/// Outside the frame on the right and at the bottom.
 pub const OUTSIDE_TRAILING: f64 = 4.0;
-/// Dentro la cornice, su tutti i lati.
+/// Inside the frame, on every side.
 pub const INSIDE: f64 = 3.0;
-/// Lungo un bordo, dall'angolo: la zona diagonale.
+/// Along an edge, from the corner: the diagonal zone.
 pub const CORNER: f64 = 16.0;
-/// Il contenuto non scende sotto questo lato se il client non chiede altro.
+/// The content does not go below this side if the client does not ask otherwise.
 const MIN_CONTENT: i32 = 1;
 
-/// I lati che il puntatore sposta.
+/// The sides the pointer moves.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Edges {
     pub left: bool,
@@ -38,7 +37,7 @@ impl Edges {
         self.left || self.right || self.top || self.bottom
     }
 
-    /// I lati di `xdg_toplevel.resize`.
+    /// The sides of `xdg_toplevel.resize`.
     pub fn from_xdg(edge: xdg_toplevel::ResizeEdge) -> Self {
         use xdg_toplevel::ResizeEdge as E;
         Self {
@@ -50,13 +49,13 @@ impl Edges {
     }
 }
 
-/// I lati sotto il punto `p` per la cornice `frame`; None fuori dalle zone.
+/// The sides under point `p` for frame `frame`; None outside the zones.
 pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Option<Edges> {
     let left = f64::from(frame.loc.x);
     let top = f64::from(frame.loc.y);
     let right = left + f64::from(frame.size.w);
     let bottom = top + f64::from(frame.size.h);
-    // Dentro il rettangolo allargato delle zone.
+    // Inside the enlarged rectangle of the zones.
     if p.x < left - OUTSIDE_LEADING
         || p.x >= right + OUTSIDE_TRAILING
         || p.y < top - OUTSIDE_LEADING
@@ -70,7 +69,7 @@ pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Optio
         top: p.y < top + INSIDE,
         bottom: p.y >= bottom - INSIDE,
     };
-    // Una finestra più stretta delle due zone: vince il lato più vicino.
+    // A window narrower than the two zones: the nearest side wins.
     if edges.left && edges.right {
         let to_left = (p.x - left).abs();
         let to_right = (right - p.x).abs();
@@ -83,7 +82,7 @@ pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Optio
         edges.top = to_top <= to_bottom;
         edges.bottom = !edges.top;
     }
-    // Vicino a un angolo il bordo diventa diagonale.
+    // Near a corner the edge becomes diagonal.
     if (edges.left || edges.right) && !(edges.top || edges.bottom) {
         edges.top = p.y < top + CORNER;
         edges.bottom = !edges.top && p.y >= bottom - CORNER;
@@ -94,8 +93,8 @@ pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Optio
     edges.any().then_some(edges)
 }
 
-/// La nuova cornice dopo uno spostamento `delta` del puntatore, entro i limiti del contenuto
-/// (`min` e `max`, 0 senza limite) e con la barra `bar` sopra; il lato opposto resta fermo.
+/// The new frame after a pointer movement `delta`, within the content limits (`min` and
+/// `max`, 0 for no limit) and with the bar `bar` on top; the opposite side stays still.
 pub fn resized(
     frame: Rectangle<i32, Logical>,
     edges: Edges,
@@ -150,7 +149,7 @@ pub fn resized(
     Rectangle::new((x, y).into(), (w, h).into())
 }
 
-/// Un ridimensionamento in corso: la finestra, i lati, dove è iniziato e la cornice di allora.
+/// A resize in progress: the window, the sides, where it started and the frame at that time.
 #[derive(Debug, Clone)]
 pub struct Resize {
     pub window: Window,
@@ -160,8 +159,8 @@ pub struct Resize {
 }
 
 impl State {
-    /// La finestra il cui bordo è sotto il punto, dall'alto: una finestra che copre il punto
-    /// fuori dalle sue zone ferma la ricerca (non si ridimensiona quella sotto).
+    /// The window whose edge is under the point, from the top: a window covering the point
+    /// outside its zones stops the search (the one below is not resized).
     pub fn resize_hit(&self, location: Point<f64, Logical>) -> Option<(Window, Edges)> {
         for window in self.space.elements().rev() {
             if crate::windows::is_fullscreen(window) {
@@ -180,7 +179,7 @@ impl State {
         None
     }
 
-    /// Comincia a ridimensionare `window` dai lati `edges`, dal punto `start`.
+    /// Starts resizing `window` from the sides `edges`, from point `start`.
     pub fn start_resize(&mut self, window: Window, edges: Edges, start: Point<f64, Logical>) {
         let Some(frame) = self.window_frame(&window) else {
             return;
@@ -199,8 +198,8 @@ impl State {
         });
     }
 
-    /// Il puntatore si è mosso durante un ridimensionamento: nuova dimensione al client e, per
-    /// i lati sinistro e alto, nuova posizione.
+    /// The pointer moved during a resize: new size to the client and, for the left and top
+    /// sides, a new position.
     pub fn resize_to(&mut self, location: Point<f64, Logical>) {
         let Some(resize) = self.resizing.clone() else {
             return;
@@ -236,7 +235,7 @@ impl State {
         }
     }
 
-    /// Fine del ridimensionamento (rilascio del pulsante).
+    /// End of the resize (button release).
     pub fn end_resize(&mut self) {
         let Some(resize) = self.resizing.take() else {
             return;
@@ -270,18 +269,18 @@ mod tests {
     };
 
     #[test]
-    fn zone_misurate_sui_quattro_lati() {
-        // Sinistra: x 198–202 (bordo a 200).
+    fn measured_zones_on_the_four_sides() {
+        // Left: x 198–202 (edge at 200).
         assert_eq!(at(197.9, 400.0), None);
         assert_eq!(at(198.0, 400.0), Some(L));
         assert_eq!(at(202.9, 400.0), Some(L));
         assert_eq!(at(203.0, 400.0), None);
-        // Destra: bordo a 1200, 3 dentro e 4 fuori.
+        // Right: edge at 1200, 3 inside and 4 outside.
         assert_eq!(at(1196.9, 400.0), None);
         assert!(at(1197.0, 400.0).is_some_and(|e| e.right && !e.top && !e.bottom));
         assert!(at(1203.9, 400.0).is_some_and(|e| e.right));
         assert_eq!(at(1204.0, 400.0), None);
-        // Alto e basso.
+        // Top and bottom.
         assert!(at(600.0, 148.0).is_some_and(|e| e.top && !e.left && !e.right));
         assert_eq!(at(600.0, 147.9), None);
         assert_eq!(at(600.0, 153.0), None);
@@ -291,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn angoli_per_16_pt() {
+    fn corners_for_16_pt() {
         let e = at(199.0, 165.0).unwrap();
         assert!(e.left && e.top);
         let e = at(199.0, 166.0).unwrap();
@@ -305,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn la_cornice_segue_e_rispetta_i_limiti() {
+    fn the_frame_follows_and_respects_the_limits() {
         let none = Size::from((0, 0));
         let both = Edges {
             left: true,
@@ -314,7 +313,7 @@ mod tests {
         };
         let r = resized(frame(), both, Point::from((50.0, 30.0)), 52, none, none);
         assert_eq!(r, Rectangle::new((250, 180).into(), (950, 670).into()));
-        // Il minimo del client (contenuto 600 × 300): il lato destro e il basso restano.
+        // The client's minimum (content 600 × 300): the right and bottom sides stay.
         let min = Size::from((600, 300));
         let r = resized(frame(), both, Point::from((900.0, 900.0)), 52, min, none);
         assert_eq!(r.size, Size::from((600, 352)));

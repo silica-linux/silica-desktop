@@ -1,5 +1,5 @@
-//! Decorazioni lato server: barra del titolo, pulsanti della finestra e loro comandi,
-//! con i colori misurati su macOS 27 (`plan/reference/windows.md`).
+//! Server-side decorations: title bar, window buttons and their commands, with the colors
+//! measured on macOS 27 (`plan/reference/windows.md`).
 
 #![allow(
     clippy::unwrap_used,
@@ -42,17 +42,20 @@ fn shot(ossido: &Headless) -> Vec<u8> {
     shot
 }
 
-/// Il pixel è entro `tolerance` dal colore atteso, canale per canale.
+/// The pixel is within `tolerance` of the expected color, channel by channel.
 fn assert_near(shot: &[u8], (x, y): (i32, i32), expected: [u8; 3], tolerance: u8, what: &str) {
     let got = pixel_in(shot, SIZE.0, x as u32, y as u32);
     let close = got
         .iter()
         .zip(expected)
         .all(|(g, e)| g.abs_diff(e) <= tolerance);
-    assert!(close, "{what} in ({x}, {y}): {got:?}, atteso {expected:?}");
+    assert!(
+        close,
+        "{what} at ({x}, {y}): {got:?}, expected {expected:?}"
+    );
 }
 
-/// Centro di un pulsante della barra (0 chiudi, 1 riduci, 2 schermo intero) della finestra.
+/// Center of a bar button (0 close, 1 minimize, 2 full screen) of the window.
 fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
     (window.x + 26 + 23 * index, window.y - BAR + 26)
 }
@@ -60,73 +63,69 @@ fn button(window: &WindowInfo, index: i32) -> (i32, i32) {
 #[test]
 fn titlebar_is_negotiated_and_drawn_with_the_measured_buttons() {
     let ossido = start("decor-draw");
-    let mut window = TestWindow::open_decorated(&ossido.wayland, "barra", (240, 140));
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "bar", (240, 140));
     assert_eq!(window.decoration_mode(), Some(Mode::ServerSide));
     let info = windows(&ossido).remove(0);
-    // La barra sta sopra il contenuto, dentro l'area utile.
-    assert!(
-        info.y >= BAR,
-        "barra fuori dallo schermo: contenuto a y {}",
-        info.y
-    );
+    // The bar sits above the content, inside the usable area.
+    assert!(info.y >= BAR, "bar off screen: content at y {}", info.y);
     let shot = shot(&ossido);
 
-    // Fondo bianco della barra attiva; vertice superiore sinistro tagliato (fondo grigio).
+    // White background of the active bar; top-left corner cut (gray background).
     assert_near(
         &shot,
         (info.x + 150, info.y - 26),
         [255, 255, 255],
         1,
-        "fondo della barra",
+        "bar background",
     );
     assert_near(
         &shot,
         (info.x, info.y - BAR),
         [0x7a, 0x7b, 0x80],
         40,
-        "angolo della barra",
+        "bar corner",
     );
-    // Pulsanti attivi: chiusura #f87d77, riduzione #fcc93b, schermo intero #85d660 al centro.
-    assert_near(&shot, button(&info, 0), [0xf8, 0x7d, 0x77], 8, "chiusura");
-    assert_near(&shot, button(&info, 1), [0xfc, 0xc9, 0x3b], 8, "riduzione");
+    // Active buttons: close #f87d77, minimize #fcc93b, full screen #85d660 at the center.
+    assert_near(&shot, button(&info, 0), [0xf8, 0x7d, 0x77], 8, "close");
+    assert_near(&shot, button(&info, 1), [0xfc, 0xc9, 0x3b], 8, "minimize");
     assert_near(
         &shot,
         button(&info, 2),
         [0x85, 0xd6, 0x60],
         8,
-        "schermo intero",
+        "full screen",
     );
-    // Il contenuto resta rosso sotto la barra.
+    // The content stays red below the bar.
     assert_near(
         &shot,
         (info.x + 120, info.y + 70),
         [255, 0, 0],
         0,
-        "contenuto",
+        "content",
     );
 }
 
 #[test]
 fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
     let ossido = start("decor-hover");
-    let _first = TestWindow::open_decorated(&ossido.wayland, "prima", (240, 140));
+    let _first = TestWindow::open_decorated(&ossido.wayland, "first", (240, 140));
     let first = windows(&ossido).remove(0);
     let mut client = ossido.client();
     let (cx, cy) = button(&first, 0);
     client
         .call(INPUT_POINTER_MOVE, json!({"x": cx, "y": cy}))
         .unwrap();
-    // Al centro della chiusura c'è l'incrocio della X, `#a30000`.
+    // At the center of the close button there is the crossing of the X, `#a30000`.
     assert_near(
         &shot(&ossido),
         (cx, cy),
         [0xa3, 0x00, 0x00],
         12,
-        "simbolo di chiusura",
+        "close symbol",
     );
 
-    // Una seconda finestra lontana rende inattiva la prima: pulsanti grigi `#eaebec`.
-    let _second = TestWindow::open_decorated(&ossido.wayland, "seconda", (120, 80));
+    // A second window far away makes the first inactive: gray buttons `#eaebec`.
+    let _second = TestWindow::open_decorated(&ossido.wayland, "second", (120, 80));
     let second = windows(&ossido).remove(0);
     client
         .call(
@@ -144,11 +143,11 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
             button(&first, index),
             [0xea, 0xeb, 0xec],
             6,
-            "pulsante inattivo",
+            "inactive button",
         );
     }
 
-    // Puntatore sul gruppo della finestra inattiva: colori attivi e simboli, resta inattiva.
+    // Pointer on the group of the inactive window: active colors and symbols, it stays inactive.
     let (mx, my) = button(&first, 1);
     client
         .call(INPUT_POINTER_MOVE, json!({"x": mx, "y": my}))
@@ -158,9 +157,9 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
         (mx, my),
         [0xc1, 0x44, 0x00],
         14,
-        "simbolo di riduzione",
+        "minimize symbol",
     );
-    // Premuto sulla riduzione: il simbolo diventa più chiaro e saturo (`#ff5a00`).
+    // Pressed on minimize: the symbol becomes lighter and saturated (`#ff5a00`).
     client
         .call(INPUT_POINTER_BUTTON, json!({"pressed": true}))
         .unwrap();
@@ -169,9 +168,9 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
         (mx, my),
         [0xff, 0x5a, 0x00],
         14,
-        "riduzione premuta",
+        "minimize pressed",
     );
-    // Uscendo prima del rilascio l'azione si annulla.
+    // Leaving before the release cancels the action.
     client
         .call(INPUT_POINTER_MOVE, json!({"x": mx + 60, "y": my + 60}))
         .unwrap();
@@ -190,14 +189,14 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
 #[test]
 fn titlebar_buttons_close_minimize_and_fullscreen() {
     let ossido = start("decor-buttons");
-    let mut window = TestWindow::open_decorated(&ossido.wayland, "pulsanti", (240, 140));
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "buttons", (240, 140));
     let info = windows(&ossido).remove(0);
     let mut client = ossido.client();
     let click = |client: &mut silica_control::Client, (x, y): (i32, i32)| {
         client.call(INPUT_CLICK, json!({"x": x, "y": y})).unwrap();
     };
 
-    // Riduci: sparisce dallo schermo, window.focus la riporta dov'era.
+    // Minimize: it disappears from the screen, window.focus brings it back where it was.
     click(&mut client, button(&info, 1));
     let list = windows(&ossido);
     assert!(list[0].minimized, "{list:?}");
@@ -206,8 +205,8 @@ fn titlebar_buttons_close_minimize_and_fullscreen() {
     assert!(!list[0].minimized && list[0].focused, "{list:?}");
     assert_eq!((list[0].x, list[0].y), (info.x, info.y));
 
-    // Schermo intero e ritorno (pulsante verde, poi il comando).
-    // Lo stato passa al client con un configure; vale dal commit successivo.
+    // Full screen and back (green button, then the command).
+    // The state reaches the client with a configure; it applies from the next commit.
     click(&mut client, button(&info, 2));
     window.decoration_mode();
     window.commit_frames(1, std::time::Duration::ZERO);
@@ -220,7 +219,7 @@ fn titlebar_buttons_close_minimize_and_fullscreen() {
     assert!(!list[0].fullscreen, "{list:?}");
     assert_eq!((list[0].x, list[0].y), (info.x, info.y));
 
-    // Chiudi: la richiesta arriva al client.
+    // Close: the request reaches the client.
     click(&mut client, button(&info, 0));
     assert!(window.close_requested());
 }
@@ -228,7 +227,7 @@ fn titlebar_buttons_close_minimize_and_fullscreen() {
 #[test]
 fn dragging_the_titlebar_moves_the_window() {
     let ossido = start("decor-drag");
-    let _window = TestWindow::open_decorated(&ossido.wayland, "trascina", (240, 140));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "drag", (240, 140));
     let info = windows(&ossido).remove(0);
     let mut client = ossido.client();
     let (x, y) = (info.x + 150, info.y - 26);
@@ -251,46 +250,40 @@ fn dragging_the_titlebar_moves_the_window() {
 #[test]
 fn full_size_content_keeps_only_the_buttons_over_the_app() {
     let ossido = start("decor-full-size");
-    let mut window = TestWindow::open_decorated(&ossido.wayland, "tutta", (240, 140));
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "full", (240, 140));
     let before = windows(&ossido).remove(0);
-    // L'app disegna una barra degli strumenti alta 52: Ossido toglie la sua barra.
+    // The app draws a toolbar 52 tall: Ossido removes its bar.
     window.set_full_size_content(52);
     window.commit_frames(1, std::time::Duration::ZERO);
     let info = windows(&ossido).remove(0);
     let image = shot(&ossido);
-    // Sopra il contenuto non c'è più la barra bianca: il fondo grigio.
+    // Above the content there is no white bar any more: the gray background.
     assert_near(
         &image,
         (info.x + 150, info.y - 26),
         [0x7a, 0x7b, 0x80],
         6,
-        "niente barra sopra il contenuto",
+        "no bar above the content",
     );
-    // I pulsanti stanno sopra il contenuto, centrati nella barra dell'app (y 26).
+    // The buttons sit above the content, centered in the app's bar (y 26).
     let on_content = |i: i32| (info.x + 26 + 23 * i, info.y + 26);
-    assert_near(&image, on_content(0), [0xf8, 0x7d, 0x77], 8, "chiusura");
-    assert_near(
-        &image,
-        on_content(2),
-        [0x85, 0xd6, 0x60],
-        8,
-        "schermo intero",
-    );
-    // Il resto della fascia è dell'app (rosso).
+    assert_near(&image, on_content(0), [0xf8, 0x7d, 0x77], 8, "close");
+    assert_near(&image, on_content(2), [0x85, 0xd6, 0x60], 8, "full screen");
+    // The rest of the strip belongs to the app (red).
     assert_near(
         &image,
         (info.x + 150, info.y + 26),
         [255, 0, 0],
         0,
-        "barra dell'app",
+        "app bar",
     );
-    // Il clic sul rosso chiude; altrove arriva all'app.
+    // The click on the red one closes; elsewhere it reaches the app.
     let mut client = ossido.client();
     client
         .call(INPUT_CLICK, json!({"x": info.x + 26, "y": info.y + 26}))
         .unwrap();
     assert!(window.close_requested());
-    // 0: di nuovo la barra di Ossido.
+    // 0: Ossido's bar again.
     window.set_full_size_content(0);
     window.commit_frames(1, std::time::Duration::ZERO);
     let image = shot(&ossido);
@@ -300,17 +293,17 @@ fn full_size_content_keeps_only_the_buttons_over_the_app() {
         (info.x + 150, info.y - 26),
         [255, 255, 255],
         1,
-        "la barra torna",
+        "the bar comes back",
     );
     let _ = before;
 }
 
-/// L'app sposta la finestra dalla sua barra degli strumenti (`xdg_toplevel.move`): solo con il
-/// pulsante ancora premuto, e il rilascio la lascia dove è.
+/// The app moves the window from its toolbar (`xdg_toplevel.move`): only with the button
+/// still pressed, and the release leaves it where it is.
 #[test]
 fn the_app_moves_its_window_from_the_toolbar() {
     let ossido = start("decor-app-move");
-    let mut window = TestWindow::open_decorated(&ossido.wayland, "sposta", (240, 140));
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "move", (240, 140));
     window.set_full_size_content(52);
     let info = windows(&ossido).remove(0);
     let mut client = ossido.client();
@@ -336,7 +329,7 @@ fn the_app_moves_its_window_from_the_toolbar() {
         .unwrap();
     let moved = windows(&ossido).remove(0);
     assert_eq!((moved.x, moved.y), (info.x + 60, info.y + 40));
-    // Dopo il rilascio la richiesta non vale più: la finestra non segue il puntatore.
+    // After the release the request no longer applies: the window does not follow the pointer.
     window.start_move();
     client
         .call(INPUT_POINTER_MOVE, json!({"x": x + 200, "y": y + 100}))
@@ -345,8 +338,8 @@ fn the_app_moves_its_window_from_the_toolbar() {
     assert_eq!((still.x, still.y), (moved.x, moved.y));
 }
 
-/// I comandi di disposizione: le metà e il riempimento dell'area utile, cornice compresa (la
-/// barra di 52 sopra il contenuto); due finestre affiancate.
+/// The arrangement commands: the halves and the fill of the usable area, frame included (the
+/// 52 bar above the content); two windows side by side.
 #[test]
 fn tile_commands_place_the_frame_in_the_usable_area() {
     use silica_control::commands::{WINDOW_ARRANGE_2, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT};
@@ -367,7 +360,7 @@ fn tile_commands_place_the_frame_in_the_usable_area() {
     client.call(WINDOW_TILE_RIGHT, json!({})).unwrap();
     let b = by_title("b");
     assert_eq!((b.x, b.y), (half, 52));
-    // Disponi due: "b" (con il focus) a sinistra, "a" a destra.
+    // Arrange two: "b" (with the focus) on the left, "a" on the right.
     client.call(WINDOW_ARRANGE_2, json!({})).unwrap();
     assert_eq!(by_title("b").x, 0);
     assert_eq!(by_title("a").x, half);

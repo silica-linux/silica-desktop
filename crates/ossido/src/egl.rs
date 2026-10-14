@@ -1,20 +1,20 @@
-//! Inizializzazione EGL/GLES senza finestra, per il backend headless: gli shader di
-//! `ossido-render` girano anche nei test e in CI (llvmpipe), non solo nella finestra winit.
+//! Windowless EGL/GLES initialization, for the headless backend: the `ossido-render` shaders
+//! run in the tests and in CI (llvmpipe) too, not only in the winit window.
 //!
-//! Unico modulo di Ossido dove `unsafe` è ammesso (AGENTS.md): i costruttori di smithay per
-//! display e renderer sono `unsafe` per le condizioni scritte accanto a ogni blocco.
+//! The only Ossido module where `unsafe` is allowed (AGENTS.md): smithay's constructors for
+//! display and renderer are `unsafe` for the conditions written next to every block.
 #![allow(unsafe_code)]
 
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::renderer::gles::GlesRenderer;
 use tracing::{info, warn};
 
-/// Un renderer GLES su un device EGL senza superficie. Con `prefer_gpu` prima le GPU,
-/// altrimenti prima il device software di Mesa (llvmpipe): screenshot uguali su ogni
-/// macchina e in CI. Errore se nessun device si inizializza.
+/// A GLES renderer on an EGL device without a surface. With `prefer_gpu` the GPUs first,
+/// otherwise Mesa's software device (llvmpipe) first: identical screenshots on every machine
+/// and in CI. Error if no device initializes.
 pub fn headless_renderer(prefer_gpu: bool) -> Result<GlesRenderer, String> {
     let mut devices: Vec<EGLDevice> = EGLDevice::enumerate()
-        .map_err(|e| format!("device EGL non elencabili: {e}"))?
+        .map_err(|e| format!("cannot list EGL devices: {e}"))?
         .collect();
     devices.sort_by_key(|device| device.is_software() == prefer_gpu);
     let mut errors = Vec::new();
@@ -26,24 +26,21 @@ pub fn headless_renderer(prefer_gpu: bool) -> Result<GlesRenderer, String> {
                 return Ok(renderer);
             }
             Err(err) => {
-                warn!("device EGL scartato: {err}");
+                warn!("EGL device discarded: {err}");
                 errors.push(err);
             }
         }
     }
-    Err(format!(
-        "nessun device EGL utilizzabile: {}",
-        errors.join("; ")
-    ))
+    Err(format!("no usable EGL device: {}", errors.join("; ")))
 }
 
 fn renderer_for(device: EGLDevice) -> Result<GlesRenderer, String> {
-    // SAFETY: smithay tiene traccia dei display che crea; la condizione è che nessun altro
-    // codice nel processo chiami eglGetPlatformDisplay/eglTerminate sullo stesso display.
-    // Ossido crea i display EGL solo tramite smithay.
+    // SAFETY: smithay keeps track of the displays it creates; the condition is that no other
+    // code in the process calls eglGetPlatformDisplay/eglTerminate on the same display.
+    // Ossido creates EGL displays only through smithay.
     let display = unsafe { EGLDisplay::new(device) }.map_err(|e| format!("display: {e}"))?;
-    let context = EGLContext::new(&display).map_err(|e| format!("contesto: {e}"))?;
-    // SAFETY: il contesto è appena creato e non è corrente su nessun altro thread; il
-    // renderer resta sul thread del compositor, l'unico che lo usa.
+    let context = EGLContext::new(&display).map_err(|e| format!("context: {e}"))?;
+    // SAFETY: the context is just created and not current on any other thread; the
+    // renderer stays on the compositor thread, the only one using it.
     unsafe { GlesRenderer::new(context) }.map_err(|e| format!("renderer: {e}"))
 }

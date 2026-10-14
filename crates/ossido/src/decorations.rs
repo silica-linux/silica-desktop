@@ -1,8 +1,8 @@
-//! Decorazioni lato server (`xdg-decoration`): la barra del titolo di Ossido sopra il
-//! contenuto della finestra, con i pulsanti chiudi, riduci e schermo intero.
+//! Server-side decorations (`xdg-decoration`): Ossido's title bar above the window content,
+//! with the close, minimize and full-screen buttons.
 //!
-//! La posizione della finestra nello spazio resta quella del contenuto; la cornice è il
-//! contenuto più la barra, sopra. Angoli e ombra seguono la cornice.
+//! The window position in the space stays the content's; the frame is the content plus the
+//! bar, on top. Corners and shadow follow the frame.
 
 use ossido_render::titlebar::{self, Part};
 use smithay::delegate_xdg_decoration;
@@ -17,12 +17,12 @@ use tracing::{info, warn};
 
 use crate::state::State;
 
-/// Pressione lunga sul pulsante verde prima del popover di disposizione: fra 0,4 s (non
-/// c'è) e 1,4 s (c'è) in windows.md; provvisorio finché W-08 non misura il ritardo.
+/// Long press on the green button before the arrangement popover: between 0.4 s (not there)
+/// and 1.4 s (there) in windows.md; provisional until W-08 measures the delay.
 pub const WINDOW_MENU_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
 
-/// La finestra ha la barra di Ossido: modo lato server già confermato al client, e non è
-/// a schermo intero (lì la barra sparisce, come nelle riprese).
+/// The window has Ossido's bar: server-side mode already confirmed to the client, and it is
+/// not full screen (there the bar disappears, as in the recordings).
 pub fn is_server_side(window: &Window) -> bool {
     window
         .toplevel()
@@ -30,16 +30,16 @@ pub fn is_server_side(window: &Window) -> bool {
         && !crate::windows::is_fullscreen(window)
 }
 
-/// L'app ha chiesto il contenuto a tutta finestra (`silica-window-v1`): l'altezza della sua
-/// barra degli strumenti. Ossido allora non aggiunge la barra, disegna solo i pulsanti.
+/// The app asked for full-size content (`silica-window-v1`): the height of its toolbar.
+/// Ossido then does not add the bar, it only draws the buttons.
 pub fn full_size_toolbar(window: &Window) -> Option<u32> {
     window
         .toplevel()
         .and_then(|toplevel| crate::window_appearance::full_size_toolbar(toplevel.wl_surface()))
 }
 
-/// Altezza della barra sopra il contenuto (0 senza decorazioni lato server o con il contenuto
-/// a tutta finestra).
+/// Height of the bar above the content (0 without server-side decorations or with full-size
+/// content).
 pub fn titlebar_height(window: &Window) -> i32 {
     if is_server_side(window) && full_size_toolbar(window).is_none() {
         titlebar::HEIGHT
@@ -48,19 +48,19 @@ pub fn titlebar_height(window: &Window) -> i32 {
     }
 }
 
-/// Il centro verticale dei pulsanti: 26 nella barra di Ossido, metà della barra degli strumenti
-/// dell'app con il contenuto a tutta finestra.
+/// The vertical center of the buttons: 26 in Ossido's bar, half of the app's toolbar with
+/// full-size content.
 pub fn button_center_y(window: &Window) -> f64 {
     full_size_toolbar(window).map_or(titlebar::BUTTON_CENTERS[0].1, |h| f64::from(h) / 2.0)
 }
 
-/// Un punto della cornice nelle coordinate della barra di Ossido (dove i pulsanti hanno il
-/// centro a y 26), per riusare `part_at` e `over_buttons` anche a tutta finestra.
+/// A point of the frame in the coordinates of Ossido's bar (where the buttons have their
+/// center at y 26), to reuse `part_at` and `over_buttons` with full-size content too.
 pub fn to_titlebar_space(window: &Window, local: Point<f64, Logical>) -> Point<f64, Logical> {
     local - Point::from((0.0, button_center_y(window) - titlebar::BUTTON_CENTERS[0].1))
 }
 
-/// La cornice dato il rettangolo del contenuto: la barra si aggiunge sopra.
+/// The frame given the content rectangle: the bar is added on top.
 pub fn frame_of(window: &Window, content: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
     let bar = titlebar_height(window);
     Rectangle::new(
@@ -69,7 +69,7 @@ pub fn frame_of(window: &Window, content: Rectangle<i32, Logical>) -> Rectangle<
     )
 }
 
-/// Dove il puntatore è sopra una finestra: barra (con la parte) o contenuto.
+/// Where the pointer is over a window: bar (with the part) or content.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Hit {
     Titlebar(Window, Part, Point<f64, Logical>),
@@ -78,7 +78,7 @@ pub enum Hit {
 
 impl XdgDecorationHandler for State {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
-        // Ossido preferisce disegnare la barra: aspetto uniforme fra le app.
+        // Ossido prefers to draw the bar: a uniform look across apps.
         toplevel.with_pending_state(|state| state.decoration_mode = Some(Mode::ServerSide));
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
@@ -86,7 +86,7 @@ impl XdgDecorationHandler for State {
     }
 
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: Mode) {
-        // Un client che disegna da sé la barra (GTK4) la tiene.
+        // A client that draws its own bar (GTK4) keeps it.
         toplevel.with_pending_state(|state| state.decoration_mode = Some(mode));
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
@@ -104,14 +104,14 @@ impl XdgDecorationHandler for State {
 delegate_xdg_decoration!(State);
 
 impl State {
-    /// La cornice di una finestra nello spazio, se è mappata.
+    /// The frame of a window in the space, if mapped.
     pub fn window_frame(&self, window: &Window) -> Option<Rectangle<i32, Logical>> {
         self.space
             .element_geometry(window)
             .map(|content| frame_of(window, content))
     }
 
-    /// La finestra sotto un punto, dall'alto, con la barra contata come parte della finestra.
+    /// The window under a point, from the top, with the bar counted as part of the window.
     pub fn window_hit(&self, location: Point<f64, Logical>) -> Option<Hit> {
         for window in self.space.elements().rev() {
             if let Some(frame) = self.window_frame(window)
@@ -120,12 +120,12 @@ impl State {
                 let local = location - frame.loc.to_f64();
                 if frame.to_f64().contains(location)
                     && let Some(part) = titlebar::part_at(to_titlebar_space(window, local))
-                    // A tutta finestra il resto della fascia è dell'app (la sua barra degli
-                    // strumenti): solo i pulsanti sono di Ossido.
+                    // With full-size content the rest of the band belongs to the app (its
+                    // toolbar): only the buttons are Ossido's.
                     && (full_size_toolbar(window).is_none() || part != Part::Bar)
                 {
-                    // Il punto nelle coordinate della barra: lì valgono `over_buttons` e
-                    // il trascinamento.
+                    // The point in the bar coordinates: there `over_buttons` and dragging
+                    // apply.
                     return Some(Hit::Titlebar(
                         window.clone(),
                         part,
@@ -147,8 +147,8 @@ impl State {
         None
     }
 
-    /// Una finestra appena passata alle decorazioni lato server: se la barra uscirebbe
-    /// dall'area utile, la finestra scende.
+    /// A window that just switched to server-side decorations: if the bar would go out of
+    /// the usable area, the window moves down.
     pub fn make_room_for_titlebar(&mut self, window: &Window) {
         let (Some(location), Some(frame)) = (
             self.space.element_location(window),
@@ -164,10 +164,10 @@ impl State {
         }
     }
 
-    /// Esegue il pulsante della barra rilasciato sopra lo stesso pulsante.
-    /// Pressione sul pulsante verde: dopo `WINDOW_MENU_DELAY` con il tasto ancora premuto sul
-    /// pulsante, la shell apre il popover di disposizione e il rilascio non fa più lo
-    /// schermo intero (windows.md: a 0,4 s non c'è, a 1,4 s sì; il ritardo vero è W-08).
+    /// Runs the bar button released over the same button.
+    /// Press on the green button: after `WINDOW_MENU_DELAY` with the button still held on it,
+    /// the shell opens the arrangement popover and the release no longer toggles full screen
+    /// (windows.md: at 0.4 s it is not there, at 1.4 s it is; the real delay is W-08).
     pub fn arm_window_menu(&mut self, window: &Window) {
         self.titlebar_press_count = self.titlebar_press_count.wrapping_add(1);
         let press = self.titlebar_press_count;
@@ -179,7 +179,7 @@ impl State {
                 && state.titlebar_press_inside
                 && matches!(&state.titlebar_press, Some((w, Part::Zoom)) if *w == window);
             if same && let Some(frame) = state.window_frame(&window) {
-                // La punta sotto il pulsante: centro x 72, base del disco (raggio 7).
+                // The tip below the button: center x 72, bottom of the disc (radius 7).
                 let center_y = button_center_y(&window);
                 let point = frame.loc
                     + Point::from((
@@ -194,7 +194,7 @@ impl State {
             TimeoutAction::Drop
         });
         if let Err(err) = inserted {
-            warn!("timer del popover: {err}");
+            warn!("popover timer: {err}");
         }
     }
 
@@ -211,9 +211,9 @@ impl State {
             Part::Bar => Ok(()),
         };
         if let Err(err) = result {
-            warn!("pulsante {part:?}: {err}");
+            warn!("button {part:?}: {err}");
         } else {
-            info!("pulsante {part:?}");
+            info!("button {part:?}");
         }
     }
 }

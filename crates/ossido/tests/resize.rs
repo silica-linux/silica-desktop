@@ -1,5 +1,5 @@
-//! Ridimensionamento dai bordi della cornice (mustache-spec 1.1, MU-08): 2 pt fuori e 3 dentro
-//! a sinistra e in alto, 4 fuori e 3 dentro a destra e in basso, angoli diagonali per 16 pt.
+//! Resizing from the frame edges (mustache-spec 1.1, MU-08): 2 pt outside and 3 inside on the
+//! left and at the top, 4 outside and 3 inside on the right and at the bottom, diagonal corners for 16 pt.
 
 #![allow(
     clippy::unwrap_used,
@@ -26,7 +26,7 @@ fn window(ossido: &Headless) -> WindowInfo {
     list.into_iter().next().unwrap()
 }
 
-/// Preme in `from`, trascina di `by` e rilascia.
+/// Presses at `from`, drags by `by` and releases.
 fn drag(ossido: &Headless, from: (f64, f64), by: (f64, f64)) {
     let mut client = ossido.client();
     client
@@ -52,10 +52,10 @@ fn drag(ossido: &Headless, from: (f64, f64), by: (f64, f64)) {
         .unwrap();
 }
 
-/// Una finestra decorata 300 × 200 e la sua cornice (barra compresa): x, y, larghezza, altezza.
+/// A decorated 300 × 200 window and its frame (bar included): x, y, width, height.
 fn open(name: &str) -> (Headless, TestWindow, (f64, f64, f64, f64)) {
     let ossido = Headless::start_with(name, SIZE, &["--background", "7a7b80"]);
-    let mut win = TestWindow::open_decorated(&ossido.wayland, "bordi", (W as u32, H as u32));
+    let mut win = TestWindow::open_decorated(&ossido.wayland, "edges", (W as u32, H as u32));
     win.configured_size();
     let info = window(&ossido);
     let frame = (
@@ -68,7 +68,7 @@ fn open(name: &str) -> (Headless, TestWindow, (f64, f64, f64, f64)) {
 }
 
 #[test]
-fn il_bordo_sinistro_prende_anche_2_pt_fuori() {
+fn the_left_edge_also_takes_2_pt_outside() {
     let (ossido, mut win, (x, y, _, _)) = open("resize-left");
     let before = window(&ossido);
     drag(&ossido, (x - 1.5, y + 120.0), (-50.0, 0.0));
@@ -76,18 +76,18 @@ fn il_bordo_sinistro_prende_anche_2_pt_fuori() {
     assert_eq!(
         window(&ossido).x,
         before.x - 50,
-        "il lato destro resta fermo"
+        "the right side stays still"
     );
 }
 
 #[test]
-fn il_bordo_destro_prende_4_pt_fuori_e_non_oltre() {
+fn the_right_edge_takes_4_pt_outside_and_no_more() {
     let (ossido, mut win, (x, y, w, _)) = open("resize-right");
     let before = window(&ossido);
     drag(&ossido, (x + w + 3.5, y + 120.0), (40.0, 0.0));
     assert_eq!(win.configured_size(), Some((W + 40, H)));
     assert_eq!(window(&ossido).x, before.x);
-    // Appena oltre la zona (4 pt fuori): niente.
+    // Just past the zone (4 pt outside): nothing.
     let (ossido, mut win, (x, y, w, _)) = open("resize-right-out");
     let asked = win.configured_size();
     drag(&ossido, (x + w + 4.5, y + 120.0), (40.0, 0.0));
@@ -95,20 +95,20 @@ fn il_bordo_destro_prende_4_pt_fuori_e_non_oltre() {
 }
 
 #[test]
-fn l_angolo_ridimensiona_in_due_direzioni() {
+fn the_corner_resizes_in_two_directions() {
     let (ossido, mut win, (x, y, w, h)) = open("resize-corner");
-    // 1 pt fuori a destra, 5 pt sopra il fondo: dentro i 16 pt dell'angolo.
+    // 1 pt outside on the right, 5 pt above the bottom: inside the 16 pt of the corner.
     drag(&ossido, (x + w + 1.0, y + h - 5.0), (30.0, 20.0));
     assert_eq!(win.configured_size(), Some((W + 30, H + 20)));
 }
 
 #[test]
-fn a_tutta_finestra_il_bordo_alto_e_la_cima_dell_app() {
+fn with_full_size_content_the_top_edge_is_the_top_of_the_app() {
     let ossido = Headless::start_with("resize-full", SIZE, &["--background", "7a7b80"]);
-    let mut win = TestWindow::open_decorated(&ossido.wayland, "bordi", (W as u32, H as u32));
+    let mut win = TestWindow::open_decorated(&ossido.wayland, "edges", (W as u32, H as u32));
     win.set_full_size_content(52);
     let before = window(&ossido);
-    // La cornice è il contenuto: la cima è a y della finestra.
+    // The frame is the content: the top is at the window's y.
     let (x, y) = (f64::from(before.x), f64::from(before.y));
     drag(&ossido, (x + 150.0, y - 1.0), (0.0, -30.0));
     assert_eq!(win.configured_size(), Some((W, H + 30)));

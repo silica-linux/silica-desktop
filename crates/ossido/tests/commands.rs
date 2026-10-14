@@ -1,4 +1,4 @@
-//! Ogni comando del catalogo è eseguibile da Ossido, dal canale di controllo.
+//! Every catalog command can be run by Ossido, from the control channel.
 
 #![allow(
     clippy::unwrap_used,
@@ -30,11 +30,11 @@ fn every_catalog_command_is_implemented() {
     let ossido = Headless::start("catalog");
     let mut client = ossido.client();
     for spec in CATALOG.iter().filter(|spec| spec.id != SESSION_QUIT) {
-        // Parametri volutamente sbagliati: conta solo che Ossido conosca il comando.
+        // Deliberately wrong parameters: it only matters that Ossido knows the command.
         if let Err(Error::Command(message)) = client.call(spec.id, json!({"_": 0})) {
             assert!(
-                !message.contains("comando sconosciuto"),
-                "{} non è implementato",
+                !message.contains("unknown command"),
+                "{} is not implemented",
                 spec.id
             );
         }
@@ -57,13 +57,13 @@ fn engine_commands_returns_the_catalog() {
 #[test]
 fn window_list_focus_move_and_close() {
     let ossido = Headless::start("windows");
-    let mut first = TestWindow::open(&ossido.wayland, "prima");
-    let _second = TestWindow::open(&ossido.wayland, "seconda");
+    let mut first = TestWindow::open(&ossido.wayland, "first");
+    let _second = TestWindow::open(&ossido.wayland, "second");
 
-    // La finestra aperta per ultima è in cima e ha il focus.
+    // The window opened last is on top and has the focus.
     let list = windows(&ossido);
     assert_eq!(list.len(), 2);
-    assert_eq!(list[0].title.as_deref(), Some("seconda"));
+    assert_eq!(list[0].title.as_deref(), Some("second"));
     assert!(list[0].focused && !list[1].focused);
     let first_id = list[1].id;
     assert_eq!(
@@ -76,7 +76,7 @@ fn window_list_focus_move_and_close() {
     let list = windows(&ossido);
     assert_eq!((list[0].id, list[0].focused), (first_id, true));
 
-    // Spostata via engine.execute: stesso comando, altro ingresso.
+    // Moved via engine.execute: same command, another entry point.
     client
         .call(
             ENGINE_EXECUTE,
@@ -89,11 +89,11 @@ fn window_list_focus_move_and_close() {
         .unwrap();
     assert_eq!((moved.x, moved.y), (200, 130));
     let shot = screenshot(&ossido);
-    // A metà del lato sinistro: lontano dagli angoli tagliati.
+    // Halfway along the left side: far from the cut corners.
     assert_eq!(pixel(&shot, 200, 160), [255, 0, 0, 255]);
     assert_outside_window(&shot, 199, 160);
 
-    // Senza id, window.close agisce sulla finestra con il focus.
+    // Without an id, window.close acts on the focused window.
     assert!(!first.close_requested());
     client.call(WINDOW_CLOSE, Value::Null).unwrap();
     assert!(first.close_requested());
@@ -106,7 +106,7 @@ fn bad_targets_and_params_are_errors() {
     for (command, params) in [
         (WINDOW_CLOSE, Value::Null),
         (WINDOW_FOCUS, json!({"id": 99})),
-        (WINDOW_MOVE, json!({"x": "dieci", "y": 0})),
+        (WINDOW_MOVE, json!({"x": "ten", "y": 0})),
         (ENGINE_EXECUTE, json!({"id": ENGINE_EXECUTE})),
     ] {
         assert!(
@@ -123,10 +123,10 @@ fn session_quit_stops_ossido() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = ossido.try_wait() {
-            assert!(status.success(), "uscita con {status}");
+            assert!(status.success(), "exit with {status}");
             break;
         }
-        assert!(Instant::now() < deadline, "Ossido non è uscito");
+        assert!(Instant::now() < deadline, "Ossido did not exit");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -134,7 +134,7 @@ fn session_quit_stops_ossido() {
 #[test]
 fn perf_measures_frame_intervals_and_process_memory() {
     let ossido = Headless::start("perf");
-    let mut window = TestWindow::open(&ossido.wayland, "ritmo");
+    let mut window = TestWindow::open(&ossido.wayland, "pace");
     let mut client = ossido.client();
     client.call(PERF_FRAMES, json!({"reset": true})).unwrap();
 
@@ -144,10 +144,10 @@ fn perf_measures_frame_intervals_and_process_memory() {
     let frames = report
         .iter()
         .find(|s| s.surface == "window 1")
-        .expect("la finestra non ha misure");
+        .expect("the window has no measurements");
     assert_eq!(frames.frames, 6);
     assert_eq!(frames.pid, Some(std::process::id()));
-    // 5 intervalli da circa 40 ms: tutti oltre 1,5 periodi a 60 Hz.
+    // 5 intervals of about 40 ms: all over 1.5 periods at 60 Hz.
     assert!(frames.p50_ms >= 35.0 && frames.p50_ms < 200.0, "{frames:?}");
     assert_eq!(frames.slow, 5);
     assert!(frames.startup_ms.is_none());

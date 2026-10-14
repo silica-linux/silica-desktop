@@ -1,8 +1,8 @@
-//! linux-dmabuf: i client disegnano con la GPU e passano il buffer senza copie.
+//! linux-dmabuf: clients draw with the GPU and pass the buffer without copies.
 //!
-//! Il feedback (versione 4) indica ai client il render node della GPU di Ossido: senza,
-//! Mesa non sa quale device usare per una superficie Wayland e ricade su llvmpipe.
-//! Solo con il backend winit; in headless (pixman) il protocollo non c'è.
+//! The feedback (version 4) tells clients the render node of Ossido's GPU: without it,
+//! Mesa does not know which device to use for a Wayland surface and falls back to llvmpipe.
+//! Only with the winit backend; in headless (pixman) the protocol is not there.
 
 use std::os::unix::fs::MetadataExt;
 
@@ -20,20 +20,20 @@ use tracing::{info, warn};
 use crate::backend::Backend;
 use crate::state::State;
 
-/// Il device (`dev_t`) del render node su cui gira il renderer di Ossido.
+/// The device (`dev_t`) of the render node Ossido's renderer runs on.
 fn main_device(renderer: &GlesRenderer) -> Result<u64, String> {
     let device = EGLDevice::device_for_display(renderer.egl_context().display())
-        .map_err(|e| format!("device EGL non trovato: {e}"))?;
+        .map_err(|e| format!("EGL device not found: {e}"))?;
     let path = device
         .render_device_path()
-        .map_err(|e| format!("render node non trovato: {e}"))?;
+        .map_err(|e| format!("render node not found: {e}"))?;
     let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    info!("render node per dmabuf: {}", path.display());
+    info!("render node for dmabuf: {}", path.display());
     Ok(metadata.rdev())
 }
 
-/// Crea il global `zwp_linux_dmabuf_v1` con i formati che il renderer sa importare.
-/// Senza render node (driver che non lo espone) offre la versione 3, senza feedback.
+/// Creates the `zwp_linux_dmabuf_v1` global with the formats the renderer can import.
+/// Without a render node (a driver that does not expose it) it offers version 3, without feedback.
 pub fn create_global(
     state: &mut DmabufState,
     dh: &DisplayHandle,
@@ -48,7 +48,7 @@ pub fn create_global(
     match feedback {
         Ok(feedback) => state.create_global_with_default_feedback::<State>(dh, &feedback),
         Err(err) => {
-            warn!("dmabuf senza feedback: {err}");
+            warn!("dmabuf without feedback: {err}");
             state.create_global::<State>(dh, formats)
         }
     }
@@ -74,7 +74,7 @@ impl DmabufHandler for State {
             Backend::Headless(_) => false,
         };
         if imported {
-            // Se il client è già sparito non c'è nessuno da avvisare.
+            // If the client is already gone there is nobody to notify.
             let _ = notifier.successful::<State>();
         } else {
             notifier.failed();

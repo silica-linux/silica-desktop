@@ -1,8 +1,8 @@
-//! `silica-window-v1` lato server: un'app chiede il contenuto a tutta finestra. Ossido non
-//! aggiunge la barra del titolo sopra il contenuto e disegna solo i pulsanti della finestra
-//! sopra l'app, centrati nella sua barra degli strumenti. Lo stato è doppio (si applica al
-//! `wl_surface.commit`); un client che chiede due oggetti per la stessa superficie riceve un
-//! errore di protocollo, mai un crash di Ossido.
+//! Server-side `silica-window-v1`: an app asks for full-size content. Ossido does not add the
+//! title bar above the content and only draws the window buttons over the app, centered in
+//! its toolbar. The state is double-buffered (it applies on `wl_surface.commit`); a client
+//! asking for two objects for the same surface receives a protocol error, never an Ossido
+//! crash.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,10 +16,10 @@ use smithay::wayland::compositor::{Cacheable, with_states};
 
 use crate::state::State;
 
-/// La barra degli strumenti più alta che si accetta (pixel logici).
+/// The tallest toolbar accepted (logical pixels).
 pub const MAX_TOOLBAR: u32 = 200;
 
-/// Lo stato doppio: l'altezza della barra degli strumenti dell'app (0: la barra di Ossido).
+/// The double-buffered state: the height of the app's toolbar (0: Ossido's bar).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AppearanceState {
     pub toolbar_height: u32,
@@ -38,7 +38,7 @@ impl Cacheable for AppearanceState {
 #[derive(Default)]
 struct HasWindow(AtomicBool);
 
-/// Il contenuto a tutta finestra della superficie: l'altezza della barra degli strumenti.
+/// The full-size content of the surface: the height of the toolbar.
 pub fn full_size_toolbar(surface: &WlSurface) -> Option<u32> {
     let height = with_states(surface, |states| {
         states
@@ -96,7 +96,7 @@ impl Dispatch<SilicaWindowManagerV1, ()> for State {
                 if already {
                     manager.post_error(
                         silica_window_manager_v1::Error::AlreadyHasWindow,
-                        "la superficie ha già un oggetto finestra",
+                        "the surface already has a window object",
                     );
                     return;
                 }

@@ -1,4 +1,4 @@
-//! Backend di Ossido: winit (annidato, per lo sviluppo) e headless (test e CI).
+//! Ossido's backends: winit (nested, for development) and headless (tests and CI).
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -20,8 +20,8 @@ use crate::state::{Ossido, State};
 
 pub enum Backend {
     Winit(Box<WinitBackend>),
-    /// Nessuna finestra: si disegna solo quando serve una cattura, con GLES su un device
-    /// EGL (la GPU o llvmpipe) se c'è, altrimenti con pixman.
+    /// No window: it draws only when a capture is needed, with GLES on an EGL device (the
+    /// GPU or llvmpipe) if there is one, otherwise with pixman.
     Headless(Headless),
 }
 
@@ -30,14 +30,14 @@ pub enum Headless {
     Pixman(PixmanRenderer),
 }
 
-/// Il renderer headless, da `OSSIDO_HEADLESS_RENDERER`: GLES su llvmpipe (predefinito),
-/// `gpu` per GLES sulla GPU, `pixman` senza GLES. Se EGL manca, pixman.
+/// The headless renderer, from `OSSIDO_HEADLESS_RENDERER`: GLES on llvmpipe (default),
+/// `gpu` for GLES on the GPU, `pixman` without GLES. If EGL is missing, pixman.
 fn headless_renderer() -> Result<Headless, Box<dyn std::error::Error>> {
     let choice = std::env::var("OSSIDO_HEADLESS_RENDERER").unwrap_or_default();
     if choice != "pixman" {
         match crate::egl::headless_renderer(choice == "gpu") {
             Ok(renderer) => return Ok(Headless::Gles(Box::new(renderer))),
-            Err(err) => warn!("headless senza GLES, uso pixman: {err}"),
+            Err(err) => warn!("headless without GLES, using pixman: {err}"),
         }
     }
     Ok(Headless::Pixman(PixmanRenderer::new()?))
@@ -48,9 +48,9 @@ pub struct WinitBackend {
     pub damage_tracker: OutputDamageTracker,
 }
 
-/// Frequenza dichiarata per gli output, in millihertz.
+/// Refresh rate declared for the outputs, in millihertz.
 const NESTED_REFRESH_MHZ: i32 = 60_000;
-/// Intervallo dei frame callback in headless.
+/// Interval of the frame callbacks in headless.
 const HEADLESS_FRAME: Duration = Duration::from_micros(16_667);
 
 fn new_output(name: &str, model: &str, mode: Mode, transform: Transform) -> Output {
@@ -106,7 +106,7 @@ pub fn init_winit(
     mut display: Display<State>,
     (width, height): (i32, i32),
 ) -> Result<Ossido, Box<dyn std::error::Error>> {
-    // La finestra annidata ha la dimensione chiesta in pixel fisici, come l'output headless.
+    // The nested window has the requested size in physical pixels, like the headless output.
     let attributes = smithay::reexports::winit::window::Window::default_attributes()
         .with_inner_size(smithay::reexports::winit::dpi::PhysicalSize::new(
             width.max(1).unsigned_abs(),
@@ -119,7 +119,7 @@ pub fn init_winit(
         size: graphics.window_size(),
         refresh: NESTED_REFRESH_MHZ,
     };
-    let output = new_output("winit", "Ossido annidato", mode, Transform::Flipped180);
+    let output = new_output("winit", "Nested Ossido", mode, Transform::Flipped180);
     let damage_tracker = OutputDamageTracker::from_output(&output);
 
     let mut state = State::new(
@@ -165,7 +165,7 @@ pub fn init_winit(
 }
 
 impl State {
-    /// Disegna l'output corrente fuori schermo e lo restituisce in RGBA.
+    /// Draws the current output offscreen and returns it as RGBA.
     pub fn screenshot(&mut self) -> Result<Capture, String> {
         let speed = self.animation_speed;
         let now = Instant::now();
@@ -294,10 +294,10 @@ impl State {
         match rendered {
             Ok(()) => {
                 if let Err(err) = backend.graphics.submit(Some(&[damage])) {
-                    warn!("submit del frame fallito: {err:?}");
+                    warn!("frame submit failed: {err:?}");
                 }
             }
-            Err(err) => warn!("render fallito: {err}"),
+            Err(err) => warn!("render failed: {err}"),
         }
         backend.graphics.window().request_redraw();
         self.perf.rendered(now.elapsed());
@@ -306,7 +306,7 @@ impl State {
 }
 
 impl State {
-    /// L'istantanea della finestra che si chiude, per farla svanire (solo con GLES).
+    /// The snapshot of the closing window, to fade it out (only with GLES).
     pub fn start_closing(&mut self, window: &smithay::desktop::Window) {
         if self.animation_speed <= 0.0 {
             return;
@@ -329,9 +329,9 @@ impl State {
 }
 
 impl State {
-    /// Il genio di una finestra ancora nello spazio: verso il Dock (riduzione) o dal Dock
-    /// (ripristino, la finestra appena rimappata resta nascosta finché il genio non finisce).
-    /// Niente con le animazioni spente o senza GLES.
+    /// The genie of a window still in the space: towards the Dock (minimize) or from the Dock
+    /// (restore, the window just remapped stays hidden until the genie ends).
+    /// Nothing with animations off or without GLES.
     pub fn start_genie(&mut self, window: &smithay::desktop::Window, restoring: bool) {
         if self.animation_speed <= 0.0 {
             return;
@@ -347,7 +347,7 @@ impl State {
         };
         let now = Instant::now();
         let speed = self.animation_speed;
-        // Una finestra ha un solo genio: quello nuovo sostituisce il vecchio.
+        // A window has only one genie: the new one replaces the old one.
         self.genies
             .retain(|genie| !genie.finished(now, speed) && !genie.hides(window));
         if let Some(genie) = crate::render::snapshot_genie(
@@ -364,20 +364,20 @@ impl State {
     }
 }
 
-/// La miniatura di una finestra ridotta, nei suoi dati: RGBA premoltiplicato, al più
-/// `THUMBNAIL_MAX` pixel per lato.
+/// The thumbnail of a minimized window, in its data: premultiplied RGBA, at most
+/// `THUMBNAIL_MAX` pixels per side.
 #[derive(Default)]
 pub struct Thumbnail(pub std::sync::Mutex<Option<(u32, u32, Vec<u8>)>>);
 
 pub const THUMBNAIL_MAX: u32 = 256;
 
 impl State {
-    /// Fotografa la cornice della finestra (senza ombra) e la tiene, ridotta, nei suoi dati.
+    /// Photographs the window frame (without shadow) and keeps it, reduced, in its data.
     pub fn capture_thumbnail(&mut self, window: &smithay::desktop::Window) {
         let capture = match self.window_capture(window) {
             Ok(capture) => capture,
             Err(err) => {
-                warn!("miniatura non letta: {err}");
+                warn!("thumbnail not read: {err}");
                 return;
             }
         };
@@ -392,7 +392,7 @@ impl State {
         }
     }
 
-    /// La finestra da sola (cornice e barra comprese), a piena risoluzione.
+    /// The window on its own (frame and bar included), at full resolution.
     pub fn window_capture(
         &mut self,
         window: &smithay::desktop::Window,
@@ -403,25 +403,25 @@ impl State {
             Backend::Winit(backend) => backend.graphics.renderer(),
             Backend::Headless(Headless::Gles(renderer)) => renderer.as_mut(),
             Backend::Headless(Headless::Pixman(_)) => {
-                return Err("cattura di una finestra non disponibile con pixman".to_owned());
+                return Err("window capture not available with pixman".to_owned());
             }
         };
         let snapshot =
             crate::render::snapshot_window(renderer, &self.space, &self.output, window, dark)
-                .ok_or("finestra non disegnabile")?;
+                .ok_or("window cannot be drawn")?;
         let scale = self.output.current_scale().fractional_scale();
         let (Some(geometry), Some(origin)) = (
             self.space.element_geometry(window),
             self.space.output_geometry(&self.output),
         ) else {
-            return Err("finestra non sullo schermo".to_owned());
+            return Err("window not on screen".to_owned());
         };
         let mut frame = crate::decorations::frame_of(window, geometry);
         frame.loc -= origin.loc;
         let frame = frame.to_physical_precise_round(scale);
         let visible = frame
             .intersection(snapshot.bbox)
-            .ok_or("finestra fuori dallo schermo")?;
+            .ok_or("window off screen")?;
         let region = Rectangle::<i32, smithay::utils::Buffer>::new(
             (visible.loc - snapshot.bbox.loc).to_logical(1).to_buffer(
                 1,
@@ -437,11 +437,11 @@ impl State {
                 smithay::backend::allocator::Fourcc::Abgr8888,
             )
             .and_then(|mapping| renderer.map_texture(&mapping).map(<[u8]>::to_vec))
-            .map_err(|err| format!("lettura: {err:?}"))?;
+            .map_err(|err| format!("readback: {err:?}"))?;
         let (Ok(width), Ok(height)) =
             (u32::try_from(visible.size.w), u32::try_from(visible.size.h))
         else {
-            return Err("dimensione non valida".to_owned());
+            return Err("invalid size".to_owned());
         };
         Ok(crate::capture::Capture {
             width,
@@ -451,7 +451,7 @@ impl State {
     }
 }
 
-/// Riduce un'immagine RGBA (media dei pixel di ogni riquadro) a non più di `max` per lato.
+/// Reduces an RGBA image (average of the pixels of every box) to at most `max` per side.
 pub fn shrink(pixels: &[u8], w: u32, h: u32, max: u32) -> Option<(u32, u32, Vec<u8>)> {
     if w == 0 || h == 0 || pixels.len() < (w as usize) * (h as usize) * 4 {
         return None;
@@ -492,14 +492,14 @@ pub fn shrink(pixels: &[u8], w: u32, h: u32, max: u32) -> Option<(u32, u32, Vec<
     Some((tw, th, out))
 }
 
-/// Il renderer gira su un rasterizzatore software (EGL_MESA_device_software).
+/// The renderer runs on a software rasterizer (EGL_MESA_device_software).
 fn is_software(renderer: &GlesRenderer) -> bool {
     smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
         .is_ok_and(|device| device.is_software())
 }
 
 impl State {
-    /// I pulsanti della barra da disegnare in questo frame (simboli in dissolvenza, premuto).
+    /// The bar buttons to draw in this frame (fading symbols, pressed).
     pub fn buttons_view(&self) -> Option<crate::render::ButtonsView> {
         let now = Instant::now();
         let ms = |t: Instant| now.saturating_duration_since(t).as_secs_f64() * 1000.0;
@@ -532,7 +532,7 @@ impl State {
         })
     }
 
-    /// ⌥ tenuto sulla tastiera.
+    /// ⌥ held on the keyboard.
     pub fn alt_held(&self) -> bool {
         self.seat
             .get_keyboard()

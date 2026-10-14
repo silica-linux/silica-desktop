@@ -1,6 +1,6 @@
-//! Avvia Ossido in headless e lo pilota dal canale di controllo.
+//! Starts Ossido headless and drives it from the control channel.
 
-// Codice di test: un errore deve far fallire il test (AGENTS.md vale per il codice non di test).
+// Test code: an error must make the test fail (AGENTS.md applies to non-test code).
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -39,7 +39,7 @@ fn screenshot_inline_returns_base64_png() {
     let ossido = Headless::start("inline");
     let mut client = ossido.client();
     let first = client.screenshot(&ScreenshotParams::default()).unwrap();
-    // La connessione resta aperta per più comandi.
+    // The connection stays open for several commands.
     let second = client.screenshot(&ScreenshotParams::default()).unwrap();
 
     for shot in [first, second] {
@@ -58,8 +58,8 @@ fn unknown_command_is_an_error_not_a_crash() {
     let mut client = ossido.client();
     match client.call("ui.nope", serde_json::Value::Null) {
         Err(Error::Command(message)) => assert!(message.contains("ui.nope")),
-        other => panic!("atteso un errore di comando, ottenuto {other:?}"),
+        other => panic!("expected a command error, got {other:?}"),
     }
-    // Ossido è ancora vivo e risponde.
+    // Ossido is still alive and answers.
     client.screenshot(&ScreenshotParams::default()).unwrap();
 }

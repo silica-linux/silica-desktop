@@ -1,4 +1,4 @@
-//! `--session-bus`: Ossido avvia un bus di sessione privato e lo passa ai client.
+//! `--session-bus`: Ossido starts a private session bus and passes it to the clients.
 
 #![allow(clippy::expect_used)]
 
@@ -11,7 +11,7 @@ use common::Headless;
 use serde_json::{Value, json};
 use silica_control::commands::{APP_LAUNCH, SYSTEM_DND, SYSTEM_STATUS, SYSTEM_VOLUME};
 
-/// Attende che `path` esista e non sia vuoto.
+/// Waits for `path` to exist and not be empty.
 fn wait_for_file(path: &std::path::Path) -> String {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -22,14 +22,14 @@ fn wait_for_file(path: &std::path::Path) -> String {
         }
         assert!(
             Instant::now() < deadline,
-            "{} non è comparso",
+            "{} did not appear",
             path.display()
         );
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 
-/// I nomi presenti sul bus, con `dbus-send`.
+/// The names present on the bus, with `dbus-send`.
 fn list_names(address: &str) -> String {
     let output = Command::new("dbus-send")
         .args([
@@ -40,7 +40,7 @@ fn list_names(address: &str) -> String {
             "org.freedesktop.DBus.ListNames",
         ])
         .output()
-        .expect("dbus-send (pacchetto dbus) è necessario per questo test");
+        .expect("dbus-send (package dbus) is required for this test");
     assert!(output.status.success(), "{output:?}");
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -59,23 +59,23 @@ fn clients_get_the_private_bus() {
         )
         .unwrap();
     let address = wait_for_file(&file);
-    assert!(address.starts_with("unix:"), "indirizzo: {address}");
-    // Il bus è quello di Ossido, non quello della sessione che lo ospita.
+    assert!(address.starts_with("unix:"), "address: {address}");
+    // The bus is Ossido's, not the one of the hosting session.
     assert_ne!(
         Some(address.as_str()),
         std::env::var("DBUS_SESSION_BUS_ADDRESS").ok().as_deref()
     );
     list_names(&address);
 
-    // Con `cargo test --workspace` silica-daemon è compilato accanto a Ossido: allora deve
-    // prendere il nome delle notifiche sul bus privato.
+    // With `cargo test --workspace` silica-daemon is built next to Ossido: then it must take
+    // the notifications name on the private bus.
     let daemon = std::path::Path::new(env!("CARGO_BIN_EXE_ossido")).with_file_name("silica-daemon");
     if daemon.is_file() {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !list_names(&address).contains("org.freedesktop.Notifications") {
             assert!(
                 Instant::now() < deadline,
-                "silica-daemon non ha preso il nome"
+                "silica-daemon did not take the name"
             );
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -102,21 +102,21 @@ fn without_the_option_clients_keep_the_host_bus() {
 
 #[test]
 fn system_commands_reach_the_daemon() {
-    // Serve silica-daemon accanto a Ossido (cargo test --workspace lo compila).
+    // silica-daemon is needed next to Ossido (cargo test --workspace builds it).
     let daemon = std::path::Path::new(env!("CARGO_BIN_EXE_ossido")).with_file_name("silica-daemon");
     if !daemon.is_file() {
-        eprintln!("silica-daemon non compilato: test saltato");
+        eprintln!("silica-daemon not built: test skipped");
         return;
     }
     let ossido = Headless::start_with("system", (320, 240), &["--session-bus"]);
     let mut client = ossido.client();
-    // Solo Non disturbare: le altre azioni cambierebbero la macchina che esegue i test.
+    // Only Do Not Disturb: the other actions would change the machine running the tests.
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         if client.call(SYSTEM_STATUS, Value::Null).is_ok() {
             break;
         }
-        assert!(Instant::now() < deadline, "system.status mai disponibile");
+        assert!(Instant::now() < deadline, "system.status never available");
         std::thread::sleep(Duration::from_millis(100));
     }
     let queued = client.call(SYSTEM_DND, json!({"enabled": true})).unwrap();
@@ -126,10 +126,10 @@ fn system_commands_reach_the_daemon() {
         if status["dnd"] == true {
             break;
         }
-        assert!(Instant::now() < deadline, "dnd mai attivo: {status}");
+        assert!(Instant::now() < deadline, "dnd never active: {status}");
         std::thread::sleep(Duration::from_millis(50));
     }
-    // Parametri sbagliati: errore, niente in coda.
+    // Wrong parameters: error, nothing queued.
     assert!(
         client
             .call(SYSTEM_VOLUME, json!({"value": "alto"}))

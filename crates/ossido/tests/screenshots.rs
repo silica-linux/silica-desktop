@@ -1,5 +1,5 @@
-//! Le istantanee: lo schermo, una regione, una finestra da sola (⇧⌘3, ⇧⌘4); i file PNG
-//! temporanei che la shell mostra in miniatura e poi sposta sulla Scrivania.
+//! Screenshots: the screen, a region, a single window (⇧⌘3, ⇧⌘4); the temporary PNG files
+//! that the shell shows as a thumbnail and then moves to the Desktop.
 
 #![allow(
     clippy::unwrap_used,
@@ -25,7 +25,7 @@ fn png_size(path: &str) -> (u32, u32) {
 #[test]
 fn screen_region_and_window_captures_write_png_files() {
     let ossido = Headless::start_with("screenshots", (640, 400), &[]);
-    let _window = TestWindow::open_decorated(&ossido.wayland, "da catturare", (200, 120));
+    let _window = TestWindow::open_decorated(&ossido.wayland, "to capture", (200, 120));
     let mut client = ossido.client();
     let call = |client: &mut silica_control::Client, id: &str, params: Value| {
         let reply = client.call(id, params).unwrap();
@@ -53,13 +53,13 @@ fn screen_region_and_window_captures_write_png_files() {
         ),
         (100, 50)
     );
-    // La finestra con la sua barra di 52: 200 × (120 + 52).
+    // The window with its 52 bar: 200 × (120 + 52).
     let at = f64::from(FIRST_WINDOW_AT) + 10.0;
     assert_eq!(
         call(&mut client, SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at})),
         (200, 172)
     );
-    // Fuori da ogni finestra: un errore, nessun file.
+    // Outside every window: an error, no file.
     assert!(
         client
             .call(SCREENSHOT_WINDOW_AT, json!({"x": 630, "y": 390}))

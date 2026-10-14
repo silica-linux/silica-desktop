@@ -1,6 +1,6 @@
-//! Trascinamento fra app (`wl_data_device`): una finestra trascina un elenco di file
-//! (`text/uri-list`) su un'altra, Ossido disegna l'icona sul puntatore, la destinazione riceve
-//! i dati al rilascio e l'icona sparisce.
+//! Drag between apps (`wl_data_device`): a window drags a list of files (`text/uri-list`)
+//! onto another, Ossido draws the icon on the pointer, the target receives the data on the
+//! drop and the icon disappears.
 
 #![allow(
     clippy::unwrap_used,
@@ -21,7 +21,7 @@ use silica_control::commands::{
 
 const SIZE: (u32, u32) = (640, 400);
 const GREEN_BGRA: [u8; 4] = [0, 255, 0, 255];
-const URIS: &[u8] = b"file:///tmp/prova.txt\r\n";
+const URIS: &[u8] = b"file:///tmp/test.txt\r\n";
 
 fn windows(ossido: &Headless) -> Vec<WindowInfo> {
     serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap()
@@ -38,15 +38,15 @@ fn by_title(ossido: &Headless, title: &str) -> WindowInfo {
 fn a_drag_carries_uris_to_another_window_with_its_icon() {
     let ossido = Headless::start_with("drag-uris", SIZE, &["--background", "7a7b80"]);
     let mut client = ossido.client();
-    let mut source = TestWindow::open_sized(&ossido.wayland, "sorgente", (200, 150));
+    let mut source = TestWindow::open_sized(&ossido.wayland, "source", (200, 150));
     client.call(WINDOW_TILE_LEFT, json!({})).unwrap();
-    let mut target = TestWindow::open_sized(&ossido.wayland, "destinazione", (200, 150));
+    let mut target = TestWindow::open_sized(&ossido.wayland, "target", (200, 150));
     client.call(WINDOW_TILE_RIGHT, json!({})).unwrap();
     target.accept_drops();
-    let from = by_title(&ossido, "sorgente");
-    let to = by_title(&ossido, "destinazione");
+    let from = by_title(&ossido, "source");
+    let to = by_title(&ossido, "target");
 
-    // Pressione nella sorgente, poi il trascinamento con il suo serial.
+    // Press in the source, then the drag with its serial.
     client
         .call(
             INPUT_POINTER_MOVE,
@@ -65,14 +65,14 @@ fn a_drag_carries_uris_to_another_window_with_its_icon() {
     client
         .call(INPUT_POINTER_MOVE, json!({"x": x, "y": y}))
         .unwrap();
-    let mimes = target.drag_over().expect("il trascinamento non è entrato");
+    let mimes = target.drag_over().expect("the drag did not enter");
     assert_eq!(mimes, vec!["text/uri-list".to_owned()]);
     target.accept_offer("text/uri-list");
 
-    // L'icona segue il puntatore, sopra la destinazione.
+    // The icon follows the pointer, above the target.
     let shot = common::screenshot(&ossido);
     let icon = pixel_in(&shot, SIZE.0, (x + 10) as u32, (y + 10) as u32);
-    assert_eq!(&icon[..3], &[0, 255, 0], "icona del trascinamento");
+    assert_eq!(&icon[..3], &[0, 255, 0], "drag icon");
 
     client
         .call(
@@ -87,11 +87,11 @@ fn a_drag_carries_uris_to_another_window_with_its_icon() {
     assert_eq!(
         source.drag_outcome(),
         Some(true),
-        "dnd_finished alla sorgente"
+        "dnd_finished to the source"
     );
 
-    // Rilasciato: l'icona non c'è più.
+    // Dropped: the icon is gone.
     let shot = common::screenshot(&ossido);
     let after = pixel_in(&shot, SIZE.0, (x + 10) as u32, (y + 10) as u32);
-    assert_ne!(&after[..3], &[0, 255, 0], "l'icona resta dopo il rilascio");
+    assert_ne!(&after[..3], &[0, 255, 0], "the icon stays after the drop");
 }
