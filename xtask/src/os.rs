@@ -264,6 +264,15 @@ fn start(args: &[String]) -> Result<()> {
             "-device",
             "virtio-tablet-pci",
         ])
+        // Sound through the host's PipeWire, so the interface sounds can be heard.
+        .args([
+            "-audiodev",
+            "pipewire,id=snd0",
+            "-device",
+            "ich9-intel-hda",
+            "-device",
+            "hda-output,audiodev=snd0",
+        ])
         .arg("-nic")
         .arg(format!(
             "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:{SSH_PORT}-:22"
