@@ -18,7 +18,7 @@
 //!
 //! ```text
 //! cargo xtask os start [--image PATH] [--fresh] [--virgl | --software] [--size WxH] [--headless]
-//! cargo xtask os deploy [--apps] [--no-build]
+//! cargo xtask os deploy [--apps | --apps=terminal,mail] [--no-build]
 //! cargo xtask os shot PATH | cmd <silica-cli args> | ssh [command] | log | status | stop
 //! ```
 
@@ -626,18 +626,35 @@ fn parse_glibc(text: &str) -> Option<(u32, u32)> {
 }
 
 struct DeployOptions {
-    apps: bool,
+    /// The apps to deploy: none, all of [`APPS`] (`--apps`) or some (`--apps=terminal,clock`).
+    apps: Vec<&'static str>,
     build: bool,
+}
+
+/// The apps named in `--apps=a,b`: an app is named by its directory (`mail` for `mail/app`).
+fn select_apps(list: &str) -> Result<Vec<&'static str>> {
+    list.split(',')
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            APPS.iter()
+                .copied()
+                .find(|app| app.split('/').next() == Some(name))
+                .ok_or_else(|| format!("unknown app: {name} (known: {})", APPS.join(", ")))
+        })
+        .collect()
 }
 
 fn deploy(args: &[String]) -> Result<()> {
     let mut options = DeployOptions {
-        apps: false,
+        apps: Vec::new(),
         build: true,
     };
     for arg in args {
         match arg.as_str() {
-            "--apps" => options.apps = true,
+            "--apps" => options.apps = APPS.to_vec(),
+            other if other.starts_with("--apps=") => {
+                options.apps = select_apps(&other["--apps=".len()..])?;
+            }
             "--no-build" => options.build = false,
             other => return Err(format!("unknown option: {other}")),
         }
@@ -652,14 +669,12 @@ fn deploy(args: &[String]) -> Result<()> {
         ));
     }
     let root = root()?;
-    let apps: Vec<PathBuf> = if options.apps {
-        APPS.iter()
-            .filter_map(|app| sibling(app))
-            .filter(|dir| dir.join("pubspec.yaml").exists())
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let apps: Vec<PathBuf> = options
+        .apps
+        .iter()
+        .filter_map(|app| sibling(app))
+        .filter(|dir| dir.join("pubspec.yaml").exists())
+        .collect();
     if options.build {
         status(cargo_command(&[
             "build",
@@ -912,6 +927,15 @@ exec "$D/bin/ossido" $OSSIDO_ARGS "$@"
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn select_apps_by_directory() {
+        assert_eq!(
+            super::select_apps("terminal,mail"),
+            Ok(vec!["terminal", "mail/app"])
+        );
+        assert!(super::select_apps("nope").is_err());
+    }
+
     use super::*;
 
     #[test]
