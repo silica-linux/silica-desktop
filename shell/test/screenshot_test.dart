@@ -167,7 +167,15 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(find.byKey(const ValueKey('crosshair')), findsNothing);
-    expect(executed, hasLength(2));
+    // Window mode asked Ossido for the veil on the window under the pointer, then off.
+    expect(
+      executed.where((id) => id == 'screenshot.window_veil'),
+      hasLength(2),
+    );
+    expect(
+      executed.where((id) => id != 'screenshot.window_veil'),
+      hasLength(2),
+    );
     await mouse.removePointer();
   });
 

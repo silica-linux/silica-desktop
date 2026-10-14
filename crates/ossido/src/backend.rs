@@ -200,6 +200,7 @@ impl State {
         let alt = self.alt_held();
         let dark = self.dark();
         let drag_icon = self.drag_icon_view();
+        let window_veil = self.window_veil_view();
         if let Some(renderer) = self.backend.gles() {
             let context = RenderContext {
                 buttons,
@@ -215,6 +216,7 @@ impl State {
                 spaces,
                 dark,
                 drag_icon,
+                window_veil,
             };
             let elements = output_elements(renderer, &self.space, &self.output, &context);
             return capture_elements::<_, GlesTexture, _>(
@@ -252,6 +254,7 @@ impl State {
         let alt = self.alt_held();
         let dark = self.dark();
         let drag_icon = self.drag_icon_view();
+        let window_veil = self.window_veil_view();
         let cursor = self.effective_cursor();
         let Backend::Winit(backend) = &mut self.backend else {
             return;
@@ -291,6 +294,7 @@ impl State {
             spaces,
             dark,
             drag_icon,
+            window_veil,
         };
         let elements = output_elements(
             backend.graphics.renderer(),

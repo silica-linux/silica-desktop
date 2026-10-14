@@ -18,7 +18,7 @@ use silica_control::commands::{
 };
 use silica_control::commands::{
     APP_FORCE_QUIT, APP_FORCE_QUIT_PANEL, SCREENSHOT_REGION, SCREENSHOT_SCREEN,
-    SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT,
+    SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT, SCREENSHOT_WINDOW_VEIL,
 };
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
@@ -134,6 +134,11 @@ impl State {
                 };
                 let capture = self.window_capture(&window)?;
                 self.publish_screenshot(&capture)
+            }
+            SCREENSHOT_WINDOW_VEIL => {
+                let EnabledParams { enabled } = parse_required(params)?;
+                self.window_veil = enabled;
+                Ok(json!({ "enabled": enabled }))
             }
             APP_FORCE_QUIT => {
                 let silica_control::AppParams { app_id } = parse_required(params)?;

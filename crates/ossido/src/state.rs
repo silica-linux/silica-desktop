@@ -54,6 +54,8 @@ pub struct State {
     pub drag_icon: Option<WlSurface>,
     /// The cursor asked by the focused client: drawn by Ossido only in the real session.
     pub cursor_status: smithay::input::pointer::CursorImageStatus,
+    /// The window screenshot mode (K-05): the frame of the window under the pointer is veiled.
+    pub window_veil: bool,
     /// A shape Ossido itself imposes (resize edges, window bar), over the client's.
     pub cursor_override: Option<smithay::input::pointer::CursorIcon>,
     /// The cursor shapes (silica-cursors), rasterized on demand.
@@ -281,6 +283,7 @@ impl State {
             drag_icon: None,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             cursor_override: None,
+            window_veil: false,
             cursor_theme: crate::cursor_theme::CursorTheme::load(),
             cursor_shape_state: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<State>(
                 &dh,

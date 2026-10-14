@@ -16,6 +16,7 @@ pub const SCREENSHOT_SELECTION: &str = "screenshot.selection";
 pub const SCREENSHOT_TOOLBAR: &str = "screenshot.toolbar";
 pub const SCREENSHOT_REGION: &str = "screenshot.region";
 pub const SCREENSHOT_WINDOW_AT: &str = "screenshot.window_at";
+pub const SCREENSHOT_WINDOW_VEIL: &str = "screenshot.window_veil";
 pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
 pub const UI_GLASS_QUALITY: &str = "ui.glass_quality";
 pub const PERF_RENDER: &str = "perf.render";
@@ -234,6 +235,21 @@ pub const CATALOG: &[CommandSpec] = &[
                 "type": "object",
                 "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
                 "required": ["x", "y"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: SCREENSHOT_WINDOW_VEIL,
+        label: "Window screenshot veil",
+        description: "While on, Ossido veils the frame of the window under the pointer \
+                      (window mode of the screenshot tools).",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"enabled": {"type": "boolean"}},
+                "required": ["enabled"],
                 "additionalProperties": false
             })
         },

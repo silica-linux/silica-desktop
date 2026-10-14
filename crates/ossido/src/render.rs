@@ -87,6 +87,25 @@ pub struct RenderContext<'a> {
     pub dark: bool,
     /// The icon of a drag between apps and the pointer position: above everything.
     pub drag_icon: Option<(WlSurface, Point<f64, Logical>)>,
+    /// The window screenshot veil: the frame of the window under the pointer (K-05).
+    pub window_veil: Option<Rectangle<i32, Logical>>,
+}
+
+/// The veil over the window to capture (K-05): `#88bae7` at alpha ~0.51, premultiplied.
+const WINDOW_VEIL: [f32; 4] = [
+    0x88 as f32 / 255.0 * 0.51,
+    0xba as f32 / 255.0 * 0.51,
+    0xe7 as f32 / 255.0 * 0.51,
+    0.51,
+];
+
+/// Stable id of the window screenshot veil, in the output data.
+struct WindowVeilId(Id);
+
+impl Default for WindowVeilId {
+    fn default() -> Self {
+        Self(Id::new())
+    }
 }
 
 /// The bar buttons of a window in the frame.
@@ -726,6 +745,24 @@ pub fn output_elements(
         }
     };
     push_layers(&mut elements, &mut anchors, renderer, Layer::Overlay);
+    // Below the screenshot tools (an overlay layer: the camera stays clear), above the
+    // window: only its frame, shadow excluded.
+    if let Some(frame) = context.window_veil {
+        let rect = Rectangle::new(frame.loc - output_origin, frame.size)
+            .to_f64()
+            .to_physical_precise_round(scale);
+        elements.push(OutputElement::Solid(SolidColorRenderElement::new(
+            output
+                .user_data()
+                .get_or_insert(WindowVeilId::default)
+                .0
+                .clone(),
+            rect,
+            CommitCounter::default(),
+            WINDOW_VEIL,
+            Kind::Unspecified,
+        )));
+    }
     // Panorama: the dragged window, the space thumbnails and the spaces bar, which comes
     // down over the fading menu bar.
     if let Some(panorama) = &context.panorama {

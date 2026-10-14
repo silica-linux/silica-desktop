@@ -235,6 +235,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       _dragStart = null;
     });
     _syncLayer();
+    _syncVeil();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
@@ -245,6 +246,25 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       _optionsOpen = false;
     });
     _syncLayer();
+    _syncVeil();
+  }
+
+  /// In window mode Ossido veils the frame of the window under the pointer (K-05: it knows
+  /// the frames, the shell does not). Outside Silica the shell veils the whole screen.
+  bool _compositorVeil = false;
+
+  bool _veilAsked = false;
+
+  Future<void> _syncVeil() async {
+    // A shell that knows the frames (windowAt) draws the veil itself.
+    final on = _mode == _Mode.window && widget.windowAt == null;
+    if (on == _veilAsked) return;
+    _veilAsked = on;
+    final done = await ShellChannel.instance.execute('screenshot.window_veil', {
+      'enabled': on,
+    });
+    if (!mounted) return;
+    setState(() => _compositorVeil = on && done);
   }
 
   /// The input region: the whole screen with the crosshair or the bar; only the thumbnail if
@@ -283,6 +303,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         _mode = _mode == _Mode.selection ? _Mode.window : _Mode.selection;
         _dragStart = null;
       });
+      _syncVeil();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -513,7 +534,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
                 ),
             if (_pointer case final p? when _mode == _Mode.selection)
               ..._crosshair(p),
-            if (_pointer case final p? when _mode == _Mode.window)
+            if (_pointer case final p?
+                when _mode == _Mode.window && !_compositorVeil)
               Positioned.fromRect(
                 rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
                 child: const IgnorePointer(

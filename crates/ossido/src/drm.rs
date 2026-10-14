@@ -432,6 +432,7 @@ impl State {
         let alt = self.alt_held();
         let dark = self.dark();
         let drag_icon = self.drag_icon_view();
+        let window_veil = self.window_veil_view();
         let pointer = self
             .seat
             .get_pointer()
@@ -463,6 +464,7 @@ impl State {
             spaces,
             dark,
             drag_icon,
+            window_veil,
         };
         let mut elements = crate::render::output_elements(
             &mut backend.renderer,

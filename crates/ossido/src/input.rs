@@ -25,6 +25,18 @@ impl State {
         }
     }
 
+    /// The frame of the window under the pointer while the window screenshot mode is on.
+    pub fn window_veil_view(&self) -> Option<Rectangle<i32, Logical>> {
+        if !self.window_veil {
+            return None;
+        }
+        let location = self.seat.get_pointer()?.current_location();
+        let window = match self.window_hit(location)? {
+            Hit::Titlebar(window, _, _) | Hit::Content(window) => window,
+        };
+        self.window_frame(&window)
+    }
+
     /// Moves the pointer to a point of the desktop (logical pixels).
     pub fn pointer_move_to(&mut self, location: Point<f64, Logical>, time: u32) {
         let Some(pointer) = self.seat.get_pointer() else {
