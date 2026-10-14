@@ -982,6 +982,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// A drag of files from another app: the cell under it, darkened as when pressed.
   StreamSubscription<SilicaDragEvent>? _fileDrags;
+  StreamSubscription<void>? _dismissed;
   int? _dropIndex;
 
   void _fileDrag(SilicaDragEvent event) {
@@ -1089,6 +1090,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
     _fileDrags = SilicaDrag.events.listen(_fileDrag);
+    _dismissed = ShellChannel.instance.transientDismissed.listen(
+      (_) => _transientDismissed(),
+    );
     // The screen is needed by the first menu already (the surface covers it to catch the click outside).
     LayerControl.outputSize().then((size) {
       if (mounted && size != null && _screen == null) {
@@ -1128,6 +1132,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   @override
   void dispose() {
     _fileDrags?.cancel();
+    _dismissed?.cancel();
     _ticker.dispose();
     _bounceTicker.dispose();
     _labelAnim.dispose();
@@ -1369,6 +1374,18 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   }
 
+  /// A menu or the stack is open and Ossido knows it (#149): the Dock keeps the pointer only
+  /// where it is and a press outside arrives as `transientDismissed`. False on an older
+  /// Ossido, then the surface covers the screen to see the click outside.
+  bool _transientActive = false;
+  bool _transientSupported = true;
+
+  /// A press outside the Dock, the menu or the stack ended them (Ossido, #149).
+  void _transientDismissed() {
+    if (_menuIndex != null) _closeMenu();
+    if (_stackIndex != null) _closeStack();
+  }
+
   /// Input region, surface height and keyboard: only when they change.
   void _syncLayer(Rect dock, Rect? menu, Rect? alert, Size size) {
     final stack = _stackIndex != null;
@@ -1377,9 +1394,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _baseHeight ??= size.height;
     final base = _baseHeight ?? size.height;
     final screen = _screen?.height;
-    // With a menu or the stack the surface covers the screen and takes the whole pointer: a
-    // click outside (on the desktop, on a window) closes them instead of going through.
-    final catchAll = (menu != null || stack) && screen != null;
+    final open = menu != null || stack;
+    // The whole screen only without transient support (older Ossido): a click outside (on the
+    // desktop, on a window) closes the menu or the stack instead of going through.
+    final catchAll = open && screen != null && !_transientSupported;
     // The surface stays as tall as the screen once its size is known, and only the input
     // region changes: the Dock is anchored to the bottom, so every height change moved the
     // content's origin and the Dock and its menu flashed up for a frame before the
@@ -1398,27 +1416,48 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final hiddenDock =
         widget.autohide && _shown.value < 1 && menu == null && alert == null;
     final key =
-        '$dock $menu $submenus $alert $height $catchAll $hiddenDock ${widget.autohide}';
+        '$dock $menu $submenus $alert $height $catchAll $hiddenDock ${widget.autohide} $open';
     if (key == _layerState) return;
     _layerState = key;
+    final rects = [
+      if (widget.autohide) bottomRow,
+      dock,
+      if (menu != null) menu.inflate(4),
+      for (final r in submenus) r.inflate(4),
+      if (alert != null) alert,
+    ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (height != size.height) LayerControl.size(0, height);
       LayerControl.inputRegion(
         catchAll
             ? [Offset.zero & Size(size.width, height)]
             : hiddenDock
             ? [bottomRow]
-            : [
-                if (widget.autohide) bottomRow,
-                dock,
-                if (menu != null) menu.inflate(4),
-                for (final r in submenus) r.inflate(4),
-                if (alert != null) alert,
-              ],
+            : rects,
       );
       LayerControl.keyboard(
         menu == null && alert == null ? 'none' : 'exclusive',
       );
+      if (open) {
+        _transientActive = true;
+        LayerControl.transient(
+          rects: rects,
+          policy: TransientPolicy.menu,
+        ).then((supported) {
+          // Older Ossido: from now on the surface covers the screen while something is open.
+          if (!supported && mounted && _transientSupported) {
+            setState(() {
+              _transientSupported = false;
+              _transientActive = false;
+              _layerState = '';
+            });
+          }
+        });
+      } else if (_transientActive) {
+        _transientActive = false;
+        LayerControl.clearTransient();
+      }
     });
   }
 
