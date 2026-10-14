@@ -1,136 +1,134 @@
 # silica-daemon
 
-Servizi di sistema di Silica su D-Bus (`crates/daemon`, binario `silica-daemon`). Oggi le
-notifiche; il Centro di controllo (rete, Bluetooth, batteria, luminosità, audio) arriva in
+Silica's system services on D-Bus (`crates/daemon`, binary `silica-daemon`). Today the
+notifications; the Control Center (network, Bluetooth, battery, brightness, audio) arrives in
 M4.4.
 
 ```
-silica-daemon [--address INDIRIZZO] [--replace]
+silica-daemon [--address ADDRESS] [--replace]
 ```
 
-Si collega al bus di sessione (`DBUS_SESSION_BUS_ADDRESS`, o `--address`) e prende i nomi
-`org.freedesktop.Notifications` e `dev.frascella.Silica`. Se un altro server delle notifiche
-li ha già (annidato in GNOME), esce con un errore; `--replace` li prende se il proprietario
-lo consente.
+It connects to the session bus (`DBUS_SESSION_BUS_ADDRESS`, or `--address`) and takes the
+names `org.freedesktop.Notifications` and `dev.frascella.Silica`. If another notification
+server already has them (nested in GNOME), it exits with an error; `--replace` takes them if
+the owner allows it.
 
-## Bus di sessione privato
+## Private session bus
 
-`ossido --session-bus` (lo passa `cargo xtask run --shell`) avvia un `dbus-daemon` suo e
-`silica-daemon` su quel bus, stampa `DBUS_SESSION_BUS_ADDRESS=…` su stdout e passa
-l'indirizzo a tutti i client che lancia (`--spawn`, `--spawn-shell`, `app.launch`).
-Annidato in GNOME, i nomi della sessione ospite restano suoi; il bus di sistema è quello
-della macchina.
+`ossido --session-bus` (passed by `cargo xtask run --shell`) starts its own `dbus-daemon` and
+`silica-daemon` on that bus, prints `DBUS_SESSION_BUS_ADDRESS=…` on stdout and passes the
+address to all the clients it launches (`--spawn`, `--spawn-shell`, `app.launch`).
+Nested in GNOME, the names of the host session stay its own; the system bus is the
+machine's.
 
-`silica-daemon` si cerca accanto all'eseguibile di Ossido, poi nel `PATH`; se manca, Ossido
-avvisa e continua senza notifiche. Il bus muore con Ossido anche se Ossido viene ucciso
-(`dbus-daemon` gira sotto una shell che termina quando si chiude lo stdin collegato a
-Ossido) e `silica-daemon` esce quando perde il bus.
+`silica-daemon` is looked for next to Ossido's executable, then in `PATH`; if it is missing,
+Ossido warns and goes on without notifications. The bus dies with Ossido even if Ossido is
+killed (`dbus-daemon` runs under a shell that terminates when the stdin connected to Ossido
+closes) and `silica-daemon` exits when it loses the bus.
 
-## Il canale silica/dbus
+## The silica/dbus channel
 
-L'embedder dà a Dart D-Bus con valori JSON (`crates/embedder/src/dbus`, lato Dart
-`shell/lib/system/dbus.dart`), su un thread a parte. Codec `JSONMethodCodec`:
+The embedder gives Dart D-Bus with JSON values (`crates/embedder/src/dbus`, Dart side
+`shell/lib/system/dbus.dart`), on a separate thread. Codec `JSONMethodCodec`:
 
-- `call {bus?, destination, path, interface?, method, signature?, args?}` → la lista degli
-  argomenti della risposta. `bus` è `session` (predefinito) o `system`. Gli argomenti si
-  convertono secondo `signature` (`"su"`, `"a{sv}"`…); dentro un variante il tipo si
-  deduce dal JSON (interi `i` o `x`, decimali `d`, liste di stringhe `as`, oggetti
-  `a{sv}`). Strutture → liste, dizionari → mappe. Un errore D-Bus diventa un
-  `PlatformException` con il nome dell'errore come codice; dopo 25 s
-  `org.freedesktop.DBus.Error.Timeout`.
-- `subscribe {bus?, sender?, path?, interface?, member?}` → un id; i segnali arrivano come
-  chiamata `signal {id, sender, path, interface, member, args}` (al massimo 256
-  iscrizioni). `unsubscribe {id}` → `true` se c'era.
+- `call {bus?, destination, path, interface?, method, signature?, args?}` → the list of the
+  reply's arguments. `bus` is `session` (default) or `system`. The arguments are converted
+  according to `signature` (`"su"`, `"a{sv}"`…); inside a variant the type is deduced from
+  the JSON (integers `i` or `x`, decimals `d`, string lists `as`, objects `a{sv}`).
+  Structures → lists, dictionaries → maps. A D-Bus error becomes a `PlatformException` with
+  the error name as the code; after 25 s `org.freedesktop.DBus.Error.Timeout`.
+- `subscribe {bus?, sender?, path?, interface?, member?}` → an id; signals arrive as the
+  call `signal {id, sender, path, interface, member, args}` (at most 256
+  subscriptions). `unsubscribe {id}` → `true` if it existed.
 
-In Dart: `DBus.instance.call(...)`, `getProperty`, `getAll` e `signals(...)` (uno stream:
-l'iscrizione si chiude quando lo si cancella).
+In Dart: `DBus.instance.call(...)`, `getProperty`, `getAll` and `signals(...)` (a stream:
+the subscription closes when it is cancelled).
 
 ## org.freedesktop.Notifications
 
-La [specifica freedesktop](https://specifications.freedesktop.org/notification-spec/) 1.2
-su `/org/freedesktop/Notifications`, per le app (`notify-send`, libnotify, portali).
+The [freedesktop specification](https://specifications.freedesktop.org/notification-spec/) 1.2
+on `/org/freedesktop/Notifications`, for the apps (`notify-send`, libnotify, portals).
 
-- `Notify`: restituisce l'id (mai 0). Con `replaces_id` di una notifica ancora presente la
-  sostituisce e tiene l'id.
-- `CloseNotification`: chiude con motivo 3; un id che non c'è più non è un errore.
-- `GetCapabilities`: `actions`, `body`, `icon-static`, `persistence`. Niente markup: la
-  shell mostra il corpo come testo.
-- `GetServerInformation`: `Silica`, `Silica`, versione del crate, `1.2`.
-- Segnali `NotificationClosed(id, motivo)` e `ActionInvoked(id, chiave)`.
+- `Notify`: returns the id (never 0). With the `replaces_id` of a notification still present
+  it replaces it and keeps the id.
+- `CloseNotification`: closes with reason 3; an id that no longer exists is not an error.
+- `GetCapabilities`: `actions`, `body`, `icon-static`, `persistence`. No markup: the
+  shell shows the body as text.
+- `GetServerInformation`: `Silica`, `Silica`, crate version, `1.2`.
+- Signals `NotificationClosed(id, reason)` and `ActionInvoked(id, key)`.
 
-Hint letti: `urgency` (byte o intero), `category`, `desktop-entry`, `image-path`,
-`transient`, `resident` (booleani o interi). Gli altri si ignorano, come i tipi sbagliati.
+Hints read: `urgency` (byte or integer), `category`, `desktop-entry`, `image-path`,
+`transient`, `resident` (booleans or integers). The others are ignored, as are wrong types.
 
-Scadenza: come nel Centro notifiche del riferimento, una notifica resta nello storico finché
-l'utente non la chiude. Scade (motivo 1) solo con `expire_timeout` positivo; -1 e 0 non
-scadono. Il tempo del banner lo decide la shell.
+Expiry: as in the reference's Notification Center, a notification stays in the history until
+the user closes it. It expires (reason 1) only with a positive `expire_timeout`; -1 and 0 do
+not expire. The banner time is decided by the shell.
 
-Limiti contro i client ostili: titolo 1024 caratteri, corpo 8192, nomi 256, 32 voci di
-azioni (una chiave senza etichetta si scarta), storico di 256 notifiche (oltre si chiude
-la più vecchia con motivo 4).
+Limits against hostile clients: title 1024 characters, body 8192, names 256, 32 action
+entries (a key without a label is discarded), history of 256 notifications (beyond that the
+oldest is closed with reason 4).
 
 ## dev.frascella.Silica.Notifications1
 
-Su `/dev/frascella/Silica/Notifications1`, per la shell (banner e Centro notifiche).
+On `/dev/frascella/Silica/Notifications1`, for the shell (banners and Notification Center).
 
-- `List() → a(ussssasysssbbti)`: lo storico, dalla più vecchia. Campi: id, app, icona,
-  titolo, corpo, azioni (chiave, etichetta, appiattite), urgenza, categoria,
-  desktop-entry, immagine, transient, resident, ricezione in ms Unix, `expire_timeout`.
-- `Dismiss(id)`: chiusa dall'utente (motivo 2). `Clear()`: tutte.
-- `InvokeAction(id, chiave)`: emette `ActionInvoked`; senza `resident` poi chiude con
-  motivo 2. Una chiave assente è l'errore `InvalidArgs`.
-- Segnali `Added(notifica)` (nuova o sostituita: stesso id) e `Removed(id, motivo)`.
+- `List() → a(ussssasysssbbti)`: the history, oldest first. Fields: id, app, icon,
+  title, body, actions (key, label, flattened), urgency, category,
+  desktop-entry, image, transient, resident, reception in Unix ms, `expire_timeout`.
+- `Dismiss(id)`: closed by the user (reason 2). `Clear()`: all of them.
+- `InvokeAction(id, key)`: emits `ActionInvoked`; without `resident` it then closes with
+  reason 2. A missing key is the `InvalidArgs` error.
+- Signals `Added(notification)` (new or replaced: same id) and `Removed(id, reason)`.
 
-## Prova a mano
+## Trying it by hand
 
 ```
-dbus-daemon --session --fork --print-address    # stampa l'indirizzo
+dbus-daemon --session --fork --print-address    # prints the address
 silica-daemon --address unix:path=…
-DBUS_SESSION_BUS_ADDRESS=unix:path=… notify-send Ciao "dal daemon"
+DBUS_SESSION_BUS_ADDRESS=unix:path=… notify-send Hello "from the daemon"
 DBUS_SESSION_BUS_ADDRESS=unix:path=… gdbus call --session -d dev.frascella.Silica \
   -o /dev/frascella/Silica/Notifications1 -m dev.frascella.Silica.Notifications1.List
 ```
 
-Su Ubuntu il profilo AppArmor di `notify-send` blocca la sua chiamata `GetCapabilities`
-verso un server non confinato: `notify-send` mostra allora la notifica senza azioni. Le
-azioni si provano con i test (`cargo test -p silica-daemon`, su un `dbus-daemon` privato).
+On Ubuntu the AppArmor profile of `notify-send` blocks its `GetCapabilities` call towards an
+unconfined server: `notify-send` then shows the notification without actions. The actions
+are tried with the tests (`cargo test -p silica-daemon`, on a private `dbus-daemon`).
 
 ## dev.frascella.Silica.System1
 
-Su `/dev/frascella/Silica/System1`: lo stato del sistema per il Centro di controllo e la barra
-dei menu.
+On `/dev/frascella/Silica/System1`: the system state for the Control Center and the menu
+bar.
 
-- `State() → a{sv}`: chiavi piatte. `wifi.available`, `wifi.enabled`, `wifi.ssid`,
+- `State() → a{sv}`: flat keys. `wifi.available`, `wifi.enabled`, `wifi.ssid`,
   `wifi.strength` (0–100), `wifi.wired`; `bluetooth.available`, `bluetooth.powered`;
   `battery.present`, `battery.percent`, `battery.charging`; `brightness.available`,
-  `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`, `audio.name` (nome dell'uscita,
-  `node.description` di PipeWire); `dnd`.
+  `brightness` (0–1); `audio.available`, `audio.volume` (0–1), `audio.muted`, `audio.name`
+  (name of the output, PipeWire's `node.description`); `dnd`.
 - `SetWifiEnabled(b)`, `SetBluetoothPowered(b)`, `SetVolume(d)`, `SetMuted(b)`,
-  `SetBrightness(d)` (0–1, mai a zero), `SetDoNotDisturb(b)`. Una sorgente assente è
-  l'errore `org.freedesktop.DBus.Error.Failed`.
-- Per i pannelli di dettaglio del Centro di controllo, letti su richiesta:
-  `WifiNetworks() → a(sybbb)` (nome, segnale 0–100, protetta, salvata, in uso; quella in uso
-  prima, poi le salvate, poi per segnale; al più 40), `ConnectWifi(s)` (solo reti salvate: una
-  rete nuova chiede una password), `AudioOutputs() → a(usb)` (id di PipeWire, nome,
-  predefinita; da `wpctl status`), `SetAudioOutput(u)`.
-- Segnale `Changed(a{sv})` con lo stato intero a ogni cambiamento.
+  `SetBrightness(d)` (0–1, never to zero), `SetDoNotDisturb(b)`. A missing source is the
+  `org.freedesktop.DBus.Error.Failed` error.
+- For the Control Center's detail panels, read on request:
+  `WifiNetworks() → a(sybbb)` (name, signal 0–100, secured, saved, in use; the one in use
+  first, then the saved ones, then by signal; at most 40), `ConnectWifi(s)` (saved networks
+  only: a new network asks for a password), `AudioOutputs() → a(usb)` (PipeWire id, name,
+  default; from `wpctl status`), `SetAudioOutput(u)`.
+- Signal `Changed(a{sv})` with the whole state on every change.
 
-Sorgenti: NetworkManager (`WirelessEnabled`, connessione principale, intensità del punto
-d'accesso), BlueZ (il primo adattatore), UPower (`DisplayDevice`, solo se è una batteria) sul
-bus di sistema, riletti a ogni loro segnale; la retroilluminazione in `/sys/class/backlight`
-(scrittura con `SetBrightness` di logind, altrimenti nel file) e l'audio dell'uscita
-predefinita con `wpctl`, riletti ogni secondo. Se un servizio manca la sorgente è assente
-(`*.available = false`) e si riprova ogni 10 s.
+Sources: NetworkManager (`WirelessEnabled`, primary connection, access point strength),
+BlueZ (the first adapter), UPower (`DisplayDevice`, only if it is a battery) on the system
+bus, read again on each of their signals; the backlight in `/sys/class/backlight`
+(written with logind's `SetBrightness`, otherwise in the file) and the audio of the default
+output with `wpctl`, read again every second. If a service is missing the source is absent
+(`*.available = false`) and it is retried every 10 s.
 
-## Aspetto chiaro e scuro
+## Light and dark appearance
 
-- `System1` ha la chiave `appearance.dark` e il metodo `SetDark(b)`, che salva la scelta in
-  `$XDG_CONFIG_HOME/silica/appearance.json` (`{"dark": true}`) per il prossimo avvio.
-- `silica-portal` offre `org.freedesktop.impl.portal.Settings` con
-  `org.freedesktop.appearance` › `color-scheme` (1 scuro, 2 chiaro): lo legge dal daemon e
-  ne segue `Changed` (senza daemon, dal file), ed emette `SettingChanged`. Le app GTK, Qt e
-  libadwaita lo seguono dal frontend; l'embedder lo legge dal backend e manda a Flutter
-  `flutter/settings` con `platformBrightness`.
-- Ossido avvia `silica-portal` insieme a `silica-daemon` sul suo bus privato; i comandi
-  `system.dark` e `system.dark_toggle` chiamano `SetDark`.
-
+- `System1` has the `appearance.dark` key and the `SetDark(b)` method, which saves the choice
+  in `$XDG_CONFIG_HOME/silica/appearance.json` (`{"dark": true}`) for the next start.
+- `silica-portal` offers `org.freedesktop.impl.portal.Settings` with
+  `org.freedesktop.appearance` › `color-scheme` (1 dark, 2 light): it reads it from the daemon
+  and follows its `Changed` (without the daemon, from the file), and emits `SettingChanged`.
+  GTK, Qt and libadwaita apps follow it from the frontend; the embedder reads it from the
+  backend and sends Flutter `flutter/settings` with `platformBrightness`.
+- Ossido starts `silica-portal` together with `silica-daemon` on its private bus; the
+  commands `system.dark` and `system.dark_toggle` call `SetDark`.

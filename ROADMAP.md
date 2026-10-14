@@ -1,100 +1,100 @@
 # Roadmap
 
-Dieci milestone in tre fasi, con due gate che decidono se proseguire: l'embedder dopo
-M1 e l'uso quotidiano dopo M6. Le date arrivano solo dopo il gate 1: fino ad allora il
-costo dell'embedder è l'incognita che pesa su tutto il resto.
+Ten milestones in three phases, with two gates that decide whether to go on: the embedder
+after M1 and daily use after M6. Dates come only after gate 1: until then the cost of the
+embedder is the unknown that weighs on everything else.
 
-## Fondamenta (M0 – M2)
+## Foundations (M0 – M2)
 
-### M0 · Fondamenta
+### M0 · Foundations
 
-- Workspace Cargo, `cargo xtask ci`, `AGENTS.md`, `ROADMAP.md`
-- Ossido annidato mostra finestre xdg-shell
-- Canale di controllo con screenshot, test in headless
+- Cargo workspace, `cargo xtask ci`, `AGENTS.md`, `ROADMAP.md`
+- Nested Ossido shows xdg-shell windows
+- Control channel with screenshots, headless tests
 
-### M1 · Embedder Flutter
+### M1 · Flutter embedder
 
-- App Flutter su Ossido tramite embedder Rust: finestre, input, HiDPI
-- Poi layer-shell per la shell e stima del costo di manutenzione
-- Renderer OpenGL e prototipo del Dock in Flutter e in Rust (iced), misurati sullo stesso
-  banco di prova (`docs/m1.5-dock.md`)
+- Flutter apps on Ossido through a Rust embedder: windows, input, HiDPI
+- Then layer-shell for the shell and an estimate of the maintenance cost
+- OpenGL renderer and a prototype of the Dock in Flutter and in Rust (iced), measured on the
+  same test bench (`docs/m1.5-dock.md`)
 
-### Gate 1 · toolkit della shell
+### Gate 1 · shell toolkit
 
-Si sceglie dalle misure del prototipo: shell e app in Flutter con l'embedder custom,
-shell in Rust e app in Flutter, oppure embedder GTK ufficiale come ripiego.
+The choice comes from the prototype's measurements: shell and apps in Flutter with the custom
+embedder, shell in Rust and apps in Flutter, or the official GTK embedder as a fallback.
 
-Deciso il 2026-10-13: shell e app in Flutter con l'embedder custom e Impeller
+Decided on 2026-10-13: shell and apps in Flutter with the custom embedder and Impeller
 (`docs/gate1-dock.md`).
-Prima di M2: `linux-dmabuf` in Ossido e una misura del Dock con la GPU su hardware nativo.
+Before M2: `linux-dmabuf` in Ossido and a measurement of the Dock with the GPU on native hardware.
 
-### M2 · Vetro e finestre
+### M2 · Glass and windows
 
-- Shader di sfocatura e rifrazione, protocollo `silica-glass-v1`
-- Decorazioni lato server, angoli, ombre, animazioni di apertura e chiusura
+- Blur and refraction shaders, `silica-glass-v1` protocol
+- Server-side decorations, corners, shadows, opening and closing animations
 
 ## Shell (M3 – M5)
 
-### M3 · Shell base
+### M3 · Base shell
 
-- Barra dei menu con orologio e stato, Dock, Faro sui file `.desktop`, sfondo
+- Menu bar with clock and status, Dock, Faro on the `.desktop` files, wallpaper
 
-### M4 · Servizi
+### M4 · Services
 
-- `silica-daemon`: server delle notifiche e Centro notifiche
-- Centro di controllo: rete, Bluetooth, audio, luminosità, batteria
+- `silica-daemon`: notification server and Notification Center
+- Control Center: network, Bluetooth, audio, brightness, battery
 
 ### M5 · Panorama
 
-- Vista di tutte le finestre, spazi di lavoro, gesture del touchpad a 3 e 4 dita
+- View of all the windows, workspaces, 3- and 4-finger touchpad gestures
 
-## Sessione e app (M6 – M9)
+## Session and apps (M6 – M9)
 
-### M6 · Sessione reale
+### M6 · Real session
 
-- DRM/KMS, libinput, logind, lock screen, login con greetd
-- XWayland, multi-monitor, scala frazionaria, test su hardware reale
+- DRM/KMS, libinput, logind, lock screen, login with greetd
+- XWayland, multi-monitor, fractional scaling, tests on real hardware
 
-### Gate 2 · uso quotidiano
+### Gate 2 · daily use
 
-Silica diventa la sessione di sviluppo: si prosegue se regge una settimana.
+Silica becomes the development session: we go on if it holds up for a week.
 
-### M7 · Integrazione app
+### M7 · App integration
 
-- Menu globale: `silica-menu-v1` e ponte DBusMenu per Qt e GTK3
-- Portal: cattura schermo e selettore file; tema GTK e Qt approssimato
+- Global menu: `silica-menu-v1` and a DBusMenu bridge for Qt and GTK3
+- Portal: screen capture and file chooser; approximated GTK and Qt theme
 
-### M8 · App
+### M8 · Apps
 
-- Impostazioni e Mustache in Flutter, sopra `silica_ui`
+- Settings and Mustache in Flutter, on top of `silica_ui`
 
 ### M9 · Alpha 0.1
 
-- Pacchetti per Ubuntu, Fedora e Arch, primo nome di versione
-- Parità misurata pubblicata in questo file
+- Packages for Ubuntu, Fedora and Arch, first version name
+- Measured parity published in this file
 
-## Parità misurata
+## Measured parity
 
-Si aggiorna solo da metriche misurate (differenza visiva sugli screenshot, test di
-conformità), mai stimata.
+Updated only from measured metrics (visual difference on the screenshots, conformance
+tests), never estimated.
 
-| Area | Metrica | Valore | Misurato il |
+| Area | Metric | Value | Measured on |
 | --- | --- | --- | --- |
-| Finestre · angoli | pixel mancanti per riga dell'angolo contro la maschera di riferimento (test `window_corners_follow_the_reference`) | errore massimo 0,44 px, rms 0,13 px | 2026-10-13 |
-| Finestre · ombra | alfa del profilo laterale (d 2–48 pt), anello e asimmetria sopra/sotto, finestra attiva e inattiva in chiaro (test `window_shadows_follow_the_reference`) | errore massimo 2 livelli d'alfa su 255 | 2026-10-13 |
-| Vetro · colore | riempimento su `#7a7b80`, materiale chiaro (Dock) e spesso (menu), aspetto chiaro (test `materials_on_the_reference_gray_match_the_measured_fill`) | entro 3 livelli su 255 per canale | 2026-10-13 |
-| Vetro · sfocatura | profilo di un bordo di striscia nel materiale chiaro contro il Dock (test `clear_glass_blurs_a_stripe_edge_like_the_dock`) | rms 5,0 livelli su 255 | 2026-10-13 |
-| Vetro · bordo | riga luminosa, sfumatura di 7 righe e bordo laterale del materiale chiaro su `#7a7b80` contro il Dock (test `clear_glass_edge_matches_the_dock_border`) | entro 3 livelli su 255 per canale | 2026-10-13 |
-| Vetro · rifrazione | spostamento degli attraversamenti di strisce vicino al bordo laterale, materiale chiaro (test `clear_glass_refracts_near_the_side_edges_like_the_dock`) | 4,6 pt a 5,4 pt dal bordo (Dock: ~5 pt a 6 pt), 0 oltre 22 pt | 2026-10-13 |
-| Liquid Glass · lente | sorgente prelevata in funzione della distanza dal bordo, materiale `regular`, contro la curva misurata sui moduli del Centro di controllo (test `regular_glass_is_the_liquid_lens_of_the_control_center`) | entro 1,1 pt nei 30 pt dal bordo (incertezza della misura ±3 pt) | 2026-10-13 |
-| Liquid Glass · colore | riempimento del materiale `regular` su `#7a7b80` contro i moduli (`#6a6b70`) | entro 2 livelli su 255 | 2026-10-13 |
-| Dock · geometria | screenshot di Ossido headless a 2560×1440 su `#7a7b80` contro `shots/dock/rest-light.png` e `hover-mail-light.png`: bordi del fondo a riposo e ingrandito, etichetta, indicatori (test dei numeri in `shell/test/dock_model_test.dart`) | bordi entro 1 pt, etichetta entro 1 pt | 2026-10-13 |
-| Dock · fondo | profilo verticale del fondo (riga luminosa, sfumatura, riempimento) nella colonna fra due icone, stesso confronto | entro 2 livelli su 255 | 2026-10-13 |
-| Barra dei menu | screenshot a 2560×1440 su `#7a7b80` contro `shots/glass/menubar-gray-light.png`: fondale (gradiente sotto la barra), righe dell'inchiostro del testo, bordo destro dell'orologio, logo | fondale entro 1 livello; testo sulle stesse righe (9–18) e stessa x di partenza; orologio allo stesso bordo; logo 1 pt più in basso | 2026-10-13 |
-| Notifiche · vetro | riempimento del materiale `notification` su `#7a7b80` contro il banner isolato `#c0c1c6`; due carte a 6 pt restano separate (test `notification_glass_matches_the_isolated_banner`) | entro 3 livelli su 255 | 2026-10-13 |
-| Notifiche · banner | screenshot a 2560×1440 su `#7a7b80` con la barra dei menu contro `shots/notifications/banner-gray-light.png`: cornice, riempimento (colonna 2530), bordo sopra, sotto e ai lati, maiuscola del titolo, ombra sotto | cornice x 2200–2544, y 46, raggio 20 come il riferimento; riempimento entro 2 livelli; bordo entro 3 (sotto 9); titolo alla stessa riga (61) e stessa x (2258); ombra entro 1 livello | 2026-10-13 |
-| Centro di controllo · griglia | screenshot a 2560×1440 su `#7a7b80` con la barra contro `shots/controlcenter/cc-gray-light-first.png`: righe luminose di ogni modulo, bordi laterali, disco attivo del Wi-Fi; nessun ponte fra moduli a 12 pt (test `every_region_of_a_group_has_its_rim_on_its_own_edge`) | righe e bordi sugli stessi pixel (y 42, 118, 194, 270, 346; x 2253 e 2394); disco sugli stessi pixel | 2026-10-13 |
-| Centro di controllo · vetro | stesso confronto: riempimento, riga luminosa e sfumatura sopra e sotto, lati | riempimento entro 1 livello; righe entro 6 (sopra) e 6 (sotto); lati entro 1; sfumatura entro 8 | 2026-10-13 |
-| Centro di controllo · ombra | profilo a sinistra della pila (0–160 pt), a destra e sopra, stesso confronto | entro 2 livelli su 255 | 2026-10-13 |
-| HUD del volume | screenshot a 2560×1440 su `#7a7b80` con la barra contro `shots/misc/volume-hud-light.png`: righe luminose, bordi laterali, traccia, fine del riempimento sulla tacca del livello, titolo | righe e bordi sugli stessi pixel (y 40 e 103, x 2257 e 2550); traccia da 2290 (rif. 2289); titolo x 2275 (2274) e maiuscola 1 pt più in alto; riempimento entro 8 livelli, riga luminosa superiore 19 sotto | 2026-10-13 |
-| Notifiche · comportamenti | curve dell'entrata, dell'uscita e del Centro contro le misure fotogramma per fotogramma della sessione 8 (test `uscita e Centro seguono le misure della sessione 8` e dell'entrata) | entrata: residuo ×0,83 a fotogramma come misurato; uscita: gli stessi spostamenti delle misure; Centro: bordo entro 5 pt a 35 ms, chiusura sugli stessi punti | 2026-10-13 |
+| Windows · corners | missing pixels per corner row against the reference mask (test `window_corners_follow_the_reference`) | maximum error 0.44 px, rms 0.13 px | 2026-10-13 |
+| Windows · shadow | alpha of the side profile (d 2–48 pt), ring and above/below asymmetry, active and inactive window in light (test `window_shadows_follow_the_reference`) | maximum error 2 alpha levels out of 255 | 2026-10-13 |
+| Glass · color | fill on `#7a7b80`, clear (Dock) and thick (menu) material, light appearance (test `materials_on_the_reference_gray_match_the_measured_fill`) | within 3 levels out of 255 per channel | 2026-10-13 |
+| Glass · blur | profile of a stripe edge in the clear material against the Dock (test `clear_glass_blurs_a_stripe_edge_like_the_dock`) | rms 5.0 levels out of 255 | 2026-10-13 |
+| Glass · edge | bright line, 7-row gradient and side edge of the clear material on `#7a7b80` against the Dock (test `clear_glass_edge_matches_the_dock_border`) | within 3 levels out of 255 per channel | 2026-10-13 |
+| Glass · refraction | displacement of the stripe crossings near the side edge, clear material (test `clear_glass_refracts_near_the_side_edges_like_the_dock`) | 4.6 pt at 5.4 pt from the edge (Dock: ~5 pt at 6 pt), 0 beyond 22 pt | 2026-10-13 |
+| Liquid Glass · lens | sampled source as a function of the distance from the edge, `regular` material, against the curve measured on the Control Center modules (test `regular_glass_is_the_liquid_lens_of_the_control_center`) | within 1.1 pt in the 30 pt from the edge (measurement uncertainty ±3 pt) | 2026-10-13 |
+| Liquid Glass · color | fill of the `regular` material on `#7a7b80` against the modules (`#6a6b70`) | within 2 levels out of 255 | 2026-10-13 |
+| Dock · geometry | screenshot of headless Ossido at 2560×1440 on `#7a7b80` against `shots/dock/rest-light.png` and `hover-mail-light.png`: edges of the background at rest and magnified, label, indicators (number tests in `shell/test/dock_model_test.dart`) | edges within 1 pt, label within 1 pt | 2026-10-13 |
+| Dock · background | vertical profile of the background (bright line, gradient, fill) in the column between two icons, same comparison | within 2 levels out of 255 | 2026-10-13 |
+| Menu bar | screenshot at 2560×1440 on `#7a7b80` against `shots/glass/menubar-gray-light.png`: backdrop (gradient below the bar), ink rows of the text, right edge of the clock, logo | backdrop within 1 level; text on the same rows (9–18) and same starting x; clock at the same edge; logo 1 pt lower | 2026-10-13 |
+| Notifications · glass | fill of the `notification` material on `#7a7b80` against the isolated banner `#c0c1c6`; two cards 6 pt apart stay separate (test `notification_glass_matches_the_isolated_banner`) | within 3 levels out of 255 | 2026-10-13 |
+| Notifications · banner | screenshot at 2560×1440 on `#7a7b80` with the menu bar against `shots/notifications/banner-gray-light.png`: frame, fill (column 2530), top, bottom and side edges, title capital, shadow below | frame x 2200–2544, y 46, radius 20 like the reference; fill within 2 levels; edge within 3 (bottom 9); title on the same row (61) and same x (2258); shadow within 1 level | 2026-10-13 |
+| Control Center · grid | screenshot at 2560×1440 on `#7a7b80` with the bar against `shots/controlcenter/cc-gray-light-first.png`: bright lines of every module, side edges, active Wi-Fi disc; no bridge between modules 12 pt apart (test `every_region_of_a_group_has_its_rim_on_its_own_edge`) | lines and edges on the same pixels (y 42, 118, 194, 270, 346; x 2253 and 2394); disc on the same pixels | 2026-10-13 |
+| Control Center · glass | same comparison: fill, bright line and gradient on top and at the bottom, sides | fill within 1 level; lines within 6 (top) and 6 (bottom); sides within 1; gradient within 8 | 2026-10-13 |
+| Control Center · shadow | profile to the left of the stack (0–160 pt), to the right and above, same comparison | within 2 levels out of 255 | 2026-10-13 |
+| Volume HUD | screenshot at 2560×1440 on `#7a7b80` with the bar against `shots/misc/volume-hud-light.png`: bright lines, side edges, track, end of the fill on the level notch, title | lines and edges on the same pixels (y 40 and 103, x 2257 and 2550); track from 2290 (ref. 2289); title x 2275 (2274) and capital 1 pt higher; fill within 8 levels, top bright line 19 below | 2026-10-13 |
+| Notifications · behaviours | curves of the entrance, the exit and the Center against the frame-by-frame measurements of session 8 (tests `uscita e Centro seguono le misure della sessione 8` and the entrance one) | entrance: residual ×0.83 per frame as measured; exit: the same displacements as the measurements; Center: edge within 5 pt at 35 ms, closing on the same points | 2026-10-13 |

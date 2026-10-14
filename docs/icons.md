@@ -1,89 +1,89 @@
-# Icone delle app nella shell
+# App icons in the shell
 
-Le icone vengono dal repo `silica-linux/silica-icons` (CC BY-SA 4.0), che non è
-incluso in questo repository: la shell le legge da disco. Il formato è descritto in
-`docs/icon-format.md` di quel repo.
+The icons come from the `silica-linux/silica-icons` repo (CC BY-SA 4.0), which is not
+included in this repository: the shell reads them from disk. The format is described in
+`docs/icon-format.md` of that repo.
 
-## Dove le cerca
+## Where it looks for them
 
-In ordine, la prima che contiene `apps/<id>/icon.json` o `files/<id>/icon.json` vince:
+In order, the first one containing `apps/<id>/icon.json` or `files/<id>/icon.json` wins:
 
-1. `$SILICA_ICONS_DIR`: per lo sviluppo, il clone del repo. `cargo xtask run` lo imposta da
-   solo se `silica-icons` è clonato accanto a questo repository (`~/silica/silica-icons`);
-2. `silica/icons` nelle cartelle dei dati XDG: `~/.local/share/silica/icons`, poi
-   `/usr/local/share/silica/icons` e `/usr/share/silica/icons`.
+1. `$SILICA_ICONS_DIR`: for development, the clone of the repo. `cargo xtask run` sets it by
+   itself if `silica-icons` is cloned next to this repository (`~/silica/silica-icons`);
+2. `silica/icons` in the XDG data folders: `~/.local/share/silica/icons`, then
+   `/usr/local/share/silica/icons` and `/usr/share/silica/icons`.
 
-Codice: `shell/lib/system/silica_icons.dart`.
+Code: `shell/lib/system/silica_icons.dart`.
 
-## Quale icona spetta a un'app
+## Which icon an app gets
 
-1. La chiave `X-Silica-Icon=<id>` nella voce `.desktop` dell'app. Le icone delle app di
-   silica-icons sono **riservate alle app di Silica** (Mustache e le prossime): le app di
-   terzi, GNOME comprese, non le prendono mai, nemmeno se fanno la stessa cosa.
-2. I luoghi del Dock usano le icone dei file (Download → `folder`, Cestino → `trash-empty` o
+1. The `X-Silica-Icon=<id>` key in the app's `.desktop` entry. The app icons of
+   silica-icons are **reserved for Silica's apps** (Mustache and the next ones): third-party
+   apps, GNOME's included, never get them, not even if they do the same thing.
+2. The Dock's places use the file icons (Downloads → `folder`, Trash → `trash-empty` or
    `trash-full`).
-3. Altrimenti l'icona del tema freedesktop (`icon_lookup.dart`), ridotta al keyline 600
-   su un fondo neutro con la stessa forma (`FlatSource`).
-4. Senza nessuna icona, la tessera con l'iniziale (`dock/icons.dart`).
+3. Otherwise the freedesktop theme icon (`icon_lookup.dart`), reduced to the 600 keyline
+   on a neutral background with the same shape (`FlatSource`).
+4. Without any icon, the tile with the initial (`dock/icons.dart`).
 
-## Come la disegna
+## How it draws it
 
-`silica_ui` (`SilicaIcon`, in `lib/src/icons/` di silica-ui), usato dalla shell e dalle app:
+`silica_ui` (`SilicaIcon`, in silica-ui's `lib/src/icons/`), used by the shell and the apps:
 
-- il corpo visibile è il lato chiesto (48 pt nel Dock, 38 pt in Faro); la tela 1024
-  sborda di 100/824 per lato;
-- maschera a superellisse per angolo, n 2,6, raggio 0,32 × lato
-  (`plan/reference/icons.md`); bordo luminoso sfumato e ombra sotto il corpo;
-- ombra neutra sotto i livelli con `"shadow": "neutral"`;
-- tema scuro dai file `-dark`, scelto dalla luminosità della piattaforma;
-- orologio: lancette ruotate ogni secondo (i secondi da 64 pt), ogni 20 s sotto;
-  calendario: mese in italiano e giorno, aggiornati a mezzanotte.
+- the visible body is the requested side (48 pt in the Dock, 38 pt in Faro); the 1024 canvas
+  overflows by 100/824 per side;
+- superellipse mask per corner, n 2.6, radius 0.32 × side
+  (`plan/reference/icons.md`); faded bright edge and shadow below the body;
+- neutral shadow below the layers with `"shadow": "neutral"`;
+- dark theme from the `-dark` files, chosen from the platform brightness;
+- clock: hands rotated every second (seconds from 64 pt), every 20 s below that;
+  calendar: month in Italian and day, updated at midnight.
 
-## Cartelle
+## Folders
 
-La cartella generica di silica-icons (`files/folder-generic`, tipo dinamico `folder-symbol`,
-spec in `docs/icon-format.md` di quel repo, "Cartella generica") incide sul pannello un
-simbolo di `symbols/` e applica una tinta. Codice in `silica_ui`: `silica_icons.dart` (parsing,
-cartelle speciali) e `silica_icon.dart` (composizione); nella shell resta solo la scelta
-dell'icona di un'app (`shell/lib/system/silica_icons.dart`, `silicaIconFor`).
+The generic folder of silica-icons (`files/folder-generic`, dynamic type `folder-symbol`,
+spec in that repo's `docs/icon-format.md`, "Generic folder") engraves a symbol from
+`symbols/` on the panel and applies a tint. Code in `silica_ui`: `silica_icons.dart` (parsing,
+special folders) and `silica_icon.dart` (composition); the shell keeps only the choice of an
+app's icon (`shell/lib/system/silica_icons.dart`, `silicaIconFor`).
 
-- `resolveFolderIcon(path, {symbol, key, tint, env})` → `FolderIcon?`: riconosce la cartella
-  speciale con `specialFolderKey` (chiavi di `~/.config/user-dirs.dirs` lette da
-  `xdgUserDirs`, più `HOME`, `APPLICATIONS` e `LIBRARY`), prende il simbolo dalla mappa
-  `folders` del manifest e la tinta (`#rrggbb` o un'etichetta: `red`, `orange`, `yellow`,
-  `green`, `blue`, `purple`, `gray`). `symbol` impone un simbolo qualsiasi di `symbols/`;
-  `key` dà la chiave alle cartelle senza percorso fisso (`SHARED`, `NETWORK`). Senza simbolo
-  né tinta, o con un simbolo che non c'è, torna la cartella semplice (`folder`).
-- `SilicaIcon(FolderSource(folderIcon), side: …)` la disegna: livelli, simbolo inciso con il
-  peso della fascia di `side` (Light da 128 pt, Regular da 64, Semibold sotto, × √φ sotto 32,
-  niente sotto 16), poi la tinta come `ColorFilter.matrix` sulla luminanza del tutto.
+- `resolveFolderIcon(path, {symbol, key, tint, env})` → `FolderIcon?`: recognizes the special
+  folder with `specialFolderKey` (keys of `~/.config/user-dirs.dirs` read by
+  `xdgUserDirs`, plus `HOME`, `APPLICATIONS` and `LIBRARY`), takes the symbol from the
+  manifest's `folders` map and the tint (`#rrggbb` or a label: `red`, `orange`, `yellow`,
+  `green`, `blue`, `purple`, `gray`). `symbol` forces any symbol of `symbols/`;
+  `key` gives the key to folders without a fixed path (`SHARED`, `NETWORK`). Without a symbol
+  or a tint, or with a symbol that does not exist, the plain folder comes back (`folder`).
+- `SilicaIcon(FolderSource(folderIcon), side: …)` draws it: layers, symbol engraved with the
+  weight of the `side` band (Light from 128 pt, Regular from 64, Semibold below, × √φ below 32,
+  nothing below 16), then the tint as a `ColorFilter.matrix` on the luminance of the whole.
 
-### Per Mustache
+### For Mustache
 
-Mustache usa lo stesso codice da `silica_ui` (dalla 0.7.0), senza dipendere dalla shell. Per
-ogni cartella della vista:
+Mustache uses the same code from `silica_ui` (since 0.7.0), without depending on the shell.
+For every folder in the view:
 
-1. `resolveFolderIcon(percorso, tint: etichettaOColore)`; per le condivisioni e i mount di
-   rete `key: 'SHARED'` o `key: 'NETWORK'`, per un simbolo scelto dall'utente `symbol: nome`;
-2. disegnarla con `SilicaIcon(FolderSource(icona), side: lato)`: il lato decide il peso del
-   simbolo, quindi va passato il lato reale della cella (16, 32, 64, 128…), non una tela
-   grande poi ridotta.
+1. `resolveFolderIcon(path, tint: labelOrColor)`; for shares and network mounts
+   `key: 'SHARED'` or `key: 'NETWORK'`, for a symbol chosen by the user `symbol: name`;
+2. draw it with `SilicaIcon(FolderSource(icon), side: side)`: the side decides the weight of
+   the symbol, so the real side of the cell must be passed (16, 32, 64, 128…), not a large
+   canvas then scaled down.
 
-Per le icone dei file, delle cartelle, dei volumi e del Cestino il lato è la **tela intera**
-(silica-icons 0.2: foglio 684 × 904 a (170, 60), cartella 944 × 760 a (40, 132), volumi
-944 × 583, Cestino 656 × 824 con la base a 924), misurata sul Finder; le fasce `min_size`
-si confrontano con quel lato. Nel Dock, accanto alle app, un luogo usa invece la tela delle
-app (`SilicaIcon(…, besideApps: true)`, silica_ui ≥ 0.17): lato = corpo, tela 1024/824 del
-lato.
+For the icons of files, folders, volumes and the Trash the side is the **whole canvas**
+(silica-icons 0.2: sheet 684 × 904 at (170, 60), folder 944 × 760 at (40, 132), volumes
+944 × 583, Trash 656 × 824 with the base at 924), measured on the Finder; the `min_size`
+bands are compared with that side. In the Dock, next to the apps, a place instead uses the
+apps' canvas (`SilicaIcon(…, besideApps: true)`, silica_ui ≥ 0.17): side = body, canvas
+1024/824 of the side.
 
-## Limiti degli SVG
+## SVG limits
 
-flutter_svg non applica i filtri SVG. Al caricamento la shell:
+flutter_svg does not apply SVG filters. On loading the shell:
 
-- toglie le copie dei tracciati che servono solo alle ombre (`<use filter=…>`);
-- trasforma ellissi e cerchi sfocati in un gradiente radiale;
-- ignora gli altri `filter`;
-- usa l'Inter di `silica_ui` per il testo (`font-family="… Inter"`); di Inter sono
-  inclusi solo Regular e SemiBold, quindi pesi più alti escono SemiBold.
+- removes the path copies that only serve the shadows (`<use filter=…>`);
+- turns blurred ellipses and circles into a radial gradient;
+- ignores the other `filter`s;
+- uses `silica_ui`'s Inter for the text (`font-family="… Inter"`); only Regular and SemiBold
+  of Inter are included, so higher weights come out SemiBold.
 
-Le ombre interne del disegno (sottili, fatte con i filtri) quindi non compaiono.
+The inner shadows of the drawing (thin, made with filters) therefore do not show.

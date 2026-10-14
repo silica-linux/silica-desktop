@@ -1,138 +1,137 @@
 # AGENTS.md
 
-Contratto di lavoro di ogni sessione, per persone e agenti. Silica è un desktop
-environment Linux scritto da zero in Rust, con il linguaggio visivo di macOS 27
-(Liquid Glass). Il compositor si chiama Ossido.
+The working contract of every session, for people and agents. Silica is a Linux desktop
+environment written from scratch in Rust, with the visual language of macOS 27
+(Liquid Glass). The compositor is called Ossido.
 
-## Inizio sessione
+## Session start
 
-1. Leggere `plan/STATUS.md` (milestone corrente, prossimo task), poi il task in
-   `plan/execution-plan.md` e la sezione rilevante di `plan/architecture.md`.
-2. Per il comportamento atteso: `plan/reference/*.md` (osservazioni misurate di macOS 27).
-3. Lavorare in autonomia; fermarsi solo per le decisioni che il piano assegna all'utente.
+1. Read `plan/STATUS.md` (current milestone, next task), then the task in
+   `plan/execution-plan.md` and the relevant section of `plan/architecture.md`.
+2. For the expected behaviour: `plan/reference/*.md` (measured observations of macOS 27).
+3. Work autonomously; stop only for the decisions the plan assigns to the user.
 
-## Principi
+## Principles
 
-1. Clean-room: macOS si osserva dall'esterno, non si copia.
-2. Non crashare mai: un crash del compositor chiude l'intera sessione.
-3. Tutto è un comando: ogni azione dell'utente è un comando raggiungibile da UI,
-   CLI, canale di controllo e MCP.
-4. La parità si misura, non si dichiara: screenshot confrontati con i riferimenti e
-   test di conformità, mai percentuali scritte dagli agenti.
+1. Clean-room: macOS is observed from the outside, not copied.
+2. Never crash: a compositor crash closes the whole session.
+3. Everything is a command: every user action is a command reachable from the UI,
+   the CLI, the control channel and MCP.
+4. Parity is measured, not declared: screenshots compared with the references and
+   conformance tests, never percentages written by agents.
 
-## Mai crashare
+## Never crash
 
-- Nel codice non di test niente `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`;
-  `unsafe` vietato salvo FFI dell'embedder (`crates/embedder/src/ffi/`) e
-  inizializzazione EGL/GLES di Ossido (`crates/ossido/src/egl.rs`), isolato in un modulo
-  con commento `SAFETY` per ogni blocco. Clippy lo fa rispettare (vedi `[workspace.lints]` in `Cargo.toml`).
-- Errori come `Result` con `?`; input da client Wayland, file e comandi trattati come
-  ostili (indici controllati, aritmetica checked).
-- Un client che si comporta male viene disconnesso, mai il compositor che cade.
-- Ogni crash corretto arriva con un test di regressione.
+- In non-test code no `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`;
+  `unsafe` is forbidden except for the embedder's FFI (`crates/embedder/src/ffi/`) and
+  Ossido's EGL/GLES initialization (`crates/ossido/src/egl.rs`), isolated in a module
+  with a `SAFETY` comment for every block. Clippy enforces it (see `[workspace.lints]` in `Cargo.toml`).
+- Errors as `Result` with `?`; input from Wayland clients, files and commands treated as
+  hostile (checked indices, checked arithmetic).
+- A misbehaving client is disconnected, never the compositor going down.
+- Every crash fixed comes with a regression test.
 
-## Tutto è un comando
+## Everything is a command
 
-- Ogni azione visibile è un comando con id, etichetta, scorciatoia, parametri e test.
-  UI, CLI, canale di controllo e MCP chiamano gli stessi comandi.
+- Every visible action is a command with an id, label, shortcut, parameters and tests.
+  UI, CLI, control channel and MCP call the same commands.
 
-## Gate di qualità
+## Quality gates
 
-- Prima di ogni commit: `cargo xtask ci`. Un task per commit (`M2.3: rifrazione del vetro`).
-- Per il lavoro visivo: screenshot, lettura del PNG, confronto con il riferimento prima
-  di chiudere il task.
-- La parità in `ROADMAP.md` si aggiorna solo da metriche misurate, mai stimata dall'agente.
+- Before every commit: `cargo xtask ci`. One task per commit (`M2.3: glass refraction`).
+- For visual work: screenshot, reading the PNG, comparison with the reference before
+  closing the task.
+- Parity in `ROADMAP.md` is updated only from measured metrics, never estimated by the agent.
 
-## Agenti in parallelo
+## Agents in parallel
 
-- Un `CARGO_TARGET_DIR` per agente; ogni agente modifica solo i crate o i pacchetti
-  che gli sono assegnati; la directory di build si cancella a fine lavoro.
+- One `CARGO_TARGET_DIR` per agent; each agent changes only the crates or packages
+  assigned to it; the build directory is deleted at the end of the work.
 
-## Clean-room e asset
+## Clean-room and assets
 
-Layout e comportamenti si possono reimplementare, gli asset no.
+Layouts and behaviours may be reimplemented, assets may not.
 
-Osservazione consentita:
+Allowed observation:
 
-- macOS 27 si osserva dall'esterno su un Mac Apple Silicon reale: uso della UI,
-  screenshot, misure (dimensioni, raggi, spaziature, durate e curve delle animazioni).
-- Le osservazioni vanno in `plan/reference/` (gitignored): screenshot e note misurate,
-  mai committati.
-  Procedura, condizioni e formato: `docs/reference-capture.md`.
-- Specifiche pubbliche: protocolli Wayland, specifiche freedesktop, documentazione
-  Smithay e Flutter.
-- Documentazione pubblica di Apple (developer.apple.com, Human Interface Guidelines,
-  sessioni WWDC): solo per sapere quali comportamenti esistono e come si usano (es. le
-  forme di vetro che si fondono, il vetro che reagisce al tocco). Non se ne copiano testi,
-  immagini, codice o nomi; i valori (dimensioni, curve, colori) si misurano comunque
-  sull'osservazione.
+- macOS 27 is observed from the outside on a real Apple Silicon Mac: use of the UI,
+  screenshots, measurements (sizes, radii, spacings, durations and curves of the animations).
+- The observations go in `plan/reference/` (gitignored): screenshots and measured notes,
+  never committed.
+  Procedure, conditions and format: `docs/reference-capture.md`.
+- Public specifications: Wayland protocols, freedesktop specifications, Smithay and
+  Flutter documentation.
+- Apple's public documentation (developer.apple.com, Human Interface Guidelines,
+  WWDC sessions): only to know which behaviours exist and how they are used (e.g. glass
+  shapes that merge, glass reacting to touch). No texts, images, code or names are copied
+  from it; the values (sizes, curves, colors) are still measured from observation.
 
-Vietato:
+Forbidden:
 
-- Leggere, disassemblare o copiare file dal sistema macOS (bundle, framework, risorse).
-- Icone, sfondi, suoni, cursori, testi e font Apple. I font SF hanno una licenza
-  limitata alle piattaforme Apple: al loro posto Inter (OFL) per l'interfaccia.
-- Nomi di prodotto Apple nell'interfaccia e nel marketing.
-- Codice con licenza incompatibile: niente copia da progetti GPL (COSMIC, KWin,
-  GNOME Shell) in un repo MIT/Apache. Leggerne l'architettura è lecito, copiarne il
-  codice no.
+- Reading, disassembling or copying files from the macOS system (bundles, frameworks, resources).
+- Apple icons, wallpapers, sounds, cursors, texts and fonts. The SF fonts have a license
+  limited to Apple platforms: Inter (OFL) takes their place for the interface.
+- Apple product names in the interface and in marketing.
+- Code with an incompatible license: no copying from GPL projects (COSMIC, KWin,
+  GNOME Shell) into an MIT/Apache repo. Reading their architecture is fine, copying their
+  code is not.
 
-Asset:
+Assets:
 
-- Ogni asset ha una riga in `ASSETS.md` con autore, licenza e fonte;
-  `cargo xtask assets` (parte di `cargo xtask ci`) blocca i file senza riga.
-- Licenze ammesse: originale del progetto, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Da preferire
-  la grafica generata in codice.
-- Icone delle app, dei file e di sistema: repo `silica-linux/silica-icons`, licenza
-  CC BY-SA 4.0. I cursori sono rimandati: il repo `silica-linux/silica-cursors` è archiviato.
-- Sfondi delle versioni: foto proprie o di fotografi con cessione scritta dei diritti,
-  oppure Wikimedia Commons con licenza compatibile.
+- Every asset has a row in `ASSETS.md` with author, license and source;
+  `cargo xtask assets` (part of `cargo xtask ci`) blocks files without a row.
+- Allowed licenses: the project's own original work, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache.
+  Graphics generated in code are preferred.
+- App, file and system icons: repo `silica-linux/silica-icons`, license
+  CC BY-SA 4.0. Cursors are postponed: the repo `silica-linux/silica-cursors` is archived.
+- Release wallpapers: our own photos or photographers' with a written transfer of rights,
+  or Wikimedia Commons with a compatible license.
 
-## Struttura e livelli
+## Structure and layers
 
 ```
 crates/ossido/         compositor (Smithay)
-crates/ossido-render/  renderer GLES + shader del vetro
-crates/protocols/      XML e binding dei protocolli silica-*
-crates/embedder/       embedder Flutter in Rust
-crates/daemon/         servizi di sistema (D-Bus)
-crates/portal/         backend xdg-desktop-portal
-crates/control/        canale di controllo JSON + server MCP
+crates/ossido-render/  GLES renderer + glass shaders
+crates/protocols/      XML and bindings of the silica-* protocols
+crates/embedder/       Flutter embedder in Rust
+crates/daemon/         system services (D-Bus)
+crates/portal/         xdg-desktop-portal backend
+crates/control/        JSON control channel + MCP server
 crates/cli/            silica-cli
-shell/                 la shell in Flutter: Dock, barra dei menu, Faro, notifiche, Centro di controllo
-testapps/demo/         app di prova per i test dell'embedder
+shell/                 the shell in Flutter: Dock, menu bar, Faro, notifications, Control Center
+testapps/demo/         test app for the embedder tests
 xtask/                 cargo xtask: ci, layers, assets, run, bundle
-plan/                  gitignored: stato, piano, riferimenti macOS
+plan/                  gitignored: status, plan, macOS references
 ```
 
-`cargo xtask layers` verifica i livelli: nessun crate sotto la shell dipende da
-Flutter, e `ossido` non dipende da `daemon`.
+`cargo xtask layers` checks the layers: no crate below the shell depends on
+Flutter, and `ossido` does not depend on `daemon`.
 
-Questo repository è `silica-desktop` (fino al 2026-10-14 `silica`). Gli altri repository di
+This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repositories of
 `silica-linux`:
 
-| Repository | Cosa | Licenza |
+| Repository | What | License |
 | --- | --- | --- |
-| `silica-ui` (pubblico) | pacchetto Dart `silica_ui`: Inter, vetro, Liquid Glass. API stabile, versioni con tag `vX.Y.Z`; la shell e le app lo prendono dal tag | MIT OR Apache-2.0 |
-| `silica-icons` | icone delle app e dei file (a livelli), 313 simboli di sistema in tre pesi | CC BY-SA 4.0 |
-| `silica-cursors` | cursori, archiviato: da rifare più avanti | CC BY-SA 4.0 |
-| `silica-reference` | osservazioni di macOS 27, clonato in `plan/reference/` (privato) | — |
-| `silica-packages` | i pacchetti RPM (desktop, app, Inter, silica-icons) e la sessione Wayland installabile su Fedora | MIT OR Apache-2.0 |
-| `silica-os` | la distro: immagine bootc sopra Fedora Atomic con i default di Silica, pipeline e ISO di installazione | MIT OR Apache-2.0 |
-| `silica-brand` | logo, banner dei repository, sfondi delle versioni (con le righe in `ASSETS.md`) | da decidere (marchio) |
-| `silica-setup` | l'assistente al primo avvio (un'app, come `mustache`) | MIT OR Apache-2.0 |
-| un repository per app | `mustache` (pubblico, il gestore dei file), poi Impostazioni, Terminale, …: dipendono da `silica-ui`; si costruiscono con `cargo xtask bundle <percorso>`; `cargo xtask install-app <percorso>` installa la loro voce `.desktop` (modello in `linux/` del repository dell'app) | MIT OR Apache-2.0 |
+| `silica-ui` (public) | Dart package `silica_ui`: Inter, glass, Liquid Glass. Stable API, versions tagged `vX.Y.Z`; the shell and the apps take it from the tag | MIT OR Apache-2.0 |
+| `silica-icons` | app and file icons (layered), 313 system symbols in three weights | CC BY-SA 4.0 |
+| `silica-cursors` | cursors, archived: to be redone later | CC BY-SA 4.0 |
+| `silica-reference` | macOS 27 observations, cloned into `plan/reference/` (private) | — |
+| `silica-packages` | the RPM packages (desktop, apps, Inter, silica-icons) and the Wayland session installable on Fedora | MIT OR Apache-2.0 |
+| `silica-os` | the distro: a bootc image on top of Fedora Atomic with Silica's defaults, pipeline and installation ISO | MIT OR Apache-2.0 |
+| `silica-brand` | logo, repository banners, release wallpapers (with their rows in `ASSETS.md`) | to be decided (trademark) |
+| `silica-setup` | the first-boot assistant (an app, like `mustache`) | MIT OR Apache-2.0 |
+| one repository per app | `mustache` (public, the file manager), then Settings, Terminal, …: they depend on `silica-ui`; they are built with `cargo xtask bundle <path>`; `cargo xtask install-app <path>` installs their `.desktop` entry (template in the app repository's `linux/`) | MIT OR Apache-2.0 |
 
-Faro e gli altri componenti della shell non sono app: restano in `shell/`. Un cambiamento a
-`silica-ui` si rilascia con un tag prima di usarlo qui (`ref` in `shell/pubspec.yaml`).
+Faro and the other shell components are not apps: they stay in `shell/`. A change to
+`silica-ui` is released with a tag before using it here (`ref` in `shell/pubspec.yaml`).
 
 ## Harness
 
-1. `cargo xtask run --nested --control 7979` avvia Ossido annidato (backend winit) con
-   canale di controllo.
-2. L'agente invia comandi JSON sul socket (`engine.execute`, `ui.screenshot`), con
-   `silica-cli` o via MCP (`silica-cli mcp`, già in `.mcp.json`). Protocollo e comandi:
+1. `cargo xtask run --nested --control 7979` starts Ossido nested (winit backend) with
+   the control channel.
+2. The agent sends JSON commands on the socket (`engine.execute`, `ui.screenshot`), with
+   `silica-cli` or via MCP (`silica-cli mcp`, already in `.mcp.json`). Protocol and commands:
    `docs/control.md`.
-3. Lo screenshot viene confrontato con il riferimento in `plan/reference/` con una
-   metrica di differenza visiva; il risultato aggiorna la parità in `ROADMAP.md`.
-4. In headless lo stesso ciclo gira in CI, senza finestra.
+3. The screenshot is compared with the reference in `plan/reference/` with a
+   visual difference metric; the result updates the parity in `ROADMAP.md`.
+4. Headless, the same loop runs in CI, without a window.

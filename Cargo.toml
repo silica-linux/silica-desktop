@@ -10,11 +10,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/silica-linux/silica-desktop"
 
 [workspace.lints.rust]
-# "deny" e non "forbid": l'FFI dell'embedder e l'EGL di Ossido lo riabilitano, solo lì
+# "deny" and not "forbid": the embedder's FFI and Ossido's EGL re-enable it, only there
 # (cargo xtask unsafe).
 unsafe_code = "deny"
 
-# Mai crashare: vedi AGENTS.md. Nei test sono consentiti (clippy.toml).
+# Never crash: see AGENTS.md. They are allowed in tests (clippy.toml).
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"

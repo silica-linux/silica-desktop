@@ -1,289 +1,296 @@
-# Gate 1 · Dock in Flutter e in Rust, misurati
+# Gate 1 · Dock in Flutter and in Rust, measured
 
-Rapporto di M1.5 (`docs/m1.5-dock.md`): lo stesso Dock scritto in Flutter (`apps/dock`) e
-in Rust con iced (`crates/dock-iced`), misurato da Ossido sullo stesso banco di prova
-(`cargo xtask bench dock`). Dati del 2026-10-12.
+M1.5 report (`docs/m1.5-dock.md`): the same Dock written in Flutter (`apps/dock`) and in
+Rust with iced (`crates/dock-iced`), measured by Ossido on the same test bench
+(`cargo xtask bench dock`). Data from 2026-10-12.
 
-## Decisione (2026-10-13)
+## Decision (2026-10-13)
 
-**Opzione A: shell e app in Flutter**, con l'embedder custom. Decisa dall'utente dopo le
-misure su hardware nativo (sezione più sotto) e una prova a mano dei due Dock.
+**Option A: shell and apps in Flutter**, with the custom embedder. Decided by the user after
+the measurements on native hardware (section further below) and a hands-on trial of the two
+Docks.
 
-Perché, rispetto alla raccomandazione iniziale qui sotto:
+Why, compared with the initial recommendation below:
 
-- Il vantaggio di fluidità di iced non si ripete su Linux nativo: con lo stesso renderer
-  (llvmpipe) le due versioni perdono gli stessi frame.
-- A vista iced rende peggio: le forme del canvas non hanno antialiasing (MSAA spento di
-  default, accenderlo ha un costo da rimisurare) e il testo di cosmic-text/cryoglyph,
-  senza hinting né correzione gamma, è meno nitido di quello di Skia con lo stesso Inter.
-- iced chiede più codice (2,3 volte), cose scritte a mano che Flutter dà già, e un
-  secondo design system da tenere allineato a quello delle app.
-- I costi di Flutter (engine release, percorso GPU dell'embedder, dmabuf in Ossido) si
-  pagano comunque per le app.
+- iced's smoothness advantage does not repeat on native Linux: with the same renderer
+  (llvmpipe) the two versions drop the same frames.
+- Visually iced renders worse: the canvas shapes have no antialiasing (MSAA off by
+  default, turning it on has a cost to be measured again) and the text of
+  cosmic-text/cryoglyph, without hinting or gamma correction, is less sharp than Skia's with
+  the same Inter.
+- iced asks for more code (2.3 times), hand-written things that Flutter already provides, and
+  a second design system to keep aligned with the apps' one.
+- Flutter's costs (release engine, the embedder's GPU path, dmabuf in Ossido) are paid
+  anyway for the apps.
 
-Condizioni:
+Conditions:
 
-- `linux-dmabuf` in Ossido, poi una nuova misura del Dock Flutter con la GPU vera su
-  hardware nativo: frame lenti sotto l'1%.
-- **Impeller, non Skia** (decisione dell'utente). Impeller è il renderer su cui Flutter
-  investe; Skia è il ripiego che verrà tolto. Quindi il crash di Impeller su llvmpipe e i
-  frame persi in WSL (2–6%, peggio di Skia) vanno capiti e risolti, non aggirati. La
-  misura con la GPU nativa si fa con flutter-gl-impeller, e va valutato Impeller su
-  Vulkan (l'API embedder ha un renderer Vulkan) oltre che su OpenGL ES.
+- `linux-dmabuf` in Ossido, then a new measurement of the Flutter Dock with the real GPU on
+  native hardware: slow frames under 1%.
+- **Impeller, not Skia** (the user's decision). Impeller is the renderer Flutter invests
+  in; Skia is the fallback that will be removed. So Impeller's crash on llvmpipe and the
+  frames dropped in WSL (2–6%, worse than Skia) must be understood and fixed, not worked
+  around. The measurement with the native GPU is done with flutter-gl-impeller, and Impeller
+  on Vulkan (the embedder API has a Vulkan renderer) must be evaluated as well as on
+  OpenGL ES.
 
-Esito delle condizioni (2026-10-13, sezione "Misure con la GPU su hardware nativo"):
-dmabuf in Ossido fatto; Impeller con la GPU perde lo 0,17% dei frame; il crash su
-llvmpipe è aggirato con il ripiego su Skia. Memoria: decisa il 2026-10-13, si accettano
-per ora ~226 MiB di PSS per la shell completa (sfondo, barra, Dock, Faro, un engine per
-componente con Impeller); un solo engine con più viste resta un'ottimizzazione possibile.
-- Il limite di memoria della shell: vedi l'esito qui sotto (accettati ~226 MiB per ora).
+Outcome of the conditions (2026-10-13, section "Measurements with the GPU on native
+hardware"): dmabuf in Ossido done; Impeller with the GPU drops 0.17% of the frames; the crash
+on llvmpipe is worked around with the fallback to Skia. Memory: decided on 2026-10-13, ~226
+MiB of PSS are accepted for now for the complete shell (wallpaper, bar, Dock, Faro, one
+engine per component with Impeller); a single engine with several views remains a possible
+optimization.
+- The shell's memory limit: see the outcome above (~226 MiB accepted for now).
 
-## Raccomandazione iniziale (2026-10-12, superata)
+## Initial recommendation (2026-10-12, superseded)
 
-**Opzione B: shell in Rust (iced), app in Flutter.** Sulle misure di oggi iced è più
-fluido (nessun frame perso con la GPU, contro l'1,4% di Flutter) e occupa 45 MiB in meno.
-La shell gira sempre, ed è la parte dove un rallentamento si vede di più. Il prezzo è più
-codice (circa 2,3 volte), un toolkit meno maturo e due design system da tenere allineati.
+**Option B: shell in Rust (iced), apps in Flutter.** On today's measurements iced is smoother
+(no frame dropped with the GPU, against Flutter's 1.4%) and takes 45 MiB less.
+The shell always runs, and it is the part where a slowdown shows the most. The price is more
+code (about 2.3 times), a less mature toolkit and two design systems to keep aligned.
 
-Due cautele, prima di decidere:
+Two caveats, before deciding:
 
-- **Il ritardo di Flutter con la GPU viene dal nostro embedder, non dal disegno.** Nei
-  frame persi il thread raster finisce in meno di 12 ms; Flutter in software non perde
-  frame. Il tempo si perde fra vsync, swap e compositor, in un percorso che in WSL passa
-  da una copia GPU → CPU (Ossido non offre ancora dmabuf). È probabilmente correggibile, e
-  va corretto comunque per le app Flutter, in qualunque opzione.
-- **Tutto è misurato in WSL**, con OpenGL tradotto in D3D12. I numeri valgono per il
-  confronto, non come valori assoluti. Le misure su Linux nativo con la GPU sono più sotto.
+- **Flutter's delay with the GPU comes from our embedder, not from the drawing.** In the
+  dropped frames the raster thread finishes in less than 12 ms; Flutter in software drops no
+  frames. The time is lost between vsync, swap and compositor, in a path that in WSL goes
+  through a GPU → CPU copy (Ossido does not offer dmabuf yet). It is probably fixable, and
+  must be fixed anyway for Flutter apps, in any option.
+- **Everything is measured in WSL**, with OpenGL translated to D3D12. The numbers hold for the
+  comparison, not as absolute values. The measurements on native Linux with the GPU are
+  further below.
 
-Se conta di più la velocità di sviluppo della UI, l'opzione A resta praticabile: il
-divario di fluidità è nel nostro codice, quello di memoria (circa 45 MiB, una volta sola
-se la shell usa un solo engine) no.
+If UI development speed matters more, option A remains viable: the smoothness gap is in our
+code, the memory one (about 45 MiB, only once if the shell uses a single engine) is not.
 
-## Banco di prova
+## Test bench
 
-Ossido annidato in WSLg, output 2560×1600 a scala 2, refresh misurato circa 56 Hz
-(periodo nominale 16,7 ms). Per ogni variante 3 ripetizioni, ciascuna con un Ossido nuovo:
+Ossido nested in WSLg, 2560×1600 output at scale 2, measured refresh about 56 Hz
+(nominal period 16.7 ms). For each variant 3 runs, each with a new Ossido:
 
-1. lancio del Dock con `app.launch`; avvio = dal lancio al primo buffer;
-2. 10 s di puntatore avanti e indietro sulla riga delle icone, 120 eventi/s;
-3. uscita del puntatore e ritorno a riposo con la molla (1,5 s);
-4. memoria del processo dopo lo scorrimento (`/proc/<pid>/smaps_rollup`).
+1. launch of the Dock with `app.launch`; startup = from the launch to the first buffer;
+2. 10 s of pointer back and forth over the icon row, 120 events/s;
+3. the pointer leaves and the Dock returns to rest with the spring (1.5 s);
+4. process memory after the scrolling (`/proc/<pid>/smaps_rollup`).
 
-Le misure sono di Ossido (`perf.frames`, `perf.process`), uguali per ogni toolkit. Un frame
-è lento se arriva oltre 1,5 periodi dopo il precedente. Tutto in build release: Rust
-`--release`, Flutter con engine release compilato dai sorgenti e Dart AOT.
+The measurements are Ossido's (`perf.frames`, `perf.process`), the same for every toolkit. A
+frame is slow if it arrives more than 1.5 periods after the previous one. Everything in
+release builds: Rust `--release`, Flutter with a release engine built from source and Dart
+AOT.
 
-| Variante | Cosa |
+| Variant | What |
 | --- | --- |
-| flutter-gl | Flutter, embedder custom, OpenGL ES (Skia), GPU via D3D12 |
-| flutter-gl-impeller | come sopra, con Impeller |
-| iced-gl | iced 0.14, wgpu su OpenGL ES, GPU via D3D12 |
-| flutter-software | Flutter, renderer software (CPU) |
+| flutter-gl | Flutter, custom embedder, OpenGL ES (Skia), GPU via D3D12 |
+| flutter-gl-impeller | as above, with Impeller |
+| iced-gl | iced 0.14, wgpu on OpenGL ES, GPU via D3D12 |
+| flutter-software | Flutter, software renderer (CPU) |
 | iced-software | iced 0.14, tiny-skia (CPU) |
 
-## Risultati
+## Results
 
-Mediana di 3 ripetizioni. Tempi in ms, memoria in MiB.
+Median of 3 runs. Times in ms, memory in MiB.
 
-| Variante | Avvio | Frame | Media | p50 | p95 | p99 | Max | Lenti | PSS | RSS |
+| Variant | Startup | Frames | Mean | p50 | p95 | p99 | Max | Slow | PSS | RSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| flutter-gl | 361 | 561 | 17,77 | 17,61 | 20,81 | 30,57 | 33,2 | 8 | 106,5 | 176,1 |
-| flutter-gl-impeller | 421 | 561 | 17,78 | 17,66 | 21,63 | 30,95 | 34,1 | 22 | 128,9 | 198,6 |
-| iced-gl | 297 | 561 | 17,83 | 17,77 | 19,60 | 21,39 | 23,3 | 0 | 60,8 | 118,9 |
-| flutter-software | 20 | 560 | 17,84 | 17,81 | 19,61 | 21,86 | 24,6 | 0 | 33,3 | 39,1 |
-| iced-software | 10 | 563 | 17,79 | 17,78 | 19,37 | 21,05 | 22,3 | 0 | 11,4 | 15,0 |
+| flutter-gl | 361 | 561 | 17.77 | 17.61 | 20.81 | 30.57 | 33.2 | 8 | 106.5 | 176.1 |
+| flutter-gl-impeller | 421 | 561 | 17.78 | 17.66 | 21.63 | 30.95 | 34.1 | 22 | 128.9 | 198.6 |
+| iced-gl | 297 | 561 | 17.83 | 17.77 | 19.60 | 21.39 | 23.3 | 0 | 60.8 | 118.9 |
+| flutter-software | 20 | 560 | 17.84 | 17.81 | 19.61 | 21.86 | 24.6 | 0 | 33.3 | 39.1 |
+| iced-software | 10 | 563 | 17.79 | 17.78 | 19.37 | 21.05 | 22.3 | 0 | 11.4 | 15.0 |
 
-Frame lenti nelle singole ripetizioni: flutter-gl 4, 8, 10; flutter-gl-impeller 36, 12,
+Slow frames in the single runs: flutter-gl 4, 8, 10; flutter-gl-impeller 36, 12,
 22; iced-gl 0, 2, 0; flutter-software 0, 0, 3; iced-software 1, 0, 0.
 
-Con le soglie proposte in `docs/m1.5-dock.md`:
+With the thresholds proposed in `docs/m1.5-dock.md`:
 
-| Soglia | flutter-gl | iced-gl |
+| Threshold | flutter-gl | iced-gl |
 | --- | --- | --- |
-| Frame lenti < 1% | no (1,4%) | sì (0%) |
-| p99 ≤ 1,5 periodi (25 ms) | no (30,6 ms) | sì (21,4 ms) |
-| Nessun intervallo oltre 50 ms | sì (33,2 ms) | sì (23,3 ms) |
-| Memoria | da fissare: 106,5 MiB | da fissare: 60,8 MiB |
+| Slow frames < 1% | no (1.4%) | yes (0%) |
+| p99 ≤ 1.5 periods (25 ms) | no (30.6 ms) | yes (21.4 ms) |
+| No interval over 50 ms | yes (33.2 ms) | yes (23.3 ms) |
+| Memory | to be set: 106.5 MiB | to be set: 60.8 MiB |
 
-## Cosa si legge nei numeri
+## What the numbers say
 
-- **Fluidità.** Le due versioni stanno al ritmo del compositor (media circa 17,8 ms).
-  Flutter con la GPU perde lo 0,7–1,8% dei frame (Impeller il 2–6%), sparsi lungo tutto
-  lo scorrimento e non solo all'inizio. In una ripetizione con il log del raster
-  (`silica_embedder::ffi::gl` in debug) quei frame hanno un disegno sotto i 12 ms. Impeller, il renderer nuovo, va peggio di Skia in
-  questo percorso.
-- **Memoria.** Flutter costa circa 45 MiB in più con la GPU e 22 MiB in più in software, per
-  processo. PSS include le librerie del driver grafico, condivise fra processi.
-- **Avvio.** Con la GPU domina l'inizializzazione del driver D3D12 (200–400 ms, molto
-  variabile) per entrambi. In software Flutter AOT parte in 20 ms, iced in 10.
-- **Aspetto.** Gli screenshot (`target/bench/dock/*-hover.png`) hanno la stessa geometria.
-  In WSL la superficie di iced è opaca: wgpu 27 su OpenGL dichiara solo `Opaque`
-  (`wgpu-hal/src/gles/adapter.rs`, un TODO), tiny-skia idem. La trasparenza c'è con Vulkan,
-  che in WSL è solo lavapipe (CPU); su hardware reale con Vulkan va verificata.
+- **Smoothness.** The two versions keep the compositor's pace (mean about 17.8 ms).
+  Flutter with the GPU drops 0.7–1.8% of the frames (Impeller 2–6%), spread over the whole
+  scroll and not only at the start. In a run with the raster log
+  (`silica_embedder::ffi::gl` in debug) those frames have a drawing time under 12 ms.
+  Impeller, the new renderer, does worse than Skia on this path.
+- **Memory.** Flutter costs about 45 MiB more with the GPU and 22 MiB more in software, per
+  process. PSS includes the graphics driver libraries, shared between processes.
+- **Startup.** With the GPU the initialization of the D3D12 driver dominates (200–400 ms, very
+  variable) for both. In software Flutter AOT starts in 20 ms, iced in 10.
+- **Look.** The screenshots (`target/bench/dock/*-hover.png`) have the same geometry.
+  In WSL iced's surface is opaque: wgpu 27 on OpenGL declares only `Opaque`
+  (`wgpu-hal/src/gles/adapter.rs`, a TODO), and so does tiny-skia. Transparency is there with
+  Vulkan, which in WSL is only lavapipe (CPU); on real hardware with Vulkan it has to be
+  checked.
 
-## Misure su hardware nativo (2026-10-12)
+## Measurements on native hardware (2026-10-12)
 
-Stesso banco, stesso PC, con Ubuntu 26.04 nativo al posto di WSL: Core i9-13900H
-(20 thread), Iris Xe (Raptor Lake-P) e RTX 4070 Laptop, Mesa 26.0.8, driver NVIDIA 595.91. Ossido annidato nella sessione GNOME (Wayland), schermo 1920×1200 a 59,88 Hz.
+Same bench, same PC, with native Ubuntu 26.04 instead of WSL: Core i9-13900H
+(20 threads), Iris Xe (Raptor Lake-P) and RTX 4070 Laptop, Mesa 26.0.8, NVIDIA driver 595.91.
+Ossido nested in the GNOME session (Wayland), 1920×1200 screen at 59.88 Hz.
 
-**Le varianti "GPU" qui non usano la GPU.** Ossido non offre `zwp_linux_dmabuf_v1` (né
-`wl_drm`), e senza uno dei due Mesa non sa quale device usare per una superficie Wayland:
-l'EGL dei client ricade su llvmpipe (`libEGL warning: failed to get driver name for fd -1`,
-e l'embedder scrive `renderer OpenGL ES: llvmpipe`). Con Vulkan wgpu sceglie lavapipe; con
-solo il driver Intel o solo quello NVIDIA nessuna superficie Vulkan è utilizzabile e iced
-ripiega su tiny-skia (PSS 14–16 MiB). In WSL il problema non si vedeva perché il driver
-d3d12 di Mesa non ha bisogno di dmabuf e copia sempre il frame in memoria condivisa.
+**The "GPU" variants here do not use the GPU.** Ossido does not offer `zwp_linux_dmabuf_v1`
+(nor `wl_drm`), and without one of the two Mesa does not know which device to use for a
+Wayland surface: the clients' EGL falls back to llvmpipe (`libEGL warning: failed to get
+driver name for fd -1`, and the embedder writes `renderer OpenGL ES: llvmpipe`). With Vulkan
+wgpu picks lavapipe; with only the Intel driver or only the NVIDIA one no Vulkan surface is
+usable and iced falls back to tiny-skia (PSS 14–16 MiB). In WSL the problem did not show
+because Mesa's d3d12 driver does not need dmabuf and always copies the frame into shared
+memory.
 
-**Scala 1 invece di 2.** GNOME stringe la finestra 2560×1600 di Ossido a 1920×1082, e il
-puntatore del banco cadeva fuori dal Dock (0 frame in ogni variante). Il banco ha ora
-`--scale N` (predefinita 2): qui gira con `--scale 1`, output 1280×800 pixel. L'output
-logico, la geometria e il percorso del puntatore sono gli stessi; i pixel da disegnare
-sono un quarto.
+**Scale 1 instead of 2.** GNOME shrinks Ossido's 2560×1600 window to 1920×1082, and the
+bench's pointer fell outside the Dock (0 frames in every variant). The bench now has
+`--scale N` (default 2): here it runs with `--scale 1`, 1280×800 pixel output. The logical
+output, the geometry and the pointer path are the same; the pixels to draw are a quarter.
 
-Mediana di 3 ripetizioni, tempi in ms, memoria in MiB. Fra parentesi il valore in WSL.
+Median of 3 runs, times in ms, memory in MiB. In parentheses the value in WSL.
 
-| Variante | Rende con | Avvio | Frame | p95 | p99 | Max | Lenti | PSS |
+| Variant | Renders with | Startup | Frames | p95 | p99 | Max | Slow | PSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| flutter-gl | llvmpipe | 1794 (361) | 597 | 19,03 | 20,74 (30,57) | 33,6 | 2 (8) | 113,1 (106,5) |
+| flutter-gl | llvmpipe | 1794 (361) | 597 | 19.03 | 20.74 (30.57) | 33.6 | 2 (8) | 113.1 (106.5) |
 | flutter-gl-impeller | llvmpipe | — | — | — | — | — | crash | — |
-| iced-gl | llvmpipe | 1868 (297) | 597 | 19,14 | 20,89 (21,39) | 35,0 | 3 (0) | 103,3 (60,8) |
-| iced-vulkan | lavapipe | 143 | 597 | 19,05 | 20,60 | 32,5 | 2 | 81,3 |
-| flutter-software | CPU | 44 (20) | 598 | 19,03 | 20,29 (21,86) | 26,0 | 1 (0) | 25,7 (33,3) |
-| iced-software | tiny-skia | 27 (10) | 598 | 19,29 | 21,12 (21,05) | 29,4 | 1 (0) | 11,7 (11,4) |
+| iced-gl | llvmpipe | 1868 (297) | 597 | 19.14 | 20.89 (21.39) | 35.0 | 3 (0) | 103.3 (60.8) |
+| iced-vulkan | lavapipe | 143 | 597 | 19.05 | 20.60 | 32.5 | 2 | 81.3 |
+| flutter-software | CPU | 44 (20) | 598 | 19.03 | 20.29 (21.86) | 26.0 | 1 (0) | 25.7 (33.3) |
+| iced-software | tiny-skia | 27 (10) | 598 | 19.29 | 21.12 (21.05) | 29.4 | 1 (0) | 11.7 (11.4) |
 
-Frame lenti nelle singole ripetizioni: flutter-gl 2, 2, 2; iced-gl 2, 3, 3; iced-vulkan
-3, 2, 2; flutter-software 3, 1, 1; iced-software 1, 1, 1. Avvio delle varianti llvmpipe e
-lavapipe molto variabile (113–2072 ms): in alcune ripetizioni il caricatore EGL o Vulkan
-prova prima i driver NVIDIA.
+Slow frames in the single runs: flutter-gl 2, 2, 2; iced-gl 2, 3, 3; iced-vulkan
+3, 2, 2; flutter-software 3, 1, 1; iced-software 1, 1, 1. Startup of the llvmpipe and
+lavapipe variants is very variable (113–2072 ms): in some runs the EGL or Vulkan loader
+tries the NVIDIA drivers first.
 
-Risposte alle tre domande, per quanto queste misure permettono:
+Answers to the three questions, as far as these measurements allow:
 
-- **Flutter con la GPU perde ancora frame?** Non misurabile finché Ossido non offre dmabuf.
-  Con llvmpipe flutter-gl perde lo 0,3% dei frame (2 su 597) con p99 20,7 ms, contro
-  l'1,4% e 30,6 ms in WSL, ed è ora alla pari con iced-gl (3 frame, p99 20,9 ms). Il
-  confronto regge (stesso renderer per entrambi), ma non dice nulla del percorso GPU reale.
-  È coerente con l'ipotesi del rapporto: le perdite in WSL venivano dal percorso del
-  frame, non dal disegno di Flutter.
-- **Impeller cambia qualcosa?** Su llvmpipe l'engine va in segmentation fault durante lo
-  scorrimento in 4 tentativi su 4 (`embedder_surface_gl_impeller.cc` dichiara il backend
-  OpenGLES, poi il processo muore e il banco non trova più la superficie).
-  Il crash è dentro l'engine; non c'è una misura da confrontare.
-- **iced su Vulkan è trasparente?** Sì, ma con lavapipe, non con la GPU: lo screenshot
-  `iced-vulkan-hover.png` mostra lo sfondo di Ossido attorno al Dock. Anche iced-gl su
-  llvmpipe qui è trasparente, a differenza che in WSL. iced-software resta opaco (nero
-  attorno al Dock). Con Vulkan su Intel o NVIDIA la domanda resta aperta per la stessa
-  ragione: serve dmabuf.
+- **Does Flutter with the GPU still drop frames?** Not measurable until Ossido offers dmabuf.
+  With llvmpipe flutter-gl drops 0.3% of the frames (2 out of 597) with p99 20.7 ms, against
+  1.4% and 30.6 ms in WSL, and it is now on par with iced-gl (3 frames, p99 20.9 ms). The
+  comparison holds (same renderer for both), but it says nothing about the real GPU path.
+  It is consistent with the report's hypothesis: the drops in WSL came from the frame path,
+  not from Flutter's drawing.
+- **Does Impeller change anything?** On llvmpipe the engine hits a segmentation fault during
+  the scroll in 4 attempts out of 4 (`embedder_surface_gl_impeller.cc` declares the OpenGLES
+  backend, then the process dies and the bench no longer finds the surface).
+  The crash is inside the engine; there is no measurement to compare.
+- **Is iced on Vulkan transparent?** Yes, but with lavapipe, not with the GPU: the screenshot
+  `iced-vulkan-hover.png` shows Ossido's background around the Dock. iced-gl on llvmpipe is
+  also transparent here, unlike in WSL. iced-software stays opaque (black around the Dock).
+  With Vulkan on Intel or NVIDIA the question stays open for the same reason: dmabuf is
+  needed.
 
-Cosa cambia per il gate 1: le misure native non contraddicono la raccomandazione, ma ne
-tolgono l'argomento principale. Il vantaggio di fluidità di iced in WSL non si ripete qui
-(sullo stesso renderer le due versioni sono pari); resta il vantaggio di memoria, che in
-software è di 14 MiB (25,7 contro 11,7) e con i driver GPU dipende da quale driver si
-carica. Una misura con la GPU vera richiede `linux-dmabuf` in Ossido, che serve comunque
-(vedi "Cosa resta aperto").
+What changes for gate 1: the native measurements do not contradict the recommendation, but
+they remove its main argument. iced's smoothness advantage in WSL does not repeat here (on
+the same renderer the two versions are even); the memory advantage remains, which in
+software is 14 MiB (25.7 against 11.7) and with the GPU drivers depends on which driver gets
+loaded. A measurement with the real GPU requires `linux-dmabuf` in Ossido, which is needed
+anyway (see "What remains open").
 
-## Misure con la GPU su hardware nativo (2026-10-13)
+## Measurements with the GPU on native hardware (2026-10-13)
 
-Ossido ora offre `zwp_linux_dmabuf_v1` versione 4 con feedback sul render node della sua
-GPU (`crates/ossido/src/dmabuf.rs`, solo backend winit). I client annidati rendono sulla
-GPU di Ossido, la Iris Xe (`renderer OpenGL ES: Mesa Intel(R) Iris(R) Xe Graphics`), e
-passano i buffer senza copie. Stesso PC e stesso banco della sezione precedente, con
-`--scale 1`. L'embedder ha `--renderer impeller` (OpenGL ES con Impeller), che il banco
-usa per flutter-gl-impeller.
+Ossido now offers `zwp_linux_dmabuf_v1` version 4 with feedback on the render node of its
+GPU (`crates/ossido/src/dmabuf.rs`, winit backend only). The nested clients render on
+Ossido's GPU, the Iris Xe (`renderer OpenGL ES: Mesa Intel(R) Iris(R) Xe Graphics`), and
+pass the buffers without copies. Same PC and same bench as the previous section, with
+`--scale 1`. The embedder has `--renderer impeller` (OpenGL ES with Impeller), which the bench
+uses for flutter-gl-impeller.
 
-Mediana di 3 ripetizioni, tempi in ms, memoria in MiB.
+Median of 3 runs, times in ms, memory in MiB.
 
-| Variante | Rende con | Avvio | Frame | p95 | p99 | Max | Lenti | PSS | RSS |
+| Variant | Renders with | Startup | Frames | p95 | p99 | Max | Slow | PSS | RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| flutter-gl-impeller | Iris Xe | 72 | 598 | 18,30 | 19,23 | 27,5 | 1 | 72,1 | 144,9 |
-| flutter-gl | Iris Xe | 79 | 598 | 18,23 | 18,98 | 28,3 | 1 | 60,7 | 132,6 |
-| iced-gl | Iris Xe | 79 | 600 | 18,26 | 19,01 | 28,6 | 1 | 50,0 | 122,8 |
-| iced-vulkan | Vulkan (GPU scelta da wgpu) | 273 | 598 | 18,05 | 19,75 | 30,5 | 2 | 99,1 | 166,1 |
-| flutter-software | CPU | 45 | 597 | 19,10 | 20,70 | 31,5 | 2 | 25,6 | 29,3 |
-| iced-software | tiny-skia | 27 | 598 | 19,21 | 21,19 | 25,9 | 1 | 11,7 | 16,0 |
+| flutter-gl-impeller | Iris Xe | 72 | 598 | 18.30 | 19.23 | 27.5 | 1 | 72.1 | 144.9 |
+| flutter-gl | Iris Xe | 79 | 598 | 18.23 | 18.98 | 28.3 | 1 | 60.7 | 132.6 |
+| iced-gl | Iris Xe | 79 | 600 | 18.26 | 19.01 | 28.6 | 1 | 50.0 | 122.8 |
+| iced-vulkan | Vulkan (GPU chosen by wgpu) | 273 | 598 | 18.05 | 19.75 | 30.5 | 2 | 99.1 | 166.1 |
+| flutter-software | CPU | 45 | 597 | 19.10 | 20.70 | 31.5 | 2 | 25.6 | 29.3 |
+| iced-software | tiny-skia | 27 | 598 | 19.21 | 21.19 | 25.9 | 1 | 11.7 | 16.0 |
 
-Frame lenti nelle singole ripetizioni: flutter-gl-impeller 0, 1, 1; flutter-gl 1, 1, 1;
+Slow frames in the single runs: flutter-gl-impeller 0, 1, 1; flutter-gl 1, 1, 1;
 iced-gl 0, 1, 2; iced-vulkan 2, 1, 2; flutter-software 2, 2, 3; iced-software 1, 1, 0.
-Il frame lento isolato compare in tutte le varianti, anche in software: è del percorso
-fra Ossido e GNOME, non dei toolkit.
+The isolated slow frame shows up in all the variants, software included: it belongs to the
+path between Ossido and GNOME, not to the toolkits.
 
-Condizioni del gate 1:
+Gate 1 conditions:
 
-| Condizione | Esito |
+| Condition | Outcome |
 | --- | --- |
-| Frame lenti < 1% con la GPU | sì: Impeller 0,17% (1 su 598), p99 19,2 ms, max 31,8 ms |
-| Nessun intervallo oltre 50 ms | sì |
-| Impeller come renderer | sì, su OpenGL ES; nessun crash con la GPU |
-| Memoria | Dock con Impeller: 72 MiB di PSS (Skia 61, iced 50). Il limite lo fissi tu |
+| Slow frames < 1% with the GPU | yes: Impeller 0.17% (1 out of 598), p99 19.2 ms, max 31.8 ms |
+| No interval over 50 ms | yes |
+| Impeller as the renderer | yes, on OpenGL ES; no crash with the GPU |
+| Memory | Dock with Impeller: 72 MiB of PSS (Skia 61, iced 50). The limit is yours to set |
 
-Con la GPU vera il ritardo di Flutter visto in WSL scompare: le tre varianti GPU hanno lo
-stesso ritmo. Impeller costa circa 11 MiB più di Skia. Lo screenshot
-`flutter-gl-impeller-hover.png` ha la stessa geometria degli altri e la superficie è
-trasparente.
+With the real GPU the Flutter delay seen in WSL disappears: the three GPU variants have the
+same pace. Impeller costs about 11 MiB more than Skia. The screenshot
+`flutter-gl-impeller-hover.png` has the same geometry as the others and the surface is
+transparent.
 
-Impeller su un driver GL software (llvmpipe) va ancora in crash dentro l'engine: con
-`--renderer impeller` l'embedder ora riconosce il driver e ripiega su Skia, con un
-avviso nel log. Il test `impeller_renderer_draws_and_reacts_to_clicks` copre il caso
-(in headless e in CI il driver è llvmpipe). Impeller su Vulkan non è misurato: l'embedder
-non ha ancora un renderer Vulkan, e su OpenGL ES Impeller soddisfa già le condizioni.
+Impeller on a software GL driver (llvmpipe) still crashes inside the engine: with
+`--renderer impeller` the embedder now recognizes the driver and falls back to Skia, with a
+warning in the log. The test `impeller_renderer_draws_and_reacts_to_clicks` covers the case
+(headless and in CI the driver is llvmpipe). Impeller on Vulkan is not measured: the embedder
+does not have a Vulkan renderer yet, and on OpenGL ES Impeller already meets the conditions.
 
-## Costo di sviluppo
+## Development cost
 
 | | Flutter | iced |
 | --- | --- | --- |
-| Righe (senza test) | 188 | 429 |
-| Problemi d'integrazione | 1: font fuori dal pacchetto (risolto con `packages/silica_ui`) | 4: `wp_viewporter` obbligatorio in Ossido, winit-core da fissare a una beta, superficie opaca su GL, `CursorEntered` senza movimento |
-| Molla, colori HSL | dal framework | scritti a mano (`geometry.rs`) |
-| Tempo dell'agente | circa 5 minuti | circa 15 minuti, più le indagini |
+| Lines (without tests) | 188 | 429 |
+| Integration problems | 1: fonts outside the package (solved with `packages/silica_ui`) | 4: `wp_viewporter` mandatory in Ossido, winit-core to be pinned to a beta, opaque surface on GL, `CursorEntered` without movement |
+| Spring, HSL colors | from the framework | hand-written (`geometry.rs`) |
+| Agent time | about 5 minutes | about 15 minutes, plus the investigations |
 
-I tempi sono quelli dell'agente che ha scritto i prototipi: indicativi, non una misura.
+The times are those of the agent that wrote the prototypes: indicative, not a measurement.
 
-## Costi scoperti durante M1.5
+## Costs discovered during M1.5
 
-- **Engine release.** Google pubblica l'engine per embedder custom solo in debug. Il
-  release si compila dai sorgenti (`docs/engine-release.md`): 9,4 GB di checkout, circa
-  15 minuti, a ogni aggiornamento di Flutter. Serve per le app Flutter in ogni opzione.
-- **Percorso OpenGL in WSL.** Mesa (d3d12) applica il ridimensionamento della finestra
-  EGL solo dal buffer successivo: l'embedder ora chiede un frame in più dopo ogni resize.
-- **Ritmo dei frame.** L'embedder segue i frame callback del compositor
-  (`vsync_callback`), come fa iced; prima l'engine andava con un suo timer a 60 Hz.
+- **Release engine.** Google publishes the engine for custom embedders only in debug. The
+  release one is built from source (`docs/engine-release.md`): 9.4 GB of checkout, about
+  15 minutes, at every Flutter update. It is needed for Flutter apps in every option.
+- **OpenGL path in WSL.** Mesa (d3d12) applies the resize of the EGL window only from the
+  next buffer: the embedder now asks for one more frame after every resize.
+- **Frame pace.** The embedder follows the compositor's frame callbacks
+  (`vsync_callback`), as iced does; before, the engine ran on its own 60 Hz timer.
 
-## Impeller su Vulkan (2026-10-13)
+## Impeller on Vulkan (2026-10-13)
 
-`--renderer vulkan`: l'embedder crea istanza e dispositivo Vulkan (`ash`), una swapchain
-`VK_KHR_wayland_surface` sulla superficie dell'app con alfa premoltiplicata, presentazione
-MAILBOX o IMMEDIATE (il ritmo resta il vsync dell'engine), e dà tutto all'engine con
-`FlutterVulkanRendererConfig` e `--enable-impeller`. Preferisce la GPU integrata
-(`SILICA_VULKAN_GPU=discrete` per la discreta); senza Vulkan ripiega su OpenGL ES con Impeller.
-È il renderer della shell in `cargo xtask run --shell`.
+`--renderer vulkan`: the embedder creates the Vulkan instance and device (`ash`), a
+`VK_KHR_wayland_surface` swapchain on the app's surface with premultiplied alpha, MAILBOX or
+IMMEDIATE presentation (the pace stays the engine's vsync), and gives everything to the engine
+with `FlutterVulkanRendererConfig` and `--enable-impeller`. It prefers the integrated GPU
+(`SILICA_VULKAN_GPU=discrete` for the discrete one); without Vulkan it falls back to OpenGL ES
+with Impeller. It is the shell's renderer in `cargo xtask run --shell`.
 
-Perché: con Impeller su OpenGL ES questo driver non dà il multisampling e i tracciati
-(glifi, contorni) restano senza antialiasing; su Vulkan sì, con la stessa qualità di Skia.
+Why: with Impeller on OpenGL ES this driver does not provide multisampling and the paths
+(glyphs, outlines) stay without antialiasing; on Vulkan it does, with the same quality as Skia.
 
-Misura: Ossido annidato in GNOME (XPS 15, Iris Xe, Mesa), Dock della shell 1600 × 1000, il
-puntatore avanti e indietro sul Dock per ~6 s (`perf.frames`, `perf.process`), due ripetizioni:
+Measurement: Ossido nested in GNOME (XPS 15, Iris Xe, Mesa), the shell's Dock 1600 × 1000, the
+pointer back and forth over the Dock for ~6 s (`perf.frames`, `perf.process`), two runs:
 
-| Renderer | Frame | p50 | p95 | p99 | Max | Lenti | PSS |
+| Renderer | Frames | p50 | p95 | p99 | Max | Slow | PSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Skia (GL) | 431 | 16,7 | 20,1 | 31,6 | 43,7 | 7 | 75 MiB |
-| Impeller (GL) | 423 | 16,7 | 19,0 | 20,7 | 29,5 | 1 | 80 MiB |
-| Impeller (Vulkan) | 427–429 | 16,7 | 19,0–19,4 | 20,0–20,6 | 23–29 | 0–1 | 78 MiB |
+| Skia (GL) | 431 | 16.7 | 20.1 | 31.6 | 43.7 | 7 | 75 MiB |
+| Impeller (GL) | 423 | 16.7 | 19.0 | 20.7 | 29.5 | 1 | 80 MiB |
+| Impeller (Vulkan) | 427–429 | 16.7 | 19.0–19.4 | 20.0–20.6 | 23–29 | 0–1 | 78 MiB |
 
-Una prima ripetizione con Impeller su GL ha avuto un intoppo di 3 s (102 frame), non
-ripetuto. Vulkan è pari o meglio su tutto e ha l'antialiasing.
+A first run with Impeller on GL had a 3 s hitch (102 frames), not repeated. Vulkan is even or
+better on everything and has antialiasing.
 
-## Cosa resta aperto
+## What remains open
 
-- `wp_presentation` per il ritmo dei frame (dmabuf in Ossido è fatto).
-- Impeller su Vulkan in una sessione reale (DRM/KMS) e sulla GPU discreta.
-- La misura in una sessione reale (DRM/KMS, M6), non annidata in GNOME.
-- Un solo engine con più viste per la shell, se la memoria diventa un problema.
+- `wp_presentation` for the frame pace (dmabuf in Ossido is done).
+- Impeller on Vulkan in a real session (DRM/KMS) and on the discrete GPU.
+- The measurement in a real session (DRM/KMS, M6), not nested in GNOME.
+- A single engine with several views for the shell, if memory becomes a problem.
 
-## Ripetere le misure
+## Repeating the measurements
 
 ```bash
 SILICA_ENGINE_SRC=~/build/flutter-engine cargo xtask engine --release
 cargo xtask bundle dock --release
-cargo xtask bench dock                 # --runs N --seconds S --only VARIANTE --scale N
+cargo xtask bench dock                 # --runs N --seconds S --only VARIANT --scale N
 ```
 
-Risultati in `target/bench/dock/results.json`, screenshot accanto.
+Results in `target/bench/dock/results.json`, screenshots next to it.

@@ -1,59 +1,58 @@
-# M2 · Vetro
+# M2 · Glass
 
-Come Ossido disegna il vetro di `silica-glass-v1` (`docs/protocols.md`), da dove vengono
-i parametri e quanto costa. Codice in `crates/ossido-render/src/glass.rs` e negli shader
-`blur.frag` e `material.frag`.
+How Ossido draws the glass of `silica-glass-v1` (`docs/protocols.md`), where the parameters
+come from and what it costs. Code in `crates/ossido-render/src/glass.rs` and in the shaders
+`blur.frag` and `material.frag`.
 
-## Come funziona
+## How it works
 
-Per ogni superficie con regioni di vetro, a ogni frame in cui cambia quello che le sta
-dietro:
+For every surface with glass regions, on every frame in which what lies behind it changes:
 
-1. gli elementi dietro la superficie (e il colore del desktop) si ridisegnano in una
-   texture fuori schermo grande quanto le regioni più 3σ;
-2. la texture si sfoca con una gaussiana separabile (a metà o a un quarto della
-   risoluzione quando σ supera 12 o 24 pixel) e si mescola con la quota nitida misurata;
-3. ogni regione si disegna con lo shader del materiale: rifrazione vicino al bordo
-   (campionamento spostato lungo la normale), matrice di colore sui valori sRGB, bordo
-   luminoso sopra e sotto e scuro ai lati, angoli ad arco di cerchio.
+1. the elements behind the surface (and the desktop color) are redrawn into an offscreen
+   texture as large as the regions plus 3σ;
+2. the texture is blurred with a separable Gaussian (at half or a quarter of the resolution
+   when σ exceeds 12 or 24 pixels) and mixed with the measured sharp share;
+3. every region is drawn with the material shader: refraction near the edge (sampling
+   displaced along the normal), color matrix on the sRGB values, bright edge on top and at
+   the bottom and dark on the sides, circular-arc corners.
 
-Se dietro non cambia niente (stessi elementi, stessi commit, stessa geometria) le
-texture si riusano. Il vetro di una finestra non vede la sua barra né la sua ombra.
+If nothing changes behind (same elements, same commits, same geometry) the textures are
+reused. A window's glass does not see its own bar or its own shadow.
 
-## Materiali (aspetto chiaro)
+## Materials (light appearance)
 
-| Materiale | Da | σ | Quota nitida | Colore | Rifrazione |
+| Material | From | σ | Sharp share | Color | Refraction |
 | --- | --- | ---: | ---: | --- | --- |
-| `clear` | fondo del Dock | 2,75 pt | 0,28 | matrice libera del Dock, b = (37; 39; 37) | ~5 pt ai lati a 6 pt dal bordo, ~1 sopra, ~3 sotto |
-| `thick` | menu | 9 pt | 0 | matrice dei menu, b = (142; 140; 140) | ≤ 1,5 pt ai lati |
+| `clear` | Dock background | 2.75 pt | 0.28 | free matrix of the Dock, b = (37, 39, 37) | ~5 pt on the sides at 6 pt from the edge, ~1 on top, ~3 at the bottom |
+| `thick` | menus | 9 pt | 0 | menu matrix, b = (142, 140, 140) | ≤ 1.5 pt on the sides |
 
-Valori e incertezze in `plan/reference/glass.md`, `dock.md`, `menubar.md`. L'aspetto
-scuro non c'è ancora.
+Values and uncertainties in `plan/reference/glass.md`, `dock.md`, `menubar.md`. The dark
+appearance is not there yet.
 
-## Livelli di qualità
+## Quality levels
 
-| Livello | Cosa vede il vetro | Quando |
+| Level | What the glass sees | When |
 | --- | --- | --- |
-| `full` | tutto quello che sta dietro | predefinito con una GPU |
-| `frosted` | solo lo sfondo del desktop (layer background e bottom): si ricalcola di rado | predefinito su un rasterizzatore software (llvmpipe) |
-| `opaque` | niente: il materiale sopra il colore del desktop | a richiesta |
+| `full` | everything behind it | default with a GPU |
+| `frosted` | only the desktop wallpaper (background and bottom layers): rarely recomputed | default on a software rasterizer (llvmpipe) |
+| `opaque` | nothing: the material over the desktop color | on request |
 
-`--glass auto|full|frosted|opaque` all'avvio, `ui.glass_quality` a sessione aperta.
+`--glass auto|full|frosted|opaque` at startup, `ui.glass_quality` during the session.
 
-## Costo (2026-10-13)
+## Cost (2026-10-13)
 
-`cargo xtask bench glass`: Ossido annidato in GNOME su Ubuntu 26.04, Iris Xe (Raptor
-Lake-P), output 1280×800 a scala 1. Il Dock Flutter (Impeller, vetro chiaro) sta su un
-layer top; dietro scorre una finestra a ogni frame, quindi lo sfondo del vetro cambia
-sempre; il puntatore passa sulle icone. 5 s per ripetizione, mediana di 3.
+`cargo xtask bench glass`: Ossido nested in GNOME on Ubuntu 26.04, Iris Xe (Raptor
+Lake-P), 1280×800 output at scale 1. The Flutter Dock (Impeller, clear glass) sits on a
+top layer; behind it a window scrolls on every frame, so the glass background always
+changes; the pointer passes over the icons. 5 s per run, median of 3.
 
-| Vetro | Render di Ossido: media | p95 | p99 | max | Dock: frame | p99 | lenti |
+| Glass | Ossido render: mean | p95 | p99 | max | Dock: frames | p99 | slow |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| full | 1,88 ms | 2,84 | 3,24 | 3,4 | 298 | 20,0 ms | 1 |
-| frosted | 1,58 ms | 2,30 | 3,02 | 3,2 | 299 | 21,5 ms | 1 |
-| opaque | 1,51 ms | 2,17 | 2,99 | 3,2 | 299 | 20,7 ms | 1 |
+| full | 1.88 ms | 2.84 | 3.24 | 3.4 | 298 | 20.0 ms | 1 |
+| frosted | 1.58 ms | 2.30 | 3.02 | 3.2 | 299 | 21.5 ms | 1 |
+| opaque | 1.51 ms | 2.17 | 2.99 | 3.2 | 299 | 20.7 ms | 1 |
 
-Il vetro pieno con lo sfondo che cambia a ogni frame costa circa 0,4 ms in più per
-frame su 16,7: il Dock resta a 60 fps. La misura è il tempo del rendering sulla CPU
-(costruzione degli elementi, comandi GL, submit), non il tempo della GPU: per quello
-servono le query di tempo di OpenGL, non ancora in Ossido.
+Full glass with the background changing on every frame costs about 0.4 ms more per frame out
+of 16.7: the Dock stays at 60 fps. The measurement is the rendering time on the CPU
+(building the elements, GL commands, submit), not the GPU time: that needs OpenGL timer
+queries, not yet in Ossido.

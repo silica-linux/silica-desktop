@@ -1,110 +1,112 @@
-# Canale di controllo
+# Control channel
 
-Ossido apre il canale con `--control PORTA` su `127.0.0.1` (`0` sceglie una porta
-libera) e annuncia l'indirizzo su stdout con una riga `OSSIDO_CONTROL=127.0.0.1:PORTA`.
-Il canale serve agli agenti e ai test: non è autenticato, quindi resta su localhost.
+Ossido opens the channel with `--control PORT` on `127.0.0.1` (`0` picks a free port) and
+announces the address on stdout with a line `OSSIDO_CONTROL=127.0.0.1:PORT`.
+The channel is for agents and tests: it is not authenticated, so it stays on localhost.
 
-## Protocollo
+## Protocol
 
-Una riga JSON per messaggio. Il client manda una richiesta, Ossido risponde con lo
-stesso `id`. Le richieste sulla stessa connessione sono servite in ordine.
+One JSON line per message. The client sends a request, Ossido answers with the same `id`.
+Requests on the same connection are served in order.
 
 ```
 → {"id":1,"command":"window.move","params":{"x":10,"y":20}}
 ← {"id":1,"ok":true,"result":null}
-← {"id":2,"ok":false,"error":"nessuna finestra con id 9"}
+← {"id":2,"ok":false,"error":"no window with id 9"}
 ```
 
-Una richiesta oltre 1 MiB chiude la connessione. Parametri sconosciuti sono un errore.
+A request over 1 MiB closes the connection. Unknown parameters are an error.
 
-## Comandi
+## Commands
 
-Il catalogo è in `crates/control/src/commands.rs`; `engine.commands` lo restituisce con
-gli schemi dei parametri. Ogni id del catalogo è eseguito da Ossido (test
+The catalog is in `crates/control/src/commands.rs`; `engine.commands` returns it with the
+parameter schemas. Every catalog id is run by Ossido (test
 `every_catalog_command_is_implemented`).
 
-| Comando | Parametri | Risultato |
+| Command | Parameters | Result |
 | --- | --- | --- |
-| `ui.screenshot` | `path?` | `width`, `height`, `path` o `png_base64` |
-| `ui.animation_scale` | `scale` (0–1000) | — (moltiplica le durate delle animazioni; 0 le spegne) |
-| `ui.glass_quality` | `quality` (`auto`, `full`, `frosted`, `opaque`) | `quality` in uso |
-| `engine.commands` | — | il catalogo |
-| `engine.execute` | `id`, `params?` | il risultato del comando |
-| `window.list` | — | finestre dall'alto in basso, poi le ridotte: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (del contenuto, senza la barra), `focused`, `minimized`, `fullscreen`, `space` |
-| `input.gesture` | `kind` (`swipe`, `pinch`), `fingers`, `phase?` (`begin`, `update`, `end`; senza: tutto il gesto), `dx`, `dy`, `scale`, `cancelled` | `command` eseguito alla fine (null se nessuno). Provvisorio (PA-20…22): 3–4 dita ←/→ spazio, ↑ Panorama, ↓ finestre dell'app o chiude la vista; pollice e tre dita: allargando la scrivania, stringendo il launcher |
-| `space.list` | — | spazi: `index`, `active`, `windows` (id dal basso verso l'alto) |
-| `space.next`, `space.previous` | — | `switched`: falso oltre l'ultimo o prima del primo (nessun rimbalzo); ⌃→ e ⌃← |
+| `ui.screenshot` | `path?` | `width`, `height`, `path` or `png_base64` |
+| `ui.animation_scale` | `scale` (0–1000) | — (multiplies the animation durations; 0 turns them off) |
+| `ui.glass_quality` | `quality` (`auto`, `full`, `frosted`, `opaque`) | `quality` in use |
+| `engine.commands` | — | the catalog |
+| `engine.execute` | `id`, `params?` | the command's result |
+| `window.list` | — | windows from top to bottom, then the minimized ones: `id`, `title`, `app_id`, `x`, `y`, `width`, `height` (of the content, without the bar), `focused`, `minimized`, `fullscreen`, `space` |
+| `input.gesture` | `kind` (`swipe`, `pinch`), `fingers`, `phase?` (`begin`, `update`, `end`; without: the whole gesture), `dx`, `dy`, `scale`, `cancelled` | `command` run at the end (null if none). Provisional (PA-20…22): 3–4 fingers ←/→ space, ↑ Panorama, ↓ the app's windows or closes the view; thumb and three fingers: spreading the desktop, pinching the launcher |
+| `space.list` | — | spaces: `index`, `active`, `windows` (ids from bottom to top) |
+| `space.next`, `space.previous` | — | `switched`: false past the last or before the first (no bounce); ⌃→ and ⌃← |
 | `space.goto` | `index` | `switched` |
-| `space.add` | — | `index` dello spazio nuovo (al più 16) |
-| `space.remove` | `index` | — ; le finestre passano allo spazio prima (o al primo) |
+| `space.add` | — | `index` of the new space (at most 16) |
+| `space.remove` | `index` | — ; the windows move to the previous space (or to the first) |
 | `window.move_to_space` | `id?`, `index` | — |
-| `panorama.toggle` | — | `open`: apre o chiude Panorama (⌃↑; Esc chiude). Aperto, un clic su una finestra la porta in primo piano, sul vuoto chiude, su uno spazio della barra ci passa, sul "+" aggiunge uno spazio |
-| `panorama.state` | — | `mode` (`panorama`, `app`, `desktop`; assente se chiuso), `open`, `progress` (0–1), `windows`: `id`, `x`, `y`, `width`, `height` delle cornici disposte; `expansion` della barra degli spazi (0–1), `thumbnails`: rettangoli delle miniature quando si vedono |
-| `panorama.app` | — | `open`: App Exposé, le finestre dell'app in primo piano al centro con il titolo sotto (⌃↓; Esc chiude) |
-| `desktop.show` | — | `open`: Mostra scrivania, le finestre escono verso il bordo più vicino (F11; di nuovo o un clic le rimette a posto) |
-| `panorama.spaces_bar` | `enabled` | — ; espande o richiude la barra degli spazi (come il puntatore in alto). Con la barra espansa una finestra trascinata su una miniatura passa a quello spazio; un clic su una miniatura ci va |
-| `switcher.next`, `switcher.previous` | — | `forwarded`: apre il selettore delle app o sposta la scelta (Logo+Tab, Logo+Shift+Tab); finché è aperto il rilascio del tasto Logo esegue `switcher.commit` ed Esc `switcher.cancel` |
-| `switcher.commit`, `switcher.cancel` | — | `forwarded`: chiude il selettore attivando l'app scelta, o senza cambiare app |
-| `launcher.toggle` | — | `forwarded`: apre o chiude il launcher delle app (Faro in modalità griglia) |
-| `app.quit` | — | `closed`: chiede a tutte le finestre dell'app in primo piano di chiudersi (Logo+Q) |
-| `faro.toggle` | — | `forwarded`: componenti della shell che l'hanno ricevuto (Logo+Spazio) |
-| `notifications.toggle` | — | `forwarded`: apre o chiude il Centro notifiche (clic sull'orologio) |
-| `controlcenter.toggle` | — | `forwarded`: apre o chiude il Centro di controllo (icona nella barra) |
-| `system.status` | — | stato da silica-daemon (`docs/daemon.md`, System1): `wifi.*`, `bluetooth.*`, `battery.*`, `brightness`, `audio.*`, `dnd`; errore se il daemon non risponde |
-| `system.wifi`, `system.bluetooth`, `system.mute`, `system.dnd` | `enabled` | `queued`: la chiamata parte su un thread, senza attendere il daemon |
+| `panorama.toggle` | — | `open`: opens or closes Panorama (⌃↑; Esc closes). When open, a click on a window brings it to the front, on empty space closes, on a space of the bar goes there, on the "+" adds a space |
+| `panorama.state` | — | `mode` (`panorama`, `app`, `desktop`; absent if closed), `open`, `progress` (0–1), `windows`: `id`, `x`, `y`, `width`, `height` of the arranged frames; `expansion` of the spaces bar (0–1), `thumbnails`: rectangles of the thumbnails when visible |
+| `panorama.app` | — | `open`: App Exposé, the windows of the frontmost app at the center with the title below (⌃↓; Esc closes) |
+| `desktop.show` | — | `open`: Show Desktop, the windows move out towards the nearest edge (F11; again or a click puts them back) |
+| `panorama.spaces_bar` | `enabled` | — ; expands or collapses the spaces bar (like the pointer at the top). With the bar expanded a window dragged onto a thumbnail moves to that space; a click on a thumbnail goes there |
+| `switcher.next`, `switcher.previous` | — | `forwarded`: opens the app switcher or moves the selection (Logo+Tab, Logo+Shift+Tab); while it is open, releasing the Logo key runs `switcher.commit` and Esc `switcher.cancel` |
+| `switcher.commit`, `switcher.cancel` | — | `forwarded`: closes the switcher activating the chosen app, or without changing app |
+| `launcher.toggle` | — | `forwarded`: opens or closes the app launcher (Faro in grid mode) |
+| `app.quit` | — | `closed`: asks all the windows of the frontmost app to close (Logo+Q) |
+| `faro.toggle` | — | `forwarded`: shell components that received it (Logo+Space) |
+| `notifications.toggle` | — | `forwarded`: opens or closes the Notification Center (click on the clock) |
+| `controlcenter.toggle` | — | `forwarded`: opens or closes the Control Center (icon in the bar) |
+| `system.status` | — | state from silica-daemon (`docs/daemon.md`, System1): `wifi.*`, `bluetooth.*`, `battery.*`, `brightness`, `audio.*`, `dnd`; error if the daemon does not answer |
+| `system.wifi`, `system.bluetooth`, `system.mute`, `system.dnd` | `enabled` | `queued`: the call runs on a thread, without waiting for the daemon |
 | `system.volume`, `system.brightness` | `value` (0–1) | `queued` |
-| `system.volume_up`, `system.volume_down`, `system.mute_toggle` | — | `queued`; passi di 1/16, alzare toglie il muto (tasti volume e muto) |
-| `system.brightness_up`, `system.brightness_down` | — | `queued`; passi di 1/16 (tasti luminosità) |
-| `system.volume_up_fine`, `system.volume_down_fine`, `system.brightness_up_fine`, `system.brightness_down_fine` | — | `queued`; un quarto di passo, 1/64 (⌥⇧ con i tasti) |
-| `glass.list` | — | superfici con vetro (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`, `opacity`) |
-| `layer.list` | — | layer della shell: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
-| `window.focus` | `id?` | — (riporta anche una finestra ridotta) |
+| `system.volume_up`, `system.volume_down`, `system.mute_toggle` | — | `queued`; steps of 1/16, raising unmutes (volume and mute keys) |
+| `system.brightness_up`, `system.brightness_down` | — | `queued`; steps of 1/16 (brightness keys) |
+| `system.volume_up_fine`, `system.volume_down_fine`, `system.brightness_up_fine`, `system.brightness_down_fine` | — | `queued`; a quarter step, 1/64 (⌥⇧ with the keys) |
+| `glass.list` | — | surfaces with glass (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`, `opacity`) |
+| `layer.list` | — | shell layers: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
+| `window.focus` | `id?` | — (also brings back a minimized window) |
 | `window.close` | `id?` | — |
 | `window.move` | `id?`, `x`, `y` | — |
 | `window.minimize` | `id?` | — (Logo+M) |
-| `window.fullscreen` | `id?` | — (Logo+Ctrl+F; di nuovo per tornare) |
-| `app.launch` | `command`, `shell?` | `pid` (con `shell` il processo vede i protocolli della shell) |
+| `window.fullscreen` | `id?` | — (Logo+Ctrl+F; again to go back) |
+| `app.launch` | `command`, `shell?` | `pid` (with `shell` the process sees the shell protocols) |
 | `session.quit` | — | — |
 | `input.pointer_move` | `x`, `y` | — |
 | `input.pointer_button` | `button?`, `pressed` | — |
 | `input.click` | `x`, `y`, `button?` | — |
-| `input.key` | `key` (nome xkb o carattere), `pressed?` | — ; come un tasto vero, anche le scorciatoie del catalogo (⌃→ cambia spazio) |
+| `input.key` | `key` (xkb name or character), `pressed?` | — ; like a real key, catalog shortcuts included (⌃→ switches space) |
 | `input.type` | `text` | — |
-| `perf.frames` | `reset?` | per superficie: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
+| `perf.frames` | `reset?` | per surface: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
-| `perf.render` | `reset?` | rendering di Ossido (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
+| `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
-Le misure di `perf.frames` sono quelle del compositor, uguali per ogni toolkit: un frame è
-un commit con un buffer nuovo, l'intervallo è il tempo fra due frame della stessa
-superficie, lento se supera 1,5 periodi di refresh dell'output. `startup_ms` va dal lancio
-con `app.launch` (o `--spawn`) al primo buffer del processo o di un suo discendente.
+The `perf.frames` measurements are the compositor's, the same for every toolkit: a frame is
+a commit with a new buffer, the interval is the time between two frames of the same
+surface, slow if it exceeds 1.5 refresh periods of the output. `startup_ms` goes from the
+launch with `app.launch` (or `--spawn`) to the first buffer of the process or of one of its
+descendants.
 
-Senza `id`, i comandi sulle finestre agiscono su quella con il focus.
+Without `id`, the window commands act on the focused one.
 
-## CLI e MCP
+## CLI and MCP
 
 ```
 cargo xtask run --nested --control 7979 --spawn foot
-cargo xtask run --nested --shell --control 7979   # con sfondo, barra dei menu e Dock
+cargo xtask run --nested --shell --control 7979   # with wallpaper, menu bar and Dock
 silica-cli window.list
 silica-cli window.move x=100 y=80
 silica-cli screenshot /tmp/silica.png
-silica-cli mcp            # server MCP su stdio, configurato in .mcp.json
+silica-cli mcp            # MCP server on stdio, configured in .mcp.json
 ```
 
-Annidato in GNOME (o in un altro desktop) le combinazioni con Super le prende il desktop di
-sotto: per questo con `--backend winit` il **Ctrl destro fa da tasto Logo** (Ctrl destro+Spazio
-apre Faro, Ctrl destro+Tab il selettore delle app). `--logo-key rightalt` usa l'Alt destro,
-`--logo-key none` lascia i tasti come sono (predefinito in headless).
+Nested in GNOME (or in another desktop) the combinations with Super are taken by the desktop
+below: for this reason with `--backend winit` the **right Ctrl acts as the Logo key** (right
+Ctrl+Space opens Faro, right Ctrl+Tab the app switcher). `--logo-key rightalt` uses the right
+Alt, `--logo-key none` leaves the keys as they are (default in headless).
 
-L'aspetto (chiaro o scuro) di finestre, barre, ombre e vetri lo decide `silica-daemon`
-(`appearance.dark`, cambiato con `system.dark` / `system.dark_toggle`); Ossido lo rilegge a ogni
-frame. Senza daemon (headless, test) è chiaro: `--appearance dark` (o `light`) lo impone e
-vince sul daemon, per screenshot deterministici in scuro:
+The appearance (light or dark) of windows, bars, shadows and glass is decided by
+`silica-daemon` (`appearance.dark`, changed with `system.dark` / `system.dark_toggle`); Ossido
+reads it again on every frame. Without the daemon (headless, tests) it is light:
+`--appearance dark` (or `light`) forces it and wins over the daemon, for deterministic
+screenshots in dark:
 
 ```
 ossido --backend headless --appearance dark --control 0
 ```
 
-Via MCP i comandi sono tool con `_` al posto di `.` (`window_list`); `ui_screenshot`
-senza `path` restituisce l'immagine come contenuto `image`.
+Via MCP the commands are tools with `_` instead of `.` (`window_list`); `ui_screenshot`
+without `path` returns the image as `image` content.

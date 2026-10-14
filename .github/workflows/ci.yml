@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Dipendenze di sistema
+      - name: System dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -23,8 +23,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      # Stessa versione dell'engine in crates/embedder/ENGINE_VERSION: i bundle compilati
-      # dall'SDK girano solo sull'engine dello stesso SDK (cargo xtask engine lo verifica).
+      # Same engine version as in crates/embedder/ENGINE_VERSION: the bundles built
+      # by the SDK run only on the engine of the same SDK (cargo xtask engine checks it).
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.7

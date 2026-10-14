@@ -1,87 +1,86 @@
-# Raccolta dei riferimenti su macOS 27
+# Collecting the references on macOS 27
 
-Procedura per le sessioni sul Mac che osservano macOS 27 e producono i riferimenti per la
-parità. Vale per persone e agenti. Le regole clean-room sono in `AGENTS.md`: qui si
-applicano.
+Procedure for the sessions on the Mac that observe macOS 27 and produce the references for
+parity. It applies to people and agents. The clean-room rules are in `AGENTS.md`: they apply
+here.
 
-## Dove vanno i riferimenti
+## Where the references go
 
-Screenshot e note di macOS non entrano mai nel repo di Silica (`plan/` è gitignored).
-Vivono nel repo privato `silica-linux/silica-reference`, clonato dentro
+macOS screenshots and notes never enter the Silica repo (`plan/` is gitignored).
+They live in the private repo `silica-linux/silica-reference`, cloned into
 `plan/reference/`:
 
 ```bash
 gh repo clone silica-linux/silica-reference plan/reference
 ```
 
-Struttura:
+Structure:
 
 ```
 plan/reference/
-  setup.md              Mac, build di macOS, display, impostazioni usate
-  <area>.md             misure e osservazioni di un'area (dock.md, glass.md, …)
-  shots/<area>/*.png    screenshot citati dalle note
-  video/<area>/*.mov    registrazioni per le animazioni
+  setup.md              Mac, macOS build, display, settings used
+  <area>.md             measurements and observations of an area (dock.md, glass.md, …)
+  shots/<area>/*.png    screenshots cited by the notes
+  video/<area>/*.mov    recordings for the animations
 ```
 
-## Condizioni fisse
+## Fixed conditions
 
-Le misure si confrontano con gli screenshot di Ossido: le condizioni devono essere
-ripetibili e scritte in `setup.md`.
+The measurements are compared with Ossido's screenshots: the conditions must be repeatable
+and written in `setup.md`.
 
-- Display: modello, risoluzione nativa, scala (es. 2×), refresh.
-- Risoluzione "Predefinita" in Impostazioni › Display.
-- Sfondo: colore pieno (Impostazioni › Sfondo › Colori), lo stesso grigio per tutte le
-  sessioni; poi una ripresa con uno sfondo a strisce generato in codice, per vedere
-  sfocatura e rifrazione.
-- Aspetto chiaro e scuro, colore d'accento predefinito, "Riduci trasparenza" e "Riduci
-  movimento" disattivati.
-- Dock: dimensione e ingrandimento annotati (cursori in Impostazioni › Desktop e Dock).
+- Display: model, native resolution, scale (e.g. 2×), refresh.
+- "Default" resolution in System Settings › Displays.
+- Wallpaper: solid color (System Settings › Wallpaper › Colors), the same gray for all the
+  sessions; then a capture with a striped wallpaper generated in code, to see blur and
+  refraction.
+- Light and dark appearance, default accent color, "Reduce transparency" and "Reduce
+  motion" off.
+- Dock: size and magnification noted (sliders in System Settings › Desktop & Dock).
 
-## Cosa è consentito
+## What is allowed
 
-- Usare la UI, fare screenshot (`screencapture -x`, `-R x,y,w,h`, `-l <windowid>`) e
-  registrazioni dello schermo (`screencapture -v` o QuickTime).
-- Misurare sui pixel degli screenshot con script propri (Python + Pillow).
-- Leggere geometria e gerarchia degli elementi visibili con l'API di accessibilità (es.
-  posizione e dimensione delle icone del Dock): è osservazione della UI in esecuzione.
+- Using the UI, taking screenshots (`screencapture -x`, `-R x,y,w,h`, `-l <windowid>`) and
+  screen recordings (`screencapture -v` or QuickTime).
+- Measuring on the screenshot pixels with our own scripts (Python + Pillow).
+- Reading the geometry and hierarchy of the visible elements with the accessibility API
+  (e.g. position and size of the Dock icons): it is observation of the running UI.
 
-## Cosa è vietato
+## What is forbidden
 
-- Leggere, copiare o disassemblare file del sistema: `/System`, `/Library`, bundle in
-  `/Applications`, framework, risorse, plist di Apple, `defaults read` dei domini Apple.
-- Estrarre icone, immagini, suoni, font o testi di Apple per usarli in Silica.
-- Mettere screenshot di macOS nel repo di Silica o in issue e PR.
+- Reading, copying or disassembling system files: `/System`, `/Library`, bundles in
+  `/Applications`, frameworks, resources, Apple plists, `defaults read` of Apple domains.
+- Extracting Apple icons, images, sounds, fonts or texts to use them in Silica.
+- Putting macOS screenshots in the Silica repo or in issues and PRs.
 
-## Formato delle note
+## Note format
 
-Ogni misura ha valore, unità, metodo e screenshot di origine. Dimensioni in punti
-(pixel / scala), durate in ms, colori in sRGB esadecimale con alfa.
+Every measurement has a value, unit, method and source screenshot. Sizes in points
+(pixels / scale), durations in ms, colors in hexadecimal sRGB with alpha.
 
 ```markdown
-## Dock · icone a riposo
+## Dock · icons at rest
 
-- Lato icona: 48 pt (96 px a 2×), metodo: bordo alfa su shots/dock/rest-light.png
-- Spaziatura fra icone: 8 pt
+- Icon side: 48 pt (96 px at 2×), method: alpha edge on shots/dock/rest-light.png
+- Spacing between icons: 8 pt
 - macOS 27.0 (build …), 2026-10-13
 ```
 
-Quando una cosa non si può misurare (es. la curva esatta di un'animazione), si scrive
-cosa si è osservato e con quale incertezza, senza stimare numeri.
+When something cannot be measured (e.g. the exact curve of an animation), write what was
+observed and with which uncertainty, without estimating numbers.
 
-## Sessioni
+## Sessions
 
-In ordine di priorità, secondo la roadmap.
+In order of priority, following the roadmap.
 
-1. **Dock** (serve a M1.5): dimensioni e spaziature a riposo, ingrandimento massimo,
-   scala di ogni icona in funzione della distanza dal puntatore (screenshot con il
-   puntatore in punti noti, o accessibilità), raggio d'influenza, ritorno a riposo
-   (video a 60 fps: durata e rimbalzo), etichetta (font, dimensioni, posizione), sfondo
-   (raggio, colore, bordo, ombra), indicatori delle app aperte.
-2. **Vetro** (M2): sfocatura, tinta, bordo e luci del materiale su sfondo pieno e a
-   strisce, chiaro e scuro; rifrazione ai bordi.
-3. **Finestre** (M2): raggi degli angoli, ombre attive e inattive, barra del titolo,
-   pulsanti della finestra (dimensioni, spaziature, colori, stati), animazioni di
-   apertura, chiusura e riduzione.
-4. **Barra dei menu** (M3): altezza, spaziature, font, area di stato, menu aperti.
-5. **Centro di controllo e notifiche** (M4), **Mission Control e spazi** (M5).
+1. **Dock** (needed for M1.5): sizes and spacings at rest, maximum magnification, scale of
+   every icon as a function of the distance from the pointer (screenshots with the pointer at
+   known points, or accessibility), radius of influence, return to rest (60 fps video:
+   duration and bounce), label (font, sizes, position), background (radius, color, edge,
+   shadow), indicators of the open apps.
+2. **Glass** (M2): blur, tint, edge and highlights of the material on a solid and a striped
+   background, light and dark; refraction at the edges.
+3. **Windows** (M2): corner radii, active and inactive shadows, title bar, window buttons
+   (sizes, spacings, colors, states), opening, closing and minimize animations.
+4. **Menu bar** (M3): height, spacings, font, status area, open menus.
+5. **Control Center and notifications** (M4), **Mission Control and spaces** (M5).

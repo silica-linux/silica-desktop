@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Sostituto minimo di `unzip` per l'SDK Flutter quando unzip non è installato.
+"""Minimal replacement for `unzip` for the Flutter SDK when unzip is not installed.
 
-Supporta solo ciò che usa Flutter: `unzip [-o] [-q] ARCHIVIO [-d DESTINAZIONE]`.
-Conserva i permessi di esecuzione e i link simbolici.
+Supports only what Flutter uses: `unzip [-o] [-q] ARCHIVE [-d DESTINATION]`.
+Keeps the execute permissions and the symbolic links.
 """
 import os
 import sys
@@ -24,7 +24,7 @@ while i < len(args):
     archive = a
     i += 1
 if archive is None:
-    sys.exit("unzip (shim): manca l'archivio")
+    sys.exit("unzip (shim): missing archive")
 
 with zipfile.ZipFile(archive) as z:
     for info in z.infolist():
