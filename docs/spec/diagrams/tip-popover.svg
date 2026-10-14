@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 260" font-family="Inter, sans-serif" font-size="12">
+  <title>Popover tip on a top or bottom edge (TIP-01), drawn at 10× (10 units = 1 pt)</title>
+  <rect width="520" height="260" fill="#ffffff"/>
+  <g transform="translate(260 170) scale(10)">
+    <!-- body above the edge -->
+    <rect x="-24" y="-15" width="48" height="4.255" fill="#e9e9eb"/>
+    <path d="M-16.193,-10.745 A8.053,8.053 0 0 1 -10.382,-8.267 L-4.147,-1.768 A5.747,5.747 0 0 0 4.147,-1.768 L10.382,-8.267 A8.053,8.053 0 0 1 16.193,-10.745 Z"
+      fill="#e9e9eb" stroke="#555" stroke-width="0.12"/>
+    <line x1="-24" y1="-10.745" x2="24" y2="-10.745" stroke="#999" stroke-width="0.08" stroke-dasharray="0.4 0.3"/>
+    <!-- apex circle and fillet circle -->
+    <circle cx="0" cy="-5.747" r="5.747" fill="none" stroke="#1d5fb4" stroke-width="0.08" stroke-dasharray="0.3 0.3"/>
+    <circle cx="16.193" cy="-2.692" r="8.053" fill="none" stroke="#b4561d" stroke-width="0.08" stroke-dasharray="0.3 0.3"/>
+  </g>
+  <!-- depth -->
+  <line x1="60" y1="62.55" x2="60" y2="170" stroke="#333"/>
+  <line x1="54" y1="62.55" x2="66" y2="62.55" stroke="#333"/>
+  <line x1="54" y1="170" x2="66" y2="170" stroke="#333"/>
+  <text x="70" y="120">D = 10.75</text>
+  <!-- half width -->
+  <line x1="260" y1="40" x2="421.9" y2="40" stroke="#333"/>
+  <line x1="421.9" y1="34" x2="421.9" y2="46" stroke="#333"/>
+  <text x="300" y="32">W = 16.2</text>
+  <text x="300" y="200" fill="#1d5fb4">apex rₐ = 5.75</text>
+  <text x="400" y="110" fill="#b4561d">fillet r_f = 8.05</text>
+  <text x="140" y="150">flank α = 46.2°</text>
+  <text x="20" y="250" fill="#555">body edge dashed; the tip points down; rotate for other edges</text>
+</svg>
