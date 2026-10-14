@@ -10,10 +10,12 @@ python3 tools/sounds/synth.py                 # needs numpy
 python3 tools/sounds/synth.py --spectrograms  # also a PNG per candidate (needs matplotlib)
 ```
 
-The script writes three candidates per sound to `candidates/<name>-<A|B|C>.wav`, lists them
-with a one-line description in `candidates/index.json`, and copies the chosen one
-(`CHOSEN` in `synth.py`, A for now) to `data/sounds/<name>.wav`. To ship another candidate,
-change its letter in `CHOSEN` and run the script again. The spectrogram PNGs are for
+The script writes the candidates of each sound to `candidates/<name>-<variant>.wav`: three
+first designs (A, B, C) and four refinements of B (B1–B4, see below). It lists them with a
+one-line description in `candidates/index.json` and copies the chosen one (`CHOSEN` in
+`synth.py`, B after the first listening) to `data/sounds/<name>.wav`. To ship another
+candidate, change its name in `CHOSEN` and run the script again. Each candidate has its own
+random generator, so changing one leaves the others identical. The spectrogram PNGs are for
 inspection only and are not committed.
 
 ## Building blocks
@@ -66,6 +68,36 @@ inspection only and are not committed.
 | `trash-empty` | the Trash emptied | **A** crisp crumple: crackling bursts with a band falling 4.3 → 2.6 kHz as the ball compacts, ~0.65 s. **B** tight and quick, ending with the ball dropping softly into the bin, ~0.6 s. **C** soft, tissue-like: longer grains, darker band, few crackles, ~0.75 s. |
 | `file-transfer` | a copy or move finished | **A** a two-note glass chime, D6 then G6 (a fourth up), from glass bowl modes with a soft mallet, ~0.7 s. **B** an airy rising swish ending on a faint glass tink, ~0.4 s. **C** a two-note soft woody pop from tuned-bar modes, G5 then D6, ~0.3 s. |
 | `screen-capture` | a screenshot taken | **A** a shutter double click 60 ms apart: band-passed noise transients through a tiny steel blade (plate modes) and a damped housing, with the blades' friction between them. **B** a leaf shutter: tighter (35 ms) and brighter. **C** a reflex-camera style: a heavier first click with a bounce and a spring ring, the return 90 ms later. |
+
+## Refinements of B (B1–B4)
+
+B was preferred for every sound. B1–B4 stay close to its character and try improvements:
+
+- **Paper** (`paper_fine`): each grain is an impulsive resonant tick (0.1 ms rise,
+  exponential fall, filtered after the envelope so the snap stays in band) instead of a
+  smooth noise window; grain lengths are log-normal around 1–1.6 ms; a quarter of the
+  events are clusters of 2–5 micro-crackles 0.3–2 ms apart (fibres giving way in a row);
+  a separate 4.5–11 kHz fibre sheen glitters under a spiky random envelope; the continuous
+  friction bed is reduced to a trace or removed (less hiss). Landings add a soft low-mid
+  puff (`flop`) of the sheet or ball meeting the bin. Per sound: **B1** lighter and
+  shorter, **B2** richer and denser (the sheet also crinkles in flight), **B3** drier and
+  closer (a quarter of the room, finer and crisper ticks), **B4** a more defined steel bin
+  contact (a tap with contact noise).
+- **file-transfer**: a smoother swish (fourth-order moving band, steeper top cut, about
+  15 dB less energy above 12 kHz than B) and two tink partial sets: glass bowl modes (B1
+  on E7, B3 on C7) and a tuned chime with near-harmonic modes 1 : 2.005 : 3.012 (B2, A6
+  then E7; B4, D7, where the swish narrows onto the chime's pitch first). Lengths
+  0.35–0.42 s.
+- **screen-capture**: each blade transient is a narrow force pulse (with a trace of contact
+  noise) driving a thin steel blade (long-plate modes), the mechanism body and a small
+  spring (stiff-wire modes), so the energy sits in resonances rather than in a click; the
+  blades glide between the snaps (band-limited friction noise). The limiter may take up
+  to 10 dB off their first milliseconds, which acts as a gentle transient shaper and brings
+  them about 3 dB nearer the others (about −26.5 LUFS against −29.4 for B). Gaps and
+  bodies: **B1** 35 ms, mid body; **B2** 45 ms, warmer; **B3** 30 ms, small and bright;
+  **B4** 55 ms, audible blade travel and spring.
+
+## Alerts
 
 The system has no alert sounds yet (silica-daemon plays only the names above); alert tones
 will be designed the same way when an alert list exists.

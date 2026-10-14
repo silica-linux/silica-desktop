@@ -19,8 +19,8 @@ running the script again rebuilds the same files bit for bit:
 
     python3 tools/sounds/synth.py [--spectrograms]
 
-Writes three candidates per sound to tools/sounds/candidates/<name>-<A|B|C>.wav with an
-index.json describing them, and copies the chosen candidate (CHOSEN) to
+Writes the candidates of each sound (A, B, C, and the refinements B1–B4) to
+tools/sounds/candidates/<name>-<variant>.wav with an index.json describing them, and copies the chosen candidate (CHOSEN) to
 data/sounds/<name>.wav. `--spectrograms` also renders a PNG per candidate next to it
 (needs matplotlib; the PNGs are not committed). See tools/sounds/README.md for the design.
 
@@ -46,11 +46,11 @@ ROOM_MIX = 0.08  # about -22 dB of the room under the dry sound
 
 # The candidate shipped in data/sounds/ for each sound.
 CHOSEN = {
-    "trash-move": "A",
-    "trash-drag": "A",
-    "trash-empty": "A",
-    "file-transfer": "A",
-    "screen-capture": "A",
+    "trash-move": "B",
+    "trash-drag": "B",
+    "trash-empty": "B",
+    "file-transfer": "B",
+    "screen-capture": "B",
 }
 
 
@@ -380,7 +380,7 @@ def limit(x, ceiling):
     return np.clip(x * gain, -ceiling, ceiling)
 
 
-def finish(signal, rng, room=ROOM_MIX):
+def finish(signal, rng, room=ROOM_MIX, max_limit_db=MAX_LIMIT_DB):
     """Room, DC removal, click-free ends, loudness and peak normalisation."""
     signal = np.asarray(signal, dtype=float)
     if room:
@@ -403,8 +403,8 @@ def finish(signal, rng, room=ROOM_MIX):
     ceiling = 10 ** (CEILING_DBFS / 20) * 0.995
     signal *= 10 ** ((TARGET_LUFS - loudness(signal)) / 20)
     peak = np.max(np.abs(signal))
-    if peak > ceiling * 10 ** (MAX_LIMIT_DB / 20):
-        signal *= ceiling * 10 ** (MAX_LIMIT_DB / 20) / peak
+    if peak > ceiling * 10 ** (max_limit_db / 20):
+        signal *= ceiling * 10 ** (max_limit_db / 20) / peak
     return limit(signal, ceiling)
 
 
@@ -640,6 +640,352 @@ SOUNDS = {
 }
 
 
+# --- Refinements of the B candidates ----------------------------------------------------
+
+
+def paper_grain(rng, centre, size, sigma, q):
+    """One fibre event: a short resonant tick of band-passed noise with an impulsive
+    envelope (0.1 ms rise, exponential fall), not a smooth window: paper snaps, it does not
+    hiss. Sizes are log-normal around `size`."""
+    length = float(np.clip(size * np.exp(sigma * rng.standard_normal()), 0.00025, 0.008))
+    fc = float(np.clip(centre * 2 ** (0.55 * rng.standard_normal()), 900, 13000))
+    width = q * rng.uniform(0.7, 1.4)
+    count = n_of(length * 1.6) + 8
+    t = np.arange(count) / RATE
+    env = np.clip(t / 0.0001, 0, 1) * np.exp(-t / max(length / 3, 0.0002))
+    # Filtered after the envelope, so the snap itself stays in band (no wide-band click);
+    # the lead-in leaves room for the zero-phase filter's ringing, which fades in from zero.
+    lead = n_of(0.001)
+    tick = shape(
+        np.concatenate([np.zeros(lead), rng.standard_normal(count) * env]),
+        lambda f: bandpass_mag(f, fc, width) ** 2 * lowpass_mag(f, 11000, 4),
+    )
+    tick[:lead] *= np.sin(0.5 * np.pi * np.linspace(0, 1, lead)) ** 2
+    return unit(tick)
+
+
+def fibre_sheen(rng, length, density, level):
+    """The fine high-frequency glitter of paper fibres: 4.5–11 kHz noise gated by a sparse,
+    spiky random envelope, following the density."""
+    count = n_of(length)
+    noise = shape(rng.standard_normal(count), lambda f: highpass_mag(f, 4500, 4) * lowpass_mag(f, 11000, 4))
+    spikes = shape(rng.standard_normal(count), lambda f: lowpass_mag(f, 400, 2)) ** 4
+    spikes /= max(np.max(spikes), 1e-12)
+    dens = np.array([density(x) for x in times(length)])
+    return level * unit(noise) * spikes * dens
+
+
+def paper_fine(
+    rng,
+    length,
+    density,
+    rate,
+    centre,
+    size=0.0016,
+    sigma=0.6,
+    q=2.4,
+    cluster=0.25,
+    crackle=0.05,
+    alpha=1.8,
+    sheen=0.25,
+    bed=0.05,
+):
+    """Finer granular paper: impulsive resonant ticks with log-normal sizes, power-law
+    energies, clusters of micro-crackles (a few ticks 0.3–2 ms apart, fibres giving way in
+    a row), a few wide-band crackles, the fibres' high sheen, and only a trace of the
+    continuous friction bed (less hiss)."""
+    total = length + 0.03
+    out = np.zeros(n_of(total))
+    t = 0.0
+    while True:
+        t += rng.exponential(1 / rate)
+        if t >= length:
+            break
+        d = density(t)
+        if rng.uniform() > d:
+            continue
+        amp = np.sqrt(min((1 - rng.uniform()) ** (-1 / alpha), 10.0)) * (0.4 + 0.6 * d)
+        if rng.uniform() < crackle:
+            tick = paper_grain(rng, centre(t) * 1.4, 0.0005, 0.3, 1.0)
+            out += place(total, tick, t, 2.0 * amp)
+            continue
+        count = int(rng.integers(2, 6)) if rng.uniform() < cluster else 1
+        at = t
+        for k in range(count):
+            out += place(total, paper_grain(rng, centre(t), size, sigma, q), at, amp * 0.75**k)
+            at += rng.uniform(0.0003, 0.002)
+    level = np.max(np.abs(out))
+    if sheen:
+        out += place(total, fibre_sheen(rng, length, density, sheen * level), 0)
+    if bed:
+        noise = shaped_noise(
+            rng, total, lambda tt, f: bandpass_mag(f, 0.6 * centre(min(tt, length)), 0.8) ** 2 * lowpass_mag(f, 6000)
+        )
+        envelope = np.array([density(min(x, length)) for x in times(total)])
+        out += bed * level * unit(noise * envelope * random_envelope(rng, total, 30, 0.35))
+    return out
+
+
+def decaying(tau):
+    return lambda t: float(np.exp(-t / tau))
+
+
+def swelling(length, power=1.5):
+    return lambda t: float(np.sin(np.pi * min(t / length, 1.0)) ** power)
+
+
+def flop(rng, length=0.03, cutoff=1600.0):
+    """A sheet or a ball meeting a surface: a soft low-mid puff of compressed air and
+    contact, 2 ms rise, ~8 ms fall."""
+    t = times(length)
+    noise = shape(rng.standard_normal(len(t)), lambda f: lowpass_mag(f, cutoff, 2) * highpass_mag(f, 120))
+    env = np.clip(t / 0.002, 0, 1) * np.exp(-t / 0.008)
+    return unit(noise * env)
+
+
+def smooth_whoosh(rng, length, path, q, rise=0.4, tilt=-1.5, top=7000.0, order=2):
+    """A smoother whoosh: a steeper (fourth-order) moving band and a firmer top cut, so it
+    reads as air rather than broadband hiss."""
+    centres = np.asarray(path, dtype=float)
+
+    def centre(t):
+        return np.exp(np.interp(t / length, np.linspace(0, 1, len(centres)), np.log(centres)))
+
+    noise = shaped_noise(
+        rng,
+        length,
+        lambda t, f: bandpass_mag(f, centre(t), q) ** order * tilt_mag(f, tilt) * lowpass_mag(f, top, 3),
+        frame=2048,
+        hop=256,
+    )
+    return unit(noise * bell(length, rise, 1.6))
+
+
+def steel_tap(f0, t60, width=0.00025):
+    return unit(strike(mallet(width), metal_bin(f0, t60)))
+
+
+# trash-move: B was a bright whoosh, a crackly landing and a faint steel bin ring.
+
+
+def trash_move_b1(rng):
+    air = smooth_whoosh(rng, 0.17, [2200, 4200, 2800], 1.1, rise=0.35)
+    land = paper_fine(rng, 0.07, decaying(0.02), 2400, lambda t: 4500, size=0.0012, sheen=0.3)
+    return mix(0.35, (air, 0.0, 1.0), (unit(land), 0.14, 0.6), (flop(rng), 0.14, 0.12), (steel_tap(560, 0.3), 0.145, 0.06))
+
+
+def trash_move_b2(rng):
+    air = smooth_whoosh(rng, 0.23, [1900, 4000, 2500], 1.0, rise=0.35)
+    # The sheet crinkles a little in flight.
+    flight = paper_fine(rng, 0.2, swelling(0.2), 500, lambda t: 4200, cluster=0.1, sheen=0.15, bed=0)
+    land = paper_fine(rng, 0.15, decaying(0.045), 3600, lambda t: 4000 - 6000 * t, cluster=0.35, crackle=0.07, sheen=0.3)
+    return mix(
+        0.5,
+        (air, 0.0, 1.0),
+        (unit(flight), 0.01, 0.18),
+        (unit(land), 0.18, 0.75),
+        (flop(rng), 0.18, 0.2),
+        (steel_tap(560, 0.35), 0.186, 0.08),
+    )
+
+
+def trash_move_b3(rng):
+    air = smooth_whoosh(rng, 0.19, [2400, 4400, 3000], 1.3, rise=0.4, tilt=-1.0)
+    land = paper_fine(rng, 0.1, decaying(0.028), 3000, lambda t: 4800, size=0.0011, sigma=0.5, q=3.0, sheen=0.3, bed=0)
+    return mix(0.4, (air, 0.0, 0.85), (unit(land), 0.15, 0.8), (flop(rng, 0.025, 2200), 0.15, 0.15))
+
+
+def trash_move_b4(rng):
+    air = smooth_whoosh(rng, 0.21, [2000, 4200, 2600], 1.2, rise=0.35)
+    land = paper_fine(rng, 0.1, decaying(0.03), 3000, lambda t: 4200, sheen=0.25)
+    rim = unit(strike(convolve(burst(rng, 0.004, 0.0008, 300, 8000), mallet(0.0003)), metal_bin(600, 0.35)))
+    return mix(0.5, (air, 0.0, 1.0), (unit(land), 0.165, 0.65), (flop(rng), 0.165, 0.18), (rim, 0.17, 0.2))
+
+
+# trash-drag: B was a short rustle and a tiny ringing steel tap.
+
+
+def trash_drag_b1(rng):
+    rustle = paper_fine(rng, 0.07, swelling(0.07), 2600, lambda t: 4400, size=0.0012, sheen=0.3)
+    return mix(0.3, (unit(rustle), 0.0, 1.0), (steel_tap(780, 0.32, 0.0002), 0.05, 0.18))
+
+
+def trash_drag_b2(rng):
+    rustle = paper_fine(rng, 0.12, swelling(0.12, 1.2), 3600, lambda t: 4000 - 4000 * t, cluster=0.35, crackle=0.07, sheen=0.3)
+    return mix(0.45, (unit(rustle), 0.0, 1.0), (flop(rng, 0.025), 0.075, 0.15), (steel_tap(760, 0.4), 0.08, 0.2))
+
+
+def trash_drag_b3(rng):
+    rustle = paper_fine(rng, 0.09, swelling(0.09), 3000, lambda t: 4800, size=0.0011, sigma=0.5, q=3.0, sheen=0.3, bed=0)
+    return mix(0.35, (unit(rustle), 0.0, 1.0), (steel_tap(800, 0.22, 0.0002), 0.065, 0.16))
+
+
+def trash_drag_b4(rng):
+    rustle = paper_fine(rng, 0.09, swelling(0.09), 3000, lambda t: 4200, sheen=0.25)
+    contact = convolve(burst(rng, 0.004, 0.0007, 300, 8000), mallet(0.00025))
+    tap = unit(strike(contact, metal_bin(780, 0.35)))
+    return mix(0.45, (unit(rustle), 0.0, 1.0), (flop(rng, 0.02, 2000), 0.06, 0.12), (tap, 0.065, 0.32))
+
+
+# trash-empty: B was a tight, quick crumple ending with the ball dropping into the bin.
+
+
+def crumple_fine(rng, length, rate, top, bottom, attack, decay_from, **kwargs):
+    density = crumple_density(rng, length, attack, decay_from)
+    return paper_fine(rng, length, density, rate, lambda t: top * (bottom / top) ** (t / length), **kwargs)
+
+
+def trash_empty_b1(rng):
+    body = crumple_fine(rng, 0.34, 3200, 4800, 3200, 0.02, 0.18, size=0.0012, sheen=0.3)
+    return mix(0.45, (unit(body), 0.0, 1.0), (flop(rng, 0.03, 1400), 0.35, 0.18), (landing_thump(rng, 170, 0.08, 0.003), 0.352, 0.15))
+
+
+def trash_empty_b2(rng):
+    body = crumple_fine(rng, 0.5, 4600, 4600, 2900, 0.025, 0.28, cluster=0.4, crackle=0.07, sheen=0.3, bed=0.08)
+    return mix(0.62, (unit(body), 0.0, 1.0), (flop(rng, 0.035, 1300), 0.5, 0.22), (landing_thump(rng, 160, 0.1, 0.003), 0.503, 0.2))
+
+
+def trash_empty_b3(rng):
+    body = crumple_fine(rng, 0.44, 3600, 5000, 3400, 0.02, 0.25, size=0.0011, sigma=0.5, q=3.0, sheen=0.3, bed=0)
+    return mix(0.55, (unit(body), 0.0, 1.0), (flop(rng, 0.025, 1800), 0.45, 0.18))
+
+
+def trash_empty_b4(rng):
+    body = crumple_fine(rng, 0.44, 3800, 4600, 3000, 0.025, 0.25, sheen=0.25)
+    contact = convolve(burst(rng, 0.006, 0.0012, 150, 5000), mallet(0.0008))
+    drop = unit(strike(contact, metal_bin(420, 0.3)))
+    return mix(0.62, (unit(body), 0.0, 1.0), (flop(rng, 0.03, 1400), 0.46, 0.2), (drop, 0.462, 0.3))
+
+
+# file-transfer: B was an airy rising swish ending on a faint glass tink.
+
+
+def harmonic_glass(f0, t60=0.5):
+    """A tuned chime: modes tuned to near-harmonic ratios, fundamental strongest."""
+    return modes_from(f0, [1.0, 2.005, 3.012], [1.0, 0.25, 0.06], t60, 5000, split=0.0015)
+
+
+def file_transfer_b1(rng):
+    air = smooth_whoosh(rng, 0.2, [1600, 3000, 4200], 1.6, rise=0.6)
+    tink = unit(strike(mallet(0.0004), glass(2637, 0.35)))  # E7, glass bowl modes
+    return mix(0.36, (air, 0.0, 1.0), (tink, 0.15, 0.45))
+
+
+def file_transfer_b2(rng):
+    air = smooth_whoosh(rng, 0.2, [1500, 2900, 4000], 1.6, rise=0.6)
+    first = unit(strike(mallet(0.0005), harmonic_glass(1760, 0.3)))  # A6
+    second = unit(strike(mallet(0.0005), harmonic_glass(2637, 0.35)))  # E7, a fifth up
+    return mix(0.42, (air, 0.0, 1.0), (first, 0.14, 0.4), (second, 0.18, 0.32))
+
+
+def file_transfer_b3(rng):
+    air = smooth_whoosh(rng, 0.16, [1800, 3400, 4600], 1.8, rise=0.6)
+    tink = unit(strike(mallet(0.0004), glass(2093, 0.3)))  # C7
+    return mix(0.3, (air, 0.0, 0.75), (tink, 0.12, 0.7))
+
+
+def file_transfer_b4(rng):
+    # The swish narrows and settles on the chime's pitch before the strike.
+    air = smooth_whoosh(rng, 0.2, [1400, 2400, 2349], 2.6, rise=0.65, tilt=-0.5)
+    tink = unit(strike(mallet(0.0005), harmonic_glass(2349, 0.3)))  # D7
+    return mix(0.42, (air, 0.0, 1.0), (tink, 0.16, 0.5))
+
+
+# screen-capture: B was a tight, bright leaf-shutter double click.
+
+
+def blade_snap(rng, blade_f0, body_f0, body_t60, spring_f0, spring, width=0.0003):
+    """One blade transient: a very short metal impact (a narrow force pulse with a trace of
+    contact noise) driving a thin steel blade (long-plate modes), the mechanism body and a
+    small spring, so the energy sits in resonances rather than in a digital click."""
+    pulse = mallet(width)
+    hit = np.zeros(n_of(0.0015))
+    hit[: len(pulse)] += pulse
+    hit += 0.15 * np.max(pulse) * unit(burst(rng, 0.0015, 0.0003, 2000, 10000))
+    blade = modes_from(blade_f0, [r for r, _, _ in plate_ratios(3.0, 6)], [1, 0.6, 0.4, 0.3, 0.2, 0.15], 0.03, 9000)
+    body = modes_from(body_f0, [r for r, _, _ in plate_ratios(1.25, 6)], [1, 0.7, 0.5, 0.35, 0.25, 0.2], body_t60, 4000)
+    coil = modes_from(spring_f0, stiff_string_ratios(0.003, 5), [1, 0.5, 0.3, 0.15, 0.08], 0.09, 8000)
+    parts = [0.45 * unit(strike(hit, blade)), unit(strike(hit, body)), spring * unit(strike(hit, coil))]
+    out = np.zeros(max(len(p) for p in parts))
+    for p in parts:
+        out[: len(p)] += p
+    return unit(out)
+
+
+def blade_glide(rng, length, centre):
+    """Blades gliding over each other between the snaps: a soft, band-limited friction
+    noise with an irregular grain, kept under 9 kHz."""
+    noise = shaped_noise(rng, length, lambda t, f: bandpass_mag(f, centre, 1.4) ** 2 * lowpass_mag(f, 9000, 3))
+    return unit(noise * bell(length, 0.3) * random_envelope(rng, length, 120, 0.4))
+
+
+def leaf_shutter(rng, gap, blade_f0, body_f0, body_t60, spring_f0, spring, travel, travel_centre):
+    first = blade_snap(rng, blade_f0, body_f0, body_t60, spring_f0, spring)
+    second = blade_snap(rng, blade_f0 * 0.94, body_f0 * 0.97, body_t60, spring_f0, spring * 0.7)
+    sweep = blade_glide(rng, gap * 0.8, travel_centre)
+    return mix(0.2, (first, 0.0, 1.0), (sweep, gap * 0.1, travel), (second, gap, 0.85))
+
+
+def screen_capture_b1(rng):
+    return leaf_shutter(rng, 0.035, 4300, 1100, 0.06, 1500, 0.12, 0.08, 3600)
+
+
+def screen_capture_b2(rng):
+    return leaf_shutter(rng, 0.045, 3800, 700, 0.075, 1200, 0.15, 0.1, 3000)
+
+
+def screen_capture_b3(rng):
+    return leaf_shutter(rng, 0.03, 4800, 1600, 0.05, 2100, 0.1, 0.06, 4200)
+
+
+def screen_capture_b4(rng):
+    return leaf_shutter(rng, 0.055, 4100, 900, 0.07, 1350, 0.25, 0.16, 3300)
+
+
+REFINEMENTS = {
+    "trash-move": {
+        "B1": (trash_move_b1, "B, lighter and shorter: a smooth bright whoosh, a brief crisp landing, the faintest steel ring."),
+        "B2": (trash_move_b2, "B, richer and denser: the sheet crinkles in flight, a fuller crackling landing with a soft puff and a light steel ring."),
+        "B3": (trash_move_b3, "B, drier and closer: almost no room, finer resonant paper ticks with more fibre sheen, no bin ring."),
+        "B4": (trash_move_b4, "B with a more defined bin contact: the landing ends on a clear tap of a steel bin rim."),
+    },
+    "trash-drag": {
+        "B1": (trash_drag_b1, "B, lighter and shorter: a brief fine rustle and a small steel tick."),
+        "B2": (trash_drag_b2, "B, richer and denser: a fuller rustle with micro-crackles, a soft puff and a ringing steel tap."),
+        "B3": (trash_drag_b3, "B, drier and closer: crisp resonant paper ticks, almost no room, a short steel tick."),
+        "B4": (trash_drag_b4, "B with a more defined bin contact: a firmer tap with contact noise on the steel bin."),
+    },
+    "trash-empty": {
+        "B1": (trash_empty_b1, "B, lighter and shorter (~0.4 s): a quick fine crumple and a soft drop."),
+        "B2": (trash_empty_b2, "B, richer and denser (~0.6 s): clustered crackles darkening as the ball compacts, then the drop."),
+        "B3": (trash_empty_b3, "B, drier and closer: crisp resonant crackles with fibre sheen, almost no room, a light puff at the end."),
+        "B4": (trash_empty_b4, "B with a more defined bin contact: the ball lands with an audible steel bin tap."),
+    },
+    "file-transfer": {
+        "B1": (file_transfer_b1, "B refined: a smoother, narrower swish into a glass-bowl tink on E7, tink a little more present (~0.36 s)."),
+        "B2": (file_transfer_b2, "B refined with a tuned chime: the swish ends on two near-harmonic glass tinks, A6 then E7 (~0.42 s)."),
+        "B3": (file_transfer_b3, "B refined, short: a quick soft swish and a clear glass-bowl tink on C7 in front (~0.3 s)."),
+        "B4": (file_transfer_b4, "B refined, pitched: the swish narrows onto the chime's pitch and lands on a tuned glass tink on D7 (~0.42 s)."),
+    },
+    "screen-capture": {
+        "B1": (screen_capture_b1, "B with real mechanics: two blade snaps 35 ms apart, a mid mechanism body, a subtle spring, faint blade travel."),
+        "B2": (screen_capture_b2, "B, warmer: 45 ms apart, a lower body tone and a slightly longer spring."),
+        "B3": (screen_capture_b3, "B, tight and small: 30 ms apart, a bright compact mechanism."),
+        "B4": (screen_capture_b4, "B, slower and more mechanical: 55 ms apart, audible blade travel and a defined spring ring."),
+    },
+}
+
+for _name, _refined in REFINEMENTS.items():
+    SOUNDS[_name].update(_refined)
+
+# Candidates finished with less room than ROOM_MIX (the "drier, closer" takes).
+DRY = {("trash-move", "B3"), ("trash-drag", "B3"), ("trash-empty", "B3")}
+
+# The refined shutters carry their energy in resonances, so their first milliseconds can
+# lose more to the limiter (a gentle transient shaper) and sit nearer the others' loudness.
+LIMIT_DB = {("screen-capture", v): 10.0 for v in ("B1", "B2", "B3", "B4")}
+
+
 # --- Output -----------------------------------------------------------------------------
 
 
@@ -682,8 +1028,9 @@ def main():
         index[name] = {"chosen": CHOSEN[name], "candidates": {}}
         for variant, (make, description) in variants.items():
             # One generator per candidate: changing one leaves the others identical.
-            rng = np.random.default_rng([SEED, sum(name.encode()), ord(variant)])
-            signal = finish(make(rng), rng)
+            rng = np.random.default_rng([SEED, sum(name.encode()), *variant.encode()])
+            room = ROOM_MIX / 4 if (name, variant) in DRY else ROOM_MIX
+            signal = finish(make(rng), rng, room, LIMIT_DB.get((name, variant), MAX_LIMIT_DB))
             path = candidates / f"{name}-{variant}.wav"
             write(path, signal)
             index[name]["candidates"][variant] = {

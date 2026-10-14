@@ -1,6 +1,6 @@
 {
   "trash-move": {
-    "chosen": "A",
+    "chosen": "B",
     "candidates": {
       "A": {
         "file": "trash-move-A.wav",
@@ -13,11 +13,27 @@
       "C": {
         "file": "trash-move-C.wav",
         "description": "Soft flutter: a slower, darker whoosh of a flapping sheet, a muffled rustle and a deeper thump."
+      },
+      "B1": {
+        "file": "trash-move-B1.wav",
+        "description": "B, lighter and shorter: a smooth bright whoosh, a brief crisp landing, the faintest steel ring."
+      },
+      "B2": {
+        "file": "trash-move-B2.wav",
+        "description": "B, richer and denser: the sheet crinkles in flight, a fuller crackling landing with a soft puff and a light steel ring."
+      },
+      "B3": {
+        "file": "trash-move-B3.wav",
+        "description": "B, drier and closer: almost no room, finer resonant paper ticks with more fibre sheen, no bin ring."
+      },
+      "B4": {
+        "file": "trash-move-B4.wav",
+        "description": "B with a more defined bin contact: the landing ends on a clear tap of a steel bin rim."
       }
     }
   },
   "trash-drag": {
-    "chosen": "A",
+    "chosen": "B",
     "candidates": {
       "A": {
         "file": "trash-drag-A.wav",
@@ -30,11 +46,27 @@
       "C": {
         "file": "trash-drag-C.wav",
         "description": "A lighter rustle, then a hollow woody tock with the bin's air cavity."
+      },
+      "B1": {
+        "file": "trash-drag-B1.wav",
+        "description": "B, lighter and shorter: a brief fine rustle and a small steel tick."
+      },
+      "B2": {
+        "file": "trash-drag-B2.wav",
+        "description": "B, richer and denser: a fuller rustle with micro-crackles, a soft puff and a ringing steel tap."
+      },
+      "B3": {
+        "file": "trash-drag-B3.wav",
+        "description": "B, drier and closer: crisp resonant paper ticks, almost no room, a short steel tick."
+      },
+      "B4": {
+        "file": "trash-drag-B4.wav",
+        "description": "B with a more defined bin contact: a firmer tap with contact noise on the steel bin."
       }
     }
   },
   "trash-empty": {
-    "chosen": "A",
+    "chosen": "B",
     "candidates": {
       "A": {
         "file": "trash-empty-A.wav",
@@ -47,11 +79,27 @@
       "C": {
         "file": "trash-empty-C.wav",
         "description": "Soft tissue-like crumple, about 0.75 s: smoother, darker, few crackles."
+      },
+      "B1": {
+        "file": "trash-empty-B1.wav",
+        "description": "B, lighter and shorter (~0.4 s): a quick fine crumple and a soft drop."
+      },
+      "B2": {
+        "file": "trash-empty-B2.wav",
+        "description": "B, richer and denser (~0.6 s): clustered crackles darkening as the ball compacts, then the drop."
+      },
+      "B3": {
+        "file": "trash-empty-B3.wav",
+        "description": "B, drier and closer: crisp resonant crackles with fibre sheen, almost no room, a light puff at the end."
+      },
+      "B4": {
+        "file": "trash-empty-B4.wav",
+        "description": "B with a more defined bin contact: the ball lands with an audible steel bin tap."
       }
     }
   },
   "file-transfer": {
-    "chosen": "A",
+    "chosen": "B",
     "candidates": {
       "A": {
         "file": "file-transfer-A.wav",
@@ -64,11 +112,27 @@
       "C": {
         "file": "file-transfer-C.wav",
         "description": "Two-note soft woody pop from tuned-bar modes (G5 then D6)."
+      },
+      "B1": {
+        "file": "file-transfer-B1.wav",
+        "description": "B refined: a smoother, narrower swish into a glass-bowl tink on E7, tink a little more present (~0.36 s)."
+      },
+      "B2": {
+        "file": "file-transfer-B2.wav",
+        "description": "B refined with a tuned chime: the swish ends on two near-harmonic glass tinks, A6 then E7 (~0.42 s)."
+      },
+      "B3": {
+        "file": "file-transfer-B3.wav",
+        "description": "B refined, short: a quick soft swish and a clear glass-bowl tink on C7 in front (~0.3 s)."
+      },
+      "B4": {
+        "file": "file-transfer-B4.wav",
+        "description": "B refined, pitched: the swish narrows onto the chime's pitch and lands on a tuned glass tink on D7 (~0.42 s)."
       }
     }
   },
   "screen-capture": {
-    "chosen": "A",
+    "chosen": "B",
     "candidates": {
       "A": {
         "file": "screen-capture-A.wav",
@@ -81,6 +145,22 @@
       "C": {
         "file": "screen-capture-C.wav",
         "description": "Reflex-camera style: a heavier first click with a bounce and a spring ring, then the return 90 ms later."
+      },
+      "B1": {
+        "file": "screen-capture-B1.wav",
+        "description": "B with real mechanics: two blade snaps 35 ms apart, a mid mechanism body, a subtle spring, faint blade travel."
+      },
+      "B2": {
+        "file": "screen-capture-B2.wav",
+        "description": "B, warmer: 45 ms apart, a lower body tone and a slightly longer spring."
+      },
+      "B3": {
+        "file": "screen-capture-B3.wav",
+        "description": "B, tight and small: 30 ms apart, a bright compact mechanism."
+      },
+      "B4": {
+        "file": "screen-capture-B4.wav",
+        "description": "B, slower and more mechanical: 55 ms apart, audible blade travel and a defined spring ring."
       }
     }
   }
