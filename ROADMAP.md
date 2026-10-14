@@ -96,7 +96,8 @@ Silica becomes the development session: we go on if it holds up for a week.
 
 ### M11 · Silica 1.0.0 «Amalfi»
 
-- The first release is 1.0.0, named Amalfi: release names are Italian cities
+- The first release is 1.0.0, named Amalfi: release names are Italian cities. Until then
+  Silica is in alpha: libraries, apps and packages keep 0.x.y versions (like `silica_ui`)
 - Installable images and packages (the distribution track D1–D5), measured parity published
   in this file
 
