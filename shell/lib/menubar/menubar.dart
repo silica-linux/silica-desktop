@@ -89,6 +89,26 @@ String clockText(DateTime t, [String locale = 'en']) {
 /// The date symbols of every intl locale, loaded once (synchronously, from the package).
 Future<void>? _dates;
 
+/// The rules and owner of what the bar has open (INPUT-01): the app menus belong to the
+/// frontmost app, the logo menu to the system, the desktop menu to the desktop's owner;
+/// the battery menu is a status menu (a system panel) and the arrangement popover a
+/// popover of the frontmost window.
+({TransientPolicy policy, String owner}) menuBarTransient({
+  String? open,
+  bool windowMenu = false,
+  bool desktopMenu = false,
+  String frontmost = '',
+}) {
+  if (open == 'logo') return (policy: TransientPolicy.menu, owner: systemOwner);
+  if (open == 'battery') {
+    return (policy: TransientPolicy.panel, owner: systemOwner);
+  }
+  if (open != null) return (policy: TransientPolicy.menu, owner: frontmost);
+  if (windowMenu) return (policy: TransientPolicy.popover, owner: frontmost);
+  if (desktopMenu) return (policy: TransientPolicy.menu, owner: desktopOwner);
+  return (policy: TransientPolicy.menu, owner: systemOwner);
+}
+
 class MenuBar extends StatefulWidget {
   const MenuBar({
     super.key,
@@ -281,7 +301,17 @@ class _MenuBarState extends State<MenuBar> {
   /// support (an older Ossido) the surface takes every click, as before.
   Future<void> _menuRegion(List<Rect> rects) async {
     final menus = [for (final r in rects) r.inflate(2)];
-    final supported = await LayerControl.transient(rects: menus);
+    final (:policy, :owner) = menuBarTransient(
+      open: _open,
+      windowMenu: _windowMenuTip != null,
+      desktopMenu: _desktopMenuAt != null,
+      frontmost: ShellChannel.instance.frontmostAppId,
+    );
+    final supported = await LayerControl.transient(
+      rects: menus,
+      policy: policy,
+      owner: owner,
+    );
     if (!mounted ||
         (_open == null && _windowMenuTip == null && _desktopMenuAt == null)) {
       return;

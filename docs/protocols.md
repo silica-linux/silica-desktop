@@ -88,19 +88,62 @@ against other processes of the same user: that will come with the app sandbox.
 - `silica_shell_manager_v1.set_transient(surface, region, press, scroll)`,
   `clear_transient(surface)` and the event `dismissed(surface)` (version 6, #149): a menu or
   panel of a shell surface is open. The surface keeps an input region as small as the menu,
-  so the windows below keep the pointer (hover, window button glyphs, cursor shapes). A
-  press outside every open transient (not on the owner surface or its popups, not inside
-  `region`) makes Ossido send `dismissed`; then the press is consumed (`consume`) or also
-  delivered (`pass_through`). Scrolling outside is dropped or delivered without ending it.
-  Keyboard routing stays with the layer surface's keyboard interactivity. App popups with
-  `xdg_popup.grab` follow the same rules (a press outside the popup's app ends it and is
-  consumed; the popup has the keyboard while open).
-  **Provisional** until silica-reference INPUT-01: menus (menu bar, desktop, window
-  popover, status menus, Dock menus and stacks, app popups) consume the press outside, panels (Control Center,
-  Notification Center, Faro) let it through; menus also consume the scroll outside. The
-  shell keeps these in one place (`TransientPolicy` in `shell/lib/system/layer_control.dart`)
-  and the embedder exposes them on `silica/layer` (`setTransient`, `clearTransient`) and
-  `silica/shell` (`transientDismissed`).
+  so the windows below keep the pointer (hover, window button glyphs). A press outside every
+  open transient (not on the owner surface or its popups, not inside `region`) makes Ossido
+  send `dismissed`; then the press is consumed (`consume`) or also delivered
+  (`pass_through`). Scrolling outside is dropped or delivered, and never ends it. Keyboard
+  routing stays with the layer surface's keyboard interactivity.
+- `set_owned_transient(surface, region, owner, owner_rule, other_rule)` (version 7): the same
+  transient with the outside split in two targets, the surfaces of the owner app and every
+  other surface, each with a `rule`:
+  - `modal`: no hover (the pointer leaves those surfaces: no tooltips, no text cursor), no
+    wheel; a press of any button ends the transient and stops there;
+  - `pass`: hover and wheel work; a press ends the transient and is delivered as with nothing
+    open (activation and the click's own effect, a right click opens that app's menu, a drag
+    selects);
+  - `activate`: hover and wheel work; a left press ends the transient and only activates the
+    window under the pointer (focus and raise, or the desktop's owner on the desktop): the
+    client sees neither the press nor its drag. Other buttons pass.
+
+  `owner` is an app id (its windows with their popups and subsurfaces, and its desktop
+  surface `desktop-icons:<app id>`), `desktop-icons` for whichever app owns the desktop
+  surface, `desktop-icons:<app id>` for that app, or `""` for the system (every surface follows
+  `other_rule`). With several transients open, the strictest outcome of those a press ends
+  wins (modal, then activate, then pass). The wheel never ends a transient, and while one is
+  open Ossido shows the arrow over every surface outside it: the window below does not have
+  the keyboard, so no text cursor.
+
+  The rules reproduce the reference's measured model (INPUT-01): menus are modal only for
+  their owning app, system panels never block other windows, the wheel never closes
+  anything. Keys always go to the open surface (menus type-select, Faro and the launcher type
+  into their field, Control Center, status menus and Notification Center swallow them),
+  through the layer's keyboard interactivity.
+
+  | Shell surface | Owner | Owner rule | Other rule |
+  | --- | --- | --- | --- |
+  | Menu-bar app menus | the frontmost app | `modal` | `pass` |
+  | Logo menu | system (`""`) | — | `pass` |
+  | Desktop menu | `desktop-icons` | `modal` | `pass` |
+  | Dock icon menu and stacks | the app that was active | `activate` | `pass` |
+  | Faro, launcher, Control Center, status menus (Wi-Fi, battery…), Notification Center | system | — | `pass` |
+  | Window arrangement popover | the frontmost app | `pass` | `pass` |
+
+  The Dock menu's `activate` stands for the reference's "a click outside is delivered as to an
+  inactive window": text views there only activate (the caret does not move), while views
+  that accept the first click act on it. Ossido cannot tell the two apart, and in Silica a
+  click on an inactive window always reaches it, so only the app that was active (the one
+  whose caret would move) gets the focus-only activation; other apps get the click.
+
+  App popups with `xdg_popup.grab` (third-party toolkits' context menus and popovers) are
+  menus of their client: `modal` for every surface of that client except the popup and its
+  sibling popups on the same window, `pass` for everything else; the popup has the keyboard
+  while open and gets `popup_done` when a press ends it.
+
+  The shell keeps the policies in one place (`TransientPolicy` in
+  `shell/lib/system/layer_control.dart`: `menu`, `dockMenu`, `panel`, `popover`) and the
+  embedder exposes them on `silica/layer` (`setTransient {rects, owner, ownerRule,
+  otherRule, press, scroll}`, where `press` and `scroll` are the version 6 fallback;
+  `clearTransient`) and `silica/shell` (`transientDismissed`).
 
 ## Drag between apps (`wl_data_device`)
 

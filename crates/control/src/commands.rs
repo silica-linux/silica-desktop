@@ -46,6 +46,7 @@ pub const APP_QUIT: &str = "app.quit";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
 pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
+pub const INPUT_SCROLL: &str = "input.scroll";
 pub const INPUT_KEY: &str = "input.key";
 pub const INPUT_TYPE: &str = "input.type";
 pub const INPUT_GESTURE: &str = "input.gesture";
@@ -852,6 +853,25 @@ pub const CATALOG: &[CommandSpec] = &[
         params: point,
     },
     CommandSpec {
+        id: INPUT_SCROLL,
+        label: "Scroll",
+        description: "Moves the pointer to a point and turns the wheel: dx and dy in logical pixels, positive right and down (dy 15 is one notch).",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "dx": {"type": "number"},
+                    "dy": {"type": "number"}
+                },
+                "required": ["x", "y"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
         id: INPUT_KEY,
         label: "Press a key",
         description: "Presses and releases a key by xkb name (Return, BackSpace, Escape, Left...) or character; with pressed only the press or the release.",
@@ -1018,6 +1038,18 @@ pub struct Click {
     pub y: f64,
     #[serde(default)]
     pub button: MouseButton,
+}
+
+/// Parameters of [`INPUT_SCROLL`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scroll {
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub dx: f64,
+    #[serde(default)]
+    pub dy: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

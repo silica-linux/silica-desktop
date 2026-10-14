@@ -392,8 +392,12 @@ void main() {
       await tester.pumpAndSettle();
       final transient = layer.lastWhere((c) => c.method == 'setTransient');
       final args = transient.arguments as Map;
-      // A panel: the press outside goes through (provisional, INPUT-01).
+      // A system panel (INPUT-01 (e)): nothing outside is blocked.
+      expect(args['owner'], '');
+      expect(args['ownerRule'], 'pass');
+      expect(args['otherRule'], 'pass');
       expect(args['press'], 'pass_through');
+      expect(args['scroll'], 'pass_through');
       final rect = (args['rects'] as List).single as List;
       expect(rect[0], greaterThan(900)); // on the right, not the whole screen
       final region = layer.lastWhere((c) => c.method == 'setInputRegion');

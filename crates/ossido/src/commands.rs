@@ -8,13 +8,13 @@ use serde_json::{Value, json};
 use silica_control::commands::{
     self, APP_LAUNCH, AnimationScale, AppLaunch, Click, ENGINE_COMMANDS, ENGINE_EXECUTE,
     ExecuteParams, FARO_TOGGLE, GLASS_LIST, GlassQualityParams, INPUT_CLICK, INPUT_KEY,
-    INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST, NOTIFICATIONS_TOGGLE,
-    PERF_FRAMES, PERF_PROCESS, PERF_RENDER, PerfFramesParams, PerfProcessParams, PerfRenderParams,
-    PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_GLASS_QUALITY,
-    UI_SCREENSHOT, WINDOW_ARRANGE_2, WINDOW_ARRANGE_3, WINDOW_ARRANGE_4, WINDOW_CLOSE,
-    WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE, WINDOW_TILE_BOTTOM,
-    WINDOW_TILE_FILL, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT, WINDOW_TILE_TOP, WindowInfo, WindowMove,
-    WindowTarget,
+    INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_SCROLL, INPUT_TYPE, Key, LAYER_LIST,
+    NOTIFICATIONS_TOGGLE, PERF_FRAMES, PERF_PROCESS, PERF_RENDER, PerfFramesParams,
+    PerfProcessParams, PerfRenderParams, PointerButton, PointerMove, SESSION_QUIT, Scroll,
+    TypeText, UI_ANIMATION_SCALE, UI_GLASS_QUALITY, UI_SCREENSHOT, WINDOW_ARRANGE_2,
+    WINDOW_ARRANGE_3, WINDOW_ARRANGE_4, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST,
+    WINDOW_MINIMIZE, WINDOW_MOVE, WINDOW_TILE_BOTTOM, WINDOW_TILE_FILL, WINDOW_TILE_LEFT,
+    WINDOW_TILE_RIGHT, WINDOW_TILE_TOP, WindowInfo, WindowMove, WindowTarget,
 };
 use silica_control::commands::{
     APP_FORCE_QUIT, APP_FORCE_QUIT_PANEL, SCREENSHOT_REGION, SCREENSHOT_SCREEN,
@@ -447,6 +447,23 @@ impl State {
                 self.pointer_button(button.code(), ButtonState::Released, time);
                 Ok(Value::Null)
             }
+            INPUT_SCROLL => {
+                let Scroll { x, y, dx, dy } = parse_required(params)?;
+                let time = self.now_msec();
+                self.pointer_move_to((x, y).into(), time);
+                let mut frame = smithay::input::pointer::AxisFrame::new(time)
+                    .source(smithay::backend::input::AxisSource::Wheel);
+                for (axis, amount) in [
+                    (smithay::backend::input::Axis::Horizontal, dx),
+                    (smithay::backend::input::Axis::Vertical, dy),
+                ] {
+                    if amount != 0.0 && amount.is_finite() {
+                        frame = frame.value(axis, amount);
+                    }
+                }
+                self.pointer_axis(frame);
+                Ok(Value::Null)
+            }
             INPUT_KEY => {
                 let Key { key, pressed } = parse_required(params)?;
                 let (code, shift) = self
@@ -541,7 +558,7 @@ impl State {
     }
 
     /// Time for synthetic input events, in milliseconds since start.
-    fn now_msec(&self) -> u32 {
+    pub(crate) fn now_msec(&self) -> u32 {
         u32::try_from(self.start_time.elapsed().as_millis()).unwrap_or(u32::MAX)
     }
 

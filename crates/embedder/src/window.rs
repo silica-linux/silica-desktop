@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
-use silica_protocols::shell::client::silica_shell_manager_v1::{Outside, SilicaShellManagerV1};
+use silica_protocols::shell::client::silica_shell_manager_v1::{
+    Outside, Rule, SilicaShellManagerV1,
+};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
@@ -621,7 +623,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=6, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=7, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -1489,9 +1491,12 @@ impl App {
     /// - `setSize {width, height}` in points, 0 to follow the anchors (the menu bar grows
     ///   while a menu is open);
     /// - `setExclusiveZone {zone}` in points (the Dock hiding itself gives its room back);
-    /// - `setTransient {rects | null, press, scroll}` (`consume` | `pass_through`): a menu or
-    ///   panel is open; a press outside it arrives as `transientDismissed` on silica/shell
-    ///   (#149); `clearTransient` when the shell closes it itself.
+    /// - `setTransient {rects | null, owner?, ownerRule?, otherRule?, press, scroll}`: a menu
+    ///   or panel is open; a press outside it arrives as `transientDismissed` on silica/shell
+    ///   (#149); `clearTransient` when the shell closes it itself. With silica-shell-v1
+    ///   version 7 the owner app (`""` the system) and the rules `modal` | `pass` |
+    ///   `activate` for its surfaces and the others; on version 6 `press` and `scroll`
+    ///   (`consume` | `pass_through`).
     fn handle_layer_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -1582,18 +1587,42 @@ impl App {
                     Some(rects) => self.region_from(rects),
                     None => None,
                 };
+                let rule = |key: &str| match args.get(key).and_then(serde_json::Value::as_str) {
+                    Some("modal") => Some(Rule::Modal),
+                    Some("pass") => Some(Rule::Pass),
+                    Some("activate") => Some(Rule::Activate),
+                    _ => None,
+                };
+                let owner = args
+                    .get("owner")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
                 match self
                     .shell
                     .manager()
                     .filter(|m| wayland_client::Proxy::version(*m) >= 6)
                 {
                     Some(manager) => {
-                        manager.set_transient(
-                            self.surface.wl_surface(),
-                            region.as_ref().map(Region::wl_region),
-                            outside("press"),
-                            outside("scroll"),
-                        );
+                        let wl_region = region.as_ref().map(Region::wl_region);
+                        match (rule("ownerRule"), rule("otherRule")) {
+                            (Some(owner_rule), Some(other_rule))
+                                if wayland_client::Proxy::version(manager) >= 7 =>
+                            {
+                                manager.set_owned_transient(
+                                    self.surface.wl_surface(),
+                                    wl_region,
+                                    owner.to_owned(),
+                                    owner_rule,
+                                    other_rule,
+                                );
+                            }
+                            _ => manager.set_transient(
+                                self.surface.wl_surface(),
+                                wl_region,
+                                outside("press"),
+                                outside("scroll"),
+                            ),
+                        }
                         true
                     }
                     None => false,

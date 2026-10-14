@@ -70,6 +70,7 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `input.pointer_move` | `x`, `y` | — |
 | `input.pointer_button` | `button?`, `pressed` | — |
 | `input.click` | `x`, `y`, `button?` | — |
+| `input.scroll` | `x`, `y`, `dx?`, `dy?` | — ; the wheel at that point (logical pixels, 15 = one notch), like a real one: an open menu may drop it (#149) |
 | `input.key` | `key` (xkb name or character), `pressed?` | — ; like a real key, catalog shortcuts included (⌃→ switches space) |
 | `input.type` | `text` | — |
 | `perf.frames` | `reset?` | per surface: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |

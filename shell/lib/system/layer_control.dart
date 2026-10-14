@@ -2,30 +2,97 @@
 // components that keep running while hidden (a closed Faro must take neither pointer
 // nor keyboard).
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// What a press or a scroll outside an open menu or panel does after closing it (#149).
-enum TransientOutside {
-  /// It closes the menu and nothing else.
-  consume,
+/// What the surfaces outside an open menu or panel receive (silica-shell-v1 `rule`,
+/// #149). Whatever the rule, the wheel never closes anything, and Ossido shows the arrow
+/// outside the menu or panel (no text cursor).
+enum TransientRule {
+  /// No hover, no wheel; a click only closes the menu (a menu's own app).
+  modal,
 
-  /// It closes the panel and also reaches what is below.
-  passThrough,
+  /// Hover and wheel work; a click, right click or drag closes the menu or panel and also
+  /// reaches what is below.
+  pass,
+
+  /// Hover and wheel work; a left click closes the menu and only activates the window
+  /// below (it does not reach its content), other buttons pass.
+  activate,
 }
 
-/// The policies of the shell's transients. PROVISIONAL until the reference's INPUT-01
-/// measurement: menus consume the press outside, panels let it through; the hover of the
-/// windows below always works.
-abstract final class TransientPolicy {
-  static const ({TransientOutside press, TransientOutside scroll}) menu = (
-    press: TransientOutside.consume,
-    scroll: TransientOutside.consume,
+/// The measured input model while a menu or panel is open (the reference's INPUT-01): a
+/// menu is modal only for the app that owns it, system panels never block other windows,
+/// the wheel never closes anything. Keys always go to the open surface (the caller asks for
+/// the keyboard with [LayerControl.keyboard]).
+@immutable
+class TransientPolicy {
+  const TransientPolicy({required this.owner, required this.other});
+
+  /// For the surfaces of the owner app.
+  final TransientRule owner;
+
+  /// For every other surface.
+  final TransientRule other;
+
+  /// Menu-bar menus (owner: the frontmost app), the logo menu (the system), the desktop
+  /// menu (the desktop's owner): a click in the owner's windows only closes the menu, in
+  /// another app it passes.
+  static const menu = TransientPolicy(
+    owner: TransientRule.modal,
+    other: TransientRule.pass,
   );
-  static const ({TransientOutside press, TransientOutside scroll}) panel = (
-    press: TransientOutside.passThrough,
-    scroll: TransientOutside.passThrough,
+
+  /// The Dock's icon menu and stacks, with the app that was active as owner: a left click
+  /// on its windows only makes it active again (the caret does not move), elsewhere it
+  /// passes as on an inactive window; right click and wheel pass.
+  static const dockMenu = TransientPolicy(
+    owner: TransientRule.activate,
+    other: TransientRule.pass,
   );
+
+  /// Faro, the launcher, Control Center, status menus, Notification Center: everything
+  /// passes.
+  static const panel = TransientPolicy(
+    owner: TransientRule.pass,
+    other: TransientRule.pass,
+  );
+
+  /// A popover (the window's arrangement popover): any click outside closes it and passes,
+  /// in its own window too.
+  static const popover = TransientPolicy(
+    owner: TransientRule.pass,
+    other: TransientRule.pass,
+  );
+
+  /// The version 6 fallback (an older Ossido without owners): `consume` or `pass_through`
+  /// for every surface.
+  String get _press =>
+      other == TransientRule.pass && owner == TransientRule.pass
+      ? 'pass_through'
+      : 'consume';
+  String get _scroll =>
+      owner == TransientRule.modal ? 'consume' : 'pass_through';
+
+  @override
+  bool operator ==(Object other) =>
+      other is TransientPolicy &&
+      other.owner == owner &&
+      other.other == this.other;
+
+  @override
+  int get hashCode => Object.hash(owner, other);
+
+  @override
+  String toString() => 'TransientPolicy(owner: $owner, other: $other)';
 }
+
+/// The owner of the system's own menus (the logo menu, Control Center…): no app.
+const String systemOwner = '';
+
+/// The owner of the desktop menu: whichever app owns the desktop surface
+/// (`desktop-icons:<app id>`), resolved by Ossido.
+const String desktopOwner = 'desktop-icons';
 
 class LayerControl {
   const LayerControl._();
@@ -52,15 +119,15 @@ class LayerControl {
   /// A menu or panel of this surface is open (silica-shell-v1 version 6, #149): with the
   /// input region as small as the menu, the windows below keep the pointer; Ossido sends
   /// `transientDismissed` (ShellChannel) when a press outside ends it. `rects` count as
-  /// inside even under another surface. False when Ossido does not support it: then the
-  /// caller covers the screen to see the clicks outside.
+  /// inside even under another surface. `owner` is the app id whose surfaces follow
+  /// `policy.owner` ([systemOwner]: none, [desktopOwner]: the desktop's app). False when
+  /// Ossido does not support it: then the caller covers the screen to see the clicks
+  /// outside.
   static Future<bool> transient({
     List<Rect>? rects,
-    ({TransientOutside press, TransientOutside scroll}) policy =
-        TransientPolicy.menu,
+    TransientPolicy policy = TransientPolicy.menu,
+    String owner = systemOwner,
   }) async {
-    String name(TransientOutside outside) =>
-        outside == TransientOutside.passThrough ? 'pass_through' : 'consume';
     try {
       return await channel.invokeMethod<bool>('setTransient', {
             'rects': rects == null
@@ -68,8 +135,11 @@ class LayerControl {
                 : [
                     for (final r in rects) [r.left, r.top, r.width, r.height],
                   ],
-            'press': name(policy.press),
-            'scroll': name(policy.scroll),
+            'owner': owner,
+            'ownerRule': policy.owner.name,
+            'otherRule': policy.other.name,
+            'press': policy._press,
+            'scroll': policy._scroll,
           }) ??
           false;
     } on MissingPluginException {

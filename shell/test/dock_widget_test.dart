@@ -7,6 +7,7 @@ import 'package:silica_shell/dock/model.dart';
 import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/main.dart';
 import 'package:silica_shell/system/layer_control.dart';
+import 'package:silica_shell/system/shell_channel.dart';
 
 void main() {
   testWidgets(
@@ -241,6 +242,15 @@ void main() {
           null,
         ),
       );
+      // The app that was active when the menu opens: its windows get only an activation.
+      ShellChannel.instance.toplevels.value = const [
+        Toplevel(id: 'w1', title: 'Notes', appId: 'dev.frascella.Note'),
+      ];
+      ShellChannel.instance.focused.value = 'w1';
+      addTearDown(() {
+        ShellChannel.instance.toplevels.value = const [];
+        ShellChannel.instance.focused.value = '';
+      });
       const items = [Item.app('Note', command: 'note')];
       await tester.pumpWidget(
         Directionality(
@@ -268,10 +278,13 @@ void main() {
         );
       }
 
-      // The menu policy, and the Dock plus the menu as the rectangles: not the screen.
+      // The Dock menu's rules (INPUT-01 (c)), and the Dock plus the menu as the
+      // rectangles: not the screen.
       final transient = layer.lastWhere((c) => c.method == 'setTransient');
       final args = transient.arguments as Map;
-      expect(args['press'], 'consume');
+      expect(args['owner'], 'dev.frascella.Note');
+      expect(args['ownerRule'], 'activate');
+      expect(args['otherRule'], 'pass');
       final rects = [for (final r in args['rects'] as List) rect(r)];
       expect(rects, hasLength(2));
       expect(rects.any((r) => r.contains(icon)), isTrue);
