@@ -11,4 +11,5 @@ grafica generata in codice.
 | --- | --- | --- | --- |
 | `crates/ossido-render/fonts/Inter-Regular.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
 | `crates/ossido-render/fonts/Inter-SemiBold.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
-| `.github/banner.png` | Progetto Silica | marchio del progetto, licenza da decidere (`silica-brand`) | originale, da `silica-brand/exports/banners/` (generato da `tools/build.py`; testo in Inter, OFL 1.1, convertito in tracciati) |
+| `.github/silica-logo-light.svg` | Silica project | project trademark, license to be decided (`silica-brand`) | original, `silica-brand/exports/logotype/silica-logotype-horizontal-light.svg` |
+| `.github/silica-logo-dark.svg` | Silica project | project trademark, license to be decided (`silica-brand`) | original, `silica-brand/exports/logotype/silica-logotype-horizontal-dark.svg` |
