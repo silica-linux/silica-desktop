@@ -600,12 +600,12 @@ class DockColors {
       : light;
 }
 
-/// Label: body 27 pt tall (y 1325–1351), tip ~7 pt wide and ~3 pt tall, with its top
+/// Label: body 27 pt tall (y 1325–1351), tip drawn from TIP-01 (`labelTipOutline`; the
+/// layout keeps the earlier 3 pt for the box), with its top
 /// ~13 pt above the icon (icon from 1367, tip at 1354), horizontal margin ~15.5 pt, text
 /// of ~14 pt (from the 10 pt capitals in Inter).
 const double labelHeight = 27;
 const double labelTip = 3;
-const double labelTipHalfWidth = 3.5;
 const double labelGap = 13;
 const double labelPadding = 15.5;
 const double labelFontSize = 14;
@@ -1744,6 +1744,20 @@ class _DockPainter extends CustomPainter {
   bool shouldRepaint(_DockPainter old) => true;
 }
 
+/// The Dock label's tip (TIP-01), origin on the apex, pointing down, in pt.
+Path labelTipOutline() => Path()
+  ..moveTo(-9.361, -6.516)
+  ..arcToPoint(const Offset(-7.461, -5.838), radius: const Radius.circular(3))
+  ..lineTo(-0.583, -0.208)
+  ..arcToPoint(
+    const Offset(0.583, -0.208),
+    radius: const Radius.circular(0.92),
+    clockwise: false,
+  )
+  ..lineTo(7.461, -5.838)
+  ..arcToPoint(const Offset(9.361, -6.516), radius: const Radius.circular(3))
+  ..close();
+
 class _LabelPainter extends CustomPainter {
   const _LabelPainter(this.colors);
   final DockColors colors;
@@ -1754,15 +1768,16 @@ class _LabelPainter extends CustomPainter {
       Rect.fromLTWH(0.5, 0.5, size.width - 1, labelHeight - 1),
       const Radius.circular(labelHeight / 2),
     );
-    final center = size.width / 2;
-    final tip = Path()
-      ..moveTo(center - labelTipHalfWidth, labelHeight - 1)
-      ..lineTo(center, labelHeight + labelTip - 0.5)
-      ..lineTo(center + labelTipHalfWidth, labelHeight - 1)
-      ..close();
-    final shape = Path()
-      ..addRRect(body)
-      ..addPath(tip, Offset.zero);
+    // The measured outline (TIP-01, Dock label): concave fillets of 3 pt into the body,
+    // straight flanks at 39°, a 0.92 pt round apex, 6.5 pt below the body's edge. It hangs
+    // below the painter's box (layout keeps the earlier 3 pt), like the reference.
+    final edge = labelHeight - 0.5;
+    final tip = labelTipOutline().shift(Offset(size.width / 2, edge + 6.516));
+    final shape = Path.combine(
+      PathOperation.union,
+      Path()..addRRect(body),
+      tip,
+    );
     canvas.drawPath(
       shape,
       Paint()
