@@ -277,6 +277,7 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _show() {
     setState(() => _open = true);
+    ShellChannel.instance.broadcast('controlcenter.open', '1');
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
     _anim.duration = openDuration;
@@ -332,6 +333,7 @@ class _ControlCenterState extends State<ControlCenter>
     _detail = null;
     _detailClosing = false;
     setState(() => _open = false);
+    ShellChannel.instance.broadcast('controlcenter.open', '0');
     LayerControl.keyboard('none');
     LayerControl.inputRegion(const []);
     _anim.duration = closeDuration;

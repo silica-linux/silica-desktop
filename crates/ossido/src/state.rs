@@ -75,6 +75,8 @@ pub struct State {
     /// I componenti della shell collegati a `silica_shell_manager_v1`.
     pub shell_managers:
         Vec<silica_protocols::shell::server::silica_shell_manager_v1::SilicaShellManagerV1>,
+    /// Gli stati annunciati dai componenti della shell (`broadcast`), per argomento.
+    pub shell_states: std::collections::BTreeMap<String, String>,
     /// L'ultima finestra con il focus annunciata alla shell.
     pub announced_focus: Option<String>,
     pub seat: Seat<State>,
@@ -256,6 +258,7 @@ impl State {
             foreign_toplevel_list,
             shell_manager_state,
             shell_managers: Vec::new(),
+            shell_states: std::collections::BTreeMap::new(),
             announced_focus: None,
             seat,
             mapped: 0,

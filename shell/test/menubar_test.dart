@@ -209,4 +209,48 @@ void main() {
       expect(find.text('Metà dello schermo'), findsNothing);
     },
   );
+
+  testWidgets(
+    'capsule sull\'icona dei controlli e sull\'orologio a Centri aperti',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        ShellChannel.channel,
+        (call) async => null,
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+        ),
+      );
+      await tester.pump();
+      Future<void> announce(String topic, String value) =>
+          tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+            'silica/shell',
+            const JSONMethodCodec().encodeMethodCall(
+              MethodCall('broadcast', {'topic': topic, 'value': value}),
+            ),
+            (_) {},
+          );
+      const controls = ValueKey('capsula del Centro di controllo');
+      const clock = ValueKey("capsula dell'orologio");
+      expect(find.byKey(controls), findsNothing);
+      await announce('controlcenter.open', '1');
+      await tester.pump();
+      await tester.pump();
+      final capsule = tester.getRect(find.byKey(controls));
+      expect(capsule.size, controlsCapsule);
+      await announce('notifications.open', '1');
+      await tester.pump();
+      expect(find.byKey(clock), findsOneWidget);
+      await announce('controlcenter.open', '0');
+      await announce('notifications.open', '0');
+      await tester.pump();
+      expect(find.byKey(controls), findsNothing);
+      expect(find.byKey(clock), findsNothing);
+    },
+  );
 }

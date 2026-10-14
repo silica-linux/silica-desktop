@@ -70,3 +70,7 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
   lunga sul pulsante verde (provvisoria: 0,8 s, W-08); la barra dei menu apre il popover di
   disposizione con la punta in x, y, e le voci eseguono `window.tile_*`, `window.arrange_*`
   e `window.fullscreen` sulla finestra con il focus.
+- `silica_shell_manager_v1.broadcast(topic, value)` ed evento omonimo (versione 4): uno stato
+  di un componente per gli altri (`controlcenter.open`, `notifications.open`: le capsule
+  nella barra). Ossido lo rimanda a tutti, mittente compreso, e manda l'ultimo valore di ogni
+  argomento a chi si collega dopo.

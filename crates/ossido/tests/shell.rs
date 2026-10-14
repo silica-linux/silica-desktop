@@ -30,6 +30,7 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 const CHILD_SOCKET: &str = "SILICA_TEST_SHELL_SOCKET";
 const CHILD_LISTEN: &str = "SILICA_TEST_SHELL_LISTEN";
 const CHILD_THUMBNAIL: &str = "SILICA_TEST_SHELL_THUMBNAIL";
+const CHILD_BROADCAST: &str = "SILICA_TEST_SHELL_BROADCAST";
 
 #[derive(Default)]
 struct Shell {
@@ -47,6 +48,8 @@ struct Shell {
     commands: Vec<String>,
     /// I popover di disposizione chiesti (identificatore, x, y).
     window_menus: Vec<(String, i32, i32)>,
+    /// Gli stati annunciati dai componenti (argomento, valore).
+    broadcasts: Vec<(String, String)>,
 }
 
 impl Dispatch<WlRegistry, ()> for Shell {
@@ -66,7 +69,7 @@ impl Dispatch<WlRegistry, ()> for Shell {
                 "ext_foreign_toplevel_list_v1" => {
                     state.list = Some(registry.bind(name, 1, qh, ()));
                 }
-                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 3, qh, ())),
+                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 4, qh, ())),
                 _ => {}
             }
             state.globals.push(interface);
@@ -137,6 +140,9 @@ impl Dispatch<SilicaShellManagerV1, ()> for Shell {
             silica_shell_manager_v1::Event::WindowMenu { identifier, x, y } => {
                 state.window_menus.push((identifier, x, y));
             }
+            silica_shell_manager_v1::Event::Broadcast { topic, value } => {
+                state.broadcasts.push((topic, value));
+            }
             _ => {}
         }
     }
@@ -152,6 +158,17 @@ fn shell_client(socket: &str) {
     conn.display().get_registry(&qh, ());
     queue.roundtrip(&mut shell).unwrap();
     queue.roundtrip(&mut shell).unwrap();
+    // Un annuncio: lo manda (se c'è un valore) e stampa quelli ricevuti, anche al collegamento.
+    if let Ok(value) = std::env::var(CHILD_BROADCAST) {
+        if let (Some(manager), false) = (shell.manager.clone(), value.is_empty()) {
+            manager.broadcast("controlcenter.open".to_owned(), value);
+            queue.roundtrip(&mut shell).unwrap();
+        }
+        for (topic, value) in &shell.broadcasts {
+            println!("BROADCAST {topic}={value}");
+        }
+        return;
+    }
     // Le finestre ridotte annunciate al collegamento e la miniatura della prima.
     if std::env::var_os(CHILD_THUMBNAIL).is_some() {
         if let (Some(manager), Some((identifier, _))) =
@@ -481,4 +498,35 @@ fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
     let list: Vec<WindowInfo> =
         serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
     assert!(!list[0].fullscreen, "{list:?}");
+}
+
+/// Uno stato annunciato da un componente torna a tutti (anche al mittente) e chi si collega
+/// dopo riceve l'ultimo valore.
+#[test]
+fn shell_components_share_their_state_with_broadcast() {
+    let ossido = Headless::start("shell-broadcast");
+    let run = |value: &str| {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "shell_child",
+                "--nocapture",
+                "--test-threads",
+                "1",
+            ])
+            .env(CHILD_SOCKET, &ossido.wayland)
+            .env(CHILD_BROADCAST, value)
+            .env("SILICA_SHELL", "1")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let sender = run("1");
+    assert!(
+        sender.contains("BROADCAST controlcenter.open=1"),
+        "{sender}"
+    );
+    // Un componente che si collega dopo, senza annunciare niente.
+    let later = run("");
+    assert!(later.contains("BROADCAST controlcenter.open=1"), "{later}");
 }

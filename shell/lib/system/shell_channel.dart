@@ -45,6 +45,14 @@ class ShellChannel {
           ];
         case 'thumbnail':
           _thumbnailArrived(call.arguments);
+        case 'broadcast':
+          final args = call.arguments;
+          if (args is Map) {
+            states.value = {
+              ...states.value,
+              '${args['topic'] ?? ''}': '${args['value'] ?? ''}',
+            };
+          }
         case 'windowMenu':
           final args = call.arguments;
           if (args is Map) {
@@ -76,6 +84,14 @@ class ShellChannel {
 
   /// I comandi che Ossido inoltra alla shell (es. `faro.toggle`).
   Stream<String> get commands => _commands.stream;
+
+  /// Gli stati annunciati dai componenti della shell (`controlcenter.open` = "1"…), per
+  /// argomento: l'ultimo valore, anche di prima del collegamento.
+  final ValueNotifier<Map<String, String>> states = ValueNotifier(const {});
+
+  /// Annuncia uno stato agli altri componenti (e a sé).
+  Future<bool> broadcast(String topic, String value) =>
+      _call('broadcast', {'topic': topic, 'value': value});
 
   final StreamController<({String id, ui.Offset tip})> _windowMenus =
       StreamController.broadcast();

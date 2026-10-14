@@ -12,7 +12,7 @@
     questo protocollo aggiunge quello che la shell chiede al compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="3">
+  <interface name="silica_shell_manager_v1" version="4">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -99,6 +99,25 @@
       <arg name="identifier" type="string"/>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>
+    </event>
+
+    <request name="broadcast" since="4">
+      <description summary="uno stato per gli altri componenti della shell">
+        Un componente annuncia uno stato agli altri (per esempio il Centro di controllo
+        aperto, che la barra mostra con la capsula sull'icona): Ossido lo rimanda a tutti i
+        componenti della shell con l'evento broadcast, mittente compreso, e lo ricorda per
+        chi si collega dopo.
+      </description>
+      <arg name="topic" type="string"/>
+      <arg name="value" type="string"/>
+    </request>
+
+    <event name="broadcast" since="4">
+      <description summary="lo stato annunciato da un componente">
+        Al collegamento l'ultimo valore di ogni argomento, poi a ogni annuncio.
+      </description>
+      <arg name="topic" type="string"/>
+      <arg name="value" type="string"/>
     </event>
   </interface>
 </protocol>

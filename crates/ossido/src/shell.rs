@@ -52,7 +52,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            3,
+            4,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -197,6 +197,26 @@ impl State {
         }
     }
 
+    /// Uno stato annunciato da un componente della shell, rimandato a tutti e ricordato per
+    /// chi si collega dopo (al più 64 argomenti, testi di al più 256 byte).
+    pub fn broadcast_to_shell(&mut self, topic: String, value: String) {
+        if topic.len() > 256 || value.len() > 256 {
+            warn!("shell: broadcast troppo lungo, ignorato");
+            return;
+        }
+        if !self.shell_states.contains_key(&topic) && self.shell_states.len() >= 64 {
+            warn!("shell: troppi argomenti di broadcast, ignorato {topic}");
+            return;
+        }
+        self.shell_managers.retain(|manager| manager.is_alive());
+        for manager in &self.shell_managers {
+            if manager.version() >= 4 {
+                manager.broadcast(topic.clone(), value.clone());
+            }
+        }
+        self.shell_states.insert(topic, value);
+    }
+
     /// Chiede ai componenti della shell il popover di disposizione della finestra, con la
     /// punta verso `point` (sotto il pulsante dello schermo intero). Quanti l'hanno ricevuto.
     pub fn announce_window_menu(&mut self, window: &Window, point: Point<i32, Logical>) -> usize {
@@ -317,6 +337,11 @@ impl GlobalDispatch<SilicaShellManagerV1, ShellGlobal> for State {
                 }
             }
         }
+        if manager.version() >= 4 {
+            for (topic, value) in &state.shell_states {
+                manager.broadcast(topic.clone(), value.clone());
+            }
+        }
         state.shell_managers.push(manager);
     }
 
@@ -347,6 +372,9 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
                 if let Err(err) = state.execute_command(&id, serde_json::Value::Null) {
                     warn!("shell: {id}: {err}");
                 }
+            }
+            silica_shell_manager_v1::Request::Broadcast { topic, value } => {
+                state.broadcast_to_shell(topic, value);
             }
             silica_shell_manager_v1::Request::Thumbnail { identifier, fd } => {
                 let (width, height) = state.write_thumbnail(&identifier, fd);

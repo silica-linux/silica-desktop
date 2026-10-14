@@ -79,6 +79,11 @@ const List<String> months = [
 ];
 
 /// Data e ora come nella barra: "Lun 12 ott  22:15" (doppio spazio fra data e ora).
+/// La capsula sull'icona del Centro di controllo aperto: 46 × 24, appena più chiara della
+/// barra (`#727478` su `#6f7075`, controlcenter.md).
+const Size controlsCapsule = Size(46, 24);
+const Color controlsCapsuleFill = Color(0x05FFFFFF);
+
 String clockText(DateTime t) {
   final hh = t.hour.toString().padLeft(2, '0');
   final mm = t.minute.toString().padLeft(2, '0');
@@ -220,6 +225,7 @@ class _MenuBarState extends State<MenuBar> {
     super.initState();
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
+    ShellChannel.instance.states.addListener(_changed);
     widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
     _scheduleTick();
@@ -275,6 +281,7 @@ class _MenuBarState extends State<MenuBar> {
     _switchTimer?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
+    ShellChannel.instance.states.removeListener(_changed);
     widget.system?.removeListener(_changed);
     _windowMenus?.cancel();
     super.dispose();
@@ -306,10 +313,50 @@ class _MenuBarState extends State<MenuBar> {
     );
     final status = uiText(size: fontSize, color: statusColor);
     final open = _open == null ? null : _rectOf(_open!);
+    final states = ShellChannel.instance.states.value;
+    // Centro di controllo aperto: capsula 46 × 24 sull'icona, appena più chiara della barra
+    // (controlcenter.md: +3 livelli). Centro notifiche aperto: l'orologio con la capsula
+    // delle voci aperte (notifications.md, N-03).
+    final controls = states['controlcenter.open'] == '1'
+        ? _rectOf('controls')
+        : null;
+    final clock = states['notifications.open'] == '1' ? _rectOf('clock') : null;
     final bar = SizedBox(
       height: barHeight,
       child: Stack(
         children: [
+          if (controls != null)
+            Positioned(
+              left: controls.center.dx - controlsCapsule.width / 2,
+              top: (barHeight - controlsCapsule.height) / 2,
+              width: controlsCapsule.width,
+              height: controlsCapsule.height,
+              child: const DecoratedBox(
+                key: ValueKey('capsula del Centro di controllo'),
+                decoration: BoxDecoration(
+                  color: controlsCapsuleFill,
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(capsuleHeight / 2),
+                  ),
+                ),
+              ),
+            ),
+          if (clock != null)
+            Positioned(
+              left: clock.left - capsuleOutset,
+              top: (barHeight - capsuleHeight) / 2,
+              width: clock.width + 2 * capsuleOutset,
+              height: capsuleHeight,
+              child: const DecoratedBox(
+                key: ValueKey("capsula dell'orologio"),
+                decoration: BoxDecoration(
+                  color: capsuleFill,
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(capsuleHeight / 2),
+                  ),
+                ),
+              ),
+            ),
           // La voce col menu aperto: capsula alta 24, ~3,5 pt oltre la casella per lato.
           if (open != null)
             Positioned(
@@ -362,12 +409,14 @@ class _MenuBarState extends State<MenuBar> {
                 ),
                 const SizedBox(width: statusGap),
                 GestureDetector(
+                  key: _keyFor('controls'),
                   onTap: widget.onControls,
                   behavior: HitTestBehavior.opaque,
                   child: const StatusIcon(kind: StatusKind.controls, cell: 26),
                 ),
                 const SizedBox(width: clockGap),
                 GestureDetector(
+                  key: _keyFor('clock'),
                   onTap: widget.onClock,
                   behavior: HitTestBehavior.opaque,
                   child: _baselined(

@@ -484,7 +484,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=3, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=4, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -1328,6 +1328,12 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
                 width,
                 height,
             } => app.shell.thumbnail_ready(&identifier, width, height),
+            // Lo stato annunciato da un componente della shell (Centro di controllo aperto…).
+            Event::Broadcast { topic, value } => serde_json::to_vec(&serde_json::json!({
+                "method": "broadcast",
+                "args": { "topic": topic, "value": value },
+            }))
+            .unwrap_or_default(),
             // Pressione lunga sul pulsante verde: il popover di disposizione.
             Event::WindowMenu { identifier, x, y } => serde_json::to_vec(&serde_json::json!({
                 "method": "windowMenu",

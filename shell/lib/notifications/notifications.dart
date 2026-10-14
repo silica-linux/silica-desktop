@@ -237,6 +237,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     setState(() {
       _banners.clear();
       _centerOpen = true;
+      ShellChannel.instance.broadcast('notifications.open', '1');
     });
     _center
       ..duration = centerOpenDuration
@@ -249,6 +250,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     if (!_centerOpen) return;
     setState(() {
       _centerOpen = false;
+      ShellChannel.instance.broadcast('notifications.open', '0');
       _expanded.clear();
     });
     _center
