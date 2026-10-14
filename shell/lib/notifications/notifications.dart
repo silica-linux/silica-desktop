@@ -92,6 +92,87 @@ const Color actionsDivider = Color(0x38000000);
 const Color buttonFill = Color(0x1C000000);
 const Color buttonText = Color(0xFF2F2F31);
 const double buttonHeight = 22;
+
+/// I colori delle carte, chiaro e scuro. Lo scuro è misurato su
+/// `shots/glass/notifications/gray-dark.png` (Centro aperto su grigio, pixel più chiari dei
+/// testi, fondi nei punti puliti) e su `banner-gray-dark.png` (testo `#eaeaeb`):
+/// - testo `#eaeaeb`, ora `#b4b5ba`, pulsanti `#dadbe0`;
+/// - sezione delle azioni **più chiara** della carta di ~20 livelli (`#7a7a7e` su `#66676c`,
+///   al contrario del chiaro), riga divisoria più scura (102 su 122), pulsanti +21 livelli;
+/// - cerchio × `#717277` con bordo `#36373a` e glifo `#bfc0c2`; capsule dei gruppi `#74757a`
+///   con il testo `#c2c3c8`; carte impilate ~`#68686c` con la riga in fondo `#858589`.
+/// Le trasparenze in scuro sono ricavate da quei livelli sul grigio. L'intestazione del
+/// Centro è uguale nei due aspetti (`headerColor`).
+@immutable
+class NotificationColors {
+  const NotificationColors({
+    required this.text,
+    required this.secondary,
+    required this.actionsFill,
+    required this.actionsDivider,
+    required this.buttonFill,
+    required this.buttonText,
+    required this.closeFill,
+    required this.closeBorder,
+    required this.closeGlyph,
+    required this.pillFill,
+    required this.pillText,
+    required this.stripFill,
+    required this.stripLine,
+  });
+
+  final Color text;
+  final Color secondary;
+  final Color actionsFill;
+  final Color actionsDivider;
+  final Color buttonFill;
+  final Color buttonText;
+  final Color closeFill;
+  final Color closeBorder;
+  final Color closeGlyph;
+  final Color pillFill;
+  final Color pillText;
+  final Color stripFill;
+  final Color stripLine;
+
+  static const NotificationColors light = NotificationColors(
+    text: Color(0xFF1D1D1E),
+    secondary: Color(0xFF575759),
+    actionsFill: Color(0x1E000000),
+    actionsDivider: Color(0x38000000),
+    buttonFill: Color(0x1C000000),
+    buttonText: Color(0xFF2F2F31),
+    closeFill: Color(0xFFB4B5B9),
+    closeBorder: Color(0xFF3A3B3E),
+    closeGlyph: Color(0xFF5A5B5C),
+    pillFill: Color(0xFFB4B5B9),
+    pillText: Color(0xFF3A3B3E),
+    stripFill: Color(0xE6ADAEB2),
+    stripLine: Color(0xFFBDBEC2),
+  );
+
+  static const NotificationColors dark = NotificationColors(
+    text: Color(0xFFEAEAEB),
+    secondary: Color(0xFFB4B5BA),
+    actionsFill: Color(0x21FFFFFF),
+    actionsDivider: Color(0x2A000000),
+    buttonFill: Color(0x28FFFFFF),
+    buttonText: Color(0xFFDADBE0),
+    closeFill: Color(0xFF717277),
+    closeBorder: Color(0xFF36373A),
+    closeGlyph: Color(0xFFBFC0C2),
+    pillFill: Color(0xFF74757A),
+    pillText: Color(0xFFC2C3C8),
+    stripFill: Color(0xE668686C),
+    stripLine: Color(0xFF858589),
+  );
+
+  static NotificationColors of(BuildContext context) =>
+      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
+      ? dark
+      : light;
+}
+
 const double actionsInset = 12;
 
 /// Pulsanti che compaiono al passaggio del puntatore sul banner (sessione 8, N-02).
@@ -508,9 +589,11 @@ class _GroupHeaderState extends State<_GroupHeader> {
       width: width,
       height: groupPillHeight,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Color(0xFFB4B5B9),
-        borderRadius: BorderRadius.all(Radius.circular(groupPillHeight / 2)),
+      decoration: BoxDecoration(
+        color: NotificationColors.of(context).pillFill,
+        borderRadius: const BorderRadius.all(
+          Radius.circular(groupPillHeight / 2),
+        ),
       ),
       child: Text(
         label,
@@ -518,7 +601,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
         overflow: TextOverflow.clip,
         style: _style(
           smallSize,
-          const Color(0xFF3A3B3E),
+          NotificationColors.of(context).pillText,
           weight: FontWeight.w600,
         ),
       ),
@@ -633,6 +716,7 @@ class NotificationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = notification;
+    final c = NotificationColors.of(context);
     final buttons = showActions ? n.buttons : const <(String, String)>[];
     final card = Stack(
       clipBehavior: Clip.none,
@@ -655,7 +739,10 @@ class NotificationCard extends StatelessWidget {
           borderRadius: const BorderRadius.all(Radius.circular(cardRadius)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [_content(n), if (buttons.isNotEmpty) _actions(buttons)],
+            children: [
+              _content(c, n),
+              if (buttons.isNotEmpty) _actions(c, buttons),
+            ],
           ),
         ),
       ],
@@ -687,11 +774,14 @@ class NotificationCard extends StatelessWidget {
                   width: detailsSize.width,
                   height: detailsSize.height,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: buttonFill,
-                    borderRadius: BorderRadius.all(Radius.circular(10.5)),
+                  decoration: BoxDecoration(
+                    color: c.buttonFill,
+                    borderRadius: const BorderRadius.all(Radius.circular(10.5)),
                   ),
-                  child: Text('Dettagli', style: _style(smallSize, buttonText)),
+                  child: Text(
+                    'Dettagli',
+                    style: _style(smallSize, c.buttonText),
+                  ),
                 ),
               ),
             ),
@@ -700,9 +790,9 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  Widget _content(ShellNotification n) {
-    final title = _style(fontSize, textColor, weight: FontWeight.w600);
-    final body = _style(fontSize, textColor);
+  Widget _content(NotificationColors c, ShellNotification n) {
+    final title = _style(fontSize, c.text, weight: FontWeight.w600);
+    final body = _style(fontSize, c.text);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         iconLeft,
@@ -736,7 +826,7 @@ class NotificationCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         timeLabel(n.timestamp),
-                        style: _style(smallSize, secondaryColor),
+                        style: _style(smallSize, c.secondary),
                       ),
                     ],
                   ],
@@ -756,11 +846,11 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  Widget _actions(List<(String, String)> buttons) {
+  Widget _actions(NotificationColors c, List<(String, String)> buttons) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: actionsFill,
-        border: Border(top: BorderSide(color: actionsDivider)),
+      decoration: BoxDecoration(
+        color: c.actionsFill,
+        border: Border(top: BorderSide(color: c.actionsDivider)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(actionsInset),
@@ -778,9 +868,9 @@ class NotificationCard extends StatelessWidget {
                       width: buttons.length == 1 ? constraints.maxWidth : width,
                       height: buttonHeight,
                       alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: buttonFill,
-                        borderRadius: BorderRadius.all(
+                      decoration: BoxDecoration(
+                        color: c.buttonFill,
+                        borderRadius: const BorderRadius.all(
                           Radius.circular(buttonHeight / 2),
                         ),
                       ),
@@ -788,7 +878,7 @@ class NotificationCard extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _style(fontSize, buttonText),
+                        style: _style(fontSize, c.buttonText),
                       ),
                     ),
                   ),
@@ -895,26 +985,26 @@ class CloseCircle extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: const _ClosePainter());
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size.square(size),
+    painter: _ClosePainter(NotificationColors.of(context)),
+  );
 }
 
 class _ClosePainter extends CustomPainter {
-  const _ClosePainter();
+  const _ClosePainter(this.colors);
+
+  final NotificationColors colors;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = size.width / 2;
-    canvas.drawCircle(center, radius, Paint()..color = const Color(0xFF3A3B3E));
-    canvas.drawCircle(
-      center,
-      radius - 1,
-      Paint()..color = const Color(0xFFB4B5B9),
-    );
+    canvas.drawCircle(center, radius, Paint()..color = colors.closeBorder);
+    canvas.drawCircle(center, radius - 1, Paint()..color = colors.closeFill);
     final arm = radius * 0.32;
     final stroke = Paint()
-      ..color = const Color(0xFF5A5B5C)
+      ..color = colors.closeGlyph
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(
@@ -930,7 +1020,7 @@ class _ClosePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ClosePainter old) => false;
+  bool shouldRepaint(_ClosePainter old) => old.colors != colors;
 }
 
 /// Una carta che sporge sotto un gruppo chiuso.
@@ -943,9 +1033,11 @@ class _StackStrip extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(child: Container(color: const Color(0xE6ADAEB2))),
+        Expanded(
+          child: Container(color: NotificationColors.of(context).stripFill),
+        ),
         // Una riga più chiara in fondo (#bc–#be contro #a7–#af).
-        Container(height: 1, color: const Color(0xFFBDBEC2)),
+        Container(height: 1, color: NotificationColors.of(context).stripLine),
       ],
     ),
   );

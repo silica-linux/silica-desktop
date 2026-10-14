@@ -1,4 +1,4 @@
-// L'HUD del volume e della luminosità, da plan/reference/hud.md.
+// L'HUD del volume e della luminosità, da plan/reference/hud.md (uguale in chiaro e in scuro).
 //
 // Un pannello di vetro `regular` 292 × 64 in alto a destra, 10 pt sotto la barra dei menu e
 // 10 pt dal bordo dello schermo, come un modulo del Centro di controllo: titolo (il nome

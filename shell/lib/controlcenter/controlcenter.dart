@@ -1,4 +1,6 @@
-// Il Centro di controllo, da plan/reference/controlcenter.md (aspetto chiaro).
+// Il Centro di controllo, da plan/reference/controlcenter.md. In aspetto scuro su grigio è
+// identico pixel per pixel al chiaro (testi bianchi, stessi riempimenti): cambia solo il vetro,
+// che disegna Ossido.
 //
 // Una pila di moduli di vetro `regular` separati, ancorata in alto a destra: due colonne
 // da 140 pt a 12 pt l'una dall'altra, 14 pt dal bordo destro, il primo modulo a y 42;
