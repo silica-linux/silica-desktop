@@ -1,7 +1,7 @@
 //! The pointer drawn by Ossido in the real session (`drm`): nested, the host compositor draws
 //! it. A client's cursor surface when it sets one, otherwise a default arrow generated here.
-//! Provisional: the arrow is a plain bitmap, not the measured system cursor (silica-cursors is
-//! postponed).
+//! The arrow is only the fallback when the XCursor theme (Adwaita by default, see
+//! `cursor_theme.rs`) is missing.
 
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::Kind;
@@ -61,12 +61,13 @@ pub fn arrow() -> (i32, i32, Vec<u8>) {
 }
 
 /// The elements of the pointer at `location` (logical, relative to the output), in front.
-/// `named` is the texture of a named shape (theme or built-in arrow) with its hotspot in
-/// physical pixels.
+/// `named` is the texture of a named shape (theme frame or built-in arrow) with its hotspot in
+/// physical pixels and, for a theme frame, the element id of that frame (the built-in arrow
+/// has none).
 pub fn elements(
     renderer: &mut GlesRenderer,
     status: &CursorImageStatus,
-    named: Option<(&GlesTexture, (i32, i32))>,
+    named: Option<(&GlesTexture, (i32, i32), Option<Id>)>,
     location: Point<f64, Logical>,
     scale: f64,
 ) -> Vec<OutputElement> {
@@ -87,12 +88,12 @@ pub fn elements(
                 .collect()
         }
         CursorImageStatus::Named(_) => {
-            let Some((texture, hotspot)) = named else {
+            let Some((texture, hotspot, id)) = named else {
                 return Vec::new();
             };
             let at = location.to_physical(scale) - Point::from((hotspot.0, hotspot.1)).to_f64();
             let element = TextureRenderElement::from_static_texture(
-                default_id(),
+                id.unwrap_or_else(default_id),
                 renderer.context_id(),
                 at,
                 texture.clone(),

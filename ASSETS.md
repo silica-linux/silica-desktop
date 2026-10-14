@@ -1,6 +1,6 @@
 # Assets
 
-Every asset in the repository (images, icons, fonts, sounds, wallpapers, cursors) has a row
+Every asset in the repository (images, icons, fonts, sounds, wallpapers) has a row
 here. `cargo xtask assets` blocks files with an asset extension that do not appear in the
 Path column.
 

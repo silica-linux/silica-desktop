@@ -63,7 +63,7 @@ pub struct State {
     pub window_veil: bool,
     /// A shape Ossido itself imposes (resize edges, window bar), over the client's.
     pub cursor_override: Option<smithay::input::pointer::CursorIcon>,
-    /// The cursor shapes (silica-cursors), rasterized on demand.
+    /// The XCursor theme (Adwaita by default), loaded on demand.
     pub cursor_theme: crate::cursor_theme::CursorTheme,
     /// wp_cursor_shape_v1: clients ask for a named shape instead of drawing a surface.
     pub cursor_shape_state: smithay::wayland::cursor_shape::CursorShapeManagerState,

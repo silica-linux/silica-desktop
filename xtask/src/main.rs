@@ -191,14 +191,6 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: SILICA_SOUNDS_DIR={}", sounds.display());
         command.env("SILICA_SOUNDS_DIR", sounds);
     }
-    // The cursors: the silica-cursors clone next to this repository, for Ossido.
-    if std::env::var_os("SILICA_CURSORS_DIR").is_none()
-        && let Some(cursors) = root()?.parent().map(|dir| dir.join("silica-cursors"))
-        && cursors.join("cursors.json").is_file()
-    {
-        eprintln!("xtask: SILICA_CURSORS_DIR={}", cursors.display());
-        command.env("SILICA_CURSORS_DIR", cursors);
-    }
     // On WSL2 Mesa picks llvmpipe for EGL clients: with /dev/dxg the GPU goes through d3d12.
     if Path::new("/dev/dxg").exists() && std::env::var_os("GALLIUM_DRIVER").is_none() {
         eprintln!("xtask: GALLIUM_DRIVER=d3d12");
