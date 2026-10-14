@@ -7,18 +7,24 @@
 // and takes neither pointer nor keyboard (silica/layer).
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:silica_ui/silica_ui.dart';
 
+import '../dock/dock.dart' show shellQuote;
+import '../dock/stack.dart' show fileIcon;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
+import 'answers.dart';
+import 'folders.dart';
 import 'launcher.dart';
 import 'search.dart';
 
@@ -136,6 +142,7 @@ class Faro extends StatefulWidget {
     this.startOpen = false,
     this.startLauncher = false,
     this.recents,
+    this.folders,
   });
 
   final Map<String, DesktopEntry> entries;
@@ -147,9 +154,78 @@ class Faro extends StatefulWidget {
   /// Where recent apps are remembered (default: ~/.local/state/silica).
   final RecentApps? recents;
 
+  /// The folders Faro finds (default: the home folder, indexed when Faro opens).
+  final FolderIndex? folders;
+
   @override
   State<Faro> createState() => _FaroState();
 }
+
+/// A result row: an app, a folder or one of the fallback searches at the bottom.
+sealed class FaroItem {
+  const FaroItem();
+}
+
+class AppItem extends FaroItem {
+  const AppItem(this.entry);
+  final DesktopEntry entry;
+}
+
+class FolderItem extends FaroItem {
+  const FolderItem(this.folder);
+  final FolderHit folder;
+}
+
+enum FallbackKind { files, web }
+
+/// "Search in <file manager>" and "Search the Web": always last, also with no results
+/// (SH-SP-18: there is no "no results" message).
+class FallbackItem extends FaroItem {
+  const FallbackItem(this.kind);
+  final FallbackKind kind;
+}
+
+/// The address Faro's web search opens (provisional: the search engine is a setting to
+/// come).
+const String webSearchUrl = 'https://duckduckgo.com/?q=';
+
+/// The rows for `query`: apps, then folders, then the fallback searches.
+List<FaroItem> faroItems(
+  Iterable<DesktopEntry> entries,
+  FolderIndex folders,
+  String query,
+) {
+  if (query.trim().isEmpty) return const [];
+  return [
+    for (final e in searchApps(entries, query)) AppItem(e),
+    for (final f in folders.search(query)) FolderItem(f),
+    const FallbackItem(FallbackKind.files),
+    const FallbackItem(FallbackKind.web),
+  ];
+}
+
+/// Answer card (SH-SP-13/14): 18 pt from the panel sides, 1 pt under the field, 62 tall
+/// with a 2 pt border, radius 18; the separator 9 pt under it.
+const double cardInset = 18;
+const double cardHeight = 62;
+const double cardRadius = 18;
+const double cardBorder = 2;
+const double cardAfter = 9;
+
+/// Copy button in the card: a 26 pt disc.
+const double copySide = 26;
+
+/// The result list has 10 pt above the first row and below the last (INV-A3).
+const double listPadding = 10;
+
+/// The icon of the app handling the chosen row, at the right of the field.
+const double fieldIconSide = 26;
+const double fieldIconRight = 24;
+
+/// "Tab" key capsule on the chosen folder row: 18 tall, radius 5.5, 10 pt from the row's
+/// right edge; the hint before it at ~11 pt.
+const double keycapHeight = 18;
+const double keycapRadius = 5.5;
 
 class _FaroState extends State<Faro> with TickerProviderStateMixin {
   final TextEditingController _query = TextEditingController();
@@ -160,6 +236,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   StreamSubscription<String>? _commands;
   bool _visible = false;
   bool _launcher = false;
+  bool _hovered = false;
+
+  /// The chosen row; with an answer card, 0 is the card and the rows start at 1.
   int _selected = 0;
   DateTime? _openedAt;
 
@@ -171,12 +250,22 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     duration: const Duration(microseconds: 213300),
   )..addListener(() => setState(() {}));
   late final RecentApps _recents = widget.recents ?? RecentApps();
+  late final FolderIndex _folders = widget.folders ?? FolderIndex.home();
   List<String> _recentIds = const [];
+  String _lastText = '';
 
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() => _selected = 0));
+    _query.addListener(() {
+      // Moving the cursor or selecting keeps the chosen row.
+      if (_query.text == _lastText) {
+        setState(() {});
+        return;
+      }
+      _lastText = _query.text;
+      setState(() => _selected = 0);
+    });
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'faro.toggle') _toggle();
       if (id == 'launcher.toggle') _toggleLauncher();
@@ -236,8 +325,18 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       _visible = true;
       _launcher = false;
       _openedAt = DateTime.now();
-      _query.clear();
+      _hovered = false;
+      // It reopens with the previous query, selected (SH-SP-04).
+      _query.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _query.text.length,
+      );
     });
+    _folders.refresh(
+      onDone: () {
+        if (mounted && _visible) setState(() {});
+      },
+    );
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
     // Height: from 0.966 to 1 with a small overshoot (+2 pt over 447).
@@ -265,27 +364,59 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     _hide();
   }
 
+  void _activate(FaroItem item) {
+    switch (item) {
+      case AppItem(:final entry):
+        _launch(entry);
+        return;
+      case FolderItem(:final folder):
+        ShellChannel.instance.launch('xdg-open ${shellQuote(folder.path)}');
+      case FallbackItem(kind: FallbackKind.files):
+        // Provisional: the file manager opens on the home folder (it has no search
+        // argument yet).
+        final home = Platform.environment['HOME'] ?? '/';
+        ShellChannel.instance.launch('xdg-open ${shellQuote(home)}');
+      case FallbackItem(kind: FallbackKind.web):
+        final url = webSearchUrl + Uri.encodeQueryComponent(_query.text.trim());
+        ShellChannel.instance.launch('xdg-open ${shellQuote(url)}');
+    }
+    _hide();
+  }
+
+  void _copy(FaroAnswer answer) {
+    Clipboard.setData(ClipboardData(text: answer.result));
+    _hide();
+  }
+
   KeyEventResult _key(
     FocusNode node,
     KeyEvent event,
-    List<DesktopEntry> results,
+    FaroAnswer? answer,
+    List<FaroItem> items,
   ) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent)
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
+    }
+    final count = items.length + (answer == null ? 0 : 1);
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape:
         _hide();
       case LogicalKeyboardKey.arrowDown:
-        setState(
-          () => _selected = (_selected + 1).clamp(0, results.length - 1),
-        );
+        if (count > 0) {
+          setState(() => _selected = (_selected + 1).clamp(0, count - 1));
+        }
       case LogicalKeyboardKey.arrowUp:
-        setState(
-          () => _selected = (_selected - 1).clamp(0, results.length - 1),
-        );
+        if (count > 0) {
+          setState(() => _selected = (_selected - 1).clamp(0, count - 1));
+        }
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
-        if (results.isNotEmpty)
-          _launch(results[_selected.clamp(0, results.length - 1)]);
+        if (count == 0) return KeyEventResult.handled;
+        final index = _selected.clamp(0, count - 1);
+        if (answer != null && index == 0) {
+          _copy(answer);
+        } else {
+          _activate(items[index - (answer == null ? 0 : 1)]);
+        }
       default:
         return KeyEventResult.ignored;
     }
@@ -294,23 +425,45 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
 
   FaroColors get _c => FaroColors.of(context);
 
+  /// The decimal separator of the shell's language.
+  String get _decimal =>
+      l10nOf(context).localeName.startsWith('it') ? ',' : '.';
+
+  /// The installed app whose id contains `part` (the calculator, the file manager).
+  DesktopEntry? _appWithId(String part) {
+    for (final e in widget.entries.values) {
+      if (e.id.toLowerCase().contains(part)) return e;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.expand();
     if (_launcher) return _launcherView();
-    final results = searchApps(widget.entries.values, _query.text);
+    final answer = answerFor(_query.text, decimal: _decimal);
+    final items = faroItems(widget.entries.values, _folders, _query.text);
     final searching = _query.text.trim().isNotEmpty;
-    final width = searching ? wideWidth : narrowWidth;
-    final listHeight = searching
-        ? (results.length * rowHeight).clamp(0.0, maxHeight - headerHeight - 1)
-        : 0.0;
-    final height = headerHeight + (searching ? 1 + listHeight : 0);
+    final count = items.length + (answer == null ? 0 : 1);
+    final selected = count == 0 ? 0 : _selected.clamp(0, count - 1);
+    final cardBlock = answer == null ? 0.0 : 1 + cardHeight + cardAfter;
+    final listHeight = items.isEmpty
+        ? 0.0
+        : (items.length * rowHeight + 2 * listPadding).clamp(
+            0.0,
+            maxHeight - headerHeight - cardBlock - 1,
+          );
+    final height = headerHeight + (searching ? cardBlock + 1 + listHeight : 0);
     final elapsed = _openedAt == null
         ? 1000.0
         : DateTime.now().difference(_openedAt!).inMicroseconds / 1000;
     final opacity = opacityAt(elapsed);
     final scaleY = 0.966 + 0.034 * _open.value;
     if (elapsed < 70) WidgetsBinding.instance.scheduleFrame();
+    // Steady state: one 640 pt capsule, empty or with results (SH-SP-04). The round buttons
+    // come out only while the pointer is on the empty panel (provisional, not measured).
+    final buttons = !searching && _hovered;
+    final width = buttons ? narrowWidth : wideWidth;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -343,28 +496,37 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
               top: top,
               width: panelWidth,
               height: panelHeight,
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.diagonal3Values(1, scaleY, 1),
-                child: Opacity(
-                  opacity: opacity,
-                  child: _panel(
-                    results,
-                    searching,
-                    listHeight,
-                    panelRadius: panelRadius,
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _hovered = true),
+                onExit: (_) => setState(() => _hovered = false),
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.diagonal3Values(1, scaleY, 1),
+                  child: Opacity(
+                    opacity: opacity,
+                    child: _panel(
+                      answer,
+                      items,
+                      selected,
+                      listHeight,
+                      panelRadius: panelRadius,
+                    ),
                   ),
                 ),
               ),
             ),
-            if (!searching && back >= 1)
+            if (buttons && back >= 1)
               for (var i = 0; i < 4; i++)
                 Positioned(
                   left: left + narrowWidth + 10 + i * circlePitch,
                   top: top + (headerHeight - circle) / 2,
                   width: circle,
                   height: circle,
-                  child: Opacity(opacity: opacity, child: _circleButton(i)),
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _hovered = true),
+                    onExit: (_) => setState(() => _hovered = false),
+                    child: Opacity(opacity: opacity, child: _circleButton(i)),
+                  ),
                 ),
           ],
         );
@@ -373,11 +535,13 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   }
 
   Widget _panel(
-    List<DesktopEntry> results,
-    bool searching,
+    FaroAnswer? answer,
+    List<FaroItem> items,
+    int selected,
     double listHeight, {
     double panelRadius = radius,
   }) {
+    final offset = answer == null ? 0 : 1;
     return OuterShadow(
       // Shadow moved down (~20 pt): it extends ~65 pt below, ~25 above, ~45 at the sides.
       radius: panelRadius,
@@ -388,81 +552,297 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         radius: panelRadius,
         material: GlassMaterial.thick,
         interactive: false,
-        child: Column(
-          children: [
-            SizedBox(height: headerHeight, child: _field(results)),
-            if (searching) ...[
-              Container(
-                height: 1,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                color: _c.selection,
-              ),
-              SizedBox(
-                height: listHeight,
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemExtent: rowHeight,
-                  itemCount: results.length,
-                  itemBuilder: (context, i) => _row(results[i], i == _selected),
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            maxHeight: double.infinity,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: headerHeight,
+                  child: _field(answer, items, selected),
                 ),
-              ),
-            ],
-          ],
+                if (answer != null) ...[
+                  const SizedBox(height: 1),
+                  _card(answer, selected == 0),
+                  const SizedBox(height: cardAfter),
+                ],
+                if (items.isNotEmpty || answer != null)
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    color: _c.selection,
+                  ),
+                if (items.isNotEmpty)
+                  SizedBox(
+                    height: listHeight,
+                    child: ListView.builder(
+                      // Rows are 619 pt cells 2 pt from the left edge; the rest
+                      // is the scroll bar's (spotlight.md › result rows).
+                      padding: const EdgeInsets.fromLTRB(
+                        2,
+                        listPadding,
+                        19,
+                        listPadding,
+                      ),
+                      itemExtent: rowHeight,
+                      itemCount: items.length,
+                      itemBuilder: (context, i) =>
+                          _row(items[i], i + offset == selected),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _field(List<DesktopEntry> results) {
+  /// The text completed inline in the field for the chosen row, and the icon at the right
+  /// of the field (the app that handles it).
+  (String?, IconSource?) _completion(
+    FaroAnswer? answer,
+    List<FaroItem> items,
+    int selected,
+  ) {
+    final l = l10nOf(context);
+    final query = _query.text.trimLeft();
+    if (answer != null && selected == 0) {
+      final calculator = _appWithId('calculator');
+      return (
+        '= ${answer.result}',
+        calculator == null ? null : _icon(calculator),
+      );
+    }
+    final index = selected - (answer == null ? 0 : 1);
+    if (index < 0 || index >= items.length) return (null, null);
+    String? rest(String name) =>
+        name.toLowerCase().startsWith(query.toLowerCase())
+        ? name.substring(query.length)
+        : null;
+    final files = _appWithId('mustache');
+    switch (items[index]) {
+      case AppItem(:final entry):
+        final r = rest(entry.name);
+        return (r == null ? null : l.completionOpen(r), _icon(entry));
+      case FolderItem(:final folder):
+        final r = rest(folder.name);
+        return (
+          r == null ? null : l.completionOpen(r),
+          files == null ? null : _icon(files),
+        );
+      case FallbackItem(:final kind):
+        return (
+          l.faroCompletionAction(_fallbackLabel(kind)),
+          kind == FallbackKind.files && files != null ? _icon(files) : null,
+        );
+    }
+  }
+
+  String _fallbackLabel(FallbackKind kind) {
+    final l = l10nOf(context);
+    return switch (kind) {
+      FallbackKind.files => l.faroSearchIn(
+        _appWithId('mustache')?.name ?? l.faroFiles,
+      ),
+      FallbackKind.web => l.faroSearchWeb,
+    };
+  }
+
+  IconSource? _icon(DesktopEntry entry) {
+    final layered = silicaIconFor(entry);
+    if (layered != null) return LayeredSource(layered);
+    final flat = findIcon(entry.icon);
+    return flat == null ? null : FlatSource(flat);
+  }
+
+  Widget _field(FaroAnswer? answer, List<FaroItem> items, int selected) {
+    final (completion, preview) = _completion(answer, items, selected);
+    // While the reopened query is selected the completion waits for typing.
+    final hasSelection =
+        _query.selection.isValid && !_query.selection.isCollapsed;
+    final shown = hasSelection ? null : completion;
+    final typed = shown == null
+        ? 0.0
+        : (TextPainter(
+            text: TextSpan(
+              text: _query.text,
+              style: uiText(size: 26, color: _c.text),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout()).width;
+    final icon = _query.text.isEmpty ? null : preview;
     return Focus(
-      onKeyEvent: (node, event) => _key(node, event, results),
-      child: Row(
+      onKeyEvent: (node, event) => _key(node, event, answer, items),
+      child: Stack(
         children: [
-          const SizedBox(width: 23),
-          CustomPaint(
-            size: const Size(23, 23),
-            painter: _LensPainter(_c.placeholder),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Stack(
-              alignment: Alignment.centerLeft,
+          Positioned.fill(
+            child: Row(
               children: [
-                if (_query.text.isEmpty)
-                  IgnorePointer(
-                    child: Text(
-                      l10nOf(context).faroPlaceholder,
-                      style: uiText(size: 26, color: _c.placeholder),
-                    ),
+                const SizedBox(width: 23),
+                CustomPaint(
+                  size: const Size(23, 23),
+                  painter: _LensPainter(_c.placeholder),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      if (_query.text.isEmpty)
+                        IgnorePointer(
+                          child: Text(
+                            l10nOf(context).faroPlaceholder,
+                            style: uiText(size: 26, color: _c.placeholder),
+                          ),
+                        ),
+                      if (shown != null)
+                        Positioned(
+                          left: typed + 1,
+                          top: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            child: Center(
+                              child: Container(
+                                height: completionHeight,
+                                padding: const EdgeInsets.only(
+                                  left: 1,
+                                  right: 6,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _c.completionFill,
+                                  borderRadius: const BorderRadius.all(
+                                    Radius.circular(completionRadius),
+                                  ),
+                                ),
+                                child: Text(
+                                  shown,
+                                  maxLines: 1,
+                                  style: uiText(
+                                    size: 26,
+                                    color: _c.completionText,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      EditableText(
+                        controller: _query,
+                        focusNode: _focus,
+                        style: uiText(size: 26, color: _c.text),
+                        cursorColor: _c.text,
+                        cursorWidth: 2,
+                        cursorHeight: 31,
+                        selectionColor: _c.completionFill,
+                        backgroundCursorColor: const Color(0x00000000),
+                      ),
+                    ],
                   ),
-                EditableText(
-                  controller: _query,
-                  focusNode: _focus,
-                  style: uiText(size: 26, color: _c.text),
-                  cursorColor: _c.text,
-                  cursorWidth: 2,
-                  cursorHeight: 31,
-                  backgroundCursorColor: const Color(0x00000000),
+                ),
+                SizedBox(
+                  width: icon == null ? 23 : fieldIconSide + 2 * fieldIconRight,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 23),
+          if (icon != null)
+            Positioned(
+              right: fieldIconRight,
+              top: (headerHeight - fieldIconSide) / 2,
+              width: fieldIconSide,
+              height: fieldIconSide,
+              child: SilicaIcon(icon, side: fieldIconSide),
+            ),
         ],
       ),
     );
   }
 
-  Widget _row(DesktopEntry entry, bool selected) {
-    final layered = silicaIconFor(entry);
-    final flat = findIcon(entry.icon);
-    final IconSource? icon = layered != null
-        ? LayeredSource(layered)
-        : flat != null
-        ? FlatSource(flat)
-        : null;
+  /// The answer card: the expression small on top, the result below, the copy button on
+  /// the right (SH-SP-13).
+  Widget _card(FaroAnswer answer, bool selected) => Container(
+    height: cardHeight,
+    margin: const EdgeInsets.symmetric(horizontal: cardInset),
+    padding: const EdgeInsets.only(left: 16, right: 14),
+    decoration: BoxDecoration(
+      color: _c.selection,
+      border: Border.all(
+        color: selected ? _c.cardBorder : const Color(0x00000000),
+        width: cardBorder,
+      ),
+      borderRadius: const BorderRadius.all(Radius.circular(cardRadius)),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                answer.expression,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiText(size: 11, color: _c.text),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                answer.result,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiText(size: 16.5, color: _c.selectedText),
+              ),
+            ],
+          ),
+        ),
+        Semantics(
+          button: true,
+          label: l10nOf(context).faroCopy,
+          child: GestureDetector(
+            onTap: () => _copy(answer),
+            child: Container(
+              width: copySide,
+              height: copySide,
+              decoration: BoxDecoration(
+                color: _c.copyFill,
+                shape: BoxShape.circle,
+              ),
+              child: CustomPaint(painter: _CopyGlyphPainter(_c.text)),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _row(FaroItem item, bool selected) {
+    final l = l10nOf(context);
+    final (IconSource? icon, String title, Widget? subtitle) = switch (item) {
+      AppItem(:final entry) => (
+        _icon(entry),
+        entry.name,
+        Text(l.faroApplication, style: uiText(size: 15, color: _c.subtitle)),
+      ),
+      FolderItem(:final folder) => (
+        fileIcon(Directory(folder.path)),
+        folder.name,
+        _folderSubtitle(folder),
+      ),
+      FallbackItem(:final kind) => (
+        switch (kind == FallbackKind.files ? _appWithId('mustache') : null) {
+          final e? => _icon(e),
+          null => null,
+        },
+        _fallbackLabel(kind),
+        null,
+      ),
+    };
     return GestureDetector(
-      onTap: () => _launch(entry),
+      onTap: () => _activate(item),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: DecoratedBox(
@@ -476,9 +856,18 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
               SizedBox(
                 width: 38,
                 height: 38,
-                child: icon == null
-                    ? null
-                    : Center(child: SilicaIcon(icon, side: rowIconSide)),
+                child: switch (icon) {
+                  final i? => Center(child: SilicaIcon(i, side: rowIconSide)),
+                  null =>
+                    item is FallbackItem
+                        ? CustomPaint(
+                            painter: _FallbackGlyphPainter(
+                              item.kind,
+                              _c.placeholder,
+                            ),
+                          )
+                        : null,
+                },
               ),
               const SizedBox(width: 15),
               Expanded(
@@ -487,23 +876,80 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      entry.name,
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: uiText(
                         size: 16.5,
                         color: selected ? _c.selectedText : _c.text,
                       ),
                     ),
-                    Text(
-                      l10nOf(context).faroApplication,
-                      style: uiText(size: 15, color: _c.subtitle),
-                    ),
+                    ?subtitle,
                   ],
                 ),
               ),
+              if (selected && item is FolderItem) ...[
+                const SizedBox(width: 8),
+                Text(
+                  l.faroSearchIn(item.folder.name),
+                  maxLines: 1,
+                  style: uiText(size: 11, color: _c.hint),
+                ),
+                const SizedBox(width: 7),
+                Container(
+                  height: keycapHeight,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _c.keycapFill,
+                    borderRadius: const BorderRadius.all(
+                      Radius.circular(keycapRadius),
+                    ),
+                  ),
+                  child: Text(
+                    l.faroTabKey,
+                    style: uiText(size: 11, color: _c.keycapText),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// "today, 14:56 · ▢ parent" (SH-SP-08).
+  Widget _folderSubtitle(FolderHit folder) {
+    final l = l10nOf(context);
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    final m = folder.modified;
+    final time = DateFormat.Hm(l.localeName).format(m);
+    final date = !m.isBefore(day)
+        ? l.faroToday(time)
+        : !m.isBefore(day.subtract(const Duration(days: 1)))
+        ? l.faroYesterday(time)
+        : DateFormat.yMMMd(l.localeName).format(m);
+    final style = uiText(size: 15, color: _c.subtitle);
+    return Row(
+      children: [
+        Text('$date · ', style: style),
+        CustomPaint(
+          size: const Size(13, 11),
+          painter: _FolderGlyphPainter(_c.subtitle),
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            folder.parent,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
     );
   }
 
@@ -682,6 +1128,110 @@ class _CircleGlyphPainter extends CustomPainter {
   @override
   bool shouldRepaint(_CircleGlyphPainter old) =>
       old.index != index || old.color != color;
+}
+
+/// Two overlapping rounded sheets: the copy glyph of the answer card.
+class _CopyGlyphPainter extends CustomPainter {
+  const _CopyGlyphPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final back = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: c + const Offset(-1.5, -1.5),
+        width: 8,
+        height: 10,
+      ),
+      const Radius.circular(1.5),
+    );
+    final front = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: c + const Offset(1.5, 1.5), width: 8, height: 10),
+      const Radius.circular(1.5),
+    );
+    canvas
+      ..drawRRect(
+        back,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3,
+      )
+      ..drawRRect(front, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_CopyGlyphPainter old) => old.color != color;
+}
+
+/// The small folder before the parent's name in a folder row's subtitle.
+class _FolderGlyphPainter extends CustomPainter {
+  const _FolderGlyphPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final path = Path()
+      ..moveTo(0.5, 2)
+      ..lineTo(0.5, h - 1)
+      ..quadraticBezierTo(0.5, h - 0.5, 1.5, h - 0.5)
+      ..lineTo(w - 1.5, h - 0.5)
+      ..quadraticBezierTo(w - 0.5, h - 0.5, w - 0.5, h - 1.5)
+      ..lineTo(w - 0.5, 3.5)
+      ..quadraticBezierTo(w - 0.5, 2.5, w - 1.5, 2.5)
+      ..lineTo(w * 0.45, 2.5)
+      ..lineTo(w * 0.35, 0.5)
+      ..lineTo(1.5, 0.5)
+      ..quadraticBezierTo(0.5, 0.5, 0.5, 2)
+      ..moveTo(0.5, 4.5)
+      ..lineTo(w - 0.5, 4.5);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FolderGlyphPainter old) => old.color != color;
+}
+
+/// The glyph of a fallback row without an app icon: a globe for the web search, a
+/// magnifier on a sheet for the file search.
+class _FallbackGlyphPainter extends CustomPainter {
+  const _FallbackGlyphPainter(this.kind, this.color);
+  final FallbackKind kind;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    switch (kind) {
+      case FallbackKind.web:
+        canvas
+          ..drawCircle(c, 14, paint)
+          ..drawOval(Rect.fromCenter(center: c, width: 13, height: 28), paint)
+          ..drawLine(c + const Offset(-14, 0), c + const Offset(14, 0), paint)
+          ..drawLine(c + const Offset(-12, -7), c + const Offset(12, -7), paint)
+          ..drawLine(c + const Offset(-12, 7), c + const Offset(12, 7), paint);
+      case FallbackKind.files:
+        canvas
+          ..drawCircle(c + const Offset(-3, -3), 9, paint)
+          ..drawLine(c + const Offset(4, 4), c + const Offset(12, 12), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_FallbackGlyphPainter old) =>
+      old.kind != kind || old.color != color;
 }
 
 /// The shadow of a glass panel drawn only outside the panel: under the glass, which Ossido

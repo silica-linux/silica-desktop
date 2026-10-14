@@ -346,4 +346,85 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get capture => 'Acquisisci';
+
+  @override
+  String faroCompletionAction(String action) {
+    return '— $action';
+  }
+
+  @override
+  String faroSearchIn(String name) {
+    return 'Cerca in $name';
+  }
+
+  @override
+  String get faroSearchWeb => 'Cerca nel web';
+
+  @override
+  String get faroFiles => 'File';
+
+  @override
+  String faroToday(String time) {
+    return 'oggi, $time';
+  }
+
+  @override
+  String faroYesterday(String time) {
+    return 'ieri, $time';
+  }
+
+  @override
+  String get faroTabKey => 'Tabulatore';
+
+  @override
+  String get faroCopy => 'Copia';
+
+  @override
+  String get systemInformation => 'Informazioni di sistema';
+
+  @override
+  String get recentItems => 'Elementi recenti';
+
+  @override
+  String get recentApplications => 'Applicazioni';
+
+  @override
+  String get recentDocuments => 'Documenti';
+
+  @override
+  String get recentNone => 'Nessuno';
+
+  @override
+  String get recentClear => 'Cancella menu';
+
+  @override
+  String get forceQuitMenu => 'Uscita forzata…';
+
+  @override
+  String get sleep => 'Standby';
+
+  @override
+  String get restart => 'Riavvia…';
+
+  @override
+  String get restartNow => 'Riavvia';
+
+  @override
+  String get shutDown => 'Spegni…';
+
+  @override
+  String get shutDownNow => 'Spegni';
+
+  @override
+  String get lockScreen => 'Blocca schermo';
+
+  @override
+  String logOutUser(String user) {
+    return 'Esci da $user…';
+  }
+
+  @override
+  String logOutUserNow(String user) {
+    return 'Esci da $user';
+  }
 }

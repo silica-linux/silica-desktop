@@ -697,6 +697,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Capture'**
   String get capture;
+
+  /// Inline completion in the Faro field for a fallback search row
+  ///
+  /// In en, this message translates to:
+  /// **'— {action}'**
+  String faroCompletionAction(String action);
+
+  /// Faro fallback row (file manager) and the hint on a chosen folder row
+  ///
+  /// In en, this message translates to:
+  /// **'Search in {name}'**
+  String faroSearchIn(String name);
+
+  /// Faro fallback row that searches the web
+  ///
+  /// In en, this message translates to:
+  /// **'Search the Web'**
+  String get faroSearchWeb;
+
+  /// Faro: name of the file search when no file manager is installed
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get faroFiles;
+
+  /// Faro folder row subtitle: modified today
+  ///
+  /// In en, this message translates to:
+  /// **'today, {time}'**
+  String faroToday(String time);
+
+  /// Faro folder row subtitle: modified yesterday
+  ///
+  /// In en, this message translates to:
+  /// **'yesterday, {time}'**
+  String faroYesterday(String time);
+
+  /// Name of the Tab key in Faro's key capsule
+  ///
+  /// In en, this message translates to:
+  /// **'Tab'**
+  String get faroTabKey;
+
+  /// Accessibility label of the copy button in Faro's answer card
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get faroCopy;
+
+  /// Logo menu: first item while Option is held
+  ///
+  /// In en, this message translates to:
+  /// **'System Information'**
+  String get systemInformation;
+
+  /// Logo menu: submenu of recent apps and documents
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Items'**
+  String get recentItems;
+
+  /// Recent Items submenu: section of apps
+  ///
+  /// In en, this message translates to:
+  /// **'Applications'**
+  String get recentApplications;
+
+  /// Recent Items submenu: section of documents
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get recentDocuments;
+
+  /// Recent Items submenu: an empty section
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get recentNone;
+
+  /// Recent Items submenu: forget the recent items
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Menu'**
+  String get recentClear;
+
+  /// Logo menu: opens the force quit panel
+  ///
+  /// In en, this message translates to:
+  /// **'Force Quit…'**
+  String get forceQuitMenu;
+
+  /// Logo menu: suspend the computer
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep'**
+  String get sleep;
+
+  /// Logo menu: restart with confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Restart…'**
+  String get restart;
+
+  /// Logo menu: restart without confirmation (Option held)
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get restartNow;
+
+  /// Logo menu: shut down with confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Shut Down…'**
+  String get shutDown;
+
+  /// Logo menu: shut down without confirmation (Option held)
+  ///
+  /// In en, this message translates to:
+  /// **'Shut Down'**
+  String get shutDownNow;
+
+  /// Logo menu: lock the screen
+  ///
+  /// In en, this message translates to:
+  /// **'Lock Screen'**
+  String get lockScreen;
+
+  /// Logo menu: log out, with the user's full name
+  ///
+  /// In en, this message translates to:
+  /// **'Log Out {user}…'**
+  String logOutUser(String user);
+
+  /// Logo menu: log out without confirmation (Option held)
+  ///
+  /// In en, this message translates to:
+  /// **'Log Out {user}'**
+  String logOutUserNow(String user);
 }
 
 class _AppLocalizationsDelegate

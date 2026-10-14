@@ -346,4 +346,85 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get capture => 'Capture';
+
+  @override
+  String faroCompletionAction(String action) {
+    return '— $action';
+  }
+
+  @override
+  String faroSearchIn(String name) {
+    return 'Search in $name';
+  }
+
+  @override
+  String get faroSearchWeb => 'Search the Web';
+
+  @override
+  String get faroFiles => 'Files';
+
+  @override
+  String faroToday(String time) {
+    return 'today, $time';
+  }
+
+  @override
+  String faroYesterday(String time) {
+    return 'yesterday, $time';
+  }
+
+  @override
+  String get faroTabKey => 'Tab';
+
+  @override
+  String get faroCopy => 'Copy';
+
+  @override
+  String get systemInformation => 'System Information';
+
+  @override
+  String get recentItems => 'Recent Items';
+
+  @override
+  String get recentApplications => 'Applications';
+
+  @override
+  String get recentDocuments => 'Documents';
+
+  @override
+  String get recentNone => 'None';
+
+  @override
+  String get recentClear => 'Clear Menu';
+
+  @override
+  String get forceQuitMenu => 'Force Quit…';
+
+  @override
+  String get sleep => 'Sleep';
+
+  @override
+  String get restart => 'Restart…';
+
+  @override
+  String get restartNow => 'Restart';
+
+  @override
+  String get shutDown => 'Shut Down…';
+
+  @override
+  String get shutDownNow => 'Shut Down';
+
+  @override
+  String get lockScreen => 'Lock Screen';
+
+  @override
+  String logOutUser(String user) {
+    return 'Log Out $user…';
+  }
+
+  @override
+  String logOutUserNow(String user) {
+    return 'Log Out $user';
+  }
 }

@@ -138,6 +138,11 @@ class FaroColors {
     required this.track,
     required this.thumb,
     required this.shadowScale,
+    required this.cardBorder,
+    required this.copyFill,
+    required this.hint,
+    required this.keycapFill,
+    required this.keycapText,
   });
 
   final Color text;
@@ -159,6 +164,19 @@ class FaroColors {
   /// Factor on the opacity of the panel shadows.
   final double shadowScale;
 
+  /// Faro's answer card (SH-SP-13): the 2 pt border of the chosen card (light `#888 98e`,
+  /// dark `#b2b3b7` over the fill) and the copy disc over the card (`#96979c` light,
+  /// `#b7b8bc` dark).
+  final Color cardBorder;
+  final Color copyFill;
+
+  /// "Search in …" hint and "Tab" key capsule on the chosen folder row (spotlight.md:
+  /// hint `#6f7075` / `#d5d6da`, capsule `#d2d3d8` / `#b7b8bc` over the chosen row, with
+  /// dark text in both; the text color is provisional).
+  final Color hint;
+  final Color keycapFill;
+  final Color keycapText;
+
   static const FaroColors light = FaroColors(
     text: launcherText,
     selectedText: Color(0xFF000003),
@@ -174,6 +192,11 @@ class FaroColors {
     track: scrollTrack,
     thumb: scrollThumb,
     shadowScale: 1,
+    cardBorder: Color(0x52000000),
+    copyFill: Color(0x24000000),
+    hint: Color(0xFF6F7075),
+    keycapFill: Color(0x70FFFFFF),
+    keycapText: Color(0xFF3C3D42),
   );
 
   static const FaroColors dark = FaroColors(
@@ -191,6 +214,11 @@ class FaroColors {
     track: Color(0xFF141414),
     thumb: Color(0xFF7C7C7C),
     shadowScale: 1.7,
+    cardBorder: Color(0x75FFFFFF),
+    copyFill: Color(0x54FFFFFF),
+    hint: Color(0xFFD5D6DA),
+    keycapFill: Color(0x54FFFFFF),
+    keycapText: Color(0xFF1E1F22),
   );
 
   static FaroColors of(BuildContext context) =>
@@ -294,6 +322,15 @@ class RecentApps {
       _file.writeAsStringSync(jsonEncode(list));
     } on FileSystemException {
       // Without a writable state the recents are not remembered.
+    }
+  }
+
+  /// Forgets the recent apps (logo menu › Recent Items › Clear Menu).
+  void clear() {
+    try {
+      if (_file.existsSync()) _file.deleteSync();
+    } on FileSystemException {
+      // Nothing to forget.
     }
   }
 }

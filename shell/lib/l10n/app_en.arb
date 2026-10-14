@@ -452,5 +452,127 @@
   "capture": "Capture",
   "@capture": {
     "description": "Screenshot bar button"
+  },
+  "faroCompletionAction": "— {action}",
+  "@faroCompletionAction": {
+    "description": "Inline completion in the Faro field for a fallback search row",
+    "placeholders": {
+      "action": {
+        "type": "String"
+      }
+    }
+  },
+  "faroSearchIn": "Search in {name}",
+  "@faroSearchIn": {
+    "description": "Faro fallback row (file manager) and the hint on a chosen folder row",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "faroSearchWeb": "Search the Web",
+  "@faroSearchWeb": {
+    "description": "Faro fallback row that searches the web"
+  },
+  "faroFiles": "Files",
+  "@faroFiles": {
+    "description": "Faro: name of the file search when no file manager is installed"
+  },
+  "faroToday": "today, {time}",
+  "@faroToday": {
+    "description": "Faro folder row subtitle: modified today",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "faroYesterday": "yesterday, {time}",
+  "@faroYesterday": {
+    "description": "Faro folder row subtitle: modified yesterday",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "faroTabKey": "Tab",
+  "@faroTabKey": {
+    "description": "Name of the Tab key in Faro's key capsule"
+  },
+  "faroCopy": "Copy",
+  "@faroCopy": {
+    "description": "Accessibility label of the copy button in Faro's answer card"
+  },
+  "systemInformation": "System Information",
+  "@systemInformation": {
+    "description": "Logo menu: first item while Option is held"
+  },
+  "recentItems": "Recent Items",
+  "@recentItems": {
+    "description": "Logo menu: submenu of recent apps and documents"
+  },
+  "recentApplications": "Applications",
+  "@recentApplications": {
+    "description": "Recent Items submenu: section of apps"
+  },
+  "recentDocuments": "Documents",
+  "@recentDocuments": {
+    "description": "Recent Items submenu: section of documents"
+  },
+  "recentNone": "None",
+  "@recentNone": {
+    "description": "Recent Items submenu: an empty section"
+  },
+  "recentClear": "Clear Menu",
+  "@recentClear": {
+    "description": "Recent Items submenu: forget the recent items"
+  },
+  "forceQuitMenu": "Force Quit…",
+  "@forceQuitMenu": {
+    "description": "Logo menu: opens the force quit panel"
+  },
+  "sleep": "Sleep",
+  "@sleep": {
+    "description": "Logo menu: suspend the computer"
+  },
+  "restart": "Restart…",
+  "@restart": {
+    "description": "Logo menu: restart with confirmation"
+  },
+  "restartNow": "Restart",
+  "@restartNow": {
+    "description": "Logo menu: restart without confirmation (Option held)"
+  },
+  "shutDown": "Shut Down…",
+  "@shutDown": {
+    "description": "Logo menu: shut down with confirmation"
+  },
+  "shutDownNow": "Shut Down",
+  "@shutDownNow": {
+    "description": "Logo menu: shut down without confirmation (Option held)"
+  },
+  "lockScreen": "Lock Screen",
+  "@lockScreen": {
+    "description": "Logo menu: lock the screen"
+  },
+  "logOutUser": "Log Out {user}…",
+  "@logOutUser": {
+    "description": "Logo menu: log out, with the user's full name",
+    "placeholders": {
+      "user": {
+        "type": "String"
+      }
+    }
+  },
+  "logOutUserNow": "Log Out {user}",
+  "@logOutUserNow": {
+    "description": "Logo menu: log out without confirmation (Option held)",
+    "placeholders": {
+      "user": {
+        "type": "String"
+      }
+    }
   }
 }
