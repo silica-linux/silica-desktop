@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -494,4 +493,129 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ccNightLight => 'Night Light';
+
+  @override
+  String get faroScopeApps => 'Applications';
+
+  @override
+  String get faroScopeFiles => 'Files';
+
+  @override
+  String get faroScopeActions => 'Actions';
+
+  @override
+  String get faroScopeClipboard => 'Clipboard';
+
+  @override
+  String get faroSearchFiles => 'Search Files';
+
+  @override
+  String get faroSearchActions => 'Search Actions';
+
+  @override
+  String get faroSearchClipboard => 'Search Clipboard';
+
+  @override
+  String get faroClearHistory => 'Clear History';
+
+  @override
+  String get faroImage => 'Image';
+
+  @override
+  String get faroSystemAction => 'System';
+
+  @override
+  String faroCopied(String time) {
+    return 'Copied $time';
+  }
+
+  @override
+  String get faroActionScreenshotScreen => 'Screenshot';
+
+  @override
+  String get faroActionScreenshotSelection => 'Screenshot of a part';
+
+  @override
+  String get faroActionScreenshotToolbar => 'Screenshot tools';
+
+  @override
+  String get faroActionSystemDarkToggle => 'Toggle appearance';
+
+  @override
+  String get faroActionSystemMuteToggle => 'Toggle mute';
+
+  @override
+  String get faroActionSystemVolumeUp => 'Volume up';
+
+  @override
+  String get faroActionSystemVolumeDown => 'Volume down';
+
+  @override
+  String get faroActionSystemBrightnessUp => 'Brightness up';
+
+  @override
+  String get faroActionSystemBrightnessDown => 'Brightness down';
+
+  @override
+  String get faroActionPanoramaToggle => 'Panorama';
+
+  @override
+  String get faroActionPanoramaApp => 'App windows';
+
+  @override
+  String get faroActionDesktopShow => 'Show desktop';
+
+  @override
+  String get faroActionSpaceAdd => 'New space';
+
+  @override
+  String get faroActionSpaceNext => 'Next space';
+
+  @override
+  String get faroActionSpacePrevious => 'Previous space';
+
+  @override
+  String get faroActionLauncherToggle => 'Apps';
+
+  @override
+  String get faroActionNotificationsToggle => 'Notification Center';
+
+  @override
+  String get faroActionControlcenterToggle => 'Control Center';
+
+  @override
+  String get faroActionWindowMinimize => 'Minimize window';
+
+  @override
+  String get faroActionWindowFullscreen => 'Full screen';
+
+  @override
+  String get faroActionWindowTileLeft => 'Left half';
+
+  @override
+  String get faroActionWindowTileRight => 'Right half';
+
+  @override
+  String get faroActionWindowTileTop => 'Top half';
+
+  @override
+  String get faroActionWindowTileBottom => 'Bottom half';
+
+  @override
+  String get faroActionWindowTileFill => 'Fill';
+
+  @override
+  String get faroActionWindowArrange2 => 'Arrange two windows';
+
+  @override
+  String get faroActionWindowArrange3 => 'Arrange three windows';
+
+  @override
+  String get faroActionWindowArrange4 => 'Arrange four windows';
+
+  @override
+  String get faroActionAppForceQuitPanel => 'Force quit';
+
+  @override
+  String get faroActionSessionQuit => 'Quit the session';
 }

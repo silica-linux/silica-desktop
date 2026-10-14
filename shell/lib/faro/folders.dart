@@ -1,19 +1,23 @@
-// The folders Faro finds by name (SH-SP-08): an index of the home folder, built in the
-// background when Faro opens, without hidden folders and with a bounded depth and size.
+// The folders and files Faro finds by name (SH-SP-07, SH-SP-08): an index of the home
+// folder, built in the background when Faro opens, without hidden entries and with a
+// bounded depth and size.
 
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
-/// A folder found by the index.
+/// A folder or a file found by the index.
 class FolderHit {
   const FolderHit({
     required this.path,
     required this.name,
     required this.parent,
     required this.modified,
+    this.isFolder = true,
   });
+
+  final bool isFolder;
 
   final String path;
   final String name;
@@ -25,7 +29,12 @@ class FolderHit {
 
 /// The folders under a root, refreshed in the background.
 class FolderIndex {
-  FolderIndex({required this.root, this.maxDepth = 5, this.maxFolders = 20000});
+  FolderIndex({
+    required this.root,
+    this.maxDepth = 5,
+    this.maxFolders = 20000,
+    this.maxFiles = 40000,
+  });
 
   /// The user's home folder.
   factory FolderIndex.home() =>
@@ -37,6 +46,7 @@ class FolderIndex {
   final String root;
   final int maxDepth;
   final int maxFolders;
+  final int maxFiles;
   List<FolderHit> _folders = const [];
   bool _scanning = false;
 
@@ -52,7 +62,10 @@ class FolderIndex {
     _scanning = true;
     try {
       final root = this.root, depth = maxDepth, limit = maxFolders;
-      _folders = await Isolate.run(() => scanFolders(root, depth, limit));
+      final files = maxFiles;
+      _folders = await Isolate.run(
+        () => scanFolders(root, depth, limit, maxFiles: files),
+      );
       onDone?.call();
     } on Object {
       // An unreadable home leaves the old list.
@@ -61,16 +74,31 @@ class FolderIndex {
     }
   }
 
-  /// The folders whose name matches `query`, the best first (name starting with it, then a
-  /// word starting with it, then containing it), at most `limit`.
-  List<FolderHit> search(String query, {int limit = 5}) {
+  /// The entries whose name matches `query`, the best first (name starting with it, then a
+  /// word starting with it, then containing it), at most `limit`. By default only folders;
+  /// `files` adds the files. `under` keeps only what is inside that folder (Tab on a folder),
+  /// where an empty query lists everything.
+  List<FolderHit> search(
+    String query, {
+    int limit = 5,
+    bool files = false,
+    String? under,
+    int minLength = 2,
+  }) {
     final q = query.trim().toLowerCase();
-    if (q.length < 2) return const [];
+    if (q.length < minLength) return const [];
+    final prefix = under == null
+        ? null
+        : '${under.replaceAll(RegExp(r'/+$'), '')}/';
     final scored = <(int, FolderHit)>[];
     for (final f in _folders) {
+      if (!f.isFolder && !files && under == null) continue;
+      if (prefix != null && !f.path.startsWith(prefix)) continue;
       final name = f.name.toLowerCase();
       final int rank;
-      if (name.startsWith(q)) {
+      if (q.isEmpty) {
+        rank = f.isFolder ? 0 : 1;
+      } else if (name.startsWith(q)) {
         rank = 0;
       } else if (name.split(RegExp(r'[\s\-_.]+')).any((w) => w.startsWith(q))) {
         rank = 1;
@@ -90,9 +118,16 @@ class FolderIndex {
 }
 
 /// The non-hidden folders under `root`, breadth first, up to `maxDepth` levels and
-/// `maxFolders` folders. Unreadable folders are skipped.
-List<FolderHit> scanFolders(String root, int maxDepth, int maxFolders) {
+/// `maxFolders` folders, and their non-hidden files up to `maxFiles`. Unreadable folders are
+/// skipped.
+List<FolderHit> scanFolders(
+  String root,
+  int maxDepth,
+  int maxFolders, {
+  int maxFiles = 0,
+}) {
   final found = <FolderHit>[];
+  var files = 0;
   var level = <Directory>[Directory(root)];
   for (var depth = 0; depth < maxDepth && level.isNotEmpty; depth++) {
     final next = <Directory>[];
@@ -104,7 +139,8 @@ List<FolderHit> scanFolders(String root, int maxDepth, int maxFolders) {
         continue;
       }
       for (final child in children) {
-        if (child is! Directory) continue;
+        final isFolder = child is Directory;
+        if (!isFolder && (child is! File || files >= maxFiles)) continue;
         final name = child.path
             .split('/')
             .lastWhere((s) => s.isNotEmpty, orElse: () => '');
@@ -125,10 +161,15 @@ List<FolderHit> scanFolders(String root, int maxDepth, int maxFolders) {
             name: name,
             parent: parent,
             modified: modified,
+            isFolder: isFolder,
           ),
         );
+        if (!isFolder) {
+          files++;
+          continue;
+        }
         next.add(child);
-        if (found.length >= maxFolders) return found;
+        if (found.length - files >= maxFolders) return found;
       }
     }
     level = next;

@@ -967,6 +967,252 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Night Light'**
   String get ccNightLight;
+
+  /// Faro round button and token: the apps (the Launcher)
+  ///
+  /// In en, this message translates to:
+  /// **'Applications'**
+  String get faroScopeApps;
+
+  /// Faro round button and token: files and folders
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get faroScopeFiles;
+
+  /// Faro round button and token: system and app actions
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get faroScopeActions;
+
+  /// Faro round button and token: the clipboard history
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard'**
+  String get faroScopeClipboard;
+
+  /// Faro placeholder in the files scope
+  ///
+  /// In en, this message translates to:
+  /// **'Search Files'**
+  String get faroSearchFiles;
+
+  /// Faro placeholder in the actions scope
+  ///
+  /// In en, this message translates to:
+  /// **'Search Actions'**
+  String get faroSearchActions;
+
+  /// Faro placeholder in the clipboard scope
+  ///
+  /// In en, this message translates to:
+  /// **'Search Clipboard'**
+  String get faroSearchClipboard;
+
+  /// Last row of Faro clipboard history
+  ///
+  /// In en, this message translates to:
+  /// **'Clear History'**
+  String get faroClearHistory;
+
+  /// A clipboard history entry that is an image
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get faroImage;
+
+  /// Subtitle of a system action row in Faro
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get faroSystemAction;
+
+  /// Subtitle of a clipboard history row: when it was copied
+  ///
+  /// In en, this message translates to:
+  /// **'Copied {time}'**
+  String faroCopied(String time);
+
+  /// Faro action row: the command screenshot.screen
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot'**
+  String get faroActionScreenshotScreen;
+
+  /// Faro action row: the command screenshot.selection
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot of a part'**
+  String get faroActionScreenshotSelection;
+
+  /// Faro action row: the command screenshot.toolbar
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot tools'**
+  String get faroActionScreenshotToolbar;
+
+  /// Faro action row: the command system.dark_toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle appearance'**
+  String get faroActionSystemDarkToggle;
+
+  /// Faro action row: the command system.mute_toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle mute'**
+  String get faroActionSystemMuteToggle;
+
+  /// Faro action row: the command system.volume_up
+  ///
+  /// In en, this message translates to:
+  /// **'Volume up'**
+  String get faroActionSystemVolumeUp;
+
+  /// Faro action row: the command system.volume_down
+  ///
+  /// In en, this message translates to:
+  /// **'Volume down'**
+  String get faroActionSystemVolumeDown;
+
+  /// Faro action row: the command system.brightness_up
+  ///
+  /// In en, this message translates to:
+  /// **'Brightness up'**
+  String get faroActionSystemBrightnessUp;
+
+  /// Faro action row: the command system.brightness_down
+  ///
+  /// In en, this message translates to:
+  /// **'Brightness down'**
+  String get faroActionSystemBrightnessDown;
+
+  /// Faro action row: the command panorama.toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Panorama'**
+  String get faroActionPanoramaToggle;
+
+  /// Faro action row: the command panorama.app
+  ///
+  /// In en, this message translates to:
+  /// **'App windows'**
+  String get faroActionPanoramaApp;
+
+  /// Faro action row: the command desktop.show
+  ///
+  /// In en, this message translates to:
+  /// **'Show desktop'**
+  String get faroActionDesktopShow;
+
+  /// Faro action row: the command space.add
+  ///
+  /// In en, this message translates to:
+  /// **'New space'**
+  String get faroActionSpaceAdd;
+
+  /// Faro action row: the command space.next
+  ///
+  /// In en, this message translates to:
+  /// **'Next space'**
+  String get faroActionSpaceNext;
+
+  /// Faro action row: the command space.previous
+  ///
+  /// In en, this message translates to:
+  /// **'Previous space'**
+  String get faroActionSpacePrevious;
+
+  /// Faro action row: the command launcher.toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Apps'**
+  String get faroActionLauncherToggle;
+
+  /// Faro action row: the command notifications.toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Notification Center'**
+  String get faroActionNotificationsToggle;
+
+  /// Faro action row: the command controlcenter.toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Control Center'**
+  String get faroActionControlcenterToggle;
+
+  /// Faro action row: the command window.minimize
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize window'**
+  String get faroActionWindowMinimize;
+
+  /// Faro action row: the command window.fullscreen
+  ///
+  /// In en, this message translates to:
+  /// **'Full screen'**
+  String get faroActionWindowFullscreen;
+
+  /// Faro action row: the command window.tile_left
+  ///
+  /// In en, this message translates to:
+  /// **'Left half'**
+  String get faroActionWindowTileLeft;
+
+  /// Faro action row: the command window.tile_right
+  ///
+  /// In en, this message translates to:
+  /// **'Right half'**
+  String get faroActionWindowTileRight;
+
+  /// Faro action row: the command window.tile_top
+  ///
+  /// In en, this message translates to:
+  /// **'Top half'**
+  String get faroActionWindowTileTop;
+
+  /// Faro action row: the command window.tile_bottom
+  ///
+  /// In en, this message translates to:
+  /// **'Bottom half'**
+  String get faroActionWindowTileBottom;
+
+  /// Faro action row: the command window.tile_fill
+  ///
+  /// In en, this message translates to:
+  /// **'Fill'**
+  String get faroActionWindowTileFill;
+
+  /// Faro action row: the command window.arrange_2
+  ///
+  /// In en, this message translates to:
+  /// **'Arrange two windows'**
+  String get faroActionWindowArrange2;
+
+  /// Faro action row: the command window.arrange_3
+  ///
+  /// In en, this message translates to:
+  /// **'Arrange three windows'**
+  String get faroActionWindowArrange3;
+
+  /// Faro action row: the command window.arrange_4
+  ///
+  /// In en, this message translates to:
+  /// **'Arrange four windows'**
+  String get faroActionWindowArrange4;
+
+  /// Faro action row: the command app.force_quit_panel
+  ///
+  /// In en, this message translates to:
+  /// **'Force quit'**
+  String get faroActionAppForceQuitPanel;
+
+  /// Faro action row: the command session.quit
+  ///
+  /// In en, this message translates to:
+  /// **'Quit the session'**
+  String get faroActionSessionQuit;
 }
 
 class _AppLocalizationsDelegate

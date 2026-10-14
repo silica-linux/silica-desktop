@@ -662,5 +662,174 @@
   "ccNightLight": "Night Light",
   "@ccNightLight": {
     "description": "Control Center Display detail: warmer colors at night"
+  },
+  "faroScopeApps": "Applications",
+  "@faroScopeApps": {
+    "description": "Faro round button and token: the apps (the Launcher)"
+  },
+  "faroScopeFiles": "Files",
+  "@faroScopeFiles": {
+    "description": "Faro round button and token: files and folders"
+  },
+  "faroScopeActions": "Actions",
+  "@faroScopeActions": {
+    "description": "Faro round button and token: system and app actions"
+  },
+  "faroScopeClipboard": "Clipboard",
+  "@faroScopeClipboard": {
+    "description": "Faro round button and token: the clipboard history"
+  },
+  "faroSearchFiles": "Search Files",
+  "@faroSearchFiles": {
+    "description": "Faro placeholder in the files scope"
+  },
+  "faroSearchActions": "Search Actions",
+  "@faroSearchActions": {
+    "description": "Faro placeholder in the actions scope"
+  },
+  "faroSearchClipboard": "Search Clipboard",
+  "@faroSearchClipboard": {
+    "description": "Faro placeholder in the clipboard scope"
+  },
+  "faroClearHistory": "Clear History",
+  "@faroClearHistory": {
+    "description": "Last row of Faro clipboard history"
+  },
+  "faroImage": "Image",
+  "@faroImage": {
+    "description": "A clipboard history entry that is an image"
+  },
+  "faroSystemAction": "System",
+  "@faroSystemAction": {
+    "description": "Subtitle of a system action row in Faro"
+  },
+  "faroCopied": "Copied {time}",
+  "@faroCopied": {
+    "description": "Subtitle of a clipboard history row: when it was copied",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "faroActionScreenshotScreen": "Screenshot",
+  "@faroActionScreenshotScreen": {
+    "description": "Faro action row: the command screenshot.screen"
+  },
+  "faroActionScreenshotSelection": "Screenshot of a part",
+  "@faroActionScreenshotSelection": {
+    "description": "Faro action row: the command screenshot.selection"
+  },
+  "faroActionScreenshotToolbar": "Screenshot tools",
+  "@faroActionScreenshotToolbar": {
+    "description": "Faro action row: the command screenshot.toolbar"
+  },
+  "faroActionSystemDarkToggle": "Toggle appearance",
+  "@faroActionSystemDarkToggle": {
+    "description": "Faro action row: the command system.dark_toggle"
+  },
+  "faroActionSystemMuteToggle": "Toggle mute",
+  "@faroActionSystemMuteToggle": {
+    "description": "Faro action row: the command system.mute_toggle"
+  },
+  "faroActionSystemVolumeUp": "Volume up",
+  "@faroActionSystemVolumeUp": {
+    "description": "Faro action row: the command system.volume_up"
+  },
+  "faroActionSystemVolumeDown": "Volume down",
+  "@faroActionSystemVolumeDown": {
+    "description": "Faro action row: the command system.volume_down"
+  },
+  "faroActionSystemBrightnessUp": "Brightness up",
+  "@faroActionSystemBrightnessUp": {
+    "description": "Faro action row: the command system.brightness_up"
+  },
+  "faroActionSystemBrightnessDown": "Brightness down",
+  "@faroActionSystemBrightnessDown": {
+    "description": "Faro action row: the command system.brightness_down"
+  },
+  "faroActionPanoramaToggle": "Panorama",
+  "@faroActionPanoramaToggle": {
+    "description": "Faro action row: the command panorama.toggle"
+  },
+  "faroActionPanoramaApp": "App windows",
+  "@faroActionPanoramaApp": {
+    "description": "Faro action row: the command panorama.app"
+  },
+  "faroActionDesktopShow": "Show desktop",
+  "@faroActionDesktopShow": {
+    "description": "Faro action row: the command desktop.show"
+  },
+  "faroActionSpaceAdd": "New space",
+  "@faroActionSpaceAdd": {
+    "description": "Faro action row: the command space.add"
+  },
+  "faroActionSpaceNext": "Next space",
+  "@faroActionSpaceNext": {
+    "description": "Faro action row: the command space.next"
+  },
+  "faroActionSpacePrevious": "Previous space",
+  "@faroActionSpacePrevious": {
+    "description": "Faro action row: the command space.previous"
+  },
+  "faroActionLauncherToggle": "Apps",
+  "@faroActionLauncherToggle": {
+    "description": "Faro action row: the command launcher.toggle"
+  },
+  "faroActionNotificationsToggle": "Notification Center",
+  "@faroActionNotificationsToggle": {
+    "description": "Faro action row: the command notifications.toggle"
+  },
+  "faroActionControlcenterToggle": "Control Center",
+  "@faroActionControlcenterToggle": {
+    "description": "Faro action row: the command controlcenter.toggle"
+  },
+  "faroActionWindowMinimize": "Minimize window",
+  "@faroActionWindowMinimize": {
+    "description": "Faro action row: the command window.minimize"
+  },
+  "faroActionWindowFullscreen": "Full screen",
+  "@faroActionWindowFullscreen": {
+    "description": "Faro action row: the command window.fullscreen"
+  },
+  "faroActionWindowTileLeft": "Left half",
+  "@faroActionWindowTileLeft": {
+    "description": "Faro action row: the command window.tile_left"
+  },
+  "faroActionWindowTileRight": "Right half",
+  "@faroActionWindowTileRight": {
+    "description": "Faro action row: the command window.tile_right"
+  },
+  "faroActionWindowTileTop": "Top half",
+  "@faroActionWindowTileTop": {
+    "description": "Faro action row: the command window.tile_top"
+  },
+  "faroActionWindowTileBottom": "Bottom half",
+  "@faroActionWindowTileBottom": {
+    "description": "Faro action row: the command window.tile_bottom"
+  },
+  "faroActionWindowTileFill": "Fill",
+  "@faroActionWindowTileFill": {
+    "description": "Faro action row: the command window.tile_fill"
+  },
+  "faroActionWindowArrange2": "Arrange two windows",
+  "@faroActionWindowArrange2": {
+    "description": "Faro action row: the command window.arrange_2"
+  },
+  "faroActionWindowArrange3": "Arrange three windows",
+  "@faroActionWindowArrange3": {
+    "description": "Faro action row: the command window.arrange_3"
+  },
+  "faroActionWindowArrange4": "Arrange four windows",
+  "@faroActionWindowArrange4": {
+    "description": "Faro action row: the command window.arrange_4"
+  },
+  "faroActionAppForceQuitPanel": "Force quit",
+  "@faroActionAppForceQuitPanel": {
+    "description": "Faro action row: the command app.force_quit_panel"
+  },
+  "faroActionSessionQuit": "Quit the session",
+  "@faroActionSessionQuit": {
+    "description": "Faro action row: the command session.quit"
   }
 }

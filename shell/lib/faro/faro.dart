@@ -7,17 +7,20 @@
 // and takes neither pointer nor keyboard (silica/layer).
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:silica_ui/silica_ui.dart';
 
 import '../dock/dock.dart' show shellQuote;
 import '../dock/stack.dart' show fileIcon;
 import '../l10n/l10n.dart';
+import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
@@ -27,9 +30,12 @@ import 'answers.dart';
 import 'faro_motion.dart';
 import 'folders.dart';
 import 'launcher.dart';
+import 'rates.dart';
 import 'search.dart';
 
 export 'faro_motion.dart';
+
+part 'faro_scopes.dart';
 
 const double wideWidth = 640;
 const double narrowWidth = 384;
@@ -63,6 +69,8 @@ class Faro extends StatefulWidget {
     this.startLauncher = false,
     this.recents,
     this.folders,
+    this.actions,
+    this.clipboard,
   });
 
   final Map<String, DesktopEntry> entries;
@@ -76,6 +84,12 @@ class Faro extends StatefulWidget {
 
   /// The folders Faro finds (default: the home folder, indexed when Faro opens).
   final FolderIndex? folders;
+
+  /// The system actions (default: from silica-daemon).
+  final SystemActions? actions;
+
+  /// The clipboard history (default: from silica-daemon).
+  final ClipboardHistory? clipboard;
 
   @override
   State<Faro> createState() => _FaroState();
@@ -118,7 +132,8 @@ List<FaroItem> faroItems(
   if (query.trim().isEmpty) return const [];
   return [
     for (final e in searchApps(entries, query)) AppItem(e),
-    for (final f in folders.search(query)) FolderItem(f),
+    for (final f in folders.search(query, files: true))
+      f.isFolder ? FolderItem(f) : FileItem(f),
     const FallbackItem(FallbackKind.files),
     const FallbackItem(FallbackKind.web),
   ];
@@ -141,6 +156,20 @@ const double listPadding = 10;
 /// The icon of the app handling the chosen row, at the right of the field.
 const double fieldIconSide = 26;
 const double fieldIconRight = 24;
+
+/// The filter row over the results: 47 pt (10 above the pills, 26, 11 below).
+const double filterHeight = 47;
+
+class _Pill {
+  const _Pill(this.label, {required this.onTap, this.selected = false});
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+}
+
+/// Distance a press on a file row travels before it becomes a drag (PROVISIONAL: the
+/// reference's list threshold, 5 pt in the sidebar).
+const double dragThreshold = 5;
 
 /// "Tab" key capsule on the chosen folder row: 18 tall, radius 5.5, 10 pt from the row's
 /// right edge; the hint before it at ~11 pt.
@@ -247,7 +276,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   /// reuses the measured first-run morph, panel first and buttons 80 ms later; going back,
   /// the buttons return first and the panel widens 80 ms later, mirroring it).
   void _retarget() {
-    final narrow = _hovered && !_searching && !_launcher;
+    final narrow =
+        _hovered && !_searching && !_launcher && _scope == FaroScope.all;
     _spreadDelay?.cancel();
     if (narrow) {
       _springTo(_width, narrowWidth, widthSpring);
@@ -294,6 +324,77 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   /// The chosen row; with an answer card, 0 is the card and the rows start at 1.
   int _selected = 0;
 
+  /// What Faro searches: everything, or the scope of a round button.
+  FaroScope _scope = FaroScope.all;
+
+  /// The folder chosen with Tab (the files scope inside it), and its name for the token.
+  String? _under;
+  String? _underName;
+  late final SystemActions _actions = widget.actions ?? SystemActions();
+  late final ClipboardHistory _clipboard =
+      widget.clipboard ?? ClipboardHistory();
+
+  /// Exchange rates for currency conversions, refreshed when Faro opens.
+  final CurrencyRates _rates = CurrencyRates();
+
+  /// Switches the scope (a round button, ⌘1–⌘4, Tab on a folder, Esc or ⌫ back to all).
+  void _setScope(
+    FaroScope scope, {
+    String? under,
+    String? underName,
+    bool keepQuery = false,
+  }) {
+    // A new scope starts empty (the reopened query would filter it), except "Search in the
+    // file manager", which carries the query over.
+    if (!keepQuery && scope != FaroScope.all) _query.clear();
+    setState(() {
+      _scope = scope;
+      _under = under;
+      _underName = underName;
+      _selected = 0;
+    });
+    switch (scope) {
+      case FaroScope.actions:
+        _actions.load(onDone: _tick);
+      case FaroScope.clipboard:
+        _clipboard.load(onChange: _tick);
+      case FaroScope.files:
+        _folders.refresh(onDone: _tick);
+      case FaroScope.all:
+        break;
+    }
+    _retarget();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  /// Opens a folder in the file manager, anything else with its default app.
+  void _openPath(String path, {required bool folder}) {
+    final files = widget.entries[fileManagerId] ?? _appWithId('mustache');
+    if (folder && files != null) {
+      ShellChannel.instance.launch(
+        execWithFiles(files.rawExec ?? files.exec, [path]) ??
+            '${files.exec} ${shellQuote(path)}',
+      );
+    } else {
+      _openWithDefault(path);
+    }
+  }
+
+  /// `gio open` (always in the image); `xdg-open` where xdg-utils is installed.
+  void _openWithDefault(String target) {
+    final quoted = shellQuote(target);
+    ShellChannel.instance.launch(
+      'gio open $quoted 2>/dev/null || xdg-open $quoted',
+    );
+  }
+
+  /// ⌘⏎: the folder that contains it, in the file manager.
+  void _reveal(String path) {
+    final parent = File(path).parent.path;
+    _openPath(parent, folder: true);
+    _hide();
+  }
+
   /// The return from the launcher (value = ms from the start).
   late final AnimationController _back = AnimationController(
     vsync: this,
@@ -309,6 +410,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    // Dates of the rows ("today, 14:56") in every language of the shell.
+    initializeDateFormatting();
     _query.addListener(() {
       // Moving the cursor or selecting keeps the chosen row.
       if (_query.text == _lastText) {
@@ -346,6 +449,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     _spread.dispose();
     _launcherClock.dispose();
     _back.dispose();
+    _clipboard.dispose();
     _query.dispose();
     _focus.dispose();
     super.dispose();
@@ -398,6 +502,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       _closing = false;
       _launcher = false;
       _hovered = false;
+      _scope = FaroScope.all;
+      _under = null;
+      _underName = null;
       // It reopens with the previous query, selected (SH-SP-04).
       _query.selection = TextSelection(
         baseOffset: 0,
@@ -409,6 +516,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         if (mounted && _visible) setState(() {});
       },
     );
+    _rates.load(onDone: _tick);
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
     _spreadDelay?.cancel();
@@ -462,15 +570,28 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         _launch(entry);
         return;
       case FolderItem(:final folder):
-        ShellChannel.instance.launch('xdg-open ${shellQuote(folder.path)}');
+        _openPath(folder.path, folder: true);
+      case FileItem(:final file):
+        _openPath(file.path, folder: false);
       case FallbackItem(kind: FallbackKind.files):
-        // Provisional: the file manager opens on the home folder (it has no search
-        // argument yet).
-        final home = Platform.environment['HOME'] ?? '/';
-        ShellChannel.instance.launch('xdg-open ${shellQuote(home)}');
+        // The same query, in the files scope.
+        _setScope(FaroScope.files, keepQuery: true);
+        return;
       case FallbackItem(kind: FallbackKind.web):
         final url = webSearchUrl + Uri.encodeQueryComponent(_query.text.trim());
-        ShellChannel.instance.launch('xdg-open ${shellQuote(url)}');
+        _openWithDefault(url);
+      case ActionItem(:final action):
+        // Closed first: an action on a window acts on the window in front, not on Faro.
+        _hide();
+        ShellChannel.instance.execute(action.id);
+        return;
+      case AppActionItem(:final action):
+        ShellChannel.instance.launch(action.exec);
+      case ClipItem(:final clip):
+        _clipboard.copy(clip);
+      case ClearClipboardItem():
+        _clipboard.clear();
+        return;
     }
     _hide();
   }
@@ -490,9 +611,53 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       return KeyEventResult.ignored;
     }
     final count = items.length + (answer == null ? 0 : 1);
+    final index = count == 0 ? -1 : _selected.clamp(0, count - 1);
+    final item = index < 0 || (answer != null && index == 0)
+        ? null
+        : items[index - (answer == null ? 0 : 1)];
+    final command = HardwareKeyboard.instance.isMetaPressed;
+    // ⌘1–⌘4: the scopes of the round buttons (PROVISIONAL: the reference's keys are not
+    // measured).
+    if (command && event is KeyDownEvent) {
+      final scope = switch (event.logicalKey) {
+        LogicalKeyboardKey.digit1 => null,
+        LogicalKeyboardKey.digit2 => FaroScope.files,
+        LogicalKeyboardKey.digit3 => FaroScope.actions,
+        LogicalKeyboardKey.digit4 => FaroScope.clipboard,
+        _ => FaroScope.all,
+      };
+      if (event.logicalKey == LogicalKeyboardKey.digit1) {
+        _showLauncher();
+        return KeyEventResult.handled;
+      }
+      if (scope != FaroScope.all && scope != null) {
+        _setScope(scope);
+        return KeyEventResult.handled;
+      }
+    }
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape:
-        _hide();
+        // Out of a scope first, then closed.
+        if (_scope != FaroScope.all) {
+          _setScope(FaroScope.all);
+        } else {
+          _hide();
+        }
+      case LogicalKeyboardKey.backspace
+          when _scope != FaroScope.all && _query.text.isEmpty:
+        _setScope(FaroScope.all);
+      case LogicalKeyboardKey.tab:
+        // On a folder: search inside it (the "Search in …" hint, SH-SP-08).
+        if (item case FolderItem(:final folder)) {
+          _query.clear();
+          _setScope(
+            FaroScope.files,
+            under: folder.path,
+            underName: folder.name,
+          );
+        }
+      case LogicalKeyboardKey.backspace when command && item is ClipItem:
+        _clipboard.remove(item.clip);
       case LogicalKeyboardKey.arrowDown:
         if (count > 0) {
           setState(() => _selected = (_selected + 1).clamp(0, count - 1));
@@ -501,9 +666,19 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         if (count > 0) {
           setState(() => _selected = (_selected - 1).clamp(0, count - 1));
         }
+      case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
+          when command:
+        // ⌘⏎: show it in the file manager.
+        switch (item) {
+          case FolderItem(:final folder):
+            _reveal(folder.path);
+          case FileItem(:final file):
+            _reveal(file.path);
+          default:
+            break;
+        }
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
         if (count == 0) return KeyEventResult.handled;
-        final index = _selected.clamp(0, count - 1);
         if (answer != null && index == 0) {
           _copy(answer);
         } else {
@@ -533,9 +708,38 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.expand();
     if (_launcher) return _launcherView();
-    final answer = answerFor(_query.text, decimal: _decimal);
-    final items = faroItems(widget.entries.values, _folders, _query.text);
-    final searching = _query.text.trim().isNotEmpty;
+    // An overlay of its own for the tooltips of the round buttons.
+    return Overlay.wrap(child: _faroView(context));
+  }
+
+  Widget _faroView(BuildContext context) {
+    final answer = _scope == FaroScope.all
+        ? answerFor(_query.text, decimal: _decimal, rates: _rates.rates)
+        : null;
+    final scoped = _scope != FaroScope.all;
+    final items = scoped
+        ? scopeItems(
+            _scope,
+            query: _query.text,
+            entries: widget.entries,
+            folders: _folders,
+            actions: _actions,
+            clipboard: _clipboard,
+            labelOf: _actionLabel,
+            under: _under,
+          )
+        : [
+            for (final item in faroItems(
+              widget.entries.values,
+              _folders,
+              _query.text,
+            ))
+              if (!_appsOnly || item is AppItem || item is FallbackItem) item,
+          ];
+    // A scope lists its rows before anything is typed.
+    final searching = _query.text.trim().isNotEmpty || scoped;
+    final pills = scoped || !searching ? const <_Pill>[] : _pills(items);
+    final pillsBlock = pills.isEmpty ? 0.0 : filterHeight;
     final count = items.length + (answer == null ? 0 : 1);
     final selected = count == 0 ? 0 : _selected.clamp(0, count - 1);
     final cardBlock = answer == null ? 0.0 : 1 + cardHeight + cardAfter;
@@ -543,9 +747,12 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         ? 0.0
         : (items.length * rowHeight + 2 * listPadding).clamp(
             0.0,
-            maxHeight - headerHeight - cardBlock - 1,
+            maxHeight - headerHeight - cardBlock - pillsBlock - 1,
           );
-    _followHeight(headerHeight + (searching ? cardBlock + 1 + listHeight : 0));
+    final shows = searching && (items.isNotEmpty || answer != null);
+    _followHeight(
+      headerHeight + (shows ? cardBlock + 1 + pillsBlock + listHeight : 0),
+    );
     final height = _height.value;
     final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
     final scaleY = _scaleY.value;
@@ -641,6 +848,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                     items,
                     selected,
                     listHeight,
+                    pills: pills,
                     panelRadius: panelRadius,
                   ),
                 ),
@@ -672,6 +880,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     List<FaroItem> items,
     int selected,
     double listHeight, {
+    List<_Pill> pills = const [],
     double panelRadius = radius,
   }) {
     final offset = answer == null ? 0 : 1;
@@ -707,6 +916,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                     margin: const EdgeInsets.symmetric(horizontal: 20),
                     color: _c.selection,
                   ),
+                if (pills.isNotEmpty) _filterRow(pills),
                 if (items.isNotEmpty)
                   SizedBox(
                     height: listHeight,
@@ -750,7 +960,10 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       );
     }
     final index = selected - (answer == null ? 0 : 1);
-    if (index < 0 || index >= items.length) return (null, null);
+    // Nothing typed (a scope listing everything): nothing to complete.
+    if (query.isEmpty || index < 0 || index >= items.length) {
+      return (null, null);
+    }
     String? rest(String name) =>
         name.toLowerCase().startsWith(query.toLowerCase())
         ? name.substring(query.length)
@@ -771,7 +984,84 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
           l.faroCompletionAction(_fallbackLabel(kind)),
           kind == FallbackKind.files && files != null ? _icon(files) : null,
         );
+      case FileItem(:final file):
+        final r = rest(file.name);
+        return (r == null ? null : l.completionOpen(r), null);
+      case ActionItem(:final action):
+        final r = rest(_actionLabel(action));
+        return (
+          r == null ? null : l.faroCompletionAction(_actionLabel(action)),
+          null,
+        );
+      case AppActionItem(:final entry, :final action):
+        final r = rest(action.name);
+        return (
+          r == null ? null : l.faroCompletionAction(action.name),
+          _icon(entry),
+        );
+      case ClipItem() || ClearClipboardItem():
+        return (null, null);
     }
+  }
+
+  /// A system action's name: the shell's translation of the catalog's label, or the
+  /// catalog's own for a command the shell does not know yet.
+  String _actionLabel(SystemAction action) {
+    final l = l10nOf(context);
+    return switch (action.id) {
+      'screenshot.screen' => l.faroActionScreenshotScreen,
+      'screenshot.selection' => l.faroActionScreenshotSelection,
+      'screenshot.toolbar' => l.faroActionScreenshotToolbar,
+      'system.dark_toggle' => l.faroActionSystemDarkToggle,
+      'system.mute_toggle' => l.faroActionSystemMuteToggle,
+      'system.volume_up' => l.faroActionSystemVolumeUp,
+      'system.volume_down' => l.faroActionSystemVolumeDown,
+      'system.brightness_up' => l.faroActionSystemBrightnessUp,
+      'system.brightness_down' => l.faroActionSystemBrightnessDown,
+      'panorama.toggle' => l.faroActionPanoramaToggle,
+      'panorama.app' => l.faroActionPanoramaApp,
+      'desktop.show' => l.faroActionDesktopShow,
+      'space.add' => l.faroActionSpaceAdd,
+      'space.next' => l.faroActionSpaceNext,
+      'space.previous' => l.faroActionSpacePrevious,
+      'launcher.toggle' => l.faroActionLauncherToggle,
+      'notifications.toggle' => l.faroActionNotificationsToggle,
+      'controlcenter.toggle' => l.faroActionControlcenterToggle,
+      'window.minimize' => l.faroActionWindowMinimize,
+      'window.fullscreen' => l.faroActionWindowFullscreen,
+      'window.tile_left' => l.faroActionWindowTileLeft,
+      'window.tile_right' => l.faroActionWindowTileRight,
+      'window.tile_top' => l.faroActionWindowTileTop,
+      'window.tile_bottom' => l.faroActionWindowTileBottom,
+      'window.tile_fill' => l.faroActionWindowTileFill,
+      'window.arrange_2' => l.faroActionWindowArrange2,
+      'window.arrange_3' => l.faroActionWindowArrange3,
+      'window.arrange_4' => l.faroActionWindowArrange4,
+      'app.force_quit_panel' => l.faroActionAppForceQuitPanel,
+      'session.quit' => l.faroActionSessionQuit,
+      _ => action.label,
+    };
+  }
+
+  String get _placeholder {
+    final l = l10nOf(context);
+    return switch (_scope) {
+      FaroScope.all => l.faroPlaceholder,
+      FaroScope.files =>
+        _underName == null ? l.faroSearchFiles : l.faroSearchIn(_underName!),
+      FaroScope.actions => l.faroSearchActions,
+      FaroScope.clipboard => l.faroSearchClipboard,
+    };
+  }
+
+  String _scopeName(FaroScope scope) {
+    final l = l10nOf(context);
+    return switch (scope) {
+      FaroScope.all => '',
+      FaroScope.files => _underName ?? l.faroScopeFiles,
+      FaroScope.actions => l.faroScopeActions,
+      FaroScope.clipboard => l.faroScopeClipboard,
+    };
   }
 
   String _fallbackLabel(FallbackKind kind) {
@@ -820,6 +1110,31 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                   painter: _LensPainter(_c.placeholder),
                 ),
                 const SizedBox(width: 16),
+                // The scope as a token, like the Launcher's category (PROVISIONAL size: the
+                // Launcher's 31 pt token).
+                if (_scope != FaroScope.all) ...[
+                  GestureDetector(
+                    onTap: () => _setScope(FaroScope.all),
+                    child: Container(
+                      key: const ValueKey('faro scope token'),
+                      height: tokenHeight,
+                      padding: const EdgeInsets.only(left: 6, right: 11),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _c.selection,
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(tokenRadius),
+                        ),
+                      ),
+                      child: Text(
+                        _scopeName(_scope),
+                        maxLines: 1,
+                        style: uiText(size: 26, color: _c.tokenText),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Stack(
                     alignment: Alignment.centerLeft,
@@ -827,7 +1142,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                       if (_query.text.isEmpty)
                         IgnorePointer(
                           child: Text(
-                            l10nOf(context).faroPlaceholder,
+                            _placeholder,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: uiText(size: 26, color: _c.placeholder),
                           ),
                         ),
@@ -954,27 +1271,89 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
 
   Widget _row(FaroItem item, bool selected) {
     final l = l10nOf(context);
-    final (IconSource? icon, String title, Widget? subtitle) = switch (item) {
+    final subtitleStyle = uiText(size: 15, color: _c.subtitle);
+    Widget glyph(int index) =>
+        CustomPaint(painter: _CircleGlyphPainter(index, _c.placeholder));
+    final (
+      IconSource? icon,
+      Widget? leading,
+      String title,
+      Widget? subtitle,
+    ) = switch (item) {
       AppItem(:final entry) => (
         _icon(entry),
+        null,
         entry.name,
-        Text(l.faroApplication, style: uiText(size: 15, color: _c.subtitle)),
+        Text(l.faroApplication, style: subtitleStyle),
       ),
       FolderItem(:final folder) => (
         fileIcon(Directory(folder.path)),
+        null,
         folder.name,
         _folderSubtitle(folder),
+      ),
+      FileItem(:final file) => (
+        fileIcon(File(file.path)),
+        null,
+        file.name,
+        _folderSubtitle(file),
       ),
       FallbackItem(:final kind) => (
         switch (kind == FallbackKind.files ? _appWithId('mustache') : null) {
           final e? => _icon(e),
           null => null,
         },
+        CustomPaint(painter: _FallbackGlyphPainter(kind, _c.placeholder)),
         _fallbackLabel(kind),
         null,
       ),
+      ActionItem(:final action) => (
+        null,
+        glyph(2),
+        _actionLabel(action),
+        Text(l.faroSystemAction, style: subtitleStyle),
+      ),
+      AppActionItem(:final entry, :final action) => (
+        _icon(entry),
+        null,
+        action.name,
+        Text(entry.name, style: subtitleStyle),
+      ),
+      ClipItem(:final clip) => (
+        clip.kind == ClipKind.files && clip.paths.isNotEmpty
+            ? fileIcon(File(clip.paths.first))
+            : null,
+        switch (clip.kind) {
+          ClipKind.image when clip.image != null => ClipRRect(
+            borderRadius: const BorderRadius.all(Radius.circular(4)),
+            child: Image.file(
+              File(clip.image!),
+              width: 38,
+              height: 38,
+              fit: BoxFit.cover,
+            ),
+          ),
+          _ => glyph(3),
+        },
+        clip.kind == ClipKind.image ? l.faroImage : clip.title,
+        Text(l.faroCopied(_when(clip.time)), style: subtitleStyle),
+      ),
+      ClearClipboardItem() => (null, null, l.faroClearHistory, null),
     };
-    return GestureDetector(
+    // Keyboard shortcuts as key glyphs; media keys (XF86…) have their own keys on the
+    // keyboard, not a combination to remember: none shown.
+    final shortcut = switch (item) {
+      ActionItem(:final action)
+          when !(action.shortcut ?? '').contains('XF86') =>
+        action.shortcut,
+      _ => null,
+    };
+    final path = switch (item) {
+      FolderItem(:final folder) => folder.path,
+      FileItem(:final file) => file.path,
+      _ => null,
+    };
+    Widget row = GestureDetector(
       onTap: () => _activate(item),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -991,15 +1370,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 height: 38,
                 child: switch (icon) {
                   final i? => Center(child: SilicaIcon(i, side: rowIconSide)),
-                  null =>
-                    item is FallbackItem
-                        ? CustomPaint(
-                            painter: _FallbackGlyphPainter(
-                              item.kind,
-                              _c.placeholder,
-                            ),
-                          )
-                        : null,
+                  null => leading,
                 },
               ),
               const SizedBox(width: 15),
@@ -1021,6 +1392,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                   ],
                 ),
               ),
+              if (shortcut != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  shortcutGlyphs(shortcut),
+                  style: uiText(size: 15, color: _c.subtitle),
+                ),
+                const SizedBox(width: 14),
+              ],
               if (selected && item is FolderItem) ...[
                 const SizedBox(width: 8),
                 Text(
@@ -1051,6 +1430,97 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         ),
       ),
     );
+    // A file or a folder can be dragged out of Faro, onto the Dock, a window or the
+    // desktop: past the drag threshold Faro closes and the drag continues as a system drag.
+    if (path != null) {
+      row = Listener(
+        onPointerDown: (e) => _dragFrom = (path, e.position),
+        onPointerMove: (e) {
+          final from = _dragFrom;
+          if (from == null || from.$1 != path) return;
+          if ((e.position - from.$2).distance < dragThreshold) return;
+          _dragFrom = null;
+          _hide();
+          SilicaDrag.start([path]);
+        },
+        onPointerUp: (_) => _dragFrom = null,
+        onPointerCancel: (_) => _dragFrom = null,
+        child: row,
+      );
+    }
+    return row;
+  }
+
+  /// The filter pills over the results (SH-SP-12): where else the search can go. On the
+  /// reference they are the apps that can search further; here (PROVISIONAL) the kinds Silica
+  /// has: applications only, and the files scope (the web is the last row already).
+  List<_Pill> _pills(List<FaroItem> items) {
+    final l = l10nOf(context);
+    final hasApps = items.any((i) => i is AppItem);
+    return [
+      if (hasApps)
+        _Pill(
+          l.faroScopeApps,
+          selected: _appsOnly,
+          onTap: () => setState(() {
+            _appsOnly = !_appsOnly;
+            _selected = 0;
+          }),
+        ),
+      _Pill(l.faroScopeFiles, onTap: () => _setScope(FaroScope.files)),
+    ];
+  }
+
+  /// Pills 26 pt tall, 8 pt apart, radius 7.5, 10 pt above and 11 below, in a row that
+  /// scrolls sideways and is cut by the panel. Their fill and text are the Launcher's
+  /// category capsules' (the same measured `#d9dadf` over `#c8c9ce` and `#5a5b60` in light).
+  Widget _filterRow(List<_Pill> pills) => SizedBox(
+    height: filterHeight,
+    child: ListView.separated(
+      key: const ValueKey('faro pills'),
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 11),
+      itemCount: pills.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 8),
+      itemBuilder: (context, i) {
+        final pill = pills[i];
+        return GestureDetector(
+          onTap: pill.onTap,
+          child: Container(
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: pill.selected ? _c.selection : _c.categoryFill,
+              borderRadius: const BorderRadius.all(Radius.circular(7.5)),
+            ),
+            child: Text(
+              pill.label,
+              style: uiText(size: 15, color: _c.categoryText),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
+  /// Only the applications (the Applications pill).
+  bool _appsOnly = false;
+
+  /// Where a press on a file row started (the drag out of Faro).
+  (String, Offset)? _dragFrom;
+
+  /// "today, 14:56", "yesterday, 9:02" or the date.
+  String _when(DateTime m) {
+    final l = l10nOf(context);
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    final time = DateFormat.Hm(l.localeName).format(m);
+    return !m.isBefore(day)
+        ? l.faroToday(time)
+        : !m.isBefore(day.subtract(const Duration(days: 1)))
+        ? l.faroYesterday(time)
+        : DateFormat.yMMMd(l.localeName).format(m);
   }
 
   /// "today, 14:56 · ▢ parent" (SH-SP-08).
@@ -1086,16 +1556,35 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     );
   }
 
-  Widget _circleButton(int index) => GestureDetector(
-    // The first button opens the launcher.
-    onTap: index == 0 ? _showLauncher : null,
-    child: LiquidGlass(
-      radius: circle / 2,
-      material: GlassMaterial.thick,
-      interactive: true,
-      child: CustomPaint(painter: _CircleGlyphPainter(index, _c.placeholder)),
-    ),
-  );
+  /// A round button: Applications (the Launcher), Files, Actions, Clipboard, with its name in
+  /// a tooltip and ⌘1–⌘4.
+  Widget _circleButton(int index) {
+    final l = l10nOf(context);
+    final (name, onTap) = switch (index) {
+      0 => (l.faroScopeApps, _showLauncher),
+      1 => (l.faroScopeFiles, () => _setScope(FaroScope.files)),
+      2 => (l.faroScopeActions, () => _setScope(FaroScope.actions)),
+      _ => (l.faroScopeClipboard, () => _setScope(FaroScope.clipboard)),
+    };
+    return SilicaTooltip(
+      message: '$name  ⌘${index + 1}',
+      child: Semantics(
+        button: true,
+        label: name,
+        child: GestureDetector(
+          onTap: onTap,
+          child: LiquidGlass(
+            radius: circle / 2,
+            material: GlassMaterial.thick,
+            interactive: true,
+            child: CustomPaint(
+              painter: _CircleGlyphPainter(index, _c.placeholder),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _launcherView() {
     final elapsed = _launcherClock.value;
