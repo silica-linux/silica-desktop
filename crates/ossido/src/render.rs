@@ -418,6 +418,9 @@ struct GlassAnchor {
     origin: Point<i32, Physical>,
     /// Opacity of the layer (the menu bar fades with Panorama).
     opacity: f32,
+    /// The regions committed with the buffer on screen, when they are not the current ones
+    /// (a layer resizing keeps its old buffer and its old glass, `layers::drawn_layer`).
+    glass: Option<Vec<crate::glass::GlassRegion>>,
 }
 
 /// The window has the active state (focus), even if the configure has not left yet.
@@ -770,12 +773,18 @@ pub fn output_elements(
     let mut anchors: Vec<GlassAnchor> = Vec::new();
 
     let layer_map = layer_map_for_output(output);
+    let layers_output = space
+        .output_geometry(output)
+        .map(|geo| geo.size)
+        .unwrap_or_default();
     let push_layers = |elements: &mut Vec<OutputElement>,
                        anchors: &mut Vec<GlassAnchor>,
                        renderer: &mut GlesRenderer,
                        level| {
         for layer in layer_map.layers_on(level).rev() {
-            let Some(geometry) = layer_map.layer_geometry(layer) else {
+            // Not before its first frame at the configured size (the Dock in the middle of
+            // the screen at session start), and where its buffer fits while it resizes.
+            let Some(drawn) = crate::layers::drawn_layer(&layer_map, layer, layers_output) else {
                 continue;
             };
             // During a space switch the space layers are drawn twice: with the desktop
@@ -796,7 +805,7 @@ pub fn output_elements(
                 _ => 1.0,
             };
             for offset in offsets {
-                let location = (geometry.loc.to_f64() + Point::from((offset, 0.0)))
+                let location = (drawn.loc.to_f64() + Point::from((offset, 0.0)))
                     .to_physical_precise_round(scale);
                 elements.extend(
                     AsRenderElements::<GlesRenderer>::render_elements::<
@@ -816,6 +825,7 @@ pub fn output_elements(
                     surface: layer.wl_surface().clone(),
                     origin: location,
                     opacity: alpha,
+                    glass: drawn.glass.clone(),
                 });
             }
         }
@@ -887,10 +897,11 @@ pub fn output_elements(
             }
             // The desktop wallpaper, small.
             for layer in layer_map.layers_on(Layer::Background).rev() {
-                let Some(geometry) = layer_map.layer_geometry(layer) else {
+                let Some(drawn) = crate::layers::drawn_layer(&layer_map, layer, layers_output)
+                else {
                     continue;
                 };
-                let location = (thumbnail.rect.loc + geometry.loc.to_f64().upscale(s))
+                let location = (thumbnail.rect.loc + drawn.loc.to_f64().upscale(s))
                     .to_physical_precise_round(scale);
                 elements.extend(
                     AsRenderElements::<GlesRenderer>::render_elements::<
@@ -1092,6 +1103,7 @@ pub fn output_elements(
                 origin: (location - window.geometry().loc - output_origin + offset)
                     .to_physical_precise_round(scale),
                 opacity: 1.0,
+                glass: None,
             });
         }
     }
@@ -1194,7 +1206,10 @@ pub fn output_elements(
     if let Some(programs) = &shaders.glass {
         let output_rect = Rectangle::from_size(output_size);
         for anchor in anchors.iter().rev() {
-            let regions: Vec<PhysicalRegion> = current_regions(&anchor.surface)
+            let regions: Vec<PhysicalRegion> = anchor
+                .glass
+                .clone()
+                .unwrap_or_else(|| current_regions(&anchor.surface))
                 .iter()
                 .map(|region| PhysicalRegion {
                     rect: Rectangle::new(

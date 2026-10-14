@@ -19,6 +19,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart'
     show HardwareKeyboard, KeyDownEvent, KeyEvent, LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
 import 'package:silica_ui/silica_ui.dart';
 
 import 'package:flutter/gestures.dart' show kSecondaryButton;
@@ -637,6 +638,7 @@ class _LiveDockState extends State<LiveDock> {
     magnification: _magnify ? defaultMagnification : 1,
     autohide: _o.autohide,
     indicators: _o.indicators,
+    revealAtStart: true,
     launcher: _launcher.value.value,
     onActivate: _activate,
     onDropFiles: _dropFiles,
@@ -716,6 +718,14 @@ const double dragInsideAbove = 20;
 const Duration autohideDelay = Duration(milliseconds: 190);
 const Duration autohideReveal = Duration(milliseconds: 190);
 const Duration autohideHide = Duration(milliseconds: 175);
+
+/// Session start (provisional: the reference's login was not measured): the Dock waits below
+/// the screen edge until every icon is decoded, then slides up like the auto-hide reveal.
+const Duration sessionReveal = autohideReveal;
+
+/// The longest wait for the icons at session start (a safety net for an icon that never
+/// loads, not a measurement).
+const Duration iconsWaitLimit = Duration(seconds: 3);
 
 /// Spring-loading on an app (MU-40): ~830 ms of a file held over it.
 const Duration springLoadDelay = Duration(milliseconds: 830);
@@ -849,9 +859,15 @@ class Dock extends StatefulWidget {
     this.onOpenPath,
     this.stackSettingsFor,
     this.stackListMenu,
+    this.revealAtStart = false,
   });
 
   final List<Item> items;
+
+  /// Session start: hidden below the screen until its icons are decoded (never empty cells
+  /// that fill in), then it slides up ([sessionReveal]). Without it the Dock is there at once
+  /// (tests, the demo).
+  final bool revealAtStart;
   final double magnification;
 
   /// Hidden below the screen until the pointer reaches the last row (SH-DK-07).
@@ -973,8 +989,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   /// down with no delay in ~175 ms (ease-in). The whole Dock slides, no fade.
   late final AnimationController _shown = AnimationController(
     vsync: this,
-    value: widget.autohide ? 0 : 1,
+    value: widget.autohide || widget.revealAtStart ? 0 : 1,
   )..addListener(() => setState(() {}));
+
+  /// Every icon is decoded (or the Dock does not wait for them): it may show.
+  late bool _iconsReady = !widget.revealAtStart;
+  Timer? _iconsTimeout;
   Timer? _revealTimer;
   // Entrance or exit animation: where it starts and when.
   double _from = 0;
@@ -1093,6 +1113,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _dismissed = ShellChannel.instance.transientDismissed.listen(
       (_) => _transientDismissed(),
     );
+    if (!_iconsReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _waitForIcons());
+      _iconsTimeout = Timer(iconsWaitLimit, _showAtStart);
+    }
     // The screen is needed by the first menu already (the surface covers it to catch the click outside).
     LayerControl.outputSize().then((size) {
       if (mounted && size != null && _screen == null) {
@@ -1112,7 +1136,67 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void _revealDock() {
     _revealTimer?.cancel();
     _revealTimer = null;
+    if (!_iconsReady) return;
     _shown.animateTo(1, duration: autohideReveal, curve: Curves.easeOut);
+  }
+
+  /// After every frame at session start: once all the icons are decoded, the Dock comes up.
+  /// An icon that finishes loading rebuilds and draws a frame, so this runs again after it.
+  void _waitForIcons() {
+    if (!mounted || _iconsReady) return;
+    if (_iconsDecoded()) {
+      _showAtStart();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _waitForIcons());
+    }
+  }
+
+  /// No icon of the Dock is still a placeholder: every SVG has its picture (flutter_svg puts
+  /// the decoded picture in a FittedBox, the placeholder is an empty SizedBox) and every
+  /// bitmap its image.
+  bool _iconsDecoded() {
+    var decoded = true;
+    bool hasPicture(Element element) {
+      var found = false;
+      void find(Element e) {
+        if (found) return;
+        if (e.widget is FittedBox) {
+          found = true;
+          return;
+        }
+        e.visitChildElements(find);
+      }
+
+      element.visitChildElements(find);
+      return found;
+    }
+
+    void visit(Element element) {
+      if (!decoded) return;
+      final widget = element.widget;
+      if (widget is SvgPicture && !hasPicture(element)) {
+        decoded = false;
+        return;
+      }
+      if (widget is RawImage && widget.image == null) {
+        decoded = false;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    return decoded;
+  }
+
+  void _showAtStart() {
+    _iconsTimeout?.cancel();
+    _iconsTimeout = null;
+    if (!mounted || _iconsReady) return;
+    setState(() => _iconsReady = true);
+    if (!widget.autohide) {
+      _shown.animateTo(1, duration: sessionReveal, curve: Curves.easeOut);
+    }
   }
 
   /// Down, unless something of the Dock is in use (menu, drag, stack, alert).
@@ -1142,6 +1226,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _stackAnim.dispose();
     _stackFocus.dispose();
     _shown.dispose();
+    _iconsTimeout?.cancel();
     _revealTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     _springTimer?.cancel();
@@ -1415,8 +1500,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final bottomRow = Rect.fromLTWH(0, height - 1, size.width, 1);
     final hiddenDock =
         widget.autohide && _shown.value < 1 && menu == null && alert == null;
+    // Before it comes up at session start nothing of the Dock takes the pointer.
+    final waiting = !_iconsReady;
     final key =
-        '$dock $menu $submenus $alert $height $catchAll $hiddenDock ${widget.autohide} $open';
+        '$dock $menu $submenus $alert $height $catchAll $hiddenDock ${widget.autohide} $open $waiting';
     if (key == _layerState) return;
     _layerState = key;
     final rects = [
@@ -1430,7 +1517,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       if (!mounted) return;
       if (height != size.height) LayerControl.size(0, height);
       LayerControl.inputRegion(
-        catchAll
+        waiting
+            ? const <Rect>[]
+            : catchAll
             ? [Offset.zero & Size(size.width, height)]
             : hiddenDock
             ? [bottomRow]

@@ -513,4 +513,31 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     },
   );
+
+  testWidgets(
+    'at session start the Dock waits below the screen, then slides up (provisional)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(items: placeholderItems, revealAtStart: true),
+        ),
+      );
+      final glass = find.byType(LiquidGlass);
+      const restTop = 200 - bottomGap - backgroundHeight;
+      // The first frame: nothing of the Dock on screen, not even its glass.
+      expect(tester.getTopLeft(glass).dy, greaterThanOrEqualTo(200));
+      // Nothing to decode (placeholder icons): it comes up right after, from below.
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(sessionReveal ~/ 2);
+      final halfway = tester.getTopLeft(glass).dy;
+      expect(halfway, greaterThan(restTop));
+      expect(halfway, lessThan(200));
+      await tester.pump(sessionReveal);
+      expect(tester.getTopLeft(glass).dy, closeTo(restTop, 0.01));
+    },
+  );
 }
