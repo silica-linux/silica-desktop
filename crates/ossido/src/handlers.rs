@@ -129,6 +129,9 @@ impl ShmHandler for State {
     }
 }
 
+/// A window whose app has not said its id yet (`app_id_changed` places it once).
+struct FreshWindow(std::cell::Cell<bool>);
+
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
@@ -143,6 +146,11 @@ impl XdgShellHandler for State {
         self.mapped = self.mapped.wrapping_add(1);
 
         let window = Window::new_wayland_window(surface);
+        // Until the app says its id, the window may still move to where that app's window
+        // last closed (`app_id_changed`).
+        window
+            .user_data()
+            .insert_if_missing(|| FreshWindow(std::cell::Cell::new(true)));
         let id = self.assign_window_id(&window);
         self.publish_toplevel(&window);
         info!("new window {id} at ({offset}, {offset})");
@@ -179,6 +187,19 @@ impl XdgShellHandler for State {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         // The window fades out from its last image: the surface still has the buffer.
         if let Some(window) = self.window_for(surface.wl_surface()) {
+            // Its app's next window opens here (APP-LC).
+            if let (Some(app), Some(location)) = (
+                crate::panorama::window_app(&window),
+                self.space.element_location(&window),
+            ) {
+                self.app_frames.remember(
+                    &app,
+                    crate::app_frames::Frame {
+                        x: location.x,
+                        y: location.y,
+                    },
+                );
+            }
             self.start_closing(&window);
         }
         self.unpublish_toplevel(&surface);
@@ -190,6 +211,30 @@ impl XdgShellHandler for State {
 
     fn app_id_changed(&mut self, surface: ToplevelSurface) {
         self.update_toplevel(&surface);
+        // The app's first id: its window opens where the app's window last closed.
+        let Some(window) = self.window_for(surface.wl_surface()) else {
+            return;
+        };
+        let fresh = window
+            .user_data()
+            .get::<FreshWindow>()
+            .is_some_and(|fresh| fresh.0.replace(false));
+        if !fresh {
+            return;
+        }
+        if let Some(app) = crate::panorama::window_app(&window)
+            && let Some(frame) = self.app_frames.get(&app)
+        {
+            let area = self.usable_area();
+            // Kept on screen (the output may have changed since).
+            let x = frame
+                .x
+                .clamp(area.loc.x, area.loc.x + (area.size.w - 64).max(0));
+            let y = frame
+                .y
+                .clamp(area.loc.y, area.loc.y + (area.size.h - 64).max(0));
+            self.space.map_element(window, (x, y), true);
+        }
     }
 
     /// The app moves the window from its toolbar (full-size content): like dragging Ossido's

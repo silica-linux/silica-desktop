@@ -106,6 +106,12 @@ pub struct State {
     /// Windows hidden by their app (its last window closed, the app still running, #142),
     /// with the position they come back to.
     pub hidden: Vec<crate::windows::Minimized>,
+    /// The app that stays frontmost after closing its last window (#142, APP-LC): no window
+    /// has the focus, the menu bar shows that app and Cmd+Q quits it. Cleared when a window
+    /// takes the focus.
+    pub windowless_front: Option<String>,
+    /// Where each app's window last closed: its next window opens there (APP-LC).
+    pub app_frames: crate::app_frames::AppFrames,
     /// The workspaces and the scroll in progress (`workspaces.rs`).
     pub workspaces: crate::workspaces::Workspaces,
     /// Panorama open or closing (`panorama.rs`).
@@ -302,6 +308,8 @@ impl State {
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
             hidden: Vec::new(),
+            windowless_front: None,
+            app_frames: crate::app_frames::AppFrames::default(),
             workspaces: crate::workspaces::Workspaces::default(),
             panorama: None,
             panorama_press: false,
@@ -351,11 +359,18 @@ impl State {
             .or_else(|| in_layer(&[Layer::Bottom, Layer::Background]))
     }
 
-    /// Sends the frame callbacks to every visible window.
+    /// Sends the frame callbacks to every visible window, and to hidden ones (#142).
     pub fn send_frames(&self) {
         let output = &self.output;
         let now = self.start_time.elapsed();
         for window in self.space.elements() {
+            window.send_frame(output, now, Some(Duration::ZERO), |_, _| {
+                Some(output.clone())
+            });
+        }
+        // A windowless app (#142) draws its next window while hidden: its frame callbacks keep
+        // coming, so its renderer never waits on a surface that is not on screen.
+        for (window, _) in &self.hidden {
             window.send_frame(output, now, Some(Duration::ZERO), |_, _| {
                 Some(output.clone())
             });

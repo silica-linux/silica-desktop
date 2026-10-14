@@ -494,12 +494,15 @@ class _MenuBarState extends State<MenuBar> {
 
   String get _appName {
     final window = ShellChannel.instance.focusedToplevel;
-    if (window == null) return 'Silica';
+    // An app that closed its last window stays frontmost (#142, APP-LC): Ossido announces it.
+    final windowless = ShellChannel.instance.states.value['app.frontmost'] ?? '';
+    final appId = window?.appId ?? windowless;
+    if (window == null && windowless.isEmpty) return 'Silica';
     final entry = widget.entries?.values
-        .where((e) => e.matchesAppId(window.appId))
+        .where((e) => e.matchesAppId(appId))
         .firstOrNull;
     return entry?.name ??
-        (window.appId.isNotEmpty ? window.appId : window.title);
+        (appId.isNotEmpty ? appId : (window?.title ?? 'Silica'));
   }
 
   @override

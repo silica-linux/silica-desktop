@@ -1,24 +1,23 @@
-//! The app's lifecycle, as on the reference (silica-desktop#142).
+//! The app's lifecycle, as on the reference (silica-desktop#142, measured in APP-LC).
 //!
-//! Closing an app's last window does not end the app. Ossido hides the window
-//! (`silica-window-v1` › `set_hidden`), and the engine stays alive with the app's state. A
-//! click on the app in the Dock (or launching it again) shows the window at once, without a
-//! cold start. Only Quit (Cmd+Q, the Dock menu) ends the app. An app that should end with
-//! its last window (a single-window utility such as Calculator) says so on the `silica/app`
-//! channel.
+//! Closing an app's last window does not end the app: the window goes away (Ossido hides it,
+//! `silica-window-v1` › `set_hidden`) and the app keeps running with no window, frontmost,
+//! with its Dock dot. The app learns it (`lastWindowClosed`) and drops the closed window's
+//! content. A reopen (a click in the Dock, launching the app again) is an event the app
+//! answers by building a new window (`reopen`, then `openWindow`), as the reference does: a
+//! document app shows its Open panel, Mail its main window; the closed window never comes
+//! back as it was (that would be minimizing). Single-window apps (Calculator, Clock,
+//! Settings) end with their last window instead. Only Quit ends an app; the file manager
+//! has none. The reference never ends a windowless app by itself.
 //!
-//! Every app process registers itself in the app registry (silica-control `apps`): a
-//! unix socket answering `status`, `reopen` and `quit`. A second launch of an app with a
-//! hidden window hands over to it (`reopen`) and exits.
-//!
-//! A windowless app is ended by the system when it has been idle for a long time or memory
-//! is short (PSI). It leaves a `.parked` marker, so the Dock keeps showing it and a click
-//! starts it again. Both limits are provisional (not measured on the reference).
+//! Every app process registers itself in the app registry (silica-control `apps`): a unix
+//! socket answering `status`, `reopen` and `quit`. A second launch of a running app hands
+//! over to it (`reopen`) and exits.
 //!
 //! The `silica/app` channel (JSONMethodCodec):
-//! - from the app: `setQuitWhenLastWindowCloses {value}`, `quit`;
-//! - to the app: `lastWindowClosed`, `reopen {shown}` (`shown`: the hidden window came back;
-//!   false when the app still had a window on screen).
+//! - from the app: `setQuitWhenLastWindowCloses {value}`, `setHandlesReopen {value}`,
+//!   `setQuitEnabled {value}`, `openWindow`, `quit`, `isHidden`;
+//! - to the app: `lastWindowClosed`, `reopen {windowless}`.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -30,14 +29,7 @@ use silica_control::apps;
 
 pub const CHANNEL: &str = "silica/app";
 
-/// A windowless app idle for longer than this is ended (provisional).
-pub const IDLE_LIMIT: Duration = Duration::from_secs(10 * 60);
-
-/// Memory pressure (PSI `some avg10`, percent of time stalled) above which a windowless
-/// app is ended (provisional).
-pub const PRESSURE_LIMIT: f64 = 10.0;
-
-/// How often a windowless app checks the two limits.
+/// How often a windowless app checks the debug idle limit.
 pub const CHECK_PERIOD: Duration = Duration::from_secs(30);
 
 /// How long a registry client may take to send its request.
@@ -101,10 +93,10 @@ pub fn register(app_id: &str) -> std::io::Result<(Registration, UnixListener)> {
     Ok((Registration { path, parked }, listener))
 }
 
-/// A second launch: if another process of `app_id` has its window hidden, it shows it and
-/// this process has nothing to do.
+/// A second launch: if another process of `app_id` runs (with or without a window), it gets
+/// the reopen and this process has nothing to do (one instance per app).
 pub fn forward(app_id: &str) -> bool {
-    apps::valid_app_id(app_id) && apps::reopen(app_id, false)
+    apps::valid_app_id(app_id) && apps::reopen(app_id, true)
 }
 
 /// Reads one request from a registry client (bounded, with a short timeout).
@@ -126,36 +118,18 @@ pub fn answer(mut stream: &UnixStream, text: &str) {
         .and_then(|()| stream.write_all(b"\n"));
 }
 
-/// The `some avg10` value of a PSI file (`/proc/pressure/memory`).
-pub fn parse_psi_some_avg10(text: &str) -> Option<f64> {
-    let line = text.lines().find(|l| l.starts_with("some "))?;
-    line.split_whitespace()
-        .find_map(|field| field.strip_prefix("avg10="))?
-        .parse()
-        .ok()
-}
-
-/// The current memory pressure, if the kernel reports it.
-pub fn memory_pressure() -> Option<f64> {
-    parse_psi_some_avg10(&std::fs::read_to_string("/proc/pressure/memory").ok()?)
-}
-
-/// The idle limit: [`IDLE_LIMIT`], or `SILICA_APP_IDLE_LIMIT` seconds (tests, tuning).
-pub fn idle_limit() -> Duration {
+/// The debug idle limit: `SILICA_APP_IDLE_LIMIT` seconds ends a windowless app after that
+/// long. Off by default: the reference keeps windowless apps running (APP-LC).
+pub fn idle_limit() -> Option<Duration> {
     std::env::var("SILICA_APP_IDLE_LIMIT")
         .ok()
         .and_then(|secs| secs.parse::<u64>().ok())
-        .map_or(IDLE_LIMIT, Duration::from_secs)
+        .map(Duration::from_secs)
 }
 
 /// How often to check: [`CHECK_PERIOD`], sooner with a short idle limit.
 pub fn check_period(limit: Duration) -> Duration {
     CHECK_PERIOD.min(limit.max(Duration::from_secs(1)))
-}
-
-/// Whether a windowless app should be ended now.
-pub fn should_end(hidden_for: Duration, limit: Duration, pressure: Option<f64>) -> bool {
-    hidden_for >= limit || pressure.is_some_and(|p| p > PRESSURE_LIMIT)
 }
 
 #[cfg(test)]
@@ -171,20 +145,8 @@ mod tests {
     }
 
     #[test]
-    fn psi_is_parsed() {
-        let text = "some avg10=12.50 avg60=3.00 avg300=1.00 total=123\n\
-                    full avg10=1.00 avg60=0.00 avg300=0.00 total=12\n";
-        assert_eq!(parse_psi_some_avg10(text), Some(12.5));
-        assert_eq!(parse_psi_some_avg10("nothing"), None);
-    }
-
-    #[test]
-    fn idle_or_pressure_end_a_windowless_app() {
-        assert!(!should_end(Duration::from_secs(60), IDLE_LIMIT, Some(0.5)));
-        assert!(!should_end(Duration::from_secs(60), IDLE_LIMIT, None));
-        assert!(should_end(IDLE_LIMIT, IDLE_LIMIT, None));
-        assert!(should_end(Duration::from_secs(1), IDLE_LIMIT, Some(25.0)));
+    fn no_idle_limit_by_default() {
         assert_eq!(check_period(Duration::from_secs(5)), Duration::from_secs(5));
-        assert_eq!(check_period(IDLE_LIMIT), CHECK_PERIOD);
+        assert_eq!(check_period(Duration::from_secs(3600)), CHECK_PERIOD);
     }
 }

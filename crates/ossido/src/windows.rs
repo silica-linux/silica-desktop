@@ -230,9 +230,22 @@ impl State {
             return;
         };
         self.withdraw_toplevel(&entry.0);
+        let app = crate::panorama::window_app(&entry.0);
         self.hidden.push(entry);
-        let next = self.space.elements().last().cloned();
-        self.focus_window(next);
+        // As on the reference (APP-LC) the app stays frontmost with no window: no other
+        // window takes the focus, and the menu bar keeps showing the app.
+        self.focus_window(None);
+        self.set_windowless_front(app);
+    }
+
+    /// The windowless frontmost app (#142), announced to the shell as `app.frontmost`.
+    pub fn set_windowless_front(&mut self, app: Option<String>) {
+        if self.windowless_front == app {
+            return;
+        }
+        self.windowless_front = app;
+        let value = self.windowless_front.clone().unwrap_or_default();
+        self.broadcast_to_shell("app.frontmost".to_owned(), value);
     }
 
     /// The app shows its hidden window again: back where it was, in the shell's list, focused.

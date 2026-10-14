@@ -360,6 +360,13 @@ impl State {
             }
             APP_QUIT => {
                 let silica_control::QuitParams { app_id } = parse(params)?;
+                // No window focused: the frontmost windowless app (#142), if any.
+                let app_id = app_id.or_else(|| {
+                    self.focused_window()
+                        .is_none()
+                        .then(|| self.windowless_front.clone())
+                        .flatten()
+                });
                 // A windowless app (Quit in its Dock menu) has no window to start from.
                 if let Some(app) = app_id.filter(|app| registered_app(app)) {
                     let quitting = app.clone();
@@ -686,6 +693,10 @@ impl State {
 
     /// Gives the focus to a window (or to none) and brings it to the top.
     pub fn focus_window(&mut self, window: Option<Window>) {
+        // A window taking the focus ends the frontmost windowless app (#142).
+        if window.is_some() {
+            self.set_windowless_front(None);
+        }
         for other in self.space.elements() {
             other.set_activated(false);
         }

@@ -280,9 +280,25 @@ struct App {
     app_id: String,
     quit_with_last_window: bool,
     hidden_since: Option<std::time::Instant>,
+    /// The app answers `reopen` itself (silica_ui `SilicaApp`): it builds its new window and
+    /// calls `openWindow`, and only then the window comes back (APP-LC). Without it the
+    /// hidden window comes back at once.
+    handles_reopen: bool,
+    /// While hidden, the engine keeps drawing until then: the app tears its window down
+    /// after a close, and builds the new one before it is shown.
+    free_run_until: Option<std::time::Instant>,
+    /// A reopen is waiting for the app's `openWindow` (or the fallback timer).
+    show_pending: bool,
+    /// The file manager has no Quit (DOCK-02): `setQuitEnabled false` ignores Cmd+Q.
+    quit_enabled: bool,
     registration: Option<crate::app_lifecycle::Registration>,
     registry_listener: Option<std::os::unix::net::UnixListener>,
 }
+
+/// How long a hidden app may draw to tear its closed window down (#142).
+const TEARDOWN: Duration = Duration::from_millis(250);
+/// How long an app has to build its new window after a reopen before it is shown anyway.
+const BUILD_LIMIT: Duration = Duration::from_millis(500);
 
 pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     for path in [&options.library, &options.icu_data] {
@@ -601,6 +617,10 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         app_id: options.app_id.clone(),
         quit_with_last_window: false,
         hidden_since: None,
+        handles_reopen: false,
+        free_run_until: None,
+        show_pending: false,
+        quit_enabled: true,
         registration: None,
         registry_listener: None,
     };
@@ -818,14 +838,17 @@ impl App {
             warn!("app registry: {err}");
             return;
         }
-        let period = crate::app_lifecycle::check_period(crate::app_lifecycle::idle_limit());
-        if let Err(err) =
-            handle.insert_source(Timer::from_duration(period), move |_, _, app: &mut App| {
-                app.check_windowless();
-                TimeoutAction::ToDuration(period)
-            })
-        {
-            warn!("app registry timer: {err}");
+        // No automatic termination (APP-LC), except under the debug limit.
+        if let Some(limit) = crate::app_lifecycle::idle_limit() {
+            let period = crate::app_lifecycle::check_period(limit);
+            if let Err(err) =
+                handle.insert_source(Timer::from_duration(period), move |_, _, app: &mut App| {
+                    app.check_windowless();
+                    TimeoutAction::ToDuration(period)
+                })
+            {
+                warn!("app registry timer: {err}");
+            }
         }
         self.registration = Some(registration);
         self.registry_listener = Some(listener);
@@ -860,17 +883,25 @@ impl App {
                     answer(&stream, "ok");
                 }
                 Some(Request::Quit) => {
-                    answer(&stream, "ok");
-                    info!("{}: quit", self.app_id);
-                    self.exit = true;
+                    if self.quit_enabled {
+                        answer(&stream, "ok");
+                        info!("{}: quit", self.app_id);
+                        self.exit = true;
+                    } else {
+                        // The file manager has no Quit (DOCK-02).
+                        answer(&stream, "ignored");
+                    }
                 }
                 None => answer(&stream, "?"),
             }
         }
     }
 
-    /// The app's last window closes (#142): Ossido hides it and the app keeps running,
-    /// unless the app ends with its last window or the system cannot hide it.
+    /// The app's last window closes (#142, APP-LC): the window goes away and the app keeps
+    /// running with no window, unless it ends with its last window (single-window apps such
+    /// as Calculator) or the system cannot hide it. The app learns it (`lastWindowClosed`)
+    /// and tears the closed window's content down: a reopen builds a new window, it does not
+    /// bring the old one back (that would be minimizing).
     fn close_last_window(&mut self) {
         let hideable = self.registration.is_some()
             && self
@@ -891,48 +922,113 @@ impl App {
             .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
         object.set_hidden(1);
         self.hidden_since = Some(std::time::Instant::now());
+        self.show_pending = false;
         self.activated = Some(false);
         self.send_lifecycle(false);
         self.send_app("lastWindowClosed", serde_json::json!({}));
+        // A few frames while hidden, so the app can drop the closed window's content.
+        if self.handles_reopen {
+            self.free_run(TEARDOWN);
+        }
         info!("{}: last window closed, the app keeps running", self.app_id);
     }
 
-    /// Shows the hidden window again (the Dock, a second launch); with the window on screen
-    /// the app only learns about it.
-    fn reopen(&mut self) {
-        let shown = self.hidden_since.take().is_some();
-        if shown {
-            if let Some(object) = &self.appearance {
-                object.set_hidden(0);
-            }
-            // The engine draws again: the vsync it was waiting for, then the frame callbacks.
-            if let Some(baton) = self.vsync.take() {
-                self.answer_vsync(baton);
-            }
-            if let Some(engine) = &self.engine
-                && let Err(err) = engine.schedule_frame()
-            {
-                warn!("{err}");
-            }
+    /// Lets the engine draw for `span` while the window is hidden.
+    fn free_run(&mut self, span: Duration) {
+        self.free_run_until = Some(std::time::Instant::now() + span);
+        if let Some(baton) = self.vsync.take() {
+            self.answer_vsync(baton);
         }
-        self.send_app("reopen", serde_json::json!({ "shown": shown }));
+        if let Some(engine) = &self.engine
+            && let Err(err) = engine.schedule_frame()
+        {
+            warn!("{err}");
+        }
     }
 
-    /// A windowless app idle for long, or with memory short, is ended (#142); the Dock keeps
-    /// showing it through the `.parked` marker.
+    /// A reopen (the Dock, a second launch, the Launcher or Faro). With a window on screen the
+    /// app only learns about it. With none, an app that answers reopen builds its new window
+    /// and calls `openWindow`; any other app gets its hidden window back at once.
+    fn reopen(&mut self) {
+        let windowless = self.hidden_since.is_some();
+        if windowless && self.handles_reopen {
+            if !self.show_pending {
+                self.show_pending = true;
+                self.free_run(BUILD_LIMIT);
+                // An app that never calls openWindow still gets its window.
+                let timer = Timer::from_duration(BUILD_LIMIT);
+                if let Err(err) = self
+                    .loop_handle
+                    .insert_source(timer, |_, _, app: &mut App| {
+                        if app.show_pending {
+                            warn!("{}: no openWindow after a reopen", app.app_id);
+                            app.show_window();
+                        }
+                        TimeoutAction::Drop
+                    })
+                {
+                    warn!("reopen timer: {err}");
+                }
+            }
+        } else if windowless {
+            self.show_window();
+        }
+        self.send_app("reopen", serde_json::json!({ "windowless": windowless }));
+    }
+
+    /// The app built its window (`openWindow`): it is shown after the frame being drawn, so
+    /// the first image on screen is the new window, never the closed one.
+    fn open_window(&mut self) {
+        if self.hidden_since.is_none() {
+            return;
+        }
+        self.free_run(BUILD_LIMIT);
+        let timer = Timer::from_duration(Duration::from_nanos(2 * FRAME_PERIOD_NANOS));
+        if let Err(err) = self
+            .loop_handle
+            .insert_source(timer, |_, _, app: &mut App| {
+                app.show_window();
+                TimeoutAction::Drop
+            })
+        {
+            warn!("open window timer: {err}");
+            self.show_window();
+        }
+    }
+
+    /// The hidden window is on screen again.
+    fn show_window(&mut self) {
+        if self.hidden_since.take().is_none() {
+            return;
+        }
+        self.show_pending = false;
+        self.free_run_until = None;
+        if let Some(object) = &self.appearance {
+            object.set_hidden(0);
+        }
+        // The engine draws again: the vsync it was waiting for, then the frame callbacks.
+        if let Some(baton) = self.vsync.take() {
+            self.answer_vsync(baton);
+        }
+        if let Some(engine) = &self.engine
+            && let Err(err) = engine.schedule_frame()
+        {
+            warn!("{err}");
+        }
+    }
+
+    /// Only with `SILICA_APP_IDLE_LIMIT` set (debugging): a windowless idle app is ended. The
+    /// reference does not end windowless apps (APP-LC: still running after 15 minutes).
     fn check_windowless(&mut self) {
-        let Some(since) = self.hidden_since else {
+        let (Some(since), Some(limit)) = (self.hidden_since, crate::app_lifecycle::idle_limit())
+        else {
             return;
         };
-        if crate::app_lifecycle::should_end(
-            since.elapsed(),
-            crate::app_lifecycle::idle_limit(),
-            crate::app_lifecycle::memory_pressure(),
-        ) {
+        if since.elapsed() >= limit {
             if let Some(registration) = &self.registration {
                 registration.park();
             }
-            info!("{}: windowless and idle, ended by the system", self.app_id);
+            info!("{}: windowless and idle, ended (debug limit)", self.app_id);
             self.exit = true;
         }
     }
@@ -951,7 +1047,27 @@ impl App {
                 crate::text_input::success(serde_json::Value::Null)
             }
             Some("quit") => {
-                self.exit = true;
+                if self.quit_enabled {
+                    self.exit = true;
+                }
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("setHandlesReopen") => {
+                self.handles_reopen = call
+                    .pointer("/args/value")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("setQuitEnabled") => {
+                self.quit_enabled = call
+                    .pointer("/args/value")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true);
+                crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("openWindow") => {
+                self.open_window();
                 crate::text_input::success(serde_json::Value::Null)
             }
             Some("isHidden") => {
@@ -1471,9 +1587,17 @@ impl App {
     /// The engine wants the next vsync: it arrives with the compositor's frame callback.
     /// Before the first frame the compositor sends none, so it answers right away.
     fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
-        // A hidden window draws nothing: the engine waits until it comes back.
+        // A hidden window draws nothing (the engine waits until it comes back), except while
+        // the app tears down its closed window or builds the next one (#142).
         if self.hidden_since.is_some() {
-            self.vsync = Some(baton);
+            if self
+                .free_run_until
+                .is_some_and(|until| std::time::Instant::now() < until)
+            {
+                self.answer_vsync(baton);
+            } else {
+                self.vsync = Some(baton);
+            }
             return;
         }
         let presented =

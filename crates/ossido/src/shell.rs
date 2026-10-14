@@ -155,6 +155,17 @@ impl State {
         self.minimized
             .retain(|(w, _)| w.toplevel() != Some(surface));
         self.hidden.retain(|(w, _)| w.toplevel() != Some(surface));
+        // The windowless frontmost app quit (its hidden window went with it, #142).
+        if let Some(window) = &window
+            && self.windowless_front.is_some()
+            && crate::panorama::window_app(window) == self.windowless_front
+            && !self
+                .hidden
+                .iter()
+                .any(|(w, _)| crate::panorama::window_app(w) == self.windowless_front)
+        {
+            self.set_windowless_front(None);
+        }
     }
 
     /// The window leaves the shell's list but stays alive (hidden by its app, #142).
