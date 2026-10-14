@@ -16,6 +16,10 @@ use silica_control::commands::{
     WINDOW_TILE_FILL, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT, WINDOW_TILE_TOP, WindowInfo, WindowMove,
     WindowTarget,
 };
+use silica_control::commands::{
+    APP_FORCE_QUIT, APP_FORCE_QUIT_PANEL, SCREENSHOT_REGION, SCREENSHOT_SCREEN,
+    SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT,
+};
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
@@ -33,10 +37,6 @@ use silica_control::commands::{
 };
 use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
-};
-use silica_control::commands::{
-    SCREENSHOT_REGION, SCREENSHOT_SCREEN, SCREENSHOT_SELECTION, SCREENSHOT_TOOLBAR,
-    SCREENSHOT_WINDOW_AT,
 };
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -134,7 +134,12 @@ impl State {
                 let capture = self.window_capture(&window)?;
                 self.publish_screenshot(&capture)
             }
-            SCREENSHOT_SELECTION | SCREENSHOT_TOOLBAR => {
+            APP_FORCE_QUIT => {
+                let silica_control::AppParams { app_id } = parse_required(params)?;
+                let killed = self.force_quit(&app_id)?;
+                Ok(json!({ "killed": killed }))
+            }
+            SCREENSHOT_SELECTION | SCREENSHOT_TOOLBAR | APP_FORCE_QUIT_PANEL => {
                 Ok(json!({ "forwarded": self.forward_to_shell(id) }))
             }
             UI_GLASS_QUALITY => {
@@ -747,6 +752,40 @@ impl State {
                 })
             })
             .collect()
+    }
+
+    /// Termina (SIGKILL) i processi delle finestre di un'app: tutte quelle con quell'app_id, sullo
+    /// schermo, ridotte o in altri spazi. Mai un componente della shell né Ossido stesso.
+    fn force_quit(&mut self, app_id: &str) -> Result<usize, String> {
+        let pids: std::collections::BTreeSet<i32> = self
+            .space
+            .elements()
+            .chain(self.minimized.iter().map(|(w, _)| w))
+            .chain(self.workspaces.stored.iter().flatten().map(|(w, _)| w))
+            .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app_id))
+            .filter_map(|w| {
+                let surface = w.toplevel()?.wl_surface().clone();
+                let client = self.display_handle.get_client(surface.id()).ok()?;
+                let data = client.get_data::<crate::state::ClientState>()?;
+                (!data.shell).then_some(data.pid?)
+            })
+            .filter(|pid| *pid != std::process::id() as i32)
+            .collect();
+        if pids.is_empty() {
+            return Err(format!("nessun processo per {app_id}"));
+        }
+        for pid in &pids {
+            let Some(pid) = rustix::process::Pid::from_raw(*pid) else {
+                continue;
+            };
+            if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::KILL) {
+                warn!(
+                    "uscita forzata di {app_id} ({}): {err}",
+                    pid.as_raw_nonzero()
+                );
+            }
+        }
+        Ok(pids.len())
     }
 
     /// Scrive l'istantanea in un file temporaneo e la annuncia alla shell (`broadcast`

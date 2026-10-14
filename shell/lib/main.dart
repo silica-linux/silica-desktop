@@ -13,6 +13,7 @@ import 'notifications/notifications.dart';
 import 'notifications/service.dart';
 import 'system/desktop_entries.dart';
 import 'system/shell_channel.dart';
+import 'forcequit/force_quit.dart';
 import 'screenshot/screenshot.dart';
 import 'switcher/switcher.dart';
 import 'system/system_status.dart';
@@ -71,6 +72,7 @@ class ShellComponent extends StatelessWidget {
         children: [
           AppSwitcher(entries: loadDesktopEntries()),
           const ScreenshotLayer(),
+          ForceQuitLayer(entries: loadDesktopEntries()),
         ],
       ),
       _ => const LiveDock(),

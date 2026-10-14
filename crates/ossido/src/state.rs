@@ -209,10 +209,14 @@ impl State {
             // si legge qui, una volta, perché i filtri dei global non possono interrogare il
             // display mentre è bloccato dal dispatch.
             let shell = crate::shell::stream_is_shell(&stream);
+            let pid = rustix::net::sockopt::socket_peercred(&stream)
+                .ok()
+                .map(|credentials| credentials.pid.as_raw_nonzero().get());
             if let Err(err) = data.state.display_handle.insert_client(
                 stream,
                 Arc::new(ClientState {
                     shell,
+                    pid,
                     ..ClientState::default()
                 }),
             ) {
@@ -340,6 +344,8 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
     /// Componente della shell (`shell.rs`): vede i protocolli della shell.
     pub shell: bool,
+    /// Il processo del client (SO_PEERCRED), per l'uscita forzata.
+    pub pid: Option<i32>,
 }
 
 impl ClientData for ClientState {

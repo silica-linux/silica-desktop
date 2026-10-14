@@ -79,6 +79,13 @@ pub struct RegionParams {
     pub height: f64,
 }
 
+/// Un'app per app_id (`app.force_quit`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppParams {
+    pub app_id: String,
+}
+
 /// Un punto dello schermo in punti logici (`screenshot.window_at`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

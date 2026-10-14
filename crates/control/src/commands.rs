@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 /// Cattura l'output come PNG.
 pub const UI_SCREENSHOT: &str = "ui.screenshot";
 pub const SCREENSHOT_SCREEN: &str = "screenshot.screen";
+pub const APP_FORCE_QUIT: &str = "app.force_quit";
+pub const APP_FORCE_QUIT_PANEL: &str = "app.force_quit_panel";
 pub const SCREENSHOT_SELECTION: &str = "screenshot.selection";
 pub const SCREENSHOT_TOOLBAR: &str = "screenshot.toolbar";
 pub const SCREENSHOT_REGION: &str = "screenshot.region";
@@ -599,6 +601,27 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "Chiede a tutte le finestre dell'app in primo piano (stesso app_id) di chiudersi.",
         shortcut: Some("Logo+Q"),
         params: no_params,
+    },
+    CommandSpec {
+        id: APP_FORCE_QUIT_PANEL,
+        label: "Uscita forzata",
+        description: "Il pannello per terminare un'app che non risponde (componente della shell).",
+        shortcut: Some("Logo+Alt+Escape"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: APP_FORCE_QUIT,
+        label: "Termina un'app",
+        description: "Termina subito i processi delle finestre di un'app (app_id), senza chiedere.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"app_id": {"type": "string"}},
+                "required": ["app_id"],
+                "additionalProperties": false
+            })
+        },
     },
     CommandSpec {
         id: WINDOW_MINIMIZE,

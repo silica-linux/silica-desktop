@@ -23,7 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-import '../system/layer_control.dart';
+import '../system/layer_arbiter.dart';
 import '../system/shell_channel.dart';
 
 const Size thumbnailImage = Size(256, 144);
@@ -130,6 +130,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   @override
   void dispose() {
+    LayerArbiter.instance.remove(this);
     _commands?.cancel();
     ShellChannel.instance.states.removeListener(_statesChanged);
     _hold?.cancel();
@@ -162,13 +163,14 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   /// altrimenti niente (la superficie è trasparente ai clic).
   void _syncLayer() {
     final thumb = _shot == null ? null : _thumbRect(_lastSize);
-    if (_mode != _Mode.none) {
-      LayerControl.inputRegion(null);
-      LayerControl.keyboard('exclusive');
-    } else {
-      LayerControl.inputRegion(thumb == null ? const [] : [thumb]);
-      LayerControl.keyboard('none');
-    }
+    LayerArbiter.instance.set(
+      this,
+      _mode != _Mode.none
+          ? const LayerWish.all()
+          : thumb == null
+          ? const LayerWish.none()
+          : LayerWish.rects([thumb]),
+    );
   }
 
   Size _lastSize = Size.zero;
