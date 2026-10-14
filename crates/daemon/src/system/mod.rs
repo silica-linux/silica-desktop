@@ -10,6 +10,7 @@
 mod backends;
 mod details;
 pub mod display;
+pub mod focus;
 
 pub use details::{Network, Output, parse_outputs};
 pub use display::NightLight;
@@ -43,6 +44,8 @@ pub struct SystemConfig {
     pub appearance_file: Option<PathBuf>,
     /// Where the night light is saved (`nightlight.json`); `None`: only in memory.
     pub nightlight_file: Option<PathBuf>,
+    /// The Focus modes (`focus.json`).
+    pub focus_file: Option<PathBuf>,
     /// Settings › Energy (`power.json`): `preventSleep` holds logind's idle inhibitor.
     pub power_file: Option<PathBuf>,
     /// Ossido's actions socket; `None`: the one of `WAYLAND_DISPLAY`.
@@ -107,6 +110,7 @@ impl Default for SystemConfig {
             appearance_file: default_appearance_file(),
             nightlight_file: display::config_file("nightlight.json"),
             power_file: display::config_file("power.json"),
+            focus_file: display::config_file("focus.json"),
             actions_socket: None,
             place: crate::sun::local_place(),
             utc_offset: None,
@@ -197,6 +201,8 @@ pub struct SystemState {
     pub brightness_requests: u64,
     pub audio: Option<Audio>,
     pub do_not_disturb: bool,
+    /// The active Focus mode (`dnd` for Do Not Disturb), if any.
+    pub focus: Option<focus::FocusMode>,
     /// Dark appearance (the whole system: Ossido, shell, apps through the Settings portal).
     pub dark: bool,
     /// `light`, `dark` or `auto` (follows the sun).
@@ -253,6 +259,12 @@ impl SystemState {
         put("audio.muted", Value::Bool(audio.muted));
         put("audio.name", Value::from(audio.name));
         put("dnd", Value::Bool(self.do_not_disturb));
+        let mode = self.focus.clone().unwrap_or_default();
+        put("focus", Value::from(mode.id));
+        put("focus.name", Value::from(mode.name));
+        put("focus.symbol", Value::from(mode.symbol));
+        put("focus.allowedApps", Value::from(mode.allowed_apps));
+        put("focus.allowedPeople", Value::from(mode.allowed_people));
         put("appearance.dark", Value::Bool(self.dark));
         put("appearance.mode", Value::from(self.appearance_mode.clone()));
         // "app<US>kind<US>1|0" per app: a flat list the shell splits.
@@ -632,7 +644,10 @@ impl System {
 
     /// Do Not Disturb: the shell does not show banners.
     fn set_do_not_disturb(&self, enabled: bool) {
-        self.shared.update(|state| state.do_not_disturb = enabled);
+        self.shared.update(|state| {
+            state.do_not_disturb = enabled;
+            state.focus = enabled.then(focus::FocusMode::do_not_disturb);
+        });
     }
 
     /// Dark or light appearance, for the whole system; it is saved (`appearance.json`).
@@ -735,6 +750,35 @@ impl System {
         }
         self.shared.update(|state| state.night_light = light);
         self.shared.schedule.notify(usize::MAX);
+        Ok(())
+    }
+
+    /// Turns a Focus mode on (`id` of `focus.json`, or `dnd`), or off with an empty id. Any
+    /// mode silences banners like Do Not Disturb (`dnd` follows it); the shell lets through the
+    /// mode's allowed apps. Saved as `active` in `focus.json`.
+    fn set_focus(&self, id: &str) -> zbus::fdo::Result<()> {
+        let modes = self
+            .shared
+            .config
+            .focus_file
+            .as_deref()
+            .map(focus::read_modes)
+            .unwrap_or_default();
+        let mode =
+            if id.is_empty() {
+                None
+            } else {
+                Some(focus::find(&modes, id).ok_or_else(|| {
+                    zbus::fdo::Error::InvalidArgs(format!("no Focus mode {id:?}"))
+                })?)
+            };
+        if let Some(file) = &self.shared.config.focus_file {
+            focus::save_active(file, id).map_err(failed)?;
+        }
+        self.shared.update(|state| {
+            state.do_not_disturb = mode.is_some();
+            state.focus = mode;
+        });
         Ok(())
     }
 

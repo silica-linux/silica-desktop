@@ -127,6 +127,21 @@ bar.
   whenever the daemon (re)appears. `displays` (s): the JSON of `output.list`, sent again on
   every change (a display plugged in, a new mode, scale or rotation), so `Changed` tells apps.
 
+### Focus
+
+- `SetFocus(s id)`: turns on a Focus mode, `dnd` (Do Not Disturb) or the `id` of a mode in
+  `$XDG_CONFIG_HOME/silica/focus.json`; an empty id turns Focus off; an unknown id is
+  `InvalidArgs`. Any mode silences banners like Do Not Disturb (`dnd` follows it, and
+  `SetDoNotDisturb` sets the mode to `dnd` or none). The active id is saved as `active` in the
+  file (not restored at start yet).
+- State keys `focus` (the active id, empty when off), `focus.name`, `focus.symbol`,
+  `focus.allowedApps` and `focus.allowedPeople` (`as`): the shell lets the allowed apps'
+  notifications through (not done in the shell yet).
+
+`focus.json`, written by Settings: `{"modes": [{"id", "name", "symbol", "allowedApps",
+"allowedPeople"}], "active"}` (at most 32 modes; the id `dnd` is reserved). Schedules are not
+handled yet.
+
 ### Energy
 
 - `Suspend()`: logind's `Suspend(false)`; Ossido calls it when `sleepMinutes` of `power.json`

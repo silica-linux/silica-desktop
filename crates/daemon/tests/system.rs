@@ -357,6 +357,7 @@ trait System {
     fn set_dark(&self, dark: bool) -> zbus::Result<()>;
     fn set_appearance_mode(&self, mode: &str) -> zbus::Result<()>;
     fn suspend(&self) -> zbus::Result<()>;
+    fn set_focus(&self, id: &str) -> zbus::Result<()>;
     fn wifi_networks(&self) -> zbus::Result<Vec<Network>>;
     fn connect_wifi(&self, ssid: &str) -> zbus::Result<()>;
     fn audio_outputs(&self) -> zbus::Result<Vec<(u32, String, bool)>>;
@@ -421,6 +422,7 @@ fn reads_and_changes_the_system() {
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
                 power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
                 utc_offset: Some(0),
@@ -503,7 +505,24 @@ fn reads_and_changes_the_system() {
             assert_eq!(get::<u64>(&state, "brightness.requests"), 2);
 
             proxy.set_do_not_disturb(true).await.unwrap();
-            wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
+            let state = wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
+            assert_eq!(get::<String>(&state, "focus"), "dnd");
+
+            // A Focus mode of focus.json: banners off like Do Not Disturb, its apps allowed.
+            std::fs::write(
+                dir.join("focus.json"),
+                r#"{"modes": [{"id": "work", "name": "Work", "allowedApps": ["mail"]}]}"#,
+            )
+            .unwrap();
+            proxy.set_focus("work").await.unwrap();
+            let state = wait_for(&proxy, |s| get::<String>(s, "focus") == "work").await;
+            assert!(get::<bool>(&state, "dnd"));
+            assert_eq!(get::<Vec<String>>(&state, "focus.allowedApps"), ["mail"]);
+            assert!(proxy.set_focus("nope").await.is_err());
+            proxy.set_focus("").await.unwrap();
+            let state = wait_for(&proxy, |s| get::<String>(s, "focus").is_empty()).await;
+            assert!(!get::<bool>(&state, "dnd"));
+            proxy.set_do_not_disturb(true).await.unwrap();
 
             // The dark appearance: in the state and in the file, for the next start.
             proxy.set_dark(true).await.unwrap();
@@ -565,6 +584,7 @@ fn missing_sources_are_absent_not_errors() {
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
                 power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
                 utc_offset: Some(0),
@@ -662,6 +682,7 @@ fn displays_and_night_light_go_through_ossido() {
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
                 power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
                 actions_socket: Some(socket.clone()),
                 place: None,
                 utc_offset: Some(0),
@@ -771,6 +792,7 @@ fn automatic_appearance_follows_the_sun() {
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
                 power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: Some(place),
                 utc_offset: Some(0),
@@ -883,6 +905,7 @@ fn energy_inhibits_idle_sleep_and_suspends_through_logind() {
                 appearance_file: Some(dir.join("appearance.json")),
                 nightlight_file: Some(dir.join("nightlight.json")),
                 power_file: Some(dir.join("power.json")),
+                focus_file: Some(dir.join("focus.json")),
                 actions_socket: Some(dir.join("no-ossido.sock")),
                 place: None,
                 utc_offset: Some(0),
