@@ -441,10 +441,11 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 17] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 18] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
+    ("tips", UniformType::Matrix4x4),
     ("shape_count", UniformType::_1f),
     ("merge", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -575,6 +576,163 @@ pub enum Tip {
     Up,
     Left,
     Right,
+}
+
+/// The outline of a tip, measured in TIP-01 (points). Not a triangle: two straight flanks at
+/// `angle` from the body edge, whose sharp corners would sit `half_base` from the axis; a round
+/// apex of `apex_radius` tangent to both flanks; concave fillets of `fillet_radius` tangent to
+/// the body edge and to each flank. It is symmetric and fixed in points (a larger popover has
+/// the same tip). The fit is within ~0.2 px of the reference outline at 1×.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TipProfile {
+    pub half_base: f64,
+    /// Flank angle from the body edge, in radians.
+    pub angle: f64,
+    pub apex_radius: f64,
+    pub fillet_radius: f64,
+}
+
+/// A measured tip (TIP-01, points and degrees).
+struct TipPreset {
+    depth: f64,
+    angle_deg: f64,
+    apex_radius: f64,
+    fillet_radius: f64,
+}
+
+/// The Dock icon menu's tip: 10.19 deep, flanks at 50.8°, apex radius 5.30, fillets 9.41
+/// (15.29 from the axis to where the outline leaves the body edge).
+const DOCK_MENU_TIP: TipPreset = TipPreset {
+    depth: 10.19,
+    angle_deg: 50.8,
+    apex_radius: 5.30,
+    fillet_radius: 9.41,
+};
+/// A popover's tip on its top or bottom edge (mean of the two): 10.8 deep, flanks at 46.2°,
+/// apex radius 5.58, fillets 8.0.
+const POPOVER_TIP: TipPreset = TipPreset {
+    depth: 10.80,
+    angle_deg: 46.2,
+    apex_radius: 5.58,
+    fillet_radius: 8.0,
+};
+/// A popover's tip on a side edge: one point deeper with longer fillets, the same flanks and
+/// apex.
+const POPOVER_SIDE_TIP: TipPreset = TipPreset {
+    depth: 11.74,
+    angle_deg: 46.1,
+    apex_radius: 5.73,
+    fillet_radius: 13.6,
+};
+
+impl TipPreset {
+    fn profile(&self) -> TipProfile {
+        let angle = self.angle_deg.to_radians();
+        TipProfile {
+            half_base: TipProfile::half_base_for(angle, self.apex_radius, self.depth),
+            angle,
+            apex_radius: self.apex_radius,
+            fillet_radius: self.fillet_radius,
+        }
+    }
+}
+
+impl TipProfile {
+    pub fn dock_menu() -> Self {
+        DOCK_MENU_TIP.profile()
+    }
+
+    pub fn popover() -> Self {
+        POPOVER_TIP.profile()
+    }
+
+    pub fn popover_side() -> Self {
+        POPOVER_SIDE_TIP.profile()
+    }
+
+    /// The half base that gives `depth`: the sharp apex sits half_base · tan(angle) from the
+    /// edge, and the round apex takes back apex_radius · (1 / cos(angle) − 1).
+    fn half_base_for(angle: f64, apex_radius: f64, depth: f64) -> f64 {
+        (depth + apex_radius * (1.0 / angle.cos() - 1.0)) / angle.tan()
+    }
+
+    /// Depth from the body edge to the apex.
+    pub fn depth(&self) -> f64 {
+        self.half_base * self.angle.tan() - self.apex_radius * (1.0 / self.angle.cos() - 1.0)
+    }
+
+    /// From the axis to where the outline leaves the body edge.
+    pub fn half_width(&self) -> f64 {
+        self.half_base + self.fillet_radius * (self.angle / 2.0).tan()
+    }
+
+    /// The tip drawn in a rectangle of `width` along the body edge and `depth` away from it
+    /// (points): the measured preset closest to that size keeps its flank angle and apex,
+    /// the half base gives the depth and the fillets give the width. The measured sizes give
+    /// the measured outlines.
+    pub fn fit(width: f64, depth: f64) -> Self {
+        let half = width / 2.0;
+        // The side does not choose: a size measured on one edge gives the same outline on
+        // every edge (rotated), so the closest measured size wins.
+        let off = |p: &Self| (p.half_width() - half).abs() + (p.depth() - depth).abs();
+        let preset = [Self::dock_menu(), Self::popover(), Self::popover_side()]
+            .into_iter()
+            .fold(None::<Self>, |best, p| match best {
+                Some(b) if off(&b) <= off(&p) => Some(b),
+                _ => Some(p),
+            })
+            .unwrap_or_else(Self::dock_menu);
+        // Protocol rectangles are whole points: a size that rounds the measured one draws the
+        // measured outline itself (it may pass the rectangle by a fraction of a point).
+        if (preset.depth() - depth).abs() <= 0.5 && (preset.half_width() - half).abs() <= 0.5 {
+            return preset;
+        }
+        let depth = depth.max(1.0);
+        let half = half.max(0.5);
+        // The apex cannot be rounder than the tip is deep or wide.
+        let apex_radius = preset.apex_radius.min(depth * 0.8).min(half * 0.8);
+        let mut angle = preset.angle;
+        let mut half_base = Self::half_base_for(angle, apex_radius, depth);
+        if half_base > half {
+            // Narrower than the measured flanks allow: steeper flanks from the rectangle's
+            // corners, still reaching `depth`.
+            half_base = half;
+            angle = Self::angle_for(half_base, apex_radius, depth);
+        }
+        let fillet_radius = ((half - half_base) / (angle / 2.0).tan()).max(0.0);
+        Self {
+            half_base,
+            angle,
+            apex_radius,
+            fillet_radius,
+        }
+    }
+
+    /// The flank angle that gives `depth` from a given half base (the depth grows with the
+    /// angle while the apex radius stays under the half base): bisection.
+    fn angle_for(half_base: f64, apex_radius: f64, depth: f64) -> f64 {
+        let reach = |a: f64| half_base * a.tan() - apex_radius * (1.0 / a.cos() - 1.0);
+        let (mut low, mut high) = (0.01_f64, 89.0_f64.to_radians());
+        for _ in 0..60 {
+            let mid = 0.5 * (low + high);
+            if reach(mid) < depth {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        0.5 * (low + high)
+    }
+
+    /// For the shader, in physical pixels: half base, tan(angle), apex and fillet radii.
+    fn uniform(&self, scale: f64) -> [f32; 4] {
+        [
+            (self.half_base * scale) as f32,
+            self.angle.tan() as f32,
+            (self.apex_radius * scale) as f32,
+            (self.fillet_radius * scale) as f32,
+        ]
+    }
 }
 
 /// A glass region in the output, in physical pixels.
@@ -1012,6 +1170,9 @@ impl RenderElement<GlesRenderer> for GlassElement {
         // rectangle: x, y, width, height) and the radii in a mat4.
         let mut rects = [[0.0_f32; 16]; 2];
         let mut radii = [0.0_f32; 16];
+        // The tips' outlines (TIP-01), one column per region: half base, tan(angle), apex and
+        // fillet radii in pixels.
+        let mut tips = [[0.0_f32; 16]; 2];
         for (i, shape) in self.shapes.iter().take(MAX_SHAPES).enumerate() {
             let local = shape.rect.loc - self.bbox.loc;
             let values = [
@@ -1028,6 +1189,20 @@ impl RenderElement<GlesRenderer> for GlassElement {
             }
             // Negative radius: a tip (the shader recognizes it by the sign): −1 points down,
             // −2 up, −3 left, −4 right.
+            if let Some(tip) = shape.tip {
+                let (along, away) = match tip {
+                    Tip::Down | Tip::Up => (shape.rect.size.w, shape.rect.size.h),
+                    Tip::Left | Tip::Right => (shape.rect.size.h, shape.rect.size.w),
+                };
+                let scale = shape.scale.max(0.01);
+                let profile = TipProfile::fit(f64::from(along) / scale, f64::from(away) / scale);
+                if let Some(slot) = tips
+                    .get_mut(i / 4)
+                    .and_then(|matrix| matrix.get_mut((i % 4) * 4..(i % 4) * 4 + 4))
+                {
+                    slot.copy_from_slice(&profile.uniform(scale));
+                }
+            }
             if let Some(slot) = radii.get_mut(i) {
                 *slot = match shape.tip {
                     None => shape.radius as f32,
@@ -1054,6 +1229,13 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 "radii",
                 UniformValue::Matrix4x4 {
                     matrices: vec![radii],
+                    transpose: false,
+                },
+            ),
+            Uniform::new(
+                "tips",
+                UniformValue::Matrix4x4 {
+                    matrices: tips.to_vec(),
                     transpose: false,
                 },
             ),
@@ -1092,5 +1274,72 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Some(&self.program),
             &uniforms,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn close(a: f64, b: f64, tolerance: f64) -> bool {
+        (a - b).abs() <= tolerance
+    }
+
+    #[test]
+    fn the_presets_give_the_measured_tips() {
+        // TIP-01: depth and half width of the three outlines.
+        for (profile, depth, half_width) in [
+            (TipProfile::dock_menu(), 10.19, 15.29),
+            (TipProfile::popover(), 10.80, 16.15),
+            (TipProfile::popover_side(), 11.74, 19.45),
+        ] {
+            assert!(close(profile.depth(), depth, 0.01), "{profile:?}");
+            assert!(close(profile.half_width(), half_width, 0.2), "{profile:?}");
+        }
+    }
+
+    #[test]
+    fn a_measured_size_gives_its_preset_back() {
+        let dock = TipProfile::dock_menu();
+        let fitted = TipProfile::fit(2.0 * dock.half_width(), dock.depth());
+        assert!(close(fitted.half_base, dock.half_base, 1e-6));
+        assert!(close(fitted.fillet_radius, dock.fillet_radius, 1e-6));
+        let side = TipProfile::popover_side();
+        let fitted = TipProfile::fit(2.0 * side.half_width(), side.depth());
+        assert!(close(fitted.angle, side.angle, 1e-9));
+        // A popover-sized tip on a top edge takes the popover's flanks, a Dock menu's the
+        // Dock's.
+        assert!(close(
+            TipProfile::fit(32.0, 11.0).angle,
+            TipProfile::popover().angle,
+            1e-9
+        ));
+        assert!(close(TipProfile::fit(31.0, 10.0).angle, dock.angle, 1e-9));
+        // Whole-point sizes that round a measured tip draw it exactly.
+        assert_eq!(TipProfile::fit(31.0, 10.0), dock);
+        assert_eq!(TipProfile::fit(32.0, 11.0), TipProfile::popover());
+        assert_eq!(TipProfile::fit(39.0, 12.0), side);
+        // Others are fitted: exactly as deep as the rectangle.
+        assert!(close(TipProfile::fit(36.0, 14.0).depth(), 14.0, 1e-6));
+    }
+
+    #[test]
+    fn any_rectangle_gives_a_tip_inside_it() {
+        for (w, d) in [
+            (24.0, 10.0),
+            (31.0, 10.0),
+            (8.0, 10.0),
+            (40.0, 3.0),
+            (39.0, 12.0),
+        ] {
+            let p = TipProfile::fit(w, d);
+            assert!(
+                p.fillet_radius >= 0.0 && p.apex_radius <= d,
+                "{w}×{d}: {p:?}"
+            );
+            // Exact, or the measured outline that the whole-point size rounds.
+            assert!(close(p.depth(), d, 0.5), "{w}×{d}: depth {}", p.depth());
+            assert!(p.half_width() <= w / 2.0 + 0.5 + 1e-6, "{w}×{d}: {p:?}");
+        }
     }
 }

@@ -2,7 +2,7 @@
 """Glass parity: renders our glass over the reference wallpapers, at the same places as the
 reference captures, and measures the difference.
 
-Usage: glass_parity.py [--reference DIR] [--out DIR] [--only SURFACE] [--skip-render]
+Usage: glass_parity.py [--reference DIR] [--out DIR] [--only SURFACE] [--skip-render] [--tips]
 
 - reference: the silica-reference checkout (default: plan/reference of the main checkout).
 - out: where renders, side-by-side images and `summary.json` go.
@@ -15,6 +15,12 @@ Metrics, per surface and appearance (all in 0–255 levels or pixels at 1×):
 - rim: RMSE of the luminance profile across the top, bottom and side edges on gray;
 - silhouette: mean / max distance (px) between our edge and the reference edge, per row and
   per column, on gray.
+
+With --tips, the tip outlines instead (TIP-01): our tips rendered over black, their outline
+taken like the reference's (coverage on the luminance, the 0.5 crossing per column, depth from
+the body edge as a function of the distance from the axis), compared with the reference
+captures on black and with the measured model (fillet, flank, round apex). Side-by-side crops
+(tip pointing down, 4x, reference left) go to `tips/`.
 """
 import argparse
 import json
@@ -71,13 +77,12 @@ SURFACES = {
         "valid": (240, 140, 800, 700),
     },
     # The context menu of a Dock icon with its tip (misc.md: body x 829–1056, y 841–1337;
-    # tip centered at x 856, 10 pt deep: silica_ui sends a 24 × 10 rectangle, the sharp
-    # triangle whose fillets and round apex give the measured ~22 pt visible base).
+    # tip centered at x 856; TIP-01: 30.6 pt from fillet to fillet, 10.2 deep, sent as 30 × 10).
     "dockmenu": {
         "crop": (780, 800, 340, 600),
         "regions": [
             (829, 841, 228, 497, 12, "thick", "none"),
-            (844, 1338, 24, 10, 0, "thick", "down"),
+            (841, 1338, 30, 10, 0, "thick", "down"),
         ],
         # A widget sits above the menu.
         "rim_sides": ("bottom", "left", "right"),
@@ -495,17 +500,278 @@ def shifted(r, o, wall):
     return best if scores[best] > 1.2 * scores[0] else 0
 
 
+# TIP-01 cases: where the tip points, the half to use when the other runs into a body corner, the measured model (sharp half base, flank angle in degrees,
+# apex radius, fillet radius) and the tip rectangle a client sends (width along the edge,
+# depth).
+TIP_CASES = {
+    "dock": {
+        "dir": "down",
+        "half": "right",
+        # The Dock shows at the bottom of the capture: only the rows above it.
+        "rows": 44,
+        "model": (10.817, 50.82, 5.295, 9.414),
+        "size": (31, 10),
+    },
+    "popover-down": {
+        "dir": "down",
+        "model": (12.76, 46.2, 5.75, 8.05),
+        "size": (32, 11),
+    },
+    "popover-up": {
+        "dir": "up",
+        "model": (12.73, 46.2, 5.41, 7.97),
+        "size": (32, 11),
+    },
+    "popover-left": {
+        "dir": "left",
+        "model": (13.7, 46.1, 5.73, 13.6),
+        "size": (39, 12),
+    },
+    "popover-right": {
+        "dir": "right",
+        "model": (13.7, 46.1, 5.73, 13.6),
+        "size": (39, 12),
+    },
+}
+ROTATION = {"down": 0, "up": 2, "left": 1, "right": 3}
+# Where our body and tip go on the 2560 x 1440 screen: the body's edge facing the tip.
+TIP_BODY = (1000, 500, 360, 300)
+
+
+def load_tip_files(ref):
+    """The capture of every tip case on black, from the private reference's table
+    (`tools/glass_parity_files.json`, key `tips`: per case a path pattern with `{ap}`)."""
+    path = os.path.join(ref, "tools", "glass_parity_files.json")
+    if not os.path.exists(path):
+        sys.exit(f"capture table not found: {path} (it comes with silica-reference)")
+    with open(path) as f:
+        table = json.load(f).get("tips", {})
+    for case, spec in TIP_CASES.items():
+        if case not in table:
+            sys.exit(f"{path}: no entry for the tip case {case!r} under 'tips'")
+        spec["file"] = table[case]
+
+
+def tip_regions(case):
+    """Body and tip rectangles for a case, and the apex position on screen."""
+    x, y, w, h = TIP_BODY
+    tw, td = TIP_CASES[case]["size"]
+    d = TIP_CASES[case]["dir"]
+    cx, cy = x + w // 2, y + h // 2
+    tip = {
+        "down": (cx - tw // 2, y + h, tw, td),
+        "up": (cx - tw // 2, y - td, tw, td),
+        "left": (x - td, cy - tw // 2, td, tw),
+        "right": (x + w, cy - tw // 2, td, tw),
+    }[d]
+    body = (x, y, w, h, 12, "thick", "none")
+    return [body, (*tip, 0, "thick", d)]
+
+
+def tip_cases(ref, out):
+    """Render cases: every tip over a black wallpaper, light and dark."""
+    black = os.path.join(out, "black.png")
+    os.makedirs(out, exist_ok=True)
+    Image.new("RGB", (2560, 1440), (0, 0, 0)).save(black)
+    result = []
+    for case, spec in TIP_CASES.items():
+        for ap in ("light", "dark"):
+            if not os.path.exists(os.path.join(ref, spec["file"].format(ap=ap))):
+                continue
+            result.append(
+                {
+                    "name": f"tip-{case}-{ap}",
+                    "dark": ap == "dark",
+                    "wallpaper": black,
+                    "out": os.path.join(out, "ours", f"tip-{case}-{ap}.png"),
+                    "regions": [
+                        {"x": x, "y": y, "w": w, "h": h, "r": r, "material": m, "tip": t}
+                        for (x, y, w, h, r, m, t) in tip_regions(case)
+                    ],
+                }
+            )
+    return result
+
+
+def our_tip_crop(path, case):
+    """Our render around the tip, 80 across and 50 along (20 inside the body), unrotated."""
+    image = load(path)
+    tip = tip_regions(case)[1]
+    x, y, w, h, _, _, d = tip
+    if d == "down":
+        return image[y - 20 : y + 30, x + w // 2 - 40 : x + w // 2 + 40]
+    if d == "up":
+        return image[y + h - 30 : y + h + 20, x + w // 2 - 40 : x + w // 2 + 40]
+    if d == "left":
+        return image[y + h // 2 - 40 : y + h // 2 + 40, x + w - 30 : x + w + 20]
+    return image[y + h // 2 - 40 : y + h // 2 + 40, x - 20 : x + 30]
+
+
+def cubic_zoom(a, z, axis):
+    """Upsamples `a` by `z` along `axis` with a cubic (Catmull-Rom) through the pixel centers,
+    like the reference tool's cubic zoom (without scipy)."""
+    a = np.moveaxis(a, axis, 0)
+    n = a.shape[0]
+    t = (np.arange(n * z) + 0.5) / z - 0.5
+    i = np.clip(np.floor(t).astype(int), 0, n - 1)
+    f = (t - i)[:, None] if a.ndim > 1 else t - i
+    p = [a[np.clip(i + k, 0, n - 1)] for k in (-1, 0, 1, 2)]
+    out = 0.5 * (
+        2 * p[1]
+        + (-p[0] + p[2]) * f
+        + (2 * p[0] - 5 * p[1] + 4 * p[2] - p[3]) * f * f
+        + (-p[0] + 3 * p[1] - 3 * p[2] + p[3]) * f * f * f
+    )
+    return np.moveaxis(out, 0, axis)
+
+
+def outline_profile(image, d, half=None, rows=None):
+    """The outline of a tip on black, as the reference's tool takes it: coverage on the
+    luminance against the background and the body's fill, the lowest 0.5 crossing per column
+    (columns every 0.1 px, linear between pixels), depth from the body edge as a function of
+    the distance from the apex's axis (both halves averaged, or one mirrored). Returns the grid,
+    the depth, where the outline leaves the body edge, and the rotated coverage."""
+    lum = image @ np.array([0.2126, 0.7152, 0.0722])
+    lum = np.rot90(lum, k=ROTATION[d])
+    if rows is not None:
+        lum = lum[:rows]
+    H, W = lum.shape
+    # Black wallpaper behind every case.
+    bg = 0.0
+    fill = np.median(lum[2:6, W // 3 : 2 * W // 3])
+    alpha = np.clip((lum - bg) / (fill - bg), 0, 1)
+    z = 10
+    up = cubic_zoom(cubic_zoom(alpha, z, 0), z, 1)
+    xs = (np.arange(up.shape[1]) + 0.5) / z - 0.5
+    ys = []
+    for c in range(up.shape[1]):
+        idx = np.nonzero(up[:, c] >= 0.5)[0]
+        ys.append((idx.max() + 0.5) / z - 0.5 if len(idx) else np.nan)
+    ys = np.array(ys)
+    ok = ~np.isnan(ys)
+    xs, ys = xs[ok], ys[ok]
+    ends = ys[xs < 4] if half == "left" else ys[xs > W - 5] if half == "right" else np.r_[ys[xs < 4], ys[xs > W - 5]]
+    depth = ys - np.median(ends)
+    top = depth.max()
+    sel = depth > 0.9 * top
+    xa = np.sum(xs[sel] * depth[sel]) / np.sum(depth[sel])
+    u = xs - xa
+    g = np.arange(0, min(-u.min(), u.max()) - 0.05, 0.1)
+    left = np.interp(-g, u[::-1] if u[0] > u[-1] else u, depth[::-1] if u[0] > u[-1] else depth)
+    right = np.interp(g, u, depth)
+    if half == "left":
+        right = left
+    if half == "right":
+        left = right
+    prof = (left + right) / 2
+    leaves = g[np.nonzero(prof > 0.05)[0].max()] if np.any(prof > 0.05) else g[-1]
+    return g, prof, float(leaves), alpha
+
+
+def model_depth(model, x):
+    """The measured model's depth at distance x from the axis (the reference's fit C)."""
+    hb, angle, ra, rf = model
+    al = np.radians(angle)
+    ta = np.tan(al)
+    yc = hb * ta - ra / np.cos(al)
+    xa_t = ra * np.sin(al)
+    xf = hb + rf * np.tan(al / 2)
+    xf_t = xf - rf * np.sin(al)
+    y = np.where(x <= xa_t, yc + np.sqrt(np.clip(ra**2 - x**2, 0, None)), (hb - x) * ta)
+    y = np.where((x >= xf_t) & (x <= xf), rf - np.sqrt(np.clip(rf**2 - (x - xf) ** 2, 0, None)), y)
+    return np.where(x > xf, 0.0, y)
+
+
+def tip_side_by_side(ref_alpha, our_alpha, path):
+    """Both coverages (tip pointing down) aligned on the apex, 4x nearest: reference left."""
+    h, w = 24, 48
+
+    def around_apex(a):
+        covered = a >= 0.5
+        rows = np.nonzero(covered.any(1))[0]
+        apex_row = rows.max() if len(rows) else a.shape[0] - 1
+        cols = np.nonzero(covered[apex_row])[0]
+        apex_col = int(cols.mean()) if len(cols) else a.shape[1] // 2
+        padded = np.pad(a, ((h, h), (w, w)))
+        y0, x0 = apex_row + h - (h - 4), apex_col + w - w // 2
+        return padded[y0 : y0 + h, x0 : x0 + w]
+
+    both = np.concatenate([around_apex(ref_alpha), np.ones((h, 2)), around_apex(our_alpha)], 1)
+    image = Image.fromarray((both * 255).astype(np.uint8)).resize((both.shape[1] * 4, h * 4), Image.NEAREST)
+    image.save(path)
+
+
+def analyze_tips(ref, out):
+    os.makedirs(os.path.join(out, "tips"), exist_ok=True)
+    rows = []
+    for case, spec in TIP_CASES.items():
+        for ap in ("light", "dark"):
+            ref_path = os.path.join(ref, spec["file"].format(ap=ap))
+            ours_path = os.path.join(out, "ours", f"tip-{case}-{ap}.png")
+            if not (os.path.exists(ref_path) and os.path.exists(ours_path)):
+                continue
+            half = spec.get("half")
+            gr, pr, wr, ar = outline_profile(load(ref_path), spec["dir"], half, spec.get("rows"))
+            go, po, wo, ao = outline_profile(our_tip_crop(ours_path, case), spec["dir"])
+            reach = min(gr[-1], go[-1], max(wr, wo) + 1.0)
+            grid = np.arange(0, reach, 0.1)
+            ref_d = np.interp(grid, gr, pr)
+            our_d = np.interp(grid, go, po)
+            model = model_depth(spec["model"], grid)
+            vs_ref = np.abs(our_d - ref_d)
+            # The body edge of a small capture is known to ~0.3 px: the residual after the
+            # best constant offset tells the shape apart from the edge.
+            inner = model > 0.5
+            shift = float(np.median((our_d - ref_d)[inner])) if inner.any() else 0.0
+            shape = np.abs(our_d - ref_d - shift)[inner] if inner.any() else np.zeros(1)
+            vs_model = np.abs(our_d - model)
+            ref_model = np.abs(ref_d - model)
+            rows.append(
+                {
+                    "case": case,
+                    "appearance": ap,
+                    "depth_ref": float(pr.max()),
+                    "depth_ours": float(po.max()),
+                    "leaves_ref": wr,
+                    "leaves_ours": wo,
+                    "vs_ref_mean": float(vs_ref.mean()),
+                    "vs_ref_max": float(vs_ref.max()),
+                    "edge_shift": shift,
+                    "shape_mean": float(shape.mean()),
+                    "shape_max": float(shape.max()),
+                    "vs_model_mean": float(vs_model.mean()),
+                    "vs_model_max": float(vs_model.max()),
+                    "ref_vs_model_max": float(ref_model.max()),
+                }
+            )
+            tip_side_by_side(ar, ao, os.path.join(out, "tips", f"{case}-{ap}.png"))
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", default=os.path.join(REPO, "plan", "reference"))
     parser.add_argument("--out", default=os.path.join(REPO, "target", "glass-parity"))
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--skip-render", action="store_true")
+    parser.add_argument("--tips", action="store_true")
     args = parser.parse_args()
     args.out = os.path.abspath(args.out)
     args.reference = os.path.abspath(args.reference)
     if not os.path.isdir(args.reference):
         sys.exit(f"reference not found: {args.reference}")
+    if args.tips:
+        load_tip_files(args.reference)
+        if not args.skip_render:
+            render(tip_cases(args.reference, args.out), args.out)
+        rows = analyze_tips(args.reference, args.out)
+        keys = ["depth_ref", "depth_ours", "vs_ref_mean", "vs_ref_max", "edge_shift", "shape_mean", "shape_max", "vs_model_mean", "vs_model_max", "ref_vs_model_max"]
+        print(f"{'case':14} {'ap':5} " + " ".join(f"{k:>16}" for k in keys))
+        for row in rows:
+            print(f"{row['case']:14} {row['appearance']:5} " + " ".join(f"{row[k]:16.2f}" for k in keys))
+        with open(os.path.join(args.out, "tips.json"), "w") as f:
+            json.dump(rows, f, indent=1)
+        return
     load_files(args.reference)
     if not args.skip_render:
         render(cases(args.reference, args.out, args.only), args.out)

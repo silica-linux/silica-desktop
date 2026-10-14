@@ -111,10 +111,13 @@
 
     <request name="add_tip" since="4">
       <description summary="adds a downward tip">
-        An isosceles triangle in the given rectangle, with the base on the top side and the
-        apex at the middle of the bottom side. It merges with the regions of the same group
-        and material (the tip of a menu pointing at a Dock icon): the glass edge runs without
-        a break from the body to the tip.
+        A tip in the given rectangle, the base on the top side (the body's edge) and the
+        round apex at the middle of the bottom side: concave fillets leave the body edge at
+        the rectangle's left and right sides, turn into straight flanks and meet in the apex.
+        The compositor draws the measured outline closest to the rectangle's size (a Dock
+        menu's tip is 31 × 10, a popover's 32 × 11, a sideways popover's 39 × 12). It merges
+        with the regions of the same group and material: the glass edge runs without a break
+        from the body to the tip.
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>

@@ -27,6 +27,9 @@ uniform float tint;
 uniform vec2 tex_size;
 uniform mat4 shapes[2];
 uniform mat4 radii;
+// The tips' outlines (TIP-01), one column per region: half base of the sharp flanks, tan of the
+// flank angle, apex radius, fillet radius (pixels).
+uniform mat4 tips[2];
 uniform float shape_count;
 uniform float merge;
 uniform float exponent;
@@ -64,44 +67,59 @@ float rounded_distance(vec2 p, vec4 rect, float r) {
     return max(d.x, d.y) - max(r, 0.0);
 }
 
-// Downward tip in the rectangle: base (its width) on the top side, at the body's edge, and a
-// rounded apex touching the bottom side. A rounded isosceles triangle: apex radius ~2 pt, the
-// sides' angle solved so that the rounded bottom lands on the rectangle's bottom
-// (misc.md, Dock context menu: base ~22 pt, ~9 pt deep, round bottom). The triangle goes on
-// into the body, cut just above the base, so its base never shows.
-float iso_triangle(vec2 p, vec2 q) {
-    // Apex at the origin, opening towards +y, half-width q.x at height q.y (iquilezles).
-    p.x = abs(p.x);
-    vec2 a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
-    vec2 b = p - q * vec2(clamp(p.x / q.x, 0.0, 1.0), 1.0);
-    float s = -sign(q.y);
-    vec2 d = min(vec2(dot(a, a), s * (p.x * q.y - p.y * q.x)),
-                 vec2(dot(b, b), s * (p.y - q.y)));
-    return -sqrt(d.x) * sign(d.y);
+// Distance from the arc of `c`, radius `r`, between the directions `a0` and `a1` (an arc
+// under 180°); far away outside that sector (the neighbouring pieces cover its ends).
+float arc_distance(vec2 q, vec2 c, float r, vec2 a0, vec2 a1) {
+    vec2 v = q - c;
+    float turn = a0.x * a1.y - a0.y * a1.x;
+    bool inside = (a0.x * v.y - a0.y * v.x) * turn >= 0.0
+               && (v.x * a1.y - v.y * a1.x) * turn >= 0.0;
+    return inside ? abs(length(v) - r) : 1.0e6;
 }
 
-// p in the tip's own frame: the base along y = 0 (x from 0 to `size.x`), the apex towards +y
-// at depth `size.y`.
-float tip_distance(vec2 p, vec2 size) {
-    float ra = min(2.5 * scale_px, size.x * 0.25);
-    float half_base = size.x * 0.5;
-    float height = size.y;
-    // Depth of the sharp apex so that the rounded bottom sits at `height`.
-    float depth = height;
-    for (int i = 0; i < 4; i++) {
-        float sin_t = half_base / sqrt(half_base * half_base + depth * depth);
-        depth = height + ra * (1.0 / max(sin_t, 0.05) - 1.0);
-    }
-    float tan_t = half_base / depth;
-    float sin_t = half_base / sqrt(half_base * half_base + depth * depth);
-    // The triangle inset by ra: apex ra / sin(t) higher; rounded back by subtracting ra.
-    float apex = depth - ra / max(sin_t, 0.05);
-    float reach = apex + 2.0 * height;
-    vec2 local = vec2(p.x - half_base, apex - p.y);
-    // Cut a little above the base: the triangle keeps widening inside the body and, with the
-    // tip near a corner, it would stick out of the body's side as a wedge.
+float segment_distance(vec2 q, vec2 a, vec2 b) {
+    vec2 ab = b - a;
+    float h = clamp(dot(q - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    return length(q - a - ab * h);
+}
+
+// The tip measured in TIP-01, in its own frame: the body edge along y = 0 (x from 0 to
+// `size.x`, the axis in the middle), the apex towards +y. Not a triangle: from the body edge a
+// concave fillet (radius rf) turns into a straight flank at angle a from the edge, which ends
+// in a round apex (radius ra) at depth `size.y`. k: half base hb of the sharp flanks, tan(a),
+// ra, rf. The shape goes on 2 pt into the body (no seam with it) and stops where its fillets
+// leave the edge, so near a corner it does not stick out of the body's side.
+float tip_distance(vec2 p, vec2 size, vec4 k) {
+    float hb = k.x;
+    float ta = k.y;
+    float ra = k.z;
+    float rf = k.w;
+    float ca = inversesqrt(1.0 + ta * ta);
+    float sa = ta * ca;
+    // tan(a / 2)
+    float th = sa / (1.0 + ca);
+    vec2 q = vec2(abs(p.x - 0.5 * size.x), p.y);
+    // From the sharp base corner b along the flank (u, towards the apex).
+    vec2 u = vec2(-ca, sa);
+    vec2 b = vec2(hb, 0.0);
+    float w = hb + rf * th;
+    vec2 t2 = b + rf * th * u;
+    vec2 apex = vec2(0.0, hb * ta);
+    vec2 t3 = apex - ra * ta * u;
+    vec2 cf = vec2(w, rf);
+    vec2 cr = vec2(0.0, apex.y - ra / ca);
+    float d = q.x >= w ? abs(q.y) : length(q - vec2(w, 0.0));
+    d = min(d, arc_distance(q, cf, rf, vec2(0.0, -1.0), normalize(t2 - cf + vec2(1e-6, 0.0))));
+    d = min(d, segment_distance(q, t2, t3));
+    d = min(d, arc_distance(q, cr, ra, normalize(t3 - cr + vec2(1e-6, 0.0)), vec2(0.0, 1.0)));
+    // Inside: above the outline, which is a function of |x|.
+    float edge = q.x >= w ? 0.0
+               : q.x >= t2.x ? rf - sqrt(max(rf * rf - (q.x - w) * (q.x - w), 0.0))
+               : q.x >= t3.x ? (hb - q.x) * ta
+               : cr.y + sqrt(max(ra * ra - q.x * q.x, 0.0));
+    float sd = q.y < edge ? -d : d;
     float overlap = 2.0 * scale_px;
-    return max(iso_triangle(local, vec2(reach * tan_t, reach)) - ra, -p.y - overlap);
+    return max(sd, max(-p.y - overlap, q.x - w));
 }
 
 // Smooth (polynomial) minimum: the bridge between two nearby shapes.
@@ -123,18 +141,18 @@ float union_distance(vec2 p, float min_radius) {
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
         // A tip: −1 points down, −2 up, −3 left, −4 right, turned into the downward frame (a
-        // reflection or a transposition, which keep distances). A tip joins its body with a
-        // small fillet (~2 pt, the concave sides of the reference), not with the merge distance
-        // of separate shapes.
+        // reflection or a transposition, which keep distances). Its outline already holds the
+        // fillets into the body: a plain union, not the merge distance of separate shapes.
         bool tip = r < 0.0;
+        vec4 k = tips[i / 4][i - (i / 4) * 4];
         vec2 near = p - rect.xy;
         vec2 far = rect.xy + rect.zw - p;
         float shape = r > -0.5 ? rounded_distance(p, rect, max(r, min_radius))
-                    : r > -1.5 ? tip_distance(near, rect.zw)
-                    : r > -2.5 ? tip_distance(vec2(near.x, far.y), rect.zw)
-                    : r > -3.5 ? tip_distance(vec2(near.y, far.x), rect.wz)
-                               : tip_distance(near.yx, rect.wz);
-        d = smooth_min(d, shape, tip ? 2.0 * scale_px : merge);
+                    : r > -1.5 ? tip_distance(near, rect.zw, k)
+                    : r > -2.5 ? tip_distance(vec2(near.x, far.y), rect.zw, k)
+                    : r > -3.5 ? tip_distance(vec2(near.y, far.x), rect.wz, k)
+                               : tip_distance(near.yx, rect.wz, k);
+        d = tip ? min(d, shape) : smooth_min(d, shape, merge);
     }
     return d;
 }

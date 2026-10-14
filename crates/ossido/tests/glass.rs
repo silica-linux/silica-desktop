@@ -481,7 +481,7 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
         "the nearby capsules do not merge"
     );
 
-    // At 10 pt (the search panel's buttons from the panel) they stay separate.
+    // At 10 pt (the Spotlight buttons from the panel) they stay separate.
     glass
         .set_glass(&[
             (0, 20, 100, 60, 30.0, Material::Regular),
@@ -545,12 +545,13 @@ fn separate_groups_overlap_without_merging() {
     assert_eq!(groups, [0, 1]);
 }
 
-/// Widths of glass per row below the body of the reference Dock menu's tip, from its base
-/// down (measured in silica-reference, misc.md "Context menu of a Dock icon", x 844–868, y 1338–1347).
-const TIP_WIDTHS: [u32; 10] = [23, 18, 16, 15, 14, 12, 10, 8, 6, 2];
+/// Widths of the reference Dock menu's tip per row of 1 pt below the body edge (TIP-01, light:
+/// 24.2 19.4 17.0 15.3 13.7 12.1 10.4 8.8 6.9 2.7), rounded.
+const TIP_WIDTHS: [u32; 10] = [24, 19, 17, 15, 14, 12, 10, 9, 7, 3];
 
-/// The glass of a thick body with a 24 × 10 tip on one of its sides, over the reference
-/// gray; per row (or column) of the tip from its base outwards, how many pixels are glass.
+/// The glass of a thick body with the Dock menu's tip (31 × 10: TIP-01 measures 30.6 × 10.19
+/// from where the outline leaves the body edge) on one of its sides, over the reference gray;
+/// per row (or column) of the tip from its base outwards, how many pixels are glass.
 fn tip_widths(name: &str, side: &str) -> Vec<u32> {
     // Upward and sideways tips: silica-glass-v1 versions 5 and 6.
     common::client::GLASS_VERSION.with(|v| v.set(6));
@@ -563,10 +564,10 @@ fn tip_widths(name: &str, side: &str) -> Vec<u32> {
         .set_glass_with(move |g| {
             g.add_region(60, 60, 180, 180, 12.0, Material::Thick);
             match side_owned.as_str() {
-                "down" => g.add_tip(138, 240, 24, 10, Material::Thick, 1.0),
-                "up" => g.add_upward_tip(138, 50, 24, 10, Material::Thick, 1.0),
-                "left" => g.add_side_tip(50, 138, 10, 24, Side::Left, Material::Thick, 1.0),
-                _ => g.add_side_tip(240, 138, 10, 24, Side::Right, Material::Thick, 1.0),
+                "down" => g.add_tip(135, 240, 31, 10, Material::Thick, 1.0),
+                "up" => g.add_upward_tip(135, 50, 31, 10, Material::Thick, 1.0),
+                "left" => g.add_side_tip(50, 135, 10, 31, Side::Left, Material::Thick, 1.0),
+                _ => g.add_side_tip(240, 135, 10, 31, Side::Right, Material::Thick, 1.0),
             }
         })
         .unwrap();
@@ -586,7 +587,7 @@ fn tip_widths(name: &str, side: &str) -> Vec<u32> {
     };
     (0..12)
         .map(|k| {
-            (138..162)
+            (128..174)
                 .filter(|&a| match side {
                     "down" => is_glass(a, 240 + k),
                     "up" => is_glass(a, 59 - k),
@@ -635,11 +636,11 @@ fn a_tip_joins_its_body_in_one_shape() {
     let ossido = Headless::start_with("glass-tip-join", SHOT, &["--background", "7a7b80"]);
     let size = (300, 120);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
-    // The Dock menu: thick body and a 24 × 10 tip below, centered at x 100.
+    // The Dock menu: thick body and its 31 × 10 tip below, centered at x 100.5.
     glass
         .set_glass_with(|g| {
             g.add_region(40, 10, 200, 60, 12.0, Material::Thick);
-            g.add_tip(88, 70, 24, 10, Material::Thick, 1.0);
+            g.add_tip(85, 70, 31, 10, Material::Thick, 1.0);
         })
         .unwrap();
     let image = shot(&ossido, "glass-tip-join.png");
@@ -660,8 +661,8 @@ fn a_tip_joins_its_body_in_one_shape() {
     assert_eq!(glass_list(&ossido)[0]["regions"][1]["shape"], "tip");
 }
 
-/// The Dock menu with its tip near the left corner (the body 122 × 69, the tip 15 pt from the
-/// left edge): the tip's triangle must not show outside the body above its base. It used to
+/// The Dock menu with its tip near the left corner (the body 122 × 69, the apex 27 pt from the
+/// left edge, as measured): the tip's triangle must not show outside the body above its base. It used to
 /// go on into the body, widening, and stuck out of the left side as a wedge.
 #[test]
 fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
@@ -671,7 +672,7 @@ fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
     glass
         .set_glass_with(|g| {
             g.add_region(50, 10, 122, 69, 12.0, Material::Thick);
-            g.add_tip(65, 79, 24, 10, Material::Thick, 1.0);
+            g.add_tip(62, 79, 31, 10, Material::Thick, 1.0);
         })
         .unwrap();
     let image = shot(&ossido, "glass-tip-corner.png");
