@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 260" font-family="Inter, sans-serif" font-size="12">
+  <title>Dock magnification profile f(d) (D-00)</title>
+  <rect width="560" height="260" fill="#ffffff"/>
+  <!-- x = 60 + 2·d (d 0–224), y = 220 − 180·f -->
+  <line x1="60" y1="220" x2="520" y2="220" stroke="#888"/>
+  <line x1="60" y1="30" x2="60" y2="220" stroke="#888"/>
+  <polyline fill="none" stroke="#1d5fb4" stroke-width="2"
+    points="60,40 92,41.6 124,46.3 156,54.2 188,64.8 220,78.3 252,94.2 284,112.5 316,132.7 348,154.3 380,176.8 412,196.4 444,210.1 476,218 508,220"/>
+  <g fill="#555" text-anchor="middle">
+    <text x="60" y="238">0</text><text x="188" y="238">64</text><text x="316" y="238">128</text>
+    <text x="444" y="238">192</text><text x="508" y="238">224</text>
+    <text x="290" y="256">distance from the pointer to the resting cell centre (pt)</text>
+  </g>
+  <g fill="#555" text-anchor="end"><text x="54" y="44">1</text><text x="54" y="224">0</text></g>
+  <text x="300" y="60" fill="#1d5fb4">s(d) = 1 + (M − 1) · f(d)</text>
+  <text x="300" y="78" fill="#555">M = 1.079 (setting 0.429) or 2.095 (maximum)</text>
+</svg>

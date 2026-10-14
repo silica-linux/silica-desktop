@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 260" font-family="Inter, sans-serif" font-size="12">
+  <title>Dock at rest (D-00), drawn at 2× (2 units = 1 pt)</title>
+  <rect width="720" height="260" fill="#ffffff"/>
+  <g transform="translate(40 40) scale(2)">
+    <!-- screen bottom edge at y = 84 (background 79 tall + 4–5 gap) -->
+    <rect x="0" y="0" width="300" height="84" fill="#7a7b80"/>
+    <rect x="4" y="0" width="292" height="80" rx="22" fill="#818289" stroke="#3c3c40" stroke-width="0.5"/>
+    <line x1="22" y1="0.5" x2="278" y2="0.5" stroke="#bdbec8"/>
+    <line x1="22" y1="79.5" x2="278" y2="79.5" stroke="#bdbec8"/>
+    <!-- cells 63 wide -->
+    <g fill="none" stroke="#ffd36b" stroke-width="0.4" stroke-dasharray="1 1">
+      <rect x="12" y="0" width="63" height="84"/>
+      <rect x="75" y="0" width="63" height="84"/>
+    </g>
+    <rect x="19.5" y="16" width="48" height="48" rx="11" fill="#e9e9ef"/>
+    <rect x="82.5" y="16" width="48" height="48" rx="11" fill="#e9e9ef"/>
+    <circle cx="43.5" cy="73" r="2" fill="#03040b"/>
+    <!-- separator -->
+    <line x1="152" y1="10" x2="152" y2="69" stroke="#484950" stroke-width="1"/>
+  </g>
+  <g fill="#333">
+    <text x="40" y="232">cell 63 × 79 (pitch 63) · icon ≈ 48, 16 pt from top and bottom · indicator ⌀4, 6 pt above the bottom</text>
+    <text x="40" y="250">background radius 22, 4–5 pt above the screen edge · separator line 59 tall, 10 pt inset</text>
+    <text x="370" y="60">bright edge top/bottom 1 pt</text>
+    <text x="370" y="78">dark edge at the sides 1 pt</text>
+    <text x="370" y="96">7 pt inner gradient</text>
+  </g>
+</svg>
