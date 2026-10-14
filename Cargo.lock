@@ -1909,7 +1909,10 @@ dependencies = [
  "futures-lite",
  "serde",
  "serde_json",
+ "silica-control",
  "tracing",
+ "wayland-client",
+ "wayland-protocols",
  "zbus",
 ]
 

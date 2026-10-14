@@ -18,6 +18,7 @@ use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::ext_data_control::DataControlState;
 use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
@@ -69,6 +70,9 @@ pub struct State {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<State>,
     pub data_device_state: DataDeviceState,
+    /// ext-data-control: the clipboard history in silica-daemon (and only there, see
+    /// `clipboard_manager_client`).
+    pub data_control_state: DataControlState,
     pub layer_shell_state: WlrLayerShellState,
     /// wp_viewporter: scaled or cropped surfaces (iced needs it for HiDPI).
     pub viewporter_state: ViewporterState,
@@ -209,6 +213,8 @@ impl State {
         let shm_state = ShmState::new::<State>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<State>(&dh);
         let data_device_state = DataDeviceState::new::<State>(&dh);
+        let data_control_state =
+            DataControlState::new::<State, _>(&dh, None, crate::handlers::clipboard_manager_client);
         let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
         let viewporter_state = ViewporterState::new::<State>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
@@ -280,6 +286,7 @@ impl State {
             output_manager_state,
             seat_state,
             data_device_state,
+            data_control_state,
             layer_shell_state,
             viewporter_state,
             dmabuf_state: DmabufState::new(),

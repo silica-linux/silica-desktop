@@ -3,7 +3,8 @@
 use std::process::ExitCode;
 
 use futures_lite::{StreamExt, future};
-use silica_daemon::{Daemon, SystemConfig, SystemService};
+use silica_daemon::actions::{ACTIONS_PATH, Actions};
+use silica_daemon::{ClipboardService, Daemon, SystemConfig, SystemService};
 
 const USAGE: &str = "usage: silica-daemon [--address ADDRESS] [--replace]
 
@@ -65,6 +66,9 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         },
     )
     .await?;
+    // Faro's clipboard and actions scopes.
+    let clipboard = ClipboardService::serve(connection.clone()).await?;
+    connection.object_server().at(ACTIONS_PATH, Actions).await?;
     let daemon = Daemon::serve(connection, replace).await?;
     eprintln!(
         "silica-daemon: notifiche su {}",
@@ -79,5 +83,28 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         while let Some(Ok(_)) = messages.next().await {}
         Err(zbus::Error::Failure("session bus closed".to_owned()))
     };
-    future::or(future::or(daemon.run(), system.run()), lost).await
+    // Replaced by a newer daemon (`--replace` from a new session on the same bus): this one
+    // goes away instead of polling the system next to it.
+    let replaced = async {
+        let bus = zbus::fdo::DBusProxy::new(daemon.connection()).await?;
+        let mut lost = bus.receive_name_lost().await?;
+        while let Some(signal) = lost.next().await {
+            if signal
+                .args()
+                .is_ok_and(|args| args.name().as_str() == silica_daemon::server::SHELL_NAME)
+            {
+                eprintln!("silica-daemon: replaced by another daemon");
+                return Ok(());
+            }
+        }
+        Ok(())
+    };
+    future::or(
+        future::or(
+            future::or(future::or(daemon.run(), system.run()), clipboard.run()),
+            lost,
+        ),
+        replaced,
+    )
+    .await
 }
