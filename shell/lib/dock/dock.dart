@@ -771,6 +771,20 @@ const Duration springLoadDelay = Duration(milliseconds: 830);
 /// The empty slot where the dragged icon would fall.
 const Item gapItem = Item.app('');
 
+/// A slot of the Dock: an item and how far its slot is open (0 closed, 1 open). While `leaving`
+/// the item is no longer in the list given to the Dock; it stays until the slot has closed.
+class _Slot {
+  _Slot(this.item, this.key, this.progress);
+
+  Item item;
+  final String key;
+  double progress;
+  bool leaving = false;
+
+  /// The eased presence that scales the width, the icon and its opacity.
+  double get presence => Curves.easeInOut.transform(progress.clamp(0.0, 1.0));
+}
+
 /// A drag: the item taken, the grab point in the icon, where the pointer is.
 class _DockDrag {
   _DockDrag({
@@ -979,6 +993,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   /// The drag in progress and the removed icon fading out in place.
   _DockDrag? _drag;
   _Ghost? _ghost;
+
+  /// The slots in layout order, leaving ones included, and what they were given: [_items]
+  /// (what is laid out and hit) and [_presences] (by identity of the item).
+  List<_Slot> _slots = const [];
+  List<Item> _items = const [];
+  final Map<Item, double> _presences = Map.identity();
+  Duration _slotClock = Duration.zero;
+  late final Ticker _slotTicker = createTicker(_slotTick);
+
+  /// The key of an item removed by dragging it out: it fades as a ghost, its slot just closes.
+  String? _dragRemoved;
   DateTime? _settleUntil;
   late final Ticker _ghostTicker = createTicker((elapsed) {
     final ghost = _ghost;
@@ -1052,15 +1077,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         final local = box.globalToLocal(position);
         _hover(local, size);
         final current = layout(
-          widget.items,
+          presenceOf: _presenceOf,
+          _items,
           width: size.width,
           height: size.height,
           pointerX: _pointerX,
           amount: _amount,
           magnification: widget.magnification,
         );
-        final index = _inside ? itemAt(current, widget.items, local.dx) : null;
-        final target = index != null && widget.items[index].acceptsFiles
+        final index = _inside ? itemAt(current, _items, local.dx) : null;
+        final target = index != null && _items[index].acceptsFiles
             ? index
             : null;
         if (target != _dropIndex) {
@@ -1070,7 +1096,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           });
           _springTimer?.cancel();
           _springTimer = null;
-          final item = target == null ? null : widget.items[target];
+          final item = target == null ? null : _items[target];
           if (item != null && item.openFiles != null) {
             _springTimer = Timer(springLoadDelay, () => _springLoad(target!));
           }
@@ -1080,18 +1106,19 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       case SilicaDrop(:final paths, :final position):
         final index = _dropIndex;
         _endFileDrag();
-        if (index != null && index < widget.items.length && paths.isNotEmpty) {
-          widget.onDropFiles?.call(widget.items[index], paths);
+        if (index != null && index < _items.length && paths.isNotEmpty) {
+          widget.onDropFiles?.call(_items[index], paths);
         } else if (paths.isNotEmpty &&
             paths.every(FileSystemEntity.isDirectorySync)) {
           // Folders right of the separator: added to the Dock where they were dropped.
           final local = box.globalToLocal(position);
           final current = layout(
-            widget.items,
+            presenceOf: _presenceOf,
+            _items,
             width: size.width,
             height: size.height,
           );
-          final separator = widget.items.indexWhere(
+          final separator = _items.indexWhere(
             (i) => i.kind == ItemKind.separator,
           );
           final inZone = inActiveZone(current, local.dx, local.dy, size.height);
@@ -1099,9 +1126,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               inZone &&
               local.dx > current.center(separator)) {
             var before = 0;
-            for (var i = separator + 1; i < widget.items.length; i++) {
-              if (widget.items[i].folder != null &&
-                  current.center(i) < local.dx) {
+            for (var i = separator + 1; i < _items.length; i++) {
+              if (_items[i].folder != null && current.center(i) < local.dx) {
                 before++;
               }
             }
@@ -1119,8 +1145,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   Future<void> _springLoad(int index) async {
     _springTimer = null;
-    if (!mounted || _dropIndex != index || index >= widget.items.length) return;
-    final item = widget.items[index];
+    if (!mounted || _dropIndex != index || index >= _items.length) return;
+    final item = _items[index];
     for (var i = 0; i < 2; i++) {
       setState(() => _pressed = null);
       await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -1146,6 +1172,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _syncSlots(first: true);
     HardwareKeyboard.instance.addHandler(_onKey);
     _fileDrags = SilicaDrag.events.listen(_fileDrag);
     _dismissed = ShellChannel.instance.transientDismissed.listen(
@@ -1166,10 +1193,128 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(Dock old) {
     super.didUpdateWidget(old);
+    if (!identical(old.items, widget.items)) _syncSlots(first: false);
     if (old.autohide != widget.autohide) {
       widget.autohide ? _hideDock() : _revealDock();
     }
   }
+
+  double _presenceOf(Item item) => _presences[item] ?? 1;
+
+  /// Stable identity of an item across rebuilds, with the n-th occurrence of equal ones.
+  static List<String> _slotKeys(List<Item> items) {
+    final seen = <String, int>{};
+    return [
+      for (final item in items)
+        () {
+          final base = item.kind == ItemKind.separator
+              ? 'separator'
+              : [
+                  item.label,
+                  item.command,
+                  item.id,
+                  item.folder,
+                  item.minimizedWindow,
+                  item.trash,
+                ].join('\u0000');
+          final n = seen[base] = (seen[base] ?? 0) + 1;
+          return '$base\u0000$n';
+        }(),
+    ];
+  }
+
+  /// Aligns the slots with the items given: a new item opens a slot, a missing one closes it.
+  /// Nothing animates the first list, the minimized windows (own effect) and a Dock hidden by
+  /// auto-hide.
+  void _syncSlots({required bool first}) {
+    final keys = _slotKeys(widget.items);
+    final animate =
+        !first && _slots.isNotEmpty && !(widget.autohide && _shown.value == 0);
+    final old = _slots;
+    // An item that comes back while its slot is closing takes that slot again.
+    final byKey = {for (final slot in old) slot.key: slot};
+    final out = <_Slot>[];
+    final kept = <_Slot>{};
+    for (var i = 0; i < keys.length; i++) {
+      final item = widget.items[i];
+      var slot = byKey[keys[i]];
+      if (slot != null) {
+        slot.item = item;
+        slot.leaving = false;
+        kept.add(slot);
+      } else {
+        final instant = !animate || item.minimizedWindow != null;
+        slot = _Slot(item, keys[i], instant ? 1 : 0);
+      }
+      out.add(slot);
+    }
+    // The missing ones stay, after the slot that preceded them, until they have closed.
+    var after = -1;
+    for (final slot in old) {
+      if (kept.contains(slot)) {
+        after = out.indexOf(slot);
+        continue;
+      }
+      final skip = slot.key == _dragRemoved;
+      if (!slot.leaving) {
+        slot.leaving = true;
+        if (skip || !animate || slot.item.minimizedWindow != null) continue;
+      } else if (slot.progress <= 0) {
+        continue;
+      }
+      out.insert(++after, slot);
+    }
+    // The parent answers a drag-out in the same frame; do not carry the mark further.
+    if (_dragRemoved != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _dragRemoved = null);
+    }
+    _slots = out;
+    _publishSlots();
+    if (out.any((s) => s.leaving || s.progress < 1)) {
+      if (!_slotTicker.isActive) {
+        _slotClock = Duration.zero;
+        _slotTicker.start();
+      }
+    }
+  }
+
+  void _publishSlots() {
+    _items = [for (final slot in _slots) slot.item];
+    _presences.clear();
+    for (final slot in _slots) {
+      if (slot.progress < 1 || slot.leaving) {
+        _presences[slot.item] = slot.presence;
+      }
+    }
+  }
+
+  void _slotTick(Duration elapsed) {
+    final step = (elapsed - _slotClock).inMicroseconds;
+    _slotClock = elapsed;
+    final open = step / slotOpenDuration.inMicroseconds;
+    final close = step / slotCloseDuration.inMicroseconds;
+    setState(() {
+      for (final slot in _slots) {
+        slot.progress = slot.leaving
+            ? slot.progress - close
+            : (slot.progress + open).clamp(0.0, 1.0);
+      }
+      _slots = [
+        for (final slot in _slots)
+          if (!slot.leaving || slot.progress > 0) slot,
+      ];
+      _publishSlots();
+      if (_slots.every((s) => !s.leaving && s.progress >= 1)) {
+        _slotTicker.stop();
+      }
+    });
+  }
+
+  /// The items that stay in the Dock (without those whose slot is closing).
+  List<Item> _staying(List<Item> items) => [
+    for (final item in items)
+      if (!_slots.any((s) => s.leaving && identical(s.item, item))) item,
+  ];
 
   void _revealDock() {
     _revealTimer?.cancel();
@@ -1261,6 +1406,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _labelTimer?.cancel();
     _longPress?.cancel();
     _ghostTicker.dispose();
+    _slotTicker.dispose();
     _stackAnim.dispose();
     _stackFocus.dispose();
     _shown.dispose();
@@ -1273,18 +1419,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// The last item left of the separator (where one can drag).
   int get _leftEnd {
-    final separator = widget.items.indexWhere(
-      (i) => i.kind == ItemKind.separator,
-    );
-    return separator < 0 ? widget.items.length : separator;
+    final separator = _items.indexWhere((i) => i.kind == ItemKind.separator);
+    return separator < 0 ? _items.length : separator;
   }
 
   /// The items to lay out: while dragging without the one taken and, if the pointer is in
   /// the Dock, with an empty slot where it would fall.
   List<Item> _displayItems(Size size) {
     final drag = _drag;
-    if (drag == null || !drag.started) return widget.items;
-    final rest = [...widget.items]..removeAt(drag.index);
+    if (drag == null || !drag.started) return _items;
+    final rest = [..._items]..removeAt(drag.index);
     if (!drag.inside || drag.remove) return rest;
     final slot = _dropSlot(rest, size, drag.pointer.dx);
     return [...rest]..insert(slot, gapItem);
@@ -1292,7 +1436,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// Where the icon would fall: the first item on the left whose center is past the pointer.
   int _dropSlot(List<Item> rest, Size size, double x) {
-    final l = layout(rest, width: size.width, height: size.height);
+    final l = layout(
+      presenceOf: _presenceOf,
+      rest,
+      width: size.width,
+      height: size.height,
+    );
     final end = rest.indexWhere((i) => i.kind == ItemKind.separator);
     final limit = end < 0 ? rest.length : end;
     // Nothing goes before the fixed items (the file manager, #141).
@@ -1306,10 +1455,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void _startDrag(Offset p, Size size) {
     final index = _downIndex;
     if (index == null || index >= _leftEnd || widget.onReorder == null) return;
-    final item = widget.items[index];
+    final item = _items[index];
     if (item.kind != ItemKind.app || item.fixed) return;
     final l = layout(
-      widget.items,
+      presenceOf: _presenceOf,
+      _items,
       width: size.width,
       height: size.height,
       pointerX: _pointerX,
@@ -1336,7 +1486,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void _moveDrag(Offset p, Size size) {
     final drag = _drag;
     if (drag == null) return;
-    final rest = layout(widget.items, width: size.width, height: size.height);
+    final rest = layout(
+      presenceOf: _presenceOf,
+      _items,
+      width: size.width,
+      height: size.height,
+    );
     setState(() {
       drag.pointer = p;
       drag.inside =
@@ -1350,10 +1505,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void _endDrag(Size size) {
     final drag = _drag;
     if (drag == null) return;
-    final rest = [...widget.items]..removeAt(drag.index);
+    final rest = _staying([..._items]..removeAt(drag.index));
     final left = rest.indexWhere((i) => i.kind == ItemKind.separator);
     final leftItems = rest.sublist(0, left < 0 ? rest.length : left);
     if (drag.remove) {
+      _dragRemoved = _slotKeys(_items)[drag.index];
       // Removed: the icon and the capsule fade out in place (~250 ms), with no other effects.
       _ghost = _Ghost(drag.item, drag.pointer - drag.grab, drag.side);
       _ghostTicker.start();
@@ -1372,7 +1528,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// Opens the menu of an item (D-04): the icon stays pressed, the label disappears.
   void _openMenu(int index, {required bool longPress}) {
-    final entries = widget.menuFor?.call(widget.items[index]) ?? const [];
+    final entries = widget.menuFor?.call(_items[index]) ?? const [];
     if (entries.isEmpty) return;
     setState(() {
       _menuIndex = index;
@@ -1392,8 +1548,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (alt != _altHeld) {
       _altHeld = alt;
       final index = _menuIndex;
-      if (index != null && index < widget.items.length) {
-        final entries = widget.menuFor?.call(widget.items[index]) ?? const [];
+      if (index != null && index < _items.length) {
+        final entries = widget.menuFor?.call(_items[index]) ?? const [];
         if (entries.isNotEmpty) setState(() => _menuEntries = entries);
       }
     }
@@ -1417,7 +1573,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     // With the stack open a click outside it and its icon closes it.
     if (_stackIndex != null &&
         !(_stackRect?.contains(p) ?? false) &&
-        itemAt(l, widget.items, p.dx) != _stackIndex) {
+        itemAt(l, _items, p.dx) != _stackIndex) {
       _closeStack();
       return;
     }
@@ -1429,13 +1585,18 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       }
       return;
     }
-    final rest = layout(widget.items, width: size.width, height: size.height);
+    final rest = layout(
+      presenceOf: _presenceOf,
+      _items,
+      width: size.width,
+      height: size.height,
+    );
     final inZone = inActiveZone(rest, p.dx, p.dy, size.height) || _inside;
-    final index = inZone ? itemAt(l, widget.items, p.dx) : null;
+    final index = inZone ? itemAt(l, _items, p.dx) : null;
     // The separator has its menu (right click), but is neither pressed nor dragged.
     if (index == null && inZone && e.buttons & kSecondaryButton != 0) {
       final cell = cellAt(l, p.dx);
-      if (cell != null && widget.items[cell].kind == ItemKind.separator) {
+      if (cell != null && _items[cell].kind == ItemKind.separator) {
         _openMenu(cell, longPress: false);
       }
       return;
@@ -1481,7 +1642,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       // A click: the item under the pointer, if it is the same as at the press.
       _longPress?.cancel();
       _longPress = null;
-      final index = itemAt(l, widget.items, p.dx);
+      final index = itemAt(l, _items, p.dx);
       setState(() => _pressed = null);
       if (index != null && index == _downIndex) _activate(index);
       return;
@@ -1598,7 +1759,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final now = DateTime.now();
     _bounces.removeWhere((key, start) {
       final ms = now.difference(start).inMicroseconds / 1000;
-      final item = widget.items.where((i) => _key(i) == key).firstOrNull;
+      final item = _items.where((i) => _key(i) == key).firstOrNull;
       final landed = ms % bouncePeriod < 30 && ms > bouncePeriod / 2;
       return ms > bounceLimit.inMilliseconds ||
           item == null ||
@@ -1607,7 +1768,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (_bounces.isEmpty && _bounceTicker.isActive) _bounceTicker.stop();
   }
 
-  double _bounce(int index) => _bounceOf(widget.items[index]);
+  double _bounce(int index) => _bounceOf(_items[index]);
 
   double _bounceOf(Item item) {
     final start = _bounces[_key(item)];
@@ -1651,7 +1812,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   void _openStack(int index) {
-    final item = widget.items[index];
+    final item = _items[index];
     final folder = item.folder;
     if (folder == null) return;
     final settings =
@@ -1708,7 +1869,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   void _activate(int index) {
-    final item = widget.items[index];
+    final item = _items[index];
     if (item.folder != null && widget.onOpenPath != null) {
       _stackIndex == index ? _closeStack() : _openStack(index);
       return;
@@ -1781,9 +1942,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         return;
       }
     }
-    final rest = layout(widget.items, width: size.width, height: size.height);
+    final rest = layout(
+      presenceOf: _presenceOf,
+      _items,
+      width: size.width,
+      height: size.height,
+    );
     final current = layout(
-      widget.items,
+      presenceOf: _presenceOf,
+      _items,
       width: size.width,
       height: size.height,
       pointerX: _pointerX,
@@ -1795,7 +1962,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         ? staysInActiveZone(
             rest,
             current,
-            widget.items,
+            _items,
             position.dx,
             position.dy,
             size.height,
@@ -1806,7 +1973,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       if (inside) _pointerX = position.dx;
     });
     _setInside(inside);
-    _showLabel(inside ? itemAt(current, widget.items, position.dx) : null);
+    _showLabel(inside ? itemAt(current, _items, position.dx) : null);
     // Leaving the Dock (but not along the bottom row) hides it again.
     if (widget.autohide && !inside && position.dy < size.height - 1) {
       _hideDock();
@@ -1821,6 +1988,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         final items = _displayItems(size);
         final dragging = _drag != null;
         final l = layout(
+          presenceOf: _presenceOf,
           items,
           width: size.width,
           height: size.height,
@@ -1830,8 +1998,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         );
         final (bx, by, bw, bh) = l.background;
         final label = _labelIndex;
-        final hovered =
-            !dragging && label != null && label < widget.items.length
+        final hovered = !dragging && label != null && label < _items.length
             ? label
             : null;
         // During and right after the drag the icons slide into place (~265 ms).
@@ -1899,7 +2066,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         Widget? stackWidget;
         if (stackIndex != null && stackIndex < l.cells.length) {
           final iconX = l.center(stackIndex);
-          final item = widget.items[stackIndex];
+          final item = _items[stackIndex];
           final progress = Curves.easeOut.transform(_stackAnim.value);
           if (_stackView == StackView.fan) {
             final count = math.min(_stackEntries.length, fanMax) + 1;
@@ -2240,24 +2407,29 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
         : SilicaIcon(source, side: side, besideApps: true);
+    final presence = l.presence[index];
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,
       curve: Curves.easeInOut,
       left: x,
-      top: y - _bounceOf(item),
+      // The launch bounce starts once the slot is open.
+      top: y - (presence < 1 ? 0 : _bounceOf(item)),
       width: side,
       height: side,
       // Pressed: the icon darkens (D-02).
-      child: !sliding && _pressed == index
-          ? ColorFiltered(
-              colorFilter: const ColorFilter.mode(
-                pressedShade,
-                BlendMode.srcATop,
-              ),
-              child: icon,
-            )
-          : icon,
+      child: Opacity(
+        opacity: presence,
+        child: !sliding && _pressed == index
+            ? ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                  pressedShade,
+                  BlendMode.srcATop,
+                ),
+                child: icon,
+              )
+            : icon,
+      ),
     );
   }
 
@@ -2271,7 +2443,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       color: DockColors.of(context).labelText,
     );
     final text = TextPainter(
-      text: TextSpan(text: widget.items[index].label, style: style),
+      text: TextSpan(text: _items[index].label, style: style),
       textDirection: TextDirection.ltr,
     )..layout();
     final width = text.width + 2 * labelPadding;
@@ -2286,7 +2458,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           painter: _LabelPainter(DockColors.of(context)),
           child: Padding(
             padding: const EdgeInsets.only(bottom: labelTip),
-            child: Center(child: Text(widget.items[index].label, style: style)),
+            child: Center(child: Text(_items[index].label, style: style)),
           ),
         ),
       ),
@@ -2322,14 +2494,25 @@ class _DockPainter extends CustomPainter {
         final x = l.center(i).roundToDouble() - 0.5;
         canvas.drawRect(
           Rect.fromLTWH(x, by + (bh - separatorHeight) / 2, 1, separatorHeight),
-          Paint()..color = colors.separator,
+          Paint()
+            ..color = colors.separator.withValues(
+              alpha: colors.separator.a * l.presence[i],
+            ),
         );
         continue;
       }
       if (identical(item, gapItem) || item.minimizedWindow != null) continue;
       final (ix, iy, side) = iconRect(l, i, height);
+      final presence = l.presence[i];
       if (item.icon == null) {
+        if (presence < 1) {
+          canvas.saveLayer(
+            null,
+            Paint()..color = Color.fromRGBO(0, 0, 0, presence),
+          );
+        }
         paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
+        if (presence < 1) canvas.restore();
       }
       if (launcher[item.id]?.progress case final progress?) {
         // The progress bar replaces the dot (SH-DK-30).
@@ -2359,7 +2542,10 @@ class _DockPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(l.center(i), by + bh - indicatorAbove),
           indicatorSize / 2,
-          Paint()..color = colors.indicator,
+          Paint()
+            ..color = colors.indicator.withValues(
+              alpha: colors.indicator.a * presence,
+            ),
         );
       }
     }
@@ -2383,7 +2569,7 @@ class _BadgePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     for (var i = 0; i < items.length && i < l.cells.length; i++) {
       final text = launcher[items[i].id]?.badge;
-      if (text == null) continue;
+      if (text == null || l.presence[i] < 1) continue;
       final (ix, iy, side) = iconRect(l, i, height);
       // Measured at the 48 pt icon: everything scales with the magnified icon.
       final k = side / iconSize;
