@@ -111,4 +111,43 @@ void main() {
       expect(items[2].kind, ItemKind.separator);
     },
   );
+
+  test(
+    'app recenti (D-08): secondo separatore, aperte non fissate e chiuse, al più 3',
+    () {
+      DesktopEntry app(String id) => DesktopEntry(id: id, name: id, exec: id);
+      final entries = {
+        for (final id in ['files', 'editor', 'calc', 'mail', 'foto'])
+          id: app(id),
+      };
+      final items = dockItems(
+        entries,
+        ['files'],
+        const [Toplevel(id: 'a', title: 'Documento', appId: 'editor')],
+        recents: ['calc', 'mail', 'foto'],
+      );
+      expect(
+        [for (final i in items) i.label],
+        ['files', '', 'editor', 'calc', 'mail', '', 'Download', 'Cestino'],
+      );
+      expect(items[3].running, isFalse);
+      // Senza l'opzione: un solo separatore, le chiuse non ci sono.
+      final off = dockItems(entries, ['files'], const []);
+      expect(
+        [for (final i in off) i.label],
+        ['files', '', 'Download', 'Cestino'],
+      );
+    },
+  );
+
+  test('le opzioni del Dock non cancellano le app fissate', () {
+    final dir = Directory.systemTemp.createTempSync('dock');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final env = {'HOME': dir.path};
+    savePinned(['files', 'editor'], env: env);
+    saveDockOption('recents', true, env: env);
+    expect(readDockConfig(env: env)['pinned'], ['files', 'editor']);
+    expect(dockFlag('recents', fallback: false, env: env), isTrue);
+    expect(dockFlag('magnify', fallback: true, env: env), isTrue);
+  });
 }

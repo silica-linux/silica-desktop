@@ -13,17 +13,51 @@ import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 import 'model.dart';
 
-/// Salva le app fissate in ~/.config/silica/dock.json ("Mantieni nel Dock" e "Rimuovi").
-void savePinned(List<String> ids, {Map<String, String>? env}) {
-  final home = (env ?? Platform.environment)['HOME'] ?? '';
-  final config = File('$home/.config/silica/dock.json');
+File _dockConfig(Map<String, String>? env) {
+  final e = env ?? Platform.environment;
+  final config = e['XDG_CONFIG_HOME'] ?? '${e['HOME'] ?? ''}/.config';
+  return File('$config/silica/dock.json');
+}
+
+/// La configurazione del Dock ($XDG_CONFIG_HOME/silica/dock.json, di solito ~/.config):
+/// `pinned`, `magnify`, `recents`.
+Map<String, Object?> readDockConfig({Map<String, String>? env}) {
+  final file = _dockConfig(env);
   try {
-    config.parent.createSync(recursive: true);
-    config.writeAsStringSync(jsonEncode({'pinned': ids}));
+    if (!file.existsSync()) return {};
+    final json = jsonDecode(file.readAsStringSync());
+    return json is Map
+        ? {for (final e in json.entries) '${e.key}': e.value}
+        : {};
+  } on FileSystemException {
+    return {};
+  } on FormatException {
+    // Configurazione rovinata: le predefinite.
+    return {};
+  }
+}
+
+/// Cambia una chiave della configurazione lasciando le altre.
+void saveDockOption(String key, Object? value, {Map<String, String>? env}) {
+  final file = _dockConfig(env);
+  final config = readDockConfig(env: env)..[key] = value;
+  try {
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(jsonEncode(config));
   } on FileSystemException {
     // Senza configurazione scrivibile la scelta vale fino alla fine della sessione.
   }
 }
+
+/// Un'opzione sì/no del Dock.
+bool dockFlag(String key, {required bool fallback, Map<String, String>? env}) {
+  final value = readDockConfig(env: env)[key];
+  return value is bool ? value : fallback;
+}
+
+/// Salva le app fissate ("Mantieni nel Dock" e "Rimuovi").
+void savePinned(List<String> ids, {Map<String, String>? env}) =>
+    saveDockOption('pinned', ids, env: env);
 
 /// App fissate quando manca la configurazione: le prime installate di questo elenco.
 const List<List<String>> defaultPinned = [
@@ -43,22 +77,16 @@ const List<List<String>> defaultPinned = [
   ['org.gnome.Settings', 'gnome-control-center'],
 ];
 
+/// Quante app chiuse di recente stanno nella sezione delle recenti (D-08: 3 osservate).
+const int recentAppsMax = 3;
+
 /// Le app fissate: dalla configurazione, o dall'elenco predefinito.
 List<String> pinnedIds(
   Map<String, DesktopEntry> entries, {
   Map<String, String>? env,
 }) {
-  final home = (env ?? Platform.environment)['HOME'] ?? '';
-  final config = File('$home/.config/silica/dock.json');
-  if (config.existsSync()) {
-    try {
-      final json = jsonDecode(config.readAsStringSync());
-      final pinned = json is Map ? json['pinned'] : null;
-      if (pinned is List) return [for (final id in pinned) '$id'];
-    } on FormatException {
-      // Configurazione rovinata: si usa il predefinito.
-    }
-  }
+  final pinned = readDockConfig(env: env)['pinned'];
+  if (pinned is List) return [for (final id in pinned) '$id'];
   return [
     for (final choices in defaultPinned)
       if (choices.where(entries.containsKey).firstOrNull case final id?) id,
@@ -87,6 +115,7 @@ List<Item> dockItems(
   List<Toplevel> toplevels, {
   List<String> minimized = const [],
   Map<String, ui.Image> thumbnails = const {},
+  List<String>? recents,
 }) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
@@ -100,6 +129,10 @@ List<Item> dockItems(
     items.add(_appItem(entry, windowsOf(entry), pinned: true));
     shown.add(id);
   }
+  // Con le app recenti (D-08) un secondo separatore dopo le fissate: fra i due le app aperte
+  // non fissate, poi le ultime chiuse finché la sezione ne ha 3.
+  final recentSection = recents != null;
+  final before = items.length;
   // App aperte e non fissate, nell'ordine in cui sono comparse.
   for (final window in toplevels) {
     final entry = entries.values
@@ -107,6 +140,15 @@ List<Item> dockItems(
         .firstOrNull;
     if (entry == null || !shown.add(entry.id)) continue;
     items.add(_appItem(entry, windowsOf(entry)));
+  }
+  if (recentSection) {
+    for (final id in recents) {
+      if (items.length - before >= recentAppsMax) break;
+      final entry = entries[id];
+      if (entry == null || !shown.add(id)) continue;
+      items.add(_appItem(entry, const []));
+    }
+    if (items.length > before) items.insert(before, const Item.separator());
   }
   final home = Platform.environment['HOME'] ?? '';
   final trashFull = trashHasFiles(home);

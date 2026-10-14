@@ -37,6 +37,14 @@ class _LiveDockState extends State<LiveDock> {
   late final Map<String, DesktopEntry> _entries = loadDesktopEntries();
   late final List<String> _pinned = pinnedIds(_entries);
 
+  /// Opzioni del Dock (dock.json): ingrandimento e sezione delle app recenti (D-08).
+  bool _magnify = dockFlag('magnify', fallback: true);
+  bool _recentsOn = dockFlag('recents', fallback: false);
+
+  /// Le app aperte all'ultimo cambio e quelle chiuse da poco, dalla più recente.
+  Set<String> _running = {};
+  final List<String> _closed = [];
+
   /// Le finestre dalla più recente (focus): un clic sull'app porta in cima l'ultima usata.
   final List<String> _recent = [];
 
@@ -182,7 +190,46 @@ class _LiveDockState extends State<LiveDock> {
     super.dispose();
   }
 
-  void _changed() => setState(() {});
+  void _changed() {
+    // Un'app che non ha più finestre entra fra le chiuse da poco.
+    final now = {
+      for (final t in ShellChannel.instance.toplevels.value)
+        if (_entries.values.where((e) => e.matchesAppId(t.appId)).firstOrNull
+            case final entry?)
+          entry.id,
+    };
+    for (final id in _running.difference(now)) {
+      _closed
+        ..remove(id)
+        ..insert(0, id);
+    }
+    _closed.removeWhere(now.contains);
+    if (_closed.length > 10) _closed.removeRange(10, _closed.length);
+    _running = now;
+    setState(() {});
+  }
+
+  void _setOption(String key, bool value) {
+    setState(() {
+      if (key == 'magnify') _magnify = value;
+      if (key == 'recents') _recentsOn = value;
+    });
+    saveDockOption(key, value);
+  }
+
+  /// Il menu del separatore (D-04): le opzioni che il Dock ha. Nascondi, la posizione e
+  /// l'effetto di riduzione arrivano con quelle funzioni.
+  List<MenuEntry> _separatorMenu() => [
+    MenuAction(
+      _magnify ? 'Disattiva l\'ingrandimento' : 'Attiva l\'ingrandimento',
+      onSelected: () => _setOption('magnify', !_magnify),
+    ),
+    MenuAction(
+      'Mostra le app recenti',
+      checked: _recentsOn,
+      onSelected: () => _setOption('recents', !_recentsOn),
+    ),
+  ];
 
   void _focused() {
     final id = ShellChannel.instance.focused.value;
@@ -240,6 +287,7 @@ class _LiveDockState extends State<LiveDock> {
         ),
       ];
     }
+    if (item.kind == ItemKind.separator) return _separatorMenu();
     if (item.folder case final folder?) return _folderMenu(item, folder);
     // Cestino: Apri; pieno anche Svuota (D-07).
     if (item.id == null) {
@@ -307,7 +355,9 @@ class _LiveDockState extends State<LiveDock> {
       ShellChannel.instance.toplevels.value,
       minimized: ShellChannel.instance.minimized.value,
       thumbnails: _thumbnails,
+      recents: _recentsOn ? _closed : null,
     ),
+    magnification: _magnify ? defaultMagnification : 1,
     onActivate: _activate,
     menuFor: _menu,
     onOpenPath: _openPath,
@@ -707,9 +757,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       return;
     }
     final rest = layout(widget.items, width: size.width, height: size.height);
-    final index = inActiveZone(rest, p.dx, p.dy, size.height) || _inside
-        ? itemAt(l, widget.items, p.dx)
-        : null;
+    final inZone = inActiveZone(rest, p.dx, p.dy, size.height) || _inside;
+    final index = inZone ? itemAt(l, widget.items, p.dx) : null;
+    // Il separatore ha il suo menu (clic destro), ma non si preme né si trascina.
+    if (index == null && inZone && e.buttons & kSecondaryButton != 0) {
+      final cell = cellAt(l, p.dx);
+      if (cell != null && widget.items[cell].kind == ItemKind.separator) {
+        _openMenu(cell, longPress: false);
+      }
+      return;
+    }
     if (index == null) return;
     if (e.buttons & kSecondaryButton != 0) {
       _openMenu(index, longPress: false);

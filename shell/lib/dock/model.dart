@@ -373,6 +373,15 @@ double bounceHeight(double ms) {
 }
 
 /// La cella sotto il puntatore, se c'è un'app.
+/// La cella sotto `x`, separatore compreso.
+int? cellAt(Layout l, double x) {
+  for (var i = 0; i < l.cells.length; i++) {
+    final (left, w) = l.cells[i];
+    if (x >= left && x < left + w) return i;
+  }
+  return null;
+}
+
 int? itemAt(Layout l, List<Item> items, double x) {
   for (var i = 0; i < l.cells.length; i++) {
     final (left, w) = l.cells[i];

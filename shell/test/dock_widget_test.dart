@@ -270,4 +270,43 @@ void main() {
       expect(find.text('Rimuovi'), findsNothing);
     },
   );
+
+  testWidgets(
+    'clic destro sul separatore: il suo menu; il clic sinistro niente',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final log = <String>[];
+      const items = [
+        Item.app('Terminale', command: 'term'),
+        Item.separator(),
+        Item.app('Cestino', command: 'trash'),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(
+            items: items,
+            onActivate: (item) => log.add('attiva ${item.label}'),
+            menuFor: (item) => item.kind == ItemKind.separator
+                ? const [MenuAction('Mostra le app recenti')]
+                : const [],
+          ),
+        ),
+      );
+      final rest = layout(items, width: 1280, height: 300);
+      final separator = Offset(
+        rest.center(1),
+        300 - bottomGap - backgroundHeight / 2,
+      );
+      await tester.tapAt(separator);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(log, isEmpty);
+      expect(find.byType(MenuPanel), findsNothing);
+      await tester.tapAt(separator, buttons: kSecondaryButton);
+      await tester.pump();
+      expect(find.text('Mostra le app recenti'), findsOneWidget);
+    },
+  );
 }
