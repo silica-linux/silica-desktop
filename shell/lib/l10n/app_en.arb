@@ -400,7 +400,7 @@
   "@notificationsTitle": {
     "description": "Notification Center header"
   },
-  "noNotifications": "No notifications",
+  "noNotifications": "No Recent Notifications",
   "@noNotifications": {
     "description": "Notification Center empty state"
   },
@@ -662,5 +662,17 @@
   "ccNightLight": "Night Light",
   "@ccNightLight": {
     "description": "Control Center Display detail: warmer colors at night"
+  },
+  "chooseWidgets": "Choose Widgets",
+  "@chooseWidgets": {
+    "description": "Notification Center footer or empty state."
+  },
+  "clearAllNotifications": "Clear All Notifications",
+  "@clearAllNotifications": {
+    "description": "Notification Center footer or empty state."
+  },
+  "replyPlaceholder": "Reply",
+  "@replyPlaceholder": {
+    "description": "Placeholder of a notification's reply field."
   }
 }

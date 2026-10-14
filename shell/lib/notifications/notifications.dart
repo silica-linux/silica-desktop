@@ -21,6 +21,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../menubar/menubar.dart' show barHeight;
 import '../l10n/l10n.dart';
+import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
@@ -28,6 +29,7 @@ import '../system/system_status.dart';
 import 'banner.dart';
 import 'model.dart';
 import 'service.dart';
+import 'settings.dart';
 
 const double columnWidth = 344;
 const double columnMargin = 16;
@@ -65,6 +67,24 @@ const Color headerColor = Color(0xE0FFFFFF);
 const double headerHeight = 21;
 const double headerSize = 18.5;
 const double headerGapBelow = 7.5;
+
+/// Between the most recent card (above the header) and the header.
+const double headerGapAbove = 15.5;
+
+/// From the last card to the footer (pill and clear menu), and between the two.
+const double footerGap = 16;
+const double footerSpacing = 8;
+const Size widgetsPillSize = Size(91, 24);
+const double clearMenuSize = 24;
+const double widgetsPillTextSize = 11;
+
+/// Empty Center: the text 30 pt below the column top, 17 pt tall, the pill 33 pt under it.
+const double emptyTextTop = 30;
+const double emptyTextHeight = 17;
+const double emptyPillGap = 33;
+
+/// A footer control without a backend yet.
+const double disabledFooterOpacity = 0.45;
 
 /// Space between cards in the Center (not measured: like the pitch of stacked cards).
 const double cardGap = 8;
@@ -204,6 +224,20 @@ TextStyle _style(double size, Color color, {FontWeight? weight}) => TextStyle(
   height: size == fontSize ? lineHeight / fontSize : null,
 );
 
+/// Opens the app that sent `n`: its desktop entry (`desktop-entry` hint), or an installed
+/// app with the same name. Nothing when it cannot be found.
+void openSenderApp(ShellNotification n) {
+  final entries = loadDesktopEntries();
+  final byId = n.desktopEntry.isEmpty
+      ? null
+      : entries[n.desktopEntry] ??
+            entries[n.desktopEntry.replaceAll(RegExp(r'\.desktop$'), '')];
+  final entry =
+      byId ?? entries.values.where((e) => e.name == n.appName).firstOrNull;
+  if (entry == null || entry.exec.isEmpty) return;
+  ShellChannel.instance.launch(entry.exec);
+}
+
 /// `HH:MM` of the arrival time, as in the reference Center.
 String timeLabel(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
@@ -214,9 +248,18 @@ class NotificationsLayer extends StatefulWidget {
     required this.source,
     this.system,
     this.startOpen = false,
+    this.settings = NotificationSettings.read,
+    this.openApp = openSenderApp,
   });
 
+  /// A click on a notification without a `default` action opens its app (N-02).
+  final void Function(ShellNotification) openApp;
+
   final NotificationsSource source;
+
+  /// The per-app styles (banners, alerts, none), read again for every notification so a
+  /// change in Settings applies at once.
+  final NotificationSettings Function() settings;
 
   /// With Do Not Disturb on, notifications go to the Center without a banner.
   final SystemSource? system;
@@ -227,10 +270,13 @@ class NotificationsLayer extends StatefulWidget {
 }
 
 class _BannerEntry {
-  _BannerEntry(this.notification);
+  _BannerEntry(this.notification, {this.alert = false});
 
   final Key key = UniqueKey();
   ShellNotification notification;
+
+  /// Alerts style: it stays until the user acts on it.
+  final bool alert;
   bool leaving = false;
 }
 
@@ -246,6 +292,10 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   /// The banners on screen: at most one entering or staying, the others leaving.
   final List<_BannerEntry> _banners = [];
   bool _centerOpen = false;
+
+  /// The clear menu under the 24 pt circle of the footer.
+  bool _clearMenu = false;
+  final GlobalKey _clearMenuKey = GlobalKey();
   final Set<String> _expanded = {};
 
   /// The surface size at the last layout.
@@ -289,7 +339,11 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   }
 
   void _post(ShellNotification n) {
+    // With a Focus (Do Not Disturb) on the notification is delivered silently, without a
+    // banner, and waits in the Center (SH-NC-07, measured).
     if (_centerOpen || (widget.system?.value.doNotDisturb ?? false)) return;
+    final style = widget.settings().styleOf(n);
+    if (style == NotificationStyle.none) return;
     setState(() {
       final same = _banners.where(
         (b) => !b.leaving && b.notification.id == n.id,
@@ -303,7 +357,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
       for (final banner in _banners) {
         banner.leaving = true;
       }
-      _banners.add(_BannerEntry(n));
+      _banners.add(_BannerEntry(n, alert: style == NotificationStyle.alerts));
     });
     _updateInput();
   }
@@ -334,6 +388,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
       _centerOpen = false;
       ShellChannel.instance.broadcast('notifications.open', '0');
       _expanded.clear();
+      _clearMenu = false;
     });
     _center
       ..duration = centerCloseDuration
@@ -362,8 +417,18 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     ]);
   }
 
+  /// A click: the app's `default` action, otherwise the sender app opens (N-02: the click
+  /// launched the sender with its window).
   void _activate(ShellNotification n) {
-    if (n.hasDefault) widget.source.invoke(n.id, 'default');
+    if (n.hasDefault) {
+      widget.source.invoke(n.id, 'default');
+    } else {
+      // As after the `default` action the notification is handled and leaves the Center.
+      widget.openApp(n);
+      if (!n.resident) widget.source.dismiss(n.id);
+    }
+    // Clicked in the Center: the app comes forward and the Center closes.
+    _closeCenter();
   }
 
   /// Rightward offset of the Center and opacity in the current phase; null if closed.
@@ -412,10 +477,17 @@ class _NotificationsLayerState extends State<NotificationsLayer>
                   child: BannerSlot(
                     notification: banner.notification,
                     leaving: banner.leaving,
+                    persistent: banner.alert,
                     onGone: () => _gone(banner),
                     onActivate: () => _activate(banner.notification),
                     onDismiss: () =>
                         widget.source.dismiss(banner.notification.id),
+                    onAction: (key) =>
+                        widget.source.invoke(banner.notification.id, key),
+                    onReply: (text) =>
+                        widget.source.reply(banner.notification.id, text),
+                    onReplyFocus: (focused) =>
+                        LayerControl.keyboard(focused ? 'exclusive' : 'none'),
                   ),
                 ),
           ],
@@ -440,7 +512,8 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         children: [
           Positioned.fill(
             child: GestureDetector(
-              onTap: _closeCenter,
+              // With the clear menu open its own clicks (and the outside close) belong to the menu.
+              onTap: _clearMenu ? null : _closeCenter,
               behavior: HitTestBehavior.opaque,
             ),
           ),
@@ -455,18 +528,102 @@ class _NotificationsLayerState extends State<NotificationsLayer>
               child: _Scrim(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _header(groups.isNotEmpty),
-                    const SizedBox(height: headerGapBelow),
-                    if (groups.isEmpty) _empty(),
-                    for (final group in groups) ..._group(group),
-                  ],
+                  children: _column(groups),
                 ),
               ),
             ),
           ),
+          if (_clearMenuView() case final menu?) Positioned.fill(child: menu),
         ],
       ),
+    );
+  }
+
+  /// The column (notifications.md › Notification Center · layout): the most recent group
+  /// sits above the header, 15.5 pt over it; the others follow 7.5 pt below the header; the
+  /// "Choose Widgets" pill and the clear menu close the column 16 pt below the last card.
+  /// Empty: only the "no recent notifications" text 30 pt below the column top, and the pill
+  /// 33 pt under it (N-03).
+  List<Widget> _column(List<NotificationGroup> groups) {
+    if (groups.isEmpty) {
+      return [
+        const SizedBox(height: emptyTextTop),
+        _empty(),
+        const SizedBox(height: emptyPillGap),
+        Center(child: _widgetsPill()),
+      ];
+    }
+    List<Widget> trimmed(List<Widget> items) =>
+        items.isNotEmpty && items.last is SizedBox
+        ? items.sublist(0, items.length - 1)
+        : items;
+    final rest = [for (final group in groups.skip(1)) ..._group(group)];
+    return [
+      ...trimmed(_group(groups.first)),
+      const SizedBox(height: headerGapAbove),
+      _header(true),
+      const SizedBox(height: headerGapBelow),
+      ...trimmed(rest),
+      const SizedBox(height: footerGap),
+      Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _widgetsPill(),
+            const SizedBox(width: footerSpacing),
+            _clearMenuButton(),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// "Choose Widgets": the pill that edits the widgets (91 × 24, SH-NC-13). Silica has no
+  /// widgets and no widget gallery yet (silica-desktop#68, #70): the pill is shown as on the
+  /// reference but disabled, never a control that does nothing.
+  Widget _widgetsPill() => Opacity(
+    key: const ValueKey('choose widgets'),
+    opacity: disabledFooterOpacity,
+    child: Semantics(
+      enabled: false,
+      button: true,
+      child: FooterPill(
+        size: widgetsPillSize,
+        label: l10nOf(context).chooseWidgets,
+      ),
+    ),
+  );
+
+  /// The 24 pt circle next to the pill: the menu to clear the notifications.
+  Widget _clearMenuButton() => GestureDetector(
+    key: _clearMenuKey,
+    onTap: () => setState(() => _clearMenu = !_clearMenu),
+    child: const FooterPill(size: Size.square(clearMenuSize), ellipsis: true),
+  );
+
+  /// The clear menu, below the circle (items provisional: the reference menu was not opened).
+  Widget? _clearMenuView() {
+    if (!_clearMenu) return null;
+    final box = _clearMenuKey.currentContext?.findRenderObject();
+    final root = context.findRenderObject();
+    if (box is! RenderBox || root is! RenderBox) return null;
+    final at = box.localToGlobal(
+      Offset(0, box.size.height + 4),
+      ancestor: root,
+    );
+    return MenuHost(
+      key: const ValueKey('clear menu'),
+      entries: [
+        MenuAction(
+          l10nOf(context).clearAllNotifications,
+          onSelected: () {
+            setState(() => _clearMenu = false);
+            widget.source.clear();
+          },
+        ),
+      ],
+      anchor: at,
+      onDismissed: () => setState(() => _clearMenu = false),
     );
   }
 
@@ -491,8 +648,8 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   );
 
   /// Empty state: white semibold text, centered on the column.
-  Widget _empty() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 24),
+  Widget _empty() => SizedBox(
+    height: emptyTextHeight,
     child: Center(
       child: Text(
         l10nOf(context).noNotifications,
@@ -659,25 +816,66 @@ class _CenterCard extends StatefulWidget {
   State<_CenterCard> createState() => _CenterCardState();
 }
 
-class _CenterCardState extends State<_CenterCard> {
+/// A card in the Center. Dragged to the right it follows the pointer and, on release, leaves
+/// with the banner's exit and is cleared (SH-NC-12; the Center drag was not measured: the
+/// banner's N-02 behaviour, provisional).
+class _CenterCardState extends State<_CenterCard>
+    with SingleTickerProviderStateMixin {
   bool _hover = false;
+  double _drag = 0;
+  late final AnimationController _exit = AnimationController(
+    vsync: this,
+    duration: bannerExitDuration,
+  )..addListener(() => setState(() {}));
+
+  @override
+  void dispose() {
+    _exit.dispose();
+    super.dispose();
+  }
+
+  Future<void> _leave() async {
+    if (_exit.isAnimating || _exit.value > 0) return;
+    await _exit.forward(from: 0);
+    if (mounted) widget.source.dismiss(widget.notification.id);
+  }
 
   @override
   Widget build(BuildContext context) {
     final n = widget.notification;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: NotificationCard(
-          notification: n,
-          showTime: true,
-          showActions: true,
-          bodyLines: 4,
-          showClose: _hover,
-          onClose: () => widget.source.dismiss(n.id),
-          onAction: (key) => widget.source.invoke(n.id, key),
+    final exitMs = _exit.value * bannerExitDuration.inMilliseconds;
+    final exiting = _exit.value > 0;
+    final dx = _drag + (exiting ? bannerExitOffset(exitMs) : 0);
+    final opacity = exiting ? bannerExitOpacity(exitMs) : 1.0;
+    return Transform.translate(
+      offset: Offset(dx, 0),
+      child: Opacity(
+        opacity: opacity.clamp(0.0, 1.0),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          child: GestureDetector(
+            onTap: exiting ? null : widget.onTap,
+            onHorizontalDragUpdate: exiting
+                ? null
+                : (d) => setState(
+                    () => _drag = (_drag + d.delta.dx).clamp(0, 1e4),
+                  ),
+            // Released after a drag to the right: it leaves; a drag back to the start stays.
+            onHorizontalDragEnd: exiting
+                ? null
+                : (_) => _drag > 0 ? _leave() : null,
+            child: NotificationCard(
+              notification: n,
+              showTime: true,
+              showActions: true,
+              bodyLines: 4,
+              showClose: _hover && !exiting,
+              onClose: () => widget.source.dismiss(n.id),
+              onAction: (key) => widget.source.invoke(n.id, key),
+              onReply: (text) => widget.source.reply(n.id, text),
+            ),
+          ),
         ),
       ),
     );
@@ -698,9 +896,17 @@ class NotificationCard extends StatelessWidget {
     this.onAction,
     this.showDetails = false,
     this.onDetails,
+    this.onReply,
+    this.onReplyFocus,
   });
 
   final ShellNotification notification;
+
+  /// The reply field, for notifications that take one (with the actions shown).
+  final ValueChanged<String>? onReply;
+
+  /// The reply field takes or loses the keyboard (the banner layer asks for it).
+  final ValueChanged<bool>? onReplyFocus;
   final bool showTime;
   final bool showActions;
   final int bodyLines;
@@ -742,6 +948,14 @@ class NotificationCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _content(c, n),
+              if (showActions && n.canReply && onReply != null)
+                _ReplyField(
+                  key: ValueKey('reply ${n.id}'),
+                  placeholder: n.replyLabel,
+                  colors: c,
+                  onSubmit: onReply!,
+                  onFocus: onReplyFocus,
+                ),
               if (buttons.isNotEmpty) _actions(c, buttons),
             ],
           ),
@@ -980,6 +1194,111 @@ class _InitialIcon extends CustomPainter {
 
 /// The circle with the × (close, clear all): background `#b4b5b9`, 1 pt dark rim,
 /// 2 px glyph `#5a5b5c`.
+/// The reply field of a notification that takes one (inline-reply; the reference reply was
+/// not tried: the field sits in the actions section with its colours, provisional). Return
+/// sends the text; an empty field sends nothing.
+class _ReplyField extends StatefulWidget {
+  const _ReplyField({
+    super.key,
+    required this.placeholder,
+    required this.colors,
+    required this.onSubmit,
+    this.onFocus,
+  });
+
+  final String placeholder;
+  final NotificationColors colors;
+  final ValueChanged<String> onSubmit;
+  final ValueChanged<bool>? onFocus;
+
+  @override
+  State<_ReplyField> createState() => _ReplyFieldState();
+}
+
+class _ReplyFieldState extends State<_ReplyField> {
+  final TextEditingController _text = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => widget.onFocus?.call(_focus.hasFocus));
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _send(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    widget.onSubmit(trimmed);
+    _text.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.actionsFill,
+        border: Border(top: BorderSide(color: c.actionsDivider)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(actionsInset),
+        child: SilicaTextField(
+          controller: _text,
+          focusNode: _focus,
+          placeholder: widget.placeholder.isEmpty
+              ? l10nOf(context).replyPlaceholder
+              : widget.placeholder,
+          onSubmitted: _send,
+        ),
+      ),
+    );
+  }
+}
+
+/// The footer controls (notifications.md › layout): a pill or a circle on the same material
+/// as the × circle — fill `#b4b5b9` light, bright row on top and bottom, dark side line.
+class FooterPill extends StatelessWidget {
+  const FooterPill({
+    super.key,
+    required this.size,
+    this.label,
+    this.ellipsis = false,
+  });
+
+  final Size size;
+  final String? label;
+
+  /// The "…" glyph of the menu circle.
+  final bool ellipsis;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = NotificationColors.of(context);
+    return Container(
+      width: size.width,
+      height: size.height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: c.pillFill,
+        border: Border.all(color: c.closeBorder),
+        borderRadius: BorderRadius.circular(size.height / 2),
+      ),
+      child: Text(
+        ellipsis ? '\u00b7\u00b7\u00b7' : label ?? '',
+        maxLines: 1,
+        style: _style(widgetsPillTextSize, c.pillText),
+      ),
+    );
+  }
+}
+
 class CloseCircle extends StatelessWidget {
   const CloseCircle({super.key, required this.size});
 

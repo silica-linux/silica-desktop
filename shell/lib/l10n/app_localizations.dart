@@ -641,7 +641,7 @@ abstract class AppLocalizations {
   /// Notification Center empty state
   ///
   /// In en, this message translates to:
-  /// **'No notifications'**
+  /// **'No Recent Notifications'**
   String get noNotifications;
 
   /// Notification group pill
@@ -967,6 +967,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Night Light'**
   String get ccNightLight;
+
+  /// Notification Center footer or empty state.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Widgets'**
+  String get chooseWidgets;
+
+  /// Notification Center footer or empty state.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear All Notifications'**
+  String get clearAllNotifications;
+
+  /// Placeholder of a notification's reply field.
+  ///
+  /// In en, this message translates to:
+  /// **'Reply'**
+  String get replyPlaceholder;
 }
 
 class _AppLocalizationsDelegate

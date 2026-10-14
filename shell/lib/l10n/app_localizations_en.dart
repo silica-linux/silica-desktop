@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -309,7 +308,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notificationsTitle => 'Notifications';
 
   @override
-  String get noNotifications => 'No notifications';
+  String get noNotifications => 'No Recent Notifications';
 
   @override
   String get collapse => 'Collapse';
@@ -494,4 +493,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ccNightLight => 'Night Light';
+
+  @override
+  String get chooseWidgets => 'Choose Widgets';
+
+  @override
+  String get clearAllNotifications => 'Clear All Notifications';
+
+  @override
+  String get replyPlaceholder => 'Reply';
 }

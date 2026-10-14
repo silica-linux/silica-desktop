@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
+import 'package:silica_shell/notifications/settings.dart';
 import 'package:silica_shell/system/system_status.dart';
 
 class FakeSource extends ChangeNotifier implements NotificationsSource {
@@ -40,6 +41,9 @@ class FakeSource extends ChangeNotifier implements NotificationsSource {
       calls.add('invoke $id $action');
 
   @override
+  Future<void> reply(int id, String text) async => calls.add('reply $id $text');
+
+  @override
   Future<void> clear() async {
     calls.add('clear');
     items.clear();
@@ -54,9 +58,11 @@ ShellNotification note(
   List<(String, String)> actions = const [],
   int urgency = 1,
   bool transient = false,
+  String entry = '',
 }) => ShellNotification(
   id: id,
   appName: app,
+  desktopEntry: entry,
   summary: 'Titolo $id',
   body: 'Corpo della notifica $id',
   actions: actions,
@@ -65,14 +71,22 @@ ShellNotification note(
   timestamp: DateTime(2026, 10, 13, 9, minute),
 );
 
-Future<void> pumpLayer(WidgetTester tester, FakeSource source) async {
+Future<void> pumpLayer(
+  WidgetTester tester,
+  FakeSource source, {
+  NotificationSettings settings = const NotificationSettings(),
+}) async {
   tester.view.physicalSize = const Size(1280, 686);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     Directionality(
       textDirection: TextDirection.ltr,
-      child: NotificationsLayer(source: source),
+      child: NotificationsLayer(
+        source: source,
+        settings: () => settings,
+        openApp: (n) => source.calls.add('open ${n.appName}'),
+      ),
     ),
   );
 }
@@ -186,6 +200,12 @@ void main() {
       tester.getTopLeft(find.text('Titolo 3')).dy,
       lessThan(tester.getTopLeft(find.text('Titolo 2')).dy),
     );
+    // The most recent group sits above the header, the others below it (SH-NC, #11).
+    final header = tester.getTopLeft(find.text('Notifications')).dy;
+    expect(tester.getTopLeft(find.text('Titolo 3')).dy, lessThan(header));
+    expect(tester.getTopLeft(find.text('Titolo 2')).dy, greaterThan(header));
+    // Footer: the pill (disabled, no widgets yet) and the clear menu circle.
+    expect(find.text('Choose Widgets'), findsOneWidget);
 
     await tester.tap(find.text('Posticipa'));
     expect(source.calls, ['invoke 3 snooze']);
@@ -198,12 +218,161 @@ void main() {
     await tester.tap(find.byType(CloseCircle).first);
     await tester.pumpAndSettle();
     expect(source.calls.last, 'clear');
-    expect(find.text('No notifications'), findsOneWidget);
+    expect(find.text('No Recent Notifications'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('Notifications'), findsNothing);
   });
+
+  test('per-app styles from notifications.json', () {
+    final settings = NotificationSettings.parse(
+      '{"apps": {"org.example.Chat": {"style": "alerts"}, '
+      '"Mail": {"style": "none"}, "Bad": {"style": "loud"}}}',
+    );
+    expect(
+      settings.styleOf(note(1, app: 'Chat', entry: 'org.example.Chat')),
+      NotificationStyle.alerts,
+    );
+    expect(settings.styleOf(note(2, app: 'Mail')), NotificationStyle.none);
+    expect(settings.styleOf(note(3, app: 'Bad')), NotificationStyle.banners);
+    expect(
+      NotificationSettings.parse('not json').styleOf(note(4)),
+      NotificationStyle.banners,
+    );
+  });
+
+  testWidgets('alerts stay with the × visible; style none shows no banner', (
+    tester,
+  ) async {
+    final source = FakeSource();
+    await pumpLayer(
+      tester,
+      source,
+      settings: const NotificationSettings({
+        'Chat': NotificationStyle.alerts,
+        'Quiet': NotificationStyle.none,
+      }),
+    );
+    source.post(note(1, app: 'Quiet'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Titolo 1'), findsNothing);
+    source.post(note(2, app: 'Chat'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Titolo 2'), findsOneWidget);
+    expect(find.byType(CloseCircle), findsOneWidget);
+    // Well past the banner duration it is still there.
+    await tester.pump(const Duration(seconds: 12));
+    expect(find.text('Titolo 2'), findsOneWidget);
+  });
+
+  testWidgets('a card dragged right in the Center leaves and is cleared', (
+    tester,
+  ) async {
+    final source = FakeSource()..items[1] = note(1, minute: 1);
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    await tester.drag(find.text('Titolo 1'), const Offset(40, 0));
+    await tester.pumpAndSettle();
+    expect(source.calls, ['dismiss 1']);
+  });
+
+  testWidgets('a long press opens the banner: its actions work and it leaves', (
+    tester,
+  ) async {
+    final source = FakeSource();
+    await pumpLayer(tester, source);
+    source.post(note(1, actions: [('default', 'Open'), ('snooze', 'Snooze')]));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Snooze'), findsNothing);
+    await tester.longPress(find.text('Titolo 1'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Snooze'), findsOneWidget);
+    await tester.tap(find.text('Snooze'));
+    await tester.pumpAndSettle();
+    expect(source.calls, ['invoke 1 snooze']);
+    expect(find.text('Titolo 1'), findsNothing);
+  });
+
+  testWidgets('the reply field sends its text (inline-reply)', (tester) async {
+    final source = FakeSource()
+      ..items[1] = note(
+        1,
+        minute: 1,
+        actions: [('inline-reply', 'Reply to Anna')],
+      );
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    expect(find.text('Reply to Anna'), findsOneWidget);
+    // inline-reply is a field, never a button.
+    expect(source.items[1]!.buttons, isEmpty);
+    await tester.tap(find.byType(EditableText));
+    await tester.enterText(find.byType(EditableText), 'on my way');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(source.calls, ['reply 1 on my way']);
+  });
+
+  testWidgets('a click without a default action opens the sender app', (
+    tester,
+  ) async {
+    final source = FakeSource()..items[1] = note(1, app: 'Chat', minute: 1);
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Titolo 1'));
+    await tester.pumpAndSettle();
+    expect(source.calls, ['open Chat', 'dismiss 1']);
+    expect(find.text('Notifications'), findsNothing);
+  });
+
+  testWidgets('the footer menu clears every notification', (tester) async {
+    final source = FakeSource()
+      ..items[1] = note(1, minute: 1)
+      ..items[2] = note(2, app: 'Calendar', minute: 2);
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    final pill = tester.getRect(find.byKey(const ValueKey('choose widgets')));
+    // The disabled pill does nothing.
+    await tester.tap(find.text('Choose Widgets'));
+    await tester.pumpAndSettle();
+    expect(source.calls, isEmpty);
+    expect(find.text('Notifications'), findsOneWidget);
+    // The circle 8 pt to the right of the pill opens the menu.
+    await tester.tapAt(Offset(pill.right + 8 + 12, pill.center.dy));
+    await tester.pumpAndSettle();
+    final item = tester.getCenter(find.text('Clear All Notifications'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: item - const Offset(0, 1));
+    await mouse.moveTo(item);
+    await tester.pump();
+    await mouse.down(item);
+    await mouse.up();
+    // The menu blinks the item, then acts: timers, not frames.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(source.calls, ['clear']);
+  });
+
+  testWidgets(
+    'empty Center: the text 30 pt below the column top, the pill 33 under it',
+    (tester) async {
+      final source = FakeSource();
+      await pumpLayer(tester, source);
+      await sendCommand(tester, 'notifications.toggle');
+      await tester.pumpAndSettle();
+      expect(find.text('Notifications'), findsNothing);
+      final text = tester.getRect(find.text('No Recent Notifications'));
+      final pill = tester.getRect(find.byKey(const ValueKey('choose widgets')));
+      expect(pill.top - text.bottom, closeTo(33 + (17 - text.height) / 2, 1.5));
+      expect(pill.size, const Size(91, 24));
+      expect(pill.center.dx, closeTo(text.center.dx, 0.5));
+    },
+  );
 
   testWidgets(
     'with Do Not Disturb no banner, the notification stays in the Center',

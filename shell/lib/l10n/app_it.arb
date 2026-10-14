@@ -90,7 +90,7 @@
   "halfScreen": "Metà dello schermo",
   "arrange": "Disponi",
   "notificationsTitle": "Notifiche",
-  "noNotifications": "Nessuna notifica",
+  "noNotifications": "Nessuna notifica recente",
   "collapse": "Riduci",
   "clear": "Cancella",
   "details": "Dettagli",
@@ -144,5 +144,8 @@
   "desktopSortModified": "Data di modifica",
   "desktopViewOptions": "Opzioni vista",
   "desktopUntitledFolder": "cartella senza titolo",
-  "ccNightLight": "Luce notturna"
+  "ccNightLight": "Luce notturna",
+  "chooseWidgets": "Scegli i widget",
+  "clearAllNotifications": "Elimina tutte le notifiche",
+  "replyPlaceholder": "Rispondi"
 }

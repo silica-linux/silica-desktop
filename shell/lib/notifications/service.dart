@@ -23,6 +23,9 @@ abstract class NotificationsSource implements Listenable {
 
   Future<void> dismiss(int id);
   Future<void> invoke(int id, String action);
+
+  /// The text of the reply field (notifications with the `inline-reply` action).
+  Future<void> reply(int id, String text);
   Future<void> clear();
 }
 
@@ -115,6 +118,10 @@ class DBusNotifications extends ChangeNotifier implements NotificationsSource {
   @override
   Future<void> invoke(int id, String action) =>
       _quiet(_call('InvokeAction', 'us', [id, action]));
+
+  @override
+  Future<void> reply(int id, String text) =>
+      _quiet(_call('Reply', 'us', [id, text]));
 
   @override
   Future<void> clear() => _quiet(_call('Clear'));

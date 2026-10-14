@@ -5,6 +5,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+/// The action key of the reply field.
+const String replyAction = 'inline-reply';
+
 /// A notification. The fields follow the daemon's `(ussssasysssbbti)` structure.
 @immutable
 class ShellNotification {
@@ -44,11 +47,19 @@ class ShellNotification {
 
   bool get critical => urgency >= 2;
 
-  /// The actions to show as buttons: `default` is the click on the notification.
+  /// The actions to show as buttons: `default` is the click on the notification, and
+  /// `inline-reply` is the reply field.
   List<(String, String)> get buttons => [
     for (final action in actions)
-      if (action.$1 != 'default') action,
+      if (action.$1 != 'default' && action.$1 != replyAction) action,
   ];
+
+  /// The app takes a reply typed in the notification (KDE's inline-reply extension).
+  bool get canReply => actions.any((a) => a.$1 == replyAction);
+
+  /// The label of the reply action: the field's placeholder.
+  String get replyLabel =>
+      actions.firstWhere((a) => a.$1 == replyAction, orElse: () => ('', '')).$2;
 
   bool get hasDefault => actions.any((a) => a.$1 == 'default');
 

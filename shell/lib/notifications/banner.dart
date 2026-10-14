@@ -28,9 +28,25 @@ class BannerSlot extends StatefulWidget {
     required this.onActivate,
     required this.onDismiss,
     this.onHover,
+    this.persistent = false,
+    this.onReply,
+    this.onReplyFocus,
+    this.onAction,
   });
 
+  /// An action button of the expanded banner (the banner then leaves).
+  final ValueChanged<String>? onAction;
+
+  /// The reply field's text (expanded banner of a notification that takes a reply).
+  final ValueChanged<String>? onReply;
+
+  /// The reply field takes or loses the keyboard.
+  final ValueChanged<bool>? onReplyFocus;
+
   final ShellNotification notification;
+
+  /// Alerts style (SH-NC-05): it does not leave by itself and its × stays visible.
+  final bool persistent;
 
   /// Replaced by a more recent banner: it leaves at once.
   final bool leaving;
@@ -93,7 +109,7 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
 
   void _schedule(Duration after) {
     _timer?.cancel();
-    if (widget.notification.critical || _hover) return;
+    if (widget.notification.critical || widget.persistent || _hover) return;
     _timer = Timer(after, _leave);
   }
 
@@ -106,6 +122,11 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
     await _exit.forward(from: 0);
     if (mounted) widget.onGone();
   }
+
+  void _expand() => setState(() {
+    _expanded = true;
+    _timer?.cancel();
+  });
 
   void _setHover(bool hover) {
     if (leaving) return;
@@ -135,15 +156,24 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
     Widget card = NotificationCard(
       notification: widget.notification,
       shadow: true,
-      showClose: _hover && !exiting,
+      showClose: (_hover || widget.persistent) && !exiting,
       onClose: widget.onDismiss,
       showDetails: _hover && !exiting && !_expanded,
-      onDetails: () => setState(() {
-        _expanded = true;
-        _timer?.cancel();
-      }),
+      onDetails: _expand,
       showActions: _expanded,
       bodyLines: _expanded ? 6 : 2,
+      onAction: (key) {
+        widget.onAction?.call(key);
+        _leave();
+      },
+      onReply: widget.onReply == null
+          ? null
+          : (text) {
+              widget.onReply!(text);
+              widget.onReplyFocus?.call(false);
+              _leave();
+            },
+      onReplyFocus: widget.onReplyFocus,
     );
     if (blur > 0.05) {
       card = ImageFiltered(
@@ -172,6 +202,9 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
                     () => _drag = (_drag + d.delta.dx).clamp(0, 1e4),
                   ),
             onHorizontalDragEnd: exiting ? null : (_) => _leave(),
+            // A long press opens the banner with its actions and reply field, like
+            // "Details" (SH-NC-04; the reference long press was not tried: provisional).
+            onLongPress: exiting || _expanded ? null : _expand,
             child: card,
           ),
         ),

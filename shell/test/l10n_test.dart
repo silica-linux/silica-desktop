@@ -75,8 +75,9 @@ void main() {
     await tester.pumpWidget(italian(NotificationsLayer(source: FakeSource())));
     await command(tester, 'notifications.toggle');
     await tester.pumpAndSettle();
-    expect(find.text('Notifiche'), findsOneWidget);
-    expect(find.text('Nessuna notifica'), findsOneWidget);
+    // Empty: no header, the text and the widgets pill (N-03).
+    expect(find.text('Nessuna notifica recente'), findsOneWidget);
+    expect(find.text('Scegli i widget'), findsOneWidget);
   });
 
   testWidgets('Empty Trash alert in Italian', (tester) async {
