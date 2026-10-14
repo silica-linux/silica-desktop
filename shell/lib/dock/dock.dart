@@ -9,6 +9,7 @@ import 'dart:io'
         Directory,
         File,
         FileSystemEntity,
+        FileSystemEvent,
         FileSystemException,
         Platform,
         Process,
@@ -65,6 +66,32 @@ class _LiveDockState extends State<LiveDock> {
   void _setFolders(void Function(List<String> folders) change) {
     setState(() => change(_folders));
     saveDockOption('folders', _folders);
+    _watchFolders();
+  }
+
+  /// One non-recursive watch per Dock folder: when its items change the Dock redraws, so a
+  /// folder that gains its first item (or loses its last) switches between the plain and the
+  /// full icon.
+  final Map<String, StreamSubscription<FileSystemEvent>> _folderWatches = {};
+  Timer? _folderRedraw;
+
+  void _watchFolders() {
+    for (final path in _folderWatches.keys.toList()) {
+      if (!_folders.contains(path)) _folderWatches.remove(path)?.cancel();
+    }
+    for (final path in _folders) {
+      if (_folderWatches.containsKey(path)) continue;
+      try {
+        _folderWatches[path] = Directory(path).watch().listen((_) {
+          _folderRedraw?.cancel();
+          _folderRedraw = Timer(const Duration(milliseconds: 150), () {
+            if (mounted) setState(() {});
+          });
+        });
+      } on FileSystemException {
+        // No notifications for this folder: it is checked at every redraw.
+      }
+    }
   }
 
   /// Dock options (dock.json), reloaded when Settings changes them.
@@ -208,6 +235,7 @@ class _LiveDockState extends State<LiveDock> {
     _applyOptions();
     _launcher.value.addListener(_launcherChanged);
     _launcher.start();
+    _watchFolders();
     // Login items: Silica has no other runner; once per session.
     runAutostartOnce();
   }
@@ -259,6 +287,10 @@ class _LiveDockState extends State<LiveDock> {
     _options.dispose();
     _launcher.value.removeListener(_launcherChanged);
     _launcher.dispose();
+    _folderRedraw?.cancel();
+    for (final watch in _folderWatches.values) {
+      watch.cancel();
+    }
     for (final image in _thumbnails.values) {
       image.dispose();
     }
