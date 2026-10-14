@@ -1574,7 +1574,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
     final pile = closer == null ? _pileOf(item) : null;
     final icon = closer != null
-        ? SilicaIcon(LayeredSource(closer), side: side, besideApps: true)
+        // Il pulsante di chiusura segue l'aspetto (dock-stacks.md, scuro: nero traslucido
+        // sopra il Dock, chevron bianco); le icone delle app no.
+        ? SilicaIcon(
+            LayeredSource(closer),
+            side: side,
+            besideApps: true,
+            dark:
+                MediaQuery.maybePlatformBrightnessOf(context) ==
+                Brightness.dark,
+          )
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
         : SilicaIcon(source, side: side, besideApps: true);
