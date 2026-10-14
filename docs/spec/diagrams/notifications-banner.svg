@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 290" font-family="Inter, sans-serif" font-size="12">
+  <title>Notification banner (N-00), drawn at 2× (2 units = 1 pt)</title>
+  <rect width="760" height="290" fill="#ffffff"/>
+  <g transform="translate(20 30) scale(2)">
+    <rect x="0" y="0" width="344" height="91" rx="20" fill="#c0c1c6" stroke="#393a3d" stroke-width="0.5"/>
+    <rect x="14" y="29.5" width="32" height="32" rx="7" fill="#e9e9ef" stroke="#babbbf" stroke-width="0.5"/>
+    <g fill="none" stroke="#1d5fb4" stroke-width="0.4" stroke-dasharray="1 1">
+      <line x1="58" y1="0" x2="58" y2="91"/>
+      <line x1="330" y1="0" x2="330" y2="91"/>
+    </g>
+    <g fill="#1d1d1e" font-size="7">
+      <text x="58" y="25" font-weight="600">Title</text>
+      <text x="58" y="42" font-weight="600">Subtitle</text>
+      <text x="58" y="59">Body, line 1</text>
+      <text x="58" y="75">Body, line 2</text>
+    </g>
+  </g>
+  <g fill="#333">
+    <text x="20" y="240">344 × 91 · radius 20 · 16 pt from the right edge and from the menu bar</text>
+    <text x="20" y="256">icon 32 at x 14, centred · text from x 58 to 330 · baselines 25, 42, 59, 75</text>
+    <text x="20" y="272">1 pt border outside the frame · bright 1 pt rows top and bottom</text>
+  </g>
+</svg>
