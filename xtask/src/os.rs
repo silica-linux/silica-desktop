@@ -49,7 +49,14 @@ const GUEST_USER: &str = "silica";
 const GUEST_GLIBC: (u32, u32) = (2, 43);
 
 /// The apps deployed with `--apps`: repositories next to this one.
-const APPS: &[&str] = &["mustache", "mail/app", "terminal", "clock", "calculator"];
+const APPS: &[&str] = &[
+    "mustache",
+    "mail/app",
+    "terminal",
+    "clock",
+    "calculator",
+    "settings",
+];
 
 pub fn os(args: &[String]) -> Result<()> {
     let rest = args.get(1..).unwrap_or_default();
