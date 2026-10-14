@@ -201,6 +201,72 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a click that passes to another app closes the menu even as the frontmost app changes (#149)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final layer = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(
+          ShellChannel.channel,
+          (call) async => switch (call.method) {
+            'list' => [
+              {'id': 'w1', 'title': 'Notes', 'app_id': 'dev.frascella.Note'},
+            ],
+            'focused' => 'w1',
+            _ => null,
+          },
+        )
+        ..setMockMethodCallHandler(
+          const MethodChannel('silica/layer', JSONMethodCodec()),
+          (call) async {
+            layer.add(call);
+            return true;
+          },
+        );
+      addTearDown(() {
+        ShellChannel.instance.toplevels.value = const [];
+        ShellChannel.instance.focused.value = '';
+        ShellChannel.instance.states.value = const {};
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+        ),
+      );
+      await tester.pump();
+      await tester.tapAt(tester.getRect(find.text('Window')).center);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Minimize'), findsOneWidget);
+
+      // Ossido ends the menu, then the same click makes the desktop's owner frontmost:
+      // the bar rebuilds for the new app while the menu fades out.
+      Future<void> shell(MethodCall call) =>
+          tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+            'silica/shell',
+            const JSONMethodCodec().encodeMethodCall(call),
+            (_) {},
+          );
+      await shell(const MethodCall('transientDismissed'));
+      await tester.pump(const Duration(milliseconds: 16));
+      await shell(const MethodCall('focused', ''));
+      await shell(
+        const MethodCall('broadcast', {
+          'topic': 'app.frontmost',
+          'value': 'dev.frascella.Mustache',
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Minimize'), findsNothing);
+      expect(layer.any((c) => c.method == 'clearTransient'), isTrue);
+      expect(layer.last.method, 'setSize');
+    },
+  );
+
   testWidgets('pressing Window opens the menu; the choice runs the command', (
     tester,
   ) async {

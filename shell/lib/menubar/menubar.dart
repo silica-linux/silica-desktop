@@ -155,6 +155,11 @@ class _MenuBarState extends State<MenuBar> {
 
   /// The open menu (`logo`, `app` or the item name) and the item rectangles.
   String? _open;
+
+  /// The entries of the open menu, taken when it opens: a rebuild while it is open (the
+  /// frontmost app changing under a click that passes, the clock) must not hand the menu a
+  /// new list, which restarts it and stops its closing fade halfway (#149).
+  List<MenuEntry>? _openEntries;
   final Map<String, GlobalKey> _itemKeys = {};
   final GlobalKey _rootKey = GlobalKey();
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
@@ -284,7 +289,10 @@ class _MenuBarState extends State<MenuBar> {
     final size = menuSize(entries);
     final anchor = Offset(rect.left - menuLeftOfItem, barHeight + 1);
     _switchTimer?.cancel();
-    setState(() => _open = name);
+    setState(() {
+      _open = name;
+      _openEntries = entries;
+    });
     // The surface grows to the screen, but takes the pointer only on the bar and the menus
     // (`_menuRegion`, from the menu's rectangles): the windows below keep their hover, and a
     // press outside arrives from Ossido as transientDismissed (#149).
@@ -300,6 +308,10 @@ class _MenuBarState extends State<MenuBar> {
   /// region is the bar plus the menus, and Ossido tells about a press outside. Without that
   /// support (an older Ossido) the surface takes every click, as before.
   Future<void> _menuRegion(List<Rect> rects) async {
+    // Already closed (a late report of a menu that went away): no transient again.
+    if (_open == null && _windowMenuTip == null && _desktopMenuAt == null) {
+      return;
+    }
     final menus = [for (final r in rects) r.inflate(2)];
     final (:policy, :owner) = menuBarTransient(
       open: _open,
@@ -338,7 +350,10 @@ class _MenuBarState extends State<MenuBar> {
   void _closeMenu() {
     _switchTimer?.cancel();
     if (_open == null) return;
-    setState(() => _open = null);
+    setState(() {
+      _open = null;
+      _openEntries = null;
+    });
     LayerControl.clearTransient();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(null);
@@ -835,7 +850,7 @@ class _MenuBarState extends State<MenuBar> {
                   Positioned.fill(
                     child: MenuHost(
                       key: _menuKey,
-                      entries: _entries(name),
+                      entries: _openEntries ?? _entries(name),
                       anchor: Offset(
                         (open?.left ?? 0) - menuLeftOfItem,
                         barHeight + 1,

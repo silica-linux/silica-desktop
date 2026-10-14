@@ -235,8 +235,8 @@ impl State {
         self.hidden.push(entry);
         // As on the reference (APP-LC) the app stays frontmost with no window: no other
         // window takes the focus, and the menu bar keeps showing the app.
-        self.focus_window(None);
         self.set_windowless_front(app);
+        self.focus_window(None);
     }
 
     /// The windowless frontmost app (#142), announced to the shell as `app.frontmost`.
@@ -247,6 +247,7 @@ impl State {
         self.windowless_front = app;
         let value = self.windowless_front.clone().unwrap_or_default();
         self.broadcast_to_shell("app.frontmost".to_owned(), value);
+        self.reannounce_focus();
     }
 
     /// The app shows its hidden window again: back where it was, in the shell's list, focused.

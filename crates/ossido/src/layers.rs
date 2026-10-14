@@ -232,15 +232,19 @@ impl State {
     /// desktop's owner becomes the frontmost app, with the keyboard (#147). Without a desktop
     /// owner no app stays frontmost.
     pub fn desktop_pressed(&mut self) {
+        // The owner first: the shell never sees the window on top as focused in between.
+        let desktop = self.desktop_layer();
+        self.set_windowless_front(
+            desktop
+                .as_ref()
+                .map(|(_, owner)| owner.clone())
+                .filter(|owner| !owner.is_empty()),
+        );
         self.focus_window(None);
-        match self.desktop_layer() {
-            Some((layer, owner)) => {
-                self.set_windowless_front((!owner.is_empty()).then_some(owner));
-                if layer.can_receive_keyboard_focus() {
-                    self.focus_layer(&layer);
-                }
-            }
-            None => self.set_windowless_front(None),
+        if let Some((layer, _)) = desktop
+            && layer.can_receive_keyboard_focus()
+        {
+            self.focus_layer(&layer);
         }
     }
 

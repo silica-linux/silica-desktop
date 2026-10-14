@@ -36,6 +36,7 @@ struct Client {
     layer_shell: Option<ZwlrLayerShellV1>,
     manager: Option<SilicaShellManagerV1>,
     frontmost: Option<String>,
+    focused: Option<String>,
 }
 
 impl Dispatch<WlRegistry, ()> for Client {
@@ -74,10 +75,16 @@ impl Dispatch<SilicaShellManagerV1, ()> for Client {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let silica_shell_manager_v1::Event::Broadcast { topic, value } = event
-            && topic == "app.frontmost"
-        {
-            client.frontmost = Some(value);
+        match event {
+            silica_shell_manager_v1::Event::Broadcast { topic, value }
+                if topic == "app.frontmost" =>
+            {
+                client.frontmost = Some(value);
+            }
+            silica_shell_manager_v1::Event::Focused { identifier } => {
+                client.focused = Some(identifier);
+            }
+            _ => {}
         }
     }
 }
@@ -116,10 +123,20 @@ fn front_child() {
     queue.roundtrip(&mut client).unwrap();
     queue.roundtrip(&mut client).unwrap();
     println!("FRONTMOST {}", client.frontmost.as_deref().unwrap_or("-"));
+    println!("FOCUSED {}", client.focused.as_deref().unwrap_or("-"));
 }
 
 /// What a shell component connecting now is told is the frontmost app (`-` if never told).
 fn frontmost(ossido: &Headless) -> String {
+    told(ossido, "FRONTMOST ")
+}
+
+/// What a shell component connecting now is told is the focused window (empty: none).
+fn focused(ossido: &Headless) -> String {
+    told(ossido, "FOCUSED ")
+}
+
+fn told(ossido: &Headless, key: &str) -> String {
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -135,7 +152,7 @@ fn frontmost(ossido: &Headless) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
         .lines()
-        .find_map(|line| line.split_once("FRONTMOST ").map(|(_, value)| value))
+        .find_map(|line| line.split_once(key).map(|(_, value)| value))
         .unwrap_or_else(|| {
             panic!(
                 "the child printed no state: {stdout}{}",
@@ -154,6 +171,22 @@ struct Desktop {
 
 impl Desktop {
     fn map(ossido: &Headless, app: &str) -> Self {
+        Self::map_layer(
+            ossido,
+            zwlr_layer_shell_v1::Layer::Bottom,
+            &format!("desktop-icons:{app}"),
+            false,
+        )
+    }
+
+    /// A shell layer covering the output; with `exclusive` it takes the keyboard (an open
+    /// menu or panel).
+    fn map_layer(
+        ossido: &Headless,
+        level: zwlr_layer_shell_v1::Layer,
+        namespace: &str,
+        exclusive: bool,
+    ) -> Self {
         let conn = Connection::from_socket(UnixStream::connect(&ossido.wayland).unwrap()).unwrap();
         let mut queue = conn.new_event_queue();
         let qh = queue.handle();
@@ -164,12 +197,17 @@ impl Desktop {
         let layer = client.layer_shell.as_ref().unwrap().get_layer_surface(
             &surface,
             None,
-            zwlr_layer_shell_v1::Layer::Bottom,
-            format!("desktop-icons:{app}"),
+            level,
+            namespace.to_owned(),
             &qh,
             (),
         );
         layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
+        if exclusive {
+            layer.set_keyboard_interactivity(
+                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+            );
+        }
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
         Self {
@@ -206,4 +244,78 @@ fn closing_the_last_window_falls_back_to_the_desktop_owner() {
     assert_ne!(frontmost(&ossido), DESKTOP_APP);
     window.destroy_toplevel();
     assert_eq!(frontmost(&ossido), DESKTOP_APP);
+}
+
+#[test]
+fn a_window_opened_after_a_desktop_click_is_frontmost_and_focused() {
+    let ossido = Headless::start("front-after-desktop");
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    // A click on the empty desktop: its owner is frontmost, with the keyboard.
+    ossido
+        .client()
+        .call(
+            silica_control::commands::INPUT_CLICK,
+            serde_json::json!({"x": 300.0, "y": 190.0}),
+        )
+        .unwrap();
+    assert_eq!(frontmost(&ossido), DESKTOP_APP);
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let _window = TestWindow::open(&ossido.wayland, "opened");
+    assert_eq!(frontmost(&ossido), "");
+    assert_ne!(
+        focused(&ossido),
+        "",
+        "the new window does not have the keyboard"
+    );
+}
+
+#[test]
+fn a_window_opened_while_the_desktop_owner_is_frontmost_takes_the_front() {
+    let ossido = Headless::start("front-then-window");
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    assert_eq!(frontmost(&ossido), DESKTOP_APP);
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let _window = TestWindow::open(&ossido.wayland, "opened");
+    assert_eq!(frontmost(&ossido), "");
+    assert_ne!(
+        focused(&ossido),
+        "",
+        "the new window does not have the keyboard"
+    );
+}
+
+#[test]
+fn with_a_shell_layer_holding_the_keyboard_the_window_on_top_stays_the_focused_one() {
+    let ossido = Headless::start("front-layer-keyboard");
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let _window = TestWindow::open(&ossido.wayland, "in use");
+    let window = focused(&ossido);
+    assert_ne!(window, "");
+    // An open menu takes the keyboard: the frontmost app does not change (INPUT-01).
+    let _menu = Desktop::map_layer(&ossido, zwlr_layer_shell_v1::Layer::Top, "menubar", true);
+    assert_eq!(focused(&ossido), window);
+    // A window opened while it keeps the keyboard is the frontmost one.
+    let _second = TestWindow::open(&ossido.wayland, "second");
+    let second = focused(&ossido);
+    assert_ne!(second, "");
+    assert_ne!(second, window);
+}
+
+#[test]
+fn with_the_desktop_owner_in_front_and_a_menu_open_no_window_is_focused() {
+    let ossido = Headless::start("front-desktop-menu");
+    let _desktop = Desktop::map(&ossido, DESKTOP_APP);
+    APP_ID.with(|id| *id.borrow_mut() = OTHER_APP.to_owned());
+    let _window = TestWindow::open(&ossido.wayland, "behind");
+    // A click on the empty desktop: its owner is frontmost.
+    ossido
+        .client()
+        .call(
+            silica_control::commands::INPUT_CLICK,
+            serde_json::json!({"x": 300.0, "y": 190.0}),
+        )
+        .unwrap();
+    let _menu = Desktop::map_layer(&ossido, zwlr_layer_shell_v1::Layer::Top, "menubar", true);
+    assert_eq!(frontmost(&ossido), DESKTOP_APP);
+    assert_eq!(focused(&ossido), "");
 }

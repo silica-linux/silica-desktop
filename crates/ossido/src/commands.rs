@@ -749,6 +749,8 @@ impl State {
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
         }
+        // The keyboard may have stayed on a shell layer: the shell still learns the window.
+        self.reannounce_focus();
         for window in self.space.elements() {
             if let Some(toplevel) = window.toplevel() {
                 toplevel.send_pending_configure();

@@ -182,17 +182,37 @@ impl State {
         }
     }
 
-    /// The identifier of this surface's window, empty if it is not a window.
+    /// The identifier of the active window with this surface holding the keyboard: its
+    /// window; with the keyboard on a shell layer (an open menu or panel, the desktop), the
+    /// window on top, as `focused_window` (the frontmost app does not change while a menu or
+    /// panel is open, INPUT-01), unless a windowless app is frontmost; empty otherwise.
     fn identifier_of(&self, focus: Option<&WlSurface>) -> String {
-        focus
-            .and_then(|focus| {
-                self.space
-                    .elements()
-                    .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == focus))
-                    .and_then(toplevel_handle)
-                    .map(|h| h.identifier())
-            })
+        let Some(focus) = focus else {
+            return String::new();
+        };
+        let window = self
+            .space
+            .elements()
+            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == focus))
+            .or_else(|| {
+                let on_layer = smithay::desktop::layer_map_for_output(&self.output)
+                    .layers()
+                    .any(|layer| layer.wl_surface() == focus);
+                (on_layer && self.windowless_front.is_none())
+                    .then(|| self.space.elements().last())
+                    .flatten()
+            });
+        window
+            .and_then(toplevel_handle)
+            .map(|h| h.identifier())
             .unwrap_or_default()
+    }
+
+    /// Announces the focused window again after a change that does not move the keyboard
+    /// (a window raised under a shell layer that keeps it, a windowless app in front).
+    pub fn reannounce_focus(&mut self) {
+        let focus = self.seat.get_keyboard().and_then(|k| k.current_focus());
+        self.announce_focus(focus.as_ref());
     }
 
     /// The identifier of the focused window, empty if none.
