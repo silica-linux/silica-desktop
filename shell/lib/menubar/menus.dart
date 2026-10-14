@@ -1,5 +1,5 @@
-// The bar menus until the global app menu arrives (M7): the logo menu, the app menu and
-// the menus with actions Ossido can do by itself (catalog commands).
+// The bar menus until the global app menu arrives (M7): the app menu and the menus with
+// actions Ossido can do by itself (catalog commands). The logo menu is in logo_menu.dart.
 // Menus without actions (Edit, Help) do not open.
 
 import 'package:silica_ui/silica_ui.dart';
@@ -25,24 +25,6 @@ List<MenuEntry> barMenu(
 }) {
   final l = texts ?? englishTexts;
   return switch (name) {
-    'logo' => [
-      MenuAction(l.aboutSilica, enabled: false),
-      const MenuDivider(),
-      MenuAction(l.systemSettings, enabled: false),
-      const MenuDivider(),
-      MenuAction(
-        l.panorama,
-        shortcut: '⌃↑',
-        onSelected: () => run('panorama.toggle'),
-      ),
-      MenuAction(
-        l.showDesktop,
-        shortcut: 'F11',
-        onSelected: () => run('desktop.show'),
-      ),
-      const MenuDivider(),
-      MenuAction(l.logOut, onSelected: () => run('session.quit')),
-    ],
     'app' => [
       MenuAction(l.aboutApp(app), enabled: false),
       const MenuDivider(),

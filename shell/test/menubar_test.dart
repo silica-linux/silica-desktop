@@ -1,11 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/l10n/l10n.dart';
+import 'package:silica_shell/menubar/logo_menu.dart';
 import 'package:silica_shell/menubar/menubar.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
 import 'package:silica_shell/menubar/window_menu.dart';
-import 'package:silica_ui/silica_ui.dart' show MenuPanel;
+import 'package:silica_ui/silica_ui.dart'
+    show MenuAction, MenuDivider, MenuEntry, MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
@@ -258,4 +261,85 @@ void main() {
       expect(find.byKey(clock), findsNothing);
     },
   );
+
+  group('logo menu', () {
+    List<String> labels(List<MenuEntry> entries) => [
+      for (final e in entries)
+        switch (e) {
+          MenuAction(:final label) => label,
+          MenuDivider() => '—',
+          _ => '?',
+        },
+    ];
+
+    List<MenuEntry> menu({bool option = false}) => logoMenu(
+      l: englishTexts,
+      run: (_) {},
+      launch: (_) {},
+      open: (_) {},
+      option: option,
+      user: 'Ada Lovelace',
+    );
+
+    test('items in the reference order, power items without the session', () {
+      expect(labels(menu()), [
+        'About Silica',
+        '—',
+        'Settings…',
+        '—',
+        'Recent Items',
+        '—',
+        'Force Quit…',
+        '—',
+        'Sleep',
+        'Restart…',
+        'Shut Down…',
+        '—',
+        'Lock Screen',
+        'Log Out Ada Lovelace…',
+      ]);
+      final logOut = menu().last as MenuAction;
+      expect(logOut.shortcut, '⇧⌘Q');
+      expect(logOut.enabled, isTrue);
+      expect((menu()[8] as MenuAction).enabled, isFalse);
+    });
+
+    test('with Option held: the alternate items, same number of rows', () {
+      final alt = labels(menu(option: true));
+      expect(alt.first, 'System Information');
+      expect(alt, contains('Restart'));
+      expect(alt, contains('Shut Down'));
+      expect(alt.last, 'Log Out Ada Lovelace');
+      expect((menu(option: true).last as MenuAction).shortcut, '⌥⇧⌘Q');
+      expect(alt.length, labels(menu()).length);
+    });
+
+    test('recent documents from the xbel list, newest first', () {
+      const xml = """
+<xbel version="1.0">
+  <bookmark href="file:///home/u/old.txt" added="x" modified="2026-10-01T10:00:00Z" visited="x"/>
+  <bookmark href="file:///home/u/new%20one.pdf" modified="2026-10-14T09:00:00Z"/>
+  <bookmark href="https://example.org/" modified="2026-10-14T10:00:00Z"/>
+</xbel>""";
+      expect(parseRecentlyUsed(xml), [
+        '/home/u/new one.pdf',
+        '/home/u/old.txt',
+      ]);
+      expect(parseRecentlyUsed(xml, after: '2026-10-10T00:00:00Z'), [
+        '/home/u/new one.pdf',
+      ]);
+    });
+
+    test('the full name from passwd, else the login', () {
+      const passwd =
+          'root:x:0:0:root:/root:/bin/bash\n'
+          'ada:x:1000:1000:Ada Lovelace,,,:/home/ada:/bin/bash\n'
+          'bob:x:1001:1001::/home/bob:/bin/sh\n';
+      expect(
+        userFullName(env: {'USER': 'ada'}, passwd: passwd),
+        'Ada Lovelace',
+      );
+      expect(userFullName(env: {'USER': 'bob'}, passwd: passwd), 'bob');
+    });
+  });
 }

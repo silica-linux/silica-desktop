@@ -122,5 +122,11 @@
   "shutDownNow": "Spegni",
   "lockScreen": "Blocca schermo",
   "logOutUser": "Esci da {user}…",
-  "logOutUserNow": "Esci da {user}"
+  "logOutUserNow": "Esci da {user}",
+  "ccFocus": "Focus",
+  "ccFocusOn": "Focus attivo",
+  "ccDarkMode": "Modalità scura",
+  "ccScreenCapture": "Acquisizione schermo",
+  "focusForAnHour": "Per un'ora",
+  "focusUntilEvening": "Fino a stasera"
 }

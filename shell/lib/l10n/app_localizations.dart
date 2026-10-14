@@ -835,6 +835,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Log Out {user}'**
   String logOutUserNow(String user);
+
+  /// Control Center: Focus module and detail title
+  ///
+  /// In en, this message translates to:
+  /// **'Focus'**
+  String get ccFocus;
+
+  /// Control Center Focus detail: subtitle while a Focus is on
+  ///
+  /// In en, this message translates to:
+  /// **'Focus on'**
+  String get ccFocusOn;
+
+  /// Control Center: accessibility label of the Dark Mode toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Dark Mode'**
+  String get ccDarkMode;
+
+  /// Control Center: accessibility label of the Screen Capture toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Capture'**
+  String get ccScreenCapture;
+
+  /// Control Center Focus detail: keep Do Not Disturb on for an hour
+  ///
+  /// In en, this message translates to:
+  /// **'For 1 hour'**
+  String get focusForAnHour;
+
+  /// Control Center Focus detail: keep Do Not Disturb on until the evening
+  ///
+  /// In en, this message translates to:
+  /// **'Until this evening'**
+  String get focusUntilEvening;
 }
 
 class _AppLocalizationsDelegate

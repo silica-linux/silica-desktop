@@ -427,4 +427,22 @@ class AppLocalizationsIt extends AppLocalizations {
   String logOutUserNow(String user) {
     return 'Esci da $user';
   }
+
+  @override
+  String get ccFocus => 'Focus';
+
+  @override
+  String get ccFocusOn => 'Focus attivo';
+
+  @override
+  String get ccDarkMode => 'Modalità scura';
+
+  @override
+  String get ccScreenCapture => 'Acquisizione schermo';
+
+  @override
+  String get focusForAnHour => 'Per un\'ora';
+
+  @override
+  String get focusUntilEvening => 'Fino a stasera';
 }

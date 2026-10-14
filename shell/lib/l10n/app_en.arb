@@ -574,5 +574,29 @@
         "type": "String"
       }
     }
+  },
+  "ccFocus": "Focus",
+  "@ccFocus": {
+    "description": "Control Center: Focus module and detail title"
+  },
+  "ccFocusOn": "Focus on",
+  "@ccFocusOn": {
+    "description": "Control Center Focus detail: subtitle while a Focus is on"
+  },
+  "ccDarkMode": "Dark Mode",
+  "@ccDarkMode": {
+    "description": "Control Center: accessibility label of the Dark Mode toggle"
+  },
+  "ccScreenCapture": "Screen Capture",
+  "@ccScreenCapture": {
+    "description": "Control Center: accessibility label of the Screen Capture toggle"
+  },
+  "focusForAnHour": "For 1 hour",
+  "@focusForAnHour": {
+    "description": "Control Center Focus detail: keep Do Not Disturb on for an hour"
+  },
+  "focusUntilEvening": "Until this evening",
+  "@focusUntilEvening": {
+    "description": "Control Center Focus detail: keep Do Not Disturb on until the evening"
   }
 }

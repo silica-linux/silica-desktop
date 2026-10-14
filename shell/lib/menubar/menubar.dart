@@ -4,19 +4,24 @@
 // clock in white at 90 %.
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
+import '../dock/dock.dart' show shellQuote;
+import '../faro/launcher.dart' show RecentApps;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
 import '../system/system_status.dart';
+import 'logo_menu.dart';
 import 'menus.dart';
 import 'status_icons.dart';
 import 'window_menu.dart';
@@ -128,12 +133,66 @@ class _MenuBarState extends State<MenuBar> {
 
   GlobalKey _keyFor(String name) => _itemKeys.putIfAbsent(name, GlobalKey.new);
 
-  List<MenuEntry> _entries(String name) => barMenu(
-    name,
-    _appName,
-    (id) => ShellChannel.instance.execute(id),
-    texts: l10nOf(context),
-  );
+  List<MenuEntry> _entries(String name) => name == 'logo'
+      ? logoMenu(
+          l: l10nOf(context),
+          run: (id) => ShellChannel.instance.execute(id),
+          launch: _launch,
+          open: (path) =>
+              ShellChannel.instance.launch('xdg-open ${shellQuote(path)}'),
+          option: _option,
+          user: _user,
+          settings: _settingsApp,
+          recent: _recent,
+          clearRecent: () {
+            RecentApps().clear();
+            RecentItems.clearDocuments();
+          },
+        )
+      : barMenu(
+          name,
+          _appName,
+          (id) => ShellChannel.instance.execute(id),
+          texts: l10nOf(context),
+        );
+
+  /// ⌥ held: the logo menu shows its alternate items (SH-MB-04).
+  bool _option = false;
+  RecentItems _recent = const RecentItems();
+  late final String _user = userFullName();
+
+  bool _keyChanged(KeyEvent event) {
+    final option = HardwareKeyboard.instance.isAltPressed;
+    if (option != _option) {
+      _option = option;
+      if (_open == 'logo' && mounted) setState(() {});
+    }
+    return false;
+  }
+
+  void _launch(DesktopEntry entry) {
+    ShellChannel.instance.launch(entry.exec);
+    RecentApps().add(entry.id);
+  }
+
+  /// The Settings app, if installed.
+  DesktopEntry? get _settingsApp {
+    for (final e in widget.entries?.values ?? const <DesktopEntry>[]) {
+      if (e.id.toLowerCase().endsWith('.settings')) return e;
+    }
+    return null;
+  }
+
+  RecentItems _loadRecent() {
+    final entries = widget.entries ?? const <String, DesktopEntry>{};
+    return RecentItems(
+      apps: [
+        for (final id in RecentApps().load())
+          if (entries[id] case final e?) e,
+      ],
+      documents: RecentItems.loadDocuments(),
+    );
+  }
 
   /// The rectangle of a bar item (its box), in the surface.
   Rect? _rectOf(String name) {
@@ -157,6 +216,7 @@ class _MenuBarState extends State<MenuBar> {
     final entries = _entries(name);
     final rect = _rectOf(name);
     if (entries.isEmpty || rect == null) return;
+    if (name == 'logo') _recent = _loadRecent();
     final size = menuSize(entries);
     final anchor = Offset(rect.left - menuLeftOfItem, barHeight + 1);
     _switchTimer?.cancel();
@@ -222,6 +282,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.states.addListener(_changed);
     widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
+    HardwareKeyboard.instance.addHandler(_keyChanged);
     _scheduleTick();
     _windowMenus = ShellChannel.instance.windowMenus.listen(
       (menu) => _openWindowMenu(menu.tip),
@@ -278,6 +339,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.states.removeListener(_changed);
     widget.system?.removeListener(_changed);
     _windowMenus?.cancel();
+    HardwareKeyboard.instance.removeHandler(_keyChanged);
     super.dispose();
   }
 
@@ -579,4 +641,25 @@ class _MenuBarState extends State<MenuBar> {
       child: Text(text, style: style),
     ),
   );
+}
+
+/// The user's full name for the log out item: the first field of the comment in
+/// `/etc/passwd`, else the login name.
+String userFullName({Map<String, String>? env, String? passwd}) {
+  final e = env ?? Platform.environment;
+  final login = e['USER'] ?? e['LOGNAME'] ?? '';
+  String text;
+  try {
+    text = passwd ?? File('/etc/passwd').readAsStringSync();
+  } on FileSystemException {
+    return login;
+  }
+  for (final line in text.split('\n')) {
+    final fields = line.split(':');
+    if (fields.length > 4 && fields[0] == login) {
+      final name = fields[4].split(',').first.trim();
+      return name.isEmpty ? login : name;
+    }
+  }
+  return login;
 }
