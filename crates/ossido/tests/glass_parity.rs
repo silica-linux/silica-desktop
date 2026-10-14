@@ -5,7 +5,7 @@
 //! `GLASS_PARITY_SPEC=spec.json cargo test -p ossido --test glass_parity -- --ignored`.
 //! The spec is a JSON list of cases:
 //! `{"name", "dark", "wallpaper": png path, "out": png path, "regions": [{"x", "y", "w", "h",
-//! "r", "material": "clear|regular|thick|notification", "tip": "none|down|up"}]}` in screen
+//! "r", "material": "clear|regular|thick|notification", "tip": "none|down|up|left|right"}]}` in screen
 //! points of a 2560 × 1440 screen at 1×.
 
 #![allow(
@@ -21,7 +21,7 @@ use common::Headless;
 use common::client::TestWindow;
 use serde::Deserialize;
 use silica_control::commands::WINDOW_MOVE;
-use silica_protocols::glass::client::silica_glass_v1::Material;
+use silica_protocols::glass::client::silica_glass_v1::{Material, Side};
 
 const SCREEN: (u32, u32) = (2560, 1440);
 /// The windows overflow the screen by this much on every side: their rounded corners and
@@ -89,8 +89,8 @@ fn render(case: &Case) {
         args.extend(["--appearance", "dark"]);
     }
     let ossido = Headless::start_with(&format!("parity-{}", case.name), SCREEN, &args);
-    // Upward tips need silica-glass-v1 version 5.
-    common::client::GLASS_VERSION.with(|v| v.set(5));
+    // Upward and sideways tips need silica-glass-v1 versions 5 and 6.
+    common::client::GLASS_VERSION.with(|v| v.set(6));
     let size = (SCREEN.0 + 2 * BLEED, SCREEN.1 + 2 * BLEED);
     let mut client = ossido.client();
     let place = |client: &mut silica_control::Client| {
@@ -127,6 +127,19 @@ fn render(case: &Case) {
                     Some("up") => {
                         glass.add_upward_tip(region.x + b, region.y + b, region.w, region.h, m, 1.0)
                     }
+                    Some(side @ ("left" | "right")) => glass.add_side_tip(
+                        region.x + b,
+                        region.y + b,
+                        region.w,
+                        region.h,
+                        if side == "left" {
+                            Side::Left
+                        } else {
+                            Side::Right
+                        },
+                        m,
+                        1.0,
+                    ),
                     _ => glass.add_region(
                         region.x + b,
                         region.y + b,

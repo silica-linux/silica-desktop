@@ -10,7 +10,7 @@ use ossido_render::border::WindowBorder;
 use ossido_render::corners::{RoundedSurface, WindowSurface};
 use ossido_render::glass::{
     CLEAR_DARK, CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, NOTIFICATION_DARK,
-    NOTIFICATION_LIGHT, PhysicalRegion, REGULAR_DARK, REGULAR_LIGHT, THICK_DARK, THICK_LIGHT,
+    NOTIFICATION_LIGHT, PhysicalRegion, REGULAR_DARK, REGULAR_LIGHT, THICK_DARK, THICK_LIGHT, Tip,
     render_to_texture,
 };
 use ossido_render::shadow::WindowShadow;
@@ -1079,8 +1079,13 @@ pub fn output_elements(
                     },
                     opacity: region.opacity as f32 * anchor.opacity,
                     scale,
-                    tip: region.shape == Shape::Tip,
-                    tip_up: region.shape == Shape::UpwardTip,
+                    tip: match region.shape {
+                        Shape::Rounded => None,
+                        Shape::Tip => Some(Tip::Down),
+                        Shape::UpwardTip => Some(Tip::Up),
+                        Shape::LeftTip => Some(Tip::Left),
+                        Shape::RightTip => Some(Tip::Right),
+                    },
                     group: region.group,
                 })
                 .collect();

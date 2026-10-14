@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 use silica_protocols::glass::MAX_REGIONS;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
-use silica_protocols::glass::client::silica_glass_v1::{Material, SilicaGlassV1};
+use silica_protocols::glass::client::silica_glass_v1::{Material, Side, SilicaGlassV1};
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Dispatch, Proxy, QueueHandle};
 
@@ -25,13 +25,32 @@ pub struct Region {
     pub material: Material,
     /// 0–1: the glass is composed with this opacity (silica-glass-v1 version 3).
     pub opacity: f64,
-    /// A downward tip instead of a rectangle (version 4, `add_tip`).
-    pub tip: bool,
-    /// An upward tip (version 5, `add_upward_tip`).
-    pub tip_up: bool,
+    /// A tip instead of a rectangle: down (version 4, `add_tip`), up (version 5,
+    /// `add_upward_tip`), left or right (version 6, `add_side_tip`).
+    pub tip: Option<Tip>,
     /// Regions merge only within the same group; a higher group is drawn on top
     /// (version 4, `separate`).
     pub group: u32,
+}
+
+/// Where a tip points (`shape`: `tip`, `tip-up`, `tip-left`, `tip-right`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tip {
+    Down,
+    Up,
+    Left,
+    Right,
+}
+
+impl Tip {
+    /// The protocol version that draws it.
+    fn since(self) -> u32 {
+        match self {
+            Self::Down => 4,
+            Self::Up => 5,
+            Self::Left | Self::Right => 6,
+        }
+    }
 }
 
 impl Region {
@@ -69,8 +88,13 @@ impl Region {
             radius,
             material,
             opacity,
-            tip: value.get("shape").and_then(Value::as_str) == Some("tip"),
-            tip_up: value.get("shape").and_then(Value::as_str) == Some("tip-up"),
+            tip: match value.get("shape").and_then(Value::as_str) {
+                Some("tip") => Some(Tip::Down),
+                Some("tip-up") => Some(Tip::Up),
+                Some("tip-left") => Some(Tip::Left),
+                Some("tip-right") => Some(Tip::Right),
+                _ => None,
+            },
             group: value
                 .get("group")
                 .and_then(Value::as_u64)
@@ -164,12 +188,8 @@ impl Glass {
         let groups = object.version() >= 4;
         let mut group = regions.first().map_or(0, |r| r.group);
         for region in &regions {
-            if region.tip_up && object.version() < 5 {
-                // An Ossido without version 5 cannot draw the upward tip.
-                continue;
-            }
-            if region.tip && !groups {
-                // An Ossido without version 4 cannot draw the tip.
+            if region.tip.is_some_and(|tip| object.version() < tip.since()) {
+                // An earlier Ossido cannot draw this tip.
                 continue;
             }
             if groups && region.group != group {
@@ -180,24 +200,20 @@ impl Glass {
                 Material::Notification if !notification => Material::Thick,
                 material => material,
             };
-            if region.tip_up {
-                object.add_upward_tip(
-                    region.x,
-                    region.y,
-                    region.width,
-                    region.height,
-                    material,
-                    region.opacity,
-                );
-            } else if region.tip {
-                object.add_tip(
-                    region.x,
-                    region.y,
-                    region.width,
-                    region.height,
-                    material,
-                    region.opacity,
-                );
+            let (x, y, w, h, opacity) = (
+                region.x,
+                region.y,
+                region.width,
+                region.height,
+                region.opacity,
+            );
+            if let Some(tip) = region.tip {
+                match tip {
+                    Tip::Down => object.add_tip(x, y, w, h, material, opacity),
+                    Tip::Up => object.add_upward_tip(x, y, w, h, material, opacity),
+                    Tip::Left => object.add_side_tip(x, y, w, h, Side::Left, material, opacity),
+                    Tip::Right => object.add_side_tip(x, y, w, h, Side::Right, material, opacity),
+                }
             } else if translucent && region.opacity < 1.0 {
                 object.add_translucent_region(
                     region.x,
@@ -271,9 +287,24 @@ mod tests {
         let regions = parse_regions(&json!([
             {"x": 0, "y": 0, "width": 10, "height": 10, "group": 1},
             {"x": 0, "y": 0, "width": 22, "height": 8, "shape": "tip"},
-            {"x": 0, "y": 0, "width": 10, "height": 10, "group": "one"}
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": "one"},
+            {"x": 0, "y": 0, "width": 22, "height": 8, "shape": "tip-up"},
+            {"x": 0, "y": 0, "width": 8, "height": 22, "shape": "tip-left"},
+            {"x": 0, "y": 0, "width": 8, "height": 22, "shape": "tip-right"},
+            {"x": 0, "y": 0, "width": 8, "height": 22, "shape": "tip-sideways"}
         ]));
-        let summary: Vec<(u32, bool)> = regions.iter().map(|r| (r.group, r.tip)).collect();
-        assert_eq!(summary, [(0, true), (0, false), (1, false)]);
+        let summary: Vec<(u32, Option<Tip>)> = regions.iter().map(|r| (r.group, r.tip)).collect();
+        assert_eq!(
+            summary,
+            [
+                (0, Some(Tip::Down)),
+                (0, None),
+                (0, Some(Tip::Up)),
+                (0, Some(Tip::Left)),
+                (0, Some(Tip::Right)),
+                (0, None),
+                (1, None)
+            ]
+        );
     }
 }

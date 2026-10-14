@@ -13,7 +13,7 @@
     (text, icons) on top, with transparent pixels where the glass must show.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="5">
+  <interface name="silica_glass_manager_v1" version="6">
     <description summary="creates the glass object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="5">
+  <interface name="silica_glass_v1" version="6">
     <description summary="glass regions of a surface">
       The state is double-buffered: clear and add_region change the pending state, which
       becomes current on the next wl_surface.commit. Coordinates are in the surface
@@ -57,6 +57,12 @@
       <entry name="thick" value="1" summary="thick glass, like menus and search"/>
       <entry name="regular" value="2" summary="glass of controls, with the edge lens"/>
       <entry name="notification" value="3" since="2" summary="glass of notifications"/>
+    </enum>
+
+    <enum name="side" since="6">
+      <description summary="the side a sideways tip points to"/>
+      <entry name="left" value="0" summary="apex on the left side, base on the right side"/>
+      <entry name="right" value="1" summary="apex on the right side, base on the left side"/>
     </enum>
 
     <enum name="error">
@@ -127,6 +133,22 @@
       <arg name="y" type="int"/>
       <arg name="width" type="int"/>
       <arg name="height" type="int"/>
+      <arg name="material" type="uint" enum="material"/>
+      <arg name="opacity" type="fixed"/>
+    </request>
+
+    <request name="add_side_tip" since="6">
+      <description summary="adds a tip pointing left or right">
+        Like add_tip, turned sideways: pointing left, the base on the right side of the
+        rectangle and the apex at the middle of the left side; pointing right, the other way
+        round (a popover beside the control that opens it). The base is the rectangle's
+        height, the depth its width.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="side" type="uint" enum="side"/>
       <arg name="material" type="uint" enum="material"/>
       <arg name="opacity" type="fixed"/>
     </request>

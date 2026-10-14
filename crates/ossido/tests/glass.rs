@@ -14,7 +14,7 @@ use common::Headless;
 use common::client::TestWindow;
 use serde_json::Value;
 use silica_control::commands::{GLASS_LIST, WINDOW_LIST};
-use silica_protocols::glass::client::silica_glass_v1::Material;
+use silica_protocols::glass::client::silica_glass_v1::{Material, Side};
 
 fn glass_list(ossido: &Headless) -> Value {
     ossido.client().call(GLASS_LIST, Value::Null).unwrap()
@@ -552,8 +552,8 @@ const TIP_WIDTHS: [u32; 10] = [23, 18, 16, 15, 14, 12, 10, 8, 6, 2];
 /// The glass of a thick body with a 24 × 10 tip on one of its sides, over the reference
 /// gray; per row (or column) of the tip from its base outwards, how many pixels are glass.
 fn tip_widths(name: &str, side: &str) -> Vec<u32> {
-    // Upward tips: silica-glass-v1 version 5.
-    common::client::GLASS_VERSION.with(|v| v.set(5));
+    // Upward and sideways tips: silica-glass-v1 versions 5 and 6.
+    common::client::GLASS_VERSION.with(|v| v.set(6));
     let ossido = Headless::start_with(name, SHOT, &["--background", "7a7b80"]);
     let size = (300, 300);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
@@ -564,7 +564,9 @@ fn tip_widths(name: &str, side: &str) -> Vec<u32> {
             g.add_region(60, 60, 180, 180, 12.0, Material::Thick);
             match side_owned.as_str() {
                 "down" => g.add_tip(138, 240, 24, 10, Material::Thick, 1.0),
-                _ => g.add_upward_tip(138, 50, 24, 10, Material::Thick, 1.0),
+                "up" => g.add_upward_tip(138, 50, 24, 10, Material::Thick, 1.0),
+                "left" => g.add_side_tip(50, 138, 10, 24, Side::Left, Material::Thick, 1.0),
+                _ => g.add_side_tip(240, 138, 10, 24, Side::Right, Material::Thick, 1.0),
             }
         })
         .unwrap();
@@ -614,9 +616,9 @@ fn a_tip_has_the_shape_of_the_dock_menus_tip() {
 }
 
 #[test]
-fn an_upward_tip_has_the_same_shape() {
+fn tips_point_every_way_with_the_same_shape() {
     let down = tip_widths("glass-tip-down", "down");
-    for side in ["up"] {
+    for side in ["up", "left", "right"] {
         let widths = tip_widths(&format!("glass-tip-{side}"), side);
         eprintln!("{side}: {widths:?} (down {down:?})");
         for (k, (a, b)) in widths.iter().zip(&down).enumerate() {

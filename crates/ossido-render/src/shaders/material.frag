@@ -119,16 +119,18 @@ float union_distance(vec2 p, float min_radius) {
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
-        // A tip: −1 points down, −2 up, turned into the downward frame (a reflection, which
-        // keeps distances). A tip joins its body with a
-        // small fillet (~2 pt, the concave sides of the reference), not with the merge
-        // distance of separate shapes.
+        // A tip: −1 points down, −2 up, −3 left, −4 right, turned into the downward frame (a
+        // reflection or a transposition, which keep distances). A tip joins its body with a
+        // small fillet (~2 pt, the concave sides of the reference), not with the merge distance
+        // of separate shapes.
         bool tip = r < 0.0;
         vec2 near = p - rect.xy;
         vec2 far = rect.xy + rect.zw - p;
         float shape = r > -0.5 ? rounded_distance(p, rect, max(r, min_radius))
                     : r > -1.5 ? tip_distance(near, rect.zw)
-                               : tip_distance(vec2(near.x, far.y), rect.zw);
+                    : r > -2.5 ? tip_distance(vec2(near.x, far.y), rect.zw)
+                    : r > -3.5 ? tip_distance(vec2(near.y, far.x), rect.wz)
+                               : tip_distance(near.yx, rect.wz);
         d = smooth_min(d, shape, tip ? 2.0 * scale_px : merge);
     }
     return d;

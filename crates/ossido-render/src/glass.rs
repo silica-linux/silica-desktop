@@ -567,6 +567,16 @@ const MAX_SHAPES: usize = 8;
 /// kernel reaches 48 pixels.
 const MAX_SIGMA_PX: f64 = 12.0;
 
+/// Where a tip points: its apex at the middle of that side of its rectangle, its base on the
+/// opposite one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tip {
+    Down,
+    Up,
+    Left,
+    Right,
+}
+
 /// A glass region in the output, in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhysicalRegion {
@@ -577,10 +587,8 @@ pub struct PhysicalRegion {
     pub opacity: f32,
     /// Physical pixels per point.
     pub scale: f64,
-    /// A downward tip instead of a rectangle (`add_tip`).
-    pub tip: bool,
-    /// An upward tip (`add_upward_tip`).
-    pub tip_up: bool,
+    /// A tip instead of a rectangle (`add_tip`, `add_upward_tip`, `add_side_tip`).
+    pub tip: Option<Tip>,
     /// Regions merge only within the same group.
     pub group: u32,
 }
@@ -594,7 +602,6 @@ impl PhysicalRegion {
             && self.material == other.material
             && self.scale == other.scale
             && self.tip == other.tip
-            && self.tip_up == other.tip_up
             && self.group == other.group
     }
 }
@@ -1019,14 +1026,15 @@ impl RenderElement<GlesRenderer> for GlassElement {
             {
                 slot.copy_from_slice(&values);
             }
-            // Negative radius: a tip (the shader recognizes it by the sign); −2 points up.
+            // Negative radius: a tip (the shader recognizes it by the sign): −1 points down,
+            // −2 up, −3 left, −4 right.
             if let Some(slot) = radii.get_mut(i) {
-                *slot = if shape.tip_up {
-                    -2.0
-                } else if shape.tip {
-                    -1.0
-                } else {
-                    shape.radius as f32
+                *slot = match shape.tip {
+                    None => shape.radius as f32,
+                    Some(Tip::Down) => -1.0,
+                    Some(Tip::Up) => -2.0,
+                    Some(Tip::Left) => -3.0,
+                    Some(Tip::Right) => -4.0,
                 };
             }
         }

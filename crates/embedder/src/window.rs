@@ -545,7 +545,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         press_serial: 0,
         glass: Glass::new(
             globals
-                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=5, ())
+                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=6, ())
                 .ok(),
         ),
         shell: ShellLink::new(

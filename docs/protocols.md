@@ -44,6 +44,15 @@ top.
 - Since version 5: `add_upward_tip(...)`, the same tip upside down (base on the bottom side,
   apex at the top): the arrangement popover below the green button. `GlassTip.up` in
   `silica_ui`.
+- Since version 6: `add_side_tip(x, y, width, height, side, material, opacity)`, the tip
+  turned sideways: `left` has the apex at the middle of the left side and the base on the
+  right one, `right` the other way round; the base is the rectangle's height, the depth its
+  width. `silica_ui` sends `tip-left` and `tip-right`.
+
+The tip is a rounded isosceles triangle: the rectangle's base side is the triangle's base, its
+depth is where the rounded apex (radius ~2.5 pt) ends, and the sides join the body with a
+~2 pt fillet. The Dock menu's measured tip is 24 × 10 pt (`misc.md`; widths per row 23, 18,
+16, 15, 14, 12, 10, 8, 6, 2).
 
 The current regions are read with `glass.list` (`docs/control.md`).
 

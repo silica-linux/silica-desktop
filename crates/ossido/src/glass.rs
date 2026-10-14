@@ -37,6 +37,11 @@ pub enum Shape {
     Tip,
     /// Upward tip (`add_upward_tip`, version 5).
     UpwardTip,
+    /// Tip pointing left (`add_side_tip`, version 6): base on the right side, apex at the
+    /// middle of the left side.
+    LeftTip,
+    /// Tip pointing right (`add_side_tip`, version 6).
+    RightTip,
 }
 
 /// A glass region, in logical pixels relative to the surface.
@@ -94,7 +99,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(5, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(6, ());
         Self
     }
 }
@@ -178,7 +183,8 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
             silica_glass_v1::Request::AddRegion { .. }
             | silica_glass_v1::Request::AddTranslucentRegion { .. }
             | silica_glass_v1::Request::AddTip { .. }
-            | silica_glass_v1::Request::AddUpwardTip { .. } => {
+            | silica_glass_v1::Request::AddUpwardTip { .. }
+            | silica_glass_v1::Request::AddSideTip { .. } => {
                 let (x, y, width, height, radius, material, opacity, shape) = match request {
                     silica_glass_v1::Request::AddRegion {
                         x,
@@ -231,6 +237,28 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                         opacity,
                         Shape::UpwardTip,
                     ),
+                    silica_glass_v1::Request::AddSideTip {
+                        x,
+                        y,
+                        width,
+                        height,
+                        side,
+                        material,
+                        opacity,
+                    } => {
+                        let shape = match side {
+                            WEnum::Value(silica_glass_v1::Side::Left) => Shape::LeftTip,
+                            WEnum::Value(silica_glass_v1::Side::Right) => Shape::RightTip,
+                            _ => {
+                                glass.post_error(
+                                    silica_glass_v1::Error::InvalidRegion,
+                                    "unknown tip side",
+                                );
+                                return;
+                            }
+                        };
+                        (x, y, width, height, 0.0, material, opacity, shape)
+                    }
                     _ => return,
                 };
                 let material = match material {
