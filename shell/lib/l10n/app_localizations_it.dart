@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -556,6 +557,12 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get desktopQuickPreview => 'Anteprima rapida';
+
+  @override
+  String get desktopCustomizeFolder => 'Personalizza cartella…';
+
+  @override
+  String get desktopTags => 'Tag…';
 
   @override
   String get desktopSortSize => 'Dimensione';

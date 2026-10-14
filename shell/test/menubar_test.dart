@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +12,13 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
 import 'package:silica_shell/menubar/window_menu.dart';
 import 'package:silica_ui/silica_ui.dart'
-    show MenuAction, MenuDivider, MenuEntry, MenuHost, MenuPanel;
+    show
+        MenuAction,
+        MenuCustom,
+        MenuDivider,
+        MenuEntry,
+        MenuHost,
+        MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
@@ -594,6 +601,118 @@ void main() {
       expect(sent, ['newFolder', 'stacks', 'sort:size']);
     });
 
+    test('the owner state carries the shared colour tags and the folder', () {
+      final state = DesktopOwnerState.parse(
+        '{"selected":1,"tags":["red","blue","pink",3],"folder":true}',
+      );
+      expect(state.tags, {'red', 'blue'});
+      expect(state.folder, isTrue);
+      final none = DesktopOwnerState.parse('{"tags":"red"}');
+      expect(none.tags, isEmpty);
+      expect(none.folder, isFalse);
+    });
+
+    test('Customize Folder… replaces Tags… on one folder and sends back', () {
+      final sent = <String>[];
+      final entries = ownerItemsMenu(
+        l: englishTexts,
+        state: const DesktopOwnerState(selected: 1, folder: true),
+        onAction: sent.add,
+      );
+      final labels = [for (final a in entries.whereType<MenuAction>()) a.label];
+      expect(labels.last, 'Customize Folder…');
+      expect(labels, isNot(contains('Tags…')));
+      entries.whereType<MenuAction>().last.onSelected?.call();
+      expect(sent, ['customize']);
+      // As in the window menu: a divider, the row of dots, then the item.
+      final last = entries.length - 1;
+      expect(entries[last - 1], isA<MenuCustom>());
+      expect(entries[last - 2], isA<MenuDivider>());
+      final row = entries[last - 1] as MenuCustom;
+      expect(row.height, 25);
+      expect(row.width, 18 + 24.0 * 7 + 12);
+    });
+
+    group('the colour dots', () {
+      Future<void> pumpRow(
+        WidgetTester tester,
+        Set<String> assigned,
+        List<String> sent,
+      ) => tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: DesktopTagRow(assigned: assigned, onToggle: sent.add),
+          ),
+        ),
+      );
+
+      testWidgets('seven dots at a 24 pt pitch, the checked ones marked', (
+        tester,
+      ) async {
+        await pumpRow(tester, {'red', 'blue'}, []);
+        const names = [
+          'red',
+          'orange',
+          'yellow',
+          'green',
+          'blue',
+          'purple',
+          'gray',
+        ];
+        for (final n in names) {
+          expect(find.byKey(ValueKey('tag $n')), findsOneWidget);
+        }
+        final first = tester.getRect(find.byKey(const ValueKey('tag red')));
+        expect(first.size, const Size(24, 25));
+        expect(first.left, 18 - 3);
+        expect(
+          tester.getRect(find.byKey(const ValueKey('tag orange'))).left -
+              first.left,
+          24,
+        );
+        // A check mark on the colours every selected icon has, none on the others.
+        expect(find.text('✓'), findsNWidgets(2));
+        for (final n in ['red', 'blue']) {
+          expect(
+            find.descendant(
+              of: find.byKey(ValueKey('tag $n')),
+              matching: find.text('✓'),
+            ),
+            findsOneWidget,
+          );
+        }
+      });
+
+      testWidgets('a click sends the colour back', (tester) async {
+        final sent = <String>[];
+        await pumpRow(tester, {'red'}, sent);
+        await tester.tap(find.byKey(const ValueKey('tag green')));
+        await tester.tap(find.byKey(const ValueKey('tag red')));
+        expect(sent, ['green', 'red']);
+      });
+
+      testWidgets('under the pointer a dot grows and shows + or ×', (
+        tester,
+      ) async {
+        await pumpRow(tester, {'red'}, []);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('tag green'))),
+        );
+        await tester.pump();
+        expect(find.text('+'), findsOneWidget);
+        await mouse.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('tag red'))),
+        );
+        await tester.pump();
+        expect(find.text('×'), findsOneWidget);
+      });
+    });
+
     test('the menu of the selected icons', () {
       final sent = <String>[];
       final many = ownerItemsMenu(
@@ -610,8 +729,11 @@ void main() {
           'Rename',
           'Duplicate',
           'Quick Preview',
+          // Not one folder: Tags…, disabled.
+          'Tags…',
         ],
       );
+      expect(many.last.enabled, isFalse);
       // Rename only one at a time.
       expect(many.firstWhere((a) => a.label == 'Rename').enabled, isFalse);
       many.firstWhere((a) => a.label == 'Move to Trash').onSelected?.call();
@@ -693,6 +815,97 @@ void main() {
         expect(find.text('Move to Trash'), findsNothing);
         expect(sent.last, 'desktopmenu=');
         expect(layer.any((c) => c.method == 'clearTransient'), isTrue);
+      },
+    );
+
+    testWidgets(
+      'the item menu shows the colour dots checked from desktop.state and '
+      'sends tag and customize back',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final sent = <String>[];
+        Future<void> broadcast(String topic, String value) =>
+            tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+              'silica/shell',
+              const JSONMethodCodec().encodeMethodCall(
+                MethodCall('broadcast', {'topic': topic, 'value': value}),
+              ),
+              (_) {},
+            );
+        tester.binding.defaultBinaryMessenger
+          ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+            if (call.method == 'broadcast') {
+              final args = call.arguments as Map;
+              sent.add('${args['topic']}=${args['value']}');
+            }
+            return switch (call.method) {
+              'list' => const <Object?>[],
+              'focused' => '',
+              _ => null,
+            };
+          })
+          ..setMockMethodCallHandler(
+            const MethodChannel('silica/layer', JSONMethodCodec()),
+            (call) async => switch (call.method) {
+              'outputSize' => {'width': 1280, 'height': 800},
+              _ => true,
+            },
+          );
+        addTearDown(() {
+          ShellChannel.instance.states.value = const {};
+        });
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+          ),
+        );
+        await tester.pump();
+        await broadcast(
+          'desktop.state',
+          '{"stacks":false,"sort":"none","selected":1,'
+              '"tags":["green"],"folder":true}',
+        );
+        await broadcast('desktopmenu', '400 100 items');
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(const ValueKey('tag red')), findsOneWidget);
+        expect(find.text('✓'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('tag green')),
+            matching: find.text('✓'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Tags…'), findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('tag blue')));
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (sent.any((s) => s.startsWith('desktop.action=tag:blue'))) break;
+        }
+        expect(sent.where((s) => s.startsWith('desktop.action=')), [
+          'desktop.action=tag:blue 1',
+        ]);
+        await tester.pumpAndSettle();
+
+        // The menu again: Customize Folder… sends `customize`.
+        await broadcast('desktopmenu', '400 100 items');
+        await tester.pump();
+        await tester.pump();
+        await tester.tap(find.text('Customize Folder…'));
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (sent.any((s) => s.startsWith('desktop.action=customize'))) break;
+        }
+        expect(sent.where((s) => s.startsWith('desktop.action=')), [
+          'desktop.action=tag:blue 1',
+          'desktop.action=customize 2',
+        ]);
+        await tester.pumpAndSettle();
       },
     );
 

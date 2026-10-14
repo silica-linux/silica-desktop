@@ -1082,6 +1082,18 @@ abstract class AppLocalizations {
   /// **'Quick Preview'**
   String get desktopQuickPreview;
 
+  /// Desktop item context menu, on one folder: Get Info on its Customize Folder section (as the file manager's window menu)
+  ///
+  /// In en, this message translates to:
+  /// **'Customize Folder…'**
+  String get desktopCustomizeFolder;
+
+  /// Desktop item context menu, when the selection is not one folder (not available yet)
+  ///
+  /// In en, this message translates to:
+  /// **'Tags…'**
+  String get desktopTags;
+
   /// Desktop context menu › Sort By
   ///
   /// In en, this message translates to:
