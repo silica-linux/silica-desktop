@@ -10,6 +10,7 @@ mod control;
 mod cursor;
 mod cursor_theme;
 mod decorations;
+mod displays;
 mod dmabuf;
 #[cfg(feature = "drm")]
 mod drm;
@@ -163,7 +164,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     println!("WAYLAND_DISPLAY={}", socket.to_string_lossy());
     // Lives until the end of `run`: closes the bus and the daemon on exit.
     let _session_bus = if options.session_bus {
-        let bus = session_bus::SessionBus::start()?;
+        let bus = session_bus::SessionBus::start(&socket)?;
         println!("DBUS_SESSION_BUS_ADDRESS={}", bus.address);
         ossido.state.session_bus = Some(bus.address.clone());
         Some(bus)

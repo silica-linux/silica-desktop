@@ -101,6 +101,9 @@ pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
 pub const KEYBOARD_STATE: &str = "keyboard.state";
 pub const KEYBOARD_NEXT_SOURCE: &str = "keyboard.next_source";
 pub const INPUT_STATE: &str = "input.state";
+pub const OUTPUT_LIST: &str = "output.list";
+pub const OUTPUT_CONFIGURE: &str = "output.configure";
+pub const OUTPUT_COLOR_TEMPERATURE: &str = "output.color_temperature";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -1022,6 +1025,53 @@ pub const CATALOG: &[CommandSpec] = &[
         description: "The mouse and touchpad settings in use (from input.json) and the kinds of pointer connected.",
         shortcut: None,
         params: no_params,
+    },
+    CommandSpec {
+        id: OUTPUT_LIST,
+        label: "List displays",
+        description: "The connected displays: connector, identity, make, model, serial, modes, current mode, scale, rotation, enabled.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: OUTPUT_CONFIGURE,
+        label: "Configure a display",
+        description: "Changes the mode, scale or rotation of a display at once and saves it in displays.json for that display.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "connector": {"type": "string"},
+                    "mode": {
+                        "type": "object",
+                        "properties": {
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                            "refresh": {"type": "number"}
+                        },
+                        "required": ["width", "height"]
+                    },
+                    "scale": {"type": "number", "minimum": 1, "maximum": 4},
+                    "transform": {"type": "string", "enum": ["normal", "90", "180", "270", "flipped", "flipped-90", "flipped-180", "flipped-270"]}
+                },
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: OUTPUT_COLOR_TEMPERATURE,
+        label: "Night light temperature",
+        description: "The colour temperature of every display in kelvin (1000–6500; 6500 is neutral), through the gamma ramp. silica-daemon drives it with the night light schedule.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"kelvin": {"type": "integer", "minimum": 1000, "maximum": 6500}},
+                "required": ["kelvin"],
+                "additionalProperties": false
+            })
+        },
     },
 ];
 

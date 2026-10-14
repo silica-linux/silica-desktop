@@ -9,8 +9,10 @@
 
 mod backends;
 mod details;
+pub mod display;
 
 pub use details::{Network, Output, parse_outputs};
+pub use display::NightLight;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,6 +41,14 @@ pub struct SystemConfig {
     pub poll: Duration,
     /// Where the appearance (light or dark) is saved; `None`: only in memory.
     pub appearance_file: Option<PathBuf>,
+    /// Where the night light is saved (`nightlight.json`); `None`: only in memory.
+    pub nightlight_file: Option<PathBuf>,
+    /// Ossido's actions socket; `None`: the one of `WAYLAND_DISPLAY`.
+    pub actions_socket: Option<PathBuf>,
+    /// Where the sun is computed from; `None` at start is filled from the time zone.
+    pub place: Option<crate::sun::Place>,
+    /// How often the schedules (night light) are checked.
+    pub schedule_tick: Duration,
 }
 
 /// `$XDG_CONFIG_HOME/silica/appearance.json` (usually `~/.config`).
@@ -66,6 +76,10 @@ impl Default for SystemConfig {
             wpctl: PathBuf::from("wpctl"),
             poll: Duration::from_secs(1),
             appearance_file: default_appearance_file(),
+            nightlight_file: display::config_file("nightlight.json"),
+            actions_socket: None,
+            place: crate::sun::local_place(),
+            schedule_tick: Duration::from_secs(30),
         }
     }
 }
@@ -162,6 +176,9 @@ pub struct SystemState {
     pub keyboard_requests: u64,
     /// What Ossido reported (`input.touchpad`, `input.mouse`, …).
     pub compositor: std::collections::BTreeMap<String, Reported>,
+    /// The night light's settings and whether it is warming the displays now.
+    pub night_light: NightLight,
+    pub night_light_active: bool,
 }
 
 impl SystemState {
@@ -217,6 +234,13 @@ impl SystemState {
             Value::F64(self.keyboard_brightness.unwrap_or(0.0)),
         );
         put("keyboard.requests", Value::U64(self.keyboard_requests));
+        let light = &self.night_light;
+        put("nightlight.enabled", Value::Bool(light.enabled));
+        put("nightlight.temperature", Value::U32(light.temperature));
+        put("nightlight.schedule", Value::from(light.schedule.clone()));
+        put("nightlight.from", Value::from(light.from.clone()));
+        put("nightlight.to", Value::from(light.to.clone()));
+        put("nightlight.active", Value::Bool(self.night_light_active));
         for (key, value) in &self.compositor {
             match value {
                 Reported::Bool(b) => put(key, Value::Bool(*b)),
@@ -233,6 +257,8 @@ struct Shared {
     state: Arc<Mutex<SystemState>>,
     /// Wakes the loop that emits `Changed`.
     changed: Arc<Event>,
+    /// Wakes the schedules (a setting changed).
+    schedule: Arc<Event>,
     config: SystemConfig,
 }
 
@@ -272,6 +298,7 @@ impl SystemService {
                 ..SystemState::default()
             })),
             changed: Arc::new(Event::new()),
+            schedule: Arc::new(Event::new()),
             config,
         };
         connection
@@ -307,9 +334,25 @@ impl SystemService {
                 listener.await;
             }
         };
+        let schedules = async {
+            let mut last = None;
+            let mut first = true;
+            loop {
+                let listener = self.shared.schedule.listen();
+                display::night_light_tick(&self.shared, &mut last, first).await;
+                first = false;
+                future::or(
+                    async {
+                        async_io::Timer::after(self.shared.config.schedule_tick).await;
+                    },
+                    listener,
+                )
+                .await;
+            }
+        };
         future::or(
             async {
-                sources.await;
+                future::zip(sources, schedules).await;
                 future::pending::<zbus::Result<()>>().await
             },
             emit,
@@ -459,6 +502,71 @@ impl System {
                 .map_err(|e| failed(e.to_string()))?;
         }
         self.shared.update(|state| state.dark = dark);
+        Ok(())
+    }
+
+    /// The displays, from Ossido (`output.list`): a JSON array.
+    async fn outputs(&self) -> zbus::fdo::Result<String> {
+        display::ossido(
+            &self.shared,
+            silica_control::commands::OUTPUT_LIST,
+            serde_json::json!({}),
+        )
+        .await
+        .map(|list| list.to_string())
+        .map_err(failed)
+    }
+
+    /// Changes a display (`output.configure`: `{connector?, mode?, scale?, transform?}` as JSON)
+    /// and returns it as JSON. Ossido saves the choice for that display.
+    async fn configure_output(&self, json: &str) -> zbus::fdo::Result<String> {
+        let params: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
+        if !params.is_object() {
+            return Err(zbus::fdo::Error::InvalidArgs("not a JSON object".into()));
+        }
+        display::ossido(
+            &self.shared,
+            silica_control::commands::OUTPUT_CONFIGURE,
+            params,
+        )
+        .await
+        .map(|output| output.to_string())
+        .map_err(failed)
+    }
+
+    /// The night light: any of `enabled` (b), `temperature` (u, 1900–6500 K), `schedule`
+    /// (`off`, `sunset`, `custom`), `from` and `to` (`HH:MM`). Saved in `nightlight.json`.
+    fn set_night_light(&self, settings: HashMap<String, OwnedValue>) -> zbus::fdo::Result<()> {
+        let mut json = serde_json::Map::new();
+        for (key, value) in &settings {
+            let value = match &**value {
+                Value::Bool(b) => serde_json::Value::from(*b),
+                Value::U32(n) => serde_json::Value::from(*n),
+                Value::I32(n) => serde_json::Value::from(*n),
+                Value::U64(n) => serde_json::Value::from(*n),
+                Value::I64(n) => serde_json::Value::from(*n),
+                Value::F64(n) => serde_json::Value::from(n.round() as i64),
+                Value::Str(s) => serde_json::Value::from(s.as_str()),
+                _ => serde_json::Value::Null,
+            };
+            json.insert(key.clone(), value);
+        }
+        let mut light = match &self.shared.config.nightlight_file {
+            Some(file) => display::read_night_light(file),
+            None => self.shared.state().night_light.clone(),
+        };
+        if !light.merge(&serde_json::Value::Object(json)) {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "night light: enabled, temperature 1900–6500, schedule off|sunset|custom, from/to HH:MM"
+                    .into(),
+            ));
+        }
+        if let Some(file) = &self.shared.config.nightlight_file {
+            display::write_json(file, &light.to_json()).map_err(failed)?;
+        }
+        self.shared.update(|state| state.night_light = light);
+        self.shared.schedule.notify(usize::MAX);
         Ok(())
     }
 

@@ -77,6 +77,9 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
 | `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
 | `input.state` | — | the pointer settings in use (`mouse`, `touchpad`: `speed`, `naturalScroll`, `scrollSpeed`, `leftHanded`, `secondaryClick`, `tapToClick`, `disableWhileTyping`) and `devices` (`mouse`, `touchpad`: connected) |
+| `output.list` | — | the connected displays: `connector`, `identity` (EDID make, model and serial; the connector without EDID), `make`, `model`, `serial`, `modes` and `current` (`width`, `height`, `refresh` in Hz, `preferred`), `scale`, `transform`, `enabled`, `primary`, `widthMm`, `heightMm` |
+| `output.configure` | `connector?`, `mode?` (`width`, `height`, `refresh?`), `scale?` (1–4, quarter steps), `transform?` (`normal`, `90`, `180`, `270`, `flipped`, `flipped-90`…) | the display after the change; applied at once and saved in `displays.json` for that display. Without `connector`: the display in use. The real session drives one display: the others are listed but not configurable yet; nested and headless cannot change mode |
+| `output.color_temperature` | `kelvin` (1000–6500) | `kelvin`, `applied`: the night light on every display through the CRTC gamma ramp (6500 is neutral; `applied` false where there is no gamma: nested, headless, some virtual GPUs). silica-daemon drives it with the schedule |
 | `keyboard.next_source` | — | `switched`, `active`: the next input source (⌃Space; with a single source the shortcut goes to the app) |
 | `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
@@ -120,6 +123,25 @@ A change of repeat is sent to every bound keyboard (`wl_keyboard.repeat_info`); 
 `layouts`, `model` or `options` compiles a new keymap and sends it to the clients. A layout xkb
 does not know keeps the keymap in use. ⌃Space (`keyboard.next_source`) moves to the next
 source when there are two or more.
+
+### displays.json
+
+```json
+{
+  "outputs": {
+    "DEL DELL U2720Q ABC123": {
+      "mode": {"width": 2560, "height": 1440, "refresh": 59.95},
+      "scale": 1.5,
+      "transform": "normal"
+    }
+  }
+}
+```
+
+Written by Ossido on `output.configure` (keeping the other keys of the file), read at start,
+when the file changes and when a display is plugged in. The key is the display's identity
+(`output.list` › `identity`), so a display gets its choice back on any connector. A mode is
+matched by size and the closest refresh; a mode the display does not have is ignored.
 
 ### input.json
 
@@ -190,7 +212,10 @@ protocol is the same JSON lines as the control channel, and only the commands in
 - `launcher.toggle`, `faro.toggle`;
 - `screenshot.toolbar`, `screenshot.screen`, `screenshot.selection`,
   `screenshot.screen_clipboard`, `screenshot.selection_clipboard`;
-- `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`.
+- `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`;
+- `output.list`, `output.configure`, `output.color_temperature`: for silica-daemon, which gives
+  apps the displays and runs the night light (`System1`, `docs/daemon.md`). Ossido passes its
+  `WAYLAND_DISPLAY` to the services it starts, so they find the socket.
 
 Anything else is refused. The client is `silica-action <action>`, which finds the socket
 through `WAYLAND_DISPLAY`. `shell/linux/*.desktop.in` are the shell's own applications:

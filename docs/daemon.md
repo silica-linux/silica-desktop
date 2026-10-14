@@ -124,7 +124,30 @@ bar.
   object; only these keys are kept, the rest is ignored) and part of `State`/`Changed` from
   then on: `input.touchpad` and `input.mouse` (b: a touchpad / another pointer is connected;
   Settings shows its Trackpad pane only with a touchpad). Ossido sends the whole report again
-  whenever the daemon (re)appears.
+  whenever the daemon (re)appears. `displays` (s): the JSON of `output.list`, sent again on
+  every change (a display plugged in, a new mode, scale or rotation), so `Changed` tells apps.
+
+### Displays and night light
+
+- `Outputs() → s`: the displays as JSON (Ossido's `output.list`, `docs/control.md`).
+- `ConfigureOutput(s json) → s`: changes a display, `{connector?, mode?: {width, height,
+  refresh?}, scale?, transform?}`; returns the display after the change. Applied at once and
+  saved by Ossido in `displays.json` for that display (a confirmation with a revert timer is
+  up to Settings). Not a JSON object: `InvalidArgs`; refused by Ossido or no Ossido: `Failed`.
+- `SetNightLight(a{sv})`: any of `enabled` (b), `temperature` (u, 1900–6500 K, default 3400),
+  `schedule` (`off`: on while enabled; `sunset`: from sunset to sunrise; `custom`: from `from`
+  to `to`), `from` and `to` (`HH:MM`, local time, the window may cross midnight). An invalid
+  value is `InvalidArgs` and changes nothing. Saved in `$XDG_CONFIG_HOME/silica/nightlight.json`
+  (same keys), which is read again at every check, so Settings may also write it directly.
+- State keys `nightlight.enabled`, `nightlight.temperature`, `nightlight.schedule`,
+  `nightlight.from`, `nightlight.to` and `nightlight.active` (b: the displays are warm now).
+
+The schedule is checked every 30 s and at once after a change; the temperature goes to Ossido
+(`output.color_temperature` on its actions socket) when it changes. Sunset and sunrise come
+from the time zone's coordinates (tzdata's `zone1970.tab` for the zone of `/etc/localtime`),
+with NOAA's solar equations (`crates/daemon/src/sun.rs`); without a known place or in polar day
+and night the night is 19:00–07:00. The local time comes from `date +%z`. No location service
+is used.
 
 Sources: NetworkManager (`WirelessEnabled`, primary connection, access point strength),
 BlueZ (the first adapter), UPower (`DisplayDevice`, only if it is a battery) on the system

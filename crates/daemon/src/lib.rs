@@ -11,6 +11,7 @@ pub mod clipboard;
 pub mod notifications;
 pub mod server;
 pub mod sound;
+pub mod sun;
 pub mod system;
 
 pub use auth::{AuthConfig, AuthService};

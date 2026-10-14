@@ -1,7 +1,12 @@
 //! `dev.frascella.Silica.System1` with fake services: NetworkManager, UPower and BlueZ on a
 //! private "system" bus, `wpctl` and the backlight in a temporary directory.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -356,6 +361,12 @@ trait System {
     fn set_audio_output(&self, id: u32) -> zbus::Result<()>;
     fn set_do_not_disturb(&self, enabled: bool) -> zbus::Result<()>;
     fn report_compositor(&self, json: &str) -> zbus::Result<()>;
+    fn outputs(&self) -> zbus::Result<String>;
+    fn configure_output(&self, json: &str) -> zbus::Result<String>;
+    fn set_night_light(
+        &self,
+        settings: HashMap<&str, zbus::zvariant::Value<'_>>,
+    ) -> zbus::Result<()>;
     #[zbus(signal)]
     fn changed(&self, state: HashMap<String, OwnedValue>) -> zbus::Result<()>;
 }
@@ -406,6 +417,10 @@ fn reads_and_changes_the_system() {
                 wpctl,
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                schedule_tick: Duration::from_millis(100),
             },
         )
         .await
@@ -544,6 +559,10 @@ fn missing_sources_are_absent_not_errors() {
                 wpctl: dir.join("no-wpctl"),
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                actions_socket: Some(dir.join("no-ossido.sock")),
+                place: None,
+                schedule_tick: Duration::from_millis(100),
             },
         )
         .await
@@ -581,6 +600,136 @@ fn missing_sources_are_absent_not_errors() {
             assert!(!get::<bool>(&state, "input.mouse"));
             assert!(!state.contains_key("evil"));
             assert!(proxy.report_compositor("[1]").await.is_err());
+        };
+        future::or(test, async {
+            let result = service.run().await;
+            panic!("the service ended: {result:?}");
+        })
+        .await;
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Ossido's actions socket: answers `output.*` and records the requests.
+fn fake_ossido(socket: &Path) -> std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> {
+    use std::io::Write;
+    let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            log.lock().unwrap().push(request.clone());
+            let result = match request["command"].as_str().unwrap() {
+                "output.list" => serde_json::json!([{"connector": "Virtual-1", "scale": 1.0}]),
+                "output.configure" => request["params"].clone(),
+                _ => serde_json::json!({"applied": true}),
+            };
+            let reply = serde_json::json!({"id": request["id"], "ok": true, "result": result});
+            stream.write_all(format!("{reply}\n").as_bytes()).unwrap();
+        }
+    });
+    seen
+}
+
+#[test]
+fn displays_and_night_light_go_through_ossido() {
+    let session = Bus::start();
+    let dir = temp_dir("displays");
+    let socket = dir.join("ossido.sock");
+    let seen = fake_ossido(&socket);
+    zbus::block_on(async {
+        let connection = session.connect().await;
+        let name = connection.unique_name().unwrap().to_string();
+        let service = SystemService::serve(
+            connection,
+            SystemConfig {
+                system_bus: None,
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
+                poll: Duration::from_millis(50),
+                appearance_file: Some(dir.join("appearance.json")),
+                nightlight_file: Some(dir.join("nightlight.json")),
+                actions_socket: Some(socket.clone()),
+                place: None,
+                schedule_tick: Duration::from_millis(100),
+            },
+        )
+        .await
+        .unwrap();
+        let client = session.connect().await;
+        let test = async {
+            let proxy = SystemProxy::builder(&client)
+                .destination(name)
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let list: serde_json::Value =
+                serde_json::from_str(&proxy.outputs().await.unwrap()).unwrap();
+            assert_eq!(list[0]["connector"], "Virtual-1");
+            let configured = proxy
+                .configure_output(r#"{"connector": "Virtual-1", "scale": 2}"#)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&configured).unwrap()["scale"],
+                2
+            );
+            assert!(proxy.configure_output("[]").await.is_err());
+            assert!(proxy.configure_output("nope").await.is_err());
+
+            // The night light, on at once with no schedule: Ossido gets its temperature.
+            let state = wait_for(&proxy, |s| s.contains_key("nightlight.enabled")).await;
+            assert!(!get::<bool>(&state, "nightlight.enabled"));
+            proxy
+                .set_night_light(HashMap::from([
+                    ("enabled", true.into()),
+                    ("schedule", "off".into()),
+                    ("temperature", 3000u32.into()),
+                ]))
+                .await
+                .unwrap();
+            let state = wait_for(&proxy, |s| get::<bool>(s, "nightlight.active")).await;
+            assert_eq!(get::<u32>(&state, "nightlight.temperature"), 3000);
+            let sent = |kelvin: u64| {
+                seen.lock().unwrap().iter().any(|r| {
+                    r["command"] == "output.color_temperature" && r["params"]["kelvin"] == kelvin
+                })
+            };
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !sent(3000) && Instant::now() < deadline {
+                async_io::Timer::after(Duration::from_millis(20)).await;
+            }
+            assert!(sent(3000));
+            let saved: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("nightlight.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved["temperature"], 3000);
+            // Invalid settings change nothing.
+            assert!(
+                proxy
+                    .set_night_light(HashMap::from([("temperature", 100u32.into())]))
+                    .await
+                    .is_err()
+            );
+            // Edited in the file: off again, neutral.
+            std::fs::write(
+                dir.join("nightlight.json"),
+                r#"{"enabled": false, "temperature": 3000}"#,
+            )
+            .unwrap();
+            wait_for(&proxy, |s| !get::<bool>(s, "nightlight.active")).await;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !sent(6500) && Instant::now() < deadline {
+                async_io::Timer::after(Duration::from_millis(20)).await;
+            }
+            assert!(sent(6500));
         };
         future::or(test, async {
             let result = service.run().await;

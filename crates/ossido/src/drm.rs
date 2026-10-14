@@ -310,6 +310,24 @@ pub fn init_drm(
     Ok(Ossido { state, display })
 }
 
+/// The make, model and serial from the connector's EDID.
+fn edid(
+    device: &impl ControlDevice,
+    handle: connector::Handle,
+) -> Option<(String, String, String)> {
+    let properties = device.get_properties(handle).ok()?;
+    for (property, value) in &properties {
+        let Ok(info) = device.get_property(*property) else {
+            continue;
+        };
+        if info.name().to_bytes() == b"EDID" {
+            let blob = device.get_property_blob(*value).ok()?;
+            return crate::displays::edid_identity(&blob);
+        }
+    }
+    None
+}
+
 /// Whether a libinput device is a touchpad (it can tap) or another pointer (a mouse).
 fn is_touchpad(device: &smithay::reexports::input::Device) -> bool {
     device.config_tap_finger_count() > 0
@@ -489,11 +507,9 @@ impl State {
             return;
         };
         let choice = choose(&backend.drm);
-        let current = backend
-            .surface
-            .as_ref()
-            .map(|s| (s.connector, s.crtc, s.mode));
-        if choice.as_ref().map(|c| (c.connector, c.crtc, c.mode)) == current {
+        let current = backend.surface.as_ref().map(|s| (s.connector, s.crtc));
+        // The same display: it keeps the mode chosen in Settings.
+        if choice.as_ref().map(|c| (c.connector, c.crtc)) == current {
             return;
         }
         backend.surface = None;
@@ -522,6 +538,136 @@ impl State {
         ) {
             Ok(surface) => backend.surface = Some(surface),
             Err(err) => warn!("{err}"),
+        }
+        // A display plugged in: its saved mode, scale and rotation, and the night light.
+        self.apply_displays_config();
+        let _ = self.drm_apply_gamma();
+    }
+
+    /// Every connected connector, the driven one enabled.
+    pub fn drm_outputs(&mut self) -> Option<Vec<crate::displays::OutputInfo>> {
+        let scale = self.output.current_scale().fractional_scale();
+        let transform = self.output.current_transform();
+        let backend = self.drm_backend()?;
+        let device = backend.drm.device_fd();
+        let resources = device.resource_handles().ok()?;
+        let driven = backend.surface.as_ref().map(|s| (s.connector, s.mode));
+        let mut list = Vec::new();
+        for &handle in resources.connectors() {
+            let Ok(info) = device.get_connector(handle, false) else {
+                continue;
+            };
+            if info.state() != connector::State::Connected {
+                continue;
+            }
+            let preferred = preferred_mode(info.modes());
+            let modes: Vec<crate::displays::ModeInfo> = info
+                .modes()
+                .iter()
+                .map(|m| crate::displays::mode_info(Mode::from(*m), Some(*m) == preferred))
+                .collect();
+            let (make, model, serial) = edid(device, handle).unwrap_or_default();
+            let enabled = driven.is_some_and(|(c, _)| c == handle);
+            let current = driven
+                .filter(|(c, _)| *c == handle)
+                .map(|(_, m)| crate::displays::mode_info(Mode::from(m), Some(m) == preferred));
+            let (w, h) = info.size().unwrap_or((0, 0));
+            list.push(crate::displays::OutputInfo {
+                connector: format!("{}-{}", info.interface().as_str(), info.interface_id()),
+                make,
+                model,
+                serial,
+                modes,
+                current,
+                scale: if enabled { scale } else { 1.0 },
+                transform: if enabled {
+                    transform
+                } else {
+                    Transform::Normal
+                },
+                enabled,
+                primary: enabled,
+                size_mm: (
+                    i32::try_from(w).unwrap_or_default(),
+                    i32::try_from(h).unwrap_or_default(),
+                ),
+            });
+        }
+        Some(list)
+    }
+
+    /// The display in use switches to its mode number `index` (in the connector's list).
+    pub fn drm_set_mode(&mut self, index: usize) -> Result<(), String> {
+        let output = self.output.clone();
+        let Some(backend) = self.drm_backend() else {
+            return Err("no display".into());
+        };
+        let Some(surface) = &backend.surface else {
+            return Err("no display in use".into());
+        };
+        let (handle, crtc) = (surface.connector, surface.crtc);
+        let info = backend
+            .drm
+            .device_fd()
+            .get_connector(handle, false)
+            .map_err(|e| format!("connector: {e}"))?;
+        let mode = *info.modes().get(index).ok_or("no such mode")?;
+        let choice = Choice {
+            connector: handle,
+            crtc,
+            mode,
+            name: format!("{}-{}", info.interface().as_str(), info.interface_id()),
+            size_mm: (0, 0),
+        };
+        backend.surface = None;
+        backend.pending = false;
+        let smithay_mode = Mode::from(mode);
+        output.change_current_state(Some(smithay_mode), None, None, None);
+        let created = create_surface(
+            &mut backend.drm,
+            &backend.gbm,
+            &backend.renderer,
+            &output,
+            &choice,
+        );
+        backend.surface = Some(created?);
+        info!(
+            "display {}: {}x{} @ {} mHz",
+            choice.name, smithay_mode.size.w, smithay_mode.size.h, smithay_mode.refresh
+        );
+        self.output_resized();
+        let _ = self.drm_apply_gamma();
+        Ok(())
+    }
+
+    /// The output's scale or rotation changed: the damage tracker follows it.
+    pub fn drm_output_changed(&mut self) {
+        let output = self.output.clone();
+        if let Some(backend) = self.drm_backend()
+            && let Some(surface) = &mut backend.surface
+        {
+            surface.damage_tracker = OutputDamageTracker::from_output(&output);
+        }
+    }
+
+    /// The colour temperature on the CRTC's gamma ramp; `None` without a display, false if the
+    /// driver has no gamma.
+    pub fn drm_apply_gamma(&mut self) -> Option<bool> {
+        let kelvin = self.color_temperature;
+        let backend = self.drm_backend()?;
+        let crtc = backend.surface.as_ref()?.crtc;
+        let device = backend.drm.device_fd();
+        let size = device.get_crtc(crtc).ok()?.gamma_length() as usize;
+        if !(2..=4096).contains(&size) {
+            return Some(false);
+        }
+        let (red, green, blue) = crate::displays::gamma_ramp(kelvin, size);
+        match device.set_gamma(crtc, &red, &green, &blue) {
+            Ok(()) => Some(true),
+            Err(err) => {
+                warn!("gamma: {err}");
+                Some(false)
+            }
         }
     }
 

@@ -57,6 +57,11 @@ impl Headless {
             .env("XDG_RUNTIME_DIR", &dir)
             // The user's settings (keyboard.json, displays.json…) never reach the tests.
             .env("XDG_CONFIG_HOME", dir.join("config"))
+            // Nor the user's session bus: Ossido's reports to silica-daemon go nowhere.
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}", dir.join("no-bus").display()),
+            )
             .env("RUST_LOG", "warn")
             .env_remove("WAYLAND_DISPLAY")
             .stdout(Stdio::piped())

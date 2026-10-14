@@ -267,6 +267,7 @@ impl State {
         match name {
             KEYBOARD_FILE => self.apply_keyboard_config(),
             INPUT_FILE => self.apply_input_config(),
+            crate::displays::DISPLAYS_FILE => self.apply_displays_config(),
             _ => {}
         }
     }
@@ -288,6 +289,7 @@ impl State {
     pub fn apply_all_config(&mut self) {
         self.apply_keyboard_config();
         self.apply_input_config();
+        self.apply_displays_config();
     }
 
     /// `keyboard.json`: the repeat goes to every bound keyboard (`wl_keyboard.repeat_info`),

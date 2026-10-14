@@ -42,6 +42,7 @@ use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
 use silica_control::commands::{MinimizeEffectParams, WINDOW_MINIMIZE_EFFECT};
+use silica_control::commands::{OUTPUT_COLOR_TEMPERATURE, OUTPUT_CONFIGURE, OUTPUT_LIST};
 use silica_control::{CaptureAnnouncement, CaptureOptions, ScreenshotSettings};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
@@ -108,6 +109,18 @@ impl State {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
             KEYBOARD_STATE => Ok(self.keyboard_state()),
             INPUT_STATE => Ok(self.input_state()),
+            OUTPUT_LIST => Ok(self.output_list()),
+            OUTPUT_CONFIGURE => self.output_configure(&params),
+            OUTPUT_COLOR_TEMPERATURE => {
+                let kelvin = params
+                    .get("kelvin")
+                    .and_then(Value::as_u64)
+                    .and_then(|k| u32::try_from(k).ok())
+                    .filter(|k| (1000..=6500).contains(k))
+                    .ok_or("kelvin: 1000–6500")?;
+                let applied = self.set_color_temperature(kelvin);
+                Ok(json!({ "kelvin": kelvin, "applied": applied }))
+            }
             KEYBOARD_NEXT_SOURCE => {
                 let switched = self.next_input_source();
                 Ok(json!({ "switched": switched, "active": self.active_layout() }))

@@ -117,6 +117,8 @@ pub struct State {
     pub config_dir: Option<std::path::PathBuf>,
     /// The keyboard settings applied (`keyboard.json`).
     pub keyboard_config: crate::config::KeyboardConfig,
+    /// The night light's colour temperature in kelvin (6500: off), `output.color_temperature`.
+    pub color_temperature: u32,
     /// The mouse and touchpad settings applied (`input.json`).
     pub input_config: crate::config::InputConfig,
     /// Frame pace, startup and memory of the clients (`perf.*`).
@@ -351,6 +353,7 @@ impl State {
             config_dir: None,
             keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
             input_config: crate::config::InputConfig::default(),
+            color_temperature: crate::displays::NEUTRAL_KELVIN,
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),

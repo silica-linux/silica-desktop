@@ -167,6 +167,70 @@ fn keyboard_json_sets_repeat_and_sources_live() {
 }
 
 #[test]
+fn displays_are_listed_configured_and_saved() {
+    let ossido = Headless::start("displays");
+    let mut client = ossido.client();
+    let list = client.call("output.list", Value::Null).unwrap();
+    let outputs = list.as_array().unwrap();
+    assert_eq!(outputs.len(), 1);
+    let output = &outputs[0];
+    let connector = output["connector"].as_str().unwrap().to_owned();
+    assert_eq!(output["enabled"], true);
+    assert_eq!(output["scale"], 1.0);
+    assert_eq!(output["transform"], "normal");
+    assert_eq!(output["current"]["width"], common::WIDTH);
+
+    let configured = client
+        .call(
+            "output.configure",
+            json!({"connector": connector, "scale": 2, "transform": "90"}),
+        )
+        .unwrap();
+    assert_eq!(configured["scale"], 2.0);
+    assert_eq!(configured["transform"], "90");
+    // Saved for this display, by its identity (the connector without EDID).
+    let saved: Value = serde_json::from_slice(
+        &std::fs::read(ossido.dir.join("config/silica/displays.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["outputs"][&connector]["scale"], 2.0);
+    assert_eq!(saved["outputs"][&connector]["transform"], "90");
+
+    // Bad parameters and modes the display does not have are refused.
+    for bad in [
+        json!({"scale": 1.1}),
+        json!({"transform": "sideways"}),
+        json!({"mode": {"width": 7, "height": 7}}),
+        json!({"connector": "nope", "scale": 1}),
+    ] {
+        assert!(
+            client.call("output.configure", bad.clone()).is_err(),
+            "{bad}"
+        );
+    }
+
+    // A change made to the file applies at once.
+    write_setting(
+        &ossido,
+        "displays.json",
+        &json!({"outputs": {connector.clone(): {"scale": 1.5, "transform": "normal"}}}),
+    );
+    let list = wait_for(&ossido, "output.list", |l| l[0]["scale"] == 1.5);
+    assert_eq!(list[0]["transform"], "normal");
+
+    // Headless has no gamma: the night light is accepted but not applied.
+    let night = client
+        .call("output.color_temperature", json!({"kelvin": 3400}))
+        .unwrap();
+    assert_eq!(night, json!({"kelvin": 3400, "applied": false}));
+    assert!(
+        client
+            .call("output.color_temperature", json!({"kelvin": 200}))
+            .is_err()
+    );
+}
+
+#[test]
 fn input_json_is_read_live() {
     let ossido = Headless::start("input-json");
     let state = ossido.client().call("input.state", Value::Null).unwrap();
