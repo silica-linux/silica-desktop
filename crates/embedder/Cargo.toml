@@ -28,6 +28,7 @@ khronos-egl = { version = "6", default-features = false, features = ["1_5", "dyn
 wayland-egl = "0.32"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 zbus = "5.19"
+alacritty_terminal = "0.26.0"
 
 [dev-dependencies]
 ossido = { path = "../ossido" }

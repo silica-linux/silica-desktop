@@ -13,6 +13,10 @@
 //!   frame per pty;
 //! - `exit {id, code?, signal?}` once the child has exited and its output is delivered.
 //!
+//! With `spawn {grid: true}` the output is not sent as bytes: a parser thread emulates the
+//! terminal (`termgrid.rs`) and the app gets `grid {…}` with the changed rows, at most once
+//! per frame.
+//!
 //! Input is hostile: sizes are bounded, ids checked, a full output buffer pauses reading
 //! (backpressure) and a full write queue refuses the write.
 
@@ -59,6 +63,8 @@ pub struct SpawnArgs {
     pub env: Vec<(String, String)>,
     pub rows: u16,
     pub cols: u16,
+    /// Emulate the terminal here and send rows (`grid`), not bytes (`output`).
+    pub grid: bool,
 }
 
 /// A call from the app.
@@ -174,6 +180,9 @@ pub fn parse_call(data: &[u8]) -> Result<Call, String> {
                 env,
                 rows: dimension(&args, "rows", true)?,
                 cols: dimension(&args, "cols", true)?,
+                grid: field(&args, "grid")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             }))
         }
         "write" => {
@@ -403,6 +412,8 @@ struct Session {
     /// Closed by the app: not reported, killed if it ignores SIGHUP.
     closing: Option<Instant>,
     last_exit_poll: Instant,
+    /// The emulator, for `grid` sessions.
+    grid: Option<crate::termgrid::GridWorker>,
 }
 
 /// The ptys of a window.
@@ -458,6 +469,13 @@ impl PtyHost {
                     return Err("too many terminals".to_owned());
                 }
                 let pty = Pty::spawn(&args).map_err(|e| format!("spawn: {e}"))?;
+                let grid = match args.grid {
+                    true => Some(
+                        crate::termgrid::GridWorker::new(args.cols, args.rows)
+                            .map_err(|e| format!("terminal thread: {e}"))?,
+                    ),
+                    false => None,
+                };
                 let id = self.next_id;
                 self.next_id = self.next_id.wrapping_add(1);
                 self.sessions.insert(
@@ -470,6 +488,7 @@ impl PtyHost {
                         paused: false,
                         closing: None,
                         last_exit_poll: Instant::now(),
+                        grid,
                     },
                 );
                 Ok(Reply {
@@ -494,9 +513,11 @@ impl PtyHost {
                 pixel_width,
                 pixel_height,
             } => {
-                self.live(id)?
-                    .pty
-                    .resize(rows, cols, pixel_width, pixel_height);
+                let session = self.live(id)?;
+                session.pty.resize(rows, cols, pixel_width, pixel_height);
+                if let Some(grid) = &session.grid {
+                    grid.resize(cols, rows);
+                }
                 Ok(done(Value::Null))
             }
             Call::Signal { id, signal } => {
@@ -576,7 +597,21 @@ impl PtyHost {
                 continue;
             }
             flush_writes(session);
-            if !session.pending.is_empty() {
+            if let Some(grid) = &session.grid {
+                // The parser thread takes the backlog while it keeps up; beyond MAX_PENDING
+                // queued there, reading from the pty pauses (backpressure to the program).
+                if !session.pending.is_empty() && grid.queued() < MAX_PENDING {
+                    grid.feed(std::mem::take(&mut session.pending));
+                }
+                let (frame, replies) = grid.frame(id);
+                if !replies.is_empty() && session.writes.len() < MAX_WRITE_QUEUE {
+                    session.writes.extend(replies);
+                    flush_writes(session);
+                }
+                if let Some(frame) = frame {
+                    tick.messages.push(message("grid", frame));
+                }
+            } else if !session.pending.is_empty() {
                 let take = session.pending.len().min(MAX_MESSAGE);
                 let chunk: Vec<u8> = session.pending.drain(..take).collect();
                 tick.messages.push(message(
@@ -669,7 +704,8 @@ mod tests {
                 cwd: None,
                 env: vec![],
                 rows: 24,
-                cols: 80
+                cols: 80,
+                grid: false,
             })
         );
         let Call::Spawn(args) = parse_call(&call(
@@ -798,6 +834,42 @@ mod tests {
     }
 
     #[test]
+    fn a_grid_session_sends_rows_not_bytes() {
+        let mut host = PtyHost::default();
+        let id = host
+            .handle(
+                parse_call(&call(
+                    "spawn",
+                    json!({ "command": ["/bin/sh", "-c", "printf 'hi\\033[31mred'; sleep 1"],
+                            "rows": 4, "cols": 20, "grid": true }),
+                ))
+                .unwrap(),
+            )
+            .unwrap()
+            .spawned
+            .unwrap();
+        let start = Instant::now();
+        let mut seen = None;
+        while start.elapsed() < Duration::from_secs(5) && seen.is_none() {
+            let _ = host.readable(id);
+            for m in host.tick(Instant::now()).messages {
+                let v: Value = serde_json::from_slice(&m).unwrap();
+                assert_ne!(v["method"], "output", "grid sessions never send bytes");
+                if v["method"] == "grid" && v["args"]["lines"].to_string().contains("red") {
+                    seen = Some(v["args"].clone());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let frame = seen.expect("a grid frame with the text");
+        assert_eq!(frame["lines"][0]["runs"][0], json!(["hi", -1, -1, 0]));
+        assert_eq!(
+            frame["lines"][0]["runs"][1],
+            json!(["red", 0xcd0000, -1, 0])
+        );
+    }
+
+    #[test]
     fn close_hangs_up_and_reaps() {
         let mut host = PtyHost::default();
         let id = host
@@ -807,6 +879,7 @@ mod tests {
                 env: vec![],
                 rows: 5,
                 cols: 5,
+                grid: false,
             }))
             .unwrap()
             .spawned

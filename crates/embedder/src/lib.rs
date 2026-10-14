@@ -21,6 +21,7 @@ mod keymap;
 mod locale;
 mod pty;
 mod shell;
+mod termgrid;
 mod text_input;
 mod window;
 
