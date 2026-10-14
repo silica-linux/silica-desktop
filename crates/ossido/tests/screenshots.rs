@@ -80,9 +80,10 @@ fn screen_region_and_window_captures_write_png_files() {
         .0,
         (200, 152)
     );
-    // With its shadow (the default): larger, and transparent in the corner.
+    // With its shadow (the default): the frame plus a transparent margin of 22 / 23 on the
+    // sides, 15 on top and 30 at the bottom (SCREENSHOT-2).
     let ((w, h), reply) = capture(&mut client, SCREENSHOT_WINDOW_AT, json!({"x": at, "y": at}));
-    assert!(w > 200 && h > 152, "with the shadow: {w} × {h}");
+    assert_eq!((w, h), (200 + 22 + 23, 152 + 15 + 30), "with the shadow");
     assert_eq!(reply["clipboard"], json!(false));
     // Outside every window: an error, no file; with or_screen, the whole screen.
     assert!(
@@ -124,6 +125,24 @@ fn the_window_shadow_is_transparent_around_the_frame() {
     // The bottom-right corner is beyond the frame: shadow or nothing, never opaque.
     let corner = pixel_in(&pixels, width, width - 1, height - 1);
     assert!(corner[3] < 255, "corner {corner:?}");
+    // The margins are exactly 22 / 23 wide on the sides, 15 on top and 30 at the bottom: the
+    // frame starts and ends there, opaque in the middle of each edge.
+    assert_eq!((width, height), (245, 197));
+    let mid_y = 15 + 152 / 2;
+    assert_eq!(pixel_in(&pixels, width, 22 + 100, 15 + 80)[3], 255);
+    assert!(pixel_in(&pixels, width, 5, mid_y)[3] < 255, "left margin");
+    assert!(
+        pixel_in(&pixels, width, width - 5, mid_y)[3] < 255,
+        "right margin"
+    );
+    assert!(
+        pixel_in(&pixels, width, width / 2, 5)[3] < 255,
+        "top margin"
+    );
+    assert!(
+        pixel_in(&pixels, width, width / 2, height - 5)[3] < 255,
+        "bottom margin"
+    );
     // Somewhere in the middle: the window, opaque.
     let middle = pixel_in(&pixels, width, width / 2, height / 2);
     assert_eq!(middle[3], 255, "middle {middle:?}");

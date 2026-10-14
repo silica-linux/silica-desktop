@@ -328,7 +328,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get saveTo => 'Salva in';
 
   @override
-  String get delay => 'Ritardo';
+  String get delay => 'Timer';
 
   @override
   String get delayNone => 'Nessuno';
@@ -345,7 +345,7 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
-  String get thumbnailAfterCapture => 'Miniatura dopo lo scatto';
+  String get thumbnailAfterCapture => 'Mostra miniatura fluttuante';
 
   @override
   String get optionsButton => 'Opzioni ⌄';
@@ -369,10 +369,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get shotChooseFolder => 'Scegli dove salvare le istantanee';
 
   @override
-  String get shotKeepSelection => 'Mantieni l’ultima selezione';
+  String get shotKeepSelection => 'Ricorda ultima selezione';
 
   @override
-  String get shotIncludePointer => 'Includi il puntatore';
+  String get shotIncludePointer => 'Mostra puntatore del mouse';
+
+  @override
+  String get shotCaptureSection => 'Acquisisci';
 
   @override
   String get shotSaveToDesktop => 'Salva sulla Scrivania';
@@ -381,16 +384,11 @@ class AppLocalizationsIt extends AppLocalizations {
   String get shotSaveToDocuments => 'Salva in Documenti';
 
   @override
-  String get shotSaveToClipboard => 'Copia negli Appunti';
-
-  @override
-  String shotSaveToFolder(String name) {
-    return 'Salva in “$name”';
-  }
+  String get shotSaveToClipboard => 'Salva negli Appunti';
 
   @override
   String shotOpenWith(String app) {
-    return 'Apri con $app';
+    return 'Apri in $app';
   }
 
   @override

@@ -328,7 +328,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get saveTo => 'Save to';
 
   @override
-  String get delay => 'Delay';
+  String get delay => 'Timer';
 
   @override
   String get delayNone => 'None';
@@ -345,7 +345,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get thumbnailAfterCapture => 'Thumbnail after capture';
+  String get thumbnailAfterCapture => 'Show Floating Thumbnail';
 
   @override
   String get optionsButton => 'Options ⌄';
@@ -369,10 +369,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shotChooseFolder => 'Choose where screenshots go';
 
   @override
-  String get shotKeepSelection => 'Keep Last Selection';
+  String get shotKeepSelection => 'Remember Last Selection';
 
   @override
-  String get shotIncludePointer => 'Include the Pointer';
+  String get shotIncludePointer => 'Show Mouse Pointer';
+
+  @override
+  String get shotCaptureSection => 'Capture';
 
   @override
   String get shotSaveToDesktop => 'Save to Desktop';
@@ -381,16 +384,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shotSaveToDocuments => 'Save to Documents';
 
   @override
-  String get shotSaveToClipboard => 'Copy to Clipboard';
-
-  @override
-  String shotSaveToFolder(String name) {
-    return 'Save to “$name”';
-  }
+  String get shotSaveToClipboard => 'Save to Clipboard';
 
   @override
   String shotOpenWith(String app) {
-    return 'Open with $app';
+    return 'Open in $app';
   }
 
   @override

@@ -31,6 +31,55 @@ impl Capture {
     }
 }
 
+/// The transparent shadow margin around a window in its capture file, in points (SCREENSHOT-2,
+/// #87): left, top, right, bottom. The file is the window frame plus these margins, whatever
+/// the shadow on the screen reaches.
+pub const WINDOW_MARGIN_LEFT: f64 = 22.0;
+pub const WINDOW_MARGIN_TOP: f64 = 15.0;
+pub const WINDOW_MARGIN_RIGHT: f64 = 23.0;
+pub const WINDOW_MARGIN_BOTTOM: f64 = 30.0;
+
+/// The margins at `scale`, in physical pixels: left, top, right, bottom.
+pub fn window_margins(scale: f64) -> (i32, i32, i32, i32) {
+    let px = |points: f64| (points * scale).round() as i32;
+    (
+        px(WINDOW_MARGIN_LEFT),
+        px(WINDOW_MARGIN_TOP),
+        px(WINDOW_MARGIN_RIGHT),
+        px(WINDOW_MARGIN_BOTTOM),
+    )
+}
+
+/// A transparent `width` × `height` canvas with `part` pasted at `(x, y)` (what falls outside
+/// is left out).
+pub fn paste_on_transparent(part: &Capture, x: i32, y: i32, width: u32, height: u32) -> Capture {
+    let mut rgba = vec![0u8; width as usize * height as usize * 4];
+    for row in 0..part.height as i64 {
+        let ty = i64::from(y) + row;
+        if ty < 0 || ty >= i64::from(height) {
+            continue;
+        }
+        let first = (-i64::from(x)).max(0);
+        let last = (i64::from(width) - i64::from(x)).min(i64::from(part.width));
+        if first >= last {
+            continue;
+        }
+        let from = ((row * i64::from(part.width) + first) * 4) as usize;
+        let to = ((row * i64::from(part.width) + last) * 4) as usize;
+        let at = ((ty * i64::from(width) + i64::from(x) + first) * 4) as usize;
+        if let (Some(src), Some(dst)) =
+            (part.rgba.get(from..to), rgba.get_mut(at..at + (to - from)))
+        {
+            dst.copy_from_slice(src);
+        }
+    }
+    Capture {
+        width,
+        height,
+        rgba,
+    }
+}
+
 /// The given rectangle (pixels, rounded and clipped to the edges) of a capture; None if empty.
 pub fn crop(capture: &Capture, x: f64, y: f64, width: f64, height: f64) -> Option<Capture> {
     if ![x, y, width, height].iter().all(|v| v.is_finite()) {
@@ -226,5 +275,23 @@ mod tests {
         draw_over(&mut big, (f64::NAN, 0.0), (2, 2, &image), 1.0);
         draw_over(&mut big, (0.0, 0.0), (-2, 2, &image), 1.0);
         draw_over(&mut big, (0.0, 0.0), (4, 4, &image), 1.0);
+    }
+
+    #[test]
+    fn window_margins_follow_the_scale_and_pasting_clips() {
+        assert_eq!(window_margins(1.0), (22, 15, 23, 30));
+        assert_eq!(window_margins(2.0), (44, 30, 46, 60));
+        let part = grey(2, 2);
+        let out = paste_on_transparent(&part, 1, 1, 4, 3);
+        assert_eq!((out.width, out.height), (4, 3));
+        assert_eq!(at(&out, 0, 0), [0, 0, 0, 0]);
+        assert_eq!(at(&out, 1, 1), [128, 128, 128, 255]);
+        assert_eq!(at(&out, 2, 2), [128, 128, 128, 255]);
+        assert_eq!(at(&out, 3, 2), [0, 0, 0, 0]);
+        // Partly outside on every side: only the inside is kept.
+        let out = paste_on_transparent(&part, -1, -1, 1, 1);
+        assert_eq!(at(&out, 0, 0), [128, 128, 128, 255]);
+        let out = paste_on_transparent(&part, 5, 5, 3, 3);
+        assert!(out.rgba.iter().all(|&b| b == 0));
     }
 }

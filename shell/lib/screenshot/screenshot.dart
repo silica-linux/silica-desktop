@@ -9,10 +9,13 @@
 //   position: `settings.dart` ($XDG_CONFIG_HOME/silica/screenshot.json). ⇧⌘3 and ⇧⌘4 follow
 //   the same choices.
 // - The file is named "Screenshot <date> at <time>.png" (localized) from the capture time,
-//   and lands in its place when the thumbnail leaves, or at once when a drag of the
-//   thumbnail starts (a real Wayland drag and drop of the file).
+//   and lands in its place when the thumbnail leaves, or at once on a swipe to the right.
+// - Dragging the thumbnail is a Wayland drag and drop of a file kept only for the drag (in the
+//   cache): a folder, the desktop or an app that takes it gets the image, and nothing stays
+//   in the capture's own place (SCREENSHOT-2, #87).
 // - Clicking the thumbnail opens the image with the default app: there is no Markup editor
-//   yet (#154), so the image viewer stands in for it. Mail is not a place yet (#155).
+//   yet (#154), so the thumbnail menu has no Markup entry and the image viewer opens on a
+//   click. Mail and Photos are offered only where their apps are installed.
 
 import 'dart:async';
 import 'dart:convert';
@@ -48,8 +51,16 @@ export 'thumbnail.dart'
         thumbnailRadius,
         thumbnailSettle,
         thumbnailHold,
-        thumbnailLeave;
+        thumbnailLeave,
+        thumbnailDragSide,
+        thumbnailDragSize,
+        thumbnailDragHotspot;
 export 'toolbar.dart' show toolbarSize, toolbarAboveDock, ShotBarColors;
+
+/// The apps the thumbnail menu and the Options menu offer when they are installed (the image
+/// viewer is the default handler of PNG files, shown as the equivalent of Preview).
+const String shotMailId = 'dev.frascella.Mail';
+const String shotPhotosId = 'dev.frascella.Photos';
 
 /// The veil of window mode: `#88bae7` (sRGB) at opacity ~0.51 (K-05).
 const Color windowVeil = Color(0x8288BAE7);
@@ -172,7 +183,16 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     vsync: this,
     duration: thumbnailLeave,
   )..addListener(() => setState(() {}));
-  Timer? _hold;
+
+  /// The time the thumbnail stays (from the start of the fade-in); stopped while its menu is
+  /// open or the pointer is on it, and it goes on from where it stopped.
+  late final AnimationController _dwell =
+      AnimationController(
+        vsync: this,
+        duration: thumbnailSettle + thumbnailHold,
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _dismiss();
+      });
   bool _hovered = false;
 
   /// The thumbnail's menu, open at this point.
@@ -207,7 +227,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _commands?.cancel();
     _drags?.cancel();
     ShellChannel.instance.states.removeListener(_statesChanged);
-    _hold?.cancel();
+    _dwell.dispose();
     _ticker?.cancel();
     _settle.dispose();
     _leave.dispose();
@@ -527,7 +547,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     // A thumbnail still showing: its capture goes to its place right away.
     final previous = _shot;
     if (previous != null) _finish(previous);
-    _hold?.cancel();
+    _dwell.stop();
     if (!_settings.showThumbnail) {
       setState(() => _shot = null);
       _syncLayer();
@@ -543,16 +563,13 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _settle.forward(from: 0);
     _restartHold(thumbnailSettle + thumbnailHold);
     _syncLayer();
-    final box = thumbnailRect(shot.size, _lastSize).size;
-    if (!box.isEmpty) {
-      thumbnailDragImage(path, box).then((image) {
-        if (!mounted || shot.done) {
-          image?.dispose();
-          return;
-        }
-        shot.dragImage = image;
-      });
-    }
+    thumbnailDragImage(path, shot.size).then((image) {
+      if (!mounted || shot.done) {
+        image?.dispose();
+        return;
+      }
+      shot.dragImage = image;
+    });
   }
 
   Future<void> _toClipboardNow(String path) async {
@@ -565,8 +582,10 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   }
 
   void _restartHold(Duration after) {
-    _hold?.cancel();
-    _hold = Timer(after, _dismiss);
+    _dwell
+      ..stop()
+      ..duration = after
+      ..forward(from: 0);
   }
 
   /// The time is up: the thumbnail slides off to the right, then the capture goes to its
@@ -578,7 +597,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   }
 
   Future<void> _slideAway(_Shot shot) async {
-    _hold?.cancel();
+    _dwell.stop();
     await _leave.forward(from: 0);
     if (!mounted || _shot != shot) return;
     _removeThumbnail();
@@ -587,7 +606,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   void _removeThumbnail() {
     final shot = _shot;
-    _hold?.cancel();
+    _dwell.stop();
     setState(() {
       _shot = null;
       _menuAt = null;
@@ -637,9 +656,9 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         await _services.copyImage(shot.file);
         if (open || reveal) {
           path = _place(shot, _cache);
-        } else if (shot.placed == null) {
+        } else {
           try {
-            File(shot.temp).deleteSync();
+            File(shot.file).deleteSync();
           } on FileSystemException {
             // Already gone.
           }
@@ -682,35 +701,36 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final shot = _shot;
     if (shot == null || shot.dragging) return;
     if (on) {
-      _hold?.cancel();
+      _dwell.stop();
     } else if (_menuAt == null) {
       // PROVISIONAL: the full time again once the pointer leaves.
       _restartHold(thumbnailHold);
     }
   }
 
-  /// Two fingers to the right: it goes away now, and the capture to its place.
+  /// Two fingers to the right: the capture is saved at once, and the thumbnail goes away.
   void _swipe() {
     final shot = _shot;
     if (shot == null || shot.dragging) return;
+    _finish(shot);
     _slideAway(shot);
   }
 
-  /// A press that moves: the file is written to its place at once and dragged out as a
-  /// real drag and drop, the thumbnail's image on the pointer where it was grabbed.
-  Future<void> _dragOut(Offset grab) async {
+  /// A press that moves: the image is dragged out as a real drag and drop of a file kept in
+  /// the cache for the drag. The thumbnail hides; a frameless image, 128 pt on its long
+  /// side, follows the pointer (SCREENSHOT-2).
+  Future<void> _dragOut() async {
     final shot = _shot;
     if (shot == null || shot.done || shot.dragging) return;
-    _hold?.cancel();
-    final folder = _folderOf(shot.destination) ?? _cache;
-    final path = _place(shot, folder);
+    _dwell.stop();
+    final path = _place(shot, _cache);
     if (path == null) return;
     setState(() => shot.dragging = true);
     _syncLayer();
     final started = await _services.startDrag(
       path,
       icon: shot.dragImage,
-      hotspot: grab,
+      hotspot: thumbnailDragHotspot(thumbnailDragSize(shot.size)),
     );
     if (!mounted || started) return;
     _dragEnded(shot, dropped: false);
@@ -724,12 +744,19 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   void _dragEnded(_Shot shot, {required bool dropped}) {
     if (dropped) {
-      // Taken by the target (a folder, the desktop, an app): nothing more to do.
+      // Taken by the target (a folder, the desktop, an app): it has its own copy, so this
+      // file goes. The capture is moved there, not saved here as well.
       shot.done = true;
       _removeThumbnail();
+      try {
+        File(shot.file).deleteSync();
+      } on FileSystemException {
+        // The target moved it.
+      }
       return;
     }
-    // Dropped nowhere: the thumbnail comes back, the file already in its place.
+    // Dropped nowhere: the thumbnail comes back, and the capture goes to its place when it
+    // leaves.
     setState(() => shot.dragging = false);
     _syncLayer();
     _restartHold(thumbnailHold);
@@ -737,7 +764,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   void _openMenu(Offset at) {
     if (_shot == null) return;
-    _hold?.cancel();
+    _dwell.stop();
     setState(() {
       _menuAt = at;
       _menuEntries = _thumbnailMenu();
@@ -749,7 +776,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     if (_menuAt == null) return;
     setState(() => _menuAt = null);
     _syncLayer();
-    if (_shot != null && !_hovered) _restartHold(thumbnailHold);
+    // The time goes on from where the menu stopped it.
+    if (_shot != null && !_hovered) _dwell.forward();
   }
 
   /// A choice of the thumbnail's menu: the thumbnail goes away and the capture goes `to`.
@@ -774,42 +802,45 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _finish(shot, to: to, reveal: reveal);
   }
 
+  /// The apps the thumbnail and the Options menu can hand an image to, in the order of the
+  /// reference (Mail, the image viewer as Preview, Photos); only the ones that exist.
+  List<DesktopEntry> _imageApps() {
+    final viewer = _viewer;
+    return [
+      if (widget.entries[shotMailId] case final mail?) mail,
+      if (viewer != null) viewer,
+      if (widget.entries[shotPhotosId] case final photos?
+          when photos.id != viewer?.id)
+        photos,
+    ];
+  }
+
+  /// The thumbnail's menu (SCREENSHOT-2): save to Desktop, Documents, Clipboard | open in
+  /// Mail, the image viewer, Photos | show in the file manager, Delete | Close. Markup is
+  /// left out until the editor exists (#154).
   List<MenuEntry> _thumbnailMenu() {
     final l = l10nOf(context);
-    final shot = _shot;
-    final current = shot?.destination ?? _settings.destination;
     final files = widget.entries[fileManagerId];
-    String base(String path) => path.split('/').where((p) => p.isNotEmpty).last;
+    final apps = _imageApps();
     return [
       MenuAction(
         l.shotSaveToDesktop,
-        checked: current is ToDesktop,
         onSelected: () => _menuFinish(to: const ToDesktop()),
       ),
       MenuAction(
         l.shotSaveToDocuments,
-        checked: current is ToDocuments,
         onSelected: () => _menuFinish(to: const ToDocuments()),
       ),
       MenuAction(
         l.shotSaveToClipboard,
-        checked: current is ToClipboard,
         onSelected: () => _menuFinish(to: const ToClipboard()),
       ),
-      for (final folder in _settings.recentFolders)
+      if (apps.isNotEmpty) const MenuDivider(),
+      for (final app in apps)
         MenuAction(
-          l.shotSaveToFolder(base(folder)),
-          checked: current == ToFolder(folder),
-          onSelected: () => _menuFinish(to: ToFolder(folder)),
+          l.shotOpenWith(app.name),
+          onSelected: () => _menuFinish(to: ToApp(app.id)),
         ),
-      if (_viewer case final viewer?) ...[
-        const MenuDivider(),
-        MenuAction(
-          l.shotOpenWith(viewer.name),
-          checked: current == ToApp(viewer.id),
-          onSelected: () => _menuFinish(to: ToApp(viewer.id)),
-        ),
-      ],
       const MenuDivider(),
       if (files != null)
         MenuAction(
@@ -861,11 +892,11 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         checked: to is ToClipboard,
         onSelected: () => destination(const ToClipboard()),
       ),
-      if (_viewer case final viewer?)
+      for (final app in _imageApps())
         MenuAction(
-          viewer.name,
-          checked: to == ToApp(viewer.id),
-          onSelected: () => destination(ToApp(viewer.id)),
+          app.name,
+          checked: to == ToApp(app.id),
+          onSelected: () => destination(ToApp(app.id)),
         ),
       for (final folder in _settings.recentFolders)
         MenuAction(
@@ -897,6 +928,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         onSelected: () =>
             _changeSettings((s) => s.rememberSelection = !s.rememberSelection),
       ),
+      const MenuDivider(),
+      MenuSection(l.shotCaptureSection),
       MenuAction(
         l.shotIncludePointer,
         checked: _settings.showPointer,

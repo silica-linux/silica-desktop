@@ -11,23 +11,55 @@ in light appearance unless noted.
   | | Value |
   |---|---|
   | Image | the screen at 0.1× (256 × 144 for 2560 × 1440) |
-  | Frame | **4 pt** white, so the outer size is **264 × 152** |
+  | Frame | **4 pt**, so the outer size is **264 × 152**: white in light appearance; in dark, black with a **1 pt** light line (about `#949494`) on its inner edge |
   | Corner radius | about 4 pt |
   | Margin | **12 pt** from the right and bottom screen edges |
+  | Height | follows the image: 264 wide for a landscape image, e.g. 264 × 136 for a 2:1 one |
+  | Transparent parts of the image | render black in dark appearance |
   | Shadow | soft, black, about symmetric: −10 levels at the edge, −8 at 2 pt, −5 at about 12 pt, −2/−3 at 24–26 pt |
 - **Appearing:** the thumbnail is **already in place and at full size**, with no slide or
-  scale. It **fades in over about 400 ms**, slowing towards the end, and the shadow widens
+  scale. It **fades in over about 380 ms**, slowing towards the end, and the shadow widens
   with it.
-- **Leaving:** after about **5.1 s** it **slides off to the right** in about **220–250 ms**.
+- **Staying:** about **5.4 s**. The timer **pauses while its context menu is open**.
+- **Leaving:** it **slides off to the right** in about **250 ms**.
   - The motion speeds up, then holds a near-constant speed.
   - Movement per 13 ms frame, in pt: 9, 10, 12, 14, 15, 17, 19, 20, 20, 24, 25, 24, 26, 24.
 - **Saving:** the file is written when the thumbnail leaves.
+- **Dragging the thumbnail:** it hides, and a **frameless** copy of the image follows the
+  pointer, shrinking from the thumbnail's size to **128 pt on its long side** in about
+  **300 ms**, then held roughly centered on the pointer (the pointer 10–15 pt above and to the
+  left of the center). No count badge, no name pill.
+  - **Onto a folder or the desktop:** the file is **moved** there. No copy is saved in the
+    default location. Onto the desktop it appears at a free spot near the drop point.
+  - **Into an app** (a rich-text document): the image is inserted at full size and **no file
+    remains**.
+- **Swipe to the right** (a quick horizontal flick): it is not a drag and drop. The thumbnail
+  follows the pointer, leaves in about 220 ms, and the file is **saved at once**.
+- **Context menu** (secondary click), in groups: **Save to Desktop / Documents / Clipboard**,
+  **Open in Mail / Preview / Photos**, **Show in the file manager / Delete**, **Markup /
+  Close**.
+  - The Save items pick the place for this one capture. The Open items hand the image to
+    that app. Close dismisses the thumbnail and saves.
+  - **Delete** leaves no file anywhere, plays no sound and does not touch the Trash.
 - **Clicking the thumbnail** opens the screenshot editor and the thumbnail disappears.
   - **Window:** 90 % of the screen, centred.
   - **Top bar:** close on the left; on the right edit, delete and share (36 × 24 each), plus
     Done (42 × 22).
   - **Bottom right:** an image-analysis button of 28 × 28.
   - **Delete** closes the editor and removes the file.
+
+### Window capture file
+
+A window captured with ⇧⌘4 + Space is the window **plus a transparent shadow margin**:
+**22 pt on the left, 23 on the right, 15 on top and 30 at the bottom** (a 1050 × 480 window
+gives a 1096 × 526 file). The corners of the window are transparent outside its rounded shape.
+The shadow fades from about 0.35 alpha under the bottom edge to 0 over 30 pt, about 0.21 at the
+sides and 0.08 above.
+
+### Shutter sound
+
+Two soft clicks about **230 ms** apart, each a short broadband tick that decays in 100–150 ms
+(about 370 ms in all), starting about 0.2 s after the selection is released.
 
 ## ⇧⌘4: selection and window
 
@@ -85,14 +117,21 @@ in light appearance unless noted.
 ### Options menu
 
 - **Position and size:** it opens **above** the button, its left edge aligned with the
-  button's, **210 pt** wide.
+  button's. It is **216 pt** wide in the capture modes (about 417 tall) and **210 pt** in the
+  record modes (about 476 tall).
 - **Rows:** 24 pt items with checkmarks, and 11 pt separators.
-- **Sections**, each with a grey header that cannot be chosen:
-  - **Save to:** Desktop ✓, Documents, a few apps, other location…
-  - **Timer:** none ✓, 5 s, 10 s.
-  - **Options:** show floating thumbnail ✓, remember last selection ✓.
-  - **Microphone:** none ✓.
-  - **Recording:** show mouse clicks, include system audio.
+- **The menu depends on the bar's mode.** Sections, each with a grey header that cannot be
+  chosen:
+  - **Capture modes:**
+    - **Save to:** Desktop ✓, Documents, Clipboard, Mail, Preview, other location…
+    - **Timer:** none ✓, 5 s, 10 s.
+    - **Options:** show floating thumbnail ✓, remember last selection ✓.
+    - **Capture:** show mouse pointer (off).
+  - **Record modes:**
+    - **Save to:** Desktop ✓, Documents, Mail, QuickTime Player, other location…
+    - **Timer** and **Options** as above.
+    - **Microphone:** none ✓.
+    - **Capture:** show mouse clicks, include system audio (both off).
 - **Closing:** Esc closes the menu, and a second Esc closes the bar.
 
 | | Light | Dark |
@@ -137,37 +176,48 @@ insertion point. It has three buttons and an arrow that expands it into the full
 ## Not measured yet
 
 - The lock screen shortcut.
-- The shutter sound.
-- Screen recording.
+- Screen recording beyond the basics: a click on the window starts it, a stop button appears
+  in the menu bar, and the stop shortcut writes the file at once with no thumbnail.
 - ⇧⌘4 in dark appearance.
-- Dragging the thumbnail.
 - The full character panel.
 
-### What Silica does meanwhile (*provisional*)
+### What Silica does
 
-Until these are measured, `shell/lib/screenshot/` follows the best knowledge of the reference
-system; every value below is marked *provisional* in the code.
+The thumbnail, its menu, the Options menu, the window capture file and the shutter follow the
+SCREENSHOT-2 measurements above (#87). `shell/lib/screenshot/` marks what is still a guess as
+*provisional*; the rest of the values were measured earlier or are listed here.
 
 - **Thumbnail:**
-  - Dragging it starts a real drag and drop of the file. The file is written to its place
-    first, so a folder, the desktop or an app receives a file that exists. The image on the
-    pointer is the thumbnail, held where it was grabbed. Dropped nowhere, the thumbnail comes
-    back.
-  - A secondary click opens its menu: save to Desktop, Documents, the clipboard or a folder
-    chosen before, open with the default image viewer, show in the file manager, Delete,
-    Close. The current place has a checkmark. Delete removes the capture; Close saves it.
-  - A click opens the image with the default app. There is no annotation editor yet.
-  - A two-finger swipe to the right of 40 pt sends it away at once.
-  - The pointer on it or its open menu keep it; when the pointer leaves, it stays another
-    5.1 s.
+  - The frame, timings (380 ms, 5.4 s, 250 ms) and sizes are the measured ones; the frame is
+    black with the 1 pt light line in dark appearance.
+  - **Dragging** starts a real drag and drop of a file that exists only for the drag (in
+    `$XDG_CACHE_HOME/silica/screenshots`). The image on the pointer is the capture alone, 128
+    pt on its long side, held 12 pt above and to the left of its center. A drop that a target
+    takes (a folder, the desktop, an app) deletes that file once the target has its copy, so
+    the capture is moved there and nothing stays on the Desktop. Dropped nowhere, the thumbnail
+    comes back and the capture goes to its place when it leaves.
+    - The ~300 ms shrink is not animated: the drag image is a static Wayland surface, so it
+      is already 128 pt when the drag starts.
+  - A **two-finger swipe to the right** of 40 pt (*provisional*: the threshold; the measured
+    flick is a mouse gesture of at least 100 pt in 100 ms, not handled) saves the capture at
+    once and sends the thumbnail away.
+  - The **menu** has Save to Desktop / Documents / Clipboard; Open in Mail / the default image
+    viewer (as Preview) / Photos, each only if the app is installed; Show in the file
+    manager; Delete; Close. **Markup is hidden** until the editor exists (#154). The timer
+    stops while the menu is open and goes on from where it stopped. Delete removes the
+    capture and plays no sound.
+  - A click opens the image with the default app (no editor yet, #154).
+  - The pointer on the thumbnail keeps it; when the pointer leaves, it stays another 5.4 s
+    (*provisional*: not measured).
 - **⇧⌘4:**
   - While dragging, the label shows the selection's size.
   - Shift keeps one side fixed, Option grows from the center, Space moves the selection.
-  - Window captures include the window's shadow on a transparent background (Option: the
-    frame only). Over the desktop, the whole screen is captured.
+  - Window captures are the window plus the transparent margin of 22 / 23 / 15 / 30 pt, whatever
+    the shadow on the screen reaches (Option: the frame only). Over the desktop, the whole
+    screen is captured.
 - **⇧⌘5 bar:**
   - The separators, Options and the action button sit at 192, 372, 383 and 463 pt from the
-    bar's left edge. The blue pill is 76 × 30.
+    bar's left edge. The blue pill is 76 × 30 (*provisional*).
   - In screen mode a click anywhere captures. The first time, the selection is half the
     screen, centered.
   - The selection is drawn with a 35 % black dim outside, a white border and eight 9 pt
@@ -175,12 +225,16 @@ system; every value below is marked *provisional* in the code.
   - The bar's background drags it, and its place is remembered.
   - The timer shows a 96 × 96 dark square with the seconds left, at the center of the
     target. Apps stay usable during the countdown.
-  - Options menu: Save to (Desktop, Documents, Clipboard, the image viewer, folders chosen
-    before, Other Folder…), the timer (none, 5 s, 10 s), and the options (thumbnail, keep the
-    last selection, include the pointer). The pointer setting applies to ⇧⌘3 as well.
-  - Recording is not available yet: its three buttons are dimmed and do nothing.
+  - **Options menu (capture modes):** Save to (Desktop, Documents, Clipboard, Mail and the
+    image viewer if installed, folders chosen before, Other Folder…), Timer (none, 5 s,
+    10 s), Options (show floating thumbnail, remember last selection) and Capture (show mouse
+    pointer, which applies to ⇧⌘3 as well). The menu's width follows its content, not the
+    measured 216 pt.
+  - **Recording is not available** (#153): its three buttons are dimmed and do nothing, so the
+    record-mode menu is not built.
 - **Clipboard:** ⌃ captures go straight to the clipboard, with no thumbnail and no file.
 - **Files:** the name is the capture time, "Screenshot 2026-10-14 at 04.12.33.png"; in Italian
   "Istantanea schermo 2026-10-14 alle 04.12.33.png" (the Italian wording is provisional).
 - **Sound:** an original synthesized shutter (`screen-capture`, made by `tools/sounds/synth.py`,
-  played by silica-daemon `Sound1`) on every capture, unless the interface sound effects are off.
+  played by silica-daemon `Sound1`) plays **once** per capture, unless the interface sound
+  effects are off. The two clicks 230 ms apart are the sound file's job, which is being redone.

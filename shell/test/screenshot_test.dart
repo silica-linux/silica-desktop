@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/dock/dock.dart' show shellQuote;
 import 'package:silica_shell/l10n/l10n.dart';
 import 'package:silica_shell/screenshot/files.dart';
 import 'package:silica_shell/screenshot/screenshot.dart';
@@ -305,9 +306,12 @@ image/png=missing.desktop;org.example.Viewer.desktop;
         BorderRadius.circular(thumbnailRadius),
       );
       expect(find.byType(Transform), findsNothing);
-      // It stays ~5.1 s, then leaves in ~220 ms and the file goes to the Desktop.
+      // It stays ~5.4 s after the fade-in, then leaves in ~250 ms and the file goes to the
+      // Desktop.
       await tester.pump(const Duration(seconds: 5));
       expect(temp.existsSync(), isTrue);
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(temp.existsSync(), isTrue, reason: 'still there at 5.9 s');
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
@@ -369,7 +373,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     for (final item in [
       'Save to Desktop',
       'Save to Documents',
-      'Copy to Clipboard',
+      'Save to Clipboard',
       'Show in Mustache',
       'Delete',
       'Close',
@@ -386,6 +390,204 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(desk.listSync(), isEmpty);
     await tester.pump(const Duration(seconds: 6));
     expect(desk.listSync(), isEmpty);
+    // No file anywhere, no sound but the shutter at the capture.
+    expect(
+      Directory('${dir.path}/cache').existsSync() &&
+          Directory('${dir.path}/cache').listSync().isNotEmpty,
+      isFalse,
+    );
+    expect(services.sounds, ['screen-capture']);
+    expect(services.copied, isEmpty);
+  });
+
+  DesktopEntry app(String id, String name) =>
+      DesktopEntry(id: id, name: name, exec: id);
+
+  /// The labels of the open menu, from top to bottom.
+  List<String> menuLabels(WidgetTester tester) {
+    final texts = find.descendant(
+      of: find.byType(MenuPanel),
+      matching: find.byType(Text),
+    );
+    final found = [
+      for (final e in texts.evaluate())
+        (
+          (e.widget as Text).data ?? '',
+          tester.getTopLeft(find.byWidget(e.widget)).dy,
+        ),
+    ]..sort((a, b) => a.$2.compareTo(b.$2));
+    return [for (final f in found) f.$1];
+  }
+
+  Future<void> openThumbnailMenu(WidgetTester tester) async {
+    await announce(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(
+      find.byKey(const ValueKey('thumbnail')),
+      buttons: kSecondaryButton,
+    );
+    await tester.pump();
+  }
+
+  testWidgets(
+    'the thumbnail menu: the items in the measured order, only the apps there are',
+    (tester) async {
+      // Mail, an image viewer and Photos, and the file manager.
+      final config = Directory('${dir.path}/config')..createSync();
+      File(
+        '${config.path}/mimeapps.list',
+      ).writeAsStringSync('[Default Applications]\nimage/png=viewer.desktop\n');
+      await pumpLayer(
+        tester,
+        env: {'HOME': dir.path, 'XDG_CONFIG_HOME': config.path},
+        entries: {
+          fileManagerId: app(fileManagerId, 'Mustache'),
+          shotMailId: app(shotMailId, 'Mail'),
+          'viewer': app('viewer', 'Viewer'),
+          shotPhotosId: app(shotPhotosId, 'Photos'),
+        },
+      );
+      await openThumbnailMenu(tester);
+      expect(menuLabels(tester), [
+        'Save to Desktop',
+        'Save to Documents',
+        'Save to Clipboard',
+        'Open in Mail',
+        'Open in Viewer',
+        'Open in Photos',
+        'Show in Mustache',
+        'Delete',
+        'Close',
+      ]);
+      // Markup is not there: the editor does not exist yet (#154).
+      expect(find.textContaining('Markup'), findsNothing);
+      await tester.tap(find.text('Open in Mail'));
+      await tester.pump(const Duration(milliseconds: 500));
+      final cached = '${dir.path}/cache/$deskName';
+      expect(File(cached).existsSync(), isTrue);
+      expect(
+        services.launched.single,
+        'dev.frascella.Mail ${shellQuote(cached)}',
+      );
+      expect(desk.listSync(), isEmpty);
+    },
+  );
+
+  testWidgets('the thumbnail menu hides the apps Silica does not have', (
+    tester,
+  ) async {
+    await pumpLayer(
+      tester,
+      entries: {shotPhotosId: app(shotPhotosId, 'Photos')},
+    );
+    await openThumbnailMenu(tester);
+    expect(menuLabels(tester), [
+      'Save to Desktop',
+      'Save to Documents',
+      'Save to Clipboard',
+      'Open in Photos',
+      'Delete',
+      'Close',
+    ]);
+    await tester.tap(find.text('Close'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await pumpLayer(tester);
+    await openThumbnailMenu(tester);
+    expect(menuLabels(tester), [
+      'Save to Desktop',
+      'Save to Documents',
+      'Save to Clipboard',
+      'Delete',
+      'Close',
+    ]);
+  });
+
+  testWidgets('the time stops while the menu is open and goes on from there', (
+    tester,
+  ) async {
+    await pumpLayer(tester);
+    await announce(tester);
+    final thumb = find.byKey(const ValueKey('thumbnail'));
+    // 3 s of the 5.78 s (fade-in and stay), then the menu.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.tap(thumb, buttons: kSecondaryButton);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 30));
+    expect(thumb, findsOneWidget);
+    // Closed without a choice: the 2.78 s left, not the whole time again.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(MenuPanel), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+    expect(thumb, findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(thumb, findsNothing);
+    expect(File('${desk.path}/$deskName').existsSync(), isTrue);
+  });
+
+  test('the measured timings of the thumbnail', () {
+    expect(thumbnailSettle, const Duration(milliseconds: 380));
+    expect(thumbnailHold, const Duration(milliseconds: 5400));
+    expect(thumbnailLeave, const Duration(milliseconds: 250));
+  });
+
+  test('the drag image: 128 pt on the long side, held up and to the left', () {
+    expect(thumbnailDragSize(const Size(2560, 1440)), const Size(128, 72));
+    expect(thumbnailDragSize(const Size(300, 150)), const Size(128, 64));
+    expect(thumbnailDragSize(const Size(100, 400)), const Size(32, 128));
+    expect(thumbnailDragSize(Size.zero), Size.zero);
+    expect(thumbnailDragHotspot(const Size(128, 64)), const Offset(52, 20));
+  });
+
+  testWidgets('dark appearance: a black frame with a 1 pt light line inside', (
+    tester,
+  ) async {
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearAllTestValues);
+    await pumpLayer(tester);
+    await announce(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    final frame = tester.widget<Container>(
+      find.byKey(const ValueKey('thumbnail frame')),
+    );
+    expect((frame.decoration! as BoxDecoration).color, const Color(0xFF000000));
+    final line = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('thumbnail line')),
+    );
+    final border = (line.decoration as BoxDecoration).border! as Border;
+    expect(border.top.color, const Color(0xFF949494));
+    expect(border.top.width, 1);
+    // 3 pt of black and 1 pt of line make the 4 pt of the frame; the box stays 264 wide.
+    expect(frame.padding, const EdgeInsets.all(3));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('thumbnail'))).size,
+      const Size(264, 152),
+    );
+  });
+
+  testWidgets('the shutter plays once per capture', (tester) async {
+    await pumpLayer(tester);
+    final temp = File('${dir.path}/once.png')..writeAsBytesSync([0, 1, 2]);
+    final message = jsonEncode({
+      'path': temp.path,
+      'width': 100,
+      'height': 50,
+      'clipboard': false,
+      'seq': 7,
+    });
+    for (var i = 0; i < 2; i++) {
+      await send(tester, 'broadcast', {
+        'topic': 'screenshot',
+        'value': message,
+      });
+      await tester.pump();
+    }
+    expect(services.sounds, ['screen-capture']);
+    await announce(tester);
+    expect(services.sounds, ['screen-capture', 'screen-capture']);
   });
 
   testWidgets('the thumbnail menu: Save to Documents, Show in the file manager', (
@@ -427,26 +629,27 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(services.launched.last, "mustache '${desk.path}'");
   });
 
-  testWidgets('dragging the thumbnail writes the file first and drags it out', (
+  testWidgets('dragging the thumbnail: the image follows, a drop moves it', (
     tester,
   ) async {
     await pumpLayer(tester);
-    final temp = await announce(tester);
+    final temp = await announce(tester, width: 300, height: 150);
     await tester.pump(const Duration(milliseconds: 500));
     final thumb = find.byKey(const ValueKey('thumbnail'));
     final at = tester.getTopLeft(thumb) + const Offset(40, 30);
     final mouse = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
     await mouse.moveBy(const Offset(-30, -20));
     await tester.pump();
-    final saved = '${desk.path}/$deskName';
+    // The file exists only for the drag, in the cache: nothing on the Desktop.
+    final cached = '${dir.path}/cache/$deskName';
     expect(temp.existsSync(), isFalse);
-    expect(File(saved).existsSync(), isTrue);
-    expect(services.dragged, [saved]);
-    // Grabbed where the press was, the thumbnail hidden while it travels.
-    expect(services.hotspot!.dx, closeTo(40, 1));
-    expect(services.hotspot!.dy, closeTo(30, 1));
+    expect(File(cached).existsSync(), isTrue);
+    expect(desk.listSync(), isEmpty);
+    expect(services.dragged, [cached]);
+    // The image is held with the pointer up and to the left of its center (128 × 64).
+    expect(services.hotspot, const Offset(52, 20));
     expect(thumb, findsNothing);
-    // Dropped nowhere: it comes back, the file already in its place.
+    // Dropped nowhere: it comes back and goes to the Desktop when it leaves.
     services.drags.add('none');
     await tester.pump();
     await tester.pump();
@@ -454,21 +657,50 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await mouse.up();
     await tester.pump();
 
-    // Dropped into a folder: gone, the file stays where the target put it.
+    // Dropped into a folder or an app: the target has its copy, this one is gone, and
+    // nothing is left on the Desktop.
     final again = await tester.startGesture(
       tester.getCenter(thumb),
       kind: PointerDeviceKind.mouse,
     );
     await again.moveBy(const Offset(-40, 0));
     await tester.pump();
-    expect(services.dragged, [saved, saved]);
+    expect(services.dragged, [cached, cached]);
     services.drags.add('copy');
     await tester.pump();
     await again.up();
     await tester.pump(const Duration(seconds: 7));
     expect(thumb, findsNothing);
-    expect(File(saved).existsSync(), isTrue);
-    expect(desk.listSync(), hasLength(1));
+    expect(File(cached).existsSync(), isFalse);
+    expect(desk.listSync(), isEmpty);
+    expect(Directory('${dir.path}/cache').listSync(), isEmpty);
+  });
+
+  testWidgets('a drag dropped nowhere still saves the capture when it leaves', (
+    tester,
+  ) async {
+    await pumpLayer(tester);
+    await announce(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    final thumb = find.byKey(const ValueKey('thumbnail'));
+    final drag = await tester.startGesture(
+      tester.getCenter(thumb),
+      kind: PointerDeviceKind.mouse,
+    );
+    await drag.moveBy(const Offset(-40, 0));
+    await tester.pump();
+    services.drags.add('none');
+    await tester.pump();
+    await tester.pump();
+    // The pointer is somewhere else by now (it would keep the thumbnail).
+    await drag.moveTo(const Offset(10, 10));
+    await drag.up();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(thumb, findsNothing);
+    expect(File('${desk.path}/$deskName').existsSync(), isTrue);
   });
 
   testWidgets('a two-finger swipe to the right sends the thumbnail away', (
@@ -489,6 +721,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     );
     await tester.sendEventToBinding(pad.panZoomEnd());
     await tester.pump();
+    // Saved at once, while it is still leaving.
+    expect(thumb, findsOneWidget);
+    expect(File('${desk.path}/$deskName').existsSync(), isTrue);
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
@@ -508,8 +743,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await tester.pump(const Duration(seconds: 8));
     expect(thumb, findsOneWidget);
     await mouse.moveTo(const Offset(10, 10));
+    await tester.pump();
     await tester.pump(const Duration(seconds: 6));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(thumb, findsNothing);
     await mouse.removePointer();
   });
@@ -753,16 +989,33 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       'Documents',
       'Clipboard',
       'Other Folder…',
-      'Delay',
+      'Timer',
       'None',
       '5 seconds',
       '10 seconds',
-      'Thumbnail after capture',
-      'Keep Last Selection',
-      'Include the Pointer',
+      'Show Floating Thumbnail',
+      'Remember Last Selection',
+      'Show Mouse Pointer',
     ]) {
       expect(find.text(item), findsOneWidget, reason: item);
     }
+    // The capture-mode menu, in the measured order (recording is not available: #153).
+    expect(menuLabels(tester), [
+      'Save to',
+      'Desktop',
+      'Documents',
+      'Clipboard',
+      'Other Folder…',
+      'Timer',
+      'None',
+      '5 seconds',
+      '10 seconds',
+      'Options',
+      'Show Floating Thumbnail',
+      'Remember Last Selection',
+      'Capture',
+      'Show Mouse Pointer',
+    ]);
     // Esc closes the menu, the bar stays.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 500));
@@ -770,7 +1023,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(find.byKey(const ValueKey('options')), findsOneWidget);
 
     // The pointer: Ossido learns it, and the captures ask for it.
-    await choose('Include the Pointer');
+    await choose('Show Mouse Pointer');
     expect(savedSettings().showPointer, isTrue);
     expect(services.executed.last, 'screenshot.settings');
     expect(services.params.last, {'pointer': true});
@@ -805,9 +1058,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     // Without a thumbnail the file goes straight into its place.
     await send(tester, 'command', 'screenshot.toolbar');
     await tester.pump();
-    await choose('Thumbnail after capture');
+    await choose('Show Floating Thumbnail');
     expect(savedSettings().showThumbnail, isFalse);
-    await choose('Keep Last Selection');
+    await choose('Remember Last Selection');
     expect(savedSettings().rememberSelection, isFalse);
     final temp = await announce(tester);
     expect(find.byKey(const ValueKey('thumbnail')), findsNothing);

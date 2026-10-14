@@ -445,8 +445,17 @@ impl State {
         let mut frame = crate::decorations::frame_of(window, geometry);
         frame.loc -= origin.loc;
         let frame = frame.to_physical_precise_round(scale);
+        // With the shadow, the file is the frame plus fixed transparent margins (SCREENSHOT-2),
+        // not the whole shadow of the screen; what the shadow does not cover stays clear.
+        let (ml, mt, mr, mb) = crate::capture::window_margins(scale);
+        let padded = Rectangle::<i32, smithay::utils::Physical>::new(
+            (frame.loc.x - ml, frame.loc.y - mt).into(),
+            (frame.size.w + ml + mr, frame.size.h + mt + mb).into(),
+        );
         let visible = if shadow {
-            snapshot.bbox
+            padded
+                .intersection(snapshot.bbox)
+                .ok_or("window off screen")?
         } else {
             frame
                 .intersection(snapshot.bbox)
@@ -473,14 +482,29 @@ impl State {
         else {
             return Err("invalid size".to_owned());
         };
-        Ok((
-            crate::capture::Capture {
-                width,
-                height,
-                rgba: pixels,
-            },
-            (f64::from(visible.loc.x), f64::from(visible.loc.y)),
-        ))
+        let capture = crate::capture::Capture {
+            width,
+            height,
+            rgba: pixels,
+        };
+        if !shadow {
+            return Ok((
+                capture,
+                (f64::from(visible.loc.x), f64::from(visible.loc.y)),
+            ));
+        }
+        let (Ok(full_w), Ok(full_h)) = (u32::try_from(padded.size.w), u32::try_from(padded.size.h))
+        else {
+            return Err("invalid size".to_owned());
+        };
+        let canvas = crate::capture::paste_on_transparent(
+            &capture,
+            visible.loc.x - padded.loc.x,
+            visible.loc.y - padded.loc.y,
+            full_w,
+            full_h,
+        );
+        Ok((canvas, (f64::from(padded.loc.x), f64::from(padded.loc.y))))
     }
 }
 
