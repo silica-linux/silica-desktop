@@ -6,7 +6,7 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
 void main() {
-  testWidgets('⌘⌥Esc: the open apps, the frontmost one chosen, Termina', (
+  testWidgets('⌘⌥Esc: the open apps, the frontmost one chosen, Quit', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 800);

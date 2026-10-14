@@ -28,7 +28,7 @@ void main() {
       appName: 'Tempo',
       summary: 'Resoconto',
       body: 'Corpo',
-      actions: const [('default', 'Apri'), ('stop', 'Disattiva')],
+      actions: const [('default', 'Open'), ('stop', 'Disattiva')],
       timestamp: DateTime(2026, 10, 13, 9, 2),
     );
     await tester.pumpWidget(
@@ -95,7 +95,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(hudAppear);
-      colors.add(colorOf(tester, 'Uscita audio'));
+      colors.add(colorOf(tester, 'Audio output'));
       await tester.pump(hudHold);
       await tester.pumpAndSettle();
     }

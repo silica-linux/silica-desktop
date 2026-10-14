@@ -13,8 +13,14 @@ import 'controlcenter_test.dart' show FakeSystem;
 
 void main() {
   test('the clock as in the bar: day, date, double space, time', () {
-    expect(clockText(DateTime(2026, 10, 12, 22, 34)), 'Lun 12 ott  22:34');
-    expect(clockText(DateTime(2026, 1, 4, 9, 5)), 'Dom 4 gen  09:05');
+    expect(clockText(DateTime(2026, 10, 12, 22, 34)), 'Mon 12 Oct  22:34');
+    expect(clockText(DateTime(2026, 1, 4, 9, 5)), 'Sun 4 Jan  09:05');
+    // In Italian as the bar has always shown it.
+    expect(
+      clockText(DateTime(2026, 10, 12, 22, 34), 'it'),
+      'Lun 12 ott  22:34',
+    );
+    expect(clockText(DateTime(2026, 1, 4, 9, 5), 'it'), 'Dom 4 gen  09:05');
   });
 
   testWidgets(
@@ -48,7 +54,7 @@ void main() {
       await tester.pump();
       final name = tester.widget<Text>(find.text('File').first);
       expect(name.style?.fontWeight, FontWeight.w600);
-      expect(find.text('Lun 12 ott  22:34'), findsOneWidget);
+      expect(find.text('Mon 12 Oct  22:34'), findsOneWidget);
     },
   );
 
@@ -104,7 +110,7 @@ void main() {
     );
   });
 
-  testWidgets('pressing Finestra opens the menu; the choice runs the command', (
+  testWidgets('pressing Window opens the menu; the choice runs the command', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 400);
@@ -133,24 +139,24 @@ void main() {
       ),
     );
     await tester.pump();
-    final finestra = tester.getRect(find.text('Finestra'));
+    final finestra = tester.getRect(find.text('Window'));
     await tester.tapAt(finestra.center);
     await tester.pump();
-    expect(find.text('Riduci'), findsOneWidget);
+    expect(find.text('Minimize'), findsOneWidget);
     // The surface grows and the keyboard goes to the menu.
     expect(
       layer,
       containsAll(['setSize', 'setInputRegion', 'setKeyboardInteractivity']),
     );
     // The menu body 5 pt left of the box (which has ~10.75 pt before the text).
-    final riduci = tester.getTopLeft(find.text('Riduci'));
+    final riduci = tester.getTopLeft(find.text('Minimize'));
     expect(riduci.dx, closeTo(finestra.left - itemPadding - 5 + 17, 1));
-    await tester.tapAt(tester.getCenter(find.text('Riduci')));
+    await tester.tapAt(tester.getCenter(find.text('Minimize')));
     await tester.pump(const Duration(milliseconds: 150));
     expect(executed, ['window.minimize']);
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('Riduci'), findsNothing);
+    expect(find.text('Minimize'), findsNothing);
   });
 
   testWidgets(
@@ -193,7 +199,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(find.text('Metà dello schermo'), findsOneWidget);
+      expect(find.text('Half of the screen'), findsOneWidget);
       // The body below the tip: 8 pt below the apex, 27 to the left.
       final panel = tester.getRect(find.byType(MenuPanel));
       expect(panel.top, 208);
@@ -205,7 +211,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(executed, ['window.tile_left']);
-      expect(find.text('Metà dello schermo'), findsNothing);
+      expect(find.text('Half of the screen'), findsNothing);
     },
   );
 

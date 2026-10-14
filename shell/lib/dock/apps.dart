@@ -55,7 +55,7 @@ bool dockFlag(String key, {required bool fallback, Map<String, String>? env}) {
   return value is bool ? value : fallback;
 }
 
-/// Saves the pinned apps ("Mantieni nel Dock" and "Rimuovi").
+/// Saves the pinned apps ("Keep in Dock" and "Remove").
 void savePinned(List<String> ids, {Map<String, String>? env}) =>
     saveDockOption('pinned', ids, env: env);
 
@@ -117,6 +117,7 @@ List<Item> dockItems(
   List<String> minimized = const [],
   Map<String, ui.Image> thumbnails = const {},
   List<String>? recents,
+  String trashLabel = 'Trash',
 }) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
@@ -157,7 +158,9 @@ List<Item> dockItems(
     ...items,
     const Item.separator(),
     Item.app(
-      'Download',
+      // The folder's own name, as on disk.
+      downloadDir(home).split('/').where((p) => p.isNotEmpty).lastOrNull ??
+          'Downloads',
       folder: downloadDir(home),
       iconPath: findIcon('folder-download'),
       layered: findSilicaIcon('folder'),
@@ -168,7 +171,7 @@ List<Item> dockItems(
       if (toplevels.where((t) => t.id == id).firstOrNull case final window?)
         _windowItem(window, entries, thumbnails[id]),
     Item.app(
-      'Cestino',
+      trashLabel,
       iconPath: findIcon(trashFull ? 'user-trash-full' : 'user-trash'),
       layered: findSilicaIcon(trashFull ? 'trash-full' : 'trash-empty'),
       command: 'xdg-open trash:///',

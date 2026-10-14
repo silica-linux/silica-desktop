@@ -24,22 +24,22 @@ void main() {
       // ~60 ms of entrance.
       await tester.pump(const Duration(milliseconds: 30));
       await tester.pump(const Duration(milliseconds: 40));
-      expect(find.text('Foto'), findsOneWidget);
+      expect(find.text('Photos'), findsOneWidget);
 
       // Hysteresis: just above the entry threshold but still on the magnified icon, it stays.
       final zoneTop = 200 - bottomGap - backgroundHeight - activeZoneAbove;
       await mouse.moveTo(Offset(rest.center(6), zoneTop - 3));
       await tester.pump(const Duration(milliseconds: 30));
-      expect(find.text('Foto'), findsOneWidget);
+      expect(find.text('Photos'), findsOneWidget);
 
       // On exit the label stays ~40 ms, then fades in ~250 ms.
       await mouse.moveTo(const Offset(1280, 10));
       await tester.pump(const Duration(milliseconds: 30));
-      expect(find.text('Foto'), findsOneWidget);
+      expect(find.text('Photos'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('Foto'), findsNothing);
+      expect(find.text('Photos'), findsNothing);
     },
   );
 
@@ -58,7 +58,7 @@ void main() {
     addTearDown(tester.view.reset);
     final log = <String>[];
     const items = [
-      Item.app('Terminale', command: 'term'),
+      Item.app('Terminal', command: 'term'),
       Item.app('Note', command: 'note'),
     ];
     await tester.pumpWidget(
@@ -81,18 +81,18 @@ void main() {
     // Click: activates.
     await tester.tapAt(icon);
     await tester.pump(const Duration(milliseconds: 50));
-    expect(log, ['attiva Terminale']);
+    expect(log, ['attiva Terminal']);
     // Right click: the menu, with its tip above the icon.
     await tester.tapAt(icon, buttons: kSecondaryButton);
     await tester.pump();
-    expect(find.text('Apri Terminale'), findsOneWidget);
+    expect(find.text('Apri Terminal'), findsOneWidget);
     final body = tester.getRect(find.byType(MenuPanel));
     expect(body.left, closeTo(rest.center(0) - 27, 0.5));
     // Click outside: it closes without choosing.
     await tester.tapAt(const Offset(10, 10));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('Apri Terminale'), findsNothing);
+    expect(find.text('Apri Terminal'), findsNothing);
     // Long press on the second icon: the menu appears after ~575 ms.
     final second = Offset(rest.center(1), icon.dy);
     final gesture = await tester.startGesture(second);
@@ -104,7 +104,7 @@ void main() {
     await gesture.moveTo(tester.getCenter(find.text('Apri Note')));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 150));
-    expect(log, ['attiva Terminale', 'menu Note']);
+    expect(log, ['attiva Terminal', 'menu Note']);
   });
 
   testWidgets('the open submenu is part of the input region', (tester) async {
@@ -145,10 +145,10 @@ void main() {
           items: items,
           menuFor: (item) => [
             MenuAction(
-              'Opzioni',
+              'Options',
               submenu: [
                 MenuAction(
-                  'Rimuovi dal Dock',
+                  'Remove from Dock',
                   onSelected: () => log.add('via'),
                 ),
               ],
@@ -163,11 +163,11 @@ void main() {
     await tester.pump();
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: icon);
-    await mouse.moveTo(tester.getCenter(find.text('Opzioni')));
+    await mouse.moveTo(tester.getCenter(find.text('Options')));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump();
     await tester.pump();
-    final item = tester.getCenter(find.text('Rimuovi dal Dock'));
+    final item = tester.getCenter(find.text('Remove from Dock'));
     expect(regions.last.any((r) => r.contains(item)), isTrue);
   });
 
@@ -199,7 +199,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Dock(items: items, menuFor: (item) => [MenuAction('Apri')]),
+          child: Dock(items: items, menuFor: (item) => [MenuAction('Open')]),
         ),
       );
       await tester.pump();
@@ -219,7 +219,7 @@ void main() {
   );
 
   testWidgets(
-    'dragging reorders; up high "Rimuovi" appears and the icon is removed',
+    'dragging reorders; up high "Remove" appears and the icon is removed',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 400);
       tester.view.devicePixelRatio = 1;
@@ -230,7 +230,7 @@ void main() {
         Item.app('Due', command: 'due', pinned: true),
         Item.app('Tre', command: 'tre', pinned: true),
         Item.separator(),
-        Item.app('Cestino', command: 'cestino'),
+        Item.app('Trash', command: 'cestino'),
       ];
       await tester.pumpWidget(
         Directionality(
@@ -254,19 +254,19 @@ void main() {
       await gesture.up();
       await tester.pump(const Duration(milliseconds: 300));
       expect(orders, ['Due Uno Tre | Uno']);
-      // Tre up high, more than 130 pt above the grab: "Rimuovi", and on release it disappears.
+      // Tre up high, more than 130 pt above the grab: "Remove", and on release it disappears.
       gesture = await tester.startGesture(Offset(rest.center(2), y));
       await gesture.moveBy(const Offset(0, -10));
       await tester.pump();
       await gesture.moveTo(Offset(rest.center(2), y - 140));
       await tester.pump();
-      expect(find.text('Rimuovi'), findsOneWidget);
+      expect(find.text('Remove'), findsOneWidget);
       await gesture.up();
       await tester.pump(const Duration(milliseconds: 100));
       expect(orders.last, 'Uno Due | null');
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('Rimuovi'), findsNothing);
+      expect(find.text('Remove'), findsNothing);
     },
   );
 
@@ -278,9 +278,9 @@ void main() {
       addTearDown(tester.view.reset);
       final log = <String>[];
       const items = [
-        Item.app('Terminale', command: 'term'),
+        Item.app('Terminal', command: 'term'),
         Item.separator(),
-        Item.app('Cestino', command: 'trash'),
+        Item.app('Trash', command: 'trash'),
       ];
       await tester.pumpWidget(
         Directionality(
@@ -289,7 +289,7 @@ void main() {
             items: items,
             onActivate: (item) => log.add('attiva ${item.label}'),
             menuFor: (item) => item.kind == ItemKind.separator
-                ? const [MenuAction('Mostra le app recenti')]
+                ? const [MenuAction('Show recent apps')]
                 : const [],
           ),
         ),
@@ -305,7 +305,7 @@ void main() {
       expect(find.byType(MenuPanel), findsNothing);
       await tester.tapAt(separator, buttons: kSecondaryButton);
       await tester.pump();
-      expect(find.text('Mostra le app recenti'), findsOneWidget);
+      expect(find.text('Show recent apps'), findsOneWidget);
     },
   );
 
@@ -317,10 +317,10 @@ void main() {
       addTearDown(tester.view.reset);
       final dropped = <String>[];
       const items = [
-        Item.app('Terminale', command: 'term'),
+        Item.app('Terminal', command: 'term'),
         Item.app('Testo', command: 'testo', openFiles: 'testo %F'),
         Item.separator(),
-        Item.app('Cestino', command: 'xdg-open trash:///', trash: true),
+        Item.app('Trash', command: 'xdg-open trash:///', trash: true),
       ];
       await tester.pumpWidget(
         Directionality(
@@ -343,7 +343,7 @@ void main() {
 
       final rest = layout(items, width: 1280, height: 300);
       final y = 300 - bottomGap - backgroundHeight / 2;
-      // On Terminale (takes no files) nothing; on the Cestino yes.
+      // On Terminal (takes no files) nothing; on the Trash yes.
       await send('enter', {'x': rest.center(0), 'y': y});
       await send('motion', {'x': rest.center(0), 'y': y});
       await send('drop', {
@@ -366,7 +366,7 @@ void main() {
         'y': y,
         'uris': ['file:///tmp/a.txt', 'file:///tmp/b%20c.txt'],
       });
-      expect(dropped, ['Cestino: /tmp/a.txt,/tmp/b c.txt']);
+      expect(dropped, ['Trash: /tmp/a.txt,/tmp/b c.txt']);
       await tester.pump(const Duration(seconds: 1));
     },
   );

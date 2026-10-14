@@ -22,6 +22,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 
+import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
@@ -41,7 +42,9 @@ class LiveDock extends StatefulWidget {
 }
 
 class _LiveDockState extends State<LiveDock> {
-  late final Map<String, DesktopEntry> _entries = loadDesktopEntries();
+  late final Map<String, DesktopEntry> _entries = loadDesktopEntries(
+    locale: systemLanguage(),
+  );
   late final List<String> _pinned = pinnedIds(_entries);
 
   /// Dock options (dock.json): magnification and the recent apps section (D-08).
@@ -55,7 +58,7 @@ class _LiveDockState extends State<LiveDock> {
   /// Windows from the most recent (focus): a click on the app raises the last one used.
   final List<String> _recent = [];
 
-  /// The "Svuota il Cestino" alert is open.
+  /// The "Empty Trash" alert is open.
   bool _confirmEmpty = false;
 
   /// The thumbnails of minimized windows, requested from Ossido when minimizing.
@@ -75,10 +78,11 @@ class _LiveDockState extends State<LiveDock> {
   void _openPath(String path) =>
       ShellChannel.instance.launch('xdg-open ${shellQuote(path)}');
 
-  /// The settings of a stack as menu items (D-04): "Ordina per", "Mostra come",
-  /// "Visualizza contenuto come", with the check mark on the choice.
+  /// The settings of a stack as menu items (D-04): "Sort by", "Show as",
+  /// "View content as", with the check mark on the choice.
   List<MenuEntry> _stackOptions(String folder) {
     final s = _stackOf(folder);
+    final l = l10nOf(context);
     MenuAction pick(String label, bool checked, StackSettings next) =>
         MenuAction(
           label,
@@ -86,50 +90,53 @@ class _LiveDockState extends State<LiveDock> {
           onSelected: () => _setStack(folder, next),
         );
     return [
-      const MenuSection('Ordina per'),
-      for (final (sort, label) in const [
-        (StackSort.name, 'Nome'),
-        (StackSort.added, 'Data di aggiunta'),
-        (StackSort.modified, 'Data di modifica'),
-        (StackSort.created, 'Data di creazione'),
-        (StackSort.kind, 'Tipo'),
+      MenuSection(l.stackSortBy),
+      for (final (sort, label) in [
+        (StackSort.name, l.sortName),
+        (StackSort.added, l.sortDateAdded),
+        (StackSort.modified, l.sortDateModified),
+        (StackSort.created, l.sortDateCreated),
+        (StackSort.kind, l.sortKind),
       ])
         pick(label, s.sort == sort, s.copyWith(sort: sort)),
       const MenuDivider(),
-      const MenuSection('Mostra come'),
-      for (final (display, label) in const [
-        (StackDisplay.folder, 'Cartella'),
-        (StackDisplay.stack, 'Pila'),
+      MenuSection(l.stackShowAs),
+      for (final (display, label) in [
+        (StackDisplay.folder, l.stackFolder),
+        (StackDisplay.stack, l.stackStack),
       ])
         pick(label, s.display == display, s.copyWith(display: display)),
       const MenuDivider(),
-      const MenuSection('Visualizza contenuto come'),
-      for (final (content, label) in const [
-        (StackContent.fan, 'Ventaglio'),
-        (StackContent.grid, 'Griglia'),
-        (StackContent.list, 'Elenco'),
-        (StackContent.automatic, 'Automatico'),
+      MenuSection(l.stackViewContentAs),
+      for (final (content, label) in [
+        (StackContent.fan, l.stackFan),
+        (StackContent.grid, l.stackGrid),
+        (StackContent.list, l.stackList),
+        (StackContent.automatic, l.stackAutomatic),
       ])
         pick(label, s.content == content, s.copyWith(content: content)),
     ];
   }
 
   /// The menu of a folder: the stack settings, Options, Open.
-  List<MenuEntry> _folderMenu(Item item, String folder) => [
-    ..._stackOptions(folder),
-    const MenuDivider(),
-    MenuAction(
-      'Opzioni',
-      submenu: [
-        MenuAction(
-          'Mostra nella cartella che la contiene',
-          onSelected: () => _openPath(File(folder).parent.path),
-        ),
-      ],
-    ),
-    const MenuDivider(),
-    MenuAction('Apri "${item.label}"', onSelected: () => _openPath(folder)),
-  ];
+  List<MenuEntry> _folderMenu(Item item, String folder) {
+    final l = l10nOf(context);
+    return [
+      ..._stackOptions(folder),
+      const MenuDivider(),
+      MenuAction(
+        l.options,
+        submenu: [
+          MenuAction(
+            l.showInEnclosingFolder,
+            onSelected: () => _openPath(File(folder).parent.path),
+          ),
+        ],
+      ),
+      const MenuDivider(),
+      MenuAction(l.openNamed(item.label), onSelected: () => _openPath(folder)),
+    ];
+  }
 
   /// The List view of a stack: a menu with a small icon and the name of every file, then
   /// Options (the stack settings) and Open (dock-stacks.md › List).
@@ -151,8 +158,11 @@ class _LiveDockState extends State<LiveDock> {
           onSelected: () => _openPath(entry.path),
         ),
       if (entries.isNotEmpty) const MenuDivider(),
-      MenuAction('Opzioni', submenu: _stackOptions(folder)),
-      MenuAction('Apri "${item.label}"', onSelected: () => _openPath(folder)),
+      MenuAction(l10nOf(context).options, submenu: _stackOptions(folder)),
+      MenuAction(
+        l10nOf(context).openNamed(item.label),
+        onSelected: () => _openPath(folder),
+      ),
     ];
   }
 
@@ -228,11 +238,13 @@ class _LiveDockState extends State<LiveDock> {
   /// effect arrive with those features.
   List<MenuEntry> _separatorMenu() => [
     MenuAction(
-      _magnify ? 'Disattiva l\'ingrandimento' : 'Attiva l\'ingrandimento',
+      _magnify
+          ? l10nOf(context).magnificationOff
+          : l10nOf(context).magnificationOn,
       onSelected: () => _setOption('magnify', !_magnify),
     ),
     MenuAction(
-      'Mostra le app recenti',
+      l10nOf(context).showRecentApps,
       checked: _recentsOn,
       onSelected: () => _setOption('recents', !_recentsOn),
     ),
@@ -303,11 +315,12 @@ class _LiveDockState extends State<LiveDock> {
   /// The menu of an icon (dock.md, D-04): the open windows, Options, then the actions.
   List<MenuEntry> _menu(Item item) {
     final shell = ShellChannel.instance;
+    final l = l10nOf(context);
     final toplevels = shell.toplevels.value;
     if (item.minimizedWindow case final window?) {
       return [
         MenuAction(
-          'Apri "${item.label}"',
+          l.openNamed(item.label),
           onSelected: () => shell.activate(window),
         ),
       ];
@@ -318,12 +331,12 @@ class _LiveDockState extends State<LiveDock> {
     if (item.id == null) {
       return [
         if (item.command case final command?)
-          MenuAction('Apri', onSelected: () => shell.launch(command)),
-        if (item.label == 'Cestino' &&
+          MenuAction(l.open, onSelected: () => shell.launch(command)),
+        if (item.trash &&
             trashHasFiles(Platform.environment['HOME'] ?? '')) ...[
           const MenuDivider(),
           MenuAction(
-            'Svuota il Cestino…',
+            l.emptyTrashEllipsis,
             onSelected: () => setState(() => _confirmEmpty = true),
           ),
         ],
@@ -337,38 +350,35 @@ class _LiveDockState extends State<LiveDock> {
         ),
       if (item.windows.isNotEmpty) const MenuDivider(),
       MenuAction(
-        'Opzioni',
+        l.options,
         submenu: [
           if (item.pinned)
             MenuAction(
-              'Rimuovi dal Dock',
+              l.removeFromDock,
               onSelected: () => _setPinned(item, false),
             )
           else
-            MenuAction(
-              'Mantieni nel Dock',
-              onSelected: () => _setPinned(item, true),
-            ),
+            MenuAction(l.keepInDock, onSelected: () => _setPinned(item, true)),
         ],
       ),
       const MenuDivider(),
       if (item.running) ...[
         MenuAction(
-          'Mostra tutte le finestre',
+          l.showAllWindows,
           onSelected: () {
             shell.activate(_latest(item));
             shell.execute('panorama.app');
           },
         ),
         MenuAction(
-          'Esci',
+          l.quit,
           onSelected: () {
             shell.activate(_latest(item));
             shell.execute('app.quit');
           },
         ),
       ] else
-        MenuAction('Apri', onSelected: () => _activate(item)),
+        MenuAction(l.open, onSelected: () => _activate(item)),
     ];
   }
 
@@ -381,6 +391,7 @@ class _LiveDockState extends State<LiveDock> {
       minimized: ShellChannel.instance.minimized.value,
       thumbnails: _thumbnails,
       recents: _recentsOn ? _closed : null,
+      trashLabel: l10nOf(context).trash,
     ),
     magnification: _magnify ? defaultMagnification : 1,
     onActivate: _activate,
@@ -435,7 +446,7 @@ const double menuShadowRoom = 30;
 const double dockInputMargin = 60;
 const double dockInputAbove = 60;
 
-/// Dragging (D-05): the empty slot, the neighbours sliding (~265 ms, S-shaped), "Rimuovi"
+/// Dragging (D-05): the empty slot, the neighbours sliding (~265 ms, S-shaped), "Remove"
 /// at ~130 pt above the grab point, fade of the removed item (~250 ms). The pointer counts
 /// as "in the Dock" up to 20 pt above the bottom.
 const Duration gapSlide = Duration(milliseconds: 265);
@@ -581,7 +592,7 @@ class Dock extends StatefulWidget {
   /// A modal alert above the screen (Svuota il Cestino), [trashAlertSize] large.
   final Widget? alert;
 
-  /// A file of the open stack, or the whole folder ("Apri la cartella").
+  /// A file of the open stack, or the whole folder ("Open folder").
   final ValueChanged<String>? onOpenPath;
 
   /// The menu of an item (right click, long press); null or empty: no menu.
@@ -595,7 +606,7 @@ class Dock extends StatefulWidget {
   stackListMenu;
 
   /// Dragging (D-05): the new order of the apps left of the separator and the item dropped
-  /// (null if it was removed with "Rimuovi", and then it is missing from the order).
+  /// (null if it was removed with "Remove", and then it is missing from the order).
   /// Null: the icons do not drag.
   final void Function(List<Item> order, Item? dropped)? onReorder;
 
@@ -820,7 +831,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       drag.inside =
           inActiveZone(rest, p.dx, p.dy, size.height) ||
           p.dy >= size.height - bottomGap - backgroundHeight - dragInsideAbove;
-      // "Rimuovi" appears 125–135 pt above the grab point.
+      // "Remove" appears 125–135 pt above the grab point.
       drag.remove = p.dy < drag.downY - removeAbove;
     });
   }
@@ -1429,7 +1440,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  /// The dragged icon: full size, opaque, hooked to the grab point; above it, the "Rimuovi"
+  /// The dragged icon: full size, opaque, hooked to the grab point; above it, the "Remove"
   /// capsule when it is high enough.
   List<Widget> _dragged(_DockDrag drag) {
     final source = drag.item.icon;
@@ -1444,7 +1455,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           child: SilicaIcon(source, side: drag.side, besideApps: true),
         ),
       if (drag.remove)
-        _capsule('Rimuovi', at.dx + drag.side / 2, at.dy - labelGap, 1),
+        _capsule(
+          l10nOf(context).dockRemove,
+          at.dx + drag.side / 2,
+          at.dy - labelGap,
+          1,
+        ),
     ];
   }
 
@@ -1468,7 +1484,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   child: SilicaIcon(source, side: ghost.side, besideApps: true),
                 ),
               _capsule(
-                'Rimuovi',
+                l10nOf(context).dockRemove,
                 ghost.at.dx + ghost.side / 2,
                 ghost.at.dy - labelGap,
                 1,

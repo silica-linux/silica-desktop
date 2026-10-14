@@ -15,11 +15,11 @@ DesktopEntry app(
 final entries = {
   for (final e in [
     app('calc', 'Calcolatrice', ['Utility', 'Calculator']),
-    app('cal', 'Calendario', ['Office', 'Calendar']),
-    app('term', 'Terminale', ['System', 'TerminalEmulator']),
+    app('cal', 'Calendar', ['Office', 'Calendar']),
+    app('term', 'Terminal', ['System', 'TerminalEmulator']),
     app('gimp', 'Disegno', ['Graphics']),
     app('chess', 'Scacchi', ['Game']),
-    app('mail', 'Posta', ['Network', 'Email']),
+    app('mail', 'Mail', ['Network', 'Email']),
     app('docs', 'Lettore', ['Viewer']),
     app('odd', 'Strana'),
     for (var i = 0; i < 20; i++) app('x$i', 'App $i', ['Utility']),
@@ -29,14 +29,14 @@ final entries = {
 
 void main() {
   test('freedesktop categories end up in the seven of the launcher', () {
-    expect(categoryOf(entries['calc']!), 'Utility');
-    expect(categoryOf(entries['term']!), 'Utility');
-    expect(categoryOf(entries['cal']!), 'Produttività e finanza');
-    expect(categoryOf(entries['gimp']!), 'Creatività');
-    expect(categoryOf(entries['chess']!), 'Svago');
-    expect(categoryOf(entries['mail']!), 'Social');
-    expect(categoryOf(entries['docs']!), 'Informazione e lettura');
-    expect(categoryOf(entries['odd']!), 'Altro');
+    expect(categoryOf(entries['calc']!), 'utilities');
+    expect(categoryOf(entries['term']!), 'utilities');
+    expect(categoryOf(entries['cal']!), 'productivity');
+    expect(categoryOf(entries['gimp']!), 'creativity');
+    expect(categoryOf(entries['chess']!), 'entertainment');
+    expect(categoryOf(entries['mail']!), 'social');
+    expect(categoryOf(entries['docs']!), 'reading');
+    expect(categoryOf(entries['odd']!), 'other');
     expect(categoryNames, hasLength(7));
   });
 
@@ -46,16 +46,16 @@ void main() {
       final all = launcherApps(entries.values, query: 'cal');
       expect(
         [for (final e in all.take(2)) e.name],
-        ['Calcolatrice', 'Calendario'],
+        ['Calcolatrice', 'Calendar'],
       );
-      final utility = launcherApps(entries.values, category: 'Utility');
+      final utility = launcherApps(entries.values, category: 'utilities');
       expect(utility.first.name, 'App 0');
-      expect(utility.every((e) => categoryOf(e) == 'Utility'), isTrue);
+      expect(utility.every((e) => categoryOf(e) == 'utilities'), isTrue);
       expect(
         [
           for (final e in launcherApps(
             entries.values,
-            category: 'Utility',
+            category: 'utilities',
             query: 'cal',
           ))
             e.name,
@@ -129,29 +129,29 @@ void main() {
             .ancestor(of: find.text(name), matching: find.byType(Container))
             .first,
       );
-      final first = capsule('Produttività e finanza');
-      final utility = capsule('Utility');
+      final first = capsule('Productivity and finance');
+      final utility = capsule('Utilities');
       // With Ahem the row is wider than the panel and shrinks by k.
       final k = first.height / 26;
       expect(first.left, 20);
       expect(first.center.dy, closeTo(56 + 1 + 10 + 13, 0.01));
       expect(utility.left - first.right, closeTo(8 * k, 0.01));
       expect(utility.width, greaterThanOrEqualTo(85.5 * k));
-      expect(find.text('Applicazioni'), findsOneWidget);
-      await tester.tap(find.text('Utility'));
+      expect(find.text('Applications'), findsOneWidget);
+      await tester.tap(find.text('Utilities'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(key.currentState!.category, 'Utility');
-      expect(find.text('Applicazioni'), findsNothing);
+      expect(key.currentState!.category, 'utilities');
+      expect(find.text('Applications'), findsNothing);
       // The capsules disappear, the token stays.
       expect(find.text('Social'), findsNothing);
-      expect(find.text('Utility'), findsOneWidget);
+      expect(find.text('Utilities'), findsOneWidget);
     },
   );
 
   test('inline completion: only if the first result starts with the text', () {
     final results = launcherApps(entries.values, query: 'cal');
-    expect(completionFor('cal', results), 'colatrice — Apri');
-    expect(completionFor('Cal', results), 'colatrice — Apri');
+    expect(completionFor('cal', results), 'colatrice');
+    expect(completionFor('Cal', results), 'colatrice');
     expect(
       completionFor('lat', launcherApps(entries.values, query: 'lat')),
       isNull,
@@ -188,7 +188,7 @@ void main() {
       );
       await tester.enterText(find.byType(EditableText), 'cal');
       await tester.pump();
-      expect(find.text('colatrice — Apri'), findsOneWidget);
+      expect(find.text('colatrice — Open'), findsOneWidget);
       // The ring: a 4 pt border around the icon of the first result.
       final ring = find.byWidgetPredicate(
         (w) =>

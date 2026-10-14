@@ -88,11 +88,11 @@ void main() {
       ),
     );
     expect(
-      tester.widget<Text>(find.text('Applicazioni')).style?.color,
+      tester.widget<Text>(find.text('Applications')).style?.color,
       const Color(0xFFEDEEF2),
     );
     expect(
-      tester.widget<Text>(find.text('Utility')).style?.color,
+      tester.widget<Text>(find.text('Utilities')).style?.color,
       FaroColors.dark.categoryText,
     );
     expect(
@@ -219,11 +219,11 @@ void main() {
       const Color(0xFF007AFF),
     );
     expect(
-      tester.widget<Text>(find.textContaining('non risponde')).style?.color,
+      tester.widget<Text>(find.textContaining('does not respond')).style?.color,
       const Color(0xFFDEDEDE),
     );
     expect(
-      tester.widget<Text>(find.text('Termina le app')).style?.color,
+      tester.widget<Text>(find.text('Quit apps')).style?.color,
       ForceQuitColors.dark.title,
     );
   });
@@ -239,16 +239,16 @@ void main() {
     await tester.pumpWidget(dark(const ScreenshotLayer()));
     await send(tester, 'screenshot.toolbar');
     await tester.pump();
-    // Measured over grey (K-06): glyphs and "Opzioni" #c7c8cd, chosen glyph #dbdde2.
+    // Measured over grey (K-06): glyphs and "Options" #c7c8cd, chosen glyph #dbdde2.
     expect(
-      tester.widget<Text>(find.textContaining('Opzioni')).style?.color,
+      tester.widget<Text>(find.textContaining('Options')).style?.color,
       const Color(0xFFC7C8CD),
     );
     expect(ShotBarColors.dark.chosenGlyph, const Color(0xFFDBDDE2));
     final chosen = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('schermo intero')),
+            of: find.byKey(const ValueKey('mode screen')),
             matching: find.byType(Container),
           )
           .first,

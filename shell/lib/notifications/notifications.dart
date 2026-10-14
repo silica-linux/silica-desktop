@@ -20,6 +20,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../menubar/menubar.dart' show barHeight;
+import '../l10n/l10n.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
@@ -476,7 +477,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         const SizedBox(width: 1),
         Expanded(
           child: Text(
-            'Notifiche',
+            l10nOf(context).notificationsTitle,
             style: _style(headerSize, headerColor, weight: FontWeight.w700),
           ),
         ),
@@ -494,7 +495,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     padding: const EdgeInsets.symmetric(vertical: 24),
     child: Center(
       child: Text(
-        'Nessuna notifica',
+        l10nOf(context).noNotifications,
         style: _style(fontSize, headerColor, weight: FontWeight.w600),
       ),
     ),
@@ -557,7 +558,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
 
 /// The header of an expanded group: the app name on the left (19 pt), on the right the
 /// capsule to collapse the group (102 × 20) and the circle to clear it (20 × 20). With the
-/// pointer on the circle the two shapes swap widths: the circle becomes the "Cancella"
+/// pointer on the circle the two shapes swap widths: the circle becomes the "Clear"
 /// capsule (65 × 20) and the capsule a circle with an up arrow.
 class _GroupHeader extends StatefulWidget {
   const _GroupHeader({
@@ -624,7 +625,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
         ),
         _pill(
           width: _clearHover ? groupPillHeight : groupCollapseWidth,
-          label: _clearHover ? '↑' : 'Riduci',
+          label: _clearHover ? '↑' : l10nOf(context).collapse,
           onTap: widget.onCollapse,
         ),
         const SizedBox(width: 8),
@@ -633,7 +634,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
           onExit: (_) => setState(() => _clearHover = false),
           child: _pill(
             width: _clearHover ? groupClearWidth : groupPillHeight,
-            label: _clearHover ? 'Cancella' : '×',
+            label: _clearHover ? l10nOf(context).clear : '×',
             onTap: widget.onClear,
           ),
         ),
@@ -708,7 +709,7 @@ class NotificationCard extends StatelessWidget {
   final VoidCallback? onClose;
   final ValueChanged<String>? onAction;
 
-  /// The "Dettagli" capsule on the right (banner on hover): the text shortens to make room
+  /// The "Details" capsule on the right (banner on hover): the text shortens to make room
   /// for it.
   final bool showDetails;
   final VoidCallback? onDetails;
@@ -779,7 +780,7 @@ class NotificationCard extends StatelessWidget {
                     borderRadius: const BorderRadius.all(Radius.circular(10.5)),
                   ),
                   child: Text(
-                    'Dettagli',
+                    l10nOf(context).details,
                     style: _style(smallSize, c.buttonText),
                   ),
                 ),

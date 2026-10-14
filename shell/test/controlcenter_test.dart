@@ -141,7 +141,7 @@ void main() {
     await sendCommand(tester, 'controlcenter.toggle');
     await tester.pumpAndSettle();
     expect(find.text('Casa'), findsOneWidget);
-    expect(find.text('80% · in carica'), findsOneWidget);
+    expect(find.text('80% · charging'), findsOneWidget);
     // The stack: 14 pt from the right edge, the first module at y 42.
     final wifi = tester.getRect(
       find
@@ -156,13 +156,13 @@ void main() {
     await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
     await tester.pump();
     expect(system.calls, ['wifi false']);
-    expect(find.text('Spento'), findsWidgets);
+    expect(find.text('Off'), findsWidgets);
     await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
     await tester.pump();
     expect(system.calls.last, 'wifi true');
 
     // A tap halfway along the Sound track.
-    final sound = tester.getTopLeft(find.text('Suono'));
+    final sound = tester.getTopLeft(find.text('Sound'));
     // The Sound track is 44 pt shorter: the outputs circle is on the right.
     await tester.tapAt(
       Offset(
@@ -196,7 +196,7 @@ void main() {
       await tester.tapAt(tester.getCenter(find.text('Wi-Fi')));
       await tester.pumpAndSettle();
       // The panel: 308 pt, 10 left of the stack, 6 above; the known networks.
-      expect(find.text('Reti conosciute'), findsOneWidget); // Home and Office
+      expect(find.text('Known networks'), findsOneWidget); // Home and Office
       expect(find.text('Ufficio'), findsOneWidget);
       expect(find.text('Bar'), findsNothing);
       final title = tester.getTopLeft(
@@ -205,10 +205,10 @@ void main() {
         ),
       );
       expect(title.dx, 1280 - 14 - 292 - 10 + 14);
-      // A known network connects; "Altre reti" shows the others.
+      // A known network connects; "Other networks" shows the others.
       await tester.tap(find.text('Ufficio'));
       expect(system.calls.last, 'connect Ufficio');
-      await tester.tap(find.text('Altre reti'));
+      await tester.tap(find.text('Other networks'));
       await tester.pumpAndSettle();
       expect(find.text('Bar'), findsOneWidget);
       // Esc: the Center again, with the modules.
@@ -235,9 +235,9 @@ void main() {
     );
     await sendCommand(tester, 'controlcenter.toggle');
     await tester.pumpAndSettle();
-    await tester.tapAt(tester.getCenter(find.text('Suono')));
+    await tester.tapAt(tester.getCenter(find.text('Sound')));
     await tester.pumpAndSettle();
-    expect(find.text('Uscita'), findsOneWidget);
+    expect(find.text('Output'), findsOneWidget);
     await tester.tap(find.text('Cuffie'));
     await tester.pump();
     expect(system.calls.last, 'output 62');

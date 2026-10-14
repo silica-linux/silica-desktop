@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/silica_icons.dart';
@@ -102,13 +103,13 @@ const double previewSide = 27;
 const double previewRight = 60;
 
 /// The suffix to complete: the rest of the first result's name, if it starts with the typed
-/// text (and there is no category).
+/// text (and there is no category). The field shows it followed by "— Open".
 String? completionFor(String query, List<DesktopEntry> results) {
   final q = query.trimLeft();
   final first = results.firstOrNull;
   if (q.isEmpty || first == null) return null;
   if (!first.name.toLowerCase().startsWith(q.toLowerCase())) return null;
-  return '${first.name.substring(q.length)} — Apri';
+  return first.name.substring(q.length);
 }
 
 /// `#838488 → #747579` over `#c8c9ce`.
@@ -202,26 +203,35 @@ class FaroColors {
       color.withValues(alpha: (color.a * shadowScale).clamp(0.0, 1.0));
 }
 
-/// The launcher categories and the freedesktop categories they contain, from the first.
+/// The launcher categories (stable ids) and the freedesktop categories they contain, from
+/// the first.
 const List<(String, List<String>)> launcherCategories = [
-  ('Produttività e finanza', ['Office', 'Finance', 'ProjectManagement']),
-  ('Utility', ['Utility', 'System', 'Settings', 'Accessibility']),
-  ('Creatività', ['Graphics', 'Audio', 'Video', 'AudioVideo', 'Development']),
-  ('Svago', ['Game', 'Player', 'Music']),
-  ('Social', ['Chat', 'InstantMessaging', 'Email', 'Network']),
-  (
-    'Informazione e lettura',
-    ['Education', 'Science', 'News', 'Viewer', 'Documentation'],
-  ),
+  ('productivity', ['Office', 'Finance', 'ProjectManagement']),
+  ('utilities', ['Utility', 'System', 'Settings', 'Accessibility']),
+  ('creativity', ['Graphics', 'Audio', 'Video', 'AudioVideo', 'Development']),
+  ('entertainment', ['Game', 'Player', 'Music']),
+  ('social', ['Chat', 'InstantMessaging', 'Email', 'Network']),
+  ('reading', ['Education', 'Science', 'News', 'Viewer', 'Documentation']),
 ];
-const String otherCategory = 'Altro';
+const String otherCategory = 'other';
 
 List<String> get categoryNames => [
   for (final (name, _) in launcherCategories) name,
   otherCategory,
 ];
 
-/// The launcher category of an app: the first that matches, or "Altro".
+/// The shown name of a category id.
+String categoryLabel(AppLocalizations l, String id) => switch (id) {
+  'productivity' => l.catProductivity,
+  'utilities' => l.catUtilities,
+  'creativity' => l.catCreativity,
+  'entertainment' => l.catEntertainment,
+  'social' => l.catSocial,
+  'reading' => l.catReading,
+  _ => l.catOther,
+};
+
+/// The launcher category of an app: the first that matches, or the other one.
 String categoryOf(DesktopEntry entry) {
   for (final (name, members) in launcherCategories) {
     if (entry.categories.any(members.contains)) return name;
@@ -511,7 +521,7 @@ class LauncherState extends State<Launcher>
                       ),
                     ),
                     child: Text(
-                      token,
+                      categoryLabel(l10nOf(context), token),
                       style: uiText(size: 26, color: _c.tokenText),
                     ),
                   ),
@@ -526,7 +536,7 @@ class LauncherState extends State<Launcher>
                           child: Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              'Applicazioni',
+                              l10nOf(context).launcherPlaceholder,
                               style: uiText(size: 26, color: _c.placeholder),
                             ),
                           ),
@@ -552,7 +562,7 @@ class LauncherState extends State<Launcher>
                                   ),
                                 ),
                                 child: Text(
-                                  completion,
+                                  l10nOf(context).completionOpen(completion),
                                   maxLines: 1,
                                   style: uiText(
                                     size: 26,
@@ -628,7 +638,7 @@ class LauncherState extends State<Launcher>
                 ),
               ),
               child: Text(
-                name,
+                categoryLabel(l10nOf(context), name),
                 maxLines: 1,
                 style: uiText(size: categoryText, color: _c.categoryText),
               ),

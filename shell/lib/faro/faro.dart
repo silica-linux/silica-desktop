@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
@@ -430,7 +431,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 if (_query.text.isEmpty)
                   IgnorePointer(
                     child: Text(
-                      'Cerca con Faro',
+                      l10nOf(context).faroPlaceholder,
                       style: uiText(size: 26, color: _c.placeholder),
                     ),
                   ),
@@ -493,7 +494,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                       ),
                     ),
                     Text(
-                      'Applicazione',
+                      l10nOf(context).faroApplication,
                       style: uiText(size: 15, color: _c.subtitle),
                     ),
                   ],

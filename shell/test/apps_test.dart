@@ -18,16 +18,25 @@ StartupWMClass=org.gnome.Nautilus
 Keywords=folder;manager;
 
 [Desktop Action new-window]
-Name=Nuova finestra
+Name=New window
 Exec=nautilus --new-window
 ''';
+
+/// The Downloads folder of the Dock is shown with its name on disk.
+String downloadsName() =>
+    downloadDir(Platform.environment['HOME'] ?? '').split('/').last;
 
 void main() {
   test(
     'a .desktop entry: localized name, Exec without codes, actions ignored',
     () {
       final entry = parseDesktopEntry('org.gnome.Nautilus', filesEntry)!;
-      expect(entry.name, 'File');
+      expect(entry.name, 'Files');
+      // The name in the system language.
+      expect(
+        parseDesktopEntry('org.gnome.Nautilus', filesEntry, locale: 'it')!.name,
+        'File',
+      );
       expect(entry.exec, 'nautilus --new-window');
       expect(entry.icon, 'org.gnome.Nautilus');
       expect(entry.keywords, ['folder', 'manager']);
@@ -102,7 +111,7 @@ void main() {
     );
     expect(
       [for (final i in items) i.label],
-      ['File', 'Editor', '', 'Download', 'Cestino'],
+      ['File', 'Editor', '', downloadsName(), 'Trash'],
     );
     expect(items[0].running, isTrue);
     expect(items[0].windows, ['b']);
@@ -126,14 +135,14 @@ void main() {
       );
       expect(
         [for (final i in items) i.label],
-        ['files', '', 'editor', 'calc', 'mail', '', 'Download', 'Cestino'],
+        ['files', '', 'editor', 'calc', 'mail', '', downloadsName(), 'Trash'],
       );
       expect(items[3].running, isFalse);
       // Without the option: a single separator, the closed ones are not there.
       final off = dockItems(entries, ['files'], const []);
       expect(
         [for (final i in off) i.label],
-        ['files', '', 'Download', 'Cestino'],
+        ['files', '', downloadsName(), 'Trash'],
       );
     },
   );

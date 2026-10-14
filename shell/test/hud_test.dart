@@ -37,23 +37,23 @@ void main() {
     'a volume change shows the HUD, which stays 1.09 s and then disappears',
     (tester) async {
       final system = await pumpHud(tester);
-      expect(find.text('Uscita audio'), findsNothing);
+      expect(find.text('Audio output'), findsNothing);
       system.value = system.value.copyWith(volume: 0.5625);
       await tester.pump();
       await tester.pump(hudAppear);
-      expect(find.text('Uscita audio'), findsOneWidget);
+      expect(find.text('Audio output'), findsOneWidget);
       // At the top right: 10 pt below the menu bar and from the edge.
-      final panel = tester.getTopRight(find.text('Uscita audio')).dy;
+      final panel = tester.getTopRight(find.text('Audio output')).dy;
       expect(panel, greaterThan(30 + 10));
 
       // A new change with the panel visible restarts the wait.
       await tester.pump(const Duration(milliseconds: 800));
       system.value = system.value.copyWith(volume: 0.625);
       await tester.pump(const Duration(milliseconds: 800));
-      expect(find.text('Uscita audio'), findsOneWidget);
+      expect(find.text('Audio output'), findsOneWidget);
       await tester.pump(hudHold);
       await tester.pumpAndSettle();
-      expect(find.text('Uscita audio'), findsNothing);
+      expect(find.text('Audio output'), findsNothing);
     },
   );
 
@@ -64,7 +64,7 @@ void main() {
       brightnessRequests: system.value.brightnessRequests + 1,
     );
     await tester.pump();
-    expect(find.text('Schermo'), findsOneWidget);
+    expect(find.text('Display'), findsOneWidget);
   });
 
   testWidgets('adaptive brightness does not show the HUD', (tester) async {
@@ -74,7 +74,7 @@ void main() {
       system.value = system.value.copyWith(brightness: v);
       await tester.pump(const Duration(milliseconds: 200));
     }
-    expect(find.text('Schermo'), findsNothing);
+    expect(find.text('Display'), findsNothing);
   });
 
   testWidgets('with the Control Center open no HUD', (tester) async {

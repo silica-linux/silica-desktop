@@ -26,6 +26,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/shell_channel.dart';
@@ -667,8 +668,10 @@ class _ControlCenterState extends State<ControlCenter>
   DetailContent? _detailContent(SystemSnapshot s) {
     final system = widget.system;
     Widget track(double? v) => CustomPaint(painter: _Track(v));
+    final l = l10nOf(context);
     return switch (_detail) {
       'wifi' => wifiDetail(
+        l: l,
         s: s,
         networks: _detailData.networks,
         othersOpen: _othersOpen,
@@ -677,6 +680,7 @@ class _ControlCenterState extends State<ControlCenter>
         onToggleOthers: () => setState(() => _othersOpen = !_othersOpen),
       ),
       'sound' => soundDetail(
+        l: l,
         s: s,
         outputs: _detailData.outputs,
         onVolume: (v) {
@@ -692,6 +696,7 @@ class _ControlCenterState extends State<ControlCenter>
         track: track,
       ),
       'display' => displayDetail(
+        l: l,
         s: s,
         onBrightness: system.setBrightness,
         track: track,
@@ -702,19 +707,20 @@ class _ControlCenterState extends State<ControlCenter>
 
   Widget _module(String key, SystemSnapshot s) {
     final system = widget.system;
+    final l = l10nOf(context);
     return switch (key) {
       'wifi' => _Capsule(
         glyph: GlyphKind.wifi,
         title: 'Wi-Fi',
         subtitle: !s.wifiAvailable
-            ? 'Non disponibile'
+            ? l.ccUnavailable
             : !s.wifiEnabled
-            ? 'Spento'
+            ? l.ccOff
             : s.wifiSsid.isNotEmpty
             ? s.wifiSsid
             : s.wired
-            ? 'Rete via cavo'
-            : 'Non connesso',
+            ? l.ccWired
+            : l.ccNotConnected,
         active: s.wifiAvailable && s.wifiEnabled,
         onTap: s.wifiAvailable ? () => system.setWifi(!s.wifiEnabled) : null,
         onOpen: s.wifiAvailable ? () => _openDetail('wifi') : null,
@@ -723,10 +729,10 @@ class _ControlCenterState extends State<ControlCenter>
         glyph: GlyphKind.bluetooth,
         title: 'Bluetooth',
         subtitle: !s.bluetoothAvailable
-            ? 'Non disponibile'
+            ? l.ccUnavailable
             : s.bluetoothPowered
-            ? 'Acceso'
-            : 'Spento',
+            ? l.ccOn
+            : l.ccOff,
         active: s.bluetoothAvailable && s.bluetoothPowered,
         onTap: s.bluetoothAvailable
             ? () => system.setBluetooth(!s.bluetoothPowered)
@@ -734,23 +740,24 @@ class _ControlCenterState extends State<ControlCenter>
       ),
       'dnd' => _Capsule(
         glyph: GlyphKind.moon,
-        title: 'Non disturbare',
-        subtitle: s.doNotDisturb ? 'Attivo' : 'Spento',
+        title: l.ccDoNotDisturb,
+        subtitle: s.doNotDisturb ? l.ccDoNotDisturbOn : l.ccOff,
         active: s.doNotDisturb,
         onTap: () => system.setDoNotDisturb(!s.doNotDisturb),
       ),
       'battery' => _Capsule(
         glyph: GlyphKind.battery,
         glyphLevel: s.batteryPercent / 100,
-        title: 'Batteria',
-        subtitle:
-            '${s.batteryPercent.round()}%${s.batteryCharging ? ' · in carica' : ''}',
+        title: l.ccBattery,
+        subtitle: s.batteryCharging
+            ? l.ccBatteryCharging(s.batteryPercent.round())
+            : l.ccBatteryLevel(s.batteryPercent.round()),
         active: false,
       ),
       'media' => const _Media(),
       'display' => _SliderModule(
         onOpen: () => _openDetail('display'),
-        title: 'Schermo',
+        title: l.ccDisplay,
         value: s.brightness,
         enabled: s.brightnessAvailable,
         low: GlyphKind.sunSmall,
@@ -760,7 +767,7 @@ class _ControlCenterState extends State<ControlCenter>
       _ => _SliderModule(
         onOpen: () => _openDetail('sound'),
         onOutputs: () => _openDetail('sound'),
-        title: 'Suono',
+        title: l.ccSound,
         value: s.muted ? 0 : s.volume,
         enabled: s.audioAvailable,
         low: GlyphKind.speakerSmall,
@@ -1051,7 +1058,9 @@ class _MediaState extends State<_Media> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        now.title.isEmpty ? 'Senza titolo' : now.title,
+                        now.title.isEmpty
+                            ? l10nOf(context).mediaUntitled
+                            : now.title,
                         maxLines: 1,
                         softWrap: false,
                         overflow: TextOverflow.ellipsis,
@@ -1073,7 +1082,7 @@ class _MediaState extends State<_Media> {
                     ],
                   )
                 : Text(
-                    'Nessuna\nriproduzione',
+                    l10nOf(context).mediaNothingPlaying,
                     style: _text(
                       titleSize,
                       weight: FontWeight.w600,

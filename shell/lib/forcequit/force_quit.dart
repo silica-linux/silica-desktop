@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
@@ -304,7 +305,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                 right: 20,
                 top: 8,
                 child: Text(
-                  'Termina le app',
+                  l10nOf(context).forceQuitTitle,
                   style: uiText(
                     size: 13,
                     color: c.title,
@@ -316,8 +317,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                 width: 332,
                 top: 51,
                 child: Text(
-                  'Se un\'app non risponde, sceglila nell\'elenco e fai clic su '
-                  '«Termina».',
+                  l10nOf(context).forceQuitHelp,
                   style: uiText(size: 13, color: c.text),
                 ),
               ),
@@ -340,7 +340,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                 width: 215,
                 top: 265,
                 child: Text(
-                  'Questo pannello si apre anche con ⌘⌥Esc.',
+                  l10nOf(context).forceQuitShortcut,
                   style: uiText(size: 10, color: c.help),
                 ),
               ),
@@ -356,7 +356,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
                     ),
                     alignment: Alignment.center,
                     child: Text(
-                      'Termina',
+                      l10nOf(context).forceQuitButton,
                       style: uiText(
                         size: 13,
                         color: _chosen == null

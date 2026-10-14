@@ -19,6 +19,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
+import '../l10n/l10n.dart';
 import 'stack_settings.dart';
 
 const int fanMax = 15;
@@ -267,7 +268,9 @@ class FanStack extends StatelessWidget {
       final side = slot.side;
       final entry = i < shown.length ? shown[i] : null;
       final label = entry == null
-          ? (more > 0 ? 'Altri $more nella cartella' : 'Apri la cartella')
+          ? (more > 0
+                ? l10nOf(context).stackMoreInFolder(more)
+                : l10nOf(context).openFolder)
           : fileName(entry.path);
       final icon = entry == null ? null : fileIcon(entry);
       children.add(
@@ -336,7 +339,7 @@ class FanStack extends StatelessWidget {
   );
 }
 
-/// "Apri la cartella": an arrow in a circle.
+/// "Open folder": an arrow in a circle.
 class _OpenFolderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -454,7 +457,7 @@ class GridStack extends StatelessWidget {
                         child: Wrap(
                           children: [
                             for (final entry in entries) _cell(entry),
-                            _openCell(columns),
+                            _openCell(context, columns),
                           ],
                         ),
                       ),
@@ -520,7 +523,7 @@ class GridStack extends StatelessWidget {
     );
   }
 
-  Widget _openCell(int columns) => GestureDetector(
+  Widget _openCell(BuildContext context, int columns) => GestureDetector(
     onTap: onOpenFolder,
     child: SizedBox(
       width: gridCell,
@@ -544,7 +547,7 @@ class GridStack extends StatelessWidget {
               child: SizedBox(
                 width: gridLabelWidth,
                 child: Text(
-                  'Apri la cartella',
+                  l10nOf(context).openFolder,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   softWrap: false,

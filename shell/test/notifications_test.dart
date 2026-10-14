@@ -49,7 +49,7 @@ class FakeSource extends ChangeNotifier implements NotificationsSource {
 
 ShellNotification note(
   int id, {
-  String app = 'Posta',
+  String app = 'Mail',
   int minute = 0,
   List<(String, String)> actions = const [],
   int urgency = 1,
@@ -87,8 +87,8 @@ Future<void> sendCommand(WidgetTester tester, String id) =>
 void main() {
   test('the D-Bus structure becomes a notification', () {
     final n = ShellNotification.fromDBus([
-      7, 'Posta', 'mail', 'Titolo', 'Corpo', //
-      ['default', 'Apri', 'reply', 'Rispondi'],
+      7, 'Mail', 'mail', 'Titolo', 'Corpo', //
+      ['default', 'Open', 'reply', 'Rispondi'],
       2, '', 'org.example.Mail', '', true, false, 1791878005135, -1,
     ])!;
     expect(n.id, 7);
@@ -106,11 +106,11 @@ void main() {
     () {
       final groups = groupNotifications([
         note(1, minute: 1),
-        note(2, app: 'Messaggi', minute: 2),
+        note(2, app: 'Messages', minute: 2),
         note(3, minute: 3),
         note(4, minute: 4, transient: true),
       ]);
-      expect([for (final g in groups) g.key], ['Posta', 'Messaggi']);
+      expect([for (final g in groups) g.key], ['Mail', 'Messages']);
       expect([for (final n in groups.first.items) n.id], [3, 1]);
     },
   );
@@ -149,7 +149,7 @@ void main() {
   ) async {
     final source = FakeSource();
     await pumpLayer(tester, source);
-    source.post(note(2, urgency: 2, actions: [('default', 'Apri')]));
+    source.post(note(2, urgency: 2, actions: [('default', 'Open')]));
     await tester.pump();
     await tester.pump(bannerEnterDuration);
     await tester.pump(bannerDuration * 3);
@@ -168,15 +168,15 @@ void main() {
       ..items[2] = note(2, minute: 2)
       ..items[3] = note(
         3,
-        app: 'Calendario',
+        app: 'Calendar',
         minute: 3,
-        actions: [('default', 'Apri'), ('snooze', 'Posticipa')],
+        actions: [('default', 'Open'), ('snooze', 'Posticipa')],
       );
     await pumpLayer(tester, source);
     await sendCommand(tester, 'notifications.toggle');
     await tester.pumpAndSettle();
 
-    expect(find.text('Notifiche'), findsOneWidget);
+    expect(find.text('Notifications'), findsOneWidget);
     // Calendario is the most recent; Posta is collapsed with a card below.
     expect(find.text('Titolo 3'), findsOneWidget);
     expect(find.text('Titolo 2'), findsOneWidget);
@@ -198,11 +198,11 @@ void main() {
     await tester.tap(find.byType(CloseCircle).first);
     await tester.pumpAndSettle();
     expect(source.calls.last, 'clear');
-    expect(find.text('Nessuna notifica'), findsOneWidget);
+    expect(find.text('No notifications'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.text('Notifiche'), findsNothing);
+    expect(find.text('Notifications'), findsNothing);
   });
 
   testWidgets(
@@ -272,7 +272,7 @@ void main() {
     final source = FakeSource();
     await pumpLayer(tester, source);
     source.post(
-      note(3, actions: [('default', 'Apri'), ('snooze', 'Posticipa')]),
+      note(3, actions: [('default', 'Open'), ('snooze', 'Posticipa')]),
     );
     await tester.pump();
     await tester.pump(bannerEnterDuration);
@@ -283,12 +283,12 @@ void main() {
     await tester.pump();
     // On hover: the × and the Dettagli capsule.
     expect(find.byType(CloseCircle), findsOneWidget);
-    expect(find.text('Dettagli'), findsOneWidget);
+    expect(find.text('Details'), findsOneWidget);
     await tester.pump(bannerDuration * 2);
     expect(find.text('Titolo 3'), findsOneWidget);
 
     // Dettagli shows the actions in the banner.
-    await tester.tap(find.text('Dettagli'));
+    await tester.tap(find.text('Details'));
     await tester.pump();
     expect(find.text('Posticipa'), findsOneWidget);
 
@@ -306,7 +306,7 @@ void main() {
     (tester) async {
       final source = FakeSource();
       await pumpLayer(tester, source);
-      source.post(note(4, actions: [('default', 'Apri')]));
+      source.post(note(4, actions: [('default', 'Open')]));
       await tester.pump();
       await tester.pump(bannerEnterDuration);
       final start = tester.getTopLeft(find.byType(NotificationCard));

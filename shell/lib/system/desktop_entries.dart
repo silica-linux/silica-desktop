@@ -107,7 +107,7 @@ String stripFieldCodes(String exec) {
 DesktopEntry? parseDesktopEntry(
   String id,
   String text, {
-  String locale = 'it',
+  String locale = 'en',
 }) {
   final values = <String, String>{};
   var inEntry = false;
@@ -153,7 +153,11 @@ DesktopEntry? parseDesktopEntry(
 }
 
 /// All installed apps, by id.
-Map<String, DesktopEntry> loadDesktopEntries({Map<String, String>? env}) {
+/// The installed apps, with names in `locale` (`Name[it]`), English by default.
+Map<String, DesktopEntry> loadDesktopEntries({
+  Map<String, String>? env,
+  String locale = 'en',
+}) {
   final entries = <String, DesktopEntry>{};
   final seen = <String>{};
   for (final dir in xdgDataDirs(env ?? Platform.environment)) {
@@ -168,7 +172,11 @@ Map<String, DesktopEntry> loadDesktopEntries({Map<String, String>? env}) {
       // The first folder wins, even if the app is hidden there.
       if (!seen.add(id)) continue;
       try {
-        final entry = parseDesktopEntry(id, file.readAsStringSync());
+        final entry = parseDesktopEntry(
+          id,
+          file.readAsStringSync(),
+          locale: locale,
+        );
         if (entry != null) entries[id] = entry;
       } on FileSystemException {
         continue;

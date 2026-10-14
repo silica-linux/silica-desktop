@@ -27,6 +27,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/layer_arbiter.dart';
 import '../system/shell_channel.dart';
 
@@ -73,12 +74,18 @@ String screenshotFolder({Map<String, String>? env}) {
   return home;
 }
 
-/// The file name: "Schermata del 2026-10-14 alle 04.12.33.png" (a number if it already exists).
-String screenshotName(DateTime t, bool Function(String name) exists) {
+/// The file name: "Screenshot 2026-10-14 at 04.12.33.png" in the user's language (a number if
+/// it already exists).
+String screenshotName(
+  DateTime t,
+  bool Function(String name) exists, {
+  AppLocalizations? texts,
+}) {
   String two(int v) => v.toString().padLeft(2, '0');
-  final base =
-      'Schermata del ${t.year}-${two(t.month)}-${two(t.day)} alle '
-      '${two(t.hour)}.${two(t.minute)}.${two(t.second)}';
+  final base = (texts ?? englishTexts).screenshotFileName(
+    '${t.year}-${two(t.month)}-${two(t.day)}',
+    '${two(t.hour)}.${two(t.minute)}.${two(t.second)}',
+  );
   var name = '$base.png';
   for (var i = 2; exists(name); i++) {
     name = '$base ($i).png';
@@ -91,7 +98,7 @@ enum _Mode { none, selection, window, toolbar }
 enum ToolbarChoice { screen, window, selection }
 
 /// The bar colors (over the glass). Dark measured over grey `#7a7b80` (K-06): glyphs and
-/// "Opzioni" `#c7c8cd`, separators and the pill of the chosen mode `#8f9095` (white ~15 %),
+/// "Options" `#c7c8cd`, separators and the pill of the chosen mode `#8f9095` (white ~15 %),
 /// chosen glyph `#dbdde2`, pressed pill −5 levels and glyph `#c3c4c9`, a 1 pt dark rim at the
 /// top `#595a5e` (black ~28 %). Light: measured only under the desktop veil (K-05); pill and
 /// separators derived by removing the veil (out = 0.514 · C + 0.486 · background:
@@ -193,7 +200,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Timer? _hold;
   String _lastAnnounced = '';
 
-  /// The "Opzioni" menu of the bar: open, the capture delay and the thumbnail.
+  /// The "Options" menu of the bar: open, the capture delay and the thumbnail.
   bool _optionsOpen = false;
   Duration _delay = Duration.zero;
   bool _showThumbnail = true;
@@ -363,6 +370,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final name = screenshotName(
       widget.now?.call() ?? DateTime.now(),
       (n) => File('$folder/$n').existsSync(),
+      texts: l10nOf(context),
     );
     final target = '$folder/$name';
     try {
@@ -597,7 +605,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       ),
     );
     if (!_optionsOpen) return bar;
-    // The "Opzioni" menu opens above the button, with its left edge on the button and its
+    // The "Options" menu opens above the button, with its left edge on the button and its
     // bottom 16 pt below the top of the bar (K-05).
     return Positioned.fill(
       child: Stack(
@@ -617,12 +625,13 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     );
   }
 
-  /// From the left edge of the bar to the "Opzioni" button.
+  /// From the left edge of the bar to the "Options" button.
   static const double _optionsLeft = 12 + 18 + 14 + 3 * 44 + 10 + 1 + 10;
 
-  /// The items of the "Opzioni" menu: where to save, the delay, the thumbnail (our texts).
+  /// The items of the "Options" menu: where to save, the delay, the thumbnail (our texts).
   List<MenuEntry> _optionsMenu() {
     final home = Platform.environment['HOME'] ?? '/tmp';
+    final l = l10nOf(context);
     final folders = <String>{
       widget.folder ?? screenshotFolder(),
       for (final name in ['Documenti', 'Documents', 'Immagini', 'Pictures'])
@@ -635,7 +644,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     }
 
     return [
-      const MenuSection('Salva in'),
+      MenuSection(l.saveTo),
       for (final folder in folders)
         MenuAction(
           label(folder),
@@ -643,11 +652,11 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           onSelected: () => setState(() => _folderChoice = folder),
         ),
       const MenuDivider(),
-      const MenuSection('Ritardo'),
-      for (final (seconds, text) in const [
-        (0, 'Nessuno'),
-        (5, '5 secondi'),
-        (10, '10 secondi'),
+      MenuSection(l.delay),
+      for (final (seconds, text) in [
+        (0, l.delayNone),
+        (5, l.delaySeconds(5)),
+        (10, l.delaySeconds(10)),
       ])
         MenuAction(
           text,
@@ -655,9 +664,9 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           onSelected: () => setState(() => _delay = Duration(seconds: seconds)),
         ),
       const MenuDivider(),
-      const MenuSection('Opzioni'),
+      MenuSection(l.options),
       MenuAction(
-        'Miniatura dopo lo scatto',
+        l.thumbnailAfterCapture,
         checked: _showThumbnail,
         onSelected: () => setState(() => _showThumbnail = !_showThumbnail),
       ),
@@ -682,9 +691,9 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         ),
       ),
       const SizedBox(width: 14),
-      mode(ToolbarChoice.screen, _Glyph.screen, 'schermo intero'),
-      mode(ToolbarChoice.window, _Glyph.window, 'finestra'),
-      mode(ToolbarChoice.selection, _Glyph.selection, 'selezione'),
+      mode(ToolbarChoice.screen, _Glyph.screen, 'mode screen'),
+      mode(ToolbarChoice.window, _Glyph.window, 'mode window'),
+      mode(ToolbarChoice.selection, _Glyph.selection, 'mode selection'),
       const SizedBox(width: 10),
       Container(width: 1, height: 28, color: c.line),
       const SizedBox(width: 10),
@@ -693,8 +702,10 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         width: 76,
         colors: c,
         onTap: () => setState(() => _optionsOpen = !_optionsOpen),
-        child: (color) =>
-            Text('Opzioni ⌄', style: uiText(size: 12, color: color)),
+        child: (color) => Text(
+          l10nOf(context).optionsButton,
+          style: uiText(size: 12, color: color),
+        ),
       ),
       const Spacer(),
       GestureDetector(
@@ -709,7 +720,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           ),
           alignment: Alignment.center,
           child: Text(
-            'Acquisisci',
+            l10nOf(context).capture,
             style: uiText(
               size: 13,
               color: const Color(0xFFFFFFFF),

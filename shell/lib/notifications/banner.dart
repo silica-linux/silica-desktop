@@ -4,7 +4,7 @@
 //   slows down;
 // - it stays ~5 s from appearing; with the pointer over it it does not expire, and it leaves
 //   ~1.1 s after the pointer exits; critical notifications stay;
-// - on hover the × appears on the top left corner and the "Dettagli" capsule on the right
+// - on hover the × appears on the top left corner and the "Details" capsule on the right
 //   (the text shortens);
 // - dragged to the right it follows the pointer 1:1 and on release it leaves anyway, without
 //   opening the app; a click opens the app (`default` action);

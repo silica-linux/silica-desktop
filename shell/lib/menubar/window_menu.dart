@@ -8,6 +8,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
+
 const double windowMenuWidth = 241;
 
 /// The icon row: 46 tall, icons from +16.
@@ -43,8 +45,11 @@ const Map<String, TileGlyph> tileGlyphs = {
 };
 
 /// The popover items; `execute` runs a command of Ossido's catalog.
-List<MenuEntry> windowMenuEntries(ValueChanged<String> execute) => [
-  const MenuSection('Metà dello schermo'),
+List<MenuEntry> windowMenuEntries(
+  ValueChanged<String> execute, {
+  AppLocalizations? texts,
+}) => [
+  MenuSection((texts ?? englishTexts).halfScreen),
   _row(const [
     'window.tile_left',
     'window.tile_right',
@@ -52,7 +57,7 @@ List<MenuEntry> windowMenuEntries(ValueChanged<String> execute) => [
     'window.tile_bottom',
   ], execute),
   const MenuDivider(),
-  const MenuSection('Disponi'),
+  MenuSection((texts ?? englishTexts).arrange),
   _row(const [
     'window.tile_fill',
     'window.arrange_2',
@@ -61,7 +66,7 @@ List<MenuEntry> windowMenuEntries(ValueChanged<String> execute) => [
   ], execute),
   const MenuDivider(),
   MenuAction(
-    'Schermo intero',
+    (texts ?? englishTexts).fullScreen,
     icon: (color) => SizedBox(
       width: 14,
       height: 11,

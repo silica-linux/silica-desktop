@@ -69,7 +69,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final opened = <String>[];
-      final items = [Item.app('Pila', command: 'x', folder: dir.path)];
+      final items = [Item.app('Stack', command: 'x', folder: dir.path)];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -82,11 +82,11 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      // By name, without the hidden ones, and "Apri la cartella" on top.
+      // By name, without the hidden ones, and "Open folder" on top.
       expect(find.text('a.txt'), findsOneWidget);
       expect(find.text('b.txt'), findsOneWidget);
       expect(find.text('.nascosto'), findsNothing);
-      expect(find.text('Apri la cartella'), findsOneWidget);
+      expect(find.text('Open folder'), findsOneWidget);
       expect(
         tester.getCenter(find.text('a.txt')).dy,
         greaterThan(tester.getCenter(find.text('b.txt')).dy),
@@ -191,7 +191,7 @@ void main() {
     tester.view.physicalSize = const Size(1280, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final items = [Item.app('Pila', command: 'x', folder: dir.path)];
+    final items = [Item.app('Stack', command: 'x', folder: dir.path)];
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
@@ -203,7 +203,7 @@ void main() {
           stackListMenu: (item, entries) => [
             for (final e in entries) MenuAction(fileName(e.path)),
             const MenuDivider(),
-            const MenuAction('Opzioni'),
+            const MenuAction('Options'),
           ],
         ),
       ),
@@ -219,9 +219,9 @@ void main() {
       tester.getTopLeft(find.text('a.txt')).dy,
       lessThan(tester.getTopLeft(find.text('b.txt')).dy),
     );
-    expect(find.text('Opzioni'), findsOneWidget);
+    expect(find.text('Options'), findsOneWidget);
     // No fan.
-    expect(find.text('Apri la cartella'), findsNothing);
+    expect(find.text('Open folder'), findsNothing);
   });
 
   testWidgets('shown as a stack: the icon is the first three files', (
@@ -238,7 +238,7 @@ void main() {
     Widget dock(StackDisplay display) => Directionality(
       textDirection: TextDirection.ltr,
       child: Dock(
-        items: [Item.app('Pila', command: 'x', folder: dir.path)],
+        items: [Item.app('Stack', command: 'x', folder: dir.path)],
         onOpenPath: (_) {},
         stackSettingsFor: (_) => StackSettings(display: display),
       ),

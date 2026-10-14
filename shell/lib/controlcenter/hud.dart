@@ -15,6 +15,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../menubar/menubar.dart' show barHeight;
+import '../l10n/l10n.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
 
@@ -162,8 +163,10 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
     final volume = _kind == HudKind.volume;
     final value = volume ? (s.muted ? null : s.volume) : s.brightness;
     final title = volume
-        ? (s.audioName.isNotEmpty ? s.audioName : 'Uscita audio')
-        : 'Schermo';
+        ? (s.audioName.isNotEmpty
+              ? s.audioName
+              : l10nOf(context).hudAudioOutput)
+        : l10nOf(context).ccDisplay;
     return LayoutBuilder(
       builder: (context, constraints) => Stack(
         children: [

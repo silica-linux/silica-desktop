@@ -61,11 +61,11 @@ void main() {
     final t = DateTime(2026, 10, 14, 4, 12, 33);
     expect(
       screenshotName(t, (_) => false),
-      'Schermata del 2026-10-14 alle 04.12.33.png',
+      'Screenshot 2026-10-14 at 04.12.33.png',
     );
     expect(
       screenshotName(t, (n) => !n.contains('(')),
-      'Schermata del 2026-10-14 alle 04.12.33 (2).png',
+      'Screenshot 2026-10-14 at 04.12.33 (2).png',
     );
   });
 
@@ -111,9 +111,7 @@ void main() {
     }
     expect(temp.existsSync(), isFalse);
     expect(
-      File(
-        '${desk.path}/Schermata del 2026-10-14 alle 04.12.33.png',
-      ).existsSync(),
+      File('${desk.path}/Screenshot 2026-10-14 at 04.12.33.png').existsSync(),
       isTrue,
     );
     expect(find.byKey(const ValueKey('thumbnail')), findsNothing);
@@ -173,7 +171,7 @@ void main() {
     await mouse.removePointer();
   });
 
-  testWidgets('⇧⌘5: the bar above the Dock; Acquisisci with the full screen', (
+  testWidgets('⇧⌘5: the bar above the Dock; Capture with the full screen', (
     tester,
   ) async {
     await pumpLayer(tester);
@@ -189,7 +187,7 @@ void main() {
     );
     expect(bar.size, toolbarSize);
     expect(bar.bottom, 800 - toolbarAboveDock);
-    await tester.tap(find.byKey(const ValueKey('schermo intero')));
+    await tester.tap(find.byKey(const ValueKey('mode screen')));
     await tester.tap(find.byKey(const ValueKey('capture')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -224,7 +222,7 @@ void main() {
     },
   );
 
-  testWidgets('Opzioni: the menu above the button; delay and thumbnail', (
+  testWidgets('Options: the menu above the button; delay and thumbnail', (
     tester,
   ) async {
     final dir = Directory.systemTemp.createTempSync('opzioni');
@@ -239,8 +237,8 @@ void main() {
     // Above the button, with its left edge on the button.
     expect(menu.bottom, lessThan(button.bottom));
     expect(menu.left, closeTo(button.left, 1));
-    expect(find.text('Ritardo'), findsOneWidget);
-    await tester.tap(find.text('5 secondi'));
+    expect(find.text('Delay'), findsOneWidget);
+    await tester.tap(find.text('5 seconds'));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
     // With the delay the capture comes 5 s later.
@@ -256,7 +254,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
-    await tester.tap(find.text('Miniatura dopo lo scatto'));
+    await tester.tap(find.text('Thumbnail after capture'));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
     final temp = File('${dir.path}/tmp.png')..writeAsBytesSync([0]);
@@ -268,9 +266,7 @@ void main() {
     expect(find.byKey(const ValueKey('thumbnail')), findsNothing);
     expect(temp.existsSync(), isFalse);
     expect(
-      File(
-        '${dir.path}/Schermata del 2026-10-14 alle 04.12.33.png',
-      ).existsSync(),
+      File('${dir.path}/Screenshot 2026-10-14 at 04.12.33.png').existsSync(),
       isTrue,
     );
   });

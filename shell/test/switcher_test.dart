@@ -5,7 +5,7 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
 const entries = {
-  'term': DesktopEntry(id: 'term', name: 'Terminale', exec: 'terminale'),
+  'term': DesktopEntry(id: 'term', name: 'Terminal', exec: 'terminale'),
   'files': DesktopEntry(id: 'files', name: 'File', exec: 'files'),
 };
 
@@ -25,7 +25,7 @@ void main() {
       ..focused('3')
       ..focused('4');
     final apps = model.recentApps();
-    expect([for (final a in apps) a.name], ['Senza app', 'Terminale', 'File']);
+    expect([for (final a in apps) a.name], ['Senza app', 'Terminal', 'File']);
     // The app's windows from the most recent.
     expect(apps[1].windows, ['3', '1']);
   });
@@ -38,7 +38,7 @@ void main() {
     expect(model.visible, isFalse);
     model.next();
     expect(model.visible, isTrue);
-    expect(model.apps![model.selected].name, 'Terminale');
+    expect(model.apps![model.selected].name, 'Terminal');
     model.next();
     expect(model.selected, 0);
     model.previous();

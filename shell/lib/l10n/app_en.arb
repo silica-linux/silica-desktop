@@ -1,0 +1,456 @@
+{
+  "@@locale": "en",
+  "ccUnavailable": "Unavailable",
+  "@ccUnavailable": {
+    "description": "Control Center module subtitle when the service is missing"
+  },
+  "ccOff": "Off",
+  "@ccOff": {
+    "description": "Control Center module subtitle: switched off"
+  },
+  "ccOn": "On",
+  "@ccOn": {
+    "description": "Bluetooth module subtitle: powered"
+  },
+  "ccWired": "Wired network",
+  "@ccWired": {
+    "description": "Wi-Fi module subtitle when only a cable is connected"
+  },
+  "ccNotConnected": "Not connected",
+  "@ccNotConnected": {
+    "description": "Wi-Fi module subtitle: on but not connected"
+  },
+  "ccDoNotDisturb": "Do not disturb",
+  "@ccDoNotDisturb": {
+    "description": "Control Center module title"
+  },
+  "ccDoNotDisturbOn": "On",
+  "@ccDoNotDisturbOn": {
+    "description": "Do not disturb module subtitle when active"
+  },
+  "ccBattery": "Battery",
+  "@ccBattery": {
+    "description": "Control Center module title"
+  },
+  "ccBatteryLevel": "{percent}%",
+  "@ccBatteryLevel": {
+    "description": "Battery module subtitle",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "ccBatteryCharging": "{percent}% · charging",
+  "@ccBatteryCharging": {
+    "description": "Battery module subtitle while charging",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "ccDisplay": "Display",
+  "@ccDisplay": {
+    "description": "Display module and HUD title (brightness)"
+  },
+  "ccSound": "Sound",
+  "@ccSound": {
+    "description": "Sound module title"
+  },
+  "mediaUntitled": "Untitled",
+  "@mediaUntitled": {
+    "description": "Media module: track without a title"
+  },
+  "mediaNothingPlaying": "Nothing\nplaying",
+  "@mediaNothingPlaying": {
+    "description": "Media module when no player is active (two lines)"
+  },
+  "knownNetworks": "{count, plural, =1{Known network} other{Known networks}}",
+  "@knownNetworks": {
+    "description": "Wi-Fi detail section header",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otherNetworks": "Other networks",
+  "@otherNetworks": {
+    "description": "Wi-Fi detail: expandable section"
+  },
+  "soundOutput": "Output",
+  "@soundOutput": {
+    "description": "Sound detail section header"
+  },
+  "hudAudioOutput": "Audio output",
+  "@hudAudioOutput": {
+    "description": "Volume HUD title when the output has no name"
+  },
+  "stackSortBy": "Sort by",
+  "@stackSortBy": {
+    "description": "Dock stack menu section"
+  },
+  "sortName": "Name",
+  "@sortName": {
+    "description": "Sort option"
+  },
+  "sortDateAdded": "Date added",
+  "@sortDateAdded": {
+    "description": "Sort option"
+  },
+  "sortDateModified": "Date modified",
+  "@sortDateModified": {
+    "description": "Sort option"
+  },
+  "sortDateCreated": "Date created",
+  "@sortDateCreated": {
+    "description": "Sort option"
+  },
+  "sortKind": "Kind",
+  "@sortKind": {
+    "description": "Sort option"
+  },
+  "stackShowAs": "Show as",
+  "@stackShowAs": {
+    "description": "Dock stack menu section"
+  },
+  "stackFolder": "Folder",
+  "@stackFolder": {
+    "description": "Show the Dock folder as its folder icon"
+  },
+  "stackStack": "Stack",
+  "@stackStack": {
+    "description": "Show the Dock folder as a pile of its files"
+  },
+  "stackViewContentAs": "View content as",
+  "@stackViewContentAs": {
+    "description": "Dock stack menu section"
+  },
+  "stackFan": "Fan",
+  "@stackFan": {
+    "description": "Stack view option"
+  },
+  "stackGrid": "Grid",
+  "@stackGrid": {
+    "description": "Stack view option"
+  },
+  "stackList": "List",
+  "@stackList": {
+    "description": "Stack view option"
+  },
+  "stackAutomatic": "Automatic",
+  "@stackAutomatic": {
+    "description": "Stack view option"
+  },
+  "options": "Options",
+  "@options": {
+    "description": "Menu item or section with options"
+  },
+  "showInEnclosingFolder": "Show in enclosing folder",
+  "@showInEnclosingFolder": {
+    "description": "Dock folder menu item"
+  },
+  "openNamed": "Open \"{name}\"",
+  "@openNamed": {
+    "description": "Dock menu item opening a folder or window",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "magnificationOff": "Turn magnification off",
+  "@magnificationOff": {
+    "description": "Dock separator menu"
+  },
+  "magnificationOn": "Turn magnification on",
+  "@magnificationOn": {
+    "description": "Dock separator menu"
+  },
+  "showRecentApps": "Show recent apps",
+  "@showRecentApps": {
+    "description": "Dock separator menu"
+  },
+  "open": "Open",
+  "@open": {
+    "description": "Menu item"
+  },
+  "trash": "Trash",
+  "@trash": {
+    "description": "The Trash in the Dock"
+  },
+  "emptyTrashEllipsis": "Empty Trash…",
+  "@emptyTrashEllipsis": {
+    "description": "Trash menu item (asks for confirmation)"
+  },
+  "removeFromDock": "Remove from Dock",
+  "@removeFromDock": {
+    "description": "App options in the Dock"
+  },
+  "keepInDock": "Keep in Dock",
+  "@keepInDock": {
+    "description": "App options in the Dock"
+  },
+  "showAllWindows": "Show all windows",
+  "@showAllWindows": {
+    "description": "Dock app menu"
+  },
+  "quit": "Quit",
+  "@quit": {
+    "description": "Dock app menu"
+  },
+  "dockRemove": "Remove",
+  "@dockRemove": {
+    "description": "Capsule over an icon dragged out of the Dock"
+  },
+  "stackMoreInFolder": "{count, plural, =1{1 more in the folder} other{{count} more in the folder}}",
+  "@stackMoreInFolder": {
+    "description": "Last item of a fan stack when files are left out",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "openFolder": "Open folder",
+  "@openFolder": {
+    "description": "Last item of a stack"
+  },
+  "trashAlertTitle": "Erase the items in the Trash for good?",
+  "@trashAlertTitle": {
+    "description": "Empty Trash alert"
+  },
+  "trashAlertMessage": "This cannot be undone.",
+  "@trashAlertMessage": {
+    "description": "Empty Trash alert"
+  },
+  "emptyTrash": "Empty Trash",
+  "@emptyTrash": {
+    "description": "Empty Trash alert button"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Button"
+  },
+  "faroPlaceholder": "Search with Faro",
+  "@faroPlaceholder": {
+    "description": "Faro search field placeholder"
+  },
+  "faroApplication": "Application",
+  "@faroApplication": {
+    "description": "Faro result subtitle for apps"
+  },
+  "completionOpen": "{rest} — Open",
+  "@completionOpen": {
+    "description": "Inline completion in the launcher field",
+    "placeholders": {
+      "rest": {
+        "type": "String"
+      }
+    }
+  },
+  "launcherPlaceholder": "Applications",
+  "@launcherPlaceholder": {
+    "description": "Launcher search field placeholder"
+  },
+  "catProductivity": "Productivity and finance",
+  "@catProductivity": {
+    "description": "Launcher category"
+  },
+  "catUtilities": "Utilities",
+  "@catUtilities": {
+    "description": "Launcher category"
+  },
+  "catCreativity": "Creativity",
+  "@catCreativity": {
+    "description": "Launcher category"
+  },
+  "catEntertainment": "Entertainment",
+  "@catEntertainment": {
+    "description": "Launcher category"
+  },
+  "catSocial": "Social",
+  "@catSocial": {
+    "description": "Launcher category"
+  },
+  "catReading": "Information and reading",
+  "@catReading": {
+    "description": "Launcher category"
+  },
+  "catOther": "Other",
+  "@catOther": {
+    "description": "Launcher category for the rest"
+  },
+  "forceQuitTitle": "Quit apps",
+  "@forceQuitTitle": {
+    "description": "Force quit panel title"
+  },
+  "forceQuitHelp": "If an app does not respond, choose it in the list and click \"Quit\".",
+  "@forceQuitHelp": {
+    "description": "Force quit panel explanation"
+  },
+  "forceQuitShortcut": "This panel also opens with ⌘⌥Esc.",
+  "@forceQuitShortcut": {
+    "description": "Force quit panel hint"
+  },
+  "forceQuitButton": "Quit",
+  "@forceQuitButton": {
+    "description": "Force quit panel button"
+  },
+  "menuFile": "File",
+  "@menuFile": {
+    "description": "Menu bar menu"
+  },
+  "menuEdit": "Edit",
+  "@menuEdit": {
+    "description": "Menu bar menu"
+  },
+  "menuView": "View",
+  "@menuView": {
+    "description": "Menu bar menu"
+  },
+  "menuWindow": "Window",
+  "@menuWindow": {
+    "description": "Menu bar menu"
+  },
+  "menuHelp": "Help",
+  "@menuHelp": {
+    "description": "Menu bar menu"
+  },
+  "aboutSilica": "About Silica",
+  "@aboutSilica": {
+    "description": "Logo menu"
+  },
+  "systemSettings": "Settings…",
+  "@systemSettings": {
+    "description": "Logo menu"
+  },
+  "panorama": "Panorama",
+  "@panorama": {
+    "description": "Logo menu: overview of windows and spaces"
+  },
+  "showDesktop": "Show desktop",
+  "@showDesktop": {
+    "description": "Logo menu"
+  },
+  "logOut": "Log out…",
+  "@logOut": {
+    "description": "Logo menu"
+  },
+  "aboutApp": "About {app}",
+  "@aboutApp": {
+    "description": "App menu",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "quitApp": "Quit {app}",
+  "@quitApp": {
+    "description": "App menu",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "closeWindow": "Close window",
+  "@closeWindow": {
+    "description": "File menu"
+  },
+  "fullScreen": "Full screen",
+  "@fullScreen": {
+    "description": "View and Window menus, window popover"
+  },
+  "minimize": "Minimize",
+  "@minimize": {
+    "description": "Window menu"
+  },
+  "appWindows": "App windows",
+  "@appWindows": {
+    "description": "Window menu"
+  },
+  "nextSpace": "Next space",
+  "@nextSpace": {
+    "description": "Window menu"
+  },
+  "previousSpace": "Previous space",
+  "@previousSpace": {
+    "description": "Window menu"
+  },
+  "halfScreen": "Half of the screen",
+  "@halfScreen": {
+    "description": "Window popover section"
+  },
+  "arrange": "Arrange",
+  "@arrange": {
+    "description": "Window popover section"
+  },
+  "notificationsTitle": "Notifications",
+  "@notificationsTitle": {
+    "description": "Notification Center header"
+  },
+  "noNotifications": "No notifications",
+  "@noNotifications": {
+    "description": "Notification Center empty state"
+  },
+  "collapse": "Collapse",
+  "@collapse": {
+    "description": "Notification group pill"
+  },
+  "clear": "Clear",
+  "@clear": {
+    "description": "Notification group pill"
+  },
+  "details": "Details",
+  "@details": {
+    "description": "Notification banner button"
+  },
+  "screenshotFileName": "Screenshot {date} at {time}",
+  "@screenshotFileName": {
+    "description": "Screenshot file name without extension; date YYYY-MM-DD, time HH.MM.SS",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "saveTo": "Save to",
+  "@saveTo": {
+    "description": "Screenshot options section"
+  },
+  "delay": "Delay",
+  "@delay": {
+    "description": "Screenshot options section"
+  },
+  "delayNone": "None",
+  "@delayNone": {
+    "description": "Screenshot delay option"
+  },
+  "delaySeconds": "{count, plural, =1{1 second} other{{count} seconds}}",
+  "@delaySeconds": {
+    "description": "Screenshot delay option",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "thumbnailAfterCapture": "Thumbnail after capture",
+  "@thumbnailAfterCapture": {
+    "description": "Screenshot option"
+  },
+  "optionsButton": "Options ⌄",
+  "@optionsButton": {
+    "description": "Screenshot bar button"
+  },
+  "capture": "Capture",
+  "@capture": {
+    "description": "Screenshot bar button"
+  }
+}

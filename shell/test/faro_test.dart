@@ -9,7 +9,7 @@ import 'package:silica_shell/system/shell_channel.dart';
 const entries = {
   'term': DesktopEntry(
     id: 'term',
-    name: 'Terminale',
+    name: 'Terminal',
     exec: 'terminale',
     keywords: ['shell'],
   ),
@@ -22,11 +22,11 @@ void main() {
   test('search puts first the names starting with the text', () {
     expect(
       [for (final e in searchApps(entries.values, 'te')) e.name],
-      ['Terminale', 'Tetris', 'Editor di testo'],
+      ['Terminal', 'Tetris', 'Editor di testo'],
     );
     expect(
       [for (final e in searchApps(entries.values, 'shell')) e.name],
-      ['Terminale'],
+      ['Terminal'],
     );
     expect(searchApps(entries.values, '  '), isEmpty);
     const twice = [
@@ -63,7 +63,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Cerca con Faro'), findsOneWidget);
+    expect(find.text('Search with Faro'), findsOneWidget);
 
     await tester.enterText(find.byType(EditableText), 'calc');
     await tester.pumpAndSettle();
@@ -73,6 +73,6 @@ void main() {
     await tester.pumpAndSettle();
     final launch = calls.where((c) => c.method == 'launch').single;
     expect((launch.arguments as Map)['command'], 'calc');
-    expect(find.text('Cerca con Faro'), findsNothing);
+    expect(find.text('Search with Faro'), findsNothing);
   });
 }

@@ -1,4 +1,4 @@
-// The "Svuota il Cestino" alert (dock.md, D-07): a 292 × 268 window centered horizontally,
+// The "Empty Trash" alert (dock.md, D-07): a 292 × 268 window centered horizontally,
 // with its top at ~20 % of the screen (295 over 1440); thick glass (`#c5c6ca` over grey),
 // radius ~26; a 66 pt Trash icon at (19, 19), main text in bold at (21, 99) 250 wide,
 // secondary text at (21, 157), two full-width 262 × 30 buttons at (15, 189) and (15, 223):
@@ -11,6 +11,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
+import '../l10n/l10n.dart';
 
 const Size trashAlertSize = Size(292, 268);
 
@@ -160,7 +161,7 @@ class TrashAlert extends StatelessWidget {
                 width: 250,
                 top: 99,
                 child: Text(
-                  'Vuoi eliminare definitivamente gli elementi nel Cestino?',
+                  l10nOf(context).trashAlertTitle,
                   maxLines: 3,
                   style: TextStyle(
                     fontFamily: uiFontFamily,
@@ -177,19 +178,19 @@ class TrashAlert extends StatelessWidget {
                 width: 250,
                 top: 157,
                 child: Text(
-                  'Non si potrà annullare.',
+                  l10nOf(context).trashAlertMessage,
                   style: uiText(size: 13, color: text),
                 ),
               ),
               _button(
-                'Svuota il Cestino',
+                l10nOf(context).emptyTrash,
                 trashAlertButtonsTop,
                 alertDefault,
                 const Color(0xFFFFFFFF),
                 onEmpty,
               ),
               _button(
-                'Annulla',
+                l10nOf(context).cancel,
                 trashAlertButtonsTop +
                     trashAlertButtonHeight +
                     trashAlertButtonGap,

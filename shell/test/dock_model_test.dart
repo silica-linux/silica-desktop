@@ -8,7 +8,7 @@ final items = [
   for (var i = 0; i < 12; i++) Item.app('App $i'),
   const Item.separator(),
   const Item.app('Download'),
-  const Item.app('Cestino'),
+  const Item.app('Trash'),
 ];
 const width = 2560.0;
 const height = 200.0;

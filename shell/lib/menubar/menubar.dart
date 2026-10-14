@@ -9,6 +9,10 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
+
+import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
@@ -53,30 +57,9 @@ const double menuShadowRoom = 40;
 /// White at 90 % (status icons and clock: 241 over 112).
 const Color statusColor = Color(0xE6FFFFFF);
 
-/// The app menu items until the global menu arrives (M7): generic.
-const List<String> genericMenus = [
-  'File',
-  'Modifica',
-  'Vista',
-  'Finestra',
-  'Aiuto',
-];
-
-const List<String> weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
-const List<String> months = [
-  'gen',
-  'feb',
-  'mar',
-  'apr',
-  'mag',
-  'giu',
-  'lug',
-  'ago',
-  'set',
-  'ott',
-  'nov',
-  'dic',
-];
+/// The app menu items until the global menu arrives (M7): generic ids, shown with
+/// `menuTitle`.
+const List<String> genericMenus = ['file', 'edit', 'view', 'window', 'help'];
 
 /// Date and time as in the bar: "Lun 12 ott  22:15" (double space between date and time).
 /// The capsule on the icon of the open Control Center: 46 × 24, just lighter than the bar
@@ -84,11 +67,18 @@ const List<String> months = [
 const Size controlsCapsule = Size(46, 24);
 const Color controlsCapsuleFill = Color(0x05FFFFFF);
 
-String clockText(DateTime t) {
+String clockText(DateTime t, [String locale = 'en']) {
+  _dates ??= initializeDateFormatting();
+  final date = DateFormat('EEE d MMM', locale).format(t);
   final hh = t.hour.toString().padLeft(2, '0');
   final mm = t.minute.toString().padLeft(2, '0');
-  return '${weekdays[t.weekday - 1]} ${t.day} ${months[t.month - 1]}  $hh:$mm';
+  // The weekday starts with a capital, as in the bar ("Mon", "Lun").
+  final shown = date.isEmpty ? date : date[0].toUpperCase() + date.substring(1);
+  return '$shown  $hh:$mm';
 }
+
+/// The date symbols of every intl locale, loaded once (synchronously, from the package).
+Future<void>? _dates;
 
 class MenuBar extends StatefulWidget {
   const MenuBar({
@@ -138,8 +128,12 @@ class _MenuBarState extends State<MenuBar> {
 
   GlobalKey _keyFor(String name) => _itemKeys.putIfAbsent(name, GlobalKey.new);
 
-  List<MenuEntry> _entries(String name) =>
-      barMenu(name, _appName, (id) => ShellChannel.instance.execute(id));
+  List<MenuEntry> _entries(String name) => barMenu(
+    name,
+    _appName,
+    (id) => ShellChannel.instance.execute(id),
+    texts: l10nOf(context),
+  );
 
   /// The rectangle of a bar item (its box), in the surface.
   Rect? _rectOf(String name) {
@@ -411,7 +405,11 @@ class _MenuBarState extends State<MenuBar> {
               children: [
                 _item(_appName, bold, key: _keyFor('app')),
                 for (final menu in genericMenus)
-                  _item(menu, regular, key: _keyFor(menu)),
+                  _item(
+                    menuTitle(l10nOf(context), menu),
+                    regular,
+                    key: _keyFor(menu),
+                  ),
               ],
             ),
           ),
@@ -440,7 +438,10 @@ class _MenuBarState extends State<MenuBar> {
                   onTap: widget.onClock,
                   behavior: HitTestBehavior.opaque,
                   child: _baselined(
-                    clockText(widget.now ?? DateTime.now()),
+                    clockText(
+                      widget.now ?? DateTime.now(),
+                      l10nOf(context).localeName,
+                    ),
                     status,
                   ),
                 ),
@@ -476,6 +477,7 @@ class _MenuBarState extends State<MenuBar> {
                       key: ValueKey(tip),
                       entries: windowMenuEntries(
                         (id) => ShellChannel.instance.execute(id),
+                        texts: l10nOf(context),
                       ),
                       anchor: Offset.zero,
                       tip: tip,

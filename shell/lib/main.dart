@@ -5,6 +5,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'controlcenter/controlcenter.dart';
+import 'l10n/l10n.dart';
 import 'dock/dock.dart';
 import 'dock/model.dart';
 import 'faro/faro.dart';
@@ -22,21 +23,21 @@ import 'wallpaper/wallpaper.dart';
 /// Dock placeholders for tests and for comparison with the recordings: 12 apps, separator,
 /// folder and trash.
 const List<Item> placeholderItems = [
-  Item.app('File', running: true),
-  Item.app('Navigatore', running: true),
-  Item.app('Posta'),
-  Item.app('Messaggi'),
-  Item.app('Calendario'),
-  Item.app('Note'),
-  Item.app('Foto'),
-  Item.app('Musica'),
-  Item.app('Mappe'),
+  Item.app('Files', running: true),
+  Item.app('Browser', running: true),
+  Item.app('Mail'),
+  Item.app('Messages'),
+  Item.app('Calendar'),
+  Item.app('Notes'),
+  Item.app('Photos'),
+  Item.app('Music'),
+  Item.app('Maps'),
   Item.app('Editor'),
-  Item.app('Terminale', running: true),
-  Item.app('Impostazioni'),
+  Item.app('Terminal', running: true),
+  Item.app('Settings'),
   Item.separator(),
-  Item.app('Download'),
-  Item.app('Cestino'),
+  Item.app('Downloads'),
+  Item.app('Trash', trash: true),
 ];
 
 void main(List<String> args) {
@@ -54,14 +55,14 @@ class ShellComponent extends StatelessWidget {
     final Widget child = switch (component) {
       'dock-demo' => const Dock(items: placeholderItems),
       'menubar' => MenuBar(
-        entries: loadDesktopEntries(),
+        entries: loadDesktopEntries(locale: systemLanguage()),
         onSearch: () => ShellChannel.instance.execute('faro.toggle'),
         onClock: () => ShellChannel.instance.execute('notifications.toggle'),
         onControls: () => ShellChannel.instance.execute('controlcenter.toggle'),
         system: DBusSystem(),
       ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
-      'faro' => Faro(entries: loadDesktopEntries()),
+      'faro' => Faro(entries: loadDesktopEntries(locale: systemLanguage())),
       'notifications' => NotificationsLayer(
         source: DBusNotifications(),
         system: DBusSystem(),
@@ -70,13 +71,15 @@ class ShellComponent extends StatelessWidget {
       // The app switcher never takes input: the same layer hosts the screenshots.
       'switcher' => Stack(
         children: [
-          AppSwitcher(entries: loadDesktopEntries()),
+          AppSwitcher(entries: loadDesktopEntries(locale: systemLanguage())),
           const ScreenshotLayer(),
-          ForceQuitLayer(entries: loadDesktopEntries()),
+          ForceQuitLayer(entries: loadDesktopEntries(locale: systemLanguage())),
         ],
       ),
       _ => const LiveDock(),
     };
-    return Directionality(textDirection: TextDirection.ltr, child: child);
+    return ShellLocalizations(
+      child: Directionality(textDirection: TextDirection.ltr, child: child),
+    );
   }
 }

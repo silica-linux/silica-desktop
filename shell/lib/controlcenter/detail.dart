@@ -13,6 +13,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../l10n/l10n.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
 
@@ -343,10 +344,11 @@ class _ChevronPainter extends CustomPainter {
       old.color != color || old.down != down;
 }
 
-/// Wi-Fi: switch, known networks, expandable "Altre reti".
+/// Wi-Fi: switch, known networks, expandable "Other networks".
 DetailContent wifiDetail({
   required SystemSnapshot s,
   required List<WifiNetwork> networks,
+  required AppLocalizations l,
   required bool othersOpen,
   required ValueChanged<bool> onSwitch,
   required ValueChanged<String> onConnect,
@@ -373,10 +375,7 @@ DetailContent wifiDetail({
   final others = networks.where((n) => !n.known && !n.active).toList();
   pieces.add((1, _separator()));
   if (known.isNotEmpty) {
-    pieces.add((
-      27,
-      _section(known.length == 1 ? 'Rete conosciuta' : 'Reti conosciute'),
-    ));
+    pieces.add((27, _section(l.knownNetworks(known.length))));
     for (final n in known) {
       pieces.add((detailRow, row(n)));
     }
@@ -400,7 +399,7 @@ DetailContent wifiDetail({
           children: [
             Expanded(
               child: Text(
-                'Altre reti',
+                l.otherNetworks,
                 style: detailText(
                   12.4,
                   weight: FontWeight.w600,
@@ -453,6 +452,7 @@ Widget _detailSlider({
 
 /// Sound: volume and outputs.
 DetailContent soundDetail({
+  required AppLocalizations l,
   required SystemSnapshot s,
   required List<AudioOutput> outputs,
   required ValueChanged<double> onVolume,
@@ -460,7 +460,7 @@ DetailContent soundDetail({
   required Widget Function(double?) track,
 }) {
   final pieces = <_Piece>[
-    (38, _header('Suono')),
+    (38, _header(l.ccSound)),
     (
       16,
       _detailSlider(
@@ -473,7 +473,7 @@ DetailContent soundDetail({
     (1, _separator()),
   ];
   if (outputs.isNotEmpty) {
-    pieces.add((27, _section('Uscita')));
+    pieces.add((27, _section(l.soundOutput)));
     for (final o in outputs) {
       pieces.add((
         detailRow,
@@ -493,11 +493,12 @@ DetailContent soundDetail({
 
 /// Display: brightness.
 DetailContent displayDetail({
+  required AppLocalizations l,
   required SystemSnapshot s,
   required ValueChanged<double> onBrightness,
   required Widget Function(double?) track,
 }) => DetailContent([
-  (43, _header('Schermo')),
+  (43, _header(l.ccDisplay)),
   (
     16,
     _detailSlider(

@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
   flutter_svg: ^2.3.0
   silica_ui:
     git:
@@ -18,3 +21,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+flutter:
+  generate: true
