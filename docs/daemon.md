@@ -269,10 +269,10 @@ points `SILICA_SOUNDS_DIR` there, `cargo xtask os deploy` copies them into the s
 
 | Name | When |
 | --- | --- |
-| `trash-move` | items moved to the Trash from a menu or the keyboard (file manager windows and desktop) |
-| `trash-drag` | items dropped on the Dock's Trash |
-| `trash-empty` | the Trash emptied |
-| `file-transfer` | a copy or move finished (drag and drop, paste, a drop on a Dock folder) |
+| `trash-move` | items moved to the Trash, once the move is done: a menu, ⌘⌫, a script or a drop on the Dock's Trash (file manager windows, desktop, Dock) |
+| `trash-drag` | an alias of `trash-move` (the Trash sound is one); nothing plays it any more |
+| `trash-empty` | the Trash emptied, ~0.2 s after the Dock's Trash icon turns empty |
+| `file-transfer` | a move, copy or Duplicate finished (drag and drop, paste, ⌘D, a drop on a Dock folder), once, on completion |
 | `screen-capture` | a screenshot taken (⇧⌘3, ⇧⌘4, ⇧⌘5, also to the clipboard); provisional, not measured |
 | `alert-crystal`, `alert-woodblock`, `alert-drop`, `alert-pebble` | alerts (`PlayAlert`) |
 | `volume-feedback` | the volume keys with `volumeFeedback` on (`PlayVolumeFeedback`) |

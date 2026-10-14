@@ -12,6 +12,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
+import '../system/sounds.dart';
 
 const Size trashAlertSize = Size(292, 268);
 
@@ -57,6 +58,30 @@ Future<void> emptyTrash({Map<String, String>? env}) async {
       }
     }
   }
+}
+
+/// How long after the Trash icon turns empty the Empty Trash sound plays (FILE-SOUNDS).
+const Duration trashEmptiedSoundDelay = Duration(milliseconds: 200);
+
+/// Items dropped on the Dock's Trash: moved, then the one Trash sound (`trash-move`, as ⌘⌫), on
+/// completion and not at the release. `play` is the sound player (a fake in tests).
+Future<void> trashDropped(
+  List<String> paths, {
+  Map<String, String>? env,
+  Future<void> Function(String sound) play = playUiSound,
+}) async {
+  if (paths.isEmpty) return;
+  await moveToTrash(paths, env: env);
+  await play(UiSound.trashMove);
+}
+
+/// The Empty Trash sound, [trashEmptiedSoundDelay] after the icon turned empty.
+Future<void> soundTrashEmptied({
+  Duration delay = trashEmptiedSoundDelay,
+  Future<void> Function(String sound) play = playUiSound,
+}) async {
+  await Future<void>.delayed(delay);
+  await play(UiSound.trashEmpty);
 }
 
 /// Moves `paths` to the Trash: `gio trash` (also on volumes); without `gio`, into the home
