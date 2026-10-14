@@ -2,6 +2,9 @@
 // (silica-embedder --dart-arg dock). Today: dock (the real apps), dock-demo (placeholders),
 // menubar, wallpaper, faro, notifications, controlcenter, switcher.
 
+import 'dart:io';
+
+import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:flutter/widgets.dart';
 
 import 'controlcenter/controlcenter.dart';
@@ -43,6 +46,12 @@ const List<Item> placeholderItems = [
 
 void main(List<String> args) {
   final component = args.isEmpty ? 'dock' : args.first;
+  // Debug only: SILICA_TIME_DILATION=10 slows every animation of the shell tenfold, to look
+  // at transitions frame by frame (docs/vm.md › Looking at animations).
+  final dilation = double.tryParse(
+    Platform.environment['SILICA_TIME_DILATION'] ?? '',
+  );
+  if (dilation != null && dilation > 0) timeDilation = dilation;
   runApp(ShellComponent(component: component));
 }
 

@@ -24,9 +24,12 @@ import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 import 'answers.dart';
+import 'faro_motion.dart';
 import 'folders.dart';
 import 'launcher.dart';
 import 'search.dart';
+
+export 'faro_motion.dart';
 
 const double wideWidth = 640;
 const double narrowWidth = 384;
@@ -51,89 +54,6 @@ const Color subtitleColor = Color(0xFF88898E);
 /// Selected row and separator: `#afb0b5` over the `#c8c9ce` fill (−25 levels): black at
 /// ~12 %, so it follows the material over different backgrounds.
 const Color selection = Color(0x20000000);
-
-/// Opacity while opening (0, 13, 27, 53, 67 ms from the first frame).
-const List<(double, double)> openOpacity = [
-  (0, 0.22),
-  (13.3, 0.66),
-  (26.7, 0.79),
-  (53.3, 0.98),
-  (66.7, 1),
-];
-
-double opacityAt(double ms) {
-  if (ms <= 0) return openOpacity.first.$2;
-  for (var i = 1; i < openOpacity.length; i++) {
-    final (t1, a1) = openOpacity[i];
-    if (ms <= t1) {
-      final (t0, a0) = openOpacity[i - 1];
-      return a0 + (a1 - a0) * (ms - t0) / (t1 - t0);
-    }
-  }
-  return 1;
-}
-
-/// Launcher opening: it starts ~8 % larger and shrinks (residual overshoot measured at 0,
-/// 13, 40, 53, 67, 93, 107, 120 and 147 ms), with the same fade as Faro.
-const double launcherOpenScale = 0.08;
-const List<(double, double)> launcherExcess = [
-  (0, 1),
-  (13.3, 0.79),
-  (40, 0.43),
-  (53.3, 0.34),
-  (66.7, 0.24),
-  (93.3, 0.09),
-  (106.7, 0.03),
-  (120, 0.01),
-  (146.7, 0),
-];
-
-double launcherScaleAt(double ms) {
-  if (ms <= 0) return 1 + launcherOpenScale;
-  for (var i = 1; i < launcherExcess.length; i++) {
-    final (t1, e1) = launcherExcess[i];
-    if (ms <= t1) {
-      final (t0, e0) = launcherExcess[i - 1];
-      return 1 + launcherOpenScale * (e0 + (e1 - e0) * (ms - t0) / (t1 - t0));
-    }
-  }
-  return 1;
-}
-
-/// Esc in the launcher: the panel shrinks towards Faro (measured height, S curve, 215 ms);
-/// width, position and radius follow the same progress.
-const List<(double, double)> backHeights = [
-  (0, 577),
-  (26.7, 556),
-  (40, 509),
-  (53.3, 468),
-  (80, 349),
-  (93.3, 294),
-  (106.7, 234),
-  (133.3, 170),
-  (146.7, 143),
-  (160, 122),
-  (186.7, 90),
-  (200, 59),
-  (213.3, 57),
-];
-const double backDuration = 213.3;
-
-/// Progress 0–1 of the return to Faro after `ms`.
-double backProgress(double ms) {
-  if (ms <= 0) return 0;
-  final first = backHeights.first.$2;
-  final last = backHeights.last.$2;
-  for (var i = 1; i < backHeights.length; i++) {
-    final (t1, h1) = backHeights[i];
-    if (ms <= t1) {
-      final (t0, h0) = backHeights[i - 1];
-      final h = h0 + (h1 - h0) * (ms - t0) / (t1 - t0);
-      return (first - h) / (first - last);
-    }
-  }
-  return 1;
-}
 
 class Faro extends StatefulWidget {
   const Faro({
@@ -230,31 +150,149 @@ const double keycapRadius = 5.5;
 class _FaroState extends State<Faro> with TickerProviderStateMixin {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode();
-  late final AnimationController _open = AnimationController.unbounded(
-    vsync: this,
-  )..addListener(() => setState(() {}));
   StreamSubscription<String>? _commands;
   bool _visible = false;
   bool _launcher = false;
+
+  /// The pointer is on the 640 pt frame of the empty panel: the round buttons come out.
   bool _hovered = false;
 
-  /// The round buttons coming out on hover: the panel narrows from 640 to 384 pt with a
-  /// damped spring (~390 ms, small undershoot) and the buttons slide out from behind it from
-  /// +80 ms, overshooting ~7 % (spotlight › animation, measured on the first-run layout).
-  late final AnimationController _reveal = AnimationController(
+  /// Closing: the fade plays backwards, then the panel is gone.
+  bool _closing = false;
+
+  // All the motion of the panel (faro_motion.dart). Each controller is one quantity,
+  // driven by the measured table or spring, from wherever it is when something changes.
+
+  /// The opening fade, in ms from the first frame (0 → [fadeMs]; backwards when closing).
+  late final AnimationController _fade =
+      AnimationController(
+          vsync: this,
+          upperBound: fadeMs,
+          duration: Duration(microseconds: (fadeMs * 1000).round()),
+        )
+        ..addListener(_tick)
+        ..addStatusListener(_fadeStatus);
+
+  /// Vertical scale of the panel, centred (0.966 → 1 when opening, back when closing).
+  late final AnimationController _scaleY = AnimationController.unbounded(
     vsync: this,
-    duration: const Duration(milliseconds: 670),
-  )..addListener(() => setState(() {}));
+    value: 1,
+  )..addListener(_tick);
+
+  /// Width of the panel, in pt.
+  late final AnimationController _width = AnimationController.unbounded(
+    vsync: this,
+    value: wideWidth,
+  )..addListener(_tick);
+
+  /// Height of the panel, in pt (the header alone, or with the results).
+  late final AnimationController _height = AnimationController.unbounded(
+    vsync: this,
+    value: headerHeight,
+  )..addListener(_tick);
+  double? _heightTarget;
+
+  /// The round buttons: 0 = all behind the panel's right edge, 1 = spread at the 64 pt pitch.
+  late final AnimationController _spread = AnimationController.unbounded(
+    vsync: this,
+  )..addListener(_tick);
+  Timer? _spreadDelay;
+
+  /// The Launcher's opening, in ms from its first frame.
+  late final AnimationController _launcherClock = AnimationController(
+    vsync: this,
+    upperBound: launcherOpenMs,
+    value: launcherOpenMs,
+    duration: Duration(microseconds: (launcherOpenMs * 1000).round()),
+  )..addListener(_tick);
+
+  void _tick() {
+    if (mounted) setState(() {});
+  }
+
+  void _fadeStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && _closing) {
+      setState(() {
+        _visible = false;
+        _closing = false;
+      });
+    }
+  }
+
+  /// Moves `controller` to `target` with `spring`, keeping its current velocity.
+  static void _springTo(
+    AnimationController controller,
+    double target,
+    SpringDescription spring,
+  ) {
+    if (controller.value == target && !controller.isAnimating) return;
+    controller
+        .animateWith(
+          SpringSimulation(
+            spring,
+            controller.value,
+            target,
+            controller.velocity,
+            tolerance: const Tolerance(distance: 0.01, velocity: 0.05),
+          ),
+        )
+        // At rest it is exactly on the target (an interrupted spring never gets here).
+        .then((_) => controller.value = target);
+  }
+
+  bool get _searching => _query.text.trim().isNotEmpty;
+
+  /// The width and the buttons follow the state: narrow with the buttons out only while the
+  /// pointer is on the empty panel (PROVISIONAL: the steady-state hover is not measured; it
+  /// reuses the measured first-run morph, panel first and buttons 80 ms later; going back,
+  /// the buttons return first and the panel widens 80 ms later, mirroring it).
+  void _retarget() {
+    final narrow = _hovered && !_searching && !_launcher;
+    _spreadDelay?.cancel();
+    if (narrow) {
+      _springTo(_width, narrowWidth, widthSpring);
+      if (_spread.value < 0.5) {
+        _spreadDelay = Timer(buttonsDelay, () {
+          if (mounted) _springTo(_spread, 1, buttonsSpring);
+        });
+      } else {
+        _springTo(_spread, 1, buttonsSpring);
+      }
+    } else {
+      _springTo(_spread, 0, buttonsSpring);
+      if (_width.value < wideWidth - 1 && _spread.value > 0.5) {
+        _spreadDelay = Timer(buttonsDelay, () {
+          if (mounted) _springTo(_width, wideWidth, widthSpring);
+        });
+      } else {
+        _springTo(_width, wideWidth, widthSpring);
+      }
+    }
+  }
 
   void _setHovered(bool hovered) {
     if (hovered == _hovered) return;
     _hovered = hovered;
-    hovered ? _reveal.forward() : _reveal.reverse();
+    _retarget();
+  }
+
+  /// The height follows the content with the vertical spring (results appearing, the answer
+  /// card, the list growing or shrinking). Not measured (PROVISIONAL): the same spring as
+  /// the opening height.
+  void _followHeight(double target) {
+    if (_heightTarget == target) return;
+    final first = _heightTarget == null;
+    _heightTarget = target;
+    if (first) {
+      _height.value = target;
+      return;
+    }
+    // Starting a simulation notifies nobody synchronously: safe during build.
+    _springTo(_height, target, verticalSpring);
   }
 
   /// The chosen row; with an answer card, 0 is the card and the rows start at 1.
   int _selected = 0;
-  DateTime? _openedAt;
 
   /// The return from the launcher (value = ms from the start).
   late final AnimationController _back = AnimationController(
@@ -277,8 +315,11 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         setState(() {});
         return;
       }
+      final wasSearching = _lastText.trim().isNotEmpty;
       _lastText = _query.text;
       setState(() => _selected = 0);
+      // Typing on the narrow panel widens it again (the buttons go back first).
+      if (wasSearching != _searching) _retarget();
     });
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'faro.toggle') _toggle();
@@ -297,51 +338,66 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   @override
   void dispose() {
     _commands?.cancel();
-    _open.dispose();
+    _spreadDelay?.cancel();
+    _fade.dispose();
+    _scaleY.dispose();
+    _width.dispose();
+    _height.dispose();
+    _spread.dispose();
+    _launcherClock.dispose();
     _back.dispose();
-    _reveal.dispose();
     _query.dispose();
     _focus.dispose();
     super.dispose();
   }
 
-  void _toggle() => _visible && !_launcher ? _hide() : _show();
+  bool get _open => _visible && !_closing;
 
-  /// Esc from the launcher: no fade, the panel turns into Faro.
+  /// Opens Faro as ⌘Space does (tests: reopening while it closes).
+  @visibleForTesting
+  void reopenForTest() => _show();
+
+  void _toggle() => _open && !_launcher ? _hide() : _show();
+
+  /// Esc from the launcher: no fade, the panel turns into Faro (the measured return).
   void _backToFaro() {
     setState(() {
       _launcher = false;
-      _openedAt = null;
       _query.clear();
+      _hovered = false;
     });
-    _open.value = 1;
+    _spreadDelay?.cancel();
+    _width.value = wideWidth;
+    _spread.value = 0;
+    _scaleY.value = 1;
+    _fade.value = fadeMs;
+    _heightTarget = null;
     _back.forward(from: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
-  void _toggleLauncher() => _visible && _launcher ? _hide() : _showLauncher();
+  void _toggleLauncher() => _open && _launcher ? _hide() : _showLauncher();
 
   void _showLauncher() {
     setState(() {
       _visible = true;
+      _closing = false;
       _launcher = true;
-      _openedAt = DateTime.now();
       _recentIds = _recents.load();
     });
-    // The controller rebuilds every frame while the opening lasts.
-    _open.value = 0;
-    _open.animateTo(1, duration: const Duration(milliseconds: 200));
+    _fade.forward(from: 0);
+    _launcherClock.forward(from: 0);
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
   }
 
   void _show() {
+    final reopening = _visible && _closing;
     setState(() {
       _visible = true;
+      _closing = false;
       _launcher = false;
-      _openedAt = DateTime.now();
       _hovered = false;
-      _reveal.value = 0;
       // It reopens with the previous query, selected (SH-SP-04).
       _query.selection = TextSelection(
         baseOffset: 0,
@@ -355,23 +411,43 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     );
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
-    // Height: from 0.966 to 1 with a small overshoot (+2 pt over 447).
-    _open.value = 0;
-    _open.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 700, damping: 42),
-        0,
-        1,
-        0,
-      ),
-    );
+    _spreadDelay?.cancel();
+    _spread.value = 0;
+    _back.value = backDuration;
+    if (reopening) {
+      // Reopened while it was closing: it comes back from where it is, no restart.
+      _fade.forward();
+      _springTo(_scaleY, 1, verticalSpring);
+      _springTo(_width, wideWidth, widthSpring);
+    } else {
+      // First frame 0.966 tall and 1.033 wide, centred; the fade from 0.22; then the
+      // height and the width settle with their springs (spotlight › opening animation).
+      _heightTarget = null;
+      _fade.forward(from: 0);
+      _scaleY.value = openScaleY;
+      _springTo(_scaleY, 1, verticalSpring);
+      _width.value = wideWidth * openScaleX;
+      _springTo(_width, wideWidth, widthSpring);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
+  /// Closing (not measured, PROVISIONAL): the opening backwards. The fade runs back over
+  /// 67 ms while the height returns to 0.966; input goes away at once, so a click on what is
+  /// behind already reaches it.
   void _hide() {
-    setState(() => _visible = false);
+    if (!_open) return;
+    setState(() => _closing = true);
+    _spreadDelay?.cancel();
     LayerControl.keyboard('none');
     LayerControl.inputRegion(const []);
+    _fade.reverse();
+    if (!_launcher) {
+      _scaleY.animateTo(
+        openScaleY,
+        duration: Duration(microseconds: (_fade.value * 1000).round()),
+      );
+    }
   }
 
   void _launch(DesktopEntry entry) {
@@ -469,28 +545,23 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
             0.0,
             maxHeight - headerHeight - cardBlock - 1,
           );
-    final height = headerHeight + (searching ? cardBlock + 1 + listHeight : 0);
-    final elapsed = _openedAt == null
-        ? 1000.0
-        : DateTime.now().difference(_openedAt!).inMicroseconds / 1000;
-    final opacity = opacityAt(elapsed);
-    final scaleY = 0.966 + 0.034 * _open.value;
-    if (elapsed < 70) WidgetsBinding.instance.scheduleFrame();
-    // Steady state: one 640 pt capsule, empty or with results (SH-SP-04). The round buttons
-    // come out only while the pointer is on the empty panel (provisional, not measured).
-    final t = searching ? 0.0 : _reveal.value * 670;
-    // Panel width: spring settling in ~390 ms; buttons: from +80 ms, settling by ~670 ms.
-    final narrow = Curves.easeOutBack.transform((t / 390).clamp(0.0, 1.0));
-    final slide = Curves.easeOutBack.transform(
-      ((t - 80) / 590).clamp(0.0, 1.0),
-    );
-    final buttons = t > 0;
-    final width = wideWidth + (narrowWidth - wideWidth) * narrow;
+    _followHeight(headerHeight + (searching ? cardBlock + 1 + listHeight : 0));
+    final height = _height.value;
+    final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
+    final scaleY = _scaleY.value;
+    final width = _width.value;
+    final slide = _spread.value;
+    final buttons = slide > 0.001;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
-        var left = (screen.width - wideWidth) / 2;
+        final frameLeft = (screen.width - wideWidth) / 2;
+        // Wider than the 640 pt frame (the first frames of an opening) it stays centred;
+        // narrower, its left edge stays on the frame and the right edge moves.
+        var left = width > wideWidth
+            ? frameLeft - (width - wideWidth) / 2
+            : frameLeft;
         final top = screen.height * topFraction;
         // From the launcher: size and position from the big panel to the Faro one.
         final back = _back.isAnimating ? backProgress(_back.value) : 1.0;
@@ -513,49 +584,73 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                 behavior: HitTestBehavior.opaque,
               ),
             ),
+            // The round buttons come out from behind the panel: the panel itself is glass
+            // drawn by the compositor under the surface, so what is "behind" it is cut away
+            // here, left of its right edge (their glass merges with the panel's, as drops).
             if (buttons && back >= 1)
-              for (var i = 3; i >= 0; i--)
-                Positioned(
-                  // From behind the panel (all overlapped at its right end) out to the
-                  // 64 pt pitch.
-                  left:
-                      left +
-                      narrowWidth -
-                      circle +
-                      (10 + circle + i * circlePitch) * slide,
-                  top: top + (headerHeight - circle) / 2,
-                  width: circle,
-                  height: circle,
-                  child: Opacity(opacity: opacity, child: _circleButton(i)),
+              Positioned(
+                left: left + width,
+                top: top + (headerHeight - circle) / 2 - 2,
+                width: (frameLeft + wideWidth + 40 - (left + width)).clamp(
+                  0.0,
+                  double.infinity,
                 ),
+                height: circle + 4,
+                child: ClipRect(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      for (var i = 3; i >= 0; i--)
+                        Positioned(
+                          // All overlapped at the panel's right end at first, then out to
+                          // the 64 pt pitch.
+                          left:
+                              -circle +
+                              (narrowWidth +
+                                      10 +
+                                      i * circlePitch -
+                                      width +
+                                      circle) *
+                                  slide,
+                          top: 2,
+                          width: circle,
+                          height: circle,
+                          child: Opacity(
+                            key: ValueKey('faro button $i'),
+                            opacity: opacity,
+                            child: _circleButton(i),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             Positioned(
               left: left,
               top: top,
               width: panelWidth,
               height: panelHeight,
-              child: MouseRegion(
-                onEnter: (_) => _setHovered(true),
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.diagonal3Values(1, scaleY, 1),
-                  child: Opacity(
-                    opacity: opacity,
-                    child: _panel(
-                      answer,
-                      items,
-                      selected,
-                      listHeight,
-                      panelRadius: panelRadius,
-                    ),
+              child: Transform(
+                key: const ValueKey('faro panel'),
+                alignment: Alignment.center,
+                transform: Matrix4.diagonal3Values(1, scaleY, 1),
+                child: Opacity(
+                  opacity: opacity,
+                  child: _panel(
+                    answer,
+                    items,
+                    selected,
+                    listHeight,
+                    panelRadius: panelRadius,
                   ),
                 ),
               ),
             ),
             // The hover zone is the whole 640 pt frame, buttons included: the panel narrowing
             // under the pointer must not count as leaving it.
-            if (!searching && back >= 1)
+            if (back >= 1)
               Positioned(
-                left: left,
+                left: frameLeft,
                 top: top,
                 width: wideWidth,
                 height: headerHeight,
@@ -1003,10 +1098,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   );
 
   Widget _launcherView() {
-    final elapsed = _openedAt == null
-        ? 1000.0
-        : DateTime.now().difference(_openedAt!).inMicroseconds / 1000;
-    if (elapsed < 160) WidgetsBinding.instance.scheduleFrame();
+    final elapsed = _launcherClock.value;
+    final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
@@ -1026,7 +1119,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
               child: Transform.scale(
                 scale: launcherScaleAt(elapsed),
                 child: Opacity(
-                  opacity: opacityAt(elapsed),
+                  opacity: opacity,
                   // Shadow moved down by ~17 pt, extending ~35 pt.
                   child: OuterShadow(
                     radius: launcherRadius,
