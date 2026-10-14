@@ -130,6 +130,8 @@ class SystemScreenshotServices implements ScreenshotServices {
       arg('--title=$title'),
       if (start != null) arg('--folder=$start'),
     ].join(' ');
+    // Under `flutter test` nothing starts on the machine running the tests.
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return null;
     try {
       final result = await Process.run('sh', ['-c', command]);
       if (result.exitCode != 0) return null;

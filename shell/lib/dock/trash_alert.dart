@@ -34,12 +34,17 @@ const Color alertCancelText = Color(0xFF242424);
 /// Empties the user's Trash: `gio trash --empty` (all trashes, including volumes); without
 /// `gio`, the `files` and `info` folders of the home Trash (freedesktop specification).
 Future<void> emptyTrash({Map<String, String>? env}) async {
-  try {
-    final result = await Process.run('gio', ['trash', '--empty']);
-    if (result.exitCode == 0) return;
-  } on ProcessException {
-    // No gio: by hand.
+  // gio always works on the real user's Trash: never with a given environment or under
+  // `flutter test`, where it would empty the Trash of the machine running the tests.
+  if (env == null && !Platform.environment.containsKey('FLUTTER_TEST')) {
+    try {
+      final result = await Process.run('gio', ['trash', '--empty']);
+      if (result.exitCode == 0) return;
+    } on ProcessException {
+      // No gio: by hand.
+    }
   }
+  if (env == null && Platform.environment.containsKey('FLUTTER_TEST')) return;
   final home = (env ?? Platform.environment)['HOME'] ?? '';
   for (final name in ['files', 'info']) {
     final dir = Directory('$home/.local/share/Trash/$name');
@@ -62,6 +67,7 @@ Future<void> moveToTrash(
   DateTime? now,
 }) async {
   if (paths.isEmpty) return;
+  if (env == null && Platform.environment.containsKey('FLUTTER_TEST')) return;
   if (env == null) {
     try {
       final result = await Process.run('gio', ['trash', '--', ...paths]);
