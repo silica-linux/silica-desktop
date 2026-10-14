@@ -617,5 +617,83 @@ void main() {
       many.firstWhere((a) => a.label == 'Move to Trash').onSelected?.call();
       expect(sent, ['trash']);
     });
+
+    testWidgets(
+      'Move to Trash closes the menu while the desktop announces its new state',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final layer = <MethodCall>[];
+        final sent = <String>[];
+        Future<void> shell(MethodCall call) =>
+            tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+              'silica/shell',
+              const JSONMethodCodec().encodeMethodCall(call),
+              (_) {},
+            );
+        Future<void> broadcast(String topic, String value) =>
+            shell(MethodCall('broadcast', {'topic': topic, 'value': value}));
+        tester.binding.defaultBinaryMessenger
+          ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+            if (call.method == 'broadcast') {
+              final args = call.arguments as Map;
+              sent.add('${args['topic']}=${args['value']}');
+            }
+            return switch (call.method) {
+              'list' => const <Object?>[],
+              'focused' => '',
+              _ => null,
+            };
+          })
+          ..setMockMethodCallHandler(
+            const MethodChannel('silica/layer', JSONMethodCodec()),
+            (call) async {
+              layer.add(call);
+              return switch (call.method) {
+                'outputSize' => {'width': 1280, 'height': 800},
+                _ => true,
+              };
+            },
+          );
+        addTearDown(() {
+          ShellChannel.instance.states.value = const {};
+        });
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+          ),
+        );
+        await tester.pump();
+        await broadcast(
+          'desktop.state',
+          '{"stacks":false,"sort":"none","selected":1}',
+        );
+        await broadcast('desktopmenu', '400 300 items');
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Move to Trash'), findsOneWidget);
+
+        await tester.tapAt(tester.getRect(find.text('Move to Trash')).center);
+        // The desktop runs the action as the menu starts fading, and announces its new
+        // state: the bar rebuilds while the menu fades out.
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (sent.any((s) => s.startsWith('desktop.action=trash'))) break;
+        }
+        expect(sent.where((s) => s.startsWith('desktop.action=trash')), [
+          'desktop.action=trash 1',
+        ]);
+        await broadcast(
+          'desktop.state',
+          '{"stacks":false,"sort":"none","selected":0}',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Move to Trash'), findsNothing);
+        expect(sent.last, 'desktopmenu=');
+        expect(layer.any((c) => c.method == 'clearTransient'), isTrue);
+      },
+    );
   });
 }

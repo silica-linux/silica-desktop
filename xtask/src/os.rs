@@ -719,6 +719,11 @@ fn deploy(args: &[String]) -> Result<()> {
         replace_file(&engine.join(file), &share.join("engine").join(file))?;
     }
     replace_dir(&root.join("shell/build/release"), &share.join("shell"))?;
+    // The interface sounds, in $XDG_DATA_DIRS/silica/sounds (the session puts share/ first).
+    replace_dir(
+        &root.join("data/sounds"),
+        &share.join("share/silica/sounds"),
+    )?;
     if let Some(icons) = sibling("silica-icons") {
         let staged = work.join("icons.stage");
         let _ = std::fs::remove_dir_all(&staged);

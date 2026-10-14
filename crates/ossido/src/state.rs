@@ -53,6 +53,10 @@ pub struct State {
     /// The icon of a drag between apps (`wl_data_device.start_drag`): it follows the pointer
     /// until the drop.
     pub drag_icon: Option<WlSurface>,
+    /// Where the drag icon sits from the pointer: the offsets of its commits added up
+    /// (`wl_surface.attach` dx/dy or `wl_surface.offset`), so a client keeps the point it
+    /// grabbed under the pointer.
+    pub drag_icon_offset: Point<i32, Logical>,
     /// The cursor asked by the focused client: drawn by Ossido only in the real session.
     pub cursor_status: smithay::input::pointer::CursorImageStatus,
     /// The window screenshot mode (K-05): the frame of the window under the pointer is veiled.
@@ -295,6 +299,7 @@ impl State {
             system: crate::system::SystemLink::disconnected(),
             appearance: None,
             drag_icon: None,
+            drag_icon_offset: Point::default(),
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
             cursor_override: None,
             window_veil: false,
@@ -420,14 +425,36 @@ impl State {
         }
     }
 
-    /// The drag icon and where to draw it: its corner on the pointer.
+    /// The drag icon and where to draw it: its corner on the pointer, moved by the offsets
+    /// the client gave it.
     pub fn drag_icon_view(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
         let icon = self.drag_icon.as_ref()?;
         if !smithay::reexports::wayland_server::Resource::is_alive(icon) {
             return None;
         }
         let pointer = self.seat.get_pointer()?;
-        Some((icon.clone(), pointer.current_location()))
+        Some((
+            icon.clone(),
+            pointer.current_location() + self.drag_icon_offset.to_f64(),
+        ))
+    }
+
+    /// A commit of the drag icon: its offset moves it from the pointer.
+    pub fn drag_icon_committed(&mut self, surface: &WlSurface) {
+        if self.drag_icon.as_ref() != Some(surface) {
+            return;
+        }
+        let delta = smithay::wayland::compositor::with_states(surface, |states| {
+            states
+                .cached_state
+                .get::<smithay::wayland::compositor::SurfaceAttributes>()
+                .current()
+                .buffer_delta
+                .take()
+        });
+        if let Some(delta) = delta {
+            self.drag_icon_offset = add_icon_offset(self.drag_icon_offset, delta);
+        }
     }
 }
 
@@ -486,5 +513,39 @@ mod key_repeat_tests {
         assert_eq!(parse_key_repeat(Some("500,0")), (500, 0));
         assert_eq!(parse_key_repeat(Some("fast")), (375, 11));
         assert_eq!(parse_key_repeat(Some("-1,30")), (375, 11));
+    }
+}
+
+/// The drag icon's offset plus a commit's delta, bounded: a hostile client cannot overflow it,
+/// and an icon farther than this from the pointer is off every screen anyway.
+pub fn add_icon_offset(
+    offset: Point<i32, Logical>,
+    delta: Point<i32, Logical>,
+) -> Point<i32, Logical> {
+    const LIMIT: i32 = 1 << 16;
+    Point::from((
+        offset.x.saturating_add(delta.x).clamp(-LIMIT, LIMIT),
+        offset.y.saturating_add(delta.y).clamp(-LIMIT, LIMIT),
+    ))
+}
+
+#[cfg(test)]
+mod drag_icon_tests {
+    use super::add_icon_offset;
+    use smithay::utils::Point;
+
+    #[test]
+    fn the_icon_offset_adds_up_and_stays_bounded() {
+        let grabbed = add_icon_offset(Point::default(), Point::from((-40, -12)));
+        assert_eq!(grabbed, Point::from((-40, -12)));
+        assert_eq!(
+            add_icon_offset(grabbed, Point::from((5, 2))),
+            Point::from((-35, -10))
+        );
+        let hostile = add_icon_offset(
+            Point::from((i32::MAX, 0)),
+            Point::from((i32::MAX, i32::MIN)),
+        );
+        assert_eq!(hostile, Point::from((1 << 16, -(1 << 16))));
     }
 }

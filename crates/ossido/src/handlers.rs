@@ -74,6 +74,7 @@ impl CompositorHandler for State {
             self.perf.frame(surface, pid, std::time::Instant::now());
         }
         on_commit_buffer_handler::<Self>(surface);
+        self.drag_icon_committed(surface);
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();
             while let Some(parent) = get_parent(&root) {
@@ -342,6 +343,7 @@ impl ClientDndGrabHandler for State {
         _seat: Seat<Self>,
     ) {
         self.drag_icon = icon;
+        self.drag_icon_offset = Point::default();
     }
 
     fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _seat: Seat<Self>) {

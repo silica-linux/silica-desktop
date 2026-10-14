@@ -1396,7 +1396,7 @@ impl App {
                 .get_mut(..icon.bgra.len())?
                 .copy_from_slice(&icon.bgra);
             let surface = self.compositor.create_surface(&self.qh);
-            Some((surface, buffer, width, height))
+            Some((surface, buffer, width, height, icon.hotspot))
         });
         source.start_drag(
             device,
@@ -1404,8 +1404,16 @@ impl App {
             icon.as_ref().map(|(surface, ..)| surface),
             self.press_serial,
         );
-        let icon = icon.and_then(|(surface, buffer, width, height)| {
+        let icon = icon.and_then(|(surface, buffer, width, height, (x, y))| {
             buffer.attach_to(&surface).ok()?;
+            // The grab point on the pointer: the icon's surface moves by (-x, -y) from it.
+            if (x, y) != (0, 0) {
+                if wayland_client::Proxy::version(&surface) >= 5 {
+                    surface.offset(-x, -y);
+                } else {
+                    surface.attach(Some(buffer.wl_buffer()), -x, -y);
+                }
+            }
             surface.damage_buffer(0, 0, width, height);
             surface.commit();
             Some((surface, buffer))

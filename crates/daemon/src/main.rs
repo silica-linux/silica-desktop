@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 use futures_lite::{StreamExt, future};
 use silica_daemon::actions::{ACTIONS_PATH, Actions};
+use silica_daemon::sound::{SOUND_PATH, Sound, SoundConfig};
 use silica_daemon::{ClipboardService, Daemon, SystemConfig, SystemService};
 
 const USAGE: &str = "usage: silica-daemon [--address ADDRESS] [--replace]
@@ -69,6 +70,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
     // Faro's clipboard and actions scopes.
     let clipboard = ClipboardService::serve(connection.clone()).await?;
     connection.object_server().at(ACTIONS_PATH, Actions).await?;
+    // The interface sound effects (the Trash, copies), for apps and the shell.
+    connection
+        .object_server()
+        .at(SOUND_PATH, Sound::new(SoundConfig::default()))
+        .await?;
     let daemon = Daemon::serve(connection, replace).await?;
     eprintln!(
         "silica-daemon: notifiche su {}",
