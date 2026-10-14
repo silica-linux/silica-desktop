@@ -146,9 +146,11 @@ Item _appItem(
   List<Toplevel> windows, {
   bool pinned = false,
   bool fixed = false,
+  bool registered = false,
 }) => Item.app(
   entry.name,
-  running: windows.isNotEmpty,
+  // An app keeps running when its last window closes (#142): the registry says so.
+  running: windows.isNotEmpty || registered,
   iconPath: findIcon(entry.icon),
   layered: silicaIconFor(entry),
   command: entry.exec,
@@ -169,16 +171,26 @@ List<Item> dockItems(
   List<String>? recents,
   String trashLabel = 'Trash',
   String appsLabel = 'Apps',
+  Set<String> registered = const {},
 }) {
   List<Toplevel> windowsOf(DesktopEntry entry) => [
     for (final t in toplevels)
       if (entry.matchesAppId(t.appId)) t,
   ];
+  bool isRegistered(DesktopEntry entry) => registered.any(entry.matchesAppId);
   final items = <Item>[];
   final shown = <String>{};
   // The file manager first, whatever the configuration says (#141).
   if (entries[fileManagerId] case final manager?) {
-    items.add(_appItem(manager, windowsOf(manager), pinned: true, fixed: true));
+    items.add(
+      _appItem(
+        manager,
+        windowsOf(manager),
+        pinned: true,
+        fixed: true,
+        registered: isRegistered(manager),
+      ),
+    );
     shown.add(fileManagerId);
   }
   for (final id in pinned) {
@@ -189,7 +201,14 @@ List<Item> dockItems(
     if (shown.contains(id)) continue;
     final entry = entries[id];
     if (entry == null) continue;
-    items.add(_appItem(entry, windowsOf(entry), pinned: true));
+    items.add(
+      _appItem(
+        entry,
+        windowsOf(entry),
+        pinned: true,
+        registered: isRegistered(entry),
+      ),
+    );
     shown.add(id);
   }
   // With recent apps (D-08) a second separator after the pinned ones: between the two the
@@ -202,7 +221,17 @@ List<Item> dockItems(
         .where((e) => e.matchesAppId(window.appId))
         .firstOrNull;
     if (entry == null || !shown.add(entry.id)) continue;
-    items.add(_appItem(entry, windowsOf(entry)));
+    items.add(
+      _appItem(entry, windowsOf(entry), registered: isRegistered(entry)),
+    );
+  }
+  // Running apps without windows (#142), after those with windows.
+  for (final appId in registered.toList()..sort()) {
+    final entry = entries.values
+        .where((e) => e.matchesAppId(appId))
+        .firstOrNull;
+    if (entry == null || !shown.add(entry.id)) continue;
+    items.add(_appItem(entry, const [], registered: true));
   }
   if (recentSection) {
     for (final id in recents) {

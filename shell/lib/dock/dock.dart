@@ -25,6 +25,7 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/layer_control.dart';
+import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
 import 'apps.dart';
 import 'icons.dart';
@@ -170,6 +171,8 @@ class _LiveDockState extends State<LiveDock> {
   void initState() {
     super.initState();
     ShellChannel.instance.toplevels.addListener(_changed);
+    AppRegistry.instance.apps.addListener(_changed);
+    AppRegistry.instance.start();
     ShellChannel.instance.focused.addListener(_focused);
     ShellChannel.instance.minimized.addListener(_minimized);
     ShellChannel.instance.refresh();
@@ -199,6 +202,7 @@ class _LiveDockState extends State<LiveDock> {
   @override
   void dispose() {
     ShellChannel.instance.toplevels.removeListener(_changed);
+    AppRegistry.instance.apps.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_focused);
     ShellChannel.instance.minimized.removeListener(_minimized);
     for (final image in _thumbnails.values) {
@@ -210,8 +214,11 @@ class _LiveDockState extends State<LiveDock> {
   void _changed() {
     // An app with no more windows joins the recently closed ones.
     final now = {
-      for (final t in ShellChannel.instance.toplevels.value)
-        if (_entries.values.where((e) => e.matchesAppId(t.appId)).firstOrNull
+      for (final appId in [
+        for (final t in ShellChannel.instance.toplevels.value) t.appId,
+        ...AppRegistry.instance.apps.value,
+      ])
+        if (_entries.values.where((e) => e.matchesAppId(appId)).firstOrNull
             case final entry?)
           entry.id,
     };
@@ -381,18 +388,24 @@ class _LiveDockState extends State<LiveDock> {
       ),
       const MenuDivider(),
       if (item.running) ...[
-        MenuAction(
-          l.showAllWindows,
-          onSelected: () {
-            shell.activate(_latest(item));
-            shell.execute('panorama.app');
-          },
-        ),
+        if (item.windows.isNotEmpty)
+          MenuAction(
+            l.showAllWindows,
+            onSelected: () {
+              shell.activate(_latest(item));
+              shell.execute('panorama.app');
+            },
+          ),
         MenuAction(
           l.quit,
           onSelected: () {
-            shell.activate(_latest(item));
-            shell.execute('app.quit');
+            if (item.windows.isEmpty) {
+              // Running without windows (#142): quit it by its app id.
+              shell.execute('app.quit', {'app_id': item.id});
+            } else {
+              shell.activate(_latest(item));
+              shell.execute('app.quit');
+            }
           },
         ),
       ] else
@@ -437,6 +450,7 @@ class _LiveDockState extends State<LiveDock> {
       recents: _recentsOn ? _closed : null,
       trashLabel: l10nOf(context).trash,
       appsLabel: l10nOf(context).dockApps,
+      registered: AppRegistry.instance.apps.value,
     ),
     magnification: _magnify ? defaultMagnification : 1,
     onActivate: _activate,
