@@ -29,6 +29,8 @@ pub const WINDOW_FOCUS: &str = "window.focus";
 pub const WINDOW_CLOSE: &str = "window.close";
 pub const WINDOW_MOVE: &str = "window.move";
 pub const WINDOW_MINIMIZE: &str = "window.minimize";
+/// The minimize effect (Dock setting): genie or scale.
+pub const WINDOW_MINIMIZE_EFFECT: &str = "window.minimize_effect";
 pub const WINDOW_FULLSCREEN: &str = "window.fullscreen";
 pub const WINDOW_TILE_LEFT: &str = "window.tile_left";
 pub const WINDOW_TILE_RIGHT: &str = "window.tile_right";
@@ -278,6 +280,20 @@ pub const CATALOG: &[CommandSpec] = &[
                 "type": "object",
                 "properties": {"quality": {"type": "string", "enum": ["auto", "full", "frosted", "opaque"]}},
                 "required": ["quality"],
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: WINDOW_MINIMIZE_EFFECT,
+        label: "Minimize effect",
+        description: "How windows go into the Dock and come out of it: genie or scale (the Dock's setting).",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"effect": {"type": "string", "enum": ["genie", "scale"]}},
+                "required": ["effect"],
                 "additionalProperties": false
             })
         },
@@ -1299,6 +1315,13 @@ pub struct ValueParams {
 #[serde(deny_unknown_fields)]
 pub struct GlassQualityParams {
     pub quality: String,
+}
+
+/// Parameters of [`WINDOW_MINIMIZE_EFFECT`]: `genie` or `scale`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MinimizeEffectParams {
+    pub effect: String,
 }
 
 /// Result of [`PERF_RENDER`]: Ossido's rendering time per frame, in ms.

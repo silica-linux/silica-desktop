@@ -58,6 +58,9 @@ pub const MINIMIZE: Duration = Duration::from_millis(480);
 /// Restore: 4868 → 5308/5335 ms into the recording, ~440–470 ms.
 pub const RESTORE: Duration = Duration::from_millis(470);
 
+/// The scale minimize effect (dock.md, SH-DK-09): ~213 ms to minimize and to restore.
+pub const SCALE_EFFECT: Duration = Duration::from_millis(213);
+
 /// The state of the genie at an instant: how bent the funnel is (0–1) and how far the top and
 /// bottom edges have come down towards the thumbnail (0 = window, 1 = thumbnail).
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -374,7 +374,8 @@ impl State {
         // A window has only one genie: the new one replaces the old one.
         self.genies
             .retain(|genie| !genie.finished(now, speed) && !genie.hides(window));
-        if let Some(genie) = crate::render::snapshot_genie(
+        let effect = self.minimize_effect;
+        if let Some(mut genie) = crate::render::snapshot_genie(
             renderer,
             &self.space,
             &self.output,
@@ -383,6 +384,7 @@ impl State {
             restoring,
             dark,
         ) {
+            genie.effect = effect;
             self.genies.push(genie);
         }
     }

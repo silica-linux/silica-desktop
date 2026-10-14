@@ -166,6 +166,27 @@ impl Closing {
     }
 }
 
+/// How a window goes into the Dock (Dock setting, SH-DK-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MinimizeEffect {
+    /// The funnel (windows.md).
+    #[default]
+    Genie,
+    /// The window shrinks uniformly towards its Dock cell, keeping its aspect (dock.md,
+    /// SH-DK-09: ~213 ms each way, about half the genie).
+    Scale,
+}
+
+impl MinimizeEffect {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "genie" => Some(Self::Genie),
+            "scale" => Some(Self::Scale),
+            _ => None,
+        }
+    }
+}
+
 /// A window minimizing into the Dock or coming out of it: the snapshot deformed as a genie.
 pub struct Genie {
     pub id: Id,
@@ -180,11 +201,14 @@ pub struct Genie {
     pub start: Instant,
     /// The restore: the window is already mapped but stays hidden until the genie ends.
     pub restoring: Option<Window>,
+    pub effect: MinimizeEffect,
 }
 
 impl Genie {
     fn duration(&self) -> std::time::Duration {
-        if self.restoring.is_some() {
+        if self.effect == MinimizeEffect::Scale {
+            animation::SCALE_EFFECT
+        } else if self.restoring.is_some() {
             animation::RESTORE
         } else {
             animation::MINIMIZE
@@ -210,6 +234,25 @@ impl Genie {
         } else {
             animation::genie_minimize(ms)
         }
+    }
+
+    /// The scale effect at instant `now`: the factor and the point that stays still, so the
+    /// snapshot shrinks from the window frame into the target keeping its aspect.
+    pub fn scale_at(&self, now: Instant, speed: f64) -> (f64, Point<i32, Physical>) {
+        let progress = animation::progress(
+            now.saturating_duration_since(self.start),
+            self.duration(),
+            speed,
+        );
+        scale_effect(
+            self.frame,
+            self.target,
+            if self.restoring.is_some() {
+                1.0 - progress
+            } else {
+                progress
+            },
+        )
     }
 
     /// The restoring window that the genie still hides.
@@ -611,7 +654,40 @@ pub fn snapshot_genie(
         target: target.to_physical(scale),
         start: Instant::now(),
         restoring: restoring.then(|| window.clone()),
+        effect: MinimizeEffect::Genie,
     })
+}
+
+/// The scale effect at `progress` (0 window, 1 in the Dock cell): the factor, and the point
+/// that stays still so the frame's center lands on the target's center while the frame shrinks
+/// to fit the target with its aspect kept.
+pub fn scale_effect(
+    frame: Rectangle<f64, Physical>,
+    target: Rectangle<f64, Physical>,
+    progress: f64,
+) -> (f64, Point<i32, Physical>) {
+    let eased = animation::smoothstep(progress);
+    let (fw, fh) = (frame.size.w.max(1.0), frame.size.h.max(1.0));
+    let end = (target.size.w / fw)
+        .min(target.size.h / fh)
+        .clamp(0.01, 1.0);
+    let factor = 1.0 + (end - 1.0) * eased;
+    // o + (frame center − o) · end = target center.
+    let fc = (frame.loc.x + fw / 2.0, frame.loc.y + fh / 2.0);
+    let tc = (
+        target.loc.x + target.size.w / 2.0,
+        target.loc.y + target.size.h / 2.0,
+    );
+    let k = 1.0 - end;
+    let origin = if k > 1e-6 {
+        ((tc.0 - end * fc.0) / k, (tc.1 - end * fc.1) / k)
+    } else {
+        fc
+    };
+    (
+        factor,
+        Point::from((origin.0.round() as i32, origin.1.round() as i32)),
+    )
 }
 
 /// The snapshot of a window (surfaces, bar and shadow) for the closing animation.
@@ -896,6 +972,30 @@ pub fn output_elements(
         let mut commit = genie.commit.get();
         commit.increment();
         genie.commit.set(commit);
+        if genie.effect == MinimizeEffect::Scale {
+            let (factor, origin) = genie.scale_at(context.now, context.animation_speed);
+            let texture = TextureRenderElement::from_static_texture(
+                genie.id.clone(),
+                context_id.clone(),
+                genie.snapshot.loc.to_f64(),
+                genie.texture.clone(),
+                1,
+                Transform::Normal,
+                None,
+                None,
+                Some(genie.texture.size().to_logical(1, Transform::Normal)),
+                None,
+                Kind::Unspecified,
+            );
+            elements.insert(
+                top_start,
+                OutputElement::Texture(RescaleRenderElement::from_element(texture, origin, factor)),
+            );
+            for anchor in &mut anchors {
+                anchor.index = after_insert(anchor.index, top_start);
+            }
+            continue;
+        }
         if let Some(element) =
             ossido_render::genie::GenieElement::new(ossido_render::genie::GenieParts {
                 id: genie.id.clone(),
@@ -1182,7 +1282,28 @@ pub fn output_elements(
 
 #[cfg(test)]
 mod tests {
-    use super::after_insert;
+    use super::{MinimizeEffect, after_insert, scale_effect};
+    use smithay::utils::{Physical, Rectangle};
+
+    #[test]
+    fn scale_effect_lands_the_window_in_its_cell_keeping_the_aspect() {
+        let frame = Rectangle::<f64, Physical>::new((830.0, 420.0).into(), (900.0, 600.0).into());
+        let target = Rectangle::<f64, Physical>::new((1600.0, 1370.0).into(), (57.0, 47.0).into());
+        let (start, _) = scale_effect(frame, target, 0.0);
+        assert!((start - 1.0).abs() < 1e-9);
+        let (end, origin) = scale_effect(frame, target, 1.0);
+        // Fits the cell's width (57 / 900), not its height: the aspect is kept.
+        assert!((end - 57.0 / 900.0).abs() < 1e-9);
+        // The frame center lands on the target center.
+        let center = (
+            f64::from(origin.x) + (1275.0 - f64::from(origin.x)) * end,
+            f64::from(origin.y) + (720.0 - f64::from(origin.y)) * end,
+        );
+        assert!((center.0 - 1628.5).abs() < 1.0, "{center:?}");
+        assert!((center.1 - 1393.5).abs() < 1.0, "{center:?}");
+        assert_eq!(MinimizeEffect::parse("scale"), Some(MinimizeEffect::Scale));
+        assert_eq!(MinimizeEffect::parse("magic"), None);
+    }
 
     #[test]
     fn glass_ending_where_the_background_starts_stays_in_front() {

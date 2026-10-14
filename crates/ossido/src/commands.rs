@@ -39,6 +39,7 @@ use silica_control::commands::{
 use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
+use silica_control::commands::{MinimizeEffectParams, WINDOW_MINIMIZE_EFFECT};
 use silica_control::{Request, Response, Screenshot, ScreenshotParams, Shortcut};
 use smithay::backend::input::{ButtonState, KeyState};
 use smithay::desktop::Window;
@@ -147,6 +148,12 @@ impl State {
             }
             SCREENSHOT_SELECTION | SCREENSHOT_TOOLBAR | APP_FORCE_QUIT_PANEL => {
                 Ok(json!({ "forwarded": self.forward_to_shell(id) }))
+            }
+            WINDOW_MINIMIZE_EFFECT => {
+                let MinimizeEffectParams { effect } = parse_required(params)?;
+                self.minimize_effect = crate::render::MinimizeEffect::parse(&effect)
+                    .ok_or_else(|| format!("unknown minimize effect (genie, scale): {effect}"))?;
+                Ok(json!({ "effect": effect }))
             }
             UI_GLASS_QUALITY => {
                 let GlassQualityParams { quality } = parse_required(params)?;

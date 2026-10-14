@@ -159,6 +159,8 @@ pub struct State {
     pub closing: Vec<crate::render::Closing>,
     /// Windows minimizing into the Dock or coming out of it (genie).
     pub genies: Vec<crate::render::Genie>,
+    /// How windows go into the Dock: genie or scale (the Dock's setting, SH-DK-09).
+    pub minimize_effect: crate::render::MinimizeEffect,
     /// Chosen glass quality (`--glass`, `ui.glass_quality`).
     pub glass_setting: GlassSetting,
     /// The renderer runs on a software rasterizer (llvmpipe): the automatic glass is
@@ -342,6 +344,7 @@ impl State {
             animation_speed: 1.0,
             closing: Vec::new(),
             genies: Vec::new(),
+            minimize_effect: crate::render::MinimizeEffect::Genie,
             glass_setting: GlassSetting::Auto,
             software_renderer: false,
         })
