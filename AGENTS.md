@@ -6,8 +6,9 @@ environment written from scratch in Rust, with the visual language of macOS 27
 
 ## Session start
 
-1. Read `plan/STATUS.md` (current milestone, next task), then the task in
-   `plan/execution-plan.md` and the relevant section of `plan/architecture.md`.
+1. Look at the project board (https://github.com/orgs/silica-linux/projects/1): milestones and
+   issues of every repository are the plan. `plan/STATUS.md` and `plan/execution-plan.md`
+   (local, gitignored) keep only the context.
 2. For the expected behaviour: `plan/reference/*.md` (measured observations of macOS 27).
 3. Work autonomously; stop only for the decisions the plan assigns to the user.
 
@@ -42,6 +43,12 @@ environment written from scratch in Rust, with the visual language of macOS 27
 - For visual work: screenshot, reading the PNG, comparison with the reference before
   closing the task.
 - Parity in `ROADMAP.md` is updated only from measured metrics, never estimated by the agent.
+- Every bug, gap or provisional value has an issue on GitHub (shared labels, milestone, on the
+  board); commits that close one say `Fixes silica-linux/<repo>#N`. Measurement requests are
+  issues in silica-reference (label `measurement`). Never paste reference captures or text
+  into public repositories.
+- English everywhere: code, comments, tests, docs, commits. User-visible texts are localized:
+  English source, Italian translation.
 
 ## Agents in parallel
 
@@ -120,6 +127,8 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 | `silica-os` | the distro: a bootc image on top of Fedora Atomic with Silica's defaults, pipeline and installation ISO | MIT OR Apache-2.0 |
 | `silica-brand` | logo, repository banners, release wallpapers (with their rows in `ASSETS.md`) | to be decided (trademark) |
 | `silica-setup` | the first-boot assistant (an app, like `mustache`) | MIT OR Apache-2.0 |
+| `clock`, `calculator` | the clock and calculator apps (like `mustache`) | MIT OR Apache-2.0 |
+| `.github` (public) | default issue templates for every repository | — |
 | one repository per app | `mustache` (public, the file manager), then Settings, Terminal, …: they depend on `silica-ui`; they are built with `cargo xtask bundle <path>`; `cargo xtask install-app <path>` installs their `.desktop` entry (template in the app repository's `linux/`) | MIT OR Apache-2.0 |
 
 Faro and the other shell components are not apps: they stay in `shell/`. A change to
