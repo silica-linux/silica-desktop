@@ -37,6 +37,7 @@ use silica_control::commands::{
     IndexParams, MoveToSpaceParams, SPACE_ADD, SPACE_GOTO, SPACE_LIST, SPACE_NEXT, SPACE_PREVIOUS,
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
+use silica_control::commands::{KEYBOARD_NEXT_SOURCE, KEYBOARD_STATE};
 use silica_control::commands::{
     LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
 };
@@ -105,6 +106,11 @@ impl State {
     pub fn execute_command(&mut self, id: &str, params: Value) -> Result<Value, String> {
         match id {
             UI_SCREENSHOT => self.command_screenshot(parse(params)?),
+            KEYBOARD_STATE => Ok(self.keyboard_state()),
+            KEYBOARD_NEXT_SOURCE => {
+                let switched = self.next_input_source();
+                Ok(json!({ "switched": switched, "active": self.active_layout() }))
+            }
             SCREENSHOT_SCREEN => {
                 let options: CaptureOptions = parse(params)?;
                 let capture = self.screenshot()?;

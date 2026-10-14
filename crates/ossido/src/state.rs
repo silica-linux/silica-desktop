@@ -113,6 +113,10 @@ pub struct State {
     pub shortcuts: Vec<(Shortcut, &'static str)>,
     /// Keycodes for the synthetic keys (`input.key`, `input.type`).
     pub keys: crate::keys::KeyLookup,
+    /// The user's settings folder (`config.rs`), watched; `None` without a home.
+    pub config_dir: Option<std::path::PathBuf>,
+    /// The keyboard settings applied (`keyboard.json`).
+    pub keyboard_config: crate::config::KeyboardConfig,
     /// Frame pace, startup and memory of the clients (`perf.*`).
     pub perf: crate::perf::Perf,
     /// Desktop color until there is a wallpaper (`--background`).
@@ -342,6 +346,8 @@ impl State {
             next_window_id: 0,
             shortcuts: crate::commands::shortcuts(),
             keys: crate::keys::KeyLookup::new()?,
+            config_dir: None,
+            keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
@@ -490,7 +496,7 @@ pub struct ButtonsHover {
 const KEY_REPEAT_DELAY_MS: i32 = 375;
 const KEY_REPEAT_RATE: i32 = 11;
 
-fn key_repeat() -> (i32, i32) {
+pub fn key_repeat() -> (i32, i32) {
     parse_key_repeat(std::env::var("OSSIDO_KEY_REPEAT").ok().as_deref())
 }
 

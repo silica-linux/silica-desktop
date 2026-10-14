@@ -4,6 +4,7 @@ mod app_frames;
 pub mod backend;
 mod capture;
 pub mod commands;
+mod config;
 mod control;
 #[cfg(feature = "drm")]
 mod cursor;
@@ -144,6 +145,17 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             Some(smithay::output::Scale::Integer(options.scale)),
             None,
         );
+    }
+
+    // The user's settings (keyboard.json, …), applied now and whenever Settings changes them.
+    if let Some(dir) = config::config_dir() {
+        match config::watch(&event_loop.handle(), &dir) {
+            Ok(()) => {
+                ossido.state.config_dir = Some(dir);
+                ossido.state.apply_all_config();
+            }
+            Err(err) => warn!("settings folder: {err}"),
+        }
     }
 
     // The lines on stdout are the interface for scripts and tests: one per variable.

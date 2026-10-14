@@ -75,6 +75,8 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `input.type` | `text` | — |
 | `perf.frames` | `reset?` | per surface: `surface`, `pid`, `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms`, `slow`, `period_ms`, `startup_ms` |
 | `perf.process` | `pid` | `pid`, `rss_kib`, `pss_kib` |
+| `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
+| `keyboard.next_source` | — | `switched`, `active`: the next input source (⌃Space; with a single source the shortcut goes to the app) |
 | `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
 
 The `perf.frames` measurements are the compositor's, the same for every toolkit: a frame is
@@ -84,6 +86,39 @@ launch with `app.launch` (or `--spawn`) to the first buffer of the process or of
 descendants.
 
 Without `id`, the window commands act on the focused one.
+
+## Settings files
+
+Ossido applies the user's settings from `$XDG_CONFIG_HOME/silica` (usually `~/.config/silica`;
+`crates/ossido/src/config.rs`), written by Settings. The folder is watched (inotify): a file
+written in place or renamed over is applied at once, a removed one brings back the defaults.
+A malformed file is ignored as a whole; a value out of range is ignored alone. Settings keeps the
+keys it does not know.
+
+### keyboard.json
+
+```json
+{
+  "repeatDelay": 375,
+  "repeatRate": 11,
+  "layouts": ["us", "it", "de(nodeadkeys)"],
+  "model": "",
+  "options": "caps:escape"
+}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `repeatDelay` | integer, 100–3000 | ms before a held key repeats (default 375, or `OSSIDO_KEY_REPEAT`) |
+| `repeatRate` | integer, 0–100 | repeats per second; 0 turns repeat off (default 11) |
+| `layouts` | array of strings, at most 4 | the input sources: xkb layouts, a variant in parentheses; the first is active at start. Empty or absent: xkb's default (`XKB_DEFAULT_*`) |
+| `model` | string | xkb model (empty: default) |
+| `options` | string | xkb options, comma-separated (`caps:escape,compose:ralt`) |
+
+A change of repeat is sent to every bound keyboard (`wl_keyboard.repeat_info`); a change of
+`layouts`, `model` or `options` compiles a new keymap and sends it to the clients. A layout xkb
+does not know keeps the keymap in use. ⌃Space (`keyboard.next_source`) moves to the next
+source when there are two or more.
 
 ## CLI and MCP
 

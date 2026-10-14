@@ -55,6 +55,8 @@ impl Headless {
             .args(extra)
             .args(["--control", "0"])
             .env("XDG_RUNTIME_DIR", &dir)
+            // The user's settings (keyboard.json, displays.json…) never reach the tests.
+            .env("XDG_CONFIG_HOME", dir.join("config"))
             .env("RUST_LOG", "warn")
             .env_remove("WAYLAND_DISPLAY")
             .stdout(Stdio::piped())

@@ -98,6 +98,8 @@ pub const SYSTEM_KEYBOARD_BRIGHTNESS_DOWN: &str = "system.keyboard_brightness_do
 pub const SYSTEM_DND: &str = "system.dnd";
 pub const SYSTEM_DARK: &str = "system.dark";
 pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
+pub const KEYBOARD_STATE: &str = "keyboard.state";
+pub const KEYBOARD_NEXT_SOURCE: &str = "keyboard.next_source";
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
@@ -998,6 +1000,20 @@ pub const CATALOG: &[CommandSpec] = &[
                 "additionalProperties": false
             })
         },
+    },
+    CommandSpec {
+        id: KEYBOARD_STATE,
+        label: "Keyboard settings",
+        description: "The keyboard settings in use (from keyboard.json): repeat delay and rate, input sources and the active one.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: KEYBOARD_NEXT_SOURCE,
+        label: "Next input source",
+        description: "Switches to the next input source of keyboard.json (the shortcut works only with two or more).",
+        shortcut: Some("Ctrl+space"),
+        params: no_params,
     },
 ];
 

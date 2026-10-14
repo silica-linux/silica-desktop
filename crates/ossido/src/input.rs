@@ -265,6 +265,8 @@ impl State {
         };
         let pressed = state == KeyState::Pressed;
         let shortcuts = self.shortcuts.clone();
+        // The input source shortcut belongs to the apps while there is only one source.
+        let one_source = self.keyboard_config.layouts.len() < 2;
         // Esc closes the open view: its own command is run.
         let switcher = self.switcher_active;
         let logo_released = std::cell::Cell::new(false);
@@ -309,8 +311,9 @@ impl State {
                 {
                     return FilterResult::Intercept(id);
                 }
-                match shortcuts.iter().find(|(shortcut, _)| {
+                match shortcuts.iter().find(|(shortcut, id)| {
                     pressed
+                        && !(one_source && *id == silica_control::commands::KEYBOARD_NEXT_SOURCE)
                         && shortcut.matches(
                             modifiers.logo,
                             modifiers.ctrl,

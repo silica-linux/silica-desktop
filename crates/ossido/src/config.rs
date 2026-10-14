@@ -1,0 +1,349 @@
+//! The user's settings files that Ossido applies: `$XDG_CONFIG_HOME/silica/*.json` (usually
+//! `~/.config/silica`), written by Settings (`docs/control.md` › Settings files).
+//!
+//! The folder is watched with inotify: a file written in place or renamed over (Settings writes
+//! a temporary file and renames it) is read again and applied at once. A missing, unreadable or
+//! malformed file means the defaults; a value out of range is ignored, the others still apply.
+
+use std::os::fd::OwnedFd;
+use std::path::{Path, PathBuf};
+
+use rustix::fs::inotify;
+use serde_json::Value;
+use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
+use tracing::{info, warn};
+
+use smithay::input::keyboard::XkbConfig;
+
+use crate::state::{Ossido, State};
+
+/// The settings folder: `$XDG_CONFIG_HOME/silica`, or `~/.config/silica`.
+pub fn config_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    Some(base.join("silica"))
+}
+
+/// The JSON object in `dir/name`; `None` if missing or not an object.
+pub fn read_json(dir: &Path, name: &str) -> Option<serde_json::Map<String, Value>> {
+    let text = std::fs::read_to_string(dir.join(name)).ok()?;
+    match serde_json::from_str(&text) {
+        Ok(Value::Object(map)) => Some(map),
+        Ok(_) => None,
+        Err(err) => {
+            warn!("{name}: {err}");
+            None
+        }
+    }
+}
+
+/// An integer in `range`, or `None`.
+pub fn int_in(map: &serde_json::Map<String, Value>, key: &str, range: (i64, i64)) -> Option<i64> {
+    let value = map.get(key)?;
+    let n = value.as_i64().or_else(|| {
+        value
+            .as_f64()
+            .filter(|f| f.is_finite())
+            .map(|f| f.round() as i64)
+    })?;
+    (range.0..=range.1).contains(&n).then_some(n)
+}
+
+/// A short string (an xkb name, an option list): no control characters, at most 256 bytes.
+pub fn text_of(map: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    let text = map.get(key)?.as_str()?;
+    (text.len() <= 256 && !text.chars().any(char::is_control)).then(|| text.to_owned())
+}
+
+// --- keyboard.json -------------------------------------------------------------------------
+
+pub const KEYBOARD_FILE: &str = "keyboard.json";
+
+/// One input source: an xkb layout with its variant (`us`, `it`, `de(nodeadkeys)`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Layout {
+    pub layout: String,
+    pub variant: String,
+}
+
+impl Layout {
+    /// `layout` or `layout(variant)`: letters, digits, `_` and `-` only.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        let (layout, variant) = match text.split_once('(') {
+            Some((layout, rest)) => (layout, rest.strip_suffix(')')?),
+            None => (text, ""),
+        };
+        let name = |s: &str| {
+            s.len() <= 64
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        };
+        (!layout.is_empty() && name(layout) && name(variant)).then(|| Layout {
+            layout: layout.to_owned(),
+            variant: variant.to_owned(),
+        })
+    }
+
+    pub fn name(&self) -> String {
+        if self.variant.is_empty() {
+            self.layout.clone()
+        } else {
+            format!("{}({})", self.layout, self.variant)
+        }
+    }
+}
+
+/// `keyboard.json`: key repeat and input sources.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardConfig {
+    /// Before the first repeat, in ms.
+    pub repeat_delay: i32,
+    /// Repeats per second; 0: no repeat.
+    pub repeat_rate: i32,
+    /// The input sources, in order; empty: xkb's default (or `XKB_DEFAULT_LAYOUT`).
+    pub layouts: Vec<Layout>,
+    pub model: String,
+    pub options: String,
+}
+
+/// At most this many input sources (xkb keeps 4 groups per keymap).
+pub const MAX_LAYOUTS: usize = 4;
+
+impl KeyboardConfig {
+    /// The defaults are `defaults` (key repeat from `OSSIDO_KEY_REPEAT` or the built-in
+    /// values); the file's valid keys win.
+    pub fn parse(map: Option<&serde_json::Map<String, Value>>, defaults: (i32, i32)) -> Self {
+        let mut config = KeyboardConfig {
+            repeat_delay: defaults.0,
+            repeat_rate: defaults.1,
+            layouts: Vec::new(),
+            model: String::new(),
+            options: String::new(),
+        };
+        let Some(map) = map else {
+            return config;
+        };
+        if let Some(delay) = int_in(map, "repeatDelay", (100, 3000)) {
+            config.repeat_delay = delay as i32;
+        }
+        if let Some(rate) = int_in(map, "repeatRate", (0, 100)) {
+            config.repeat_rate = rate as i32;
+        }
+        if let Some(Value::Array(list)) = map.get("layouts") {
+            config.layouts = list
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(Layout::parse)
+                .take(MAX_LAYOUTS)
+                .collect();
+        }
+        config.model = text_of(map, "model").unwrap_or_default();
+        config.options = text_of(map, "options").unwrap_or_default();
+        config
+    }
+
+    /// The xkb names: comma-separated layouts and variants.
+    pub fn xkb_names(&self) -> (String, String) {
+        let layouts: Vec<&str> = self.layouts.iter().map(|l| l.layout.as_str()).collect();
+        let variants: Vec<&str> = self.layouts.iter().map(|l| l.variant.as_str()).collect();
+        (layouts.join(","), variants.join(","))
+    }
+}
+
+impl State {
+    /// A file of the settings folder changed.
+    pub fn config_changed(&mut self, name: &str) {
+        if name == KEYBOARD_FILE {
+            self.apply_keyboard_config();
+        }
+    }
+
+    /// Reads and applies every settings file (at start).
+    pub fn apply_all_config(&mut self) {
+        self.apply_keyboard_config();
+    }
+
+    /// `keyboard.json`: the repeat goes to every bound keyboard (`wl_keyboard.repeat_info`),
+    /// a new keymap to the clients when the sources change.
+    pub fn apply_keyboard_config(&mut self) {
+        let Some(dir) = self.config_dir.clone() else {
+            return;
+        };
+        let map = read_json(&dir, KEYBOARD_FILE);
+        let config = KeyboardConfig::parse(map.as_ref(), crate::state::key_repeat());
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let old = std::mem::replace(&mut self.keyboard_config, config.clone());
+        if (old.repeat_delay, old.repeat_rate) != (config.repeat_delay, config.repeat_rate) {
+            keyboard.change_repeat_info(config.repeat_rate, config.repeat_delay);
+            info!(
+                "key repeat: {} ms, {}/s",
+                config.repeat_delay, config.repeat_rate
+            );
+        }
+        if (&old.layouts, &old.model, &old.options)
+            != (&config.layouts, &config.model, &config.options)
+        {
+            let (layout, variant) = config.xkb_names();
+            let xkb = XkbConfig {
+                rules: "",
+                model: &config.model,
+                layout: &layout,
+                variant: &variant,
+                options: (!config.options.is_empty()).then(|| config.options.clone()),
+            };
+            match keyboard.set_xkb_config(self, xkb) {
+                Ok(()) => info!("keyboard layouts: {layout} ({variant})"),
+                Err(err) => {
+                    // A layout xkb does not know: keep the keymap in use.
+                    warn!("keyboard.json: layouts {layout} ({variant}): {err:?}");
+                    self.keyboard_config.layouts = old.layouts;
+                    self.keyboard_config.model = old.model;
+                    self.keyboard_config.options = old.options;
+                }
+            }
+        }
+    }
+
+    /// The index of the active input source.
+    pub fn active_layout(&mut self) -> u32 {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return 0;
+        };
+        keyboard.with_xkb_state(self, |context| {
+            context
+                .xkb()
+                .lock()
+                .map(|xkb| xkb.active_layout().0)
+                .unwrap_or(0)
+        })
+    }
+
+    /// Switches to the next input source; false with only one.
+    pub fn next_input_source(&mut self) -> bool {
+        if self.keyboard_config.layouts.len() < 2 {
+            return false;
+        }
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return false;
+        };
+        keyboard.with_xkb_state(self, |mut context| context.cycle_next_layout());
+        true
+    }
+
+    /// `keyboard.state`.
+    pub fn keyboard_state(&mut self) -> Value {
+        let active = self.active_layout();
+        let config = &self.keyboard_config;
+        serde_json::json!({
+            "repeatDelay": config.repeat_delay,
+            "repeatRate": config.repeat_rate,
+            "layouts": config.layouts.iter().map(Layout::name).collect::<Vec<_>>(),
+            "model": config.model,
+            "options": config.options,
+            "active": active,
+        })
+    }
+}
+
+// --- watching ------------------------------------------------------------------------------
+
+/// Watches `dir` (created if missing) and calls `State::config_changed` with the name of each
+/// file written, renamed or removed there.
+pub fn watch(handle: &LoopHandle<'static, Ossido>, dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let fd: OwnedFd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC)
+        .map_err(|e| format!("inotify: {e}"))?;
+    inotify::add_watch(
+        &fd,
+        dir,
+        inotify::WatchFlags::CLOSE_WRITE
+            | inotify::WatchFlags::MOVED_TO
+            | inotify::WatchFlags::DELETE
+            | inotify::WatchFlags::MOVED_FROM,
+    )
+    .map_err(|e| format!("inotify {}: {e}", dir.display()))?;
+    handle
+        .insert_source(
+            Generic::new(fd, Interest::READ, Mode::Level),
+            |_, fd, data| {
+                let mut names: Vec<String> = Vec::new();
+                let mut buffer = [std::mem::MaybeUninit::<u8>::uninit(); 4096];
+                let mut reader = inotify::Reader::new(&*fd, &mut buffer);
+                while let Ok(event) = reader.next() {
+                    if let Some(name) = event.file_name().and_then(|n| n.to_str().ok())
+                        && !names.iter().any(|n| n == name)
+                    {
+                        names.push(name.to_owned());
+                    }
+                }
+                for name in names {
+                    data.state.config_changed(&name);
+                }
+                Ok(PostAction::Continue)
+            },
+        )
+        .map_err(|e| format!("inotify source: {e}"))?;
+    info!("settings folder: {}", dir.display());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map(text: &str) -> serde_json::Map<String, Value> {
+        match serde_json::from_str(text).unwrap() {
+            Value::Object(map) => map,
+            _ => panic!("not an object"),
+        }
+    }
+
+    #[test]
+    fn layouts_take_an_optional_variant() {
+        assert_eq!(
+            Layout::parse("de(nodeadkeys)"),
+            Some(Layout {
+                layout: "de".into(),
+                variant: "nodeadkeys".into()
+            })
+        );
+        assert_eq!(Layout::parse(" it ").unwrap().name(), "it");
+        for bad in ["", "(x)", "us(", "us,it", "us(x;y)", "a b"] {
+            assert_eq!(Layout::parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn keyboard_file_over_the_defaults() {
+        let defaults = (375, 11);
+        let none = KeyboardConfig::parse(None, defaults);
+        assert_eq!((none.repeat_delay, none.repeat_rate), defaults);
+        assert!(none.layouts.is_empty());
+
+        let config = KeyboardConfig::parse(
+            Some(&map(r#"{"repeatDelay": 250, "repeatRate": 30.4,
+                    "layouts": ["us", "it", 3, "bad layout", "de(nodeadkeys)", "fr", "es"],
+                    "options": "caps:escape"}"#)),
+            defaults,
+        );
+        assert_eq!((config.repeat_delay, config.repeat_rate), (250, 30));
+        assert_eq!(
+            config.xkb_names(),
+            ("us,it,de,fr".to_owned(), ",,nodeadkeys,".to_owned())
+        );
+        assert_eq!(config.options, "caps:escape");
+
+        // Out of range: that key keeps its default, rate 0 turns repeat off.
+        let config = KeyboardConfig::parse(
+            Some(&map(r#"{"repeatDelay": 5, "repeatRate": 0}"#)),
+            defaults,
+        );
+        assert_eq!((config.repeat_delay, config.repeat_rate), (375, 0));
+    }
+}
