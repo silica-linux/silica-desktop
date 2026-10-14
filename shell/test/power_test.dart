@@ -45,15 +45,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     final card = find.byKey(const ValueKey('power confirmation'));
     expect(tester.getSize(card), const Size(292, 266));
-    expect(
-      find.text(englishTexts.powerShutDownBody(60)),
-      findsOneWidget,
-    );
+    expect(find.text(englishTexts.powerShutDownBody(60)), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
-    expect(
-      find.text(englishTexts.powerShutDownBody(59)),
-      findsOneWidget,
-    );
+    expect(find.text(englishTexts.powerShutDownBody(59)), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('power confirm'))),
       const Size(128, 30),

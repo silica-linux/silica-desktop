@@ -185,7 +185,7 @@ impl State {
                         }
                     }
                     Some(Hit::Content(window)) => self.focus_window(Some(window)),
-                    None => self.focus_window(None),
+                    None => self.desktop_pressed(),
                 },
             }
         }

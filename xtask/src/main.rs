@@ -235,6 +235,12 @@ fn shell_components() -> Result<Vec<String>> {
         root.join("target/release/silica-embedder").display(),
         engine.display()
     );
+    // The file manager's desktop (#147), when Mustache's release bundle was built next to us.
+    let desktop = os::sibling("mustache")
+        .map(|dir| dir.join("build/release/flutter_assets"))
+        .filter(|assets| assets.with_file_name("libapp.so").exists())
+        .map(|assets| desktop_component_args(&embedder, &assets.display().to_string()))
+        .unwrap_or_default();
     // Private session bus with silica-daemon (notifications): when nested, the host
     // session's ones are already taken.
     Ok(std::iter::once("--session-bus".to_owned())
@@ -242,7 +248,20 @@ fn shell_components() -> Result<Vec<String>> {
             &embedder,
             &bundle.display().to_string(),
         ))
+        .chain(desktop)
         .collect())
+}
+
+/// The file manager's desktop (#147): Mustache in `--desktop` mode on the bottom layer, above
+/// the wallpaper and below the windows, kept running (`--keep-shell`) like the reference keeps
+/// its file manager. `bundle` is Mustache's `flutter_assets`.
+pub(crate) fn desktop_component_args(embedder: &str, bundle: &str) -> Vec<String> {
+    vec![
+        "--keep-shell".to_owned(),
+        format!(
+            "{embedder} --layer bottom --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard on-demand --namespace desktop-icons:dev.frascella.Mustache --dart-arg --desktop {bundle}"
+        ),
+    ]
 }
 
 /// `--spawn-shell` arguments for every shell component: `embedder` is the embedder command

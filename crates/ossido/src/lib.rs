@@ -17,6 +17,7 @@ mod gestures;
 mod glass;
 mod handlers;
 mod input;
+mod keep;
 pub mod keys;
 mod layers;
 pub(crate) mod panorama;
@@ -78,6 +79,8 @@ pub struct Options {
     pub spawn: Vec<String>,
     /// Shell components to start (`--spawn-shell`): they see the shell protocols.
     pub spawn_shell: Vec<String>,
+    /// Shell components kept running (`--keep-shell`): started again when they exit.
+    pub keep_shell: Vec<String>,
     /// Desktop color until there is a wallpaper (RGBA 0–1, sRGB values).
     pub background: [f32; 4],
     /// Multiplier of the animation durations (0: no animation).
@@ -102,6 +105,7 @@ impl Default for Options {
             control: None,
             spawn: Vec::new(),
             spawn_shell: Vec::new(),
+            keep_shell: Vec::new(),
             background: state::CLEAR_COLOR,
             animation_scale: 1.0,
             glass: state::GlassSetting::Auto,
@@ -174,6 +178,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         if let Err(err) = ossido.state.launch_with(command, true) {
             warn!("{err}");
         }
+    }
+    for command in &options.keep_shell {
+        ossido.state.keep_shell(command);
     }
 
     event_loop.run(None, &mut ossido, |ossido| {

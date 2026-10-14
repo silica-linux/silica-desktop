@@ -962,6 +962,54 @@ abstract class AppLocalizations {
   /// **'untitled folder'**
   String get desktopUntitledFolder;
 
+  /// Desktop item context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get desktopOpen;
+
+  /// Desktop item context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Move to Trash'**
+  String get desktopMoveToTrash;
+
+  /// Desktop item context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get desktopRename;
+
+  /// Desktop item context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate'**
+  String get desktopDuplicate;
+
+  /// Desktop item context menu (not available yet)
+  ///
+  /// In en, this message translates to:
+  /// **'Quick Preview'**
+  String get desktopQuickPreview;
+
+  /// Desktop context menu › Sort By
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get desktopSortSize;
+
+  /// Desktop context menu, with Sort By › None
+  ///
+  /// In en, this message translates to:
+  /// **'Clean Up'**
+  String get desktopCleanUp;
+
+  /// Desktop context menu: lays every icon out in an order
+  ///
+  /// In en, this message translates to:
+  /// **'Clean Up By'**
+  String get desktopCleanUpBy;
+
   /// Control Center Display detail: warmer colors at night
   ///
   /// In en, this message translates to:

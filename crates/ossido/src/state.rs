@@ -124,6 +124,8 @@ pub struct State {
     pub windowless_front: Option<String>,
     /// Where each app's window last closed: its next window opens there (APP-LC).
     pub app_frames: crate::app_frames::AppFrames,
+    /// Shell components kept running (`--keep-shell`, `keep.rs`).
+    pub keeper: crate::keep::Keeper,
     /// The workspaces and the scroll in progress (`workspaces.rs`).
     pub workspaces: crate::workspaces::Workspaces,
     /// Panorama open or closing (`panorama.rs`).
@@ -333,6 +335,7 @@ impl State {
             hidden: Vec::new(),
             windowless_front: None,
             app_frames: crate::app_frames::AppFrames::default(),
+            keeper: crate::keep::Keeper::default(),
             workspaces: crate::workspaces::Workspaces::default(),
             panorama: None,
             panorama_press: false,

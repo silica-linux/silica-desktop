@@ -659,6 +659,38 @@
   "@desktopUntitledFolder": {
     "description": "Name of a folder created from the desktop context menu"
   },
+  "desktopOpen": "Open",
+  "@desktopOpen": {
+    "description": "Desktop item context menu"
+  },
+  "desktopMoveToTrash": "Move to Trash",
+  "@desktopMoveToTrash": {
+    "description": "Desktop item context menu"
+  },
+  "desktopRename": "Rename",
+  "@desktopRename": {
+    "description": "Desktop item context menu"
+  },
+  "desktopDuplicate": "Duplicate",
+  "@desktopDuplicate": {
+    "description": "Desktop item context menu"
+  },
+  "desktopQuickPreview": "Quick Preview",
+  "@desktopQuickPreview": {
+    "description": "Desktop item context menu (not available yet)"
+  },
+  "desktopSortSize": "Size",
+  "@desktopSortSize": {
+    "description": "Desktop context menu › Sort By"
+  },
+  "desktopCleanUp": "Clean Up",
+  "@desktopCleanUp": {
+    "description": "Desktop context menu, with Sort By › None"
+  },
+  "desktopCleanUpBy": "Clean Up By",
+  "@desktopCleanUpBy": {
+    "description": "Desktop context menu: lays every icon out in an order"
+  },
   "ccNightLight": "Night Light",
   "@ccNightLight": {
     "description": "Control Center Display detail: warmer colors at night"

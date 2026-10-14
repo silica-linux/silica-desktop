@@ -364,22 +364,35 @@ class _MenuBarState extends State<MenuBar> {
     LayerControl.keyboard('exclusive');
   }
 
-  /// The desktop context menu: the wallpaper announces `desktopmenu` = "x y".
+  /// The desktop context menu: the wallpaper announces `desktopmenu` = "x y", the file
+  /// manager's desktop "x y desktop" or "x y items" (#147).
   Offset? _desktopMenuAt;
+  DesktopMenuKind _desktopMenuKind = DesktopMenuKind.wallpaper;
   String _desktopMenuState = '';
+
+  /// Each action sent to the file manager's desktop carries a new serial: the broadcast is a
+  /// state, and the same action twice must still arrive.
+  int _desktopActionSerial = 0;
 
   void _desktopMenuChanged() {
     final value = ShellChannel.instance.states.value['desktopmenu'] ?? '';
     if (value == _desktopMenuState) return;
     _desktopMenuState = value;
-    final parts = value.split(' ');
-    final x = parts.length == 2 ? double.tryParse(parts[0]) : null;
-    final y = parts.length == 2 ? double.tryParse(parts[1]) : null;
-    if (x == null || y == null) {
+    final request = parseDesktopMenu(value);
+    if (request == null) {
       _closeDesktopMenu(announce: false);
     } else {
-      _openDesktopMenu(Offset(x, y));
+      _desktopMenuKind = request.$2;
+      _openDesktopMenu(request.$1);
     }
+  }
+
+  void _desktopAction(String id) {
+    _desktopActionSerial++;
+    ShellChannel.instance.broadcast(
+      'desktop.action',
+      '$id $_desktopActionSerial',
+    );
   }
 
   Future<void> _openDesktopMenu(Offset at) async {
@@ -407,6 +420,26 @@ class _MenuBarState extends State<MenuBar> {
 
   List<MenuEntry> _desktopEntries() {
     final settings = _settingsApp;
+    final owner = DesktopOwnerState.parse(
+      ShellChannel.instance.states.value['desktop.state'] ?? '',
+    );
+    switch (_desktopMenuKind) {
+      case DesktopMenuKind.desktop:
+        return ownerDesktopMenu(
+          l: l10nOf(context),
+          state: owner,
+          onAction: _desktopAction,
+          onChangeWallpaper: settings == null ? null : () => _launch(settings),
+        );
+      case DesktopMenuKind.items:
+        return ownerItemsMenu(
+          l: l10nOf(context),
+          state: owner,
+          onAction: _desktopAction,
+        );
+      case DesktopMenuKind.wallpaper:
+        break;
+    }
     return desktopMenu(
       l: l10nOf(context),
       onNewFolder: () =>
@@ -495,7 +528,8 @@ class _MenuBarState extends State<MenuBar> {
   String get _appName {
     final window = ShellChannel.instance.focusedToplevel;
     // An app that closed its last window stays frontmost (#142, APP-LC): Ossido announces it.
-    final windowless = ShellChannel.instance.states.value['app.frontmost'] ?? '';
+    final windowless =
+        ShellChannel.instance.states.value['app.frontmost'] ?? '';
     final appId = window?.appId ?? windowless;
     if (window == null && windowless.isEmpty) return 'Silica';
     final entry = widget.entries?.values
@@ -615,11 +649,11 @@ class _MenuBarState extends State<MenuBar> {
                 _item(_appName, bold, key: _keyFor('app')),
                 for (final menu in genericMenus)
                   if (_entries(menu).isNotEmpty)
-                  _item(
-                    menuTitle(l10nOf(context), menu),
-                    regular,
-                    key: _keyFor(menu),
-                  ),
+                    _item(
+                      menuTitle(l10nOf(context), menu),
+                      regular,
+                      key: _keyFor(menu),
+                    ),
               ],
             ),
           ),

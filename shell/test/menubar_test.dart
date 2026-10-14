@@ -413,5 +413,77 @@ void main() {
       expect(actions[3].enabled, isFalse);
       expect(entries.whereType<MenuDivider>(), hasLength(2));
     });
+
+    test(
+      'who asked for the menu: the wallpaper or the file manager (#147)',
+      () {
+        expect(parseDesktopMenu('10 20'), (
+          const Offset(10, 20),
+          DesktopMenuKind.wallpaper,
+        ));
+        expect(parseDesktopMenu('10 20 desktop')?.$2, DesktopMenuKind.desktop);
+        expect(parseDesktopMenu('10 20 items')?.$2, DesktopMenuKind.items);
+        expect(parseDesktopMenu(''), isNull);
+        expect(parseDesktopMenu('10 20 other'), isNull);
+        expect(parseDesktopMenu('x 20'), isNull);
+      },
+    );
+
+    test('the owner state, with bad values ignored', () {
+      final state = DesktopOwnerState.parse(
+        '{"stacks":true,"sort":"kind","selected":2}',
+      );
+      expect(state.stacks, isTrue);
+      expect(state.sort, 'kind');
+      expect(state.selected, 2);
+      final broken = DesktopOwnerState.parse('{"sort":"color","selected":-1');
+      expect(broken.sort, 'none');
+      expect(broken.selected, 0);
+    });
+
+    test('the file manager desktop menu sends its actions back', () {
+      final sent = <String>[];
+      final entries = ownerDesktopMenu(
+        l: englishTexts,
+        state: const DesktopOwnerState(sort: 'name'),
+        onAction: sent.add,
+      );
+      final actions = entries.whereType<MenuAction>().toList();
+      MenuAction named(String label) =>
+          actions.firstWhere((a) => a.label == label);
+      named('New Folder').onSelected?.call();
+      named('Use Stacks').onSelected?.call();
+      final sort = named('Sort By').submenu!.whereType<MenuAction>().toList();
+      expect(sort.firstWhere((a) => a.label == 'Name').checked, isTrue);
+      sort.firstWhere((a) => a.label == 'Size').onSelected?.call();
+      // Clean Up only with free positions (Sort By › None).
+      expect(named('Clean Up').enabled, isFalse);
+      expect(named('Paste Item').enabled, isFalse);
+      expect(sent, ['newFolder', 'stacks', 'sort:size']);
+    });
+
+    test('the menu of the selected icons', () {
+      final sent = <String>[];
+      final many = ownerItemsMenu(
+        l: englishTexts,
+        state: const DesktopOwnerState(selected: 2),
+        onAction: sent.add,
+      ).whereType<MenuAction>().toList();
+      expect(
+        [for (final a in many) a.label],
+        [
+          'Open',
+          'Move to Trash',
+          'Get Info',
+          'Rename',
+          'Duplicate',
+          'Quick Preview',
+        ],
+      );
+      // Rename only one at a time.
+      expect(many.firstWhere((a) => a.label == 'Rename').enabled, isFalse);
+      many.firstWhere((a) => a.label == 'Move to Trash').onSelected?.call();
+      expect(sent, ['trash']);
+    });
   });
 }

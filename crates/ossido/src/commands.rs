@@ -553,6 +553,15 @@ impl State {
     /// Like `launch`; with `shell` the process is a shell component and sees its
     /// protocols (`shell.rs`).
     pub fn launch_with(&mut self, command: &str, shell: bool) -> Result<u32, String> {
+        self.spawn_child(command, shell).map(|child| child.id())
+    }
+
+    /// Starts the process of `launch_with` and hands it over (`keep.rs` waits for it).
+    pub fn spawn_child(
+        &mut self,
+        command: &str,
+        shell: bool,
+    ) -> Result<std::process::Child, String> {
         let mut process = Command::new("sh");
         process
             .arg("-c")
@@ -571,7 +580,7 @@ impl State {
             .map_err(|e| format!("starting {command}: {e}"))?;
         info!("started {command} (pid {})", child.id());
         self.perf.launched(child.id(), std::time::Instant::now());
-        Ok(child.id())
+        Ok(child)
     }
 
     /// The frame measurements, with the surfaces named as in `window.list` and `layer.list`.
