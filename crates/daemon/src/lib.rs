@@ -6,12 +6,14 @@
 //! (`dev.frascella.Silica.Sound1`). See `docs/daemon.md`.
 
 pub mod actions;
+pub mod auth;
 pub mod clipboard;
 pub mod notifications;
 pub mod server;
 pub mod sound;
 pub mod system;
 
+pub use auth::{AuthConfig, AuthService};
 pub use clipboard::ClipboardService;
 pub use server::Daemon;
 pub use system::{SystemConfig, SystemService};

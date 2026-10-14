@@ -203,6 +203,89 @@ gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \
   -m dev.frascella.Silica.Sound1.PlaySound trash-empty
 ```
 
+## Authentication (polkit agent)
+
+The session's polkit authentication agent (`crates/daemon/src/auth.rs`): when an app asks for
+something that polkit allows only after a password (`auth_admin_keep`: the time zone and
+automatic time with `timedatectl`, the computer name with `hostnamectl`, the language and
+region with `localectl`), polkit calls this agent and the shell shows the system
+authentication dialog. Without an agent those calls fail with "Interactive authentication
+required".
+
+- At start the daemon registers `org.freedesktop.PolicyKit1.AuthenticationAgent` at
+  `/dev/frascella/Silica/PolkitAgent` on the **system** bus with
+  `RegisterAuthenticationAgent` for its logind session (`unix-session`, the id from
+  `XDG_SESSION_ID` or logind's `GetSessionByPID`), with the session's `LANG` as locale. If it
+  fails (polkit not running, another agent already registered for the session, as nested in
+  GNOME) it tries again every 30 s; when polkit restarts it registers again.
+- `BeginAuthentication` is accepted only from the owner of `org.freedesktop.PolicyKit1`. The
+  users offered are polkit's `unix-user` identities (groups arrive expanded) with their names
+  from `/etc/passwd`; the user running the session comes first when polkit accepts them. The
+  app that asked is the first ancestor of `polkit.subject-pid` that is not a command-line
+  wrapper (`timedatectl`, `sh`, `pkexec`…), by executable name. At most 8 requests wait at
+  once.
+- The password is checked by polkit's helper, which runs PAM and reports to polkit itself:
+  through `/run/polkit/agent-helper.socket` when it exists (polkit ≥ 126, socket-activated:
+  the user name and the cookie on the first two lines), otherwise by running
+  `polkit-agent-helper-1 USER` (setuid; the cookie on stdin). The conversation is the helper's:
+  `PAM_PROMPT_ECHO_OFF` gets the password, `PAM_PROMPT_ECHO_ON` the user name, then
+  `SUCCESS` or `FAILURE`. A second secret prompt (a one-time code) counts as a failure. The
+  password is never logged or kept.
+- Cancelled by the user: polkit gets `org.freedesktop.PolicyKit1.Error.Cancelled`.
+  `CancelAuthentication` from polkit closes the dialog.
+
+### dev.frascella.Silica.Authentication1
+
+On `/dev/frascella/Silica/Authentication1` (session bus), for the shell's dialog and for apps
+that want to know whether a password can be asked:
+
+- `Pending() → a(ussssa(ss)s)`: the waiting requests, oldest first: id, action id, polkit's
+  message (in the session's language), icon name, app (executable name, may be empty), users
+  (login name, full name), default user.
+- `Respond(u id, s user, s password) → b`: true if the password is right (the request then
+  closes with `success`), false to try again. `user` must be one of the request's users,
+  otherwise `InvalidArgs`; a check already running or a helper that cannot be reached is
+  `Failed`. It returns when PAM answers (a few seconds after a wrong password).
+- `Cancel(u id)`: the user dismissed the dialog.
+- Property `Registered` (b, with `PropertiesChanged`): the agent is registered with polkit.
+- Signals `Requested(request)` (same tuple as `Pending`) and `Closed(u id, s outcome)`
+  (`success` or `cancelled`).
+
+The dialog is drawn by the shell in the switcher layer (`shell/lib/auth/auth_dialog.dart`): a
+system alert above every window with the app's icon (from its desktop entry, a padlock if
+unknown), a title naming the app, polkit's message, the user name and password fields and
+Allow / Cancel. A wrong password shakes it and clears the field; Escape cancels.
+
+```
+pkexec true      # or: timedatectl set-timezone Europe/Rome
+```
+
+### Without a password: a polkit rule for administrators
+
+An image may also let the administrators of an active local session change these settings
+without a password (the agent stays the general fix). Install it as
+`/etc/polkit-1/rules.d/50-silica-settings.rules`:
+
+```js
+// Administrators at the machine change the time, the computer name and the language
+// without typing their password.
+polkit.addRule(function (action, subject) {
+    var actions = [
+        "org.freedesktop.timedate1.set-timezone",
+        "org.freedesktop.timedate1.set-ntp",
+        "org.freedesktop.timedate1.set-time",
+        "org.freedesktop.hostname1.set-hostname",
+        "org.freedesktop.hostname1.set-static-hostname",
+        "org.freedesktop.locale1.set-locale",
+        "org.freedesktop.locale1.set-keyboard",
+    ];
+    if (actions.indexOf(action.id) >= 0 && subject.active && subject.local &&
+        subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});
+```
+
 ## Replacement
 
 When a newer daemon takes `dev.frascella.Silica` (`--replace`, from a new session on the same

@@ -5,7 +5,9 @@ use std::process::ExitCode;
 use futures_lite::{StreamExt, future};
 use silica_daemon::actions::{ACTIONS_PATH, Actions};
 use silica_daemon::sound::{SOUND_PATH, Sound, SoundConfig};
-use silica_daemon::{ClipboardService, Daemon, SystemConfig, SystemService};
+use silica_daemon::{
+    AuthConfig, AuthService, ClipboardService, Daemon, SystemConfig, SystemService,
+};
 
 const USAGE: &str = "usage: silica-daemon [--address ADDRESS] [--replace]
 
@@ -59,6 +61,15 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
             None
         }
     };
+    // The polkit agent: the password dialog for privileged settings.
+    let auth = AuthService::serve(
+        connection.clone(),
+        AuthConfig {
+            system_bus: system_bus.clone(),
+            ..AuthConfig::default()
+        },
+    )
+    .await?;
     let system = SystemService::serve(
         connection.clone(),
         SystemConfig {
@@ -107,7 +118,10 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
     };
     future::or(
         future::or(
-            future::or(future::or(daemon.run(), system.run()), clipboard.run()),
+            future::or(
+                future::or(future::or(daemon.run(), system.run()), clipboard.run()),
+                auth.run(),
+            ),
             lost,
         ),
         replaced,

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:flutter/widgets.dart';
 
+import 'auth/auth_dialog.dart';
 import 'controlcenter/controlcenter.dart';
 import 'l10n/l10n.dart';
 import 'dock/dock.dart';
@@ -87,6 +88,11 @@ class ShellComponent extends StatelessWidget {
             entries: loadDesktopEntries(locale: systemLanguage()),
           ),
           ForceQuitLayer(entries: loadDesktopEntries(locale: systemLanguage())),
+          // The polkit agent's password dialog, above everything else here.
+          AuthLayer(
+            source: DBusAuth(),
+            entries: loadDesktopEntries(locale: systemLanguage()),
+          ),
         ],
       ),
       _ => const LiveDock(),

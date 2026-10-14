@@ -282,5 +282,12 @@
   "faroActionWindowArrange3": "Disponi tre finestre",
   "faroActionWindowArrange4": "Disponi quattro finestre",
   "faroActionAppForceQuitPanel": "Uscita forzata",
-  "faroActionSessionQuit": "Esci dalla sessione"
+  "faroActionSessionQuit": "Esci dalla sessione",
+  "authTitle": "Una modifica al sistema richiede il permesso di un amministratore.",
+  "authTitleApp": "{app} richiede il permesso di un amministratore.",
+  "authPrompt": "Inserisci la password per consentirlo.",
+  "authUnavailable": "Non è stato possibile verificare la password: riprova.",
+  "authUserName": "Nome utente",
+  "authPassword": "Password",
+  "authAllow": "Consenti"
 }

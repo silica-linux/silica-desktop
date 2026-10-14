@@ -1269,5 +1269,38 @@
   "faroActionSessionQuit": "Quit the session",
   "@faroActionSessionQuit": {
     "description": "Faro action row: the command session.quit"
+  },
+  "authTitle": "A system change needs an administrator’s permission.",
+  "@authTitle": {
+    "description": "Authentication dialog title when the app is unknown"
+  },
+  "authTitleApp": "{app} needs an administrator’s permission.",
+  "@authTitleApp": {
+    "description": "Authentication dialog title with the app that asked",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "authPrompt": "Type the password to allow it.",
+  "@authPrompt": {
+    "description": "Authentication dialog: what to do"
+  },
+  "authUnavailable": "The password could not be checked: try again.",
+  "@authUnavailable": {
+    "description": "Authentication dialog: the check failed for another reason"
+  },
+  "authUserName": "User name",
+  "@authUserName": {
+    "description": "Authentication dialog: user field placeholder"
+  },
+  "authPassword": "Password",
+  "@authPassword": {
+    "description": "Authentication dialog: password field placeholder"
+  },
+  "authAllow": "Allow",
+  "@authAllow": {
+    "description": "Authentication dialog: confirm button"
   }
 }
