@@ -148,13 +148,16 @@ against other processes of the same user: that will come with the app sandbox.
 ## Drag between apps (`wl_data_device`)
 
 Standard protocol, no extension. Ossido draws the drag icon (`start_drag`) with its corner on
-the pointer, above everything, until the drop.
+the pointer, moved by the offsets of its commits (`wl_surface.attach` dx/dy or
+`wl_surface.offset`, added up), above everything, until the drop.
 
 The embedder offers it to the apps on the `silica/drag` channel (JSONMethodCodec, `SilicaDrag`
 in silica_ui ≥ 0.16):
 
-- `start {uris, icon?: {width, height, rgba}}` from the app: a `text/uri-list` source
-  (copy and move actions) with the serial of the last press. When Ossido takes the pointer,
+- `start {uris, icon?: {width, height, rgba, x?, y?}}` from the app: a `text/uri-list` source
+  (copy and move actions) with the serial of the last press. The icon's point (`x`, `y`) stays
+  under the pointer (the corner without them): an image of the dragged items keeps where the
+  pointer grabbed them. At most 1024 pixels per side. When Ossido takes the pointer,
   the Flutter gesture in progress receives a cancellation.
 - Towards the app: `enter`/`motion {x, y}` and `leave` for drags with `text/uri-list`
   over the window (accepted, copy preferred), `drop {x, y, uris}` with the data already read

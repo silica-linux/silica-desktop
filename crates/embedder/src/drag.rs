@@ -1,9 +1,10 @@
 //! Drag and drop between apps (`wl_data_device`), channel `silica/drag` (JSONMethodCodec).
 //!
 //! From the app:
-//! - `start {uris, icon?: {width, height, rgba}}`: starts a drag with the serial of the last
-//!   press; offers `text/uri-list`. `rgba` is the image in base64 (premultiplied RGBA, rows
-//!   from the top), which Ossido draws with its corner on the pointer.
+//! - `start {uris, icon?: {width, height, rgba, x?, y?}}`: starts a drag with the serial of the
+//!   last press; offers `text/uri-list`. `rgba` is the image in base64 (premultiplied RGBA, rows
+//!   from the top); its point (`x`, `y`) stays on the pointer (the corner when absent), so an
+//!   image of the dragged items keeps where the pointer grabbed them.
 //!   Answers whether it started.
 //!
 //! To the app (calls on the same channel):
@@ -19,7 +20,7 @@ pub const URI_LIST: &str = "text/uri-list";
 
 /// At most this many URIs in a drag, and an icon at most this large per side.
 const MAX_URIS: usize = 10_000;
-const MAX_ICON_SIDE: u32 = 512;
+const MAX_ICON_SIDE: u32 = 1024;
 
 /// A drag icon: size and pixels in Wayland's ARGB8888 (B, G, R, A in memory).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub struct DragIcon {
     pub width: u32,
     pub height: u32,
     pub bgra: Vec<u8>,
+    /// The point of the image under the pointer, inside the image.
+    pub hotspot: (i32, i32),
 }
 
 /// A parsed `start` request.
@@ -97,10 +100,20 @@ fn parse_icon(icon: &Value) -> Option<DragIcon> {
         .iter()
         .flat_map(|[r, g, b, a]| [*b, *g, *r, *a])
         .collect();
+    // The point under the pointer: inside the image, the corner when missing or wrong.
+    let coordinate = |key, side: u32| {
+        icon.get(key)
+            .and_then(Value::as_i64)
+            .filter(|v| (0..i64::from(side)).contains(v))
+            .and_then(|v| i32::try_from(v).ok())
+            .unwrap_or(0)
+    };
+    let hotspot = (coordinate("x", width), coordinate("y", height));
     Some(DragIcon {
         width,
         height,
         bgra,
+        hotspot,
     })
 }
 
@@ -183,6 +196,13 @@ mod tests {
         let icon = start.icon.unwrap();
         assert_eq!((icon.width, icon.height), (1, 1));
         assert_eq!(icon.bgra, vec![0, 0, 255, 255]);
+        assert_eq!(icon.hotspot, (0, 0));
+        // The grab point stays inside the image.
+        let two = "/wAA//8AAP8=";
+        let grabbed = json!({"width": 2, "height": 1, "rgba": two, "x": 1, "y": 0});
+        assert_eq!(parse_icon(&grabbed).map(|i| i.hotspot), Some((1, 0)));
+        let outside = json!({"width": 2, "height": 1, "rgba": two, "x": 2, "y": -1});
+        assert_eq!(parse_icon(&outside).map(|i| i.hotspot), Some((0, 0)));
         // Sizes that do not match the pixels, or huge ones: no icon, the rest stands.
         let wrong = parse_start(&json!({
             "uris": ["file:///a"],
