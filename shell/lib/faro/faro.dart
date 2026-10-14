@@ -1430,6 +1430,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       _ => null,
     };
     Widget row = GestureDetector(
+      // The whole row, also where it is empty or only an image icon.
+      behavior: HitTestBehavior.opaque,
       onTap: () => _activate(item),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),

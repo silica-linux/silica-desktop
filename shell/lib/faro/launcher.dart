@@ -270,7 +270,7 @@ String categoryOf(DesktopEntry entry) {
 int _byName(DesktopEntry a, DesktopEntry b) =>
     a.name.toLowerCase().compareTo(b.name.toLowerCase());
 
-/// The grid apps (system components left out, #141): alphabetical, in the category if there is one; with text, inside a
+/// The grid apps (the file manager included, as Finder is in Applications): alphabetical, in the category if there is one; with text, inside a
 /// category it filters alphabetically, over all apps the best goes first.
 List<DesktopEntry> launcherApps(
   Iterable<DesktopEntry> entries, {
@@ -279,9 +279,7 @@ List<DesktopEntry> launcherApps(
 }) {
   final inCategory = [
     for (final e in entries)
-      if (!systemComponentIds.contains(e.id) &&
-          (category == null || categoryOf(e) == category))
-        e,
+      if (category == null || categoryOf(e) == category) e,
   ];
   if (query.trim().isEmpty) return inCategory..sort(_byName);
   final found = searchApps(inCategory, query);
@@ -664,6 +662,7 @@ class LauncherState extends State<Launcher>
         for (final (i, name) in categoryNames.indexed) ...[
           if (i > 0) const SizedBox(width: categoryGap),
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => chooseCategory(name),
             child: Container(
               height: categoryHeight,
@@ -752,6 +751,9 @@ class LauncherState extends State<Launcher>
       width: cellWidth,
       height: cellHeight,
       child: GestureDetector(
+        // The whole cell: an image icon is not hit-testable by itself, and a click on it
+        // would fall through to the backdrop and close the panel without opening the app.
+        behavior: HitTestBehavior.opaque,
         onTap: () => widget.onLaunch(entry),
         child: Stack(
           clipBehavior: Clip.none,

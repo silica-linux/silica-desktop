@@ -65,7 +65,7 @@ void main() {
     },
   );
 
-  test('the file manager is a system component: not in the grid (#141)', () {
+  test('the file manager is in the grid, like Finder in Applications', () {
     const manager = DesktopEntry(
       id: fileManagerId,
       name: 'Mustache',
@@ -73,8 +73,8 @@ void main() {
       categories: ['System', 'FileManager'],
     );
     final all = launcherApps([...entries.values, manager]);
-    expect(all.where((e) => e.id == fileManagerId), isEmpty);
-    expect(launcherApps([manager], query: 'must'), isEmpty);
+    expect(all.where((e) => e.id == fileManagerId), hasLength(1));
+    expect(launcherApps([manager], query: 'must'), [manager]);
   });
 
   test('grid: recents, line and list at the measured distances', () {
