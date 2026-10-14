@@ -771,18 +771,74 @@ const Duration springLoadDelay = Duration(milliseconds: 830);
 /// The empty slot where the dragged icon would fall.
 const Item gapItem = Item.app('');
 
-/// A slot of the Dock: an item and how far its slot is open (0 closed, 1 open). While `leaving`
-/// the item is no longer in the list given to the Dock; it stays until the slot has closed.
+/// A slot of the Dock: an item and how open its slot is. While `leaving` the item is no longer
+/// in the list given to the Dock; it stays until the slot has closed (DOCK-ANIM).
 class _Slot {
-  _Slot(this.item, this.key, this.progress);
+  _Slot(this.item, this.key, {required bool opening})
+    : from = opening ? launchStartScale : 1,
+      t = opening ? 0 : 1,
+      hop = opening;
 
   Item item;
   final String key;
-  double progress;
+
+  /// Presence at the start of the current phase, and how far the phase has gone (0-1).
+  double from;
+  double t;
+
+  /// Milliseconds since the phase started; the launch bounce and the dot follow it.
+  double age = 0;
   bool leaving = false;
 
-  /// The eased presence that scales the width, the icon and its opacity.
-  double get presence => Curves.easeInOut.transform(progress.clamp(0.0, 1.0));
+  /// A launch: the icon makes one hop with the slot.
+  bool hop;
+
+  /// Cell scale, 1 at rest: it scales the width, the icon and its opacity.
+  double get presence => leaving
+      ? from * (1 - quitCurve.transform(t))
+      : from + (1 - from) * launchCurve.transform(t);
+
+  /// Icon opacity: from 20 % of the size when opening, the square of the size when closing.
+  double get opacity {
+    final p = presence;
+    return leaving ? p * p : ((p - 0.2) / 0.8).clamp(0.0, 1.0);
+  }
+
+  /// The hop as a fraction of its peak (0 when not hopping).
+  double get hopFraction => hop && !leaving ? launchHop(age) : 0;
+
+  /// The running dot: it fades in at the end of a launch and out at the start of a quit.
+  double get dot => leaving
+      ? (1 - age / quitDotFade.inMilliseconds).clamp(0.0, 1.0)
+      : hop
+      ? ((age - launchDotStart.inMilliseconds) / launchDotFade.inMilliseconds)
+            .clamp(0.0, 1.0)
+      : 1;
+
+  bool get active => leaving
+      ? t < 1
+      : t < 1 || (hop && age < launchHopDuration.inMilliseconds);
+
+  void startLeaving() {
+    from = presence;
+    leaving = true;
+    t = 0;
+    age = 0;
+  }
+
+  void startOpening() {
+    from = presence;
+    leaving = false;
+    t = 0;
+    age = 0;
+    hop = false;
+  }
+
+  void advance(double ms) {
+    age += ms;
+    final duration = leaving ? quitDuration : launchDuration;
+    t = (t + ms / duration.inMilliseconds).clamp(0.0, 1.0);
+  }
 }
 
 /// A drag: the item taken, the grab point in the icon, where the pointer is.
@@ -966,10 +1022,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   _Ghost? _ghost;
 
   /// The slots in layout order, leaving ones included, and what they were given: [_items]
-  /// (what is laid out and hit) and [_presences] (by identity of the item).
+  /// (what is laid out and hit) and [_live] (the slots still animating, by identity of the item).
   List<_Slot> _slots = const [];
   List<Item> _items = const [];
-  final Map<Item, double> _presences = Map.identity();
+  final Map<Item, _Slot> _live = Map.identity();
   Duration _slotClock = Duration.zero;
   late final Ticker _slotTicker = createTicker(_slotTick);
 
@@ -1170,7 +1226,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
   }
 
-  double _presenceOf(Item item) => _presences[item] ?? 1;
+  double _presenceOf(Item item) => _live[item]?.presence ?? 1;
 
   /// Stable identity of an item across rebuilds, with the n-th occurrence of equal ones.
   static List<String> _slotKeys(List<Item> items) {
@@ -1211,11 +1267,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       var slot = byKey[keys[i]];
       if (slot != null) {
         slot.item = item;
-        slot.leaving = false;
+        if (slot.leaving) slot.startOpening();
         kept.add(slot);
       } else {
         final instant = !animate || item.minimizedWindow != null;
-        slot = _Slot(item, keys[i], instant ? 1 : 0);
+        slot = _Slot(item, keys[i], opening: !instant);
       }
       out.add(slot);
     }
@@ -1228,9 +1284,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       }
       final skip = slot.key == _dragRemoved;
       if (!slot.leaving) {
-        slot.leaving = true;
+        slot.startLeaving();
         if (skip || !animate || slot.item.minimizedWindow != null) continue;
-      } else if (slot.progress <= 0) {
+      } else if (!slot.active) {
         continue;
       }
       out.insert(++after, slot);
@@ -1241,7 +1297,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
     _slots = out;
     _publishSlots();
-    if (out.any((s) => s.leaving || s.progress < 1)) {
+    if (out.any((s) => s.active)) {
       if (!_slotTicker.isActive) {
         _slotClock = Duration.zero;
         _slotTicker.start();
@@ -1251,33 +1307,25 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   void _publishSlots() {
     _items = [for (final slot in _slots) slot.item];
-    _presences.clear();
+    _live.clear();
     for (final slot in _slots) {
-      if (slot.progress < 1 || slot.leaving) {
-        _presences[slot.item] = slot.presence;
-      }
+      if (slot.active) _live[slot.item] = slot;
     }
   }
 
   void _slotTick(Duration elapsed) {
     final step = (elapsed - _slotClock).inMicroseconds;
     _slotClock = elapsed;
-    final open = step / slotOpenDuration.inMicroseconds;
-    final close = step / slotCloseDuration.inMicroseconds;
     setState(() {
       for (final slot in _slots) {
-        slot.progress = slot.leaving
-            ? slot.progress - close
-            : (slot.progress + open).clamp(0.0, 1.0);
+        slot.advance(step / 1000);
       }
       _slots = [
         for (final slot in _slots)
-          if (!slot.leaving || slot.progress > 0) slot,
+          if (!slot.leaving || slot.t < 1) slot,
       ];
       _publishSlots();
-      if (_slots.every((s) => !s.leaving && s.progress >= 1)) {
-        _slotTicker.stop();
-      }
+      if (_slots.every((s) => !s.active)) _slotTicker.stop();
     });
   }
 
@@ -2134,6 +2182,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         DockColors.of(context),
                         indicators: widget.indicators,
                         launcher: widget.launcher,
+                        opacities: [
+                          for (final item in items) _live[item]?.opacity ?? 1,
+                        ],
+                        dots: [for (final item in items) _live[item]?.dot ?? 1],
                       ),
                     ),
                   ),
@@ -2373,19 +2425,23 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
         : SilicaIcon(source, side: side, besideApps: true);
-    final presence = l.presence[index];
+    final live = _live[item];
+    // The launch hop: 17 pt (about 18 with the magnification) in the same animation.
+    final hop =
+        (live?.hopFraction ?? 0) *
+        (launchHopPeak +
+            math.min(1, (l.scales[index] - 1) / (defaultMagnification - 1)));
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,
       curve: Curves.easeInOut,
       left: x,
-      // The launch bounce starts once the slot is open.
-      top: y - (presence < 1 ? 0 : _bounceOf(item)),
+      top: y - math.max(hop, _bounceOf(item)),
       width: side,
       height: side,
       // Pressed: the icon darkens (D-02).
       child: Opacity(
-        opacity: presence,
+        opacity: live?.opacity ?? 1,
         child: !sliding && _pressed == index
             ? ColorFiltered(
                 colorFilter: const ColorFilter.mode(
@@ -2434,7 +2490,13 @@ class _DockPainter extends CustomPainter {
     this.colors, {
     this.indicators = true,
     this.launcher = const {},
+    this.opacities = const [],
+    this.dots = const [],
   });
+
+  /// Opacity of every icon and of its running dot, by item index (1: missing).
+  final List<double> opacities;
+  final List<double> dots;
 
   final List<Item> items;
   final Layout l;
@@ -2463,7 +2525,8 @@ class _DockPainter extends CustomPainter {
       }
       if (identical(item, gapItem) || item.minimizedWindow != null) continue;
       final (ix, iy, side) = iconRect(l, i, height);
-      final presence = l.presence[i];
+      final presence = i < opacities.length ? opacities[i] : 1.0;
+      final dot = i < dots.length ? dots[i] : 1.0;
       if (item.icon == null) {
         if (presence < 1) {
           canvas.saveLayer(
@@ -2504,7 +2567,7 @@ class _DockPainter extends CustomPainter {
           indicatorSize / 2,
           Paint()
             ..color = colors.indicator.withValues(
-              alpha: colors.indicator.a * presence,
+              alpha: colors.indicator.a * dot,
             ),
         );
       }

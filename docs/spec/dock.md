@@ -282,22 +282,42 @@ After the third hop the icon stays still for about 1 s.
 | Already in front with visible windows | nothing |
 | In front, with one visible and one minimised window | nothing; the minimised window stays in the Dock |
 
-## Slot opening and closing (D-02)
+## Launch and quit animations (DOCK-ANIM)
 
-When an app that is not kept in the Dock launches, its slot opens before the separator; when
-it quits, the slot closes. The same applies to the separator when the running section goes
-from empty to non-empty and back.
+When an app that is not kept in the Dock launches, its icon is inserted after the last pinned
+app, before the separator; when it quits, it is removed.
 
-- **Opening:** the neighbours slide apart while the icon grows from nothing and fades in; the
-  launch bounce starts once the slot is open.
-- **Closing:** the icon shrinks and fades out while the neighbours slide together.
-- **Background:** its width follows the slots in every frame and stays centred.
-- **Times:** the Dock widens in about **320 ms** and narrows in about **480 ms** (measured with
-  the launch animation turned off, see Launching an app).
-- **Provisional (not measured):** the same times with the launch animation on, the ease-in-out
-  curve, the icon starting at scale 0, and the opacity following the scale.
-- **Not animated:** the first list at start-up, minimised windows (their own effect), a Dock
-  hidden by auto-hide, and an icon dragged out (it fades in place, see Dragging icons).
+**Launch**
+
+- The new cell starts at 10 % of its size (6.3 pt) with its centre fixed, and grows to 63 pt
+  in about **350 ms** along cubic-bezier(0.38, 0, 0.64, 1). With magnification it grows to the
+  magnified size.
+- The neighbours each move exactly half the growth, so the background grows and stays centred.
+  The neighbour under the pointer stays magnified while it slides.
+- The icon is drawn at the cell's scale, with opacity (scale - 0.2) / 0.8: invisible below
+  20 %.
+- The 17 pt rise of the bounce (about 18 pt with magnification) is part of the same animation
+  and curve. The fall takes about 350 ms, quadratic ease-in, with no settle bounce and no
+  squash. One hop is about 705 ms.
+- The running dot fades in linearly over about 450 ms (415-480), starting about 255 ms in
+  (230-325) and ending at the landing.
+- The command to the first change of the Dock takes 49-52 ms (system latency, not reproduced).
+
+**Quit**
+
+- The cell goes from 63 to 0 pt in about **480 ms** (470-490) along cubic-bezier(0.38, 0.05,
+  0.61, 1). The icon shrinks in place with opacity = scale squared; the Dock shrinks
+  symmetrically.
+- The dot fades out over about 370 ms (350-390) from the start.
+
+**Other cases**
+
+- The separator follows the same curves when the running section goes from empty to non-empty
+  and back (provisional: not measured on its own).
+- Not animated: minimised windows (their own effect), a Dock hidden by auto-hide, and an icon
+  dragged out (it fades in place, see Dragging icons).
+- Provisional: the reveal of the Dock at login (cannot be captured); at start-up nothing
+  animates.
 
 ## Context menu (D-04)
 
@@ -407,5 +427,3 @@ The menu opens on a secondary click, a control-click, or a **long press of about
 - Dropping a file on an app that does not accept it.
 - Clicking an app whose windows are on other spaces.
 - Whether the magnification radius scales with the Dock size.
-- Slot opening and closing with the launch animation on: durations, curve, icon scale and
-  opacity, and the order against the bounce.

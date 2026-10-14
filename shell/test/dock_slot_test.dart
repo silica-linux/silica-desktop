@@ -50,12 +50,15 @@ void main() {
     expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.001));
 
     await tester.pumpWidget(_dock([_a, _b, _c]));
-    // First frame: the slot is closed.
+    // First frame: the cell is at 10 % (6.3 pt).
     await tester.pump();
-    expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.5));
+    expect(
+      glassWidth(tester),
+      closeTo(rest([_a, _b]) + cellPitch * launchStartScale, 0.5),
+    );
     final half = <double>[];
     for (var i = 0; i < 5; i++) {
-      await tester.pump(slotOpenDuration ~/ 5);
+      await tester.pump(launchDuration ~/ 5);
       half.add(glassWidth(tester));
     }
     // Monotonic growth, no jump, reaching the full width at the end.
@@ -78,11 +81,11 @@ void main() {
     await tester.pump();
     // Still there at the start...
     expect(glassWidth(tester), closeTo(rest([_a, _b, _c]), 0.5));
-    await tester.pump(slotCloseDuration ~/ 2);
+    await tester.pump(quitDuration ~/ 2);
     final mid = glassWidth(tester);
     expect(mid, lessThan(rest([_a, _b, _c])));
     expect(mid, greaterThan(rest([_a, _b])));
-    await tester.pump(slotCloseDuration);
+    await tester.pump(quitDuration);
     expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.001));
     // ...and gone: nothing keeps animating.
     expect(tester.binding.transientCallbackCount, 0);
@@ -95,15 +98,15 @@ void main() {
     await tester.pumpWidget(_dock([_a, _b]));
     await tester.pumpWidget(_dock([_a, _b, _sep, _c]));
     await tester.pump();
-    expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.5));
-    await tester.pump(slotOpenDuration ~/ 2);
+    expect(glassWidth(tester), lessThan(rest([_a, _b]) + 10));
+    await tester.pump(launchDuration ~/ 2);
     expect(glassWidth(tester), greaterThan(rest([_a, _b])));
     expect(glassWidth(tester), lessThan(rest([_a, _b, _sep, _c])));
     await tester.pumpAndSettle();
     expect(glassWidth(tester), closeTo(rest([_a, _b, _sep, _c]), 0.001));
 
     await tester.pumpWidget(_dock([_a, _b]));
-    await tester.pump(slotOpenDuration ~/ 2);
+    await tester.pump(launchDuration ~/ 2);
     expect(glassWidth(tester), lessThan(rest([_a, _b, _sep, _c])));
     await tester.pumpAndSettle();
     expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.001));
@@ -115,7 +118,7 @@ void main() {
     await tester.pumpWidget(_dock([_a, _b, _c], mag: maxMagnification));
     var last = glassWidth(tester);
     for (var i = 0; i < 20; i++) {
-      await tester.pump(slotOpenDuration ~/ 20);
+      await tester.pump(launchDuration ~/ 20);
       final w = glassWidth(tester);
       // 63 pt over 20 frames: no step larger than a few points.
       expect((w - last).abs(), lessThan(12));
@@ -150,5 +153,36 @@ void main() {
       open.background.$1 + open.background.$3 / 2,
       closeTo(total / 2, 0.001),
     );
+  });
+
+  test(
+    'the hop rises with the launch curve, falls in 350 ms and lands at ~705 ms',
+    () {
+      expect(launchHop(0), 0);
+      expect(launchHop(350), closeTo(1, 1e-6));
+      expect(launchHop(175), closeTo(launchCurve.transform(0.5), 1e-6));
+      // Quadratic ease-in fall: slow at first, then fast.
+      expect(launchHop(350 + 175), closeTo(0.75, 1e-6));
+      expect(launchHop(705), 0);
+    },
+  );
+
+  test('the curves are the measured ones', () {
+    expect(launchCurve, const Cubic(0.38, 0, 0.64, 1));
+    expect(quitCurve, const Cubic(0.38, 0.05, 0.61, 1));
+    expect(launchDuration.inMilliseconds, 350);
+    expect(quitDuration.inMilliseconds, 480);
+  });
+
+  testWidgets('the quit shrinks 63 to 0 in ~480 ms', (tester) async {
+    await setUp(tester);
+    await tester.pumpWidget(_dock([_a, _b, _c]));
+    await tester.pumpWidget(_dock([_a, _b]));
+    await tester.pump();
+    await tester.pump(quitDuration * 0.5);
+    final mid = glassWidth(tester) - rest([_a, _b]);
+    expect(mid, closeTo(cellPitch * (1 - quitCurve.transform(0.5)), 2));
+    await tester.pump(quitDuration);
+    expect(glassWidth(tester), closeTo(rest([_a, _b]), 0.001));
   });
 }
