@@ -9,6 +9,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
+import '../system/shell_channel.dart';
+
 /// The wallpaper choice.
 sealed class WallpaperChoice {
   const WallpaperChoice();
@@ -70,7 +72,17 @@ class Wallpaper extends StatelessWidget {
   final WallpaperChoice choice;
 
   @override
-  Widget build(BuildContext context) => switch (choice) {
+  Widget build(BuildContext context) => GestureDetector(
+    // A right click on the desktop: the menu bar shows the context menu (on top of the
+    // windows, which the wallpaper is below).
+    onSecondaryTapUp: (details) => ShellChannel.instance.broadcast(
+      'desktopmenu',
+      '${details.globalPosition.dx} ${details.globalPosition.dy}',
+    ),
+    child: _picture(),
+  );
+
+  Widget _picture() => switch (choice) {
     GeneratedWallpaper() => const CustomPaint(
       painter: DunesPainter(),
       size: Size.infinite,

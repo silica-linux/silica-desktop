@@ -21,6 +21,7 @@ import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
 import '../system/system_status.dart';
+import 'desktop_menu.dart';
 import 'logo_menu.dart';
 import 'menus.dart';
 import 'status_icons.dart';
@@ -280,6 +281,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
     ShellChannel.instance.states.addListener(_changed);
+    ShellChannel.instance.states.addListener(_desktopMenuChanged);
     widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
     HardwareKeyboard.instance.addHandler(_keyChanged);
@@ -303,6 +305,57 @@ class _MenuBarState extends State<MenuBar> {
     LayerControl.size(0, screen?.height ?? tip.dy + 400);
     LayerControl.inputRegion(null);
     LayerControl.keyboard('exclusive');
+  }
+
+  /// The desktop context menu: the wallpaper announces `desktopmenu` = "x y".
+  Offset? _desktopMenuAt;
+  String _desktopMenuState = '';
+
+  void _desktopMenuChanged() {
+    final value = ShellChannel.instance.states.value['desktopmenu'] ?? '';
+    if (value == _desktopMenuState) return;
+    _desktopMenuState = value;
+    final parts = value.split(' ');
+    final x = parts.length == 2 ? double.tryParse(parts[0]) : null;
+    final y = parts.length == 2 ? double.tryParse(parts[1]) : null;
+    if (x == null || y == null) {
+      _closeDesktopMenu(announce: false);
+    } else {
+      _openDesktopMenu(Offset(x, y));
+    }
+  }
+
+  Future<void> _openDesktopMenu(Offset at) async {
+    _closeMenu();
+    _closeWindowMenu();
+    final screen = await LayerControl.outputSize();
+    if (!mounted) return;
+    setState(() => _desktopMenuAt = at);
+    LayerControl.size(0, screen?.height ?? at.dy + 400);
+    LayerControl.inputRegion(null);
+    LayerControl.keyboard('exclusive');
+  }
+
+  void _closeDesktopMenu({bool announce = true}) {
+    if (_desktopMenuAt == null) return;
+    setState(() => _desktopMenuAt = null);
+    if (announce) {
+      _desktopMenuState = '';
+      ShellChannel.instance.broadcast('desktopmenu', '');
+    }
+    LayerControl.keyboard('none');
+    LayerControl.inputRegion(null);
+    LayerControl.size(0, barHeight);
+  }
+
+  List<MenuEntry> _desktopEntries() {
+    final settings = _settingsApp;
+    return desktopMenu(
+      l: l10nOf(context),
+      onNewFolder: () =>
+          newFolder(desktopFolder(), l10nOf(context).desktopUntitledFolder),
+      onChangeWallpaper: settings == null ? null : () => _launch(settings),
+    );
   }
 
   void _closeWindowMenu() {
@@ -337,6 +390,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
     ShellChannel.instance.states.removeListener(_changed);
+    ShellChannel.instance.states.removeListener(_desktopMenuChanged);
     widget.system?.removeListener(_changed);
     _windowMenus?.cancel();
     HardwareKeyboard.instance.removeHandler(_keyChanged);
@@ -545,6 +599,15 @@ class _MenuBarState extends State<MenuBar> {
                       tip: tip,
                       tipUp: true,
                       onDismissed: _closeWindowMenu,
+                    ),
+                  ),
+                if (_desktopMenuAt case final at?)
+                  Positioned.fill(
+                    child: MenuHost(
+                      key: ValueKey(at),
+                      entries: _desktopEntries(),
+                      anchor: Offset(at.dx, at.dy - desktopMenuAbove),
+                      onDismissed: _closeDesktopMenu,
                     ),
                   ),
                 if (_open case final name?)

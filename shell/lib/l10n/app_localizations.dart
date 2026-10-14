@@ -871,6 +871,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Until this evening'**
   String get focusUntilEvening;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'New Folder'**
+  String get desktopNewFolder;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Paste Item'**
+  String get desktopPaste;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Get Info'**
+  String get desktopGetInfo;
+
+  /// Desktop context menu: opens the wallpaper settings
+  ///
+  /// In en, this message translates to:
+  /// **'Change Wallpaper…'**
+  String get desktopChangeWallpaper;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Widgets…'**
+  String get desktopEditWidgets;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Use Stacks'**
+  String get desktopUseStacks;
+
+  /// Desktop context menu: submenu
+  ///
+  /// In en, this message translates to:
+  /// **'Sort By'**
+  String get desktopSortBy;
+
+  /// Desktop context menu › Sort By
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get desktopSortNone;
+
+  /// Desktop context menu › Sort By
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get desktopSortName;
+
+  /// Desktop context menu › Sort By
+  ///
+  /// In en, this message translates to:
+  /// **'Kind'**
+  String get desktopSortKind;
+
+  /// Desktop context menu › Sort By
+  ///
+  /// In en, this message translates to:
+  /// **'Date Modified'**
+  String get desktopSortModified;
+
+  /// Desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'Show View Options'**
+  String get desktopViewOptions;
+
+  /// Name of a folder created from the desktop context menu
+  ///
+  /// In en, this message translates to:
+  /// **'untitled folder'**
+  String get desktopUntitledFolder;
 }
 
 class _AppLocalizationsDelegate

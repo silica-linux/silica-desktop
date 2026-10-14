@@ -598,5 +598,57 @@
   "focusUntilEvening": "Until this evening",
   "@focusUntilEvening": {
     "description": "Control Center Focus detail: keep Do Not Disturb on until the evening"
+  },
+  "desktopNewFolder": "New Folder",
+  "@desktopNewFolder": {
+    "description": "Desktop context menu"
+  },
+  "desktopPaste": "Paste Item",
+  "@desktopPaste": {
+    "description": "Desktop context menu"
+  },
+  "desktopGetInfo": "Get Info",
+  "@desktopGetInfo": {
+    "description": "Desktop context menu"
+  },
+  "desktopChangeWallpaper": "Change Wallpaper…",
+  "@desktopChangeWallpaper": {
+    "description": "Desktop context menu: opens the wallpaper settings"
+  },
+  "desktopEditWidgets": "Edit Widgets…",
+  "@desktopEditWidgets": {
+    "description": "Desktop context menu"
+  },
+  "desktopUseStacks": "Use Stacks",
+  "@desktopUseStacks": {
+    "description": "Desktop context menu"
+  },
+  "desktopSortBy": "Sort By",
+  "@desktopSortBy": {
+    "description": "Desktop context menu: submenu"
+  },
+  "desktopSortNone": "None",
+  "@desktopSortNone": {
+    "description": "Desktop context menu › Sort By"
+  },
+  "desktopSortName": "Name",
+  "@desktopSortName": {
+    "description": "Desktop context menu › Sort By"
+  },
+  "desktopSortKind": "Kind",
+  "@desktopSortKind": {
+    "description": "Desktop context menu › Sort By"
+  },
+  "desktopSortModified": "Date Modified",
+  "@desktopSortModified": {
+    "description": "Desktop context menu › Sort By"
+  },
+  "desktopViewOptions": "Show View Options",
+  "@desktopViewOptions": {
+    "description": "Desktop context menu"
+  },
+  "desktopUntitledFolder": "untitled folder",
+  "@desktopUntitledFolder": {
+    "description": "Name of a folder created from the desktop context menu"
   }
 }

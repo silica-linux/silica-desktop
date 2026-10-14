@@ -445,4 +445,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get focusUntilEvening => 'Until this evening';
+
+  @override
+  String get desktopNewFolder => 'New Folder';
+
+  @override
+  String get desktopPaste => 'Paste Item';
+
+  @override
+  String get desktopGetInfo => 'Get Info';
+
+  @override
+  String get desktopChangeWallpaper => 'Change Wallpaper…';
+
+  @override
+  String get desktopEditWidgets => 'Edit Widgets…';
+
+  @override
+  String get desktopUseStacks => 'Use Stacks';
+
+  @override
+  String get desktopSortBy => 'Sort By';
+
+  @override
+  String get desktopSortNone => 'None';
+
+  @override
+  String get desktopSortName => 'Name';
+
+  @override
+  String get desktopSortKind => 'Kind';
+
+  @override
+  String get desktopSortModified => 'Date Modified';
+
+  @override
+  String get desktopViewOptions => 'Show View Options';
+
+  @override
+  String get desktopUntitledFolder => 'untitled folder';
 }

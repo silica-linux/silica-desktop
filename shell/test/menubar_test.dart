@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/l10n/l10n.dart';
+import 'package:silica_shell/menubar/desktop_menu.dart';
 import 'package:silica_shell/menubar/logo_menu.dart';
 import 'package:silica_shell/menubar/menubar.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
@@ -340,6 +343,56 @@ void main() {
         'Ada Lovelace',
       );
       expect(userFullName(env: {'USER': 'bob'}, passwd: passwd), 'bob');
+    });
+  });
+
+  group('desktop menu', () {
+    test('the desktop folder from user-dirs, else ~/Desktop', () {
+      expect(
+        desktopFolder(
+          env: {'HOME': '/home/u'},
+          userDirs: 'XDG_DESKTOP_DIR="\$HOME/Scrivania"\n',
+        ),
+        '/home/u/Scrivania',
+      );
+      expect(
+        desktopFolder(env: {'HOME': '/home/u'}, userDirs: ''),
+        '/home/u/Desktop',
+      );
+    });
+
+    test('New Folder picks a free name', () {
+      final dir = Directory.systemTemp.createTempSync('desktop');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      expect(
+        newFolder(dir.path, 'untitled folder'),
+        '${dir.path}/untitled folder',
+      );
+      expect(
+        newFolder(dir.path, 'untitled folder'),
+        '${dir.path}/untitled folder 2',
+      );
+    });
+
+    test('the items of the reference, the unavailable ones disabled', () {
+      final entries = desktopMenu(l: englishTexts, onNewFolder: () {});
+      final actions = entries.whereType<MenuAction>().toList();
+      expect(
+        [for (final a in actions) a.label],
+        [
+          'New Folder',
+          'Paste Item',
+          'Get Info',
+          'Change Wallpaper…',
+          'Edit Widgets…',
+          'Use Stacks',
+          'Sort By',
+          'Show View Options',
+        ],
+      );
+      expect(actions.first.enabled, isTrue);
+      expect(actions[3].enabled, isFalse);
+      expect(entries.whereType<MenuDivider>(), hasLength(2));
     });
   });
 }

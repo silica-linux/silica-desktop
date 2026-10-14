@@ -128,5 +128,18 @@
   "ccDarkMode": "Modalità scura",
   "ccScreenCapture": "Acquisizione schermo",
   "focusForAnHour": "Per un'ora",
-  "focusUntilEvening": "Fino a stasera"
+  "focusUntilEvening": "Fino a stasera",
+  "desktopNewFolder": "Nuova cartella",
+  "desktopPaste": "Incolla elemento",
+  "desktopGetInfo": "Informazioni",
+  "desktopChangeWallpaper": "Cambia sfondo…",
+  "desktopEditWidgets": "Modifica widget…",
+  "desktopUseStacks": "Usa pile",
+  "desktopSortBy": "Ordina per",
+  "desktopSortNone": "Nessuno",
+  "desktopSortName": "Nome",
+  "desktopSortKind": "Tipo",
+  "desktopSortModified": "Data di modifica",
+  "desktopViewOptions": "Opzioni vista",
+  "desktopUntitledFolder": "cartella senza titolo"
 }
