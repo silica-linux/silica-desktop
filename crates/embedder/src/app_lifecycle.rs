@@ -16,7 +16,7 @@
 //!
 //! The `silica/app` channel (JSONMethodCodec):
 //! - from the app: `setQuitWhenLastWindowCloses {value}`, `setHandlesReopen {value}`,
-//!   `setQuitEnabled {value}`, `openWindow`, `quit`, `isHidden`;
+//!   `setQuitEnabled {value}`, `openWindow`, `closeWindow`, `quit`, `isHidden`;
 //! - to the app: `lastWindowClosed`, `reopen {windowless}`.
 
 use std::io::{BufRead, BufReader, Write};

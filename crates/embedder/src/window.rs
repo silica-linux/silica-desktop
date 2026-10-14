@@ -1070,6 +1070,14 @@ impl App {
                 self.open_window();
                 crate::text_input::success(serde_json::Value::Null)
             }
+            // The app closes its window itself (its last tab, its shell exited): as the
+            // close button.
+            Some("closeWindow") => {
+                if self.hidden_since.is_none() {
+                    self.close_last_window();
+                }
+                crate::text_input::success(serde_json::Value::Null)
+            }
             Some("isHidden") => {
                 crate::text_input::success(serde_json::json!(self.hidden_since.is_some()))
             }
