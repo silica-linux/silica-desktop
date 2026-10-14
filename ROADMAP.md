@@ -1,7 +1,7 @@
 # Roadmap
 
-Ten milestones in three phases, with two gates that decide whether to go on: the embedder
-after M1 and daily use after M6. Dates come only after gate 1: until then the cost of the
+Twelve milestones in four phases, with two gates that decide whether to go on: the embedder
+after M1 and daily use after M9. Dates come only after gate 1: until then the cost of the
 embedder is the unknown that weighs on everything else.
 
 ## Foundations (M0 – M2)
@@ -48,30 +48,57 @@ Before M2: `linux-dmabuf` in Ossido and a measurement of the Dock with the GPU o
 
 - View of all the windows, workspaces, 3- and 4-finger touchpad gestures
 
-## Session and apps (M6 – M9)
+## Complete interface (M6 – M8)
 
-### M6 · Real session
+Revised on 2026-10-14: before the real session, the interface reaches 1:1 with macOS 27. A
+systematic inventory of every shell feature, interface control and Settings pane (measured on
+the Mac, in silica-reference) becomes issues on the project board, so what is missing is a
+number, not an impression.
 
-- DRM/KMS, libinput, logind, lock screen, login with greetd
-- XWayland, multi-monitor, fractional scaling, tests on real hardware
+### M6 · UI components 1:1
+
+- Every interface control in `silica_ui`: buttons of every kind, popovers with tips, sheets,
+  tables and outline views, sidebars, segmented controls, sliders, switches, steppers, date and
+  colour pickers, search fields with tokens, tooltips, progress, customizable toolbars, the glass
+  toolbar over scrolling content
+- A catalog app showing every control next to the reference
+
+### M7 · Complete shell 1:1
+
+- Menu bar with real app menus and every status menu; Control Center with every module and
+  "Edit Controls"; Notification Center with widgets and per-app grouping; Dock with all its
+  settings and effects; Spotlight with calculations, conversions and actions; Mission Control
+  and spaces complete
+- Hot corners, lock screen, screen saver, Focus, Night Shift, keyboard shortcuts, accessibility
+
+### M8 · Apps
+
+- Settings first (it drives everything above), then Mustache, Mail, Terminal, Clock, Calculator
+  at parity; every app on `silica_ui`
+
+## Session and release (M9 – M11)
+
+### M9 · Real session (VM first)
+
+- DRM/KMS, libinput, logind, lock screen, login with greetd, XWayland, multi-monitor,
+  fractional scaling
+- First in a QEMU/KVM virtual machine with virtio-gpu, where the `silica-os` image also boots;
+  a minimal VM runs in CI from now on, in parallel; then real hardware
 
 ### Gate 2 · daily use
 
 Silica becomes the development session: we go on if it holds up for a week.
 
-### M7 · App integration
+### M10 · App integration
 
 - Global menu: `silica-menu-v1` and a DBusMenu bridge for Qt and GTK3
-- Portal: screen capture and file chooser; approximated GTK and Qt theme
+- Portals: screen capture and file chooser; GTK and Qt theming
 
-### M8 · Apps
+### M11 · Silica 1.0.0 «Amalfi»
 
-- Settings and Mustache in Flutter, on top of `silica_ui`
-
-### M9 · Alpha 0.1
-
-- Packages for Ubuntu, Fedora and Arch, first version name
-- Measured parity published in this file
+- The first release is 1.0.0, named Amalfi: release names are Italian cities
+- Installable images and packages (the distribution track D1–D5), measured parity published
+  in this file
 
 ## Measured parity
 
