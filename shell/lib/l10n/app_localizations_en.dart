@@ -540,4 +540,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get powerReopenWindows => 'Reopen windows when logging back in';
+
+  @override
+  String get batteryMenuTitle => 'Battery';
+
+  @override
+  String batteryMenuCharge(int percent) {
+    return '$percent % charged';
+  }
+
+  @override
+  String get batteryMenuOnBattery => 'Power Source: Battery';
+
+  @override
+  String get batteryMenuPowerAdapter => 'Power Source: Power Adapter';
+
+  @override
+  String get batteryMenuSettings => 'Battery Settings…';
 }

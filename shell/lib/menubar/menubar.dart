@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -23,6 +24,7 @@ import '../system/media.dart';
 import '../system/system_status.dart';
 import 'desktop_menu.dart';
 import 'logo_menu.dart';
+import 'menubar_config.dart';
 import 'power.dart';
 import 'menus.dart';
 import 'status_icons.dart';
@@ -97,7 +99,11 @@ class MenuBar extends StatefulWidget {
     this.system,
     this.now,
     this.media,
+    this.config,
   });
+
+  /// Which optional status items to show (Settings › Menu Bar); null: the file, watched.
+  final ValueListenable<MenubarConfig>? config;
 
   /// The installed apps, for the name of the focused app.
   final Map<String, DesktopEntry>? entries;
@@ -138,7 +144,9 @@ class _MenuBarState extends State<MenuBar> {
 
   GlobalKey _keyFor(String name) => _itemKeys.putIfAbsent(name, GlobalKey.new);
 
-  List<MenuEntry> _entries(String name) => name == 'logo'
+  List<MenuEntry> _entries(String name) => name == 'battery'
+      ? _batteryMenu()
+      : name == 'logo'
       ? logoMenu(
           l: l10nOf(context),
           run: (id) => ShellChannel.instance.execute(id),
@@ -162,6 +170,33 @@ class _MenuBarState extends State<MenuBar> {
           (id) => ShellChannel.instance.execute(id),
           texts: l10nOf(context),
         );
+
+  /// The battery menu: charge, power source, Battery Settings (not measured on the
+  /// reference, which has no battery: provisional).
+  List<MenuEntry> _batteryMenu() {
+    final l = l10nOf(context);
+    final s = widget.system?.value;
+    final settings = _settingsApp;
+    return [
+      MenuSection(l.batteryMenuTitle),
+      MenuAction(
+        l.batteryMenuCharge((s?.batteryPercent ?? 0).round()),
+        enabled: false,
+      ),
+      MenuAction(
+        (s?.batteryCharging ?? false)
+            ? l.batteryMenuPowerAdapter
+            : l.batteryMenuOnBattery,
+        enabled: false,
+      ),
+      const MenuDivider(),
+      MenuAction(
+        l.batteryMenuSettings,
+        enabled: settings != null,
+        onSelected: settings == null ? null : () => _launch(settings),
+      ),
+    ];
+  }
 
   /// ⌥ held: the logo menu shows its alternate items (SH-MB-04).
   bool _option = false;
@@ -288,9 +323,14 @@ class _MenuBarState extends State<MenuBar> {
     _menuKey.currentState?.pointerMoved(p);
   }
 
+  MenubarConfigWatcher? _ownConfig;
+  ValueListenable<MenubarConfig> get _config =>
+      widget.config ?? (_ownConfig ??= MenubarConfigWatcher());
+
   @override
   void initState() {
     super.initState();
+    _config.addListener(_changed);
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
     ShellChannel.instance.states.addListener(_changed);
@@ -431,6 +471,8 @@ class _MenuBarState extends State<MenuBar> {
 
   @override
   void dispose() {
+    _config.removeListener(_changed);
+    _ownConfig?.dispose();
     _timer?.cancel();
     _switchTimer?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
@@ -711,6 +753,7 @@ class _MenuBarState extends State<MenuBar> {
   /// Battery (if any) and network, from the system state; without it, the full Wi-Fi icon.
   List<Widget> _systemIcons() {
     final s = widget.system?.value;
+    final config = _config.value;
     if (s == null) {
       return const [StatusIcon(kind: StatusKind.network, cell: 22)];
     }
@@ -736,12 +779,66 @@ class _MenuBarState extends State<MenuBar> {
         ),
         const SizedBox(width: statusGap),
       ],
-      if (s.batteryPresent) ...[
-        StatusIcon(
-          kind: StatusKind.battery,
-          cell: 33,
-          level: s.batteryPercent / 100,
-          charging: s.batteryCharging,
+      // Bluetooth and Sound when Settings › Menu Bar asks for them (SH-MB-24, SH-MB-25):
+      // their menus are the Control Center's detail panels, like Wi-Fi. Sound "when
+      // active" shows while media plays (provisional reading of the setting).
+      if (config.bluetooth && s.bluetoothAvailable) ...[
+        GestureDetector(
+          key: _keyFor('bluetooth'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleStatusMenu('bluetooth'),
+          child: StatusIcon(
+            kind: StatusKind.bluetooth,
+            cell: 22,
+            dim: !s.bluetoothPowered,
+          ),
+        ),
+        const SizedBox(width: statusGap),
+      ],
+      if (s.audioAvailable &&
+          switch (config.sound) {
+            SoundItem.always => true,
+            SoundItem.active => widget.media?.now?.playing ?? false,
+            SoundItem.never => false,
+          }) ...[
+        GestureDetector(
+          key: _keyFor('sound'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleStatusMenu('sound'),
+          child: StatusIcon(
+            kind: StatusKind.sound,
+            cell: 26,
+            level: s.muted ? 0 : s.volume,
+            dim: s.muted,
+          ),
+        ),
+        const SizedBox(width: statusGap),
+      ],
+      if (s.batteryPresent && config.battery) ...[
+        // The battery menu (SH-MB-27): a standard menu with the charge, the power source
+        // and Battery Settings.
+        GestureDetector(
+          key: _keyFor('battery'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _open == 'battery' ? _closeMenu() : _openMenu('battery'),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (config.batteryPercent) ...[
+                Text(
+                  '${s.batteryPercent.round()} %',
+                  style: uiText(size: fontSize, color: statusColor),
+                ),
+                const SizedBox(width: 4),
+              ],
+              StatusIcon(
+                kind: StatusKind.battery,
+                cell: 33,
+                level: s.batteryPercent / 100,
+                charging: s.batteryCharging,
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: statusGap),
       ],

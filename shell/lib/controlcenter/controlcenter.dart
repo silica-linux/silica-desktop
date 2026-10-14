@@ -325,7 +325,13 @@ class _ControlCenterState extends State<ControlCenter>
   final FocusNode _menuFocus = FocusNode();
 
   /// The panels the bar's status items open.
-  static const Set<String> statusMenus = {'wifi', 'dnd', 'media'};
+  static const Set<String> statusMenus = {
+    'wifi',
+    'dnd',
+    'media',
+    'bluetooth',
+    'sound',
+  };
 
   /// The bar announces `statusmenu` = "<panel> <right edge of the icon>" or "".
   void _statesChanged() {
@@ -358,10 +364,18 @@ class _ControlCenterState extends State<ControlCenter>
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _menuFocus.requestFocus(),
     );
-    if (key != 'wifi') return;
-    final networks = await widget.system.wifiNetworks();
-    if (mounted && _wifiMenuRight != null && _statusMenuKey == 'wifi') {
-      setState(() => _detailData = DetailData(networks: networks));
+    final system = widget.system;
+    final data = switch (key) {
+      'wifi' => DetailData(networks: await system.wifiNetworks()),
+      'sound' => DetailData(outputs: await system.audioOutputs()),
+      'bluetooth' => DetailData(devices: await system.bluetoothDevices()),
+      _ => null,
+    };
+    if (data != null &&
+        mounted &&
+        _wifiMenuRight != null &&
+        _statusMenuKey == key) {
+      setState(() => _detailData = data);
     }
   }
 

@@ -1045,6 +1045,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reopen windows when logging back in'**
   String get powerReopenWindows;
+
+  /// Battery status menu: section title
+  ///
+  /// In en, this message translates to:
+  /// **'Battery'**
+  String get batteryMenuTitle;
+
+  /// Battery status menu: the charge
+  ///
+  /// In en, this message translates to:
+  /// **'{percent} % charged'**
+  String batteryMenuCharge(int percent);
+
+  /// Battery status menu: running on battery
+  ///
+  /// In en, this message translates to:
+  /// **'Power Source: Battery'**
+  String get batteryMenuOnBattery;
+
+  /// Battery status menu: plugged in
+  ///
+  /// In en, this message translates to:
+  /// **'Power Source: Power Adapter'**
+  String get batteryMenuPowerAdapter;
+
+  /// Battery status menu: opens Settings
+  ///
+  /// In en, this message translates to:
+  /// **'Battery Settings…'**
+  String get batteryMenuSettings;
 }
 
 class _AppLocalizationsDelegate

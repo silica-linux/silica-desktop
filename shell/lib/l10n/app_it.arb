@@ -157,5 +157,10 @@
   "powerLogOutTitle": "Disconnettere {user} e chiudere tutte le app?",
   "powerLogOutBody": "La disconnessione avverrà automaticamente tra {seconds} secondi.",
   "powerLogOutButton": "Esci",
-  "powerReopenWindows": "Riapri le finestre al prossimo accesso"
+  "powerReopenWindows": "Riapri le finestre al prossimo accesso",
+  "batteryMenuTitle": "Batteria",
+  "batteryMenuCharge": "Carica al {percent} %",
+  "batteryMenuOnBattery": "Alimentazione: batteria",
+  "batteryMenuPowerAdapter": "Alimentazione: alimentatore",
+  "batteryMenuSettings": "Impostazioni Batteria…"
 }

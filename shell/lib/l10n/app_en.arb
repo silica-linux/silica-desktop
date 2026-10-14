@@ -734,5 +734,30 @@
   "powerReopenWindows": "Reopen windows when logging back in",
   "@powerReopenWindows": {
     "description": "Power confirmation card (SH-MB-05)"
+  },
+  "batteryMenuTitle": "Battery",
+  "@batteryMenuTitle": {
+    "description": "Battery status menu: section title"
+  },
+  "batteryMenuCharge": "{percent} % charged",
+  "@batteryMenuCharge": {
+    "description": "Battery status menu: the charge",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "batteryMenuOnBattery": "Power Source: Battery",
+  "@batteryMenuOnBattery": {
+    "description": "Battery status menu: running on battery"
+  },
+  "batteryMenuPowerAdapter": "Power Source: Power Adapter",
+  "@batteryMenuPowerAdapter": {
+    "description": "Battery status menu: plugged in"
+  },
+  "batteryMenuSettings": "Battery Settings…",
+  "@batteryMenuSettings": {
+    "description": "Battery status menu: opens Settings"
   }
 }

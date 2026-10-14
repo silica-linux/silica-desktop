@@ -540,4 +540,21 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get powerReopenWindows => 'Riapri le finestre al prossimo accesso';
+
+  @override
+  String get batteryMenuTitle => 'Batteria';
+
+  @override
+  String batteryMenuCharge(int percent) {
+    return 'Carica al $percent %';
+  }
+
+  @override
+  String get batteryMenuOnBattery => 'Alimentazione: batteria';
+
+  @override
+  String get batteryMenuPowerAdapter => 'Alimentazione: alimentatore';
+
+  @override
+  String get batteryMenuSettings => 'Impostazioni Batteria…';
 }

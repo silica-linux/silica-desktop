@@ -49,7 +49,17 @@ class _MarkPainter extends CustomPainter {
   bool shouldRepaint(_MarkPainter old) => old.color != color;
 }
 
-enum StatusKind { network, wired, battery, search, controls, focus, nowPlaying }
+enum StatusKind {
+  network,
+  wired,
+  battery,
+  search,
+  controls,
+  focus,
+  nowPlaying,
+  sound,
+  bluetooth,
+}
 
 class StatusIcon extends StatelessWidget {
   const StatusIcon({
@@ -233,6 +243,58 @@ class _StatusPainter extends CustomPainter {
               ..close(),
             fill,
           );
+      case StatusKind.sound:
+        // A speaker and up to three waves for the volume (`level`; muted: no waves, a
+        // slash), ~18 × 14 pt. Provisional: drawn after the Control Center's glyph.
+        final body = Path()
+          ..moveTo(c.dx - 8, c.dy - 2.5)
+          ..lineTo(c.dx - 5, c.dy - 2.5)
+          ..lineTo(c.dx - 1, c.dy - 6)
+          ..lineTo(c.dx - 1, c.dy + 6)
+          ..lineTo(c.dx - 5, c.dy + 2.5)
+          ..lineTo(c.dx - 8, c.dy + 2.5)
+          ..close();
+        canvas.drawPath(body, fill);
+        if (dim) {
+          canvas.drawLine(
+            c + const Offset(2, -4),
+            c + const Offset(8, 4),
+            stroke..strokeWidth = 1.4,
+          );
+          break;
+        }
+        final waves = level <= 0
+            ? 0
+            : level < 0.34
+            ? 1
+            : level < 0.67
+            ? 2
+            : 3;
+        for (var i = 0; i < waves; i++) {
+          canvas.drawArc(
+            Rect.fromCircle(center: c - const Offset(1, 0), radius: 3.5 + i * 3),
+            -math.pi * 0.3,
+            math.pi * 0.6,
+            false,
+            stroke..strokeWidth = 1.4,
+          );
+        }
+      case StatusKind.bluetooth:
+        // The runic B, ~8 × 15 pt; dimmed when Bluetooth is off.
+        final ink = Paint.from(stroke)
+          ..strokeWidth = 1.4
+          ..strokeJoin = StrokeJoin.round
+          ..color = dim
+              ? statusColor.withValues(alpha: statusColor.a * 0.35)
+              : statusColor;
+        final rune = Path()
+          ..moveTo(c.dx - 3.8, c.dy - 3.6)
+          ..lineTo(c.dx + 3.6, c.dy + 3.6)
+          ..lineTo(c.dx, c.dy + 7.2)
+          ..lineTo(c.dx, c.dy - 7.2)
+          ..lineTo(c.dx + 3.6, c.dy - 3.6)
+          ..lineTo(c.dx - 3.8, c.dy + 3.6);
+        canvas.drawPath(rune, ink);
       case StatusKind.controls:
         // Two stacked switches: 14 × 14 pt.
         for (final (dy, knobLeft) in [(-3.5, true), (3.5, false)]) {
