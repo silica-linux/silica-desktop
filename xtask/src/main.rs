@@ -1,13 +1,13 @@
-//! `cargo xtask`: automazione del repository.
+//! `cargo xtask`: repository automation.
 //!
-//! - `ci`: fmt, flutter analyze/test, clippy con warning come errori, test, layers, assets, unsafe.
-//! - `layers`: verifica le dipendenze vietate tra i livelli.
-//! - `assets`: blocca gli asset senza riga in `ASSETS.md`.
-//! - `run`: avvia Ossido (`--nested` o `--headless`, `--control PORT`); con `--shell` anche
-//!   la shell completa (sfondo, barra dei menu, Dock, Faro, notifiche) e il bus di sessione privato
-//!   con `silica-daemon`, in release.
-//! - `unsafe`: `unsafe` ammesso solo nell'FFI dell'embedder.
-//! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter per l'embedder (vedi `flutter.rs`).
+//! - `ci`: fmt, flutter analyze/test, clippy with warnings as errors, tests, layers, assets, unsafe.
+//! - `layers`: checks the forbidden dependencies between layers.
+//! - `assets`: blocks assets without a row in `ASSETS.md`.
+//! - `run`: starts Ossido (`--nested` or `--headless`, `--control PORT`); with `--shell` also
+//!   the full shell (wallpaper, menu bar, Dock, Faro, notifications) and the private session
+//!   bus with `silica-daemon`, in release.
+//! - `unsafe`: `unsafe` allowed only in the embedder FFI.
+//! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter for the embedder (see `flutter.rs`).
 
 mod bench;
 mod bench_glass;
@@ -22,17 +22,17 @@ use serde_json::Value;
 
 pub(crate) type Result<T> = std::result::Result<T, String>;
 
-/// Dipendenze vietate: (crate, dipendenza anche transitiva, motivo).
+/// Forbidden dependencies: (crate, dependency, even transitive, reason).
 const FORBIDDEN: &[(&str, &str, &str)] = &[(
     "ossido",
     "silica-daemon",
-    "il compositor non dipende dai servizi di sistema",
+    "the compositor does not depend on the system services",
 )];
 
-/// Crate che portano Flutter: nessun crate del workspace sotto la shell li usa.
+/// Crates that bring Flutter: no workspace crate below the shell uses them.
 const FLUTTER_CRATES: &[&str] = &["flutter_rust_bridge"];
 
-/// Estensioni trattate come asset da `cargo xtask assets`.
+/// Extensions treated as assets by `cargo xtask assets`.
 const ASSET_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "icns", "ttf", "otf", "woff", "woff2",
     "wav", "ogg", "oga", "mp3", "flac", "xcf", "psd",
@@ -49,7 +49,7 @@ fn main() -> ExitCode {
         Some("engine") => match args.get(1).map(String::as_str) {
             Some("--release") => flutter::engine_release(),
             None => flutter::engine(),
-            Some(other) => Err(format!("uso: cargo xtask engine [--release], non {other}")),
+            Some(other) => Err(format!("usage: cargo xtask engine [--release], not {other}")),
         },
         Some("bindings") => flutter::bindings(),
         Some("bench") => match args.get(1).map(String::as_str) {
@@ -60,15 +60,15 @@ fn main() -> ExitCode {
         Some("bundle") => match (args.get(1), args.get(2).map(String::as_str)) {
             (Some(app), None) => flutter::bundle(app),
             (Some(app), Some("--release")) => flutter::bundle_release(app),
-            _ => Err("uso: cargo xtask bundle <shell | demo | percorso di un'app> [--release]".to_owned()),
+            _ => Err("usage: cargo xtask bundle <shell | demo | path of an app> [--release]".to_owned()),
         },
         Some("install-app") => match args.get(1) {
             Some(app) => install::install_app(app),
-            None => Err("uso: cargo xtask install-app <percorso di un'app>".to_owned()),
+            None => Err("usage: cargo xtask install-app <path of an app>".to_owned()),
         },
         Some("install-portal") => install::install_portal(),
         _ => Err(
-            "uso: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app|install-portal> [argomenti]"
+            "usage: cargo xtask <ci|layers|assets|unsafe|run|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
                 .to_owned(),
         ),
     };
@@ -85,7 +85,7 @@ pub(crate) fn root() -> Result<PathBuf> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
-        .ok_or_else(|| "radice del repository non trovata".to_owned())
+        .ok_or_else(|| "repository root not found".to_owned())
 }
 
 pub(crate) fn cargo_command(args: &[&str]) -> Command {
@@ -106,11 +106,11 @@ pub(crate) fn status(mut command: Command) -> Result<()> {
     eprintln!("xtask: {line}");
     let status = command
         .status()
-        .map_err(|e| format!("{line} non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start {line}: {e}"))?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("{line} è fallito ({status})"))
+        Err(format!("{line} failed ({status})"))
     }
 }
 
@@ -120,7 +120,7 @@ fn cargo(args: &[&str]) -> Result<()> {
 
 fn ci() -> Result<()> {
     cargo(&["fmt", "--all", "--check"])?;
-    // I test dell'embedder fanno girare l'app demo: servono engine e bundle.
+    // The embedder tests run the demo app: they need the engine and the bundle.
     flutter::engine()?;
     for project in flutter::projects()? {
         flutter::check(&project)?;
@@ -168,8 +168,8 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: WAYLAND_DISPLAY={}", socket.display());
         command.env("WAYLAND_DISPLAY", socket);
     }
-    // Le icone: il clone di silica-icons accanto a questo repository (~/silica/silica-icons),
-    // salvo un SILICA_ICONS_DIR già impostato (docs/icons.md).
+    // The icons: the silica-icons clone next to this repository (~/silica/silica-icons),
+    // unless SILICA_ICONS_DIR is already set (docs/icons.md).
     if std::env::var_os("SILICA_ICONS_DIR").is_none()
         && let Some(icons) = root()?.parent().map(|dir| dir.join("silica-icons"))
         && icons.is_dir()
@@ -177,7 +177,7 @@ fn run(args: &[String]) -> Result<()> {
         eprintln!("xtask: SILICA_ICONS_DIR={}", icons.display());
         command.env("SILICA_ICONS_DIR", icons);
     }
-    // In WSL2 Mesa sceglie llvmpipe per i client EGL: con /dev/dxg la GPU passa da d3d12.
+    // On WSL2 Mesa picks llvmpipe for EGL clients: with /dev/dxg the GPU goes through d3d12.
     if Path::new("/dev/dxg").exists() && std::env::var_os("GALLIUM_DRIVER").is_none() {
         eprintln!("xtask: GALLIUM_DRIVER=d3d12");
         command.env("GALLIUM_DRIVER", "d3d12");
@@ -185,9 +185,9 @@ fn run(args: &[String]) -> Result<()> {
     status(command)
 }
 
-/// La shell completa: Ossido ed embedder in release, il bundle della shell (costruito se
-/// manca), e i componenti come argomenti `--spawn-shell` (sfondo, barra dei menu, Dock,
-/// Faro, notifiche, Centro di controllo, selettore delle app).
+/// The full shell: Ossido and the embedder in release, the shell bundle (built if
+/// missing), and the components as `--spawn-shell` arguments (wallpaper, menu bar, Dock,
+/// Faro, notifications, Control Center, app switcher).
 fn shell_components() -> Result<Vec<String>> {
     let root = root()?;
     status(cargo_command(&[
@@ -203,7 +203,7 @@ fn shell_components() -> Result<Vec<String>> {
     let engine = flutter::release_engine_dir()?;
     if !engine.join("libflutter_engine.so").exists() {
         return Err(format!(
-            "{} assente: cargo xtask engine --release (docs/engine-release.md)",
+            "{} missing: cargo xtask engine --release (docs/engine-release.md)",
             engine.display()
         ));
     }
@@ -240,8 +240,8 @@ fn shell_components() -> Result<Vec<String>> {
             "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace controlcenter --dart-arg controlcenter {bundle}"
         ),
     ];
-    // Bus di sessione privato con silica-daemon (notifiche): annidato, quelli della
-    // sessione ospite sono già presi.
+    // Private session bus with silica-daemon (notifications): when nested, the host
+    // session's ones are already taken.
     Ok(std::iter::once("--session-bus".to_owned())
         .chain(
             components
@@ -251,8 +251,8 @@ fn shell_components() -> Result<Vec<String>> {
         .collect())
 }
 
-/// In WSL2 il link `$XDG_RUNTIME_DIR/wayland-0` verso WSLg a volte manca: in quel caso
-/// winit va puntato direttamente al socket di WSLg.
+/// On WSL2 the `$XDG_RUNTIME_DIR/wayland-0` link to WSLg is sometimes missing: in that case
+/// winit must point straight at WSLg's socket.
 pub(crate) fn wslg_socket() -> Option<PathBuf> {
     let display = std::env::var("WAYLAND_DISPLAY").ok()?;
     let runtime = std::env::var("XDG_RUNTIME_DIR").ok()?;
@@ -264,15 +264,15 @@ pub(crate) fn wslg_socket() -> Option<PathBuf> {
 fn layers() -> Result<()> {
     let output = cargo_command(&["metadata", "--format-version", "1", "--locked"])
         .output()
-        .map_err(|e| format!("cargo metadata non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start cargo metadata: {e}"))?;
     if !output.status.success() {
         return Err(format!(
-            "cargo metadata è fallito: {}",
+            "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
     let meta: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("cargo metadata illeggibile: {e}"))?;
+        .map_err(|e| format!("unreadable cargo metadata: {e}"))?;
 
     let mut names: HashMap<&str, &str> = HashMap::new();
     for package in meta
@@ -321,13 +321,13 @@ fn layers() -> Result<()> {
         let reachable = transitive(member, &deps, &names);
         for (krate, forbidden, why) in FORBIDDEN {
             if name == *krate && reachable.contains(forbidden) {
-                errors.push(format!("{name} dipende da {forbidden}: {why}"));
+                errors.push(format!("{name} depends on {forbidden}: {why}"));
             }
         }
         for flutter in FLUTTER_CRATES {
             if reachable.contains(flutter) {
                 errors.push(format!(
-                    "{name} dipende da {flutter}: Flutter sta sopra i crate"
+                    "{name} depends on {flutter}: Flutter sits above the crates"
                 ));
             }
         }
@@ -336,7 +336,7 @@ fn layers() -> Result<()> {
         eprintln!("xtask: layers ok ({} crate)", members.len());
         Ok(())
     } else {
-        Err(format!("livelli violati:\n  {}", errors.join("\n  ")))
+        Err(format!("layers violated:\n  {}", errors.join("\n  ")))
     }
 }
 
@@ -364,22 +364,22 @@ fn transitive<'a>(
 fn assets() -> Result<()> {
     let root = root()?;
     let listing = std::fs::read_to_string(root.join("ASSETS.md"))
-        .map_err(|e| format!("ASSETS.md illeggibile: {e}"))?;
+        .map_err(|e| format!("unreadable ASSETS.md: {e}"))?;
     let declared: BTreeSet<String> = listing
         .lines()
         .filter_map(|line| line.trim().strip_prefix('|'))
         .filter_map(|row| row.split('|').next())
         .map(|cell| cell.trim().trim_matches('`').to_owned())
-        .filter(|cell| !cell.is_empty() && cell != "Percorso" && !cell.starts_with("---"))
+        .filter(|cell| !cell.is_empty() && cell != "Path" && !cell.starts_with("---"))
         .collect();
 
     let output = Command::new("git")
         .args(["ls-files", "--cached", "--others", "--exclude-standard"])
         .current_dir(&root)
         .output()
-        .map_err(|e| format!("git non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start git: {e}"))?;
     if !output.status.success() {
-        return Err("git ls-files è fallito".to_owned());
+        return Err("git ls-files failed".to_owned());
     }
     let files = String::from_utf8_lossy(&output.stdout);
     let missing: Vec<&str> = files
@@ -393,18 +393,18 @@ fn assets() -> Result<()> {
         .filter(|path| !declared.contains(*path))
         .collect();
     if missing.is_empty() {
-        eprintln!("xtask: assets ok ({} dichiarati)", declared.len());
+        eprintln!("xtask: assets ok ({} declared)", declared.len());
         Ok(())
     } else {
         Err(format!(
-            "asset senza riga in ASSETS.md:\n  {}",
+            "assets without a row in ASSETS.md:\n  {}",
             missing.join("\n  ")
         ))
     }
 }
 
-/// Dove `unsafe` è ammesso: l'FFI dell'embedder e l'inizializzazione EGL di Ossido
-/// (AGENTS.md, "Mai crashare").
+/// Where `unsafe` is allowed: the embedder FFI and Ossido's EGL initialization
+/// (AGENTS.md, "Never crash").
 const UNSAFE_ALLOWED: [&str; 2] = ["crates/embedder/src/ffi/", "crates/ossido/src/egl.rs"];
 
 fn unsafe_check() -> Result<()> {
@@ -419,7 +419,7 @@ fn unsafe_check() -> Result<()> {
         ])
         .current_dir(&root)
         .output()
-        .map_err(|e| format!("git non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start git: {e}"))?;
     let files = String::from_utf8_lossy(&output.stdout);
     let mut offenders = Vec::new();
     for path in files
@@ -427,7 +427,7 @@ fn unsafe_check() -> Result<()> {
         .filter(|p| !UNSAFE_ALLOWED.iter().any(|allowed| p.starts_with(allowed)))
     {
         let text = std::fs::read_to_string(root.join(path)).unwrap_or_default();
-        // In due pezzi, perché questo file non trovi sé stesso.
+        // In two pieces, so that this file does not find itself.
         if text.contains(concat!("allow(", "unsafe_code)")) {
             offenders.push(path.to_owned());
         }
@@ -437,7 +437,7 @@ fn unsafe_check() -> Result<()> {
         Ok(())
     } else {
         Err(format!(
-            "unsafe consentito fuori da {}:\n  {}",
+            "unsafe allowed outside {}:\n  {}",
             UNSAFE_ALLOWED.join(", "),
             offenders.join("\n  ")
         ))

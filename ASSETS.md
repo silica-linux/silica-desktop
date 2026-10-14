@@ -1,15 +1,15 @@
-# Asset
+# Assets
 
-Ogni asset del repository (immagini, icone, font, suoni, sfondi, cursori) ha una riga
-qui. `cargo xtask assets` blocca i file con estensione da asset che non compaiono nella
-colonna Percorso.
+Every asset in the repository (images, icons, fonts, sounds, wallpapers, cursors) has a row
+here. `cargo xtask assets` blocks files with an asset extension that do not appear in the
+Path column.
 
-Licenze ammesse: originale del progetto, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Da preferire la
-grafica generata in codice.
+Allowed licenses: original to the project, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Graphics
+generated in code are preferred.
 
-| Percorso | Autore | Licenza | Fonte |
+| Path | Author | License | Source |
 | --- | --- | --- | --- |
-| `crates/ossido-render/fonts/Inter-Regular.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
-| `crates/ossido-render/fonts/Inter-SemiBold.ttf` | Rasmus Andersson e The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
+| `crates/ossido-render/fonts/Inter-Regular.ttf` | Rasmus Andersson and The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
+| `crates/ossido-render/fonts/Inter-SemiBold.ttf` | Rasmus Andersson and The Inter Project Authors | OFL 1.1 (`crates/ossido-render/fonts/OFL.txt`) | https://github.com/rsms/inter/releases/tag/v4.1 |
 | `.github/silica-logo-light.svg` | Silica project | project trademark, license to be decided (`silica-brand`) | original, `silica-brand/exports/logotype/silica-logotype-horizontal-light.svg` |
 | `.github/silica-logo-dark.svg` | Silica project | project trademark, license to be decided (`silica-brand`) | original, `silica-brand/exports/logotype/silica-logotype-horizontal-dark.svg` |

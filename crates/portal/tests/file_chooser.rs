@@ -44,11 +44,11 @@ fn open_file_runs_mustache_and_returns_its_uris() {
     std::fs::create_dir_all(&apps).unwrap();
     // "Mustache": writes the arguments it received and chooses a file.
     let script = dir.join("mustache.sh");
-    let args_file = dir.join("argomenti");
+    let args_file = dir.join("arguments");
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\necho 'file:///home/io/scelto.txt'\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\necho 'file:///home/io/chosen.txt'\n",
             args_file.display()
         ),
     )
@@ -100,9 +100,9 @@ fn open_file_runs_mustache_and_returns_its_uris() {
             match chooser
                 .open_file(
                     ObjectPath::try_from("/org/freedesktop/portal/desktop/request/1").unwrap(),
-                    "org.esempio.App",
+                    "org.example.App",
                     "",
-                    "Scegli",
+                    "Choose",
                     options,
                 )
                 .await
@@ -117,7 +117,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
         let (response, results) = answer.expect("the portal does not answer");
         assert_eq!(response, 0);
         let uris: Vec<String> = results["uris"].try_clone().unwrap().try_into().unwrap();
-        assert_eq!(uris, ["file:///home/io/scelto.txt"]);
+        assert_eq!(uris, ["file:///home/io/chosen.txt"]);
     });
     let args = std::fs::read_to_string(&args_file).unwrap();
     let args: Vec<&str> = args.lines().collect();
@@ -128,7 +128,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
             "--dart-arg",
             "--dialog=open",
             "--dart-arg",
-            "--title=Scegli",
+            "--title=Choose",
             "--dart-arg",
             "--multiple",
             "--dart-arg",

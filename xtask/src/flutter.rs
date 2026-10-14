@@ -1,12 +1,12 @@
-//! Flutter per l'embedder: engine, binding, bundle delle app.
+//! Flutter for the embedder: engine, bindings, app bundles.
 //!
-//! - `engine`: scarica `libflutter_engine.so` e `icudtl.dat` per `crates/embedder/ENGINE_VERSION`.
-//! - `engine --release`: compila l'engine release dai sorgenti (`docs/engine-release.md`):
-//!   Google pubblica l'engine per embedder custom solo in debug.
-//! - `bindings`: rigenera `crates/embedder/src/ffi/bindings.rs` con bindgen.
-//! - `bundle <shell | demo | percorso> [--release]`: il bundle della shell, dell'app di prova
-//!   o di un'app esterna (il suo repository); in release anche `libapp.so`.
-//! - `projects`/`check`: usati da `cargo xtask ci` per `flutter analyze` e `flutter test`.
+//! - `engine`: downloads `libflutter_engine.so` and `icudtl.dat` for `crates/embedder/ENGINE_VERSION`.
+//! - `engine --release`: builds the release engine from source (`docs/engine-release.md`):
+//!   Google publishes the engine for custom embedders only in debug.
+//! - `bindings`: regenerates `crates/embedder/src/ffi/bindings.rs` with bindgen.
+//! - `bundle <shell | demo | path> [--release]`: the bundle of the shell, of the test app
+//!   or of an external app (its own repository); in release also `libapp.so`.
+//! - `projects`/`check`: used by `cargo xtask ci` for `flutter analyze` and `flutter test`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,7 +19,7 @@ pub fn engine_version() -> Result<String> {
     let path = root()?.join("crates/embedder/ENGINE_VERSION");
     std::fs::read_to_string(&path)
         .map(|v| v.trim().to_owned())
-        .map_err(|e| format!("{} illeggibile: {e}", path.display()))
+        .map_err(|e| format!("{} unreadable: {e}", path.display()))
 }
 
 pub fn engine_dir() -> Result<PathBuf> {
@@ -28,14 +28,14 @@ pub fn engine_dir() -> Result<PathBuf> {
         .join(engine_version()?))
 }
 
-/// L'engine release compilato da `engine --release`.
+/// The release engine built by `engine --release`.
 pub fn release_engine_dir() -> Result<PathBuf> {
     Ok(root()?
         .join("target/flutter-engine")
         .join(format!("{}-release", engine_version()?)))
 }
 
-/// La radice dell'SDK Flutter: `FLUTTER_ROOT`, oppure da `flutter` nel PATH.
+/// The Flutter SDK root: `FLUTTER_ROOT`, or from `flutter` in PATH.
 fn sdk_root() -> Result<PathBuf> {
     if let Ok(root) = std::env::var("FLUTTER_ROOT") {
         return Ok(PathBuf::from(root));
@@ -43,18 +43,18 @@ fn sdk_root() -> Result<PathBuf> {
     let output = Command::new("sh")
         .args(["-c", "command -v flutter"])
         .output()
-        .map_err(|e| format!("sh non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start sh: {e}"))?;
     let flutter = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if flutter.is_empty() {
-        return Err("SDK Flutter non trovato: installalo o imposta FLUTTER_ROOT".to_owned());
+        return Err("Flutter SDK not found: install it or set FLUTTER_ROOT".to_owned());
     }
     std::fs::canonicalize(&flutter)
         .ok()
         .and_then(|bin| bin.parent()?.parent().map(Path::to_path_buf))
-        .ok_or_else(|| format!("radice dell'SDK non ricavabile da {flutter}"))
+        .ok_or_else(|| format!("cannot derive the SDK root from {flutter}"))
 }
 
-/// `PATH` per i comandi Flutter: aggiunge lo shim di `unzip` se manca quello vero.
+/// `PATH` for the Flutter commands: adds the `unzip` shim if the real one is missing.
 fn tool_path() -> Result<String> {
     let path = std::env::var("PATH").unwrap_or_default();
     let has_unzip = Command::new("sh")
@@ -79,12 +79,12 @@ pub fn engine() -> Result<()> {
     let sdk = sdk_root()?;
     let sdk_version = std::fs::read_to_string(sdk.join("bin/internal/engine.version"))
         .map(|v| v.trim().to_owned())
-        .map_err(|e| format!("versione dell'engine dell'SDK illeggibile: {e}"))?;
+        .map_err(|e| format!("unreadable engine version of the SDK: {e}"))?;
     if sdk_version != version {
         return Err(format!(
-            "l'SDK Flutter usa l'engine {sdk_version}, il repo {version}: i bundle compilati \
-             dall'SDK girano solo sull'engine dello stesso SDK. Aggiorna \
-             crates/embedder/ENGINE_VERSION e rigenera con `cargo xtask bindings`."
+            "the Flutter SDK uses engine {sdk_version}, the repo {version}: bundles compiled \
+             by the SDK only run on the engine of the same SDK. Update \
+             crates/embedder/ENGINE_VERSION and regenerate with `cargo xtask bindings`."
         ));
     }
 
@@ -123,35 +123,38 @@ pub fn engine() -> Result<()> {
     Ok(())
 }
 
-/// Compila `libflutter_engine.so` release dal checkout in `SILICA_ENGINE_SRC`, già
-/// preparato con gclient alla revisione di `ENGINE_VERSION` (`docs/engine-release.md`).
+/// Builds the release `libflutter_engine.so` from the checkout in `SILICA_ENGINE_SRC`, already
+/// prepared with gclient at the `ENGINE_VERSION` revision (`docs/engine-release.md`).
 pub fn engine_release() -> Result<()> {
     let version = engine_version()?;
     let source = std::env::var_os("SILICA_ENGINE_SRC")
         .map(PathBuf::from)
         .ok_or(
-            "SILICA_ENGINE_SRC non impostata: il checkout dell'engine si prepara come in \
+            "SILICA_ENGINE_SRC not set: the engine checkout is prepared as in \
          docs/engine-release.md",
         )?;
     let head = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(&source)
         .output()
-        .map_err(|e| format!("git non avviabile: {e}"))?;
+        .map_err(|e| format!("cannot start git: {e}"))?;
     let head = String::from_utf8_lossy(&head.stdout).trim().to_owned();
     if head != version {
         return Err(format!(
-            "{} è alla revisione {head}, il repo vuole {version}",
+            "{} is at revision {head}, the repo wants {version}",
             source.display()
         ));
     }
     let src = source.join("engine/src");
     let ninja = source.join("third_party/ninja/ninja");
     if !ninja.exists() {
-        return Err(format!("{} assente: serve `gclient sync`", ninja.display()));
+        return Err(format!(
+            "{} missing: `gclient sync` is needed",
+            ninja.display()
+        ));
     }
 
-    // Gli script della build chiamano vpython3 di depot_tools: basta python3.
+    // The build scripts call depot_tools' vpython3: python3 is enough.
     let shims = root()?.join("target/xtask-shims");
     std::fs::create_dir_all(&shims).map_err(|e| format!("{}: {e}", shims.display()))?;
     let vpython = shims.join("vpython3");
@@ -196,7 +199,7 @@ pub fn engine_release() -> Result<()> {
     )
     .map_err(|e| format!("libflutter_engine.so: {e}"))?;
     std::fs::copy(engine_dir()?.join("icudtl.dat"), dir.join("icudtl.dat"))
-        .map_err(|e| format!("icudtl.dat (prima `cargo xtask engine`): {e}"))?;
+        .map_err(|e| format!("icudtl.dat (run `cargo xtask engine` first): {e}"))?;
     eprintln!("xtask: engine release {version} in {}", dir.display());
     Ok(())
 }
@@ -204,7 +207,7 @@ pub fn engine_release() -> Result<()> {
 pub fn bindings() -> Result<()> {
     let header = engine_dir()?.join("flutter_embedder.h");
     if !header.exists() {
-        return Err("header assente: prima `cargo xtask engine`".to_owned());
+        return Err("header missing: run `cargo xtask engine` first".to_owned());
     }
     let out = root()?.join("crates/embedder/src/ffi/bindings.rs");
     let mut bindgen = Command::new("bindgen");
@@ -225,9 +228,9 @@ pub fn bindings() -> Result<()> {
             "--no-layout-tests",
             "--no-doc-comments",
             "--raw-line",
-            "// Generato da `cargo xtask bindings` da flutter_embedder.h (BSD, The Flutter Authors).",
+            "// Generated by `cargo xtask bindings` from flutter_embedder.h (BSD, The Flutter Authors).",
             "--raw-line",
-            &format!("// Engine: {}. Non modificare a mano.", engine_version()?),
+            &format!("// Engine: {}. Do not edit by hand.", engine_version()?),
             "-o",
         ])
         .arg(&out);
@@ -239,9 +242,9 @@ pub fn bindings() -> Result<()> {
     })
 }
 
-/// La cartella di un progetto Flutter da costruire: `shell` è la shell, `demo` l'app di
-/// prova dei test dell'embedder, altrimenti il percorso di un'app esterna (le app di Silica
-/// stanno nei loro repository).
+/// The folder of a Flutter project to build: `shell` is the shell, `demo` the test app of
+/// the embedder tests, otherwise the path of an external app (Silica's apps live in their
+/// own repositories).
 fn app_dir(app: &str) -> Result<PathBuf> {
     let root = root()?;
     Ok(match app {
@@ -254,7 +257,7 @@ fn app_dir(app: &str) -> Result<PathBuf> {
 pub fn bundle(app: &str) -> Result<()> {
     let dir = app_dir(app)?;
     if !dir.join("pubspec.yaml").exists() {
-        return Err(format!("{} non è un'app Flutter", dir.display()));
+        return Err(format!("{} is not a Flutter app", dir.display()));
     }
     let mut command = flutter_command(&["build", "bundle", "--debug"])?;
     command.current_dir(&dir);
@@ -266,12 +269,12 @@ pub fn bundle(app: &str) -> Result<()> {
     Ok(())
 }
 
-/// Bundle release in `build/release/`: asset e `libapp.so`, il Dart compilato AOT con
-/// il frontend e il gen_snapshot dell'SDK (gli stessi passi di `flutter build linux`).
+/// Release bundle in `build/release/`: assets and `libapp.so`, the Dart compiled AOT with
+/// the SDK's frontend and gen_snapshot (the same steps as `flutter build linux`).
 pub fn bundle_release(app: &str) -> Result<()> {
     let dir = app_dir(app)?;
     if !dir.join("pubspec.yaml").exists() {
-        return Err(format!("{} non è un'app Flutter", dir.display()));
+        return Err(format!("{} is not a Flutter app", dir.display()));
     }
     let out = dir.join("build/release");
     let mut assets = flutter_command(&["build", "bundle", "--release", "--asset-dir"])?;
@@ -313,7 +316,7 @@ pub fn bundle_release(app: &str) -> Result<()> {
     Ok(())
 }
 
-/// Il nome del pacchetto Dart dal `pubspec.yaml`.
+/// The Dart package name from `pubspec.yaml`.
 fn app_package(dir: &Path) -> Result<String> {
     let pubspec = std::fs::read_to_string(dir.join("pubspec.yaml"))
         .map_err(|e| format!("pubspec.yaml: {e}"))?;
@@ -321,11 +324,11 @@ fn app_package(dir: &Path) -> Result<String> {
         .lines()
         .find_map(|line| line.strip_prefix("name:"))
         .map(|name| name.trim().to_owned())
-        .ok_or_else(|| "pubspec.yaml senza name".to_owned())
+        .ok_or_else(|| "pubspec.yaml without name".to_owned())
 }
 
-/// I progetti Dart del repo: la shell e le app di prova in `testapps/`, come percorsi
-/// relativi (`shell`, `testapps/demo`). `silica_ui` e le app hanno i loro repository.
+/// The Dart projects of the repo: the shell and the test apps in `testapps/`, as relative
+/// paths (`shell`, `testapps/demo`). `silica_ui` and the apps have their own repositories.
 pub fn projects() -> Result<Vec<String>> {
     let root = root()?;
     let mut projects = Vec::new();
@@ -345,7 +348,7 @@ pub fn projects() -> Result<Vec<String>> {
     Ok(projects)
 }
 
-/// `flutter analyze` e `flutter test` per un progetto di [`projects`].
+/// `flutter analyze` and `flutter test` for a project of [`projects`].
 pub fn check(project: &str) -> Result<()> {
     let dir = root()?.join(project);
     for args in [["analyze", "--fatal-infos"].as_slice(), ["test"].as_slice()] {
@@ -356,7 +359,7 @@ pub fn check(project: &str) -> Result<()> {
     Ok(())
 }
 
-/// Estrae una mappa `chiave: Tipo.nome,` da `keyboard_maps.g.dart` e risolve i nomi.
+/// Extracts a `key: Type.name,` map from `keyboard_maps.g.dart` and resolves the names.
 fn dart_map(
     maps: &str,
     map_name: &str,
@@ -364,12 +367,12 @@ fn dart_map(
 ) -> Result<Vec<(u32, u64)>> {
     let start = maps
         .find(&format!("{map_name} = "))
-        .ok_or_else(|| format!("{map_name} assente"))?;
+        .ok_or_else(|| format!("{map_name} missing"))?;
     let body = maps
         .get(start..)
         .and_then(|rest| rest.split_once("};"))
         .map(|(body, _)| body)
-        .ok_or_else(|| format!("{map_name} non chiusa"))?;
+        .ok_or_else(|| format!("{map_name} not closed"))?;
     let mut entries = Vec::new();
     for line in body.lines().skip(1) {
         let Some((key, value)) = line.trim().trim_end_matches(',').split_once(':') else {
@@ -380,15 +383,15 @@ fn dart_map(
             Some(hex) => u32::from_str_radix(hex, 16),
             None => key.parse(),
         }
-        .map_err(|e| format!("{map_name}: chiave {key}: {e}"))?;
+        .map_err(|e| format!("{map_name}: key {key}: {e}"))?;
         let name = value
             .trim()
             .rsplit('.')
             .next()
-            .ok_or_else(|| format!("{map_name}: valore {value}"))?;
+            .ok_or_else(|| format!("{map_name}: value {value}"))?;
         let code = values
             .get(name)
-            .ok_or_else(|| format!("{map_name}: {name} non definito"))?;
+            .ok_or_else(|| format!("{map_name}: {name} not defined"))?;
         entries.push((key, *code));
     }
     entries.sort_unstable();
@@ -396,7 +399,7 @@ fn dart_map(
     Ok(entries)
 }
 
-/// Rigenera `crates/embedder/src/keymap.rs` dalle tabelle dell'SDK Flutter.
+/// Regenerates `crates/embedder/src/keymap.rs` from the Flutter SDK tables.
 pub fn keymap() -> Result<()> {
     let services = sdk_root()?.join("packages/flutter/lib/src/services");
     let read = |name: &str| {
@@ -405,7 +408,7 @@ pub fn keymap() -> Result<()> {
     let keys = read("keyboard_key.g.dart")?;
     let maps = read("keyboard_maps.g.dart")?;
 
-    // `static const LogicalKeyboardKey nome = LogicalKeyboardKey(0x...);`
+    // `static const LogicalKeyboardKey name = LogicalKeyboardKey(0x...);`
     let mut logical = std::collections::HashMap::new();
     let mut physical = std::collections::HashMap::new();
     for line in keys.lines() {
@@ -439,21 +442,21 @@ pub fn keymap() -> Result<()> {
         format!("/// {doc}\npub const {name}: &[(u32, u64)] = &[\n{rows}];\n")
     };
     let out = format!(
-        "//! Generato da `cargo xtask keymap` da keyboard_maps.g.dart dell'SDK Flutter\n\
-         //! (BSD, The Flutter Authors). Non modificare a mano.\n\n{}\n{}\n{}",
+        "//! Generated by `cargo xtask keymap` from the Flutter SDK's keyboard_maps.g.dart\n\
+         //! (BSD, The Flutter Authors). Do not edit by hand.\n\n{}\n{}\n{}",
         table(
             "LINUX_TO_PHYSICAL",
-            "Keycode xkb (evdev + 8) → chiave fisica di Flutter. Ordinata per chiave.",
+            "xkb keycode (evdev + 8) → Flutter physical key. Sorted by key.",
             &dart_map(&maps, "kLinuxToPhysicalKey", &physical)?,
         ),
         table(
             "GTK_TO_LOGICAL",
-            "Keysym xkb → chiave logica di Flutter. Ordinata per chiave.",
+            "xkb keysym → Flutter logical key. Sorted by key.",
             &dart_map(&maps, "kGtkToLogicalKey", &logical)?,
         ),
         table(
             "GTK_NUMPAD",
-            "Keysym del tastierino numerico → chiave logica di Flutter. Ordinata per chiave.",
+            "Numeric keypad keysym → Flutter logical key. Sorted by key.",
             &dart_map(&maps, "kGtkNumpadMap", &logical)?,
         ),
     );

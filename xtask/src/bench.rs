@@ -1,8 +1,8 @@
-//! Strumenti comuni dei banchi di prova (`bench_glass.rs`): Ossido annidato con il canale
-//! di controllo, misure dei frame, puntatore sintetico, mediana.
+//! Shared tools of the test benches (`bench_glass.rs`): nested Ossido with the control
+//! channel, frame measurements, synthetic pointer, median.
 //!
-//! Il banco del Dock di M1.5 (Flutter contro iced, `docs/gate1-dock.md`) è stato tolto con i
-//! prototipi dopo il Gate 1; le sue misure restano nei documenti.
+//! The M1.5 Dock bench (Flutter against iced, `docs/gate1-dock.md`) was removed with the
+//! prototypes after Gate 1; its measurements remain in the documents.
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -15,18 +15,18 @@ use silica_control::commands::{INPUT_POINTER_MOVE, PERF_FRAMES, SESSION_QUIT, Su
 
 use crate::{Result, wslg_socket};
 
-/// Output logico: 1280×800, moltiplicato per `--scale`.
+/// Logical output: 1280×800, multiplied by `--scale`.
 #[cfg(test)]
 const OUTPUT: (f64, f64) = (1280.0, 800.0);
-/// Fascia percorsa dal puntatore sopra le icone del Dock e sua altezza.
+/// Band swept by the pointer over the Dock icons, and its height.
 pub(crate) const ROW: (f64, f64) = (308.0, 972.0);
 pub(crate) const ROW_Y: f64 = 760.0;
 pub(crate) const EVENTS_PER_SECOND: f64 = 120.0;
-/// Andata e ritorno sulla riga.
+/// Back and forth along the row.
 pub(crate) const SWEEP_PERIOD: f64 = 2.0;
 const SURFACE: &str = "layer dock";
 
-/// Ossido annidato per una ripetizione; si chiude quando esce di scena.
+/// Nested Ossido for one repetition; it closes when it goes out of scope.
 pub(crate) struct Session {
     child: Child,
     pub(crate) control: String,
@@ -78,8 +78,8 @@ pub(crate) fn start_ossido(root: &Path, scale: u32, extra: &[&str]) -> Result<Se
     }
     let mut child = command
         .spawn()
-        .map_err(|e| format!("Ossido non avviabile: {e}"))?;
-    let stdout = child.stdout.take().ok_or("stdout di Ossido assente")?;
+        .map_err(|e| format!("cannot start Ossido: {e}"))?;
+    let stdout = child.stdout.take().ok_or("Ossido's stdout missing")?;
     let mut lines = BufReader::new(stdout).lines();
     let mut control = None;
     for line in lines.by_ref() {
@@ -89,9 +89,9 @@ pub(crate) fn start_ossido(root: &Path, scale: u32, extra: &[&str]) -> Result<Se
             break;
         }
     }
-    // Il resto dello stdout si scarta, ma la pipe resta aperta finché Ossido vive.
+    // The rest of stdout is discarded, but the pipe stays open while Ossido lives.
     std::thread::spawn(move || lines.for_each(drop));
-    let control = control.ok_or("Ossido non ha aperto il canale di controllo")?;
+    let control = control.ok_or("Ossido did not open the control channel")?;
     Ok(Session { child, control })
 }
 

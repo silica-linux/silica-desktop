@@ -1,10 +1,10 @@
-//! `cargo xtask bench glass`: il costo del vetro per Ossido, per livello di qualità.
+//! `cargo xtask bench glass`: the cost of the glass for Ossido, per quality level.
 //!
-//! Caso peggiore: il Dock della shell (Liquid Glass, Impeller) con una finestra che scorre
-//! dietro di lui a ogni frame, così lo sfondo del vetro cambia sempre, e il puntatore che
-//! passa sulle icone. Per ogni livello si misurano il tempo di rendering di Ossido
-//! (`perf.render`, backend winit) e il ritmo del Dock (`perf.frames`). Va lanciato in una
-//! sessione grafica con la GPU (Ossido annidato).
+//! Worst case: the shell's Dock (Liquid Glass, Impeller) with a window scrolling behind it
+//! on every frame, so the glass background always changes, and the pointer passing over
+//! the icons. For each level it measures Ossido's rendering time (`perf.render`, winit
+//! backend) and the Dock's pace (`perf.frames`). Run it in a graphical session with the GPU
+//! (nested Ossido).
 
 use std::time::{Duration, Instant};
 
@@ -35,30 +35,30 @@ fn options(args: &[String]) -> Result<Options> {
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
-        let mut value = || args.next().ok_or(format!("{arg} richiede un valore"));
+        let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
             "--runs" => {
                 options.runs = value()?
                     .parse()
                     .ok()
                     .filter(|n| *n > 0)
-                    .ok_or("--runs vuole un intero positivo")?;
+                    .ok_or("--runs wants a positive integer")?;
             }
             "--seconds" => {
                 options.seconds = value()?
                     .parse()
                     .ok()
                     .filter(|s: &f64| *s > 0.0)
-                    .ok_or("--seconds vuole un numero positivo")?;
+                    .ok_or("--seconds wants a positive number")?;
             }
             "--scale" => {
                 options.scale = value()?
                     .parse()
                     .ok()
                     .filter(|s| (1..=4).contains(s))
-                    .ok_or("--scale vuole un intero da 1 a 4")?;
+                    .ok_or("--scale wants an integer from 1 to 4")?;
             }
-            other => return Err(format!("argomento sconosciuto: {other}")),
+            other => return Err(format!("unknown argument: {other}")),
         }
     }
     Ok(options)
@@ -92,7 +92,7 @@ pub fn glass(args: &[String]) -> Result<()> {
         (demo.join("kernel_blob.bin"), "cargo xtask bundle demo"),
     ] {
         if !path.exists() {
-            return Err(format!("{} assente: {hint}", path.display()));
+            return Err(format!("{} missing: {hint}", path.display()));
         }
     }
     let embedder = root.join("target/release/silica-embedder");
@@ -149,7 +149,7 @@ pub fn glass(args: &[String]) -> Result<()> {
     )
     .map_err(|e| format!("{}: {e}", results.display()))?;
     println!("{}", table(&report));
-    eprintln!("xtask: risultati in {}", results.display());
+    eprintln!("xtask: results in {}", results.display());
     Ok(())
 }
 
@@ -170,7 +170,7 @@ fn measure(
     call(&mut client, APP_LAUNCH, json!({ "command": demo_command }))?;
     call(&mut client, UI_GLASS_QUALITY, json!({ "quality": quality }))?;
 
-    // Si aspettano il Dock e la finestra della demo.
+    // Wait for the Dock and the demo window.
     let deadline = Instant::now() + Duration::from_secs(30);
     let window = loop {
         let list: Vec<WindowInfo> =
@@ -180,7 +180,7 @@ fn measure(
             break window;
         }
         if Instant::now() > deadline {
-            return Err("Dock o finestra della demo non comparsi in 30 s".to_owned());
+            return Err("Dock or demo window did not appear within 30 s".to_owned());
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -198,7 +198,7 @@ fn measure(
         } else {
             2.0 - phase * 2.0
         };
-        // La finestra scorre dietro il Dock (bordo inferiore oltre la riga delle icone).
+        // The window scrolls behind the Dock (bottom edge past the icon row).
         let x = (along * 600.0).round() as i64;
         call(
             &mut client,
@@ -214,9 +214,9 @@ fn measure(
     let render: RenderTimes =
         serde_json::from_value(call(&mut client, PERF_RENDER, json!({ "reset": true }))?)
             .map_err(|e| e.to_string())?;
-    let dock = frames(&mut client, true)?.ok_or("misure del Dock assenti")?;
+    let dock = frames(&mut client, true)?.ok_or("Dock measurements missing")?;
     if render.frames < 2 {
-        return Err("Ossido non ha misurato i rendering: serve il backend winit".to_owned());
+        return Err("Ossido did not measure the renders: the winit backend is needed".to_owned());
     }
     drop(client);
     drop(session);
@@ -225,7 +225,7 @@ fn measure(
 
 fn table(report: &[(&str, Vec<Run>)]) -> String {
     let mut lines = vec![
-        "| Vetro | Render Ossido: frame | media (ms) | p95 | p99 | max | Dock: frame | p99 | lenti |".to_owned(),
+        "| Glass | Ossido render: frames | mean (ms) | p95 | p99 | max | Dock: frames | p99 | slow |".to_owned(),
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |".to_owned(),
     ];
     for (quality, runs) in report {

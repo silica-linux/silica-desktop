@@ -114,7 +114,7 @@ fn run_mcp(control: String) -> Result<(), String> {
             );
         }
         let Some(connected) = client.as_mut() else {
-            return Err("connessione assente".to_owned());
+            return Err("no connection".to_owned());
         };
         match connected.call(command, params) {
             Ok(value) => Ok(value),
@@ -145,10 +145,10 @@ mod tests {
     fn params_from_pairs_and_json() {
         assert_eq!(params(&[]).unwrap(), Value::Null);
         assert_eq!(
-            params(&strings(&["x=10", "title=ciao", "on=true"])).unwrap(),
-            json!({"x": 10, "title": "ciao", "on": true})
+            params(&strings(&["x=10", "title=hello", "on=true"])).unwrap(),
+            json!({"x": 10, "title": "hello", "on": true})
         );
         assert_eq!(params(&strings(&[r#"{"x":1}"#])).unwrap(), json!({"x": 1}));
-        assert!(params(&strings(&["senza-uguale"])).is_err());
+        assert!(params(&strings(&["no-equals-sign"])).is_err());
     }
 }

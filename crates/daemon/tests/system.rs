@@ -107,7 +107,7 @@ struct FakeSaved;
 #[interface(name = "org.freedesktop.NetworkManager.Settings.Connection")]
 impl FakeSaved {
     fn get_settings(&self) -> HashMap<String, HashMap<String, OwnedValue>> {
-        let ssid = OwnedValue::try_from(zbus::zvariant::Value::from(b"Ufficio".to_vec())).unwrap();
+        let ssid = OwnedValue::try_from(zbus::zvariant::Value::from(b"Office".to_vec())).unwrap();
         HashMap::from([(
             "802-11-wireless".to_owned(),
             HashMap::from([("ssid".to_owned(), ssid)]),
@@ -135,7 +135,7 @@ impl FakeActive {
     }
     #[zbus(property)]
     fn id(&self) -> String {
-        "Casa".into()
+        "Home".into()
     }
     #[zbus(property)]
     fn devices(&self) -> Vec<OwnedObjectPath> {
@@ -252,8 +252,8 @@ async fn fake_services(bus: &Bus) -> Vec<Connection> {
         .await
         .unwrap();
     for (n, ssid, strength, rsn) in [
-        (9, "Casa", 70, 0x188),
-        (10, "Ufficio", 40, 0x188),
+        (9, "Home", 70, 0x188),
+        (10, "Office", 40, 0x188),
         (11, "Bar", 90, 0),
     ] {
         server
@@ -377,7 +377,7 @@ async fn wait_for(
         if ready(&state) {
             return state;
         }
-        assert!(Instant::now() < deadline, "stato mai raggiunto: {state:?}");
+        assert!(Instant::now() < deadline, "state never reached: {state:?}");
         async_io::Timer::after(Duration::from_millis(20)).await;
     }
 }
@@ -426,7 +426,7 @@ fn reads_and_changes_the_system() {
                     && get::<bool>(s, "audio.available")
             })
             .await;
-            assert_eq!(get::<String>(&state, "wifi.ssid"), "Casa");
+            assert_eq!(get::<String>(&state, "wifi.ssid"), "Home");
             assert_eq!(get::<u8>(&state, "wifi.strength"), 70);
             assert!(get::<bool>(&state, "wifi.enabled"));
             assert_eq!(get::<f64>(&state, "battery.percent"), 80.0);
@@ -497,12 +497,12 @@ fn reads_and_changes_the_system() {
             assert_eq!(
                 networks,
                 [
-                    ("Casa".to_owned(), 70, true, false, true),
-                    ("Ufficio".to_owned(), 40, true, true, false),
+                    ("Home".to_owned(), 70, true, false, true),
+                    ("Office".to_owned(), 40, true, true, false),
                     ("Bar".to_owned(), 90, false, false, false),
                 ]
             );
-            proxy.connect_wifi("Ufficio").await.unwrap();
+            proxy.connect_wifi("Office").await.unwrap();
             assert!(proxy.connect_wifi("Bar").await.is_err());
 
             // Audio outputs from `wpctl status`.
@@ -539,8 +539,8 @@ fn missing_sources_are_absent_not_errors() {
             connection,
             SystemConfig {
                 system_bus: None,
-                backlight_dir: dir.join("nessuna"),
-                wpctl: dir.join("nessun-wpctl"),
+                backlight_dir: dir.join("none"),
+                wpctl: dir.join("no-wpctl"),
                 poll: Duration::from_millis(50),
                 appearance_file: Some(dir.join("appearance.json")),
             },

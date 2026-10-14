@@ -272,7 +272,7 @@ mod tests {
 
     fn request(summary: &str) -> Request {
         Request {
-            app_name: "prova".into(),
+            app_name: "test".into(),
             summary: summary.into(),
             expire_timeout: -1,
             ..Request::default()
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(n.actions.len(), MAX_ACTIONS);
 
         let mut odd = request("odd");
-        odd.actions = vec!["default".into(), "Apri".into(), "sola".into()];
+        odd.actions = vec!["default".into(), "Open".into(), "lonely".into()];
         let n = store.notify(odd, Instant::now(), 0).notification;
         assert_eq!(action_keys(&n).collect::<Vec<_>>(), ["default"]);
     }
@@ -330,7 +330,7 @@ mod tests {
         for i in 0..MAX_HISTORY {
             store.notify(request(&i.to_string()), now, 0);
         }
-        let posted = store.notify(request("ultima"), now, 0);
+        let posted = store.notify(request("latest"), now, 0);
         assert_eq!(posted.evicted, [1]);
         assert_eq!(store.list().len(), MAX_HISTORY);
     }
@@ -349,7 +349,7 @@ mod tests {
         store.notify(
             Request {
                 expire_timeout: i32::MIN,
-                ..request("negativa")
+                ..request("negative")
             },
             now,
             0,

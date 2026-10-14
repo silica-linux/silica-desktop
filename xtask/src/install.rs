@@ -1,10 +1,10 @@
-//! `cargo xtask install-app <percorso>`: installa la voce `.desktop` di un'app Flutter di
-//! Silica (un repository per app, accanto a questo) in `~/.local/share/applications`, così la
-//! shell la trova con la sua icona: Dock, selettore, Faro, launcher.
+//! `cargo xtask install-app <path>`: installs the `.desktop` entry of a Silica Flutter app
+//! (one repository per app, next to this one) in `~/.local/share/applications`, so the
+//! shell finds it with its icon: Dock, switcher, Faro, launcher.
 //!
-//! Il repository dell'app ha un modello `linux/<id>.desktop.in` con due segnaposto:
-//! `@EMBEDDER@` (l'embedder in release con l'engine e il renderer della shell) e `@BUNDLE@`
-//! (il suo bundle in release). Se mancano, bundle ed embedder si costruiscono prima.
+//! The app repository has a `linux/<id>.desktop.in` template with two placeholders:
+//! `@EMBEDDER@` (the release embedder with the shell's engine and renderer) and `@BUNDLE@`
+//! (its release bundle). If they are missing, the bundle and the embedder are built first.
 
 use std::path::{Path, PathBuf};
 
@@ -18,10 +18,7 @@ pub fn install_app(app: &str) -> Result<()> {
         .filter(|path| path.to_string_lossy().ends_with(".desktop.in"))
         .collect();
     if templates.is_empty() {
-        return Err(format!(
-            "{}/linux: nessun modello .desktop.in",
-            dir.display()
-        ));
+        return Err(format!("{}/linux: no .desktop.in template", dir.display()));
     }
     let bundle = dir.join("build/release/flutter_assets");
     if !dir.join("build/release/libapp.so").exists() {
@@ -40,7 +37,7 @@ pub fn install_app(app: &str) -> Result<()> {
     let engine = flutter::release_engine_dir()?;
     if !engine.join("libflutter_engine.so").exists() {
         return Err(format!(
-            "{} assente: cargo xtask engine --release (docs/engine-release.md)",
+            "{} missing: cargo xtask engine --release (docs/engine-release.md)",
             engine.display()
         ));
     }
@@ -61,42 +58,42 @@ pub fn install_app(app: &str) -> Result<()> {
             .file_name()
             .and_then(|n| n.to_str())
             .and_then(|n| n.strip_suffix(".in"))
-            .ok_or_else(|| format!("{}: nome non valido", template.display()))?;
+            .ok_or_else(|| format!("{}: invalid name", template.display()))?;
         let out = target.join(name);
         std::fs::write(&out, entry).map_err(|e| format!("{}: {e}", out.display()))?;
-        eprintln!("xtask: installato {}", out.display());
+        eprintln!("xtask: installed {}", out.display());
     }
     Ok(())
 }
 
-/// `$XDG_DATA_HOME/applications`, o `~/.local/share/applications`.
+/// `$XDG_DATA_HOME/applications`, or `~/.local/share/applications`.
 fn applications_dir() -> Result<PathBuf> {
     Ok(data_home()?.join("applications"))
 }
 
-/// `$XDG_DATA_HOME`, o `~/.local/share`.
+/// `$XDG_DATA_HOME`, or `~/.local/share`.
 fn data_home() -> Result<PathBuf> {
     if let Some(data) = std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(data));
     }
-    let home = std::env::var_os("HOME").ok_or("HOME assente")?;
+    let home = std::env::var_os("HOME").ok_or("HOME not set")?;
     Ok(Path::new(&home).join(".local/share"))
 }
 
-/// `$XDG_CONFIG_HOME`, o `~/.config`.
+/// `$XDG_CONFIG_HOME`, or `~/.config`.
 fn config_home() -> Result<PathBuf> {
     if let Some(config) = std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(config));
     }
-    let home = std::env::var_os("HOME").ok_or("HOME assente")?;
+    let home = std::env::var_os("HOME").ok_or("HOME not set")?;
     Ok(Path::new(&home).join(".config"))
 }
 
-/// `cargo xtask install-portal`: il backend dei portali di Silica per l'utente. Il file
-/// `.portal` dice a xdg-desktop-portal che c'è un backend FileChooser (`UseIn=Silica`), la
-/// configurazione `silica-portals.conf` lo sceglie quando `XDG_CURRENT_DESKTOP=Silica`, il
-/// servizio D-Bus avvia `silica-portal` alla prima richiesta. I dialoghi sono di Mustache
-/// (installato con `install-app`).
+/// `cargo xtask install-portal`: Silica's portal backend for the user. The `.portal` file
+/// tells xdg-desktop-portal there is a FileChooser backend (`UseIn=Silica`), the
+/// `silica-portals.conf` configuration picks it when `XDG_CURRENT_DESKTOP=Silica`, the
+/// D-Bus service starts `silica-portal` on the first request. The dialogs are Mustache's
+/// (installed with `install-app`).
 pub fn install_portal() -> Result<()> {
     let root = root()?;
     let binary = root.join("target/release/silica-portal");
@@ -131,7 +128,7 @@ pub fn install_portal() -> Result<()> {
             std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
         std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
-        eprintln!("xtask: installato {}", path.display());
+        eprintln!("xtask: installed {}", path.display());
     }
     Ok(())
 }

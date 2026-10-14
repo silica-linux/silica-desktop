@@ -536,9 +536,9 @@ mod tests {
             parse_audio_name("    node.nick = \"Speaker\""),
             Some("Speaker".to_owned())
         );
-        assert_eq!(parse_audio_name("niente"), None);
+        assert_eq!(parse_audio_name("nothing"), None);
         assert_eq!(parse_volume("Volume: NaN"), None);
-        assert_eq!(parse_volume("errore"), None);
+        assert_eq!(parse_volume("error"), None);
         assert_eq!(parse_volume(""), None);
     }
 
@@ -546,8 +546,8 @@ mod tests {
     fn backlight_reads_the_first_valid_device() {
         let root = std::env::temp_dir().join(format!("silica-backlight-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("a_rotto")).unwrap();
-        std::fs::write(root.join("a_rotto/max_brightness"), "0").unwrap();
+        std::fs::create_dir_all(root.join("a_broken")).unwrap();
+        std::fs::write(root.join("a_broken/max_brightness"), "0").unwrap();
         std::fs::create_dir_all(root.join("intel")).unwrap();
         std::fs::write(root.join("intel/max_brightness"), "1000\n").unwrap();
         std::fs::write(root.join("intel/brightness"), "250\n").unwrap();

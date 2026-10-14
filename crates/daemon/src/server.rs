@@ -259,9 +259,9 @@ impl ShellNotifications {
     ) -> zbus::fdo::Result<()> {
         let resident = {
             let store = self.shared.store();
-            let notification = store
-                .get(id)
-                .ok_or_else(|| zbus::fdo::Error::InvalidArgs(format!("notifica {id} assente")))?;
+            let notification = store.get(id).ok_or_else(|| {
+                zbus::fdo::Error::InvalidArgs(format!("notification {id} absent"))
+            })?;
             if !action_keys(notification).any(|key| key == action_key) {
                 return Err(zbus::fdo::Error::InvalidArgs(format!(
                     "action «{action_key}» absent in notification {id}"

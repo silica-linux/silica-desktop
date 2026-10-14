@@ -150,16 +150,7 @@ fn notify_reaches_the_shell() {
         hints.insert("desktop-entry", Value::from("org.example.Mail"));
         hints.insert("transient", Value::Bool(true));
         let id = fdo
-            .notify(
-                "Posta",
-                0,
-                "mail",
-                "Nuovo messaggio",
-                "Ciao",
-                &[],
-                hints,
-                -1,
-            )
+            .notify("Mail", 0, "mail", "New message", "Hello", &[], hints, -1)
             .await
             .unwrap();
         assert_ne!(id, 0);
@@ -167,8 +158,8 @@ fn notify_reaches_the_shell() {
         let signal = added.next().await.unwrap();
         let n = signal.args().unwrap().notification;
         assert_eq!(n.id, id);
-        assert_eq!(n.app_name, "Posta");
-        assert_eq!(n.summary, "Nuovo messaggio");
+        assert_eq!(n.app_name, "Mail");
+        assert_eq!(n.summary, "New message");
         assert_eq!(n.urgency, 2);
         assert_eq!(n.desktop_entry, "org.example.Mail");
         assert!(n.transient);
@@ -177,13 +168,13 @@ fn notify_reaches_the_shell() {
 
         // Replacement keeps the id and updates the history.
         let again = fdo
-            .notify("Posta", id, "mail", "Due messaggi", "", &[], no_hints(), -1)
+            .notify("Mail", id, "mail", "Two messages", "", &[], no_hints(), -1)
             .await
             .unwrap();
         assert_eq!(again, id);
         let list = shell.list().await.unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].summary, "Due messaggi");
+        assert_eq!(list[0].summary, "Two messages");
     });
 }
 
@@ -238,12 +229,12 @@ fn actions_are_forwarded_and_close() {
         let mut invoked = fdo.receive_action_invoked().await.unwrap();
         let mut closed = fdo.receive_notification_closed().await.unwrap();
 
-        let actions = ["default", "Apri", "reply", "Rispondi"];
+        let actions = ["default", "Open", "reply", "Reply"];
         let id = fdo
-            .notify("app", 0, "", "azioni", "", &actions, no_hints(), -1)
+            .notify("app", 0, "", "actions", "", &actions, no_hints(), -1)
             .await
             .unwrap();
-        assert!(shell.invoke_action(id, "inesistente").await.is_err());
+        assert!(shell.invoke_action(id, "missing").await.is_err());
         shell.invoke_action(id, "reply").await.unwrap();
         let args = invoked.next().await.unwrap();
         assert_eq!(args.args().unwrap().id, id);
@@ -258,7 +249,7 @@ fn actions_are_forwarded_and_close() {
         let mut hints = no_hints();
         hints.insert("resident", Value::Bool(true));
         let id = fdo
-            .notify("app", 0, "", "resta", "", &actions, hints, -1)
+            .notify("app", 0, "", "stays", "", &actions, hints, -1)
             .await
             .unwrap();
         shell.invoke_action(id, "default").await.unwrap();
@@ -277,7 +268,7 @@ fn explicit_timeouts_expire() {
         let mut closed = fdo.receive_notification_closed().await.unwrap();
 
         let stays = fdo
-            .notify("app", 0, "", "resta", "", &[], no_hints(), -1)
+            .notify("app", 0, "", "stays", "", &[], no_hints(), -1)
             .await
             .unwrap();
         let first = fdo
@@ -310,9 +301,9 @@ fn hostile_hints_do_not_break_the_server() {
                 "app",
                 0,
                 "",
-                "ostile",
+                "hostile",
                 &body,
-                &["solo-chiave"],
+                &["key-only"],
                 hints,
                 i32::MIN,
             )

@@ -302,7 +302,7 @@ Video
             ]
         );
         assert!(parse_outputs("").is_empty());
-        assert!(parse_outputs("Audio\n ├─ Sinks:\n │  *   x. rotto\n").is_empty());
+        assert!(parse_outputs("Audio\n ├─ Sinks:\n │  *   x. broken\n").is_empty());
     }
 
     #[test]
@@ -315,13 +315,13 @@ Video
             active,
         };
         let mut list = vec![
-            net("forte", 90, false, false),
-            net("salvata", 40, true, false),
-            net("casa", 60, true, true),
-            net("debole", 10, false, false),
+            net("strong", 90, false, false),
+            net("saved", 40, true, false),
+            net("home", 60, true, true),
+            net("weak", 10, false, false),
         ];
         sort_networks(&mut list);
         let names: Vec<_> = list.iter().map(|n| n.ssid.as_str()).collect();
-        assert_eq!(names, ["casa", "salvata", "forte", "debole"]);
+        assert_eq!(names, ["home", "saved", "strong", "weak"]);
     }
 }

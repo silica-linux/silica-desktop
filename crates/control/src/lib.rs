@@ -146,7 +146,7 @@ impl std::fmt::Display for Error {
             Error::Io(err) => write!(f, "I/O: {err}"),
             Error::Json(err) => write!(f, "JSON: {err}"),
             Error::Command(err) => write!(f, "command failed: {err}"),
-            Error::Protocol(err) => write!(f, "protocollo: {err}"),
+            Error::Protocol(err) => write!(f, "protocol: {err}"),
         }
     }
 }

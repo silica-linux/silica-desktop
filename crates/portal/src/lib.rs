@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn the_dialog_command_adds_dart_arguments() {
         let request = DialogRequest {
-            title: "Scegli".to_owned(),
+            title: "Choose".to_owned(),
             multiple: true,
             current_folder: Some("/home/io".to_owned()),
             ..DialogRequest::default()
@@ -202,7 +202,7 @@ mod tests {
                 "--dart-arg",
                 "--dialog=open",
                 "--dart-arg",
-                "--title=Scegli",
+                "--title=Choose",
                 "--dart-arg",
                 "--multiple",
                 "--dart-arg",
@@ -218,7 +218,7 @@ mod tests {
             ["file:///a.txt", "file:///b%20c.txt"]
         );
         assert_eq!(path_from_bytes(b"/home/io\0").as_deref(), Some("/home/io"));
-        assert_eq!(path_from_bytes(b"relativo\0"), None);
+        assert_eq!(path_from_bytes(b"relative\0"), None);
         assert_eq!(path_from_bytes(&[0xff, 0]), None);
         assert_eq!(
             desktop_exec("[Desktop Action x]\nExec=no\n[Desktop Entry]\nName=M\nExec=emb /b\n")
@@ -238,7 +238,7 @@ mod tests {
         )
         .unwrap();
         let env = HashMap::from([
-            ("HOME".to_owned(), "/nessuna".to_owned()),
+            ("HOME".to_owned(), "/nowhere".to_owned()),
             ("XDG_DATA_DIRS".to_owned(), dir.display().to_string()),
         ]);
         assert_eq!(find_mustache_exec(&env).as_deref(), Some("emb /b"));
