@@ -45,6 +45,18 @@ class ShellChannel {
           ];
         case 'thumbnail':
           _thumbnailArrived(call.arguments);
+        case 'windowMenu':
+          final args = call.arguments;
+          if (args is Map) {
+            final x = args['x'];
+            final y = args['y'];
+            if (x is num && y is num) {
+              _windowMenus.add((
+                id: '${args['id'] ?? ''}',
+                tip: ui.Offset(x.toDouble(), y.toDouble()),
+              ));
+            }
+          }
       }
       return null;
     });
@@ -64,6 +76,13 @@ class ShellChannel {
 
   /// I comandi che Ossido inoltra alla shell (es. `faro.toggle`).
   Stream<String> get commands => _commands.stream;
+
+  final StreamController<({String id, ui.Offset tip})> _windowMenus =
+      StreamController.broadcast();
+
+  /// Pressione lunga sul pulsante verde di una finestra: il popover di disposizione, con la
+  /// punta in `tip` (coordinate dello schermo).
+  Stream<({String id, ui.Offset tip})> get windowMenus => _windowMenus.stream;
 
   /// L'identificatore della finestra con il focus (vuoto: nessuna).
   final ValueNotifier<String> focused = ValueNotifier('');

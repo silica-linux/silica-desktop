@@ -22,6 +22,14 @@ pub const WINDOW_CLOSE: &str = "window.close";
 pub const WINDOW_MOVE: &str = "window.move";
 pub const WINDOW_MINIMIZE: &str = "window.minimize";
 pub const WINDOW_FULLSCREEN: &str = "window.fullscreen";
+pub const WINDOW_TILE_LEFT: &str = "window.tile_left";
+pub const WINDOW_TILE_RIGHT: &str = "window.tile_right";
+pub const WINDOW_TILE_TOP: &str = "window.tile_top";
+pub const WINDOW_TILE_BOTTOM: &str = "window.tile_bottom";
+pub const WINDOW_TILE_FILL: &str = "window.tile_fill";
+pub const WINDOW_ARRANGE_2: &str = "window.arrange_2";
+pub const WINDOW_ARRANGE_3: &str = "window.arrange_3";
+pub const WINDOW_ARRANGE_4: &str = "window.arrange_4";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
 pub const APP_QUIT: &str = "app.quit";
@@ -547,6 +555,62 @@ pub const CATALOG: &[CommandSpec] = &[
         label: "Schermo intero",
         description: "Porta la finestra a schermo intero, o la riporta com'era.",
         shortcut: Some("Logo+Ctrl+F"),
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_TILE_LEFT,
+        label: "Metà sinistra",
+        description: "Porta la finestra nella metà sinistra dello schermo.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_TILE_RIGHT,
+        label: "Metà destra",
+        description: "Porta la finestra nella metà destra dello schermo.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_TILE_TOP,
+        label: "Metà alta",
+        description: "Porta la finestra nella metà alta dello schermo.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_TILE_BOTTOM,
+        label: "Metà bassa",
+        description: "Porta la finestra nella metà bassa dello schermo.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_TILE_FILL,
+        label: "Riempi",
+        description: "La finestra riempie lo schermo, senza schermo intero.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_ARRANGE_2,
+        label: "Disponi due finestre",
+        description: "La finestra a sinistra e l'ultima usata a destra.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_ARRANGE_3,
+        label: "Disponi tre finestre",
+        description: "La finestra a sinistra e le due ultime usate impilate a destra.",
+        shortcut: None,
+        params: window_target,
+    },
+    CommandSpec {
+        id: WINDOW_ARRANGE_4,
+        label: "Disponi quattro finestre",
+        description: "La finestra e le tre ultime usate nei quarti dello schermo.",
+        shortcut: None,
         params: window_target,
     },
     CommandSpec {

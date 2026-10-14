@@ -15,6 +15,7 @@ import '../system/layer_control.dart';
 import '../system/system_status.dart';
 import 'menus.dart';
 import 'status_icons.dart';
+import 'window_menu.dart';
 
 const double barHeight = 30;
 const double fontSize = 13;
@@ -222,6 +223,33 @@ class _MenuBarState extends State<MenuBar> {
     widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
     _scheduleTick();
+    _windowMenus = ShellChannel.instance.windowMenus.listen(
+      (menu) => _openWindowMenu(menu.tip),
+    );
+  }
+
+  /// Il popover di disposizione di una finestra (pressione lunga sul pulsante verde): la
+  /// punta nel punto indicato da Ossido. Finché è aperto la superficie copre lo schermo e
+  /// prende tutti i clic: uno fuori lo chiude (come nel riferimento, nel documento).
+  StreamSubscription<({String id, Offset tip})>? _windowMenus;
+  Offset? _windowMenuTip;
+
+  Future<void> _openWindowMenu(Offset tip) async {
+    _closeMenu();
+    final screen = await LayerControl.outputSize();
+    if (!mounted) return;
+    setState(() => _windowMenuTip = tip);
+    LayerControl.size(0, screen?.height ?? tip.dy + 400);
+    LayerControl.inputRegion(null);
+    LayerControl.keyboard('exclusive');
+  }
+
+  void _closeWindowMenu() {
+    if (_windowMenuTip == null) return;
+    setState(() => _windowMenuTip = null);
+    LayerControl.keyboard('none');
+    LayerControl.inputRegion(null);
+    LayerControl.size(0, barHeight);
   }
 
   // Il minuto successivo, allineato all'orologio.
@@ -248,6 +276,7 @@ class _MenuBarState extends State<MenuBar> {
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
     widget.system?.removeListener(_changed);
+    _windowMenus?.cancel();
     super.dispose();
   }
 
@@ -372,6 +401,19 @@ class _MenuBarState extends State<MenuBar> {
                   height: barHeight,
                   child: bar,
                 ),
+                if (_windowMenuTip case final tip?)
+                  Positioned.fill(
+                    child: MenuHost(
+                      key: ValueKey(tip),
+                      entries: windowMenuEntries(
+                        (id) => ShellChannel.instance.execute(id),
+                      ),
+                      anchor: Offset.zero,
+                      tip: tip,
+                      tipUp: true,
+                      onDismissed: _closeWindowMenu,
+                    ),
+                  ),
                 if (_open case final name?)
                   Positioned.fill(
                     child: MenuHost(

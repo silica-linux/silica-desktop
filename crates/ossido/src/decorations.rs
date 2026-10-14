@@ -6,6 +6,7 @@
 
 use ossido_render::titlebar::{self, Part};
 use smithay::delegate_xdg_decoration;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
@@ -15,6 +16,10 @@ use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use tracing::{info, warn};
 
 use crate::state::State;
+
+/// Pressione lunga sul pulsante verde prima del popover di disposizione: fra 0,4 s (non
+/// c'è) e 1,4 s (c'è) in windows.md; provvisorio finché W-08 non misura il ritardo.
+pub const WINDOW_MENU_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// La finestra ha la barra di Ossido: modo lato server già confermato al client, e non è
 /// a schermo intero (lì la barra sparisce, come nelle riprese).
@@ -160,6 +165,39 @@ impl State {
     }
 
     /// Esegue il pulsante della barra rilasciato sopra lo stesso pulsante.
+    /// Pressione sul pulsante verde: dopo `WINDOW_MENU_DELAY` con il tasto ancora premuto sul
+    /// pulsante, la shell apre il popover di disposizione e il rilascio non fa più lo
+    /// schermo intero (windows.md: a 0,4 s non c'è, a 1,4 s sì; il ritardo vero è W-08).
+    pub fn arm_window_menu(&mut self, window: &Window) {
+        self.titlebar_press_count = self.titlebar_press_count.wrapping_add(1);
+        let press = self.titlebar_press_count;
+        let window = window.clone();
+        let timer = Timer::from_duration(WINDOW_MENU_DELAY);
+        let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
+            let state = &mut data.state;
+            let same = state.titlebar_press_count == press
+                && state.titlebar_press_inside
+                && matches!(&state.titlebar_press, Some((w, Part::Zoom)) if *w == window);
+            if same && let Some(frame) = state.window_frame(&window) {
+                // La punta sotto il pulsante: centro x 72, base del disco (raggio 7).
+                let center_y = button_center_y(&window);
+                let point = frame.loc
+                    + Point::from((
+                        titlebar::BUTTON_CENTERS[2].0.round() as i32,
+                        (center_y + 7.0).round() as i32,
+                    ));
+                if state.announce_window_menu(&window, point) > 0 {
+                    state.titlebar_press = None;
+                    state.titlebar_press_inside = false;
+                }
+            }
+            TimeoutAction::Drop
+        });
+        if let Err(err) = inserted {
+            warn!("timer del popover: {err}");
+        }
+    }
+
     pub fn titlebar_action(&mut self, window: &Window, part: Part) {
         let result = match part {
             Part::Close => {

@@ -128,8 +128,11 @@ impl State {
                         if part == Part::Bar {
                             self.moving = Some((window, local));
                         } else {
-                            self.titlebar_press = Some((window, part));
+                            self.titlebar_press = Some((window.clone(), part));
                             self.titlebar_press_inside = true;
+                            if part == Part::Zoom {
+                                self.arm_window_menu(&window);
+                            }
                         }
                     }
                     Some(Hit::Content(window)) => self.focus_window(Some(window)),

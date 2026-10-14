@@ -97,7 +97,9 @@ float union_distance(vec2 p, float min_radius) {
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
-        float shape = r < 0.0 ? tip_distance(p, rect)
+        // −1: punta in basso; −2: in alto (la stessa specchiata sull'asse orizzontale).
+        float shape = r < -1.5 ? tip_distance(vec2(p.x, 2.0 * rect.y + rect.w - p.y), rect)
+                    : r < 0.0 ? tip_distance(p, rect)
                               : rounded_distance(p, rect, max(r, min_radius));
         d = smooth_min(d, shape, merge);
     }

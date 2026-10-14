@@ -9,7 +9,8 @@
 //!   se inviato;
 //! - verso Dart: `toplevels [{id, title, app_id, minimized}]` e `focused id` a ogni
 //!   cambiamento, `command id` quando Ossido inoltra un comando alla shell (es.
-//!   `faro.toggle`), `minimized [id…]` (le ridotte, dalla prima ridotta);
+//!   `faro.toggle`), `minimized [id…]` (le ridotte, dalla prima ridotta); `windowMenu {id, x,
+//!   y}` (pressione lunga sul pulsante verde: il popover di disposizione con la punta in x, y);
 //! - `thumbnail {id}` da Dart chiede la miniatura di una finestra ridotta: arriva come
 //!   `thumbnail {id, width, height, path}`, un file RGBA premoltiplicato che Dart legge e
 //!   cancella (width 0 se non c'è).

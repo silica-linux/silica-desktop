@@ -11,8 +11,10 @@ use silica_control::commands::{
     INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, INPUT_TYPE, Key, LAYER_LIST, NOTIFICATIONS_TOGGLE,
     PERF_FRAMES, PERF_PROCESS, PERF_RENDER, PerfFramesParams, PerfProcessParams, PerfRenderParams,
     PointerButton, PointerMove, SESSION_QUIT, TypeText, UI_ANIMATION_SCALE, UI_GLASS_QUALITY,
-    UI_SCREENSHOT, WINDOW_CLOSE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE,
-    WINDOW_MOVE, WindowInfo, WindowMove, WindowTarget,
+    UI_SCREENSHOT, WINDOW_ARRANGE_2, WINDOW_ARRANGE_3, WINDOW_ARRANGE_4, WINDOW_CLOSE,
+    WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WINDOW_MOVE, WINDOW_TILE_BOTTOM,
+    WINDOW_TILE_FILL, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT, WINDOW_TILE_TOP, WindowInfo, WindowMove,
+    WindowTarget,
 };
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
@@ -275,6 +277,31 @@ impl State {
                 let target: WindowTarget = parse(params)?;
                 let window = self.target_window(target.id)?;
                 self.toggle_fullscreen(&window)?;
+                Ok(Value::Null)
+            }
+            WINDOW_TILE_LEFT | WINDOW_TILE_RIGHT | WINDOW_TILE_TOP | WINDOW_TILE_BOTTOM
+            | WINDOW_TILE_FILL => {
+                let target: WindowTarget = parse(params)?;
+                let window = self.target_window(target.id)?;
+                let tile = match id {
+                    WINDOW_TILE_LEFT => crate::windows::Tile::Left,
+                    WINDOW_TILE_RIGHT => crate::windows::Tile::Right,
+                    WINDOW_TILE_TOP => crate::windows::Tile::Top,
+                    WINDOW_TILE_BOTTOM => crate::windows::Tile::Bottom,
+                    _ => crate::windows::Tile::Fill,
+                };
+                self.tile_window(&window, tile)?;
+                Ok(Value::Null)
+            }
+            WINDOW_ARRANGE_2 | WINDOW_ARRANGE_3 | WINDOW_ARRANGE_4 => {
+                let target: WindowTarget = parse(params)?;
+                let window = self.target_window(target.id)?;
+                let count = match id {
+                    WINDOW_ARRANGE_2 => 2,
+                    WINDOW_ARRANGE_3 => 3,
+                    _ => 4,
+                };
+                self.arrange_windows(&window, count)?;
                 Ok(Value::Null)
             }
             WINDOW_CLOSE => {

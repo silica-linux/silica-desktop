@@ -25,7 +25,101 @@ pub fn is_fullscreen(window: &Window) -> bool {
     })
 }
 
+/// Una disposizione del popover del pulsante verde (windows.md, W-08): una metà dell'area
+/// utile o tutta. Margini fra le finestre: nessuno finché W-08 non li misura.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tile {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Fill,
+}
+
+/// Le cornici di `count` finestre disposte nell'area (la prima è quella con il focus): 2 a
+/// metà, 3 con la prima a sinistra e due impilate a destra, 4 nei quarti.
+pub fn arrangement(area: Rectangle<i32, Logical>, count: usize) -> Vec<Rectangle<i32, Logical>> {
+    let (x, y) = (area.loc.x, area.loc.y);
+    let (w, h) = (area.size.w, area.size.h);
+    let (hw, hh) = (w / 2, h / 2);
+    let rect = |x: i32, y: i32, w: i32, h: i32| Rectangle::new((x, y).into(), (w, h).into());
+    match count {
+        0 => Vec::new(),
+        1 => vec![area],
+        2 => vec![rect(x, y, hw, h), rect(x + hw, y, w - hw, h)],
+        3 => vec![
+            rect(x, y, hw, h),
+            rect(x + hw, y, w - hw, hh),
+            rect(x + hw, y + hh, w - hw, h - hh),
+        ],
+        _ => vec![
+            rect(x, y, hw, hh),
+            rect(x + hw, y, w - hw, hh),
+            rect(x, y + hh, hw, h - hh),
+            rect(x + hw, y + hh, w - hw, h - hh),
+        ],
+    }
+}
+
 impl State {
+    /// Porta la finestra in una metà dell'area utile, o in tutta (fuori dallo schermo intero).
+    pub fn tile_window(&mut self, window: &Window, tile: Tile) -> Result<(), String> {
+        let area = self.usable_area();
+        let (x, y) = (area.loc.x, area.loc.y);
+        let (w, h) = (area.size.w, area.size.h);
+        let (hw, hh) = (w / 2, h / 2);
+        let frame = match tile {
+            Tile::Left => Rectangle::new((x, y).into(), (hw, h).into()),
+            Tile::Right => Rectangle::new((x + hw, y).into(), (w - hw, h).into()),
+            Tile::Top => Rectangle::new((x, y).into(), (w, hh).into()),
+            Tile::Bottom => Rectangle::new((x, y + hh).into(), (w, h - hh).into()),
+            Tile::Fill => area,
+        };
+        self.place_frame(window, frame)
+    }
+
+    /// Dispone la finestra e le `count − 1` usate più di recente dello spazio (dall'alto della
+    /// pila) secondo [`arrangement`].
+    pub fn arrange_windows(&mut self, first: &Window, count: usize) -> Result<(), String> {
+        let mut windows = vec![first.clone()];
+        windows.extend(
+            self.space
+                .elements()
+                .rev()
+                .filter(|w| *w != first)
+                .take(count.saturating_sub(1))
+                .cloned(),
+        );
+        let frames = arrangement(self.usable_area(), windows.len());
+        for (window, frame) in windows.iter().zip(frames) {
+            self.place_frame(window, frame)?;
+        }
+        self.focus_window(Some(first.clone()));
+        Ok(())
+    }
+
+    /// Mette la cornice della finestra (barra compresa) in `frame`: posizione e dimensione del
+    /// contenuto chiesta al client.
+    fn place_frame(
+        &mut self,
+        window: &Window,
+        frame: Rectangle<i32, Logical>,
+    ) -> Result<(), String> {
+        if is_fullscreen(window) {
+            self.toggle_fullscreen(window)?;
+        }
+        let toplevel = window.toplevel().ok_or("finestra senza toplevel")?;
+        let bar = crate::decorations::titlebar_height(window);
+        let size = (frame.size.w, frame.size.h.saturating_sub(bar).max(1));
+        toplevel.with_pending_state(|state| {
+            state.size = Some(size.into());
+        });
+        toplevel.send_pending_configure();
+        self.space
+            .map_element(window.clone(), frame.loc + Point::from((0, bar)), false);
+        Ok(())
+    }
+
     /// Dove finisce la miniatura di una finestra ridotta, in punti dell'output: la cella prima
     /// del Cestino nel Dock (il pannello di vetro più largo del layer `dock`). Dalla ripresa
     /// della riduzione (`windows.md`): il Dock si allarga di una cella (816–1743 → 784–1775) e
@@ -192,3 +286,31 @@ impl State {
 
 /// Posizione salvata di una finestra ridotta.
 pub type Minimized = (Window, Point<i32, Logical>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arrangements_split_the_area() {
+        let area = Rectangle::new((0, 30).into(), (1600, 900).into());
+        let two = arrangement(area, 2);
+        assert_eq!(two[0], Rectangle::new((0, 30).into(), (800, 900).into()));
+        assert_eq!(two[1], Rectangle::new((800, 30).into(), (800, 900).into()));
+        let three = arrangement(area, 3);
+        assert_eq!(
+            three[1],
+            Rectangle::new((800, 30).into(), (800, 450).into())
+        );
+        assert_eq!(
+            three[2],
+            Rectangle::new((800, 480).into(), (800, 450).into())
+        );
+        let four = arrangement(area, 4);
+        assert_eq!(
+            four[3],
+            Rectangle::new((800, 480).into(), (800, 450).into())
+        );
+        assert!(arrangement(area, 0).is_empty());
+    }
+}

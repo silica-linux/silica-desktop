@@ -12,7 +12,7 @@
     questo protocollo aggiunge quello che la shell chiede al compositor.
   </description>
 
-  <interface name="silica_shell_manager_v1" version="2">
+  <interface name="silica_shell_manager_v1" version="3">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
@@ -86,6 +86,19 @@
       <arg name="identifier" type="string"/>
       <arg name="width" type="uint"/>
       <arg name="height" type="uint"/>
+    </event>
+
+    <event name="window_menu" since="3">
+      <description summary="il popover di disposizione di una finestra">
+        Pressione lunga sul pulsante dello schermo intero della finestra con questo
+        identificatore: la shell apre il popover di disposizione (sposta e ridimensiona,
+        riempi e disponi, schermo intero) con la punta verso il punto x, y (coordinate
+        logiche dello schermo, sotto il pulsante). Le voci eseguono i comandi window.tile_*
+        sulla finestra con il focus.
+      </description>
+      <arg name="identifier" type="string"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
     </event>
   </interface>
 </protocol>

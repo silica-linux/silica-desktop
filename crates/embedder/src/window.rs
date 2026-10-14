@@ -479,12 +479,12 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         press_serial: 0,
         glass: Glass::new(
             globals
-                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=4, ())
+                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=5, ())
                 .ok(),
         ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=2, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=3, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -1328,6 +1328,12 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
                 width,
                 height,
             } => app.shell.thumbnail_ready(&identifier, width, height),
+            // Pressione lunga sul pulsante verde: il popover di disposizione.
+            Event::WindowMenu { identifier, x, y } => serde_json::to_vec(&serde_json::json!({
+                "method": "windowMenu",
+                "args": { "id": identifier, "x": x, "y": y },
+            }))
+            .unwrap_or_default(),
             _ => return,
         };
         if let Some(engine) = &app.engine

@@ -35,6 +35,8 @@ pub enum Shape {
     /// Punta rivolta in basso (`add_tip`, versione 4): base sul lato superiore, vertice al
     /// centro del lato inferiore.
     Tip,
+    /// Punta rivolta in alto (`add_upward_tip`, versione 5).
+    UpwardTip,
 }
 
 /// Una regione di vetro, in pixel logici relativi alla superficie.
@@ -92,7 +94,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(4, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(5, ());
         Self
     }
 }
@@ -175,7 +177,8 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
             }),
             silica_glass_v1::Request::AddRegion { .. }
             | silica_glass_v1::Request::AddTranslucentRegion { .. }
-            | silica_glass_v1::Request::AddTip { .. } => {
+            | silica_glass_v1::Request::AddTip { .. }
+            | silica_glass_v1::Request::AddUpwardTip { .. } => {
                 let (x, y, width, height, radius, material, opacity, shape) = match request {
                     silica_glass_v1::Request::AddRegion {
                         x,
@@ -211,6 +214,23 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                         material,
                         opacity,
                     } => (x, y, width, height, 0.0, material, opacity, Shape::Tip),
+                    silica_glass_v1::Request::AddUpwardTip {
+                        x,
+                        y,
+                        width,
+                        height,
+                        material,
+                        opacity,
+                    } => (
+                        x,
+                        y,
+                        width,
+                        height,
+                        0.0,
+                        material,
+                        opacity,
+                        Shape::UpwardTip,
+                    ),
                     _ => return,
                 };
                 let material = match material {

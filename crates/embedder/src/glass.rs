@@ -27,6 +27,8 @@ pub struct Region {
     pub opacity: f64,
     /// Una punta rivolta in basso invece di un rettangolo (versione 4, `add_tip`).
     pub tip: bool,
+    /// Una punta rivolta in alto (versione 5, `add_upward_tip`).
+    pub tip_up: bool,
     /// Le regioni si fondono solo nello stesso gruppo; un gruppo più alto sta sopra
     /// (versione 4, `separate`).
     pub group: u32,
@@ -68,6 +70,7 @@ impl Region {
             material,
             opacity,
             tip: value.get("shape").and_then(Value::as_str) == Some("tip"),
+            tip_up: value.get("shape").and_then(Value::as_str) == Some("tip-up"),
             group: value
                 .get("group")
                 .and_then(Value::as_u64)
@@ -161,6 +164,10 @@ impl Glass {
         let groups = object.version() >= 4;
         let mut group = regions.first().map_or(0, |r| r.group);
         for region in &regions {
+            if region.tip_up && object.version() < 5 {
+                // Un Ossido senza la versione 5 non sa disegnare la punta in alto.
+                continue;
+            }
             if region.tip && !groups {
                 // Un Ossido senza la versione 4 non sa disegnare la punta.
                 continue;
@@ -173,7 +180,16 @@ impl Glass {
                 Material::Notification if !notification => Material::Thick,
                 material => material,
             };
-            if region.tip {
+            if region.tip_up {
+                object.add_upward_tip(
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                    material,
+                    region.opacity,
+                );
+            } else if region.tip {
                 object.add_tip(
                     region.x,
                     region.y,

@@ -45,6 +45,8 @@ struct Shell {
     thumbnail: Option<(u32, u32)>,
     /// I comandi inoltrati da Ossido.
     commands: Vec<String>,
+    /// I popover di disposizione chiesti (identificatore, x, y).
+    window_menus: Vec<(String, i32, i32)>,
 }
 
 impl Dispatch<WlRegistry, ()> for Shell {
@@ -64,7 +66,7 @@ impl Dispatch<WlRegistry, ()> for Shell {
                 "ext_foreign_toplevel_list_v1" => {
                     state.list = Some(registry.bind(name, 1, qh, ()));
                 }
-                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 2, qh, ())),
+                "silica_shell_manager_v1" => state.manager = Some(registry.bind(name, 3, qh, ())),
                 _ => {}
             }
             state.globals.push(interface);
@@ -132,6 +134,9 @@ impl Dispatch<SilicaShellManagerV1, ()> for Shell {
             silica_shell_manager_v1::Event::Thumbnail { width, height, .. } => {
                 state.thumbnail = Some((width, height));
             }
+            silica_shell_manager_v1::Event::WindowMenu { identifier, x, y } => {
+                state.window_menus.push((identifier, x, y));
+            }
             _ => {}
         }
     }
@@ -187,6 +192,9 @@ fn shell_client(socket: &str) {
         }
         for id in &shell.commands {
             println!("COMMAND {id}");
+        }
+        for (_, x, y) in &shell.window_menus {
+            println!("WINDOW_MENU {x} {y}");
         }
         return;
     }
@@ -419,4 +427,58 @@ fn minimized_windows_are_announced_with_a_thumbnail() {
     assert!((160..=180).contains(&numbers[1]), "{line}");
     // Quasi tutti i pixel sono pieni (la finestra rossa, senza ombra intorno).
     assert!(numbers[2] > 256 * 160 * 9 / 10, "{line}");
+}
+
+/// Pressione lunga sul pulsante verde: la shell riceve il popover di disposizione con la
+/// punta sotto il pulsante, e il rilascio non porta la finestra a schermo intero.
+#[test]
+fn a_long_press_on_the_zoom_button_asks_the_shell_for_the_window_menu() {
+    use silica_control::commands::{INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE};
+    let ossido = Headless::start("shell-window-menu");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "disponi", (300, 200));
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "shell_child",
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
+        .env(CHILD_SOCKET, &ossido.wayland)
+        .env(CHILD_LISTEN, "2500")
+        .env("SILICA_SHELL", "1")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let mut c = ossido.client();
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let info = &list[0];
+    // Il pulsante verde: centro x 72, y 26 della barra, che sta sopra il contenuto.
+    let (bx, by) = (info.x + 72, info.y - 52 + 26);
+    c.call(INPUT_POINTER_MOVE, json!({"x": bx, "y": by}))
+        .unwrap();
+    c.call(
+        INPUT_POINTER_BUTTON,
+        json!({"button": "left", "pressed": true}),
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    c.call(
+        INPUT_POINTER_BUTTON,
+        json!({"button": "left", "pressed": false}),
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    let menu = out
+        .lines()
+        .find(|l| l.starts_with("WINDOW_MENU"))
+        .unwrap_or_else(|| panic!("nessun popover: {out}"));
+    // La punta sotto il pulsante: x del centro, y della base del disco (raggio 7).
+    assert_eq!(menu, format!("WINDOW_MENU {} {}", bx, by + 7));
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(c.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    assert!(!list[0].fullscreen, "{list:?}");
 }

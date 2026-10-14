@@ -344,3 +344,31 @@ fn the_app_moves_its_window_from_the_toolbar() {
     let still = windows(&ossido).remove(0);
     assert_eq!((still.x, still.y), (moved.x, moved.y));
 }
+
+/// I comandi di disposizione: le metà e il riempimento dell'area utile, cornice compresa (la
+/// barra di 52 sopra il contenuto); due finestre affiancate.
+#[test]
+fn tile_commands_place_the_frame_in_the_usable_area() {
+    use silica_control::commands::{WINDOW_ARRANGE_2, WINDOW_TILE_LEFT, WINDOW_TILE_RIGHT};
+    let ossido = start("decor-tile");
+    let _a = TestWindow::open_decorated(&ossido.wayland, "a", (300, 200));
+    let _b = TestWindow::open_decorated(&ossido.wayland, "b", (300, 200));
+    let half = (SIZE.0 / 2) as i32;
+    let mut client = ossido.client();
+    let by_title = |title: &str| {
+        windows(&ossido)
+            .into_iter()
+            .find(|w| w.title.as_deref() == Some(title))
+            .unwrap()
+    };
+    client.call(WINDOW_TILE_LEFT, json!({})).unwrap();
+    let b = by_title("b");
+    assert_eq!((b.x, b.y), (0, 52));
+    client.call(WINDOW_TILE_RIGHT, json!({})).unwrap();
+    let b = by_title("b");
+    assert_eq!((b.x, b.y), (half, 52));
+    // Disponi due: "b" (con il focus) a sinistra, "a" a destra.
+    client.call(WINDOW_ARRANGE_2, json!({})).unwrap();
+    assert_eq!(by_title("b").x, 0);
+    assert_eq!(by_title("a").x, half);
+}

@@ -14,6 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::foreign_toplevel_list::{
     ForeignToplevelHandle, ForeignToplevelListHandler, ForeignToplevelListState,
@@ -51,7 +52,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            2,
+            3,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -194,6 +195,27 @@ impl State {
                 manager.minimized(identifier.clone(), u32::from(minimized));
             }
         }
+    }
+
+    /// Chiede ai componenti della shell il popover di disposizione della finestra, con la
+    /// punta verso `point` (sotto il pulsante dello schermo intero). Quanti l'hanno ricevuto.
+    pub fn announce_window_menu(&mut self, window: &Window, point: Point<i32, Logical>) -> usize {
+        let Some(identifier) = window
+            .user_data()
+            .get::<ForeignToplevelHandle>()
+            .map(ForeignToplevelHandle::identifier)
+        else {
+            return 0;
+        };
+        self.shell_managers.retain(|manager| manager.is_alive());
+        let mut sent = 0;
+        for manager in &self.shell_managers {
+            if manager.version() >= 3 {
+                manager.window_menu(identifier.clone(), point.x, point.y);
+                sent += 1;
+            }
+        }
+        sent
     }
 
     /// Scrive nel file la miniatura della finestra ridotta con questo identificatore;

@@ -42,6 +42,9 @@ sopra testo e icone.
   corpo del suo gruppo in una sola forma: il bordo corre continuo dal corpo alla punta
   (la punta dei menu del Dock, `misc.md`). `silica_ui` li manda con `Glass.group` e
   `Glass.tip`; un embedder legato a una versione precedente ignora gruppi e punte.
+- Dalla versione 5: `add_upward_tip(...)`, la stessa punta capovolta (base sul lato inferiore,
+  vertice in alto): il popover di disposizione sotto il pulsante verde. `GlassTip.up` in
+  `silica_ui`.
 
 Le regioni correnti si leggono con `glass.list` (`docs/control.md`).
 
@@ -63,3 +66,7 @@ contro altri processi dello stesso utente: quella arriverà con la sandbox delle
   shell (`faro.toggle`, Logo+Spazio), inoltrato a tutti i componenti.
 - evento `silica_shell_manager_v1.focused(identifier)`: la finestra con il focus (vuoto se
   nessuna), al collegamento e a ogni cambiamento.
+- evento `silica_shell_manager_v1.window_menu(identifier, x, y)` (versione 3): pressione
+  lunga sul pulsante verde (provvisoria: 0,8 s, W-08); la barra dei menu apre il popover di
+  disposizione con la punta in x, y, e le voci eseguono `window.tile_*`, `window.arrange_*`
+  e `window.fullscreen` sulla finestra con il focus.

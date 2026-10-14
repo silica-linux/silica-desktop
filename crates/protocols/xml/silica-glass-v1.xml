@@ -13,7 +13,7 @@
     proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="4">
+  <interface name="silica_glass_manager_v1" version="5">
     <description summary="crea l'oggetto vetro di una superficie"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="4">
+  <interface name="silica_glass_v1" version="5">
     <description summary="regioni di vetro di una superficie">
       Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
       corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
@@ -109,6 +109,19 @@
         vertice al centro del lato inferiore. Si fonde con le regioni dello stesso gruppo e
         materiale (la punta di un menu che indica un'icona del Dock): il bordo del vetro
         corre senza interruzioni dal corpo alla punta.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="material" type="uint" enum="material"/>
+      <arg name="opacity" type="fixed"/>
+    </request>
+
+    <request name="add_upward_tip" since="5">
+      <description summary="aggiunge una punta rivolta in alto">
+        Come add_tip, capovolta: la base sul lato inferiore del rettangolo e il vertice al
+        centro di quello superiore (un popover sotto il pulsante che lo apre).
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>

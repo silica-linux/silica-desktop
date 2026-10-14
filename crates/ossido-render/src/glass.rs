@@ -343,6 +343,8 @@ pub struct PhysicalRegion {
     pub scale: f64,
     /// Una punta rivolta in basso invece di un rettangolo (`add_tip`).
     pub tip: bool,
+    /// Una punta rivolta in alto (`add_upward_tip`).
+    pub tip_up: bool,
     /// Le regioni si fondono solo nello stesso gruppo.
     pub group: u32,
 }
@@ -356,6 +358,7 @@ impl PhysicalRegion {
             && self.material == other.material
             && self.scale == other.scale
             && self.tip == other.tip
+            && self.tip_up == other.tip_up
             && self.group == other.group
     }
 }
@@ -779,9 +782,15 @@ impl RenderElement<GlesRenderer> for GlassElement {
             {
                 slot.copy_from_slice(&values);
             }
-            // Raggio negativo: una punta (lo shader la riconosce dal segno).
+            // Raggio negativo: una punta (lo shader la riconosce dal segno); −2 rivolta in alto.
             if let Some(slot) = radii.get_mut(i) {
-                *slot = if shape.tip { -1.0 } else { shape.radius as f32 };
+                *slot = if shape.tip_up {
+                    -2.0
+                } else if shape.tip {
+                    -1.0
+                } else {
+                    shape.radius as f32
+                };
             }
         }
         let uniforms = [

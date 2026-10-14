@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/menubar/menubar.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
+import 'package:silica_shell/menubar/window_menu.dart';
+import 'package:silica_ui/silica_ui.dart' show MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
@@ -149,6 +151,62 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('Riduci'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'pressione lunga sul pulsante verde: il popover sotto il pulsante esegue la disposizione',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final executed = <String>[];
+      final layer = <String>[];
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(ShellChannel.channel, (call) async {
+          if (call.method == 'execute') {
+            executed.add('${(call.arguments as Map)['id']}');
+          }
+          return null;
+        })
+        ..setMockMethodCallHandler(
+          const MethodChannel('silica/layer', JSONMethodCodec()),
+          (call) async {
+            layer.add(call.method);
+            return call.method == 'outputSize'
+                ? {'width': 1280, 'height': 800}
+                : true;
+          },
+        );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
+        ),
+      );
+      await tester.pump();
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'silica/shell',
+        const JSONMethodCodec().encodeMethodCall(
+          MethodCall('windowMenu', {'id': 'w1', 'x': 300, 'y': 200}),
+        ),
+        (_) {},
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Metà dello schermo'), findsOneWidget);
+      // Il corpo sotto la punta: 8 pt sotto il vertice, 27 a sinistra.
+      final panel = tester.getRect(find.byType(MenuPanel));
+      expect(panel.top, 208);
+      expect(panel.left, 273);
+      expect(panel.width, windowMenuWidth);
+      await tester.tap(find.byKey(const ValueKey('window.tile_left')));
+      // Lampeggio e dissolvenza della chiusura (~380 ms).
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(executed, ['window.tile_left']);
+      expect(find.text('Metà dello schermo'), findsNothing);
     },
   );
 }

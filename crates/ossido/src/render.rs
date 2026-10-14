@@ -1031,6 +1031,7 @@ pub fn output_elements(
                     opacity: region.opacity as f32 * anchor.opacity,
                     scale,
                     tip: region.shape == Shape::Tip,
+                    tip_up: region.shape == Shape::UpwardTip,
                     group: region.group,
                 })
                 .collect();
