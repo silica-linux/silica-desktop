@@ -55,7 +55,7 @@ class _MarkPainter extends CustomPainter {
   bool shouldRepaint(_MarkPainter old) => old.color != color;
 }
 
-enum StatusKind { network, wired, battery, search, controls, focus }
+enum StatusKind { network, wired, battery, search, controls, focus, nowPlaying }
 
 class StatusIcon extends StatelessWidget {
   const StatusIcon({
@@ -227,6 +227,18 @@ class _StatusPainter extends CustomPainter {
           ),
         );
         canvas.drawPath(moon, fill);
+      case StatusKind.nowPlaying:
+        // Media playing: a play triangle in a ring, ~15 pt (SH-MB-33).
+        canvas
+          ..drawCircle(c, 7, stroke..strokeWidth = 1.3)
+          ..drawPath(
+            Path()
+              ..moveTo(c.dx - 2, c.dy - 3.5)
+              ..lineTo(c.dx + 3.5, c.dy)
+              ..lineTo(c.dx - 2, c.dy + 3.5)
+              ..close(),
+            fill,
+          );
       case StatusKind.controls:
         // Two stacked switches: 14 × 14 pt.
         for (final (dy, knobLeft) in [(-3.5, true), (3.5, false)]) {

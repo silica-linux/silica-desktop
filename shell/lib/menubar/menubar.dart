@@ -20,6 +20,7 @@ import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
+import '../system/media.dart';
 import '../system/system_status.dart';
 import 'desktop_menu.dart';
 import 'logo_menu.dart';
@@ -95,6 +96,7 @@ class MenuBar extends StatefulWidget {
     this.onControls,
     this.system,
     this.now,
+    this.media,
   });
 
   /// The installed apps, for the name of the focused app.
@@ -111,6 +113,9 @@ class MenuBar extends StatefulWidget {
 
   /// System state: Wi-Fi or wired network, battery.
   final SystemSource? system;
+
+  /// The media players, for the Now Playing item.
+  final MediaPlayers? media;
 
   /// Fixed clock (tests).
   final DateTime? now;
@@ -285,6 +290,8 @@ class _MenuBarState extends State<MenuBar> {
     widget.system?.addListener(_changed);
     ShellChannel.instance.refresh();
     HardwareKeyboard.instance.addHandler(_keyChanged);
+    widget.media?.start();
+    widget.media?.addListener(_changed);
     _scheduleTick();
     _windowMenus = ShellChannel.instance.windowMenus.listen(
       (menu) => _openWindowMenu(menu.tip),
@@ -394,6 +401,7 @@ class _MenuBarState extends State<MenuBar> {
     widget.system?.removeListener(_changed);
     _windowMenus?.cancel();
     HardwareKeyboard.instance.removeHandler(_keyChanged);
+    widget.media?.removeListener(_changed);
     super.dispose();
   }
 
@@ -651,6 +659,17 @@ class _MenuBarState extends State<MenuBar> {
       return const [StatusIcon(kind: StatusKind.network, cell: 22)];
     }
     return [
+      // While media plays (SH-MB-33): the play glyph, 17 pt; the menu is the Now Playing
+      // panel.
+      if (widget.media?.now?.playing ?? false) ...[
+        GestureDetector(
+          key: _keyFor('media'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleStatusMenu('media'),
+          child: const StatusIcon(kind: StatusKind.nowPlaying, cell: 17),
+        ),
+        const SizedBox(width: statusGap),
+      ],
       // While a Focus is on, its moon (SH-MB-26); the menu is the Focus panel.
       if (s.doNotDisturb) ...[
         GestureDetector(

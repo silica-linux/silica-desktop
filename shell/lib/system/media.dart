@@ -25,6 +25,9 @@ class NowPlaying {
     this.playing = false,
     this.canPrevious = false,
     this.canNext = false,
+    this.length = Duration.zero,
+    this.position = Duration.zero,
+    this.readAt,
   });
 
   /// The name on the bus (`org.mpris.MediaPlayer2.…`).
@@ -38,6 +41,23 @@ class NowPlaying {
   final bool canPrevious;
   final bool canNext;
 
+  /// The track length (`mpris:length`), zero if the player does not say.
+  final Duration length;
+
+  /// The position when it was read (`Position` is not announced as it changes: it is
+  /// read with the properties and moved on while playing).
+  final Duration position;
+  final DateTime? readAt;
+
+  /// The position at `now`: the one read, plus the time since then while playing.
+  Duration positionAt(DateTime now) {
+    final at = readAt;
+    var p = position;
+    if (playing && at != null) p += now.difference(at);
+    if (length > Duration.zero && p > length) p = length;
+    return p < Duration.zero ? Duration.zero : p;
+  }
+
   /// From the properties of `org.mpris.MediaPlayer2.Player`.
   static NowPlaying fromProperties(String player, Map<String, Object?> props) {
     final metadata = props['Metadata'];
@@ -47,8 +67,12 @@ class NowPlaying {
       final List<Object?> l => l.whereType<String>().join(', '),
       _ => '',
     };
+    int micros(Object? value) => value is int ? value : 0;
     return NowPlaying(
       player: player,
+      length: Duration(microseconds: micros(meta['mpris:length'])),
+      position: Duration(microseconds: micros(props['Position'])),
+      readAt: DateTime.now(),
       title: text(meta['xesam:title']),
       artist: text(meta['xesam:artist']),
       artUrl: text(meta['mpris:artUrl']),
@@ -144,7 +168,14 @@ class MediaPlayers extends ChangeNotifier {
         old?.artUrl == value?.artUrl &&
         old?.playing == value?.playing &&
         old?.canPrevious == value?.canPrevious &&
-        old?.canNext == value?.canNext) {
+        old?.canNext == value?.canNext &&
+        old?.length == value?.length &&
+        (old?.positionAt(DateTime.now()) ?? Duration.zero) -
+                (value?.positionAt(DateTime.now()) ?? Duration.zero) <
+            const Duration(seconds: 2) &&
+        (value?.positionAt(DateTime.now()) ?? Duration.zero) -
+                (old?.positionAt(DateTime.now()) ?? Duration.zero) <
+            const Duration(seconds: 2)) {
       return;
     }
     _now = value;

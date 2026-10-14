@@ -18,6 +18,7 @@ import 'forcequit/force_quit.dart';
 import 'screenshot/screenshot.dart';
 import 'switcher/switcher.dart';
 import 'system/system_status.dart';
+import 'system/media.dart';
 import 'wallpaper/wallpaper.dart';
 
 /// Dock placeholders for tests and for comparison with the recordings: 12 apps, separator,
@@ -60,6 +61,7 @@ class ShellComponent extends StatelessWidget {
         onClock: () => ShellChannel.instance.execute('notifications.toggle'),
         onControls: () => ShellChannel.instance.execute('controlcenter.toggle'),
         system: DBusSystem(),
+        media: MediaPlayers.instance,
       ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
       'faro' => Faro(entries: loadDesktopEntries(locale: systemLanguage())),

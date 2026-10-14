@@ -249,6 +249,7 @@ class ControlCenter extends StatefulWidget {
 /// The modules with a detail panel.
 const Set<String> detailModules = {
   'wifi',
+  'media',
   'bluetooth',
   'dnd',
   'sound',
@@ -324,7 +325,7 @@ class _ControlCenterState extends State<ControlCenter>
   final FocusNode _menuFocus = FocusNode();
 
   /// The panels the bar's status items open.
-  static const Set<String> statusMenus = {'wifi', 'dnd'};
+  static const Set<String> statusMenus = {'wifi', 'dnd', 'media'};
 
   /// The bar announces `statusmenu` = "<panel> <right edge of the icon>" or "".
   void _statesChanged() {
@@ -745,6 +746,7 @@ class _ControlCenterState extends State<ControlCenter>
           }
         },
       ),
+      'media' => DetailContent([(nowPlayingHeight, const _NowPlayingDetail())]),
       'dnd' => focusDetail(
         l: l,
         s: s,
@@ -833,7 +835,7 @@ class _ControlCenterState extends State<ControlCenter>
             : l.ccBatteryLevel(s.batteryPercent.round()),
         active: false,
       ),
-      'media' => const _Media(),
+      'media' => _Media(onOpen: () => _openDetail('media')),
       'display' => _SliderModule(
         onOpen: () => _openDetail('display'),
         title: l.ccDisplay,
@@ -1047,7 +1049,10 @@ class _RoundToggleState extends State<_RoundToggle> {
 /// are dimmed (white at 33 and 51 %); with an MPRIS player it shows title and artist and
 /// controls them.
 class _Media extends StatefulWidget {
-  const _Media();
+  const _Media({this.onOpen});
+
+  /// A click on the rest of the module (cover, title): the Now Playing detail.
+  final VoidCallback? onOpen;
 
   @override
   State<_Media> createState() => _MediaState();
@@ -1176,6 +1181,12 @@ class _MediaState extends State<_Media> {
       onExit: (_) => setState(() => _hover = false),
       child: Stack(
         children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: active ? widget.onOpen : null,
+            ),
+          ),
           if (_hover)
             const Positioned.fill(
               child: IgnorePointer(
@@ -1195,47 +1206,49 @@ class _MediaState extends State<_Media> {
             top: 14,
             width: 40,
             height: 40,
-            child: _art(now),
+            child: IgnorePointer(child: _art(now)),
           ),
           Positioned(
             left: 14,
             right: 12,
             top: 64,
-            child: active
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        now.title.isEmpty
-                            ? l10nOf(context).mediaUntitled
-                            : now.title,
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: _text(
-                          titleSize,
-                          weight: FontWeight.w600,
-                        ).copyWith(color: mediaTitle),
-                      ),
-                      if (now.artist.isNotEmpty)
+            child: IgnorePointer(
+              child: active
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          now.artist,
+                          now.title.isEmpty
+                              ? l10nOf(context).mediaUntitled
+                              : now.title,
                           maxLines: 1,
                           softWrap: false,
                           overflow: TextOverflow.ellipsis,
                           style: _text(
-                            subtitleSize,
-                          ).copyWith(color: mediaSubtitle),
+                            titleSize,
+                            weight: FontWeight.w600,
+                          ).copyWith(color: mediaTitle),
                         ),
-                    ],
-                  )
-                : Text(
-                    l10nOf(context).mediaNothingPlaying,
-                    style: _text(
-                      titleSize,
-                      weight: FontWeight.w600,
-                    ).copyWith(height: 15 / titleSize),
-                  ),
+                        if (now.artist.isNotEmpty)
+                          Text(
+                            now.artist,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: _text(
+                              subtitleSize,
+                            ).copyWith(color: mediaSubtitle),
+                          ),
+                      ],
+                    )
+                  : Text(
+                      l10nOf(context).mediaNothingPlaying,
+                      style: _text(
+                        titleSize,
+                        weight: FontWeight.w600,
+                      ).copyWith(height: 15 / titleSize),
+                    ),
+            ),
           ),
           _button(
             key: 'precedente',
@@ -1264,6 +1277,205 @@ class _MediaState extends State<_Media> {
       ),
     );
   }
+}
+
+/// The Now Playing detail (SH-CC-20; controlcenter.md › Now Playing media module): a
+/// 308 × 140 panel, the 112 pt cover at (14, 14), title and artist from (140, 15), three
+/// 26 pt buttons at y 64 and x 148 / 204 / 260 (pitch 56), the 154 × 12 progress bar at
+/// (140, 102) (4 pt track `#232323`, elapsed sRGB `#1482ff`) and the times under it
+/// (`#b7b8be`). Cover radius provisional.
+const double nowPlayingHeight = 140;
+const double nowPlayingArt = 112;
+const double nowPlayingArtRadius = 10;
+const double nowPlayingTextLeft = 140;
+const double nowPlayingButton = 26;
+const List<double> nowPlayingButtonLefts = [148, 204, 260];
+const double nowPlayingButtonTop = 64;
+const Rect nowPlayingProgress = Rect.fromLTWH(140, 102, 154, 12);
+const Color nowPlayingTrack = Color(0xFF232323);
+const Color nowPlayingElapsed = Color(0xFF1482FF);
+const Color nowPlayingTime = Color(0xFFB7B8BE);
+
+/// "01:03", "1:02:03".
+String mediaTime(Duration d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final h = d.inHours, m = d.inMinutes % 60, s = d.inSeconds % 60;
+  return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+}
+
+class _NowPlayingDetail extends StatefulWidget {
+  const _NowPlayingDetail();
+
+  @override
+  State<_NowPlayingDetail> createState() => _NowPlayingDetailState();
+}
+
+class _NowPlayingDetailState extends State<_NowPlayingDetail> {
+  final MediaPlayers _players = MediaPlayers.instance;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _players.addListener(_changed);
+    // The position moves on while playing: once a second.
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _changed());
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    _players.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  Widget _button(_Transport kind, int index, bool enabled, VoidCallback tap) =>
+      Positioned(
+        left: nowPlayingButtonLefts[index],
+        top: nowPlayingButtonTop,
+        width: nowPlayingButton,
+        height: nowPlayingButton,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? tap : null,
+          child: Center(
+            child: CustomPaint(
+              size: switch (kind) {
+                _Transport.play => const Size(15, 18),
+                _Transport.pause => const Size(13, 18),
+                _ => const Size(20, 12),
+              },
+              painter: _TransportPainter(
+                kind,
+                const Color(0xFFFFFFFF).withValues(
+                  alpha: enabled ? mediaGlyphActive : mediaGlyphDisabled,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final now = _players.now;
+    final url = now?.artUrl ?? '';
+    final file = url.startsWith('file://')
+        ? File(Uri.parse(url).toFilePath())
+        : null;
+    final length = now?.length ?? Duration.zero;
+    final position = now?.positionAt(DateTime.now()) ?? Duration.zero;
+    final fraction = length > Duration.zero
+        ? (position.inMilliseconds / length.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final timeStyle = _text(10).copyWith(color: nowPlayingTime, height: 1.3);
+    return Stack(
+      children: [
+        Positioned(
+          left: 14,
+          top: 14,
+          width: nowPlayingArt,
+          height: nowPlayingArt,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(nowPlayingArtRadius),
+            child: file != null && file.existsSync()
+                ? Image.file(file, fit: BoxFit.cover)
+                : const ColoredBox(color: Color(0xFF7C7D82)),
+          ),
+        ),
+        Positioned(
+          left: nowPlayingTextLeft,
+          right: 14,
+          top: 15,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                now == null || now.title.isEmpty
+                    ? l10nOf(context).mediaUntitled
+                    : now.title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: _text(
+                  titleSize,
+                  weight: FontWeight.w600,
+                ).copyWith(color: mediaTitle),
+              ),
+              if (now != null && now.artist.isNotEmpty)
+                Text(
+                  now.artist,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: _text(subtitleSize).copyWith(color: mediaSubtitle),
+                ),
+            ],
+          ),
+        ),
+        _button(
+          _Transport.previous,
+          0,
+          now?.canPrevious ?? false,
+          _players.previous,
+        ),
+        _button(
+          now?.playing ?? false ? _Transport.pause : _Transport.play,
+          1,
+          now != null,
+          _players.playPause,
+        ),
+        _button(_Transport.next, 2, now?.canNext ?? false, _players.next),
+        Positioned.fromRect(
+          rect: nowPlayingProgress,
+          child: CustomPaint(painter: _ProgressPainter(fraction)),
+        ),
+        if (length > Duration.zero)
+          Positioned(
+            left: nowPlayingProgress.left,
+            width: nowPlayingProgress.width,
+            top: nowPlayingProgress.bottom + 1,
+            child: Row(
+              children: [
+                Text(mediaTime(position), style: timeStyle),
+                const Spacer(),
+                Text('−${mediaTime(length - position)}', style: timeStyle),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProgressPainter extends CustomPainter {
+  const _ProgressPainter(this.fraction);
+  final double fraction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final track = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: size.center(Offset.zero),
+        width: size.width,
+        height: 4,
+      ),
+      const Radius.circular(2),
+    );
+    canvas
+      ..drawRRect(track, Paint()..color = nowPlayingTrack)
+      ..save()
+      ..clipRect(Rect.fromLTWH(0, 0, size.width * fraction, size.height))
+      ..drawRRect(track, Paint()..color = nowPlayingElapsed)
+      ..restore();
+  }
+
+  @override
+  bool shouldRepaint(_ProgressPainter old) => old.fraction != fraction;
 }
 
 enum _Transport { previous, play, pause, next }

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:silica_shell/controlcenter/controlcenter.dart' show mediaTime;
 import 'package:silica_shell/system/dbus.dart';
 import 'package:silica_shell/system/media.dart';
 
@@ -65,5 +66,39 @@ void main() {
     final players = MediaPlayers();
     await players.refresh();
     expect(players.now, isNull);
+  });
+
+  test('position and length: read, then moved on while playing', () {
+    final read = DateTime(2026, 10, 14, 12);
+    final now = NowPlaying.fromProperties('org.mpris.MediaPlayer2.x', {
+      'PlaybackStatus': 'Playing',
+      'Position': 63000000,
+      'Metadata': {'mpris:length': 600000000},
+    });
+    expect(now.length, const Duration(minutes: 10));
+    final playing = NowPlaying(
+      player: 'p',
+      playing: true,
+      length: now.length,
+      position: now.position,
+      readAt: read,
+    );
+    expect(
+      playing.positionAt(read.add(const Duration(seconds: 5))),
+      const Duration(seconds: 68),
+    );
+    // Never past the end.
+    expect(playing.positionAt(read.add(const Duration(hours: 1))), now.length);
+    final paused = NowPlaying(
+      player: 'p',
+      position: const Duration(seconds: 63),
+      readAt: read,
+    );
+    expect(
+      paused.positionAt(read.add(const Duration(seconds: 5))),
+      const Duration(seconds: 63),
+    );
+    expect(mediaTime(const Duration(seconds: 63)), '01:03');
+    expect(mediaTime(const Duration(hours: 1, seconds: 3)), '1:00:03');
   });
 }
