@@ -174,6 +174,7 @@ pub fn init_winit(
                     .output
                     .change_current_state(Some(mode), None, None, None);
                 data.state.output.set_preferred(mode);
+                data.state.output_resized();
             }
             WinitEvent::Input(event) => data.state.process_input_event(event),
             WinitEvent::Redraw => data.state.render_winit(),

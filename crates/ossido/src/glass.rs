@@ -360,18 +360,26 @@ impl State {
             });
         }
         let map = smithay::desktop::layer_map_for_output(&self.output);
+        let output = self
+            .space
+            .output_geometry(&self.output)
+            .map(|g| g.size)
+            .unwrap_or_default();
         for layer in map.layers() {
-            let regions = current_regions(layer.wl_surface());
-            let Some(geometry) = map.layer_geometry(layer) else {
+            // The glass as drawn: none for a layer not shown yet, the old one while it resizes.
+            let Some(drawn) = crate::layers::drawn_layer(&map, layer, output) else {
                 continue;
             };
+            let regions = drawn
+                .glass
+                .unwrap_or_else(|| current_regions(layer.wl_surface()));
             if regions.is_empty() {
                 continue;
             }
             list.push(GlassSurface {
                 surface: format!("layer {}", layer.namespace()),
-                x: geometry.loc.x,
-                y: geometry.loc.y,
+                x: drawn.loc.x,
+                y: drawn.loc.y,
                 regions,
             });
         }

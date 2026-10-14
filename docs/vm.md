@@ -114,3 +114,14 @@ How it works, without root on the host and without changing the image:
   to the second workspace.
 
 The work directory is `~/build/silica-os-dev` (`SILICA_OS_DIR`).
+
+## Looking at animations and frames
+
+- `SILICA_TIME_DILATION=10` in the shell's environment slows every animation of the shell
+  tenfold (Flutter's `timeDilation`), to take screenshots through a transition.
+- `RUST_LOG=ossido::handlers=trace,ossido::layers=trace` logs every commit of every surface:
+  the layer namespace, whether it carries a new buffer and its glass regions (count and
+  highest opacity), and the layers whose buffer does not have the configured size (not
+  drawn yet). A glass change on a commit without a new buffer is a frame early or late: the
+  embedder commits the glass regions with the frame they were measured on (`GlassSync` in
+  `crates/embedder/src/glass.rs`).

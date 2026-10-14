@@ -33,7 +33,7 @@ use smithay::{
     delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm,
     delegate_viewporter, delegate_xdg_shell,
 };
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 use crate::state::{ClientState, State};
 
@@ -75,6 +75,22 @@ impl CompositorHandler for State {
         }
         on_commit_buffer_handler::<Self>(surface);
         self.drag_icon_committed(surface);
+        // The frame sequence of every surface, to check frame by frame what is on screen
+        // (RUST_LOG=ossido::handlers=trace): a new buffer and the glass that comes with it.
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let glass = crate::glass::current_regions(surface);
+            let name = smithay::desktop::layer_map_for_output(&self.output)
+                .layer_for_surface(surface, smithay::desktop::WindowSurfaceType::TOPLEVEL)
+                .map_or_else(
+                    || format!("{:?}", surface.id()),
+                    |l| l.namespace().to_owned(),
+                );
+            trace!(
+                "commit {name}: new buffer {new_buffer}, glass {} (opacity {:.2})",
+                glass.len(),
+                glass.iter().map(|r| r.opacity).fold(0.0, f64::max),
+            );
+        }
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();
             while let Some(parent) = get_parent(&root) {

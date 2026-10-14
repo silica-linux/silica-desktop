@@ -108,10 +108,10 @@ impl Shell {
 }
 use crate::dbus;
 use crate::ffi::{
-    Callbacks, Engine, EngineConfig, Frame, GlSurface, KeyEvent, PlatformMessage, PointerEvent,
-    PointerPhase, ResponseHandle, Task, VsyncBaton, VulkanSurface,
+    Callbacks, Engine, EngineConfig, Frame, FrameClock, GlSurface, KeyEvent, PlatformMessage,
+    PointerEvent, PointerPhase, ResponseHandle, Task, VsyncBaton, VulkanSurface,
 };
-use crate::glass::{self, Glass};
+use crate::glass::{self, Glass, GlassSync};
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
 
@@ -206,10 +206,6 @@ impl Ord for Queued {
     }
 }
 
-/// How long the glass regions must stay the same before they are committed on their own
-/// (two frames): while they change every frame, the frames' commits carry them.
-const GLASS_SETTLE: Duration = Duration::from_millis(34);
-
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -228,8 +224,11 @@ struct App {
     keys: Keyboard,
     modifiers: Modifiers,
     text_input: TextInput,
-    /// Glass regions of the `Glass` widgets (`silica/glass`).
-    glass: Glass,
+    /// Glass regions of the `Glass` widgets (`silica/glass`), taken in by the platform task
+    /// that delivers them (see `platform_message` in `run`).
+    glass: Arc<Mutex<Glass>>,
+    /// The same regions in step with the frames (software frames are committed here).
+    glass_sync: Arc<GlassSync>,
     /// `silica-window-v1`: the manager and the window object (created on the first request).
     appearance_manager: Option<SilicaWindowManagerV1>,
     appearance: Option<SilicaWindowV1>,
@@ -245,8 +244,6 @@ struct App {
     clipboard: Option<(CopyPasteSource, Arc<Vec<u8>>)>,
     /// The serial of the last key or button press: setting the selection needs one.
     input_serial: u32,
-    /// The commit that applies the glass regions once they stop changing.
-    glass_commit: Option<RegistrationToken>,
     /// To send requests before waiting on another client (a paste).
     conn: Connection,
     dropped: Option<DragOffer>,
@@ -539,6 +536,25 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         })
         .map_err(|e| format!("frame channel: {e}"))?;
 
+    // The glass regions travel with the frames of the raster thread.
+    let glass_sync = Arc::new(GlassSync::new(conn.clone(), surface.wl_surface().clone()));
+    let frames = {
+        let before = Arc::clone(&glass_sync);
+        let after = Arc::clone(&glass_sync);
+        Arc::new(FrameClock::new(
+            move |seq| before.before_present(seq),
+            move |seq| after.after_task(seq),
+        ))
+    };
+    let software_frames = Arc::clone(&glass_sync);
+    let glass = Arc::new(Mutex::new(Glass::new(
+        globals
+            .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=6, ())
+            .ok(),
+        Arc::clone(&glass_sync),
+    )));
+    let (glass_inbox, glass_surface, glass_qh) =
+        (Arc::clone(&glass), surface.wl_surface().clone(), qh.clone());
     let callbacks = Callbacks {
         platform_thread: std::thread::current().id(),
         post_task: Box::new(move |task| {
@@ -546,10 +562,19 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
                 warn!("task dropped: the main loop is closed");
             }
         }),
-        present: Box::new(move |frame| {
+        present: Box::new(move |frame: Frame| {
+            software_frames.software_frame(frame.raster_seq);
             let _ = frame_sender.send(frame);
         }),
         platform_message: Box::new(move |message| {
+            // The glass regions are taken in here, in the platform task that delivers them, to
+            // reach their frame before the raster thread presents it (`GlassSync`).
+            if message.channel == glass::CHANNEL
+                && let Ok(mut glass) = glass_inbox.lock()
+                && glass.receive(&message.data, message.raster_seq, &glass_surface, &glass_qh)
+            {
+                glass_surface.commit();
+            }
             // If the loop is closed the message falls with its handle: the engine is shutting
             // down and no longer waits for answers.
             let _ = message_sender.send(message);
@@ -559,6 +584,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         vsync: Some(Box::new(move |baton| {
             let _ = vsync_sender.send(baton);
         })),
+        frames,
     };
     let engine = Engine::run(
         &EngineConfig {
@@ -604,7 +630,6 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         drag_in: false,
         clipboard: None,
         input_serial: 0,
-        glass_commit: None,
         conn: conn.clone(),
         dropped: None,
         ptys: crate::pty::PtyHost::default(),
@@ -616,11 +641,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         drops: None,
         seat: None,
         press_serial: 0,
-        glass: Glass::new(
-            globals
-                .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=6, ())
-                .ok(),
-        ),
+        glass,
+        glass_sync,
         shell: ShellLink::new(
             globals
                 .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=7, ())
@@ -743,20 +765,12 @@ impl App {
             crate::drag::CHANNEL => self.handle_drag_call(&message.data),
             crate::app_lifecycle::CHANNEL => self.handle_app_call(&message.data),
             crate::pty::CHANNEL => self.handle_pty_call(&message.data),
-            glass::CHANNEL => {
-                let (reply, changed) =
-                    self.glass
-                        .handle_call(&message.data, self.surface.wl_surface(), &self.qh);
-                // The regions apply from the next commit. Committing now would show them with
-                // the buffer already on screen, a frame ahead of the content they were
-                // measured on (a double edge while a panel animates). The frame they belong to
-                // is still being rasterized: its own commit carries them. Only once the
-                // regions stop changing, a commit makes sure they apply without a new frame.
-                if changed {
-                    self.commit_glass_later();
-                }
-                reply
-            }
+            // Already taken in by the platform task (`platform_message` in `run`): the reply.
+            glass::CHANNEL => self
+                .glass
+                .lock()
+                .map(|glass| glass.reply(&message.data))
+                .unwrap_or_default(),
             "flutter/platform" => self.handle_platform_call(&message.data),
             crate::mouse_cursor::CHANNEL => {
                 if let Some(kind) = crate::mouse_cursor::activate_kind(&message.data) {
@@ -883,21 +897,6 @@ impl App {
             }
             _ => Vec::new(),
         }
-    }
-
-    /// Commits the pending glass regions if they do not change for [GLASS_SETTLE].
-    fn commit_glass_later(&mut self) {
-        if let Some(token) = self.glass_commit.take() {
-            self.loop_handle.remove(token);
-        }
-        self.glass_commit = self
-            .loop_handle
-            .insert_source(Timer::from_duration(GLASS_SETTLE), |_, _, app: &mut App| {
-                app.glass_commit = None;
-                app.surface.commit();
-                TimeoutAction::Drop
-            })
-            .ok();
     }
 
     /// `Clipboard.setData`: this window becomes the selection owner with `text`.
@@ -1891,6 +1890,8 @@ impl App {
             }
         }
 
+        // The glass measured on this frame goes with its commit.
+        self.glass_sync.before_present(frame.raster_seq);
         let surface = self.surface.wl_surface();
         surface.set_buffer_scale(self.scale.max(1));
         surface.damage_buffer(0, 0, width, height);

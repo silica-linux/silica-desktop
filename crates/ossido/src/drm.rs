@@ -393,6 +393,8 @@ impl State {
         let mode = Mode::from(choice.mode);
         output.change_current_state(Some(mode), None, None, None);
         output.set_preferred(mode);
+        // The layers are arranged for the new size now (see `State::output_resized`).
+        smithay::desktop::layer_map_for_output(&output).arrange();
         match create_surface(
             &mut backend.drm,
             &backend.gbm,

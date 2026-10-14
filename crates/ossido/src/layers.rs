@@ -1,20 +1,145 @@
 //! wlr-layer-shell: shell surfaces (menu bar, Dock, wallpaper) anchored to the output
 //! edges, above or below the windows.
 
+use std::cell::RefCell;
+use std::time::{Duration, Instant};
+
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::delegate_layer_shell;
-use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
+use smithay::desktop::{LayerMap, LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::{
     ExclusiveZone, KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
     WlrLayerShellHandler, WlrLayerShellState,
 };
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
+use crate::glass::{GlassRegion, current_regions};
 use crate::state::State;
+
+/// How long a layer whose buffer does not have its configured size stays off screen at most:
+/// a client that never draws at the configured size is still shown (a safety net, not a
+/// measured value).
+pub const FIT_GRACE: Duration = Duration::from_millis(500);
+
+/// Where a layer is drawn, and with which glass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Drawn {
+    /// The layer's geometry origin in the output (as `LayerMap::layer_geometry`).
+    pub loc: Point<i32, Logical>,
+    /// The glass to draw with it: `None` for the surface's current regions, `Some` for the
+    /// regions committed with the buffer still on screen.
+    pub glass: Option<Vec<GlassRegion>>,
+}
+
+/// The last placement where the layer's buffer had its configured size.
+#[derive(Default)]
+struct Placement(RefCell<PlacementState>);
+
+/// Where a layer's buffer last fitted: its origin, the output size then, its glass.
+struct Fitted {
+    loc: Point<i32, Logical>,
+    output: Size<i32, Logical>,
+    glass: Vec<GlassRegion>,
+}
+
+#[derive(Default)]
+struct PlacementState {
+    /// The last commit whose buffer fitted.
+    fitted: Option<Fitted>,
+    /// Since when the committed buffer does not fit the configured size.
+    unfit_since: Option<Instant>,
+}
+
+/// The buffer on screen has the size the compositor configured: the client has drawn for the
+/// current arrangement (not the size it asked before the configure, nor the old size while it
+/// resizes).
+fn fits(layer: &LayerSurface) -> bool {
+    let configured = layer.layer_surface().with_pending_state(|state| state.size);
+    let drawn =
+        with_renderer_surface_state(layer.wl_surface(), |state| state.surface_size()).flatten();
+    matches!((configured, drawn), (Some(configured), Some(drawn)) if configured == drawn)
+}
+
+/// Where and how a layer is drawn on an output of `output` logical size, `None` if it must not
+/// be drawn yet.
+///
+/// A shell surface is never shown before its first frame at the configured size: before the
+/// configure the client draws at the size it guessed (the Dock 1280 × 200, anchored nowhere
+/// yet), and the layer would appear in the wrong place for a few frames. While it resizes
+/// (the Dock growing to the screen height for a menu) the old buffer stays where it fitted,
+/// with the glass committed with it, until the frame at the new size arrives. After an
+/// output change the old placement no longer counts. A client that never fits is shown
+/// after [`FIT_GRACE`].
+pub fn drawn_layer(
+    map: &LayerMap,
+    layer: &LayerSurface,
+    output: Size<i32, Logical>,
+) -> Option<Drawn> {
+    let geometry = map.layer_geometry(layer)?;
+    if fits(layer) {
+        return Some(Drawn {
+            loc: geometry.loc,
+            glass: None,
+        });
+    }
+    let placement = layer.user_data().get::<Placement>()?;
+    let state = placement.0.borrow();
+    if let Some(fitted) = &state.fitted
+        && fitted.output == output
+    {
+        return Some(Drawn {
+            loc: fitted.loc,
+            glass: Some(fitted.glass.clone()),
+        });
+    }
+    state
+        .unfit_since
+        .is_some_and(|since| since.elapsed() >= FIT_GRACE)
+        .then_some(Drawn {
+            loc: geometry.loc,
+            glass: None,
+        })
+}
+
+/// After a layer's commit (and the arrangement): remembers where its buffer fits, or since
+/// when it does not.
+fn note_placement(map: &LayerMap, layer: &LayerSurface, output: Size<i32, Logical>) {
+    layer.user_data().insert_if_missing(Placement::default);
+    let Some(placement) = layer.user_data().get::<Placement>() else {
+        return;
+    };
+    let mut state = placement.0.borrow_mut();
+    let fit = fits(layer);
+    if fit {
+        if let Some(geometry) = map.layer_geometry(layer) {
+            state.fitted = Some(Fitted {
+                loc: geometry.loc,
+                output,
+                glass: current_regions(layer.wl_surface()),
+            });
+        }
+        state.unfit_since = None;
+    } else {
+        let has_buffer = with_renderer_surface_state(layer.wl_surface(), |s| s.buffer().is_some())
+            .unwrap_or(false);
+        if has_buffer && state.unfit_since.is_none() {
+            state.unfit_since = Some(Instant::now());
+        }
+    }
+    if !fit {
+        trace!(
+            "layer {:?} not drawn as committed: buffer {:?}, configured {:?}",
+            layer.namespace(),
+            with_renderer_surface_state(layer.wl_surface(), |s| s.surface_size()).flatten(),
+            layer.layer_surface().with_pending_state(|s| s.size),
+        );
+    }
+}
 
 /// The namespace of the file manager's desktop surface (#147): `desktop-icons:<app id>`, on the
 /// bottom layer (above the wallpaper, below the windows). On the reference the desktop icons are
@@ -91,6 +216,12 @@ impl State {
             if !sent {
                 layer.layer_surface().send_configure();
             }
+            let output = self
+                .space
+                .output_geometry(&self.output)
+                .map(|g| g.size)
+                .unwrap_or_default();
+            note_placement(&map, &layer, output);
             (layer, !sent)
         };
         let exclusive = layer.cached_state().keyboard_interactivity
@@ -149,16 +280,18 @@ impl State {
         pos: Point<f64, Logical>,
     ) -> Option<(LayerSurface, Point<i32, Logical>)> {
         let map = layer_map_for_output(&self.output);
-        let origin = self.space.output_geometry(&self.output)?.loc;
+        let output = self.space.output_geometry(&self.output)?;
+        let origin = output.loc;
         // The input region counts, not the rectangle: a hidden shell component (a closed
-        // Faro) is transparent and full screen but with an empty region.
+        // Faro) is transparent and full screen but with an empty region. A layer not shown yet
+        // takes no input; one resizing takes it where it is drawn.
         layers.iter().find_map(|level| {
             map.layers_on(*level).rev().find_map(|layer| {
-                let geometry = map.layer_geometry(layer)?;
-                let local = pos - (geometry.loc + origin).to_f64();
+                let drawn = drawn_layer(&map, layer, output.size)?;
+                let local = pos - (drawn.loc + origin).to_f64();
                 layer
                     .surface_under(local, smithay::desktop::WindowSurfaceType::ALL)
-                    .map(|_| (layer.clone(), geometry.loc + origin))
+                    .map(|_| (layer.clone(), drawn.loc + origin))
             })
         })
     }
@@ -246,6 +379,13 @@ impl State {
         {
             self.focus_layer(&layer);
         }
+    }
+
+    /// The output changed mode: the layers are arranged again for the new size (and receive
+    /// their configure now, not at their next commit). Until they draw at the new size they
+    /// are not shown ([`drawn_layer`]).
+    pub fn output_resized(&mut self) {
+        layer_map_for_output(&self.output).arrange();
     }
 
     /// The area free of layers with an exclusive zone: the windows go there.

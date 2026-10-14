@@ -23,16 +23,22 @@
 mod bindings;
 mod gl;
 pub mod pty;
+mod raster;
 mod vulkan;
 
 pub use gl::GlSurface;
+pub use raster::FrameClock;
 pub use vulkan::VulkanSurface;
 
+use std::cell::Cell;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr;
+use std::sync::Arc;
 use std::thread::ThreadId;
+
+use raster::RasterRunner;
 
 use bindings::{
     FLUTTER_ENGINE_VERSION, FlutterCustomTaskRunners, FlutterEngine, FlutterEngineAOTData,
@@ -82,6 +88,16 @@ pub struct Task {
     inner: FlutterTask,
     /// When to run it, in the base of [`Engine::current_time`] (nanoseconds).
     pub target_nanos: u64,
+    /// Raster tasks posted before this one ([`FrameClock::posted`]): a message it delivers
+    /// was sent after the frame those tasks present.
+    pub raster_seq: u64,
+    /// Due at once when posted: a present waits for it ([`FrameClock::before_present`]).
+    immediate: bool,
+}
+
+thread_local! {
+    /// The `raster_seq` of the platform task running on this thread.
+    static RUNNING_STAMP: Cell<u64> = const { Cell::new(0) };
 }
 
 // SAFETY: FlutterTask is an opaque handle (runner pointer + id) that the engine passes from
@@ -96,6 +112,8 @@ pub struct Frame {
     pub height: u32,
     pub stride: usize,
     pub pixels: Vec<u8>,
+    /// The raster task that drew it ([`FrameClock::running`]).
+    pub raster_seq: u64,
 }
 
 /// The response owed to a platform message: it must be consumed with
@@ -112,6 +130,9 @@ pub struct PlatformMessage {
     pub data: Vec<u8>,
     /// Absent for messages that do not expect a response.
     pub response: Option<ResponseHandle>,
+    /// Raster tasks posted before the message ([`Task::raster_seq`]): Dart sent it after the
+    /// frame they present (the glass regions measured on that frame).
+    pub raster_seq: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +175,8 @@ pub struct Callbacks {
     /// The frame pace comes from the embedder (compositor frame callbacks); without it, the
     /// engine uses its own 60 Hz timer, unrelated to the compositor.
     pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
+    /// The raster thread's tasks and frames, numbered (the raster thread is the embedder's).
+    pub frames: Arc<FrameClock>,
 }
 
 /// Whoever waits to know whether the framework handled a key.
@@ -186,13 +209,15 @@ pub struct PointerEvent {
     pub timestamp_micros: u64,
 }
 
-type RunFn = unsafe extern "C" fn(
+type InitializeFn = unsafe extern "C" fn(
     usize,
     *const FlutterRendererConfig,
     *const FlutterProjectArgs,
     *mut c_void,
     *mut FlutterEngine,
 ) -> FlutterEngineResult;
+type RunInitializedFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
+type DeinitializeFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
 type ShutdownFn = unsafe extern "C" fn(FlutterEngine) -> FlutterEngineResult;
 type RunTaskFn = unsafe extern "C" fn(FlutterEngine, *const FlutterTask) -> FlutterEngineResult;
 type MetricsFn =
@@ -243,7 +268,9 @@ struct Api {
     runs_aot: RunsAotFn,
     create_aot: CreateAotFn,
     collect_aot: CollectAotFn,
-    run: RunFn,
+    initialize: InitializeFn,
+    run_initialized: RunInitializedFn,
+    deinitialize: DeinitializeFn,
     shutdown: ShutdownFn,
     run_task: RunTaskFn,
     metrics: MetricsFn,
@@ -284,9 +311,13 @@ pub struct Engine {
     engine: FlutterEngine,
     /// Null with a debug engine (JIT); freed after shutdown.
     aot_data: FlutterEngineAOTData,
+    /// The raster thread: stopped right after the shutdown, before the callbacks it may use
+    /// are dropped (fields drop in declaration order).
+    raster: RasterRunner,
     // Everything the engine keeps pointers to: it must live as long as the engine.
     _callbacks: Box<Callbacks>,
     _runner: Box<FlutterTaskRunnerDescription>,
+    _render_runner: Box<FlutterTaskRunnerDescription>,
     _runners: Box<FlutterCustomTaskRunners>,
     _strings: Vec<CString>,
     _argv: Vec<*const c_char>,
@@ -335,6 +366,7 @@ unsafe extern "C" fn present(
         height,
         stride: row_bytes,
         pixels,
+        raster_seq: callbacks.frames.running(),
     });
     true
 }
@@ -365,7 +397,10 @@ unsafe extern "C" fn gl_make_resource_current(user_data: *mut c_void) -> bool {
 
 unsafe extern "C" fn gl_present(user_data: *mut c_void) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
-    unsafe { gl_surface(user_data) }.is_some_and(GlSurface::present)
+    let callbacks = unsafe { callbacks(user_data) };
+    // The swap commits the surface: what goes with this frame is sent before it.
+    callbacks.frames.before_present();
+    callbacks.gl.as_ref().is_some_and(GlSurface::present)
 }
 
 unsafe extern "C" fn gl_fbo(user_data: *mut c_void, info: *const FlutterFrameInfo) -> u32 {
@@ -451,7 +486,13 @@ unsafe extern "C" fn vulkan_present(
     _image: *const FlutterVulkanImage,
 ) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
-    unsafe { vulkan_surface(user_data) }.is_some_and(VulkanSurface::present)
+    let callbacks = unsafe { callbacks(user_data) };
+    // The present commits the surface: what goes with this frame is sent before it.
+    callbacks.frames.before_present();
+    callbacks
+        .vulkan
+        .as_ref()
+        .is_some_and(VulkanSurface::present)
 }
 
 unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
@@ -465,9 +506,12 @@ unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
 unsafe extern "C" fn post_task(task: FlutterTask, target_nanos: u64, user_data: *mut c_void) {
     // SAFETY: user_data is the one of the FlutterTaskRunnerDescription (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    let immediate = callbacks.frames.platform_posted(target_nanos);
     (callbacks.post_task)(Task {
         inner: task,
         target_nanos,
+        raster_seq: callbacks.frames.posted(),
+        immediate,
     });
 }
 
@@ -508,6 +552,7 @@ unsafe extern "C" fn platform_message(
         channel,
         data,
         response,
+        raster_seq: RUNNING_STAMP.with(Cell::get),
     });
 }
 
@@ -567,7 +612,9 @@ impl Engine {
             runs_aot: symbol!(library, FlutterEngineRunsAOTCompiledDartCode),
             create_aot: symbol!(library, FlutterEngineCreateAOTData),
             collect_aot: symbol!(library, FlutterEngineCollectAOTData),
-            run: symbol!(library, FlutterEngineRun),
+            initialize: symbol!(library, FlutterEngineInitialize),
+            run_initialized: symbol!(library, FlutterEngineRunInitialized),
+            deinitialize: symbol!(library, FlutterEngineDeinitialize),
             shutdown: symbol!(library, FlutterEngineShutdown),
             run_task: symbol!(library, FlutterEngineRunTask),
             metrics: symbol!(library, FlutterEngineSendWindowMetricsEvent),
@@ -593,9 +640,21 @@ impl Engine {
             identifier: 1,
             ..Default::default()
         });
+        // The raster thread is the embedder's: its tasks are numbered (`FrameClock`).
+        callbacks.frames.set_time(api.time);
+        let raster = RasterRunner::start(Arc::clone(&callbacks.frames), api.run_task, api.time)?;
+        let render_runner = Box::new(FlutterTaskRunnerDescription {
+            struct_size: size_of::<FlutterTaskRunnerDescription>(),
+            user_data: raster.user_data(),
+            runs_task_on_current_thread_callback: Some(raster::runs_on_current_thread),
+            post_task_callback: Some(raster::post_task),
+            identifier: 2,
+            ..Default::default()
+        });
         let runners = Box::new(FlutterCustomTaskRunners {
             struct_size: size_of::<FlutterCustomTaskRunners>(),
             platform_task_runner: ptr::from_ref(&*runner),
+            render_task_runner: ptr::from_ref(&*render_runner),
             ..Default::default()
         });
         let mut renderer = FlutterRendererConfig::default();
@@ -712,11 +771,13 @@ impl Engine {
         };
 
         let mut engine: FlutterEngine = ptr::null_mut();
+        // Initialize, then run: the raster thread needs the handle before the shell starts
+        // (the shell waits for its first raster tasks while it starts).
         // SAFETY: renderer and args are structs initialized with a correct struct_size; the
-        // pointers they contain (strings, argv, runner, callbacks) stay alive in Engine until
+        // pointers they contain (strings, argv, runners, callbacks) stay alive in Engine until
         // the engine is shut down in Drop.
         let result = unsafe {
-            (api.run)(
+            (api.initialize)(
                 FLUTTER_ENGINE_VERSION as usize,
                 &renderer,
                 &args,
@@ -724,7 +785,21 @@ impl Engine {
                 &mut engine,
             )
         };
+        let result = if result == FlutterEngineResult::kSuccess && !engine.is_null() {
+            raster.set_engine(engine);
+            // SAFETY: the engine was just initialized and has not run yet.
+            let run = unsafe { (api.run_initialized)(engine) };
+            if run != FlutterEngineResult::kSuccess {
+                raster.closing();
+                // SAFETY: the engine was initialized, did not start and is not used again.
+                let _ = unsafe { (api.deinitialize)(engine) };
+            }
+            run
+        } else {
+            result
+        };
         if result != FlutterEngineResult::kSuccess || engine.is_null() {
+            std::mem::drop(raster);
             if !aot_data.is_null() {
                 // SAFETY: aot_data comes from FlutterEngineCreateAOTData and no engine uses it.
                 let _ = unsafe { (api.collect_aot)(aot_data) };
@@ -736,8 +811,10 @@ impl Engine {
             api,
             engine,
             aot_data,
+            raster,
             _callbacks: callbacks,
             _runner: runner,
+            _render_runner: render_runner,
             _runners: runners,
             _strings: strings,
             _argv: argv,
@@ -755,11 +832,16 @@ impl Engine {
 
     /// Runs a task received from `post_task`. Only on the platform thread.
     pub fn run_task(&self, task: &Task) -> Result<(), Error> {
+        RUNNING_STAMP.with(|stamp| stamp.set(task.raster_seq));
         // SAFETY: the engine is alive; task comes from this engine's post_task and every task
         // runs only once (the caller consumes it from the queue).
-        check("FlutterEngineRunTask", unsafe {
+        let result = check("FlutterEngineRunTask", unsafe {
             (self.api.run_task)(self.engine, &task.inner)
-        })
+        });
+        if task.immediate {
+            self._callbacks.frames.platform_done();
+        }
+        result
     }
 
     /// Size of the view in physical pixels and ratio of physical to logical pixels.
@@ -995,6 +1077,8 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        // The delayed raster tasks already queued never run: the engine is gone afterwards.
+        self.raster.closing();
         // SAFETY: the engine is alive and no longer used afterwards; the fields the engine
         // references are destroyed only after this call (field order in Engine).
         let result = unsafe { (self.api.shutdown)(self.engine) };
