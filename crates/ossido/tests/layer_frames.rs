@@ -34,6 +34,17 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
 };
 
 const SIZE: (u32, u32) = (320, 200);
+
+/// A headless Ossido whose safety net for layers that never fit (500 ms) does not fire while
+/// a test waits for its screenshot on a loaded machine.
+fn start(name: &str, size: (u32, u32), extra: &[&str]) -> Headless {
+    Headless::start_with_env(
+        name,
+        size,
+        extra,
+        &[("OSSIDO_LAYER_FIT_GRACE_MS", "600000")],
+    )
+}
 const RED: [u8; 4] = [0, 0, 255, 255];
 const BLUE: [u8; 4] = [255, 0, 0, 255];
 
@@ -224,7 +235,7 @@ fn glass_list(ossido: &Headless) -> Value {
 
 #[test]
 fn a_layer_is_not_drawn_before_its_first_frame_at_the_configured_size() {
-    let ossido = Headless::start_with("layer-first-frame", SIZE, &[]);
+    let ossido = start("layer-first-frame", SIZE, &[]);
     let mut dock = Layer::open(&ossido, 50);
     assert_eq!(dock.configured(), (SIZE.0, 50));
 
@@ -246,7 +257,7 @@ fn a_layer_is_not_drawn_before_its_first_frame_at_the_configured_size() {
 
 #[test]
 fn a_resizing_layer_keeps_its_old_buffer_in_place_until_the_new_one() {
-    let ossido = Headless::start_with("layer-resize", SIZE, &[]);
+    let ossido = start("layer-resize", SIZE, &[]);
     let mut dock = Layer::open(&ossido, 50);
     dock.draw((SIZE.0, 50), RED, Some(&[(10, 10, 100, 30)]));
 
@@ -275,7 +286,7 @@ fn a_resizing_layer_keeps_its_old_buffer_in_place_until_the_new_one() {
 
 #[test]
 fn the_glass_leaves_with_the_commit_of_the_closing_frame() {
-    let ossido = Headless::start_with("layer-glass-close", SIZE, &[]);
+    let ossido = start("layer-glass-close", SIZE, &[]);
     let mut panel = Layer::open(&ossido, 120);
     let clear_color = common::screenshot(&ossido);
     let background = common::pixel(&clear_color, 160, 150);
