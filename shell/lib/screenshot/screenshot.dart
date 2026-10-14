@@ -27,6 +27,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../dock/apps.dart' show openPathCommand;
 import '../dock/dock.dart' show shellQuote;
 import '../l10n/l10n.dart';
+import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/layer_arbiter.dart';
 import '../system/shell_channel.dart';
@@ -955,15 +956,11 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             child: MenuHost(
               key: const ValueKey('thumbnail menu'),
               entries: _menuEntries,
-              // At the pointer, moved left so it stays whole on the screen (the thumbnail
-              // is at the right edge).
-              anchor: Offset(
-                (screen.width - menuSize(_menuEntries).width - 4)
-                    .clamp(0, at.dx)
-                    .toDouble(),
-                at.dy,
-              ),
+              // At the pointer: the host moves it left when the thumbnail is at the right
+              // edge.
+              anchor: at,
               upwards: true,
+              top: barHeight,
               // Drawn by Flutter: it covers the thumbnail (Ossido's glass would sit behind
               // the whole layer, thumbnail included).
               opaque: true,
@@ -1191,6 +1188,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
             entries: _optionsEntries,
             anchor: Offset(bar.left + optionsX, bar.top + 16),
             upwards: true,
+            top: barHeight,
             onDismissed: () => setState(() => _optionsOpen = false),
           ),
         ),

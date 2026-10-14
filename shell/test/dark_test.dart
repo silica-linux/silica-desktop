@@ -110,8 +110,7 @@ void main() {
     final context = await _context(tester);
     expect(DockColors.of(context).separator, const Color(0xFFA9AAAF));
     expect(DockColors.of(context).indicator, const Color(0xFFE5E6EB));
-    expect(DockColors.of(context).labelBody, const Color(0xFF7F8086));
-    expect(DockColors.of(context).labelText, const Color(0xFFF9F9F9));
+    expect(MenuColors.of(context).text, const Color(0xD9FFFFFF));
   });
 
   testWidgets('grid stack: light title and names', (tester) async {

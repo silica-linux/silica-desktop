@@ -282,6 +282,23 @@ After the third hop the icon stays still for about 1 s.
 | Already in front with visible windows | nothing |
 | In front, with one visible and one minimised window | nothing; the minimised window stays in the Dock |
 
+## Slot opening and closing (D-02)
+
+When an app that is not kept in the Dock launches, its slot opens before the separator; when
+it quits, the slot closes. The same applies to the separator when the running section goes
+from empty to non-empty and back.
+
+- **Opening:** the neighbours slide apart while the icon grows from nothing and fades in; the
+  launch bounce starts once the slot is open.
+- **Closing:** the icon shrinks and fades out while the neighbours slide together.
+- **Background:** its width follows the slots in every frame and stays centred.
+- **Times:** the Dock widens in about **320 ms** and narrows in about **480 ms** (measured with
+  the launch animation turned off, see Launching an app).
+- **Provisional (not measured):** the same times with the launch animation on, the ease-in-out
+  curve, the icon starting at scale 0, and the opacity following the scale.
+- **Not animated:** the first list at start-up, minimised windows (their own effect), a Dock
+  hidden by auto-hide, and an icon dragged out (it fades in place, see Dragging icons).
+
 ## Context menu (D-04)
 
 The menu opens on a secondary click, a control-click, or a **long press of about 550–600 ms**.
@@ -390,3 +407,5 @@ The menu opens on a secondary click, a control-click, or a **long press of about
 - Dropping a file on an app that does not accept it.
 - Clicking an app whose windows are on other spaces.
 - Whether the magnification radius scales with the Dock size.
+- Slot opening and closing with the launch animation on: durations, curve, icon scale and
+  opacity, and the order against the bounce.

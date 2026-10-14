@@ -1,3 +1,6 @@
 /target/
 /plan/
 .claude/
+
+# Spectrograms rendered by tools/sounds/synth.py --spectrograms (inspection only).
+/tools/sounds/candidates/*.png

@@ -662,6 +662,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         ),
       ],
       anchor: at,
+      top: barHeight,
       onDismissed: () => setState(() => _clearMenu = false),
     );
   }
