@@ -1,13 +1,13 @@
-//! Le sorgenti dello stato del sistema.
+//! The sources of the system state.
 //!
-//! - NetworkManager, BlueZ e UPower sul bus di sistema: lettura delle proprietà, poi una
-//!   rilettura a ogni segnale del servizio. Se un servizio manca o sparisce la sorgente
-//!   diventa assente e si riprova ogni `RETRY`.
-//! - Retroilluminazione: sysfs (`brightness` / `max_brightness`), scrittura con
-//!   `SetBrightness` di logind e, se logind non c'è, direttamente nel file.
-//! - Audio: `wpctl` di PipeWire sull'uscita predefinita.
+//! - NetworkManager, BlueZ and UPower on the system bus: properties are read, then
+//!   reread on every signal of the service. If a service is missing or disappears the source
+//!   becomes absent and it retries every `RETRY`.
+//! - Backlight: sysfs (`brightness` / `max_brightness`), written with logind's
+//!   `SetBrightness` and, if logind is not there, directly into the file.
+//! - Audio: PipeWire's `wpctl` on the default output.
 //!
-//! Luminosità e audio non hanno segnali: si rileggono ogni `poll`.
+//! Brightness and audio have no signals: they are reread every `poll`.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -23,7 +23,7 @@ use zbus::{Connection, MatchRule, MessageStream};
 use super::{Audio, Battery, Shared, Wifi};
 
 const RETRY: Duration = Duration::from_secs(10);
-/// Oltre questo tempo `wpctl` si considera bloccato.
+/// Beyond this time `wpctl` is considered stuck.
 const WPCTL_TIMEOUT: Duration = Duration::from_secs(2);
 
 const NM: &str = "org.freedesktop.NetworkManager";
@@ -37,12 +37,12 @@ const UPOWER: &str = "org.freedesktop.UPower";
 const UPOWER_DISPLAY: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
 const UPOWER_DEVICE: &str = "org.freedesktop.UPower.Device";
 const LOGIND: &str = "org.freedesktop.login1";
-/// Sink predefinito di `wpctl`.
+/// Default sink of `wpctl`.
 const DEFAULT_SINK: &str = "@DEFAULT_AUDIO_SINK@";
 
 type Result<T> = std::result::Result<T, String>;
 
-/// Tutte le sorgenti insieme; non ritorna.
+/// All the sources together; never returns.
 pub(super) async fn run(shared: &Shared) {
     future::zip(
         future::zip(network(shared), bluetooth(shared)),
@@ -99,7 +99,7 @@ async fn set_prop(
         .map_err(|e| e.to_string())
 }
 
-/// I segnali di un servizio (tutti, o di un solo percorso).
+/// The signals of a service (all of them, or of a single path).
 async fn signals(bus: &Connection, sender: &str, path: Option<&str>) -> Result<MessageStream> {
     let mut rule = MatchRule::builder()
         .msg_type(MessageType::Signal)
@@ -113,8 +113,8 @@ async fn signals(bus: &Connection, sender: &str, path: Option<&str>) -> Result<M
         .map_err(|e| e.to_string())
 }
 
-/// Segue una sorgente del bus di sistema: `read` all'inizio e a ogni segnale di `sender`;
-/// se fallisce la sorgente è assente (`absent`) e si riprova.
+/// Follows a system bus source: `read` at the start and on every signal of `sender`;
+/// if it fails the source is absent (`absent`) and it retries.
 async fn follow<F, Fut>(
     shared: &Shared,
     sender: &str,
@@ -149,7 +149,7 @@ async fn follow<F, Fut>(
     }
 }
 
-// --- Rete --------------------------------------------------------------------------
+// --- Network -----------------------------------------------------------------------
 
 async fn network(shared: &Shared) {
     follow(
@@ -213,7 +213,7 @@ pub(super) async fn set_wifi_enabled(shared: &Shared, enabled: bool) -> Result<(
         .config
         .system_bus
         .as_ref()
-        .ok_or("bus di sistema assente")?;
+        .ok_or("system bus absent")?;
     set_prop(
         bus,
         NM,
@@ -253,7 +253,7 @@ async fn bluetooth(shared: &Shared) {
     .await;
 }
 
-/// Il primo adattatore Bluetooth, se c'è.
+/// The first Bluetooth adapter, if any.
 async fn adapter(bus: &Connection) -> Result<Option<OwnedObjectPath>> {
     let manager = ObjectManagerProxy::builder(bus)
         .destination(BLUEZ)
@@ -280,8 +280,8 @@ pub(super) async fn set_bluetooth_powered(shared: &Shared, powered: bool) -> Res
         .config
         .system_bus
         .as_ref()
-        .ok_or("bus di sistema assente")?;
-    let path = adapter(bus).await?.ok_or("nessun adattatore Bluetooth")?;
+        .ok_or("system bus absent")?;
+    let path = adapter(bus).await?.ok_or("no Bluetooth adapter")?;
     set_prop(
         bus,
         BLUEZ,
@@ -295,7 +295,7 @@ pub(super) async fn set_bluetooth_powered(shared: &Shared, powered: bool) -> Res
     Ok(())
 }
 
-// --- Batteria ----------------------------------------------------------------------
+// --- Battery -----------------------------------------------------------------------
 
 async fn power(shared: &Shared) {
     follow(
@@ -314,13 +314,13 @@ async fn power(shared: &Shared) {
 
 async fn read_battery(bus: &Connection) -> Result<Option<Battery>> {
     let present: bool = prop(bus, UPOWER, UPOWER_DISPLAY, UPOWER_DEVICE, "IsPresent").await?;
-    // Tipo 2: batteria (l'aggregato di UPower su un fisso può essere "linea elettrica").
+    // Type 2: battery (UPower's aggregate on a desktop can be "line power").
     let kind: u32 = prop(bus, UPOWER, UPOWER_DISPLAY, UPOWER_DEVICE, "Type").await?;
     if !present || kind != 2 {
         return Ok(None);
     }
     let percent: f64 = prop(bus, UPOWER, UPOWER_DISPLAY, UPOWER_DEVICE, "Percentage").await?;
-    // Stato: 1 in carica, 4 carica completa, 5 in attesa di carica (collegata).
+    // State: 1 charging, 4 fully charged, 5 pending charge (plugged in).
     let state: u32 = prop(bus, UPOWER, UPOWER_DISPLAY, UPOWER_DEVICE, "State").await?;
     Ok(Some(Battery {
         percent: if percent.is_finite() {
@@ -332,9 +332,9 @@ async fn read_battery(bus: &Connection) -> Result<Option<Battery>> {
     }))
 }
 
-// --- Luminosità e audio ------------------------------------------------------------
+// --- Brightness and audio ----------------------------------------------------------
 
-/// Ogni quante letture del volume si rilegge il nome dell'uscita (cambia di rado).
+/// Every how many volume readings the output name is reread (it rarely changes).
 const NAME_EVERY: u32 = 5;
 
 async fn poll(shared: &Shared) {
@@ -360,7 +360,7 @@ async fn poll(shared: &Shared) {
     }
 }
 
-/// Il volume appena riletto, con il nome dell'uscita già noto.
+/// The volume just reread, with the output name already known.
 fn keep_name(shared: &Shared, audio: Option<Audio>) {
     shared.update(|s| {
         let name = s.audio.as_ref().map(|a| a.name.clone()).unwrap_or_default();
@@ -384,7 +384,7 @@ impl Backlight {
     }
 }
 
-/// La prima retroilluminazione con un massimo valido.
+/// The first backlight with a valid maximum.
 fn read_backlight(root: &Path) -> Option<Backlight> {
     let read =
         |path: PathBuf| -> Option<u64> { std::fs::read_to_string(path).ok()?.trim().parse().ok() };
@@ -407,9 +407,8 @@ fn read_backlight(root: &Path) -> Option<Backlight> {
 }
 
 pub(super) async fn set_brightness(shared: &Shared, fraction: f64) -> Result<()> {
-    let backlight =
-        read_backlight(&shared.config.backlight_dir).ok_or("nessuna retroilluminazione")?;
-    // Mai a zero: uno schermo nero non si riaccende con il cursore che non si vede.
+    let backlight = read_backlight(&shared.config.backlight_dir).ok_or("no backlight")?;
+    // Never zero: a black screen cannot be turned back on with a cursor nobody sees.
     let value = ((fraction * backlight.max as f64).round() as u64).clamp(1, backlight.max);
     let via_logind = match &shared.config.system_bus {
         Some(bus) => {
@@ -428,7 +427,7 @@ pub(super) async fn set_brightness(shared: &Shared, fraction: f64) -> Result<()>
     };
     if !via_logind {
         std::fs::write(backlight.dir.join("brightness"), value.to_string())
-            .map_err(|e| format!("retroilluminazione {}: {e}", backlight.name))?;
+            .map_err(|e| format!("backlight {}: {e}", backlight.name))?;
     }
     let fraction = value as f64 / backlight.max as f64;
     shared.update(|s| s.brightness = Some(fraction));
@@ -450,13 +449,13 @@ pub(super) async fn wpctl(program: &Path, args: &[&str]) -> Result<String> {
     };
     future::or(run, async {
         Timer::after(WPCTL_TIMEOUT).await;
-        Err(format!("{}: nessuna risposta", program.display()))
+        Err(format!("{}: no response", program.display()))
     })
     .await
 }
 
-/// Il nome dell'uscita da `wpctl inspect`: `node.description = "…"`, altrimenti
-/// `node.nick`; al più 128 caratteri.
+/// The output name from `wpctl inspect`: `node.description = "…"`, otherwise
+/// `node.nick`; at most 128 characters.
 fn parse_audio_name(text: &str) -> Option<String> {
     let value = |key: &str| {
         text.lines().find_map(|line| {
@@ -474,7 +473,7 @@ async fn read_audio_name(program: &Path) -> Option<String> {
     parse_audio_name(&wpctl(program, &["inspect", DEFAULT_SINK]).await.ok()?)
 }
 
-/// `Volume: 0.46` o `Volume: 0.46 [MUTED]`.
+/// `Volume: 0.46` or `Volume: 0.46 [MUTED]`.
 fn parse_volume(text: &str) -> Option<Audio> {
     let mut words = text.split_whitespace();
     if words.next()? != "Volume:" {

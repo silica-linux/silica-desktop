@@ -1,12 +1,12 @@
-//! Le interfacce D-Bus delle notifiche.
+//! The D-Bus interfaces of notifications.
 //!
-//! - `org.freedesktop.Notifications` su `/org/freedesktop/Notifications`: la specifica
-//!   freedesktop 1.2, per le app.
-//! - `dev.frascella.Silica.Notifications1` su `/dev/frascella/Silica/Notifications1`: per la
-//!   shell (banner e Centro notifiche).
+//! - `org.freedesktop.Notifications` on `/org/freedesktop/Notifications`: the freedesktop
+//!   specification 1.2, for apps.
+//! - `dev.frascella.Silica.Notifications1` on `/dev/frascella/Silica/Notifications1`: for the
+//!   shell (banners and Notification Center).
 //!
-//! Le due interfacce condividono lo stesso `Store`; ogni cambiamento emette i segnali di
-//! entrambe.
+//! The two interfaces share the same `Store`; every change emits the signals of
+//! both.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -27,38 +27,38 @@ pub const SHELL_NAME: &str = "dev.frascella.Silica";
 pub const SHELL_PATH: &str = "/dev/frascella/Silica/Notifications1";
 pub const SHELL_INTERFACE: &str = "dev.frascella.Silica.Notifications1";
 
-/// Versione della specifica freedesktop implementata.
+/// Version of the freedesktop specification implemented.
 pub const SPEC_VERSION: &str = "1.2";
 
-/// Capacità annunciate da `GetCapabilities`. Niente markup nel corpo: la shell lo mostra
-/// come testo semplice.
+/// Capabilities announced by `GetCapabilities`. No markup in the body: the shell shows it
+/// as plain text.
 pub const CAPABILITIES: &[&str] = &["actions", "body", "icon-static", "persistence"];
 
 #[derive(Clone, Default)]
 struct Shared {
     store: Arc<Mutex<Store>>,
-    /// Sveglia il ciclo delle scadenze quando cambia la prossima scadenza.
+    /// Wakes the expiration loop when the next expiration changes.
     changed: Arc<Event>,
 }
 
 impl Shared {
-    /// Lo stato resta coerente anche se un altro thread è caduto tenendo il lucchetto: ogni
-    /// operazione dello `Store` lo lascia valido.
+    /// The state stays consistent even if another thread panicked holding the lock: every
+    /// `Store` operation leaves it valid.
     fn store(&self) -> MutexGuard<'_, Store> {
         self.store.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
-/// Il daemon delle notifiche su una connessione al bus.
+/// The notification daemon on a bus connection.
 pub struct Daemon {
     connection: Connection,
     shared: Shared,
 }
 
 impl Daemon {
-    /// Pubblica le interfacce su `connection` e prende i nomi `org.freedesktop.Notifications`
-    /// e `dev.frascella.Silica`. Con `replace` sostituisce un proprietario che lo consente;
-    /// altrimenti fallisce se un nome è già preso.
+    /// Publishes the interfaces on `connection` and takes the names `org.freedesktop.Notifications`
+    /// and `dev.frascella.Silica`. With `replace` it replaces an owner that allows it;
+    /// otherwise it fails if a name is already taken.
     pub async fn serve(connection: Connection, replace: bool) -> zbus::Result<Self> {
         let shared = Shared::default();
         let server = connection.object_server();
@@ -97,10 +97,10 @@ impl Daemon {
         &self.connection
     }
 
-    /// Fa scadere le notifiche con un tempo; non ritorna se non per un errore del bus.
+    /// Expires the notifications that have a time; returns only on a bus error.
     pub async fn run(&self) -> zbus::Result<()> {
         loop {
-            // Ascoltare prima di leggere la scadenza: un cambiamento nel mezzo non si perde.
+            // Listen before reading the expiration: a change in between is not lost.
             let listener = self.shared.changed.listen();
             let next = self.shared.store().next_deadline();
             match next {
@@ -174,7 +174,7 @@ impl Notifications {
         Ok(id)
     }
 
-    /// Chiude una notifica; se non esiste più non succede niente.
+    /// Closes a notification; if it no longer exists nothing happens.
     async fn close_notification(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -215,19 +215,19 @@ impl Notifications {
     ) -> zbus::Result<()>;
 }
 
-/// `dev.frascella.Silica.Notifications1`: la vista della shell.
+/// `dev.frascella.Silica.Notifications1`: the shell's view.
 struct ShellNotifications {
     shared: Shared,
 }
 
 #[interface(name = "dev.frascella.Silica.Notifications1")]
 impl ShellNotifications {
-    /// Lo storico, dalla più vecchia alla più recente.
+    /// The history, from the oldest to the most recent.
     fn list(&self) -> Vec<Notification> {
         self.shared.store().list()
     }
 
-    /// L'utente ha chiuso la notifica.
+    /// The user closed the notification.
     async fn dismiss(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -240,7 +240,7 @@ impl ShellNotifications {
         Ok(())
     }
 
-    /// L'utente ha chiuso tutte le notifiche.
+    /// The user closed every notification.
     async fn clear(&self, #[zbus(connection)] connection: &Connection) -> zbus::fdo::Result<()> {
         let ids = self.shared.store().clear();
         for id in ids {
@@ -249,8 +249,8 @@ impl ShellNotifications {
         Ok(())
     }
 
-    /// L'utente ha scelto un'azione (`default` è il clic sulla notifica). Senza l'hint
-    /// `resident` la notifica poi si chiude.
+    /// The user chose an action (`default` is the click on the notification). Without the
+    /// `resident` hint the notification then closes.
     async fn invoke_action(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -264,7 +264,7 @@ impl ShellNotifications {
                 .ok_or_else(|| zbus::fdo::Error::InvalidArgs(format!("notifica {id} assente")))?;
             if !action_keys(notification).any(|key| key == action_key) {
                 return Err(zbus::fdo::Error::InvalidArgs(format!(
-                    "azione «{action_key}» assente nella notifica {id}"
+                    "action «{action_key}» absent in notification {id}"
                 )));
             }
             notification.resident
@@ -277,16 +277,16 @@ impl ShellNotifications {
         Ok(())
     }
 
-    /// Una notifica nuova o sostituita (stesso id).
+    /// A new or replaced notification (same id).
     #[zbus(signal)]
     async fn added(emitter: &SignalEmitter<'_>, notification: Notification) -> zbus::Result<()>;
 
-    /// Una notifica tolta, con il motivo della specifica freedesktop.
+    /// A removed notification, with the freedesktop specification reason.
     #[zbus(signal)]
     async fn removed(emitter: &SignalEmitter<'_>, id: u32, reason: u32) -> zbus::Result<()>;
 }
 
-/// `NotificationClosed` per le app e `Removed` per la shell.
+/// `NotificationClosed` for apps and `Removed` for the shell.
 async fn emit_closed(connection: &Connection, id: u32, reason: CloseReason) -> zbus::Result<()> {
     let reason = reason as u32;
     let fdo = SignalEmitter::new(connection, FDO_PATH)?;
@@ -302,8 +302,8 @@ fn unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Gli hint arrivano con tipi diversi a seconda della libreria del client: `urgency` è un
-/// byte per la specifica, ma c'è chi manda un intero.
+/// Hints arrive with different types depending on the client library: `urgency` is a
+/// byte per the specification, but some send an integer.
 fn hint_int(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<i64> {
     match &**hints.get(key)? {
         Value::U8(v) => Some(i64::from(*v)),

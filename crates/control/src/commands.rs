@@ -1,13 +1,13 @@
-//! Catalogo dei comandi di Silica: la stessa lista per UI, CLI, canale di controllo e MCP.
+//! The catalog of Silica commands: the same list for UI, CLI, control channel and MCP.
 //!
-//! Ogni comando ha id, etichetta, descrizione, scorciatoia facoltativa e lo schema JSON
-//! dei parametri. Chi esegue i comandi (Ossido) deve gestire ogni id del catalogo: un
-//! test in `crates/ossido/tests/` lo verifica.
+//! Every command has an id, a label, a description, an optional shortcut and the JSON schema
+//! of its parameters. Whoever runs the commands (Ossido) must handle every id in the catalog: a
+//! test in `crates/ossido/tests/` checks it.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// Cattura l'output come PNG.
+/// Captures the output as a PNG.
 pub const UI_SCREENSHOT: &str = "ui.screenshot";
 pub const SCREENSHOT_SCREEN: &str = "screenshot.screen";
 pub const APP_FORCE_QUIT: &str = "app.force_quit";
@@ -19,9 +19,9 @@ pub const SCREENSHOT_WINDOW_AT: &str = "screenshot.window_at";
 pub const UI_ANIMATION_SCALE: &str = "ui.animation_scale";
 pub const UI_GLASS_QUALITY: &str = "ui.glass_quality";
 pub const PERF_RENDER: &str = "perf.render";
-/// Elenca il catalogo dei comandi.
+/// Lists the command catalog.
 pub const ENGINE_COMMANDS: &str = "engine.commands";
-/// Esegue un comando del catalogo per id: `{"id": "...", "params": {...}}`.
+/// Runs a catalog command by id: `{"id": "...", "params": {...}}`.
 pub const ENGINE_EXECUTE: &str = "engine.execute";
 pub const WINDOW_LIST: &str = "window.list";
 pub const WINDOW_FOCUS: &str = "window.focus";
@@ -92,12 +92,12 @@ pub const SYSTEM_DARK_TOGGLE: &str = "system.dark_toggle";
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
     pub id: &'static str,
-    /// Etichetta per l'interfaccia (menu, Faro).
+    /// Label for the interface (menus, Faro).
     pub label: &'static str,
     pub description: &'static str,
-    /// Scorciatoia nel formato di [`Shortcut::parse`], per esempio `Logo+Shift+Q`.
+    /// Shortcut in the [`Shortcut::parse`] format, for example `Logo+Shift+Q`.
     pub shortcut: Option<&'static str>,
-    /// Schema JSON dei parametri.
+    /// JSON schema of the parameters.
     pub params: fn() -> Value,
 }
 
@@ -148,7 +148,7 @@ fn window_target() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "id": {"type": "integer", "minimum": 0, "description": "Finestra; senza, quella con il focus"}
+            "id": {"type": "integer", "minimum": 0, "description": "Window; without it, the focused one"}
         },
         "additionalProperties": false
     })
@@ -158,8 +158,8 @@ fn point() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "x": {"type": "number", "description": "Pixel logici dal bordo sinistro dell'output"},
-            "y": {"type": "number", "description": "Pixel logici dal bordo superiore dell'output"},
+            "x": {"type": "number", "description": "Logical pixels from the left edge of the output"},
+            "y": {"type": "number", "description": "Logical pixels from the top edge of the output"},
             "button": {"type": "string", "enum": ["left", "right", "middle"]}
         },
         "required": ["x", "y"],
@@ -170,14 +170,14 @@ fn point() -> Value {
 pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: UI_SCREENSHOT,
-        label: "Istantanea dello schermo",
-        description: "Cattura l'output come PNG, in un file o in base64.",
+        label: "Screenshot",
+        description: "Captures the output as a PNG, into a file or as base64.",
         shortcut: None,
         params: || {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Dove scrivere il PNG; senza, torna in png_base64"}
+                    "path": {"type": "string", "description": "Where to write the PNG; without it, it comes back in png_base64"}
                 },
                 "additionalProperties": false
             })
@@ -185,29 +185,29 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: SCREENSHOT_SCREEN,
-        label: "Istantanea dello schermo",
-        description: "Cattura tutto lo schermo; la miniatura compare in basso a destra e il file va sulla Scrivania.",
+        label: "Screenshot",
+        description: "Captures the whole screen; the thumbnail appears at the bottom right and the file goes to the Desktop.",
         shortcut: Some("Logo+Shift+3"),
         params: no_params,
     },
     CommandSpec {
         id: SCREENSHOT_SELECTION,
-        label: "Istantanea di una parte",
-        description: "Il mirino per scegliere una regione (Spazio: una finestra); componente della shell.",
+        label: "Screenshot of a part",
+        description: "The crosshair to choose a region (Space: a window); shell component.",
         shortcut: Some("Logo+Shift+4"),
         params: no_params,
     },
     CommandSpec {
         id: SCREENSHOT_TOOLBAR,
-        label: "Strumenti per le istantanee",
-        description: "La barra delle istantanee: schermo, finestra o selezione; componente della shell.",
+        label: "Screenshot tools",
+        description: "The screenshot bar: screen, window or selection; shell component.",
         shortcut: Some("Logo+Shift+5"),
         params: no_params,
     },
     CommandSpec {
         id: SCREENSHOT_REGION,
-        label: "Istantanea di una regione",
-        description: "Cattura un rettangolo dello schermo, in punti.",
+        label: "Screenshot of a region",
+        description: "Captures a rectangle of the screen, in points.",
         shortcut: None,
         params: || {
             json!({
@@ -223,8 +223,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: SCREENSHOT_WINDOW_AT,
-        label: "Istantanea di una finestra",
-        description: "Cattura la finestra sotto il punto dato, da sola.",
+        label: "Screenshot of a window",
+        description: "Captures the window under the given point, on its own.",
         shortcut: None,
         params: || {
             json!({
@@ -237,8 +237,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: UI_ANIMATION_SCALE,
-        label: "Velocità delle animazioni",
-        description: "Moltiplica le durate delle animazioni; 0 le spegne (riduci movimento).",
+        label: "Animation speed",
+        description: "Multiplies animation durations; 0 turns them off (reduce motion).",
         shortcut: None,
         params: || {
             json!({
@@ -251,8 +251,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: UI_GLASS_QUALITY,
-        label: "Qualità del vetro",
-        description: "Vetro pieno, smerigliato statico (solo lo sfondo del desktop) o opaco; auto sceglie in base alla GPU.",
+        label: "Glass quality",
+        description: "Full glass, static frosted (desktop background only) or opaque; auto chooses based on the GPU.",
         shortcut: None,
         params: || {
             json!({
@@ -265,8 +265,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: PERF_RENDER,
-        label: "Tempi di rendering",
-        description: "Durata del rendering di Ossido per frame (backend winit): media, percentili, massimo.",
+        label: "Rendering times",
+        description: "Duration of Ossido's rendering per frame (winit backend): mean, percentiles, maximum.",
         shortcut: None,
         params: || {
             json!({
@@ -278,15 +278,15 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: ENGINE_COMMANDS,
-        label: "Elenca i comandi",
-        description: "Restituisce il catalogo dei comandi con parametri e scorciatoie.",
+        label: "List commands",
+        description: "Returns the command catalog with parameters and shortcuts.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: ENGINE_EXECUTE,
-        label: "Esegui comando",
-        description: "Esegue un comando del catalogo per id.",
+        label: "Run command",
+        description: "Runs a catalog command by id.",
         shortcut: None,
         params: || {
             json!({
@@ -302,120 +302,120 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: WINDOW_LIST,
-        label: "Elenca le finestre",
-        description: "Finestre aperte, dall'alto in basso, con titolo, app e geometria.",
+        label: "List windows",
+        description: "Open windows, from top to bottom, with title, app and geometry.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: LAYER_LIST,
-        label: "Elenca i layer",
-        description: "Superfici della shell (wlr-layer-shell): namespace, livello, geometria, zona esclusiva.",
+        label: "List layers",
+        description: "Shell surfaces (wlr-layer-shell): namespace, layer, geometry, exclusive zone.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: LAUNCHER_TOGGLE,
-        label: "App",
-        description: "Apre o chiude il launcher delle app: tutte le app in una griglia per categoria, con le recenti in cima (componente della shell).",
+        label: "Apps",
+        description: "Opens or closes the app launcher: all apps in a grid by category, with the recent ones on top (shell component).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SWITCHER_NEXT,
-        label: "App successiva",
-        description: "Apre il selettore delle app sull'app usata prima, o passa alla successiva; al rilascio del tasto Logo si attiva l'app scelta (componente della shell).",
+        label: "Next app",
+        description: "Opens the app switcher on the previously used app, or moves to the next one; releasing the Logo key activates the chosen app (shell component).",
         shortcut: Some("Logo+Tab"),
         params: no_params,
     },
     CommandSpec {
         id: SWITCHER_PREVIOUS,
-        label: "App precedente",
-        description: "Come switcher.next, all'indietro.",
+        label: "Previous app",
+        description: "Like switcher.next, backwards.",
         shortcut: Some("Logo+Shift+Tab"),
         params: no_params,
     },
     CommandSpec {
         id: SWITCHER_COMMIT,
-        label: "Attiva l'app scelta",
-        description: "Chiude il selettore delle app attivando l'app scelta (il rilascio del tasto Logo).",
+        label: "Activate the chosen app",
+        description: "Closes the app switcher activating the chosen app (releasing the Logo key).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SWITCHER_CANCEL,
-        label: "Annulla il selettore",
-        description: "Chiude il selettore delle app senza cambiare app (Esc).",
+        label: "Cancel the switcher",
+        description: "Closes the app switcher without changing app (Esc).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: FARO_TOGGLE,
         label: "Faro",
-        description: "Apre o chiude Faro, la ricerca delle app (componente della shell).",
+        description: "Opens or closes Faro, the app search (shell component).",
         shortcut: Some("Logo+space"),
         params: no_params,
     },
     CommandSpec {
         id: NOTIFICATIONS_TOGGLE,
-        label: "Centro notifiche",
-        description: "Apre o chiude il Centro notifiche (componente della shell; clic sull'orologio).",
+        label: "Notification Center",
+        description: "Opens or closes the Notification Center (shell component; click on the clock).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: CONTROLCENTER_TOGGLE,
-        label: "Centro di controllo",
-        description: "Apre o chiude il Centro di controllo (componente della shell; icona nella barra).",
+        label: "Control Center",
+        description: "Opens or closes the Control Center (shell component; icon in the bar).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SPACE_LIST,
-        label: "Elenca gli spazi",
-        description: "Gli spazi di lavoro: quale è attivo e gli id delle finestre di ciascuno.",
+        label: "List spaces",
+        description: "The workspaces: which one is active and the window ids of each.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SPACE_NEXT,
-        label: "Spazio successivo",
-        description: "Passa allo spazio a destra (oltre l'ultimo non fa niente).",
+        label: "Next space",
+        description: "Moves to the space on the right (does nothing past the last one).",
         shortcut: Some("Ctrl+Right"),
         params: no_params,
     },
     CommandSpec {
         id: SPACE_PREVIOUS,
-        label: "Spazio precedente",
-        description: "Passa allo spazio a sinistra (prima del primo non fa niente).",
+        label: "Previous space",
+        description: "Moves to the space on the left (does nothing before the first one).",
         shortcut: Some("Ctrl+Left"),
         params: no_params,
     },
     CommandSpec {
         id: SPACE_GOTO,
-        label: "Vai allo spazio",
-        description: "Passa allo spazio `index` (da 0).",
+        label: "Go to space",
+        description: "Moves to space `index` (from 0).",
         shortcut: None,
         params: index_param,
     },
     CommandSpec {
         id: SPACE_ADD,
-        label: "Nuovo spazio",
-        description: "Aggiunge uno spazio vuoto in fondo; restituisce il suo indice.",
+        label: "New space",
+        description: "Adds an empty space at the end; returns its index.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SPACE_REMOVE,
-        label: "Togli lo spazio",
-        description: "Toglie lo spazio `index`; le sue finestre passano a quello prima.",
+        label: "Remove space",
+        description: "Removes space `index`; its windows move to the previous one.",
         shortcut: None,
         params: index_param,
     },
     CommandSpec {
         id: WINDOW_MOVE_TO_SPACE,
-        label: "Sposta nello spazio",
-        description: "Sposta la finestra `id` (o quella con il focus) nello spazio `index`.",
+        label: "Move to space",
+        description: "Moves window `id` (or the focused one) to space `index`.",
         shortcut: None,
         params: || {
             json!({
@@ -432,203 +432,203 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: PANORAMA_TOGGLE,
         label: "Panorama",
-        description: "Mostra tutte le finestre dello spazio una accanto all'altra con la barra degli spazi in alto; se è aperto lo chiude.",
+        description: "Shows all the windows of the space side by side with the spaces bar at the top; if open, closes it.",
         shortcut: Some("Ctrl+Up"),
         params: no_params,
     },
     CommandSpec {
         id: PANORAMA_APP,
-        label: "Finestre dell'app",
-        description: "Mostra le finestre dell'app in primo piano al centro, con il titolo sotto; se è già aperto lo chiude.",
+        label: "App windows",
+        description: "Shows the windows of the frontmost app in the middle, with the title below; if already open, closes it.",
         shortcut: Some("Ctrl+Down"),
         params: no_params,
     },
     CommandSpec {
         id: DESKTOP_SHOW,
-        label: "Mostra la scrivania",
-        description: "Sposta le finestre fuori dallo schermo per mostrare la scrivania; di nuovo (o un clic) le rimette al loro posto.",
+        label: "Show desktop",
+        description: "Moves the windows off screen to show the desktop; again (or a click) puts them back.",
         shortcut: Some("F11"),
         params: no_params,
     },
     CommandSpec {
         id: PANORAMA_SPACES_BAR,
-        label: "Barra degli spazi",
-        description: "Con Panorama aperto, espande (`enabled`) o richiude la barra degli spazi con le miniature, come il puntatore in alto.",
+        label: "Spaces bar",
+        description: "With Panorama open, expands (`enabled`) or collapses the spaces bar with the thumbnails, like the pointer at the top.",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: PANORAMA_STATE,
-        label: "Stato di Panorama",
-        description: "Se Panorama è aperto, l'avanzamento dell'animazione (0–1) e le cornici disposte delle finestre.",
+        label: "Panorama state",
+        description: "Whether Panorama is open, the animation progress (0–1) and the arranged window frames.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_STATUS,
-        label: "Stato del sistema",
-        description: "Wi-Fi, Bluetooth, batteria, luminosità, volume e Non disturbare, da silica-daemon (chiavi di dev.frascella.Silica.System1).",
+        label: "System state",
+        description: "Wi-Fi, Bluetooth, battery, brightness, volume and Do Not Disturb, from silica-daemon (keys of dev.frascella.Silica.System1).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_WIFI,
         label: "Wi-Fi",
-        description: "Accende o spegne il Wi-Fi.",
+        description: "Turns Wi-Fi on or off.",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: SYSTEM_BLUETOOTH,
         label: "Bluetooth",
-        description: "Accende o spegne il Bluetooth.",
+        description: "Turns Bluetooth on or off.",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: SYSTEM_VOLUME,
         label: "Volume",
-        description: "Volume dell'uscita predefinita, da 0 a 1.",
+        description: "Volume of the default output, from 0 to 1.",
         shortcut: None,
         params: value_param,
     },
     CommandSpec {
         id: SYSTEM_VOLUME_UP,
-        label: "Alza il volume",
-        description: "Alza il volume di un sedicesimo (toglie il muto).",
+        label: "Volume up",
+        description: "Raises the volume by one sixteenth (unmutes).",
         shortcut: Some("XF86AudioRaiseVolume"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_VOLUME_DOWN,
-        label: "Abbassa il volume",
-        description: "Abbassa il volume di un sedicesimo.",
+        label: "Volume down",
+        description: "Lowers the volume by one sixteenth.",
         shortcut: Some("XF86AudioLowerVolume"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_VOLUME_UP_FINE,
-        label: "Alza il volume di poco",
-        description: "Alza il volume di un quarto di passo (1/64).",
+        label: "Volume up slightly",
+        description: "Raises the volume by a quarter step (1/64).",
         shortcut: Some("Alt+Shift+XF86AudioRaiseVolume"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_VOLUME_DOWN_FINE,
-        label: "Abbassa il volume di poco",
-        description: "Abbassa il volume di un quarto di passo (1/64).",
+        label: "Volume down slightly",
+        description: "Lowers the volume by a quarter step (1/64).",
         shortcut: Some("Alt+Shift+XF86AudioLowerVolume"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_MUTE,
-        label: "Muto",
-        description: "Toglie o rimette l'audio dell'uscita predefinita.",
+        label: "Mute",
+        description: "Mutes or unmutes the default output.",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: SYSTEM_MUTE_TOGGLE,
-        label: "Muto sì/no",
-        description: "Inverte il muto dell'uscita predefinita.",
+        label: "Toggle mute",
+        description: "Toggles mute on the default output.",
         shortcut: Some("XF86AudioMute"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_BRIGHTNESS,
-        label: "Luminosità",
-        description: "Luminosità dello schermo, da 0 a 1 (mai spento del tutto).",
+        label: "Brightness",
+        description: "Screen brightness, from 0 to 1 (never fully off).",
         shortcut: None,
         params: value_param,
     },
     CommandSpec {
         id: SYSTEM_BRIGHTNESS_UP,
-        label: "Aumenta la luminosità",
-        description: "Aumenta la luminosità di un sedicesimo.",
+        label: "Brightness up",
+        description: "Raises the brightness by one sixteenth.",
         shortcut: Some("XF86MonBrightnessUp"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_BRIGHTNESS_DOWN,
-        label: "Diminuisci la luminosità",
-        description: "Diminuisce la luminosità di un sedicesimo.",
+        label: "Brightness down",
+        description: "Lowers the brightness by one sixteenth.",
         shortcut: Some("XF86MonBrightnessDown"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_BRIGHTNESS_UP_FINE,
-        label: "Aumenta la luminosità di poco",
-        description: "Aumenta la luminosità di un quarto di passo (1/64).",
+        label: "Brightness up slightly",
+        description: "Raises the brightness by a quarter step (1/64).",
         shortcut: Some("Alt+Shift+XF86MonBrightnessUp"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_BRIGHTNESS_DOWN_FINE,
-        label: "Diminuisci la luminosità di poco",
-        description: "Diminuisce la luminosità di un quarto di passo (1/64).",
+        label: "Brightness down slightly",
+        description: "Lowers the brightness by a quarter step (1/64).",
         shortcut: Some("Alt+Shift+XF86MonBrightnessDown"),
         params: no_params,
     },
     CommandSpec {
         id: SYSTEM_DND,
-        label: "Non disturbare",
-        description: "Con Non disturbare attivo le notifiche arrivano nel Centro senza banner.",
+        label: "Do Not Disturb",
+        description: "With Do Not Disturb on, notifications arrive in the Center without a banner.",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: SYSTEM_DARK,
-        label: "Aspetto scuro",
-        description: "Aspetto scuro o chiaro per tutto il sistema: Ossido, la shell e le app (portale Settings).",
+        label: "Dark appearance",
+        description: "Dark or light appearance for the whole system: Ossido, the shell and the apps (Settings portal).",
         shortcut: None,
         params: enabled_param,
     },
     CommandSpec {
         id: SYSTEM_DARK_TOGGLE,
-        label: "Cambia aspetto",
-        description: "Passa dall'aspetto chiaro a quello scuro e viceversa.",
+        label: "Toggle appearance",
+        description: "Switches from the light appearance to the dark one and back.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: GLASS_LIST,
-        label: "Elenca il vetro",
-        description: "Superfici con regioni di vetro (silica-glass-v1): superficie, origine e regioni.",
+        label: "List glass",
+        description: "Surfaces with glass regions (silica-glass-v1): surface, origin and regions.",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: WINDOW_FOCUS,
-        label: "Porta in primo piano",
-        description: "Dà il focus a una finestra e la porta sopra le altre; se è ridotta la riporta.",
+        label: "Bring to front",
+        description: "Gives the focus to a window and brings it above the others; if minimized, restores it.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_CLOSE,
-        label: "Chiudi finestra",
-        description: "Chiede alla finestra di chiudersi.",
+        label: "Close window",
+        description: "Asks the window to close.",
         shortcut: Some("Logo+W"),
         params: window_target,
     },
     CommandSpec {
         id: APP_QUIT,
-        label: "Esci dall'app",
-        description: "Chiede a tutte le finestre dell'app in primo piano (stesso app_id) di chiudersi.",
+        label: "Quit app",
+        description: "Asks every window of the frontmost app (same app_id) to close.",
         shortcut: Some("Logo+Q"),
         params: no_params,
     },
     CommandSpec {
         id: APP_FORCE_QUIT_PANEL,
-        label: "Uscita forzata",
-        description: "Il pannello per terminare un'app che non risponde (componente della shell).",
+        label: "Force quit",
+        description: "The panel to terminate an app that does not respond (shell component).",
         shortcut: Some("Logo+Alt+Escape"),
         params: no_params,
     },
     CommandSpec {
         id: APP_FORCE_QUIT,
-        label: "Termina un'app",
-        description: "Termina subito i processi delle finestre di un'app (app_id), senza chiedere.",
+        label: "Terminate an app",
+        description: "Terminates the processes of an app's windows (app_id) right away, without asking.",
         shortcut: None,
         params: || {
             json!({
@@ -641,78 +641,78 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: WINDOW_MINIMIZE,
-        label: "Riduci finestra",
-        description: "Nasconde la finestra; window.focus la riporta.",
+        label: "Minimize window",
+        description: "Hides the window; window.focus brings it back.",
         shortcut: Some("Logo+M"),
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_FULLSCREEN,
-        label: "Schermo intero",
-        description: "Porta la finestra a schermo intero, o la riporta com'era.",
+        label: "Full screen",
+        description: "Makes the window full screen, or brings it back as it was.",
         shortcut: Some("Logo+Ctrl+F"),
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_TILE_LEFT,
-        label: "Metà sinistra",
-        description: "Porta la finestra nella metà sinistra dello schermo.",
+        label: "Left half",
+        description: "Moves the window to the left half of the screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_TILE_RIGHT,
-        label: "Metà destra",
-        description: "Porta la finestra nella metà destra dello schermo.",
+        label: "Right half",
+        description: "Moves the window to the right half of the screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_TILE_TOP,
-        label: "Metà alta",
-        description: "Porta la finestra nella metà alta dello schermo.",
+        label: "Top half",
+        description: "Moves the window to the top half of the screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_TILE_BOTTOM,
-        label: "Metà bassa",
-        description: "Porta la finestra nella metà bassa dello schermo.",
+        label: "Bottom half",
+        description: "Moves the window to the bottom half of the screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_TILE_FILL,
-        label: "Riempi",
-        description: "La finestra riempie lo schermo, senza schermo intero.",
+        label: "Fill",
+        description: "The window fills the screen, without full screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_ARRANGE_2,
-        label: "Disponi due finestre",
-        description: "La finestra a sinistra e l'ultima usata a destra.",
+        label: "Arrange two windows",
+        description: "The window on the left and the last used one on the right.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_ARRANGE_3,
-        label: "Disponi tre finestre",
-        description: "La finestra a sinistra e le due ultime usate impilate a destra.",
+        label: "Arrange three windows",
+        description: "The window on the left and the two last used ones stacked on the right.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_ARRANGE_4,
-        label: "Disponi quattro finestre",
-        description: "La finestra e le tre ultime usate nei quarti dello schermo.",
+        label: "Arrange four windows",
+        description: "The window and the three last used ones in the quarters of the screen.",
         shortcut: None,
         params: window_target,
     },
     CommandSpec {
         id: WINDOW_MOVE,
-        label: "Sposta finestra",
-        description: "Sposta una finestra alla posizione data, in pixel logici.",
+        label: "Move window",
+        description: "Moves a window to the given position, in logical pixels.",
         shortcut: None,
         params: || {
             json!({
@@ -729,15 +729,15 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: APP_LAUNCH,
-        label: "Apri app",
-        description: "Avvia un comando come client di questa sessione.",
+        label: "Open app",
+        description: "Starts a command as a client of this session.",
         shortcut: None,
         params: || {
             json!({
                 "type": "object",
                 "properties": {
                     "command": {"type": "string"},
-                    "shell": {"type": "boolean", "description": "Componente della shell (vede silica-shell-v1)"}
+                    "shell": {"type": "boolean", "description": "Shell component (sees silica-shell-v1)"}
                 },
                 "required": ["command"],
                 "additionalProperties": false
@@ -746,15 +746,15 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: SESSION_QUIT,
-        label: "Esci dalla sessione",
-        description: "Chiude Ossido e tutte le finestre.",
+        label: "Quit the session",
+        description: "Closes Ossido and every window.",
         shortcut: Some("Logo+Shift+Q"),
         params: no_params,
     },
     CommandSpec {
         id: INPUT_POINTER_MOVE,
-        label: "Muovi il puntatore",
-        description: "Porta il puntatore in un punto dell'output, come un mouse vero.",
+        label: "Move the pointer",
+        description: "Moves the pointer to a point of the output, like a real mouse.",
         shortcut: None,
         params: || {
             json!({
@@ -767,8 +767,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: INPUT_POINTER_BUTTON,
-        label: "Premi o rilascia un pulsante",
-        description: "Preme o rilascia un pulsante del mouse dove si trova il puntatore.",
+        label: "Press or release a button",
+        description: "Presses or releases a mouse button where the pointer is.",
         shortcut: None,
         params: || {
             json!({
@@ -784,15 +784,15 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: INPUT_CLICK,
-        label: "Clic",
-        description: "Muove il puntatore in un punto e fa clic (pulsante sinistro se non indicato).",
+        label: "Click",
+        description: "Moves the pointer to a point and clicks (left button if not given).",
         shortcut: None,
         params: point,
     },
     CommandSpec {
         id: INPUT_KEY,
-        label: "Premi un tasto",
-        description: "Preme e rilascia un tasto per nome xkb (Return, BackSpace, Escape, Left...) o carattere; con pressed solo pressione o rilascio.",
+        label: "Press a key",
+        description: "Presses and releases a key by xkb name (Return, BackSpace, Escape, Left...) or character; with pressed only the press or the release.",
         shortcut: None,
         params: || {
             json!({
@@ -808,8 +808,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: INPUT_GESTURE,
-        label: "Gesto del trackpad",
-        description: "Un gesto a più dita: `kind` swipe o pinch, `fingers`, `phase` begin, update o end (senza phase il gesto intero in una chiamata), `dx` e `dy` (scorrimento, punti), `scale` (pizzico, assoluta), `cancelled`. Alla fine restituisce `command`, il comando eseguito: tre o quattro dita a sinistra o a destra cambiano spazio, in alto Panorama, in basso le finestre dell'app; pollice e tre dita allargando la scrivania, stringendo il launcher.",
+        label: "Trackpad gesture",
+        description: "A multi-finger gesture: `kind` swipe or pinch, `fingers`, `phase` begin, update or end (without phase the whole gesture in one call), `dx` and `dy` (scroll, points), `scale` (pinch, absolute), `cancelled`. At the end it returns `command`, the command it ran: three or four fingers left or right change space, up Panorama, down the app windows; thumb and three fingers spreading the desktop, pinching the launcher.",
         shortcut: None,
         params: || {
             json!({
@@ -830,8 +830,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: INPUT_TYPE,
-        label: "Scrivi testo",
-        description: "Scrive un testo tasto per tasto nella finestra con il focus.",
+        label: "Type text",
+        description: "Types a text key by key into the focused window.",
         shortcut: None,
         params: || {
             json!({
@@ -844,8 +844,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: PERF_FRAMES,
-        label: "Misura i frame",
-        description: "Per ogni superficie con buffer: frame ricevuti, intervalli fra i commit (media, p50, p95, p99, massimo), frame lenti (oltre 1,5 periodi di refresh) e tempo dall'avvio al primo buffer. Con reset azzera le misure dopo averle restituite.",
+        label: "Measure frames",
+        description: "For every surface with a buffer: frames received, intervals between commits (mean, p50, p95, p99, maximum), slow frames (over 1.5 refresh periods) and time from start to the first buffer. With reset it clears the measurements after returning them.",
         shortcut: None,
         params: || {
             json!({
@@ -857,8 +857,8 @@ pub const CATALOG: &[CommandSpec] = &[
     },
     CommandSpec {
         id: PERF_PROCESS,
-        label: "Misura un processo",
-        description: "Memoria di un processo client (RSS e PSS da /proc, in KiB).",
+        label: "Measure a process",
+        description: "Memory of a client process (RSS and PSS from /proc, in KiB).",
         shortcut: None,
         params: || {
             json!({
@@ -879,7 +879,7 @@ pub fn catalog_json() -> Value {
     Value::Array(CATALOG.iter().map(CommandSpec::to_json).collect())
 }
 
-/// Parametri di [`ENGINE_EXECUTE`].
+/// Parameters of [`ENGINE_EXECUTE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecuteParams {
@@ -888,7 +888,7 @@ pub struct ExecuteParams {
     pub params: Value,
 }
 
-/// Parametri dei comandi che agiscono su una finestra.
+/// Parameters of the commands that act on a window.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WindowTarget {
@@ -909,7 +909,7 @@ pub struct WindowMove {
 #[serde(deny_unknown_fields)]
 pub struct AppLaunch {
     pub command: String,
-    /// Un componente della shell: vede i protocolli della shell.
+    /// A shell component: sees the shell protocols.
     #[serde(default)]
     pub shell: bool,
 }
@@ -924,7 +924,7 @@ pub enum MouseButton {
 }
 
 impl MouseButton {
-    /// Codice evdev del pulsante (linux/input-event-codes.h).
+    /// evdev code of the button (linux/input-event-codes.h).
     pub fn code(self) -> u32 {
         match self {
             MouseButton::Left => 0x110,
@@ -962,7 +962,7 @@ pub struct Click {
 #[serde(deny_unknown_fields)]
 pub struct Key {
     pub key: String,
-    /// Assente: pressione e rilascio.
+    /// Absent: press and release.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pressed: Option<bool>,
 }
@@ -973,7 +973,7 @@ pub struct TypeText {
     pub text: String,
 }
 
-/// Parametri di [`PERF_FRAMES`].
+/// Parameters of [`PERF_FRAMES`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PerfFramesParams {
@@ -981,34 +981,34 @@ pub struct PerfFramesParams {
     pub reset: bool,
 }
 
-/// Le misure di una superficie in [`PERF_FRAMES`]. Tempi in millisecondi.
+/// The measurements of a surface in [`PERF_FRAMES`]. Times in milliseconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SurfaceFrames {
-    /// `window <id>`, `layer <namespace>` o `surface` per le altre.
+    /// `window <id>`, `layer <namespace>` or `surface` for the others.
     pub surface: String,
     pub pid: Option<u32>,
-    /// Commit con un buffer nuovo dall'ultimo reset.
+    /// Commits with a new buffer since the last reset.
     pub frames: u64,
     pub mean_ms: f64,
     pub p50_ms: f64,
     pub p95_ms: f64,
     pub p99_ms: f64,
     pub max_ms: f64,
-    /// Intervalli oltre 1,5 periodi di refresh dell'output.
+    /// Intervals over 1.5 refresh periods of the output.
     pub slow: u64,
     pub period_ms: f64,
-    /// Dal lancio con `app.launch` (o `--spawn`) al primo buffer, se lanciato da Ossido.
+    /// From the launch with `app.launch` (or `--spawn`) to the first buffer, if launched by Ossido.
     pub startup_ms: Option<f64>,
 }
 
-/// Parametri di [`PERF_PROCESS`].
+/// Parameters of [`PERF_PROCESS`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PerfProcessParams {
     pub pid: u32,
 }
 
-/// Il risultato di [`PERF_PROCESS`].
+/// The result of [`PERF_PROCESS`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProcessInfo {
     pub pid: u32,
@@ -1016,11 +1016,11 @@ pub struct ProcessInfo {
     pub pss_kib: u64,
 }
 
-/// Un layer in [`LAYER_LIST`].
+/// A layer in [`LAYER_LIST`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayerInfo {
     pub namespace: String,
-    /// `background`, `bottom`, `top` o `overlay`.
+    /// `background`, `bottom`, `top` or `overlay`.
     pub layer: String,
     pub x: i32,
     pub y: i32,
@@ -1030,7 +1030,7 @@ pub struct LayerInfo {
     pub focused: bool,
 }
 
-/// Una finestra in [`WINDOW_LIST`].
+/// A window in [`WINDOW_LIST`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowInfo {
     pub id: u64,
@@ -1041,37 +1041,37 @@ pub struct WindowInfo {
     pub width: i32,
     pub height: i32,
     pub focused: bool,
-    /// Ridotta: non è sullo schermo, window.focus la riporta.
+    /// Minimized: not on screen, window.focus brings it back.
     #[serde(default)]
     pub minimized: bool,
-    /// A schermo intero.
+    /// Full screen.
     #[serde(default)]
     pub fullscreen: bool,
-    /// Lo spazio di lavoro della finestra (da 0).
+    /// The workspace of the window (from 0).
     #[serde(default)]
     pub space: usize,
 }
 
-/// Una scorciatoia da tastiera: modificatori più il nome del keysym xkb.
+/// A keyboard shortcut: modifiers plus the name of the xkb keysym.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Shortcut {
     pub logo: bool,
     pub ctrl: bool,
     pub alt: bool,
     pub shift: bool,
-    /// Nome del keysym senza modificatori, confrontato senza badare alle maiuscole.
+    /// Keysym name without modifiers, compared case-insensitively.
     pub key: String,
 }
 
 impl Shortcut {
-    /// Legge `Logo+Shift+Q`: modificatori (`Logo`, `Ctrl`, `Alt`, `Shift`) e un tasto finale.
+    /// Reads `Logo+Shift+Q`: modifiers (`Logo`, `Ctrl`, `Alt`, `Shift`) and a final key.
     pub fn parse(text: &str) -> Result<Self, String> {
         let mut shortcut = Shortcut::default();
         let mut parts = text.split('+').map(str::trim).peekable();
         while let Some(part) = parts.next() {
             if parts.peek().is_none() {
                 if part.is_empty() {
-                    return Err(format!("scorciatoia senza tasto: {text}"));
+                    return Err(format!("shortcut without a key: {text}"));
                 }
                 shortcut.key = part.to_owned();
                 return Ok(shortcut);
@@ -1081,11 +1081,11 @@ impl Shortcut {
                 "ctrl" | "control" => &mut shortcut.ctrl,
                 "alt" => &mut shortcut.alt,
                 "shift" => &mut shortcut.shift,
-                other => return Err(format!("modificatore sconosciuto: {other}")),
+                other => return Err(format!("unknown modifier: {other}")),
             };
             *flag = true;
         }
-        Err(format!("scorciatoia vuota: {text:?}"))
+        Err(format!("empty shortcut: {text:?}"))
     }
 
     pub fn matches(&self, logo: bool, ctrl: bool, alt: bool, shift: bool, key: &str) -> bool {
@@ -1150,21 +1150,21 @@ mod tests {
     }
 }
 
-/// Parametri di [`UI_ANIMATION_SCALE`].
+/// Parameters of [`UI_ANIMATION_SCALE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnimationScale {
     pub scale: f64,
 }
 
-/// Parametri di [`SPACE_GOTO`] e [`SPACE_REMOVE`].
+/// Parameters of [`SPACE_GOTO`] and [`SPACE_REMOVE`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexParams {
     pub index: usize,
 }
 
-/// Parametri di [`WINDOW_MOVE_TO_SPACE`].
+/// Parameters of [`WINDOW_MOVE_TO_SPACE`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MoveToSpaceParams {
@@ -1173,7 +1173,7 @@ pub struct MoveToSpaceParams {
     pub index: usize,
 }
 
-/// Una finestra disposta in [`PANORAMA_STATE`] (punti logici).
+/// A window arranged in [`PANORAMA_STATE`] (logical points).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PanoramaWindow {
     pub id: u64,
@@ -1183,7 +1183,7 @@ pub struct PanoramaWindow {
     pub height: f64,
 }
 
-/// Un rettangolo in punti logici.
+/// A rectangle in logical points.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PanoramaRect {
     pub x: f64,
@@ -1192,22 +1192,22 @@ pub struct PanoramaRect {
     pub height: f64,
 }
 
-/// Risposta di [`PANORAMA_STATE`].
+/// Response of [`PANORAMA_STATE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PanoramaState {
-    /// `panorama`, `app` (App Exposé) o `desktop` (Mostra scrivania); assente se chiuso.
+    /// `panorama`, `app` (App Exposé) or `desktop` (Show Desktop); absent when closed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     pub open: bool,
     pub progress: f64,
     pub windows: Vec<PanoramaWindow>,
-    /// Espansione della barra degli spazi (0 compatta, 1 espansa).
+    /// Expansion of the spaces bar (0 compact, 1 expanded).
     pub expansion: f64,
-    /// Le miniature degli spazi, quando si vedono.
+    /// The space thumbnails, when visible.
     pub thumbnails: Vec<PanoramaRect>,
 }
 
-/// Parametri di [`INPUT_GESTURE`].
+/// Parameters of [`INPUT_GESTURE`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GestureParams {
@@ -1225,37 +1225,37 @@ pub struct GestureParams {
     pub cancelled: bool,
 }
 
-/// Uno spazio in [`SPACE_LIST`].
+/// A space in [`SPACE_LIST`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpaceInfo {
     pub index: usize,
     pub active: bool,
-    /// Id delle finestre, dal basso verso l'alto.
+    /// Window ids, from bottom to top.
     pub windows: Vec<u64>,
 }
 
-/// Parametri di [`SYSTEM_WIFI`], [`SYSTEM_BLUETOOTH`], [`SYSTEM_MUTE`], [`SYSTEM_DND`].
+/// Parameters of [`SYSTEM_WIFI`], [`SYSTEM_BLUETOOTH`], [`SYSTEM_MUTE`], [`SYSTEM_DND`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnabledParams {
     pub enabled: bool,
 }
 
-/// Parametri di [`SYSTEM_VOLUME`] e [`SYSTEM_BRIGHTNESS`], da 0 a 1.
+/// Parameters of [`SYSTEM_VOLUME`] and [`SYSTEM_BRIGHTNESS`], from 0 to 1.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValueParams {
     pub value: f64,
 }
 
-/// Parametri di [`UI_GLASS_QUALITY`]: `auto`, `full`, `frosted`, `opaque`.
+/// Parameters of [`UI_GLASS_QUALITY`]: `auto`, `full`, `frosted`, `opaque`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GlassQualityParams {
     pub quality: String,
 }
 
-/// Risultato di [`PERF_RENDER`]: il tempo del rendering di Ossido per frame, in ms.
+/// Result of [`PERF_RENDER`]: Ossido's rendering time per frame, in ms.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RenderTimes {
     pub frames: u64,
@@ -1266,7 +1266,7 @@ pub struct RenderTimes {
     pub max_ms: f64,
 }
 
-/// Parametri di [`PERF_RENDER`].
+/// Parameters of [`PERF_RENDER`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PerfRenderParams {

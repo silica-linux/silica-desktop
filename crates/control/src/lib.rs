@@ -1,7 +1,7 @@
-//! Canale di controllo JSON di Silica.
+//! Silica's JSON control channel.
 //!
-//! Il protocollo è una riga JSON per messaggio su TCP locale: il client manda una
-//! [`Request`], il server risponde con una [`Response`] che porta lo stesso `id`.
+//! The protocol is one JSON line per message over local TCP: the client sends a
+//! [`Request`], the server answers with a [`Response`] carrying the same `id`.
 //!
 //! ```text
 //! → {"id":1,"command":"ui.screenshot","params":{"path":"/tmp/shot.png"}}
@@ -20,7 +20,7 @@ pub mod mcp;
 
 pub use commands::{CATALOG, CommandSpec, Shortcut, UI_SCREENSHOT};
 
-/// Lunghezza massima di una richiesta: oltre, il server chiude la connessione.
+/// Maximum length of a request: beyond it, the server closes the connection.
 pub const MAX_REQUEST_BYTES: usize = 1 << 20;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,12 +64,12 @@ impl Response {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScreenshotParams {
-    /// Dove scrivere il PNG. Senza, il PNG torna in base64 in `png_base64`.
+    /// Where to write the PNG. Without it, the PNG comes back as base64 in `png_base64`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 }
 
-/// Una regione dello schermo in punti logici (`screenshot.region`).
+/// A region of the screen in logical points (`screenshot.region`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegionParams {
@@ -79,14 +79,14 @@ pub struct RegionParams {
     pub height: f64,
 }
 
-/// Un'app per app_id (`app.force_quit`).
+/// An app by app_id (`app.force_quit`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AppParams {
     pub app_id: String,
 }
 
-/// Un punto dello schermo in punti logici (`screenshot.window_at`).
+/// A point of the screen in logical points (`screenshot.window_at`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PointParams {
@@ -104,15 +104,15 @@ pub struct Screenshot {
     pub png_base64: Option<String>,
 }
 
-/// Divide un flusso di byte in righe complete.
+/// Splits a byte stream into complete lines.
 #[derive(Debug, Default)]
 pub struct LineBuffer {
     pending: Vec<u8>,
 }
 
 impl LineBuffer {
-    /// Aggiunge byte letti dal socket e restituisce le righe complete.
-    /// Errore se una riga supera [`MAX_REQUEST_BYTES`].
+    /// Adds bytes read from the socket and returns the complete lines.
+    /// Error if a line exceeds [`MAX_REQUEST_BYTES`].
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>, String> {
         self.pending.extend_from_slice(bytes);
         let mut lines = Vec::new();
@@ -124,7 +124,7 @@ impl LineBuffer {
             }
         }
         if self.pending.len() > MAX_REQUEST_BYTES {
-            return Err(format!("richiesta oltre {MAX_REQUEST_BYTES} byte"));
+            return Err(format!("request over {MAX_REQUEST_BYTES} bytes"));
         }
         Ok(lines)
     }
@@ -134,9 +134,9 @@ impl LineBuffer {
 pub enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
-    /// Il server ha risposto con `ok: false`.
+    /// The server answered with `ok: false`.
     Command(String),
-    /// La connessione si è chiusa o la risposta non corrisponde alla richiesta.
+    /// The connection closed or the response does not match the request.
     Protocol(String),
 }
 
@@ -145,7 +145,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::Io(err) => write!(f, "I/O: {err}"),
             Error::Json(err) => write!(f, "JSON: {err}"),
-            Error::Command(err) => write!(f, "comando fallito: {err}"),
+            Error::Command(err) => write!(f, "command failed: {err}"),
             Error::Protocol(err) => write!(f, "protocollo: {err}"),
         }
     }
@@ -165,7 +165,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-/// Client sincrono del canale di controllo, per test, CLI e agenti.
+/// Synchronous client of the control channel, for tests, CLI and agents.
 pub struct Client {
     reader: BufReader<TcpStream>,
     writer: TcpStream,
@@ -184,7 +184,7 @@ impl Client {
         })
     }
 
-    /// Manda un comando e aspetta la risposta.
+    /// Sends a command and waits for the response.
     pub fn call(&mut self, command: &str, params: Value) -> Result<Value, Error> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
@@ -199,12 +199,14 @@ impl Client {
 
         let mut reply = String::new();
         if self.reader.read_line(&mut reply)? == 0 {
-            return Err(Error::Protocol("connessione chiusa dal server".to_owned()));
+            return Err(Error::Protocol(
+                "connection closed by the server".to_owned(),
+            ));
         }
         let response: Response = serde_json::from_str(&reply)?;
         if response.id != id {
             return Err(Error::Protocol(format!(
-                "risposta {} per la richiesta {id}",
+                "response {} for request {id}",
                 response.id
             )));
         }

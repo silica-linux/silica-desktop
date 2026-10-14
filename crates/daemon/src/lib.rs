@@ -1,8 +1,8 @@
-//! Servizi di sistema di Silica (D-Bus).
+//! Silica system services (D-Bus).
 //!
-//! Le notifiche (il server `org.freedesktop.Notifications` per le app e l'interfaccia
-//! `dev.frascella.Silica.Notifications1` per la shell) e lo stato del sistema per il Centro
-//! di controllo (`dev.frascella.Silica.System1`). `docs/daemon.md`.
+//! Notifications (the `org.freedesktop.Notifications` server for apps and the
+//! `dev.frascella.Silica.Notifications1` interface for the shell) and the system state for the
+//! Control Center (`dev.frascella.Silica.System1`). See `docs/daemon.md`.
 
 pub mod notifications;
 pub mod server;

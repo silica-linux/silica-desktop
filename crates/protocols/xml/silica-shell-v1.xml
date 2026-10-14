@@ -6,82 +6,82 @@
     Licensed under MIT OR Apache-2.0.
   </copyright>
 
-  <description summary="comandi della shell verso Ossido">
-    Riservato ai componenti della shell di Silica (Dock, barra dei menu, Faro): il global
-    è visibile solo a loro. Le finestre si elencano con ext-foreign-toplevel-list-v1;
-    questo protocollo aggiunge quello che la shell chiede al compositor.
+  <description summary="shell commands to Ossido">
+    Reserved to the Silica shell components (Dock, menu bar, Faro): the global is visible
+    only to them. Windows are listed with ext-foreign-toplevel-list-v1; this protocol adds
+    what the shell asks of the compositor.
   </description>
 
   <interface name="silica_shell_manager_v1" version="5">
     <request name="destroy" type="destructor"/>
 
     <request name="activate">
-      <description summary="porta in primo piano una finestra">
-        La finestra con questo identificatore (l'evento identifier di
-        ext_foreign_toplevel_handle_v1) riceve il focus e va sopra le altre; se è
-        ridotta, torna dov'era. Un identificatore sconosciuto non fa niente.
+      <description summary="brings a window to the front">
+        The window with this identifier (the identifier event of
+        ext_foreign_toplevel_handle_v1) gets the focus and goes above the others; if it is
+        minimized, it comes back where it was. An unknown identifier does nothing.
       </description>
       <arg name="identifier" type="string"/>
     </request>
 
     <event name="focused">
-      <description summary="la finestra con il focus">
-        L'identificatore (ext_foreign_toplevel_handle_v1.identifier) della finestra che
-        ha il focus della tastiera, o una stringa vuota se nessuna finestra ce l'ha. Si
-        manda al collegamento e a ogni cambiamento.
+      <description summary="the focused window">
+        The identifier (ext_foreign_toplevel_handle_v1.identifier) of the window that has
+        the keyboard focus, or an empty string if no window has it. Sent on binding and on
+        every change.
       </description>
       <arg name="identifier" type="string"/>
     </event>
 
     <request name="execute">
-      <description summary="esegue un comando del catalogo">
-        Un comando senza parametri del catalogo di Ossido (lo stesso di scorciatoie,
-        canale di controllo e MCP), per esempio faro.toggle dalla lente della barra.
+      <description summary="runs a catalog command">
+        A parameterless command of Ossido's catalog (the same one used by shortcuts, the
+        control channel and MCP), for example faro.toggle from the bar's magnifier.
       </description>
       <arg name="id" type="string"/>
     </request>
 
     <event name="command">
-      <description summary="un comando per la shell">
-        Un comando del catalogo che tocca a un componente della shell (per esempio
-        faro.toggle): Ossido lo inoltra a tutti; ognuno risponde ai suoi.
+      <description summary="a command for the shell">
+        A catalog command that belongs to a shell component (for example faro.toggle):
+        Ossido forwards it to all of them; each one answers its own.
       </description>
       <arg name="id" type="string"/>
     </event>
 
     <request name="launch">
-      <description summary="avvia un'app come client della sessione">
-        Il comando (sintassi della shell POSIX, già senza i codici di campo di Exec)
-        diventa un processo figlio di Ossido, come app.launch del canale di controllo.
+      <description summary="starts an app as a client of the session">
+        The command (POSIX shell syntax, already without the Exec field codes) becomes a
+        child process of Ossido, like app.launch on the control channel.
       </description>
       <arg name="command" type="string"/>
     </request>
 
     <event name="minimized" since="2">
-      <description summary="una finestra è ridotta o tornata">
-        La finestra con questo identificatore è stata ridotta (minimized 1) o è tornata
-        (0). Al collegamento si mandano tutte quelle ridotte, nell'ordine in cui sono state
-        ridotte; poi a ogni cambiamento. Il Dock le mette accanto al Cestino.
+      <description summary="a window was minimized or restored">
+        The window with this identifier was minimized (minimized 1) or restored (0). On
+        binding all minimized windows are sent, in the order they were minimized; then on
+        every change. The Dock puts them next to the Trash.
       </description>
       <arg name="identifier" type="string"/>
       <arg name="minimized" type="uint"/>
     </event>
 
     <request name="thumbnail" since="2">
-      <description summary="la miniatura di una finestra ridotta">
-        Ossido scrive nel file la miniatura della finestra (RGBA a 8 bit premoltiplicati,
-        righe dall'alto, senza spazi fra le righe), presa quando è stata ridotta, al più
-        256 pixel per lato; poi manda l'evento thumbnail. Il file deve essere scrivibile e
-        grande almeno 256 × 256 × 4 byte.
+      <description summary="the thumbnail of a minimized window">
+        Ossido writes into the file the window thumbnail (8-bit premultiplied RGBA, rows
+        from the top, no padding between rows), taken when it was minimized, at most 256
+        pixels per side; then it sends the thumbnail event. The file must be writable and at
+        least 256 × 256 × 4 bytes large.
       </description>
       <arg name="identifier" type="string"/>
       <arg name="fd" type="fd"/>
     </request>
 
     <event name="thumbnail" since="2">
-      <description summary="la miniatura è nel file">
-        Larghezza e altezza della miniatura scritta nel file; 0 e 0 se la finestra non è
-        ridotta o non ha una miniatura.
+      <description summary="the thumbnail is in the file">
+        Width and height of the thumbnail written into the file; 0 and 0 if the window is
+        not minimized or has no thumbnail.
       </description>
       <arg name="identifier" type="string"/>
       <arg name="width" type="uint"/>
@@ -89,12 +89,11 @@
     </event>
 
     <event name="window_menu" since="3">
-      <description summary="il popover di disposizione di una finestra">
-        Pressione lunga sul pulsante dello schermo intero della finestra con questo
-        identificatore: la shell apre il popover di disposizione (sposta e ridimensiona,
-        riempi e disponi, schermo intero) con la punta verso il punto x, y (coordinate
-        logiche dello schermo, sotto il pulsante). Le voci eseguono i comandi window.tile_*
-        sulla finestra con il focus.
+      <description summary="the arrangement popover of a window">
+        Long press on the full-screen button of the window with this identifier: the shell
+        opens the arrangement popover (move and resize, fill and arrange, full screen) with
+        the tip towards the point x, y (logical screen coordinates, below the button). The
+        entries run the window.tile_* commands on the focused window.
       </description>
       <arg name="identifier" type="string"/>
       <arg name="x" type="int"/>
@@ -102,28 +101,28 @@
     </event>
 
     <request name="broadcast" since="4">
-      <description summary="uno stato per gli altri componenti della shell">
-        Un componente annuncia uno stato agli altri (per esempio il Centro di controllo
-        aperto, che la barra mostra con la capsula sull'icona): Ossido lo rimanda a tutti i
-        componenti della shell con l'evento broadcast, mittente compreso, e lo ricorda per
-        chi si collega dopo.
+      <description summary="a state for the other shell components">
+        A component announces a state to the others (for example the open Control Center,
+        which the bar shows with the capsule on its icon): Ossido sends it back to every
+        shell component with the broadcast event, sender included, and remembers it for
+        whoever binds later.
       </description>
       <arg name="topic" type="string"/>
       <arg name="value" type="string"/>
     </request>
 
     <event name="broadcast" since="4">
-      <description summary="lo stato annunciato da un componente">
-        Al collegamento l'ultimo valore di ogni argomento, poi a ogni annuncio.
+      <description summary="the state announced by a component">
+        On binding the last value of every topic, then on every announcement.
       </description>
       <arg name="topic" type="string"/>
       <arg name="value" type="string"/>
     </event>
 
     <request name="execute_with" since="5">
-      <description summary="esegue un comando del catalogo con i parametri">
-        Come execute, con i parametri in JSON (un oggetto): per esempio screenshot.region
-        con il rettangolo scelto nel mirino.
+      <description summary="runs a catalog command with parameters">
+        Like execute, with the parameters in JSON (an object): for example
+        screenshot.region with the rectangle chosen in the crosshair.
       </description>
       <arg name="id" type="string"/>
       <arg name="params" type="string"/>

@@ -1,6 +1,6 @@
 [package]
 name = "silica-cli"
-description = "Riga di comando per i comandi di Silica"
+description = "Command line for Silica commands"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

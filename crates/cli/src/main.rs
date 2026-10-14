@@ -1,16 +1,16 @@
-//! silica-cli: invia comandi a Silica dal terminale, o li espone via MCP.
+//! silica-cli: sends commands to Silica from the terminal, or exposes them over MCP.
 //!
 //! ```text
-//! silica-cli commands                        elenca il catalogo
-//! silica-cli window.list                     esegue un comando
-//! silica-cli window.move x=10 y=20           parametri chiave=valore (valori JSON o testo)
-//! silica-cli window.move '{"x":10,"y":20}'   oppure un oggetto JSON
-//! silica-cli screenshot [PERCORSO]           cattura l'output in un PNG
-//! silica-cli mcp                             server MCP su stdio
+//! silica-cli commands                        lists the catalog
+//! silica-cli window.list                     runs a command
+//! silica-cli window.move x=10 y=20           key=value parameters (JSON or text values)
+//! silica-cli window.move '{"x":10,"y":20}'   or a JSON object
+//! silica-cli screenshot [PATH]               captures the output into a PNG
+//! silica-cli mcp                             MCP server on stdio
 //! ```
 //!
-//! L'indirizzo del canale di controllo è `--control INDIRIZZO`, oppure `SILICA_CONTROL`,
-//! oppure `127.0.0.1:7979`.
+//! The control channel address is `--control ADDRESS`, or `SILICA_CONTROL`,
+//! or `127.0.0.1:7979`.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -27,7 +27,7 @@ fn main() -> ExitCode {
         std::env::var("SILICA_CONTROL").unwrap_or_else(|_| DEFAULT_CONTROL.to_owned());
     if let Some(pos) = args.iter().position(|arg| arg == "--control") {
         let Some(addr) = args.get(pos + 1).cloned() else {
-            eprintln!("silica-cli: --control richiede un indirizzo");
+            eprintln!("silica-cli: --control needs an address");
             return ExitCode::from(2);
         };
         control = addr;
@@ -66,22 +66,22 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> &'static str {
-    "uso: silica-cli [--control INDIRIZZO] <commands | screenshot [PERCORSO] | mcp | COMANDO [chiave=valore... | JSON]>"
+    "usage: silica-cli [--control ADDRESS] <commands | screenshot [PATH] | mcp | COMMAND [key=value... | JSON]>"
 }
 
-/// Legge i parametri: un oggetto JSON intero, oppure coppie `chiave=valore`.
+/// Reads the parameters: a whole JSON object, or `key=value` pairs.
 fn params(args: &[String]) -> Result<Value, String> {
     match args {
         [] => Ok(Value::Null),
         [json] if json.trim_start().starts_with('{') => {
-            serde_json::from_str(json).map_err(|e| format!("JSON non valido: {e}"))
+            serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))
         }
         pairs => {
             let mut map = Map::new();
             for pair in pairs {
                 let (key, value) = pair
                     .split_once('=')
-                    .ok_or_else(|| format!("atteso chiave=valore, trovato {pair}"))?;
+                    .ok_or_else(|| format!("expected key=value, found {pair}"))?;
                 let value =
                     serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.to_owned()));
                 map.insert(key.to_owned(), value);
@@ -92,8 +92,8 @@ fn params(args: &[String]) -> Result<Value, String> {
 }
 
 fn call(control: &str, command: &str, params: Value) -> Result<(), String> {
-    let mut client = Client::connect(control)
-        .map_err(|e| format!("Ossido non raggiungibile su {control}: {e}"))?;
+    let mut client =
+        Client::connect(control).map_err(|e| format!("Ossido unreachable at {control}: {e}"))?;
     let result = client.call(command, params).map_err(|e| e.to_string())?;
     if !result.is_null() {
         let text = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
@@ -103,14 +103,14 @@ fn call(control: &str, command: &str, params: Value) -> Result<(), String> {
 }
 
 fn run_mcp(control: String) -> Result<(), String> {
-    // La connessione si apre alla prima chiamata e si riapre se cade: Ossido può
-    // partire dopo il server MCP o essere riavviato.
+    // The connection opens on the first call and reopens if it drops: Ossido may
+    // start after the MCP server or be restarted.
     let mut client: Option<Client> = None;
     let execute = |command: &str, params: Value| -> Result<Value, String> {
         if client.is_none() {
             client = Some(
                 Client::connect(control.as_str())
-                    .map_err(|e| format!("Ossido non raggiungibile su {control}: {e}"))?,
+                    .map_err(|e| format!("Ossido unreachable at {control}: {e}"))?,
             );
         }
         let Some(connected) = client.as_mut() else {

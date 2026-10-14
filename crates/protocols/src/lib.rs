@@ -1,11 +1,11 @@
-//! XML e binding dei protocolli silica-*.
+//! XML and bindings of the silica-* protocols.
 //!
-//! - `silica-glass-v1` (`xml/silica-glass-v1.xml`): regioni di vetro di una superficie.
-//! - `silica-shell-v1` (`xml/silica-shell-v1.xml`): comandi della shell verso Ossido.
-//! - `silica-window-v1` (`xml/silica-window-v1.xml`): aspetto della finestra di un'app
-//!   (contenuto a tutta finestra con i pulsanti di Ossido sopra).
+//! - `silica-glass-v1` (`xml/silica-glass-v1.xml`): glass regions of a surface.
+//! - `silica-shell-v1` (`xml/silica-shell-v1.xml`): shell commands to Ossido.
+//! - `silica-window-v1` (`xml/silica-window-v1.xml`): appearance of an app window
+//!   (full-size content with Ossido's buttons on top).
 //!
-//! Il lato server (`server`) serve a Ossido, il lato client (`client`) all'embedder.
+//! The server side (`server`) is for Ossido, the client side (`client`) for the embedder.
 
 /// `silica-glass-v1`.
 pub mod glass {
@@ -51,7 +51,7 @@ pub mod glass {
         wayland_scanner::generate_client_code!("xml/silica-glass-v1.xml");
     }
 
-    /// Regioni in attesa oltre le quali la richiesta è un errore del client.
+    /// Pending regions beyond which the request is a client error.
     pub const MAX_REGIONS: usize = 64;
 }
 
@@ -99,8 +99,8 @@ pub mod shell {
         wayland_scanner::generate_client_code!("xml/silica-shell-v1.xml");
     }
 
-    /// Variabile d'ambiente che Ossido mette ai componenti della shell che lancia: solo i
-    /// loro processi vedono `silica_shell_manager_v1` e l'elenco delle finestre.
+    /// Environment variable that Ossido sets on the shell components it launches: only their
+    /// processes see `silica_shell_manager_v1` and the window list.
     pub const SHELL_ENV: &str = "SILICA_SHELL";
 }
 

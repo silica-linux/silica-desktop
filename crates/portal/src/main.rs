@@ -1,4 +1,4 @@
-//! `silica-portal`: il backend xdg-desktop-portal di Silica sul bus di sessione.
+//! `silica-portal`: the xdg-desktop-portal backend of Silica on the session bus.
 
 use std::collections::HashMap;
 use std::process::{ExitCode, Stdio};
@@ -46,12 +46,12 @@ fn request(title: &str, options: &HashMap<String, OwnedValue>) -> DialogRequest 
     }
 }
 
-/// Apre il dialogo di Mustache e aspetta la scelta, senza bloccare il bus.
+/// Opens Mustache's dialog and waits for the choice, without blocking the bus.
 async fn run_dialog(kind: DialogKind, request: DialogRequest) -> (u32, Results) {
     let env: HashMap<String, String> = std::env::vars().collect();
     let Some(exec) = find_mustache_exec(&env) else {
         eprintln!(
-            "silica-portal: Mustache non è installato ({})",
+            "silica-portal: Mustache is not installed ({})",
             silica_portal::MUSTACHE_ID
         );
         return (RESPONSE_OTHER, Results::new());
@@ -130,9 +130,9 @@ impl FileChooser {
     }
 }
 
-const USAGE: &str = "uso: silica-portal [--address INDIRIZZO]
+const USAGE: &str = "usage: silica-portal [--address ADDRESS]
 
-  --address INDIRIZZO  bus a cui collegarsi (predefinito: DBUS_SESSION_BUS_ADDRESS)";
+  --address ADDRESS    bus to connect to (default: DBUS_SESSION_BUS_ADDRESS)";
 
 fn main() -> ExitCode {
     let mut address = None;
@@ -142,7 +142,7 @@ fn main() -> ExitCode {
             "--address" => match args.next() {
                 Some(value) => address = Some(value),
                 None => {
-                    eprintln!("silica-portal: --address richiede un indirizzo\n{USAGE}");
+                    eprintln!("silica-portal: --address needs an address\n{USAGE}");
                     return ExitCode::from(2);
                 }
             },
@@ -151,7 +151,7 @@ fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             other => {
-                eprintln!("silica-portal: opzione sconosciuta {other}\n{USAGE}");
+                eprintln!("silica-portal: unknown option {other}\n{USAGE}");
                 return ExitCode::from(2);
             }
         }
@@ -161,7 +161,7 @@ fn main() -> ExitCode {
             Some(address) => zbus::connection::Builder::address(address.as_str())?,
             None => zbus::connection::Builder::session()?,
         };
-        // L'aspetto: dal file finché il daemon non risponde, poi dal daemon.
+        // Appearance: from the file until the daemon answers, then from the daemon.
         let settings = silica_portal::settings::Settings {
             dark: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
                 silica_portal::settings::appearance_file()
@@ -180,15 +180,15 @@ fn main() -> ExitCode {
                 .unique_name()
                 .map_or("?".to_owned(), |n| n.to_string())
         );
-        // Il daemon può non esserci ancora: si riprova ogni 2 s. Se il bus si chiude (il bus
-        // privato di Ossido muore con Ossido) il portale esce.
+        // The daemon may not be there yet: retry every 2 s. If the bus closes (Ossido's
+        // private bus dies with Ossido) the portal exits.
         let follow = async {
             loop {
                 if let Err(err) =
                     silica_portal::settings::follow_daemon(&connection, &settings, OBJECT_PATH)
                         .await
                 {
-                    eprintln!("silica-portal: aspetto dal daemon: {err}");
+                    eprintln!("silica-portal: appearance from the daemon: {err}");
                 }
                 async_io::Timer::after(Duration::from_secs(2)).await;
             }
@@ -197,7 +197,7 @@ fn main() -> ExitCode {
             use futures_lite::StreamExt;
             let mut messages = zbus::MessageStream::from(&connection);
             while let Some(Ok(_)) = messages.next().await {}
-            Err(zbus::Error::Failure("bus di sessione chiuso".to_owned()))
+            Err(zbus::Error::Failure("session bus closed".to_owned()))
         };
         futures_lite::future::or(follow, lost).await
     });

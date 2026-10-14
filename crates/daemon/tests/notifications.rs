@@ -1,4 +1,4 @@
-//! Il daemon delle notifiche su un bus di sessione privato (`dbus-daemon`).
+//! The notification daemon on a private session bus (`dbus-daemon`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -57,7 +57,7 @@ trait Shell {
     fn removed(&self, id: u32, reason: u32) -> zbus::Result<()>;
 }
 
-/// Un `dbus-daemon` privato, chiuso alla fine del test.
+/// A private `dbus-daemon`, closed at the end of the test.
 struct Bus {
     child: Child,
     address: String,
@@ -69,7 +69,7 @@ impl Bus {
             .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
             .stdout(Stdio::piped())
             .spawn()
-            .expect("dbus-daemon (pacchetto dbus) è necessario per questi test");
+            .expect("dbus-daemon (package dbus) is required for these tests");
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
@@ -96,7 +96,7 @@ impl Drop for Bus {
     }
 }
 
-/// Avvia il daemon su un bus nuovo ed esegue `test` con una connessione cliente.
+/// Starts the daemon on a new bus and runs `test` with a client connection.
 fn with_daemon<F, Fut>(test: F)
 where
     F: FnOnce(Connection) -> Fut,
@@ -108,12 +108,12 @@ where
         let client = bus.connect().await;
         let run = async {
             let result = daemon.run().await;
-            panic!("il ciclo del daemon è finito: {result:?}");
+            panic!("the daemon loop ended: {result:?}");
         };
         let test = async {
             future::or(test(client), async {
                 async_io::Timer::after(Duration::from_secs(20)).await;
-                panic!("test oltre il tempo limite");
+                panic!("test over the time limit");
             })
             .await;
         };
@@ -175,7 +175,7 @@ fn notify_reaches_the_shell() {
         assert!(n.timestamp_ms > 0);
         assert_eq!(shell.list().await.unwrap(), std::slice::from_ref(&n));
 
-        // La sostituzione tiene l'id e aggiorna lo storico.
+        // Replacement keeps the id and updates the history.
         let again = fdo
             .notify("Posta", id, "mail", "Due messaggi", "", &[], no_hints(), -1)
             .await
@@ -224,7 +224,7 @@ fn close_and_dismiss_emit_reasons() {
         );
         assert!(shell.list().await.unwrap().is_empty());
 
-        // Chiudere una notifica che non c'è più non è un errore.
+        // Closing a notification that is gone is not an error.
         fdo.close_notification(b).await.unwrap();
         shell.dismiss(12345).await.unwrap();
     });
@@ -254,7 +254,7 @@ fn actions_are_forwarded_and_close() {
             (id, 2)
         );
 
-        // Con `resident` la notifica resta.
+        // With `resident` the notification stays.
         let mut hints = no_hints();
         hints.insert("resident", Value::Bool(true));
         let id = fdo
@@ -300,7 +300,7 @@ fn hostile_hints_do_not_break_the_server() {
         let fdo = NotificationsProxy::new(&conn).await.unwrap();
         let shell = ShellProxy::new(&conn).await.unwrap();
         let mut hints = no_hints();
-        // Tipi sbagliati: si ignorano.
+        // Wrong types: ignored.
         hints.insert("urgency", Value::from("alta"));
         hints.insert("transient", Value::from(7u32));
         hints.insert("desktop-entry", Value::U8(3));
@@ -335,7 +335,7 @@ fn a_second_server_cannot_take_the_names() {
         let _first = Daemon::serve(bus.connect().await, false).await.unwrap();
         let second = Daemon::serve(bus.connect().await, false).await;
         assert!(matches!(second, Err(zbus::Error::NameTaken)));
-        // Con --replace prende il posto del primo, che lo consente.
+        // With --replace it takes the place of the first one, which allows it.
         assert!(Daemon::serve(bus.connect().await, true).await.is_ok());
     });
 }

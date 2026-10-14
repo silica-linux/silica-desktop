@@ -1,7 +1,7 @@
-//! `org.freedesktop.impl.portal.Settings`: l'aspetto di Silica per tutte le app
-//! (`org.freedesktop.appearance` › `color-scheme`: 0 nessuna preferenza, 1 scuro, 2 chiaro).
-//! La fonte è il daemon (`dev.frascella.Silica.System1`, chiave `appearance.dark`); senza
-//! daemon, il file `$XDG_CONFIG_HOME/silica/appearance.json`.
+//! `org.freedesktop.impl.portal.Settings`: Silica's appearance for every app
+//! (`org.freedesktop.appearance` › `color-scheme`: 0 no preference, 1 dark, 2 light).
+//! The source is the daemon (`dev.frascella.Silica.System1`, key `appearance.dark`); without
+//! the daemon, the file `$XDG_CONFIG_HOME/silica/appearance.json`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,12 +18,12 @@ pub const DAEMON_NAME: &str = "dev.frascella.Silica";
 pub const DAEMON_PATH: &str = "/dev/frascella/Silica/System1";
 pub const DAEMON_INTERFACE: &str = "dev.frascella.Silica.System1";
 
-/// Il valore di `color-scheme` per l'aspetto.
+/// The `color-scheme` value for the appearance.
 pub fn color_scheme(dark: bool) -> u32 {
     if dark { 1 } else { 2 }
 }
 
-/// `$XDG_CONFIG_HOME/silica/appearance.json` (di solito `~/.config`).
+/// `$XDG_CONFIG_HOME/silica/appearance.json` (usually `~/.config`).
 pub fn appearance_file() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -31,12 +31,12 @@ pub fn appearance_file() -> Option<PathBuf> {
     Some(config.join("silica").join("appearance.json"))
 }
 
-/// `{"dark": true}` nel file; senza file, chiaro.
+/// `{"dark": true}` in the file; without the file, light.
 pub fn read_file(file: &Path) -> bool {
     std::fs::read_to_string(file).is_ok_and(|text| text.replace(' ', "").contains("\"dark\":true"))
 }
 
-/// Uno spazio dei nomi chiesto da `ReadAll`: vuoto o con `*` finale come prefisso.
+/// A namespace asked by `ReadAll`: empty, or with a trailing `*` as a prefix.
 fn matches(pattern: &str, namespace: &str) -> bool {
     match pattern.strip_suffix('*') {
         Some(prefix) => namespace.starts_with(prefix),
@@ -73,7 +73,7 @@ impl Settings {
             )));
         }
         Err(zbus::fdo::Error::Failed(format!(
-            "impostazione sconosciuta: {namespace} {key}"
+            "unknown setting: {namespace} {key}"
         )))
     }
 
@@ -91,15 +91,15 @@ impl Settings {
     }
 }
 
-/// Lo stato del daemon (`State`): `appearance.dark`, se c'è.
+/// The daemon state (`State`): `appearance.dark`, if present.
 fn dark_in(state: &HashMap<String, OwnedValue>) -> Option<bool> {
     state
         .get("appearance.dark")
         .and_then(|v| bool::try_from(v).ok())
 }
 
-/// Segue il daemon: legge lo stato e ascolta `Changed`; a ogni cambio d'aspetto aggiorna
-/// `dark` ed emette `SettingChanged`. Ritorna quando il daemon non c'è o il bus si chiude.
+/// Follows the daemon: reads the state and listens to `Changed`; on every appearance change it
+/// updates `dark` and emits `SettingChanged`. Returns when the daemon is gone or the bus closes.
 pub async fn follow_daemon(
     connection: &zbus::Connection,
     settings: &Settings,

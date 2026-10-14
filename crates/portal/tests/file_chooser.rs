@@ -1,5 +1,5 @@
-//! Il backend FileChooser su un bus privato: chiama "Mustache" (uno script al suo posto, dalla
-//! voce .desktop) e restituisce gli URI scelti.
+//! The FileChooser backend on a private bus: calls "Mustache" (a script in its place, from the
+//! .desktop entry) and returns the chosen URIs.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -42,7 +42,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
     let dir = std::env::temp_dir().join(format!("silica-portal-it-{}", std::process::id()));
     let apps = dir.join("applications");
     std::fs::create_dir_all(&apps).unwrap();
-    // "Mustache": scrive gli argomenti ricevuti e sceglie un file.
+    // "Mustache": writes the arguments it received and chooses a file.
     let script = dir.join("mustache.sh");
     let args_file = dir.join("argomenti");
     std::fs::write(
@@ -67,7 +67,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
         .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
         .stdout(Stdio::piped())
         .spawn()
-        .expect("dbus-daemon (pacchetto dbus) è necessario per questo test");
+        .expect("dbus-daemon (package dbus) is required for this test");
     let mut address = String::new();
     BufReader::new(bus.stdout.take().unwrap())
         .read_line(&mut address)
@@ -90,7 +90,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
             .await
             .unwrap();
         let chooser = FileChooserProxy::new(&connection).await.unwrap();
-        // Il portale ha bisogno di un attimo per prendere il nome.
+        // The portal needs a moment to take the name.
         let mut answer = None;
         for _ in 0..50 {
             let options = HashMap::from([
@@ -114,7 +114,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
                 Err(_) => async_io::Timer::after(Duration::from_millis(100)).await,
             };
         }
-        let (response, results) = answer.expect("il portale non risponde");
+        let (response, results) = answer.expect("the portal does not answer");
         assert_eq!(response, 0);
         let uris: Vec<String> = results["uris"].try_clone().unwrap().try_into().unwrap();
         assert_eq!(uris, ["file:///home/io/scelto.txt"]);

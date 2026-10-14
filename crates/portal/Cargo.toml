@@ -1,6 +1,6 @@
 [package]
 name = "silica-portal"
-description = "Backend xdg-desktop-portal di Silica"
+description = "xdg-desktop-portal backend of Silica"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "silica-daemon"
-description = "Servizi di sistema di Silica (D-Bus)"
+description = "Silica system services (D-Bus)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

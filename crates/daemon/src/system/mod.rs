@@ -1,11 +1,11 @@
-//! Lo stato del sistema per il Centro di controllo e la barra dei menu:
-//! `dev.frascella.Silica.System1` su `/dev/frascella/Silica/System1`.
+//! The system state for the Control Center and the menu bar:
+//! `dev.frascella.Silica.System1` on `/dev/frascella/Silica/System1`.
 //!
-//! Le sorgenti sono i servizi del bus di sistema (NetworkManager, BlueZ, UPower, logind),
-//! la retroilluminazione in sysfs e l'audio di PipeWire con `wpctl` (`backends.rs`). Ogni
-//! sorgente è facoltativa: se manca, le sue chiavi dicono `available = false` e il resto
-//! funziona. Lo stato si legge tutto insieme (`State`) e ogni cambiamento emette `Changed`
-//! con lo stato intero: per la shell è più semplice di un segnale per proprietà.
+//! The sources are the system bus services (NetworkManager, BlueZ, UPower, logind),
+//! the backlight in sysfs and PipeWire audio with `wpctl` (`backends.rs`). Every
+//! source is optional: if it is missing, its keys say `available = false` and the rest
+//! works. The state is read all together (`State`) and every change emits `Changed`
+//! with the whole state: for the shell that is simpler than one signal per property.
 
 mod backends;
 mod details;
@@ -26,22 +26,22 @@ use zbus::{Connection, interface};
 pub const SYSTEM_PATH: &str = "/dev/frascella/Silica/System1";
 pub const SYSTEM_INTERFACE: &str = "dev.frascella.Silica.System1";
 
-/// Dove il daemon trova le sorgenti; i test le sostituiscono con servizi finti.
+/// Where the daemon finds the sources; tests replace them with fake services.
 #[derive(Clone, Debug)]
 pub struct SystemConfig {
-    /// Bus di sistema (NetworkManager, BlueZ, UPower, logind); `None` se non c'è.
+    /// System bus (NetworkManager, BlueZ, UPower, logind); `None` if absent.
     pub system_bus: Option<Connection>,
-    /// La directory delle retroilluminazioni (`/sys/class/backlight`).
+    /// The backlight directory (`/sys/class/backlight`).
     pub backlight_dir: PathBuf,
-    /// Il programma `wpctl` di PipeWire.
+    /// PipeWire's `wpctl` program.
     pub wpctl: PathBuf,
-    /// Ogni quanto rileggere luminosità e volume, che non hanno segnali.
+    /// How often to reread brightness and volume, which have no signals.
     pub poll: Duration,
-    /// Dove si salva l'aspetto (chiaro o scuro); `None`: solo in memoria.
+    /// Where the appearance (light or dark) is saved; `None`: only in memory.
     pub appearance_file: Option<PathBuf>,
 }
 
-/// `$XDG_CONFIG_HOME/silica/appearance.json` (di solito `~/.config`).
+/// `$XDG_CONFIG_HOME/silica/appearance.json` (usually `~/.config`).
 pub fn default_appearance_file() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -49,7 +49,7 @@ pub fn default_appearance_file() -> Option<PathBuf> {
     Some(config.join("silica").join("appearance.json"))
 }
 
-/// L'aspetto salvato: `{"dark": true}`; senza file o illeggibile, chiaro.
+/// The saved appearance: `{"dark": true}`; without the file or unreadable, light.
 pub fn read_appearance(file: &std::path::Path) -> bool {
     std::fs::read_to_string(file)
         .ok()
@@ -73,11 +73,11 @@ impl Default for SystemConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Wifi {
     pub enabled: bool,
-    /// Il nome della connessione principale, se è senza fili.
+    /// The name of the primary connection, if wireless.
     pub ssid: String,
     /// 0–100.
     pub strength: u8,
-    /// Connessione principale via cavo.
+    /// Wired primary connection.
     pub wired: bool,
 }
 
@@ -92,11 +92,11 @@ pub struct Audio {
     /// 0–1.
     pub volume: f64,
     pub muted: bool,
-    /// Il nome dell'uscita predefinita (`node.description` di PipeWire).
+    /// The name of the default output (PipeWire's `node.description`).
     pub name: String,
 }
 
-/// Lo stato intero; `None` vuol dire sorgente assente.
+/// The whole state; `None` means an absent source.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SystemState {
     pub wifi: Option<Wifi>,
@@ -104,18 +104,18 @@ pub struct SystemState {
     pub battery: Option<Battery>,
     /// 0–1.
     pub brightness: Option<f64>,
-    /// Quante volte la luminosità è stata chiesta con `SetBrightness` (tasti e cursori di
-    /// Silica). Un cambio che arriva da fuori (luminosità adattiva, un'altra app) cambia
-    /// `brightness` ma non questo: l'HUD compare solo quando cambia questo.
+    /// How many times the brightness was requested with `SetBrightness` (Silica's keys and
+    /// sliders). A change coming from outside (adaptive brightness, another app) changes
+    /// `brightness` but not this: the HUD appears only when this changes.
     pub brightness_requests: u64,
     pub audio: Option<Audio>,
     pub do_not_disturb: bool,
-    /// Aspetto scuro (tutto il sistema: Ossido, shell, app con il portale Settings).
+    /// Dark appearance (the whole system: Ossido, shell, apps through the Settings portal).
     pub dark: bool,
 }
 
 impl SystemState {
-    /// Il dizionario di `State` e `Changed`: chiavi piatte, `*.available` per sorgente.
+    /// The dictionary of `State` and `Changed`: flat keys, `*.available` per source.
     pub fn to_dict(&self) -> HashMap<String, OwnedValue> {
         let mut dict = HashMap::new();
         let mut put = |key: &str, value: Value<'_>| {
@@ -158,7 +158,7 @@ impl SystemState {
 #[derive(Clone)]
 struct Shared {
     state: Arc<Mutex<SystemState>>,
-    /// Sveglia il ciclo che emette `Changed`.
+    /// Wakes the loop that emits `Changed`.
     changed: Arc<Event>,
     config: SystemConfig,
 }
@@ -168,7 +168,7 @@ impl Shared {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Cambia lo stato; se è diverso sveglia l'emissione di `Changed`.
+    /// Changes the state; if it differs, wakes the emission of `Changed`.
     fn update(&self, change: impl FnOnce(&mut SystemState)) {
         let mut state = self.state();
         let before = state.clone();
@@ -180,14 +180,14 @@ impl Shared {
     }
 }
 
-/// Il servizio `System1` su una connessione al bus di sessione.
+/// The `System1` service on a session bus connection.
 pub struct SystemService {
     connection: Connection,
     shared: Shared,
 }
 
 impl SystemService {
-    /// Pubblica l'interfaccia; le sorgenti partono con `run`.
+    /// Publishes the interface; the sources start with `run`.
     pub async fn serve(connection: Connection, config: SystemConfig) -> zbus::Result<Self> {
         let dark = config
             .appearance_file
@@ -217,8 +217,8 @@ impl SystemService {
         self.shared.state().clone()
     }
 
-    /// Legge le sorgenti e ne segue i cambiamenti; non ritorna se non per un errore del
-    /// bus di sessione.
+    /// Reads the sources and follows their changes; returns only on a session bus
+    /// error.
     pub async fn run(&self) -> zbus::Result<()> {
         let sources = backends::run(&self.shared);
         let emit = async {
@@ -255,7 +255,7 @@ fn failed(error: impl std::fmt::Display) -> zbus::fdo::Error {
 
 #[interface(name = "dev.frascella.Silica.System1")]
 impl System {
-    /// Lo stato intero.
+    /// The whole state.
     fn state(&self) -> HashMap<String, OwnedValue> {
         self.shared.state().to_dict()
     }
@@ -272,10 +272,10 @@ impl System {
             .map_err(failed)
     }
 
-    /// Volume dell'uscita predefinita, 0–1.
+    /// Volume of the default output, 0–1.
     async fn set_volume(&self, volume: f64) -> zbus::fdo::Result<()> {
         if !volume.is_finite() {
-            return Err(zbus::fdo::Error::InvalidArgs("volume non finito".into()));
+            return Err(zbus::fdo::Error::InvalidArgs("non-finite volume".into()));
         }
         backends::set_volume(&self.shared, volume.clamp(0.0, 1.0))
             .await
@@ -288,11 +288,11 @@ impl System {
             .map_err(failed)
     }
 
-    /// Luminosità dello schermo, 0–1.
+    /// Screen brightness, 0–1.
     async fn set_brightness(&self, brightness: f64) -> zbus::fdo::Result<()> {
         if !brightness.is_finite() {
             return Err(zbus::fdo::Error::InvalidArgs(
-                "luminosità non finita".into(),
+                "non-finite brightness".into(),
             ));
         }
         backends::set_brightness(&self.shared, brightness.clamp(0.0, 1.0))
@@ -303,8 +303,8 @@ impl System {
         Ok(())
     }
 
-    /// Le reti Wi-Fi visibili: (nome, segnale 0–100, protetta, salvata, in uso), quella in
-    /// uso prima, poi le salvate, poi per segnale.
+    /// The visible Wi-Fi networks: (name, signal 0–100, protected, saved, in use), the one in
+    /// use first, then the saved ones, then by signal.
     async fn wifi_networks(&self) -> zbus::fdo::Result<Vec<(String, u8, bool, bool, bool)>> {
         let list = details::wifi_networks(&self.shared).await.map_err(failed)?;
         Ok(list
@@ -313,14 +313,14 @@ impl System {
             .collect())
     }
 
-    /// Si collega a una rete salvata.
+    /// Connects to a saved network.
     async fn connect_wifi(&self, ssid: String) -> zbus::fdo::Result<()> {
         details::connect_wifi(&self.shared, &ssid)
             .await
             .map_err(failed)
     }
 
-    /// Le uscite audio: (id, nome, predefinita).
+    /// The audio outputs: (id, name, default).
     async fn audio_outputs(&self) -> zbus::fdo::Result<Vec<(u32, String, bool)>> {
         let list = details::audio_outputs(&self.shared.config.wpctl)
             .await
@@ -331,19 +331,19 @@ impl System {
             .collect())
     }
 
-    /// Sceglie l'uscita audio predefinita.
+    /// Chooses the default audio output.
     async fn set_audio_output(&self, id: u32) -> zbus::fdo::Result<()> {
         details::set_audio_output(&self.shared.config.wpctl, id)
             .await
             .map_err(failed)
     }
 
-    /// Non disturbare: la shell non mostra i banner.
+    /// Do Not Disturb: the shell does not show banners.
     fn set_do_not_disturb(&self, enabled: bool) {
         self.shared.update(|state| state.do_not_disturb = enabled);
     }
 
-    /// Aspetto scuro o chiaro, per tutto il sistema; si salva (`appearance.json`).
+    /// Dark or light appearance, for the whole system; it is saved (`appearance.json`).
     fn set_dark(&self, dark: bool) -> zbus::fdo::Result<()> {
         if let Some(file) = &self.shared.config.appearance_file {
             if let Some(dir) = file.parent() {

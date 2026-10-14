@@ -1,9 +1,9 @@
-//! Server MCP (Model Context Protocol) su stdio: ogni comando del catalogo è un tool.
+//! MCP (Model Context Protocol) server on stdio: every catalog command is a tool.
 //!
-//! Il server parla JSON-RPC 2.0, un messaggio per riga. I nomi dei tool sono gli id del
-//! catalogo con `_` al posto di `.` (`window.list` → `window_list`), perché alcuni client
-//! accettano solo `[a-zA-Z0-9_-]`. `ui_screenshot` restituisce l'immagine come contenuto
-//! `image`, così l'agente la vede direttamente.
+//! The server speaks JSON-RPC 2.0, one message per line. Tool names are the catalog ids
+//! with `_` instead of `.` (`window.list` → `window_list`), because some clients only
+//! accept `[a-zA-Z0-9_-]`. `ui_screenshot` returns the image as `image` content, so the
+//! agent sees it directly.
 
 use std::io::{BufRead, Write};
 
@@ -41,7 +41,7 @@ fn tools() -> Value {
     json!({ "tools": tools })
 }
 
-/// Serve MCP finché `input` non si chiude. `execute` esegue un comando del catalogo.
+/// Serves MCP until `input` closes. `execute` runs a catalog command.
 pub fn serve<R, W, E>(input: R, mut output: W, mut execute: E) -> std::io::Result<()>
 where
     R: BufRead,
@@ -63,7 +63,7 @@ where
     Ok(())
 }
 
-/// Gestisce un messaggio; `None` per le notifiche, che non hanno risposta.
+/// Handles a message; `None` for notifications, which have no response.
 pub fn handle<E>(line: &str, execute: &mut E) -> Option<Value>
 where
     E: FnMut(&str, Value) -> Result<Value, String>,
@@ -77,10 +77,10 @@ where
         return Some(error(
             id.unwrap_or(Value::Null),
             INVALID_REQUEST,
-            "manca method",
+            "missing method",
         ));
     };
-    // Una notifica (senza id) non riceve risposta, qualunque sia il metodo.
+    // A notification (without id) gets no response, whatever the method.
     let id = id?;
     let params = message.get("params").cloned().unwrap_or(Value::Null);
     let result = match method {
@@ -88,12 +88,12 @@ where
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": { "tools": { "listChanged": false } },
             "serverInfo": { "name": "silica", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "Comandi di Silica: finestre, app, sessione e screenshot dell'output di Ossido."
+            "instructions": "Silica commands: windows, apps, session and screenshots of Ossido's output."
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools()),
         "tools/call" => call_tool(&params, execute),
-        other => Err((METHOD_NOT_FOUND, format!("metodo sconosciuto: {other}"))),
+        other => Err((METHOD_NOT_FOUND, format!("unknown method: {other}"))),
     };
     Some(match result {
         Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
@@ -108,13 +108,13 @@ where
     let name = params
         .get("name")
         .and_then(Value::as_str)
-        .ok_or((INVALID_PARAMS, "manca name".to_owned()))?;
+        .ok_or((INVALID_PARAMS, "missing name".to_owned()))?;
     let spec =
-        spec_for_tool(name).ok_or_else(|| (INVALID_PARAMS, format!("tool sconosciuto: {name}")))?;
+        spec_for_tool(name).ok_or_else(|| (INVALID_PARAMS, format!("unknown tool: {name}")))?;
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
 
-    // Gli errori del comando sono risultati con isError, non errori di protocollo:
-    // così l'agente li legge e può correggersi.
+    // Command errors are results with isError, not protocol errors:
+    // so the agent reads them and can correct itself.
     Ok(match execute(spec.id, arguments) {
         Ok(result) => tool_result(spec.id, result),
         Err(message) => json!({
@@ -162,7 +162,7 @@ mod tests {
             UI_SCREENSHOT if params.get("path").is_none() => {
                 Ok(json!({ "width": 2, "height": 1, "png_base64": "iVBOR" }))
             }
-            _ => Err(format!("{id} fallito")),
+            _ => Err(format!("{id} failed")),
         }
     }
 
@@ -186,7 +186,7 @@ mod tests {
             json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                    "params": {"name": "window_list", "arguments": {}}}),
         ]);
-        assert_eq!(replies.len(), 3, "la notifica non ha risposta");
+        assert_eq!(replies.len(), 3, "the notification has no response");
         assert_eq!(replies[0]["result"]["protocolVersion"], PROTOCOL_VERSION);
         let tools = replies[1]["result"]["tools"].as_array().unwrap();
         assert_eq!(tools.len(), CATALOG.len());

@@ -1,5 +1,5 @@
-//! Il backend Settings: `color-scheme` dall'aspetto del daemon, `SettingChanged` quando cambia,
-//! e il file `appearance.json` quando il daemon non c'è.
+//! The Settings backend: `color-scheme` from the daemon's appearance, `SettingChanged` when it
+//! changes, and the `appearance.json` file when there is no daemon.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -33,7 +33,7 @@ trait Settings {
     ) -> zbus::Result<()>;
 }
 
-/// Il daemon finto: `State` con `appearance.dark` e il segnale `Changed`.
+/// The fake daemon: `State` with `appearance.dark` and the `Changed` signal.
 struct FakeSystem {
     dark: bool,
 }
@@ -65,7 +65,7 @@ fn private_bus() -> (Killed, String) {
         .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
         .stdout(Stdio::piped())
         .spawn()
-        .expect("dbus-daemon (pacchetto dbus) è necessario per questo test");
+        .expect("dbus-daemon (package dbus) is required for this test");
     let mut address = String::new();
     BufReader::new(bus.stdout.take().unwrap())
         .read_line(&mut address)
@@ -118,11 +118,11 @@ fn color_scheme_follows_the_daemon() {
             .await
             .unwrap();
         let settings = SettingsProxy::new(&client).await.unwrap();
-        // Chiaro dal daemon (2).
+        // Light from the daemon (2).
         assert_eq!(scheme(&settings).await, Some(2));
         let all = settings.read_all(&["org.freedesktop.*"]).await.unwrap();
         assert!(all["org.freedesktop.appearance"].contains_key("color-scheme"));
-        // Il daemon passa allo scuro: SettingChanged e Read danno 1.
+        // The daemon switches to dark: SettingChanged and Read give 1.
         let mut changes = settings.receive_setting_changed().await.unwrap();
         let emitter = SignalEmitter::new(&daemon, "/dev/frascella/Silica/System1").unwrap();
         FakeSystem::changed(
@@ -136,7 +136,7 @@ fn color_scheme_follows_the_daemon() {
             None
         })
         .await
-        .expect("nessun SettingChanged");
+        .expect("no SettingChanged");
         let args = signal.args().unwrap();
         assert_eq!(args.namespace, "org.freedesktop.appearance");
         assert_eq!(u32::try_from(args.value).unwrap(), 1);

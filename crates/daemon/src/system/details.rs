@@ -1,6 +1,6 @@
-//! I dati dei pannelli di dettaglio del Centro di controllo, letti su richiesta (non fanno
-//! parte dello stato che si emette a ogni cambiamento): le reti Wi-Fi visibili da
-//! NetworkManager e le uscite audio di PipeWire (`wpctl status`).
+//! The data of the Control Center detail panels, read on demand (they are not part of
+//! the state emitted on every change): the Wi-Fi networks visible to NetworkManager and
+//! PipeWire's audio outputs (`wpctl status`).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -21,27 +21,27 @@ const NM_SETTINGS: &str = "org.freedesktop.NetworkManager.Settings";
 const NM_CONNECTION: &str = "org.freedesktop.NetworkManager.Settings.Connection";
 /// `NM_DEVICE_TYPE_WIFI`.
 const DEVICE_WIFI: u32 = 2;
-/// Al più tante reti nell'elenco: un luogo affollato non deve gonfiare la risposta.
+/// At most this many networks in the list: a crowded place must not bloat the answer.
 const MAX_NETWORKS: usize = 40;
 const MAX_OUTPUTS: usize = 32;
 
 type Result<T> = std::result::Result<T, String>;
 
-/// Una rete senza fili visibile.
+/// A visible wireless network.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Network {
     pub ssid: String,
     /// 0–100.
     pub strength: u8,
-    /// Protetta da una password.
+    /// Protected by a password.
     pub secure: bool,
-    /// C'è una connessione salvata con questo nome.
+    /// There is a saved connection with this name.
     pub known: bool,
-    /// È quella in uso.
+    /// It is the one in use.
     pub active: bool,
 }
 
-/// Un'uscita audio.
+/// An audio output.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Output {
     pub id: u32,
@@ -54,7 +54,7 @@ fn bus(shared: &Shared) -> Result<&Connection> {
         .config
         .system_bus
         .as_ref()
-        .ok_or_else(|| "bus di sistema assente".to_owned())
+        .ok_or_else(|| "system bus absent".to_owned())
 }
 
 async fn call<B, R>(bus: &Connection, path: &str, iface: &str, method: &str, body: &B) -> Result<R>
@@ -72,7 +72,7 @@ where
         .map_err(|e| format!("{iface}.{method}: {e}"))
 }
 
-/// Le connessioni salvate senza fili: nome della rete → percorso.
+/// The saved wireless connections: network name → path.
 async fn saved_networks(bus: &Connection) -> HashMap<String, OwnedObjectPath> {
     let mut saved = HashMap::new();
     let Ok(list) =
@@ -105,7 +105,7 @@ async fn saved_networks(bus: &Connection) -> HashMap<String, OwnedObjectPath> {
     saved
 }
 
-/// Le reti visibili: quella in uso prima, poi le salvate, poi per segnale; una per nome.
+/// The visible networks: the one in use first, then the saved ones, then by signal; one per name.
 pub(super) async fn wifi_networks(shared: &Shared) -> Result<Vec<Network>> {
     let bus = bus(shared)?;
     let devices: Vec<OwnedObjectPath> = call(bus, NM_PATH, NM, "GetDevices", &()).await?;
@@ -178,13 +178,13 @@ fn sort_networks(list: &mut [Network]) {
     });
 }
 
-/// Si collega a una rete salvata. Una rete nuova chiede una password, che qui non c'è.
+/// Connects to a saved network. A new network asks for a password, which is not available here.
 pub(super) async fn connect_wifi(shared: &Shared, ssid: &str) -> Result<()> {
     let bus = bus(shared)?;
     let saved = saved_networks(bus).await;
     let connection = saved
         .get(ssid)
-        .ok_or_else(|| format!("{ssid}: rete non salvata (serve la password)"))?;
+        .ok_or_else(|| format!("{ssid}: network not saved (a password is needed)"))?;
     let root = OwnedObjectPath::try_from("/").map_err(|e| e.to_string())?;
     let _: OwnedObjectPath = call(
         bus,
@@ -197,7 +197,7 @@ pub(super) async fn connect_wifi(shared: &Shared, ssid: &str) -> Result<()> {
     Ok(())
 }
 
-/// Le uscite (`Sinks:` nella sezione `Audio` di `wpctl status`); `*` segna la predefinita.
+/// The outputs (`Sinks:` in the `Audio` section of `wpctl status`); `*` marks the default.
 pub fn parse_outputs(text: &str) -> Vec<Output> {
     let mut outputs = Vec::new();
     let mut in_audio = false;
@@ -250,7 +250,7 @@ pub(super) async fn audio_outputs(program: &Path) -> Result<Vec<Output>> {
 pub(super) async fn set_audio_output(program: &Path, id: u32) -> Result<()> {
     let outputs = audio_outputs(program).await?;
     if !outputs.iter().any(|o| o.id == id) {
-        return Err(format!("uscita {id} assente"));
+        return Err(format!("output {id} absent"));
     }
     wpctl(program, &["set-default", &id.to_string()]).await?;
     Ok(())

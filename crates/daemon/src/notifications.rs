@@ -1,26 +1,26 @@
-//! Le notifiche ricevute: storico in memoria, sostituzioni, scadenze.
+//! The received notifications: in-memory history, replacements, expirations.
 //!
-//! Logica pura, senza D-Bus: il server (`server.rs`) la chiama e trasforma i risultati in
-//! segnali. Tutto quello che arriva dai client è ostile: testi troncati, azioni limitate,
-//! storico di dimensione fissa.
+//! Pure logic, no D-Bus: the server (`server.rs`) calls it and turns the results into
+//! signals. Everything coming from clients is hostile: truncated texts, limited actions,
+//! fixed-size history.
 
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use zbus::zvariant::Type;
 
-/// Notifiche tenute nello storico: oltre si scarta la più vecchia.
+/// Notifications kept in the history: beyond that the oldest is dropped.
 pub const MAX_HISTORY: usize = 256;
-/// Caratteri massimi del nome dell'app, dell'icona, della categoria.
+/// Maximum characters of the app name, the icon, the category.
 pub const MAX_NAME: usize = 256;
-/// Caratteri massimi del titolo.
+/// Maximum characters of the title.
 pub const MAX_SUMMARY: usize = 1024;
-/// Caratteri massimi del corpo.
+/// Maximum characters of the body.
 pub const MAX_BODY: usize = 8192;
-/// Voci massime della lista delle azioni (coppie chiave, etichetta).
+/// Maximum entries of the action list (key, label pairs).
 pub const MAX_ACTIONS: usize = 32;
 
-/// Motivo della chiusura, come nella specifica freedesktop (segnale `NotificationClosed`).
+/// Reason for closing, as in the freedesktop specification (`NotificationClosed` signal).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum CloseReason {
@@ -30,7 +30,7 @@ pub enum CloseReason {
     Undefined = 4,
 }
 
-/// Urgenza (hint `urgency`).
+/// Urgency (`urgency` hint).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Urgency {
@@ -50,7 +50,7 @@ impl Urgency {
     }
 }
 
-/// Una notifica come la vede la shell (`dev.frascella.Silica.Notifications1`).
+/// A notification as the shell sees it (`dev.frascella.Silica.Notifications1`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Notification {
     pub id: u32,
@@ -58,24 +58,24 @@ pub struct Notification {
     pub app_icon: String,
     pub summary: String,
     pub body: String,
-    /// Coppie chiave, etichetta, appiattite come nella specifica.
+    /// Key, label pairs, flattened as in the specification.
     pub actions: Vec<String>,
-    /// 0 bassa, 1 normale, 2 critica.
+    /// 0 low, 1 normal, 2 critical.
     pub urgency: u8,
     pub category: String,
     pub desktop_entry: String,
     pub image_path: String,
-    /// Non va nello storico del Centro notifiche: solo il banner.
+    /// Does not go into the Notification Center history: only the banner.
     pub transient: bool,
-    /// Resta dopo l'invocazione di un'azione.
+    /// Stays after an action is invoked.
     pub resident: bool,
-    /// Millisecondi dall'epoca Unix alla ricezione.
+    /// Milliseconds from the Unix epoch to reception.
     pub timestamp_ms: u64,
-    /// Come richiesto dal client: -1 predefinito, 0 mai, altrimenti millisecondi.
+    /// As requested by the client: -1 default, 0 never, otherwise milliseconds.
     pub expire_timeout: i32,
 }
 
-/// Una richiesta `Notify`, con gli hint già letti.
+/// A `Notify` request, with the hints already read.
 #[derive(Clone, Debug, Default)]
 pub struct Request {
     pub app_name: String,
@@ -93,11 +93,11 @@ pub struct Request {
     pub expire_timeout: i32,
 }
 
-/// Esito di `Store::notify`.
+/// Outcome of `Store::notify`.
 #[derive(Debug)]
 pub struct Posted {
     pub notification: Notification,
-    /// Notifiche tolte per far posto nello storico.
+    /// Notifications removed to make room in the history.
     pub evicted: Vec<u32>,
 }
 
@@ -127,7 +127,7 @@ impl Store {
         }
     }
 
-    /// Aggiunge una notifica, o sostituisce quella con `replaces_id` se esiste ancora.
+    /// Adds a notification, or replaces the one with `replaces_id` if it still exists.
     pub fn notify(&mut self, request: Request, now: Instant, timestamp_ms: u64) -> Posted {
         let deadline = deadline(request.expire_timeout, now);
         let replaced = (request.replaces_id != 0)
@@ -163,13 +163,13 @@ impl Store {
         }
     }
 
-    /// Toglie una notifica; `None` se non c'era.
+    /// Removes a notification; `None` if it was not there.
     pub fn remove(&mut self, id: u32) -> Option<Notification> {
         let index = self.entries.iter().position(|e| e.notification.id == id)?;
         Some(self.entries.remove(index).notification)
     }
 
-    /// Toglie tutte le notifiche e ne restituisce gli id.
+    /// Removes every notification and returns their ids.
     pub fn clear(&mut self) -> Vec<u32> {
         self.entries.drain(..).map(|e| e.notification.id).collect()
     }
@@ -181,7 +181,7 @@ impl Store {
             .find(|n| n.id == id)
     }
 
-    /// Dalla più vecchia alla più recente.
+    /// From the oldest to the most recent.
     pub fn list(&self) -> Vec<Notification> {
         self.entries
             .iter()
@@ -189,12 +189,12 @@ impl Store {
             .collect()
     }
 
-    /// La prossima scadenza, se ce n'è una.
+    /// The next expiration, if there is one.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.entries.iter().filter_map(|e| e.deadline).min()
     }
 
-    /// Toglie le notifiche scadute entro `now` e ne restituisce gli id.
+    /// Removes the notifications expired by `now` and returns their ids.
     pub fn take_expired(&mut self, now: Instant) -> Vec<u32> {
         let mut expired = Vec::new();
         self.entries.retain(|e| match e.deadline {
@@ -207,7 +207,7 @@ impl Store {
         expired
     }
 
-    /// Id successivo, mai 0 e mai uno ancora in uso.
+    /// Next id, never 0 and never one still in use.
     fn next_id(&mut self) -> u32 {
         loop {
             self.last_id = self.last_id.wrapping_add(1);
@@ -218,8 +218,8 @@ impl Store {
     }
 }
 
-/// Scadenza della notifica. Come nel Centro notifiche del riferimento, le notifiche restano
-/// finché l'utente non le chiude (-1 e 0); scadono solo se il client chiede un tempo.
+/// Expiration of the notification. As in the reference Notification Center, notifications stay
+/// until the user closes them (-1 and 0); they expire only if the client asks for a time.
 fn deadline(expire_timeout: i32, now: Instant) -> Option<Instant> {
     let ms = u64::try_from(expire_timeout).ok().filter(|&ms| ms > 0)?;
     now.checked_add(Duration::from_millis(ms))
@@ -232,7 +232,7 @@ fn sanitize(id: u32, request: Request, timestamp_ms: u64) -> Notification {
         .take(MAX_ACTIONS)
         .map(|a| truncate(a, MAX_NAME))
         .collect();
-    // Le azioni sono coppie: una chiave senza etichetta si scarta.
+    // Actions are pairs: a key without a label is dropped.
     if actions.len() % 2 == 1 {
         actions.pop();
     }
@@ -261,7 +261,7 @@ fn truncate(mut text: String, max_chars: usize) -> String {
     text
 }
 
-/// Le chiavi delle azioni (le voci pari della lista).
+/// The action keys (the even entries of the list).
 pub fn action_keys(notification: &Notification) -> impl Iterator<Item = &str> {
     notification.actions.iter().step_by(2).map(String::as_str)
 }
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(posted.notification.id, id);
         assert_eq!(store.list().len(), 1);
         assert_eq!(store.get(id).map(|n| n.summary.as_str()), Some("b"));
-        // Un id che non esiste più dà una notifica nuova.
+        // An id that no longer exists gives a new notification.
         let mut stale = request("c");
         stale.replaces_id = 999;
         assert_ne!(store.notify(stale, now, 0).notification.id, 999);

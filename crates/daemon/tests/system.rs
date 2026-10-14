@@ -1,5 +1,5 @@
-//! `dev.frascella.Silica.System1` con servizi finti: NetworkManager, UPower e BlueZ su un
-//! bus "di sistema" privato, `wpctl` e la retroilluminazione in una directory temporanea.
+//! `dev.frascella.Silica.System1` with fake services: NetworkManager, UPower and BlueZ on a
+//! private "system" bus, `wpctl` and the backlight in a temporary directory.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -27,7 +27,7 @@ impl Bus {
             .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
             .stdout(Stdio::piped())
             .spawn()
-            .expect("dbus-daemon (pacchetto dbus) è necessario per questi test");
+            .expect("dbus-daemon (package dbus) is required for these tests");
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
@@ -54,7 +54,7 @@ impl Drop for Bus {
     }
 }
 
-// --- Servizi finti -----------------------------------------------------------------
+// --- Fake services -----------------------------------------------------------------
 
 struct FakeNm {
     wireless: bool,
@@ -232,7 +232,7 @@ impl FakeAdapter {
     }
 }
 
-/// NetworkManager, UPower e BlueZ finti, ciascuno con la sua connessione e il suo nome.
+/// Fake NetworkManager, UPower and BlueZ, each with its own connection and name.
 async fn fake_services(bus: &Bus) -> Vec<Connection> {
     let nm = bus.connect().await;
     let server = nm.object_server();
@@ -303,7 +303,7 @@ async fn fake_services(bus: &Bus) -> Vec<Connection> {
     vec![nm, upower, bluez]
 }
 
-/// `wpctl` finto: il volume in un file accanto allo script.
+/// Fake `wpctl`: the volume in a file next to the script.
 fn fake_wpctl(dir: &Path) -> PathBuf {
     let script = dir.join("wpctl");
     std::fs::write(
@@ -316,8 +316,8 @@ case "$1" in
     if [ "$(cat "$S.mute" 2>/dev/null)" = 1 ]; then echo "Volume: $v [MUTED]"; else echo "Volume: $v"; fi ;;
   set-volume) echo "$3" > "$S" ;;
   set-mute) echo "$3" > "$S.mute" ;;
-  inspect) echo '  * node.description = "Altoparlanti di prova"' ;;
-  status) printf 'Audio\n ├─ Sinks:\n │      62. Cuffie [vol: 1.00]\n │  *   74. Altoparlanti di prova [vol: 0.50]\n │  \n ├─ Sources:\n' ;;
+  inspect) echo '  * node.description = "Test speakers"' ;;
+  status) printf 'Audio\n ├─ Sinks:\n │      62. Headphones [vol: 1.00]\n │  *   74. Test speakers [vol: 0.50]\n │  \n ├─ Sources:\n' ;;
   set-default) echo "$2" > "$S.default" ;;
   *) exit 1 ;;
 esac
@@ -335,7 +335,7 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// (nome, segnale, protetta, salvata, in uso).
+/// (name, signal, protected, saved, in use).
 type Network = (String, u8, bool, bool, bool);
 
 #[proxy(
@@ -366,7 +366,7 @@ where
     T::try_from(state[key].try_clone().unwrap()).unwrap()
 }
 
-/// Attende che lo stato soddisfi `ready` (le sorgenti partono in parallelo).
+/// Waits until the state satisfies `ready` (the sources start in parallel).
 async fn wait_for(
     proxy: &SystemProxy<'_>,
     ready: impl Fn(&HashMap<String, OwnedValue>) -> bool,
@@ -386,7 +386,7 @@ async fn wait_for(
 fn reads_and_changes_the_system() {
     let session = Bus::start();
     let system = Bus::start();
-    let dir = temp_dir("pieno");
+    let dir = temp_dir("full");
     let backlight = dir.join("backlight/intel");
     std::fs::create_dir_all(&backlight).unwrap();
     std::fs::write(backlight.join("max_brightness"), "1000").unwrap();
@@ -435,11 +435,11 @@ fn reads_and_changes_the_system() {
             assert!((get::<f64>(&state, "brightness") - 0.5).abs() < 1e-9);
             assert!((get::<f64>(&state, "audio.volume") - 0.5).abs() < 1e-9);
             let state = wait_for(&proxy, |s| !get::<String>(s, "audio.name").is_empty()).await;
-            assert_eq!(get::<String>(&state, "audio.name"), "Altoparlanti di prova");
+            assert_eq!(get::<String>(&state, "audio.name"), "Test speakers");
 
             proxy.set_wifi_enabled(false).await.unwrap();
             wait_for(&proxy, |s| !get::<bool>(s, "wifi.enabled")).await;
-            // Ogni cambiamento arriva anche come segnale con lo stato intero.
+            // Every change also arrives as a signal with the whole state.
             let mut saw_wifi_off = false;
             for _ in 0..20 {
                 let signal = changed.next().await.unwrap();
@@ -460,18 +460,18 @@ fn reads_and_changes_the_system() {
             assert!((get::<f64>(&state, "audio.volume") - 0.3).abs() < 1e-9);
             assert!(proxy.set_volume(f64::NAN).await.is_err());
 
-            // Senza logind sul bus finto la luminosità si scrive in sysfs.
+            // Without logind on the fake bus the brightness is written to sysfs.
             proxy.set_brightness(0.25).await.unwrap();
             let written = std::fs::read_to_string(backlight.join("brightness")).unwrap();
             assert_eq!(written.trim(), "250");
-            // Mai a zero.
+            // Never zero.
             proxy.set_brightness(0.0).await.unwrap();
             let written = std::fs::read_to_string(backlight.join("brightness")).unwrap();
             assert_eq!(written.trim(), "1");
-            // Due richieste di Silica; un cambio da fuori (luminosità adattiva) cambia il
-            // valore ma non le richieste: l'HUD non compare.
-            // Il polling può riportare per un giro il valore letto prima della scrittura: si
-            // aspetta lo stato con le due richieste e il valore scritto.
+            // Two requests from Silica; a change from outside (adaptive brightness) changes
+            // the value but not the requests: the HUD does not appear.
+            // The polling may report for one round the value read before the write: it
+            // waits for the state with both requests and the written value.
             wait_for(&proxy, |s| {
                 get::<u64>(s, "brightness.requests") == 2
                     && (get::<f64>(s, "brightness") - 0.001).abs() < 1e-9
@@ -485,14 +485,14 @@ fn reads_and_changes_the_system() {
             proxy.set_do_not_disturb(true).await.unwrap();
             wait_for(&proxy, |s| get::<bool>(s, "dnd")).await;
 
-            // L'aspetto scuro: nello stato e nel file, per il prossimo avvio.
+            // The dark appearance: in the state and in the file, for the next start.
             proxy.set_dark(true).await.unwrap();
             wait_for(&proxy, |s| get::<bool>(s, "appearance.dark")).await;
             assert!(silica_daemon::system::read_appearance(
                 &dir.join("appearance.json")
             ));
 
-            // Reti: quella in uso, poi la salvata, poi le altre per segnale.
+            // Networks: the one in use, then the saved one, then the others by signal.
             let networks = proxy.wifi_networks().await.unwrap();
             assert_eq!(
                 networks,
@@ -505,13 +505,13 @@ fn reads_and_changes_the_system() {
             proxy.connect_wifi("Ufficio").await.unwrap();
             assert!(proxy.connect_wifi("Bar").await.is_err());
 
-            // Uscite audio da `wpctl status`.
+            // Audio outputs from `wpctl status`.
             let outputs = proxy.audio_outputs().await.unwrap();
             assert_eq!(
                 outputs,
                 [
-                    (62, "Cuffie".to_owned(), false),
-                    (74, "Altoparlanti di prova".to_owned(), true),
+                    (62, "Headphones".to_owned(), false),
+                    (74, "Test speakers".to_owned(), true),
                 ]
             );
             proxy.set_audio_output(62).await.unwrap();
@@ -521,7 +521,7 @@ fn reads_and_changes_the_system() {
         };
         future::or(test, async {
             let result = service.run().await;
-            panic!("il servizio è finito: {result:?}");
+            panic!("the service ended: {result:?}");
         })
         .await;
     });
@@ -531,7 +531,7 @@ fn reads_and_changes_the_system() {
 #[test]
 fn missing_sources_are_absent_not_errors() {
     let session = Bus::start();
-    let dir = temp_dir("vuoto");
+    let dir = temp_dir("empty");
     zbus::block_on(async {
         let connection = session.connect().await;
         let name = connection.unique_name().unwrap().to_string();
@@ -572,7 +572,7 @@ fn missing_sources_are_absent_not_errors() {
         };
         future::or(test, async {
             let result = service.run().await;
-            panic!("il servizio è finito: {result:?}");
+            panic!("the service ended: {result:?}");
         })
         .await;
     });

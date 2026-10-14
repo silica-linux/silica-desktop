@@ -6,29 +6,29 @@
     Licensed under MIT OR Apache-2.0.
   </copyright>
 
-  <description summary="regioni di vetro calcolate dal compositor">
-    Un client dichiara regioni di una sua superficie da rendere come vetro: il
-    compositor campiona quello che sta dietro la superficie e lo mostra sfocato,
-    con il colore e la rifrazione del materiale scelto. Il client disegna sopra il
-    proprio contenuto (testo, icone) con pixel trasparenti dove deve vedersi il vetro.
+  <description summary="glass regions computed by the compositor">
+    A client declares regions of one of its surfaces to be rendered as glass: the
+    compositor samples what is behind the surface and shows it blurred, with the
+    color and refraction of the chosen material. The client draws its own content
+    (text, icons) on top, with transparent pixels where the glass must show.
   </description>
 
   <interface name="silica_glass_manager_v1" version="5">
-    <description summary="crea l'oggetto vetro di una superficie"/>
+    <description summary="creates the glass object of a surface"/>
 
     <request name="destroy" type="destructor">
-      <description summary="distrugge il manager; gli oggetti vetro restano validi"/>
+      <description summary="destroys the manager; glass objects stay valid"/>
     </request>
 
     <enum name="error">
       <entry name="already_has_glass" value="0"
-             summary="la superficie ha già un oggetto silica_glass_v1"/>
+             summary="the surface already has a silica_glass_v1 object"/>
     </enum>
 
     <request name="get_glass">
-      <description summary="oggetto vetro per una superficie">
-        Una superficie ha al più un oggetto vetro: un secondo get_glass sulla stessa
-        superficie è l'errore already_has_glass.
+      <description summary="glass object for a surface">
+        A surface has at most one glass object: a second get_glass on the same
+        surface is the already_has_glass error.
       </description>
       <arg name="id" type="new_id" interface="silica_glass_v1"/>
       <arg name="surface" type="object" interface="wl_surface"/>
@@ -36,42 +36,42 @@
   </interface>
 
   <interface name="silica_glass_v1" version="5">
-    <description summary="regioni di vetro di una superficie">
-      Lo stato è doppio: clear e add_region cambiano lo stato in attesa, che diventa
-      corrente al prossimo wl_surface.commit. Le coordinate sono nel sistema della
-      superficie, in pixel logici.
+    <description summary="glass regions of a surface">
+      The state is double-buffered: clear and add_region change the pending state, which
+      becomes current on the next wl_surface.commit. Coordinates are in the surface
+      coordinate system, in logical pixels.
     </description>
 
     <request name="destroy" type="destructor">
-      <description summary="toglie il vetro dalla superficie al prossimo commit"/>
+      <description summary="removes the glass from the surface on the next commit"/>
     </request>
 
     <enum name="material">
-      <description summary="materiali misurati">
-        Le famiglie di vetro misurate: chiaro (sfocatura piccola, quasi trasparente),
-        spesso (sfocatura ampia, quasi bianco in aspetto chiaro) e regolare (il Liquid Glass
-        dei controlli: lente forte sul bordo). Dalla versione 2: notifica (sfocatura molto
-        ampia, quasi opaco, come banner e Centro notifiche).
+      <description summary="measured materials">
+        The measured glass families: clear (small blur, almost transparent), thick (wide
+        blur, almost white in the light appearance) and regular (the Liquid Glass of
+        controls: strong lens at the edge). Since version 2: notification (very wide blur,
+        almost opaque, like banners and the Notification Center).
       </description>
-      <entry name="clear" value="0" summary="vetro chiaro, come il Dock"/>
-      <entry name="thick" value="1" summary="vetro spesso, come menu e ricerca"/>
-      <entry name="regular" value="2" summary="vetro dei controlli, con la lente del bordo"/>
-      <entry name="notification" value="3" since="2" summary="vetro delle notifiche"/>
+      <entry name="clear" value="0" summary="clear glass, like the Dock"/>
+      <entry name="thick" value="1" summary="thick glass, like menus and search"/>
+      <entry name="regular" value="2" summary="glass of controls, with the edge lens"/>
+      <entry name="notification" value="3" since="2" summary="glass of notifications"/>
     </enum>
 
     <enum name="error">
       <entry name="invalid_region" value="0"
-             summary="dimensione negativa o nulla, raggio negativo, materiale sconosciuto o opacità fuori da 0–1"/>
-      <entry name="too_many_regions" value="1" summary="oltre 64 regioni in attesa"/>
+             summary="negative or zero size, negative radius, unknown material or opacity outside 0–1"/>
+      <entry name="too_many_regions" value="1" summary="more than 64 pending regions"/>
     </enum>
 
     <request name="clear">
-      <description summary="toglie tutte le regioni in attesa"/>
+      <description summary="removes all pending regions"/>
     </request>
 
     <request name="add_region">
-      <description summary="aggiunge una regione allo stato in attesa">
-        Un rettangolo con angoli ad arco di cerchio di raggio radius (0 = angoli retti).
+      <description summary="adds a region to the pending state">
+        A rectangle with circular-arc corners of the given radius (0 = square corners).
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>
@@ -82,9 +82,9 @@
     </request>
 
     <request name="add_translucent_region" since="3">
-      <description summary="aggiunge una regione con un'opacità">
-        Come add_region, con il vetro composto con opacità opacity (0–1): un pannello che
-        compare o scompare in dissolvenza porta con sé il suo vetro.
+      <description summary="adds a region with an opacity">
+        Like add_region, with the glass composed at the given opacity (0–1): a panel that
+        fades in or out carries its glass with it.
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>
@@ -96,19 +96,19 @@
     </request>
 
     <request name="separate" since="4">
-      <description summary="le regioni seguenti formano un gruppo a sé">
-        Le regioni aggiunte dopo questa richiesta non si fondono con quelle aggiunte prima,
-        anche se vicine o sovrapposte, e si disegnano sopra di loro: un sottomenu sopra il
-        suo menu. clear riporta al primo gruppo.
+      <description summary="the following regions form a group of their own">
+        Regions added after this request do not merge with those added before, even when
+        close or overlapping, and are drawn on top of them: a submenu over its menu.
+        clear goes back to the first group.
       </description>
     </request>
 
     <request name="add_tip" since="4">
-      <description summary="aggiunge una punta rivolta in basso">
-        Un triangolo isoscele nel rettangolo dato, con la base sul lato superiore e il
-        vertice al centro del lato inferiore. Si fonde con le regioni dello stesso gruppo e
-        materiale (la punta di un menu che indica un'icona del Dock): il bordo del vetro
-        corre senza interruzioni dal corpo alla punta.
+      <description summary="adds a downward tip">
+        An isosceles triangle in the given rectangle, with the base on the top side and the
+        apex at the middle of the bottom side. It merges with the regions of the same group
+        and material (the tip of a menu pointing at a Dock icon): the glass edge runs without
+        a break from the body to the tip.
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>
@@ -119,9 +119,9 @@
     </request>
 
     <request name="add_upward_tip" since="5">
-      <description summary="aggiunge una punta rivolta in alto">
-        Come add_tip, capovolta: la base sul lato inferiore del rettangolo e il vertice al
-        centro di quello superiore (un popover sotto il pulsante che lo apre).
+      <description summary="adds an upward tip">
+        Like add_tip, flipped: the base on the bottom side of the rectangle and the apex at
+        the middle of the top side (a popover below the button that opens it).
       </description>
       <arg name="x" type="int"/>
       <arg name="y" type="int"/>

@@ -1,14 +1,14 @@
-//! `silica-daemon`: i servizi di sistema di Silica sul bus di sessione.
+//! `silica-daemon`: Silica's system services on the session bus.
 
 use std::process::ExitCode;
 
 use futures_lite::{StreamExt, future};
 use silica_daemon::{Daemon, SystemConfig, SystemService};
 
-const USAGE: &str = "uso: silica-daemon [--address INDIRIZZO] [--replace]
+const USAGE: &str = "usage: silica-daemon [--address ADDRESS] [--replace]
 
-  --address INDIRIZZO  bus a cui collegarsi (predefinito: DBUS_SESSION_BUS_ADDRESS)
-  --replace            prende i nomi anche se un altro server li ha";
+  --address ADDRESS    bus to connect to (default: DBUS_SESSION_BUS_ADDRESS)
+  --replace            takes the names even if another server holds them";
 
 fn main() -> ExitCode {
     let mut address = None;
@@ -19,7 +19,7 @@ fn main() -> ExitCode {
             "--address" => match args.next() {
                 Some(value) => address = Some(value),
                 None => {
-                    eprintln!("silica-daemon: --address richiede un indirizzo\n{USAGE}");
+                    eprintln!("silica-daemon: --address needs an address\n{USAGE}");
                     return ExitCode::from(2);
                 }
             },
@@ -29,7 +29,7 @@ fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             other => {
-                eprintln!("silica-daemon: opzione sconosciuta {other}\n{USAGE}");
+                eprintln!("silica-daemon: unknown option {other}\n{USAGE}");
                 return ExitCode::from(2);
             }
         }
@@ -49,11 +49,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         None => zbus::connection::Builder::session()?,
     };
     let connection = builder.build().await?;
-    // Il bus di sistema serve al Centro di controllo; senza, quelle sorgenti sono assenti.
+    // The system bus is for the Control Center; without it, those sources are absent.
     let system_bus = match zbus::Connection::system().await {
         Ok(bus) => Some(bus),
         Err(err) => {
-            eprintln!("silica-daemon: bus di sistema non disponibile: {err}");
+            eprintln!("silica-daemon: system bus unavailable: {err}");
             None
         }
     };
@@ -73,11 +73,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
             .unique_name()
             .map_or("?".to_owned(), |n| n.to_string())
     );
-    // Il bus privato di Ossido si chiude con Ossido: allora il daemon esce.
+    // Ossido's private bus closes with Ossido: then the daemon exits.
     let lost = async {
         let mut messages = zbus::MessageStream::from(daemon.connection());
         while let Some(Ok(_)) = messages.next().await {}
-        Err(zbus::Error::Failure("bus di sessione chiuso".to_owned()))
+        Err(zbus::Error::Failure("session bus closed".to_owned()))
     };
     future::or(future::or(daemon.run(), system.run()), lost).await
 }

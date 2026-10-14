@@ -1,22 +1,22 @@
-//! Il backend xdg-desktop-portal di Silica (`org.freedesktop.impl.portal.FileChooser`): i
-//! dialoghi Apri e Salva delle app sono finestre di Mustache in modalità dialogo
-//! (`--dialog=open|save`), avviate dalla sua voce .desktop; la scelta torna sullo stdout, un
-//! URI per riga (vuoto e uscita non zero: annullato). Specifica: documentazione di
-//! xdg-desktop-portal, interfaccia `org.freedesktop.impl.portal.FileChooser`.
+//! The xdg-desktop-portal backend of Silica (`org.freedesktop.impl.portal.FileChooser`): the
+//! Open and Save dialogs of apps are Mustache windows in dialog mode
+//! (`--dialog=open|save`), started from its .desktop entry; the choice comes back on stdout, one
+//! URI per line (empty with a non-zero exit: cancelled). Specification: xdg-desktop-portal
+//! documentation, interface `org.freedesktop.impl.portal.FileChooser`.
 
 pub mod settings;
 
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Il nome del backend sul bus di sessione e l'oggetto dei portali.
+/// The backend name on the session bus and the portal object.
 pub const BUS_NAME: &str = "org.freedesktop.impl.portal.desktop.silica";
 pub const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
 
-/// La voce .desktop di Mustache.
+/// The .desktop entry of Mustache.
 pub const MUSTACHE_ID: &str = "dev.frascella.Mustache.desktop";
 
-/// Le risposte del portale: 0 fatto, 1 annullato dall'utente, 2 altro errore.
+/// Portal responses: 0 done, 1 cancelled by the user, 2 other error.
 pub const RESPONSE_OK: u32 = 0;
 pub const RESPONSE_CANCELLED: u32 = 1;
 pub const RESPONSE_OTHER: u32 = 2;
@@ -27,7 +27,7 @@ pub enum DialogKind {
     Save,
 }
 
-/// Quel che chiede l'app.
+/// What the app asks for.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DialogRequest {
     pub title: String,
@@ -38,8 +38,8 @@ pub struct DialogRequest {
     pub current_folder: Option<String>,
 }
 
-/// Le parole di una riga `Exec` (virgolette della specifica Desktop Entry), senza i codici di
-/// campo: i file del dialogo non c'entrano.
+/// The words of an `Exec` line (Desktop Entry specification quoting), without the field
+/// codes: the dialog files have nothing to do with them.
 pub fn exec_words(exec: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -78,7 +78,7 @@ pub fn exec_words(exec: &str) -> Vec<String> {
         .collect()
 }
 
-/// Il valore di `Exec` nella sezione `[Desktop Entry]`.
+/// The value of `Exec` in the `[Desktop Entry]` section.
 pub fn desktop_exec(text: &str) -> Option<String> {
     let mut in_entry = false;
     for line in text.lines() {
@@ -94,7 +94,7 @@ pub fn desktop_exec(text: &str) -> Option<String> {
     None
 }
 
-/// La riga di comando di Mustache per il dialogo: `Exec` più gli argomenti per Dart.
+/// Mustache's command line for the dialog: `Exec` plus the arguments for Dart.
 pub fn dialog_command(exec: &str, kind: DialogKind, request: &DialogRequest) -> Vec<String> {
     let mut words = exec_words(exec);
     let mut arg = |value: String| {
@@ -126,7 +126,7 @@ pub fn dialog_command(exec: &str, kind: DialogKind, request: &DialogRequest) -> 
     words
 }
 
-/// Gli URI scelti dallo stdout di Mustache: solo righe `file://`.
+/// The URIs chosen on Mustache's stdout: only `file://` lines.
 pub fn parse_uris(stdout: &str) -> Vec<String> {
     stdout
         .lines()
@@ -136,14 +136,14 @@ pub fn parse_uris(stdout: &str) -> Vec<String> {
         .collect()
 }
 
-/// Un percorso dato come array di byte terminato da zero (`current_folder` del portale).
+/// A path given as a zero-terminated byte array (the portal's `current_folder`).
 pub fn path_from_bytes(bytes: &[u8]) -> Option<String> {
     let trimmed = bytes.strip_suffix(&[0]).unwrap_or(bytes);
     let text = std::str::from_utf8(trimmed).ok()?;
     (!text.is_empty() && Path::new(text).is_absolute()).then(|| text.to_owned())
 }
 
-/// La voce di Mustache nelle cartelle dei dati XDG (la prima vince).
+/// Mustache's entry in the XDG data directories (the first one wins).
 pub fn find_mustache_exec(env: &HashMap<String, String>) -> Option<String> {
     let home = env.get("HOME").cloned().unwrap_or_default();
     let data_home = env
@@ -172,11 +172,11 @@ mod tests {
     #[test]
     fn exec_words_respect_quotes_and_drop_field_codes() {
         assert_eq!(
-            exec_words(r#"/opt/silica/embedder --title "Il Mustache" /b/flutter_assets %F"#),
+            exec_words(r#"/opt/silica/embedder --title "The Mustache" /b/flutter_assets %F"#),
             [
                 "/opt/silica/embedder",
                 "--title",
-                "Il Mustache",
+                "The Mustache",
                 "/b/flutter_assets"
             ]
         );

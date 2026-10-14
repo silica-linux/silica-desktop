@@ -6,28 +6,27 @@
     Licensed under MIT OR Apache-2.0.
   </copyright>
 
-  <description summary="aspetto della finestra di un'app">
-    Un'app chiede a Ossido come presentare la sua finestra. Con il contenuto a tutta
-    finestra Ossido non aggiunge la sua barra del titolo sopra il contenuto: l'app disegna da
-    sé la barra degli strumenti (unificata con quella del titolo) e la barra laterale fino in
-    cima, e Ossido disegna soltanto i pulsanti della finestra sopra il contenuto, in alto a
-    sinistra, centrati nell'altezza della barra degli strumenti.
+  <description summary="appearance of an app window">
+    An app tells Ossido how to present its window. With full-size content Ossido does not
+    add its title bar above the content: the app draws its own toolbar (unified with the
+    title bar) and the sidebar up to the top, and Ossido only draws the window buttons over
+    the content, at the top left, vertically centered in the toolbar height.
   </description>
 
   <interface name="silica_window_manager_v1" version="1">
-    <description summary="crea l'oggetto finestra di una superficie"/>
+    <description summary="creates the window object of a surface"/>
 
     <request name="destroy" type="destructor">
-      <description summary="non serve più il gestore"/>
+      <description summary="the manager is no longer needed"/>
     </request>
 
     <enum name="error">
-      <entry name="already_has_window" value="0" summary="la superficie ha già un oggetto finestra"/>
+      <entry name="already_has_window" value="0" summary="the surface already has a window object"/>
     </enum>
 
     <request name="get_window">
-      <description summary="l'oggetto finestra della superficie di un xdg_toplevel">
-        La superficie è quella del ruolo xdg_toplevel della finestra.
+      <description summary="the window object of an xdg_toplevel's surface">
+        The surface is the one with the window's xdg_toplevel role.
       </description>
       <arg name="id" type="new_id" interface="silica_window_v1"/>
       <arg name="surface" type="object" interface="wl_surface"/>
@@ -35,19 +34,19 @@
   </interface>
 
   <interface name="silica_window_v1" version="1">
-    <description summary="aspetto di una finestra">
-      Lo stato è doppio: diventa corrente al prossimo wl_surface.commit.
+    <description summary="appearance of a window">
+      The state is double-buffered: it becomes current on the next wl_surface.commit.
     </description>
 
     <request name="destroy" type="destructor">
-      <description summary="torna all'aspetto normale al prossimo commit"/>
+      <description summary="back to the normal appearance on the next commit"/>
     </request>
 
     <request name="set_full_size_content">
-      <description summary="contenuto a tutta finestra">
-        toolbar_height è l'altezza, in pixel logici, della barra degli strumenti che l'app
-        disegna in cima: i pulsanti della finestra sono centrati in verticale in quella fascia.
-        0 torna alla barra del titolo di Ossido. Valori oltre 200 si riducono a 200.
+      <description summary="full-size content">
+        toolbar_height is the height, in logical pixels, of the toolbar the app draws at the
+        top: the window buttons are vertically centered in that band. 0 goes back to Ossido's
+        title bar. Values above 200 are clamped to 200.
       </description>
       <arg name="toolbar_height" type="uint"/>
     </request>
