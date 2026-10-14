@@ -127,7 +127,7 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 | `silica-os` | the distro: a bootc image on top of Fedora Atomic with Silica's defaults, pipeline and installation ISO | MIT OR Apache-2.0 |
 | `silica-brand` | logo, repository banners, release wallpapers (with their rows in `ASSETS.md`) | Silica trademark, all rights reserved (`TRADEMARKS.md`) |
 | `silica-setup` | the first-boot assistant (an app, like `mustache`) | MIT OR Apache-2.0 |
-| `clock`, `calculator` | the clock and calculator apps (like `mustache`) | MIT OR Apache-2.0 |
+| `settings`, `mail`, `terminal`, `clock`, `calculator` | the Settings, Mail (Flutter app + Rust engine), Terminal, Clock and Calculator apps (like `mustache`) | MIT OR Apache-2.0 |
 | `.github` (public) | default issue templates for every repository | — |
 | one repository per app | `mustache` (public, the file manager), then Settings, Terminal, …: they depend on `silica-ui`; they are built with `cargo xtask bundle <path>`; `cargo xtask install-app <path>` installs their `.desktop` entry (template in the app repository's `linux/`) | MIT OR Apache-2.0 |
 
