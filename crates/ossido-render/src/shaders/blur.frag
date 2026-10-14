@@ -20,9 +20,9 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Passo di un pixel della texture lungo l'asse della passata (x o y, in coordinate 0–1).
+// One texture pixel step along the axis of the pass (x or y, in 0–1 coordinates).
 uniform vec2 step;
-// σ della gaussiana in pixel della texture; il nucleo arriva a 3σ (al più 48 pixel).
+// σ of the Gaussian in texture pixels; the kernel reaches 3σ (at most 48 pixels).
 uniform float sigma;
 
 void main() {

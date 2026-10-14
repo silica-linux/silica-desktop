@@ -1,6 +1,6 @@
-//! Elementi a pixel shader tenuti fra un frame e l'altro: stesso id e contatore dei
-//! commit finché area e parametri non cambiano, così il damage tracker li ridisegna solo
-//! quando serve.
+//! Pixel-shader elements kept between frames: same id and commit counter as long as
+//! area and parameters do not change, so the damage tracker redraws them only when
+//! needed.
 
 use std::cell::RefCell;
 
@@ -28,7 +28,7 @@ impl<K> Default for ShaderCache<K> {
 }
 
 impl<K: PartialEq + Copy> ShaderCache<K> {
-    /// L'elemento per quest'area e questi parametri; `uniforms` si calcola solo se cambiano.
+    /// The element for this area and these parameters; `uniforms` is computed only if they change.
     pub fn element(
         &self,
         program: &GlesPixelProgram,

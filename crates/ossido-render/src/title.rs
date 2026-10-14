@@ -1,11 +1,11 @@
-//! Il titolo nella barra delle decorazioni lato server.
+//! The title in the server-side decorations bar.
 //!
-//! Misure della barra degli strumenti (`plan/reference/windows.md`): altezza delle
-//! maiuscole 10,75 pt → Inter a ~15 pt (inferenza: il font di sistema non si identifica),
-//! peso semibold, linea di base a ~31 pt dalla cima, `#4d4d4d` attiva e `#bebebe` inattiva;
-//! in scuro `#e9e9e9` e `#646464`.
-//! In Finder il titolo segue i pulsanti di navigazione; una finestra con il solo titolo
-//! non è misurata: qui è centrato, provvisorio.
+//! Toolbar measurements (`plan/reference/windows.md`): cap height 10.75 pt → Inter at
+//! ~15 pt (inference: the system font cannot be identified), semibold weight, baseline at
+//! ~31 pt from the top, `#4d4d4d` active and `#bebebe` inactive; in dark `#e9e9e9` and
+//! `#646464`.
+//! In Finder the title follows the navigation buttons; a window with only the title is
+//! not measured: here it is centered, provisional.
 
 use std::cell::RefCell;
 
@@ -19,18 +19,18 @@ use tracing::warn;
 
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.ttf");
 
-/// Corpo del titolo in punti.
+/// Title size in points.
 pub const SIZE: f32 = 15.0;
-/// Linea di base dalla cima della cornice, in punti.
+/// Baseline from the top of the frame, in points.
 pub const BASELINE: f64 = 31.0;
-/// Margine dal gruppo dei pulsanti (che finisce a x 80) e dal bordo destro.
+/// Margin from the button group (which ends at x 80) and from the right edge.
 const MARGIN: f64 = 92.0;
 const ACTIVE: [u8; 3] = [0x4d, 0x4d, 0x4d];
 const INACTIVE: [u8; 3] = [0xbe, 0xbe, 0xbe];
 const ACTIVE_DARK: [u8; 3] = [0xe9, 0xe9, 0xe9];
 const INACTIVE_DARK: [u8; 3] = [0x64, 0x64, 0x64];
 
-/// Il colore del titolo secondo stato e aspetto.
+/// The title color according to state and appearance.
 pub fn color(active: bool, dark: bool) -> [u8; 3] {
     match (active, dark) {
         (true, false) => ACTIVE,
@@ -40,17 +40,17 @@ pub fn color(active: bool, dark: bool) -> [u8; 3] {
     }
 }
 
-/// Il testo rasterizzato, in RGBA premoltiplicato.
+/// The rasterized text, in premultiplied RGBA.
 struct Raster {
     width: u32,
     height: u32,
-    /// Distanza della linea di base dalla cima del raster, in pixel.
+    /// Distance of the baseline from the top of the raster, in pixels.
     ascent: f32,
     pixels: Vec<u8>,
 }
 
-/// Rasterizza `text` a `px` pixel nel colore dato, al più `max_width` pixel: oltre, il
-/// testo si accorcia con i puntini.
+/// Rasterizes `text` at `px` pixels in the given color, at most `max_width` pixels: beyond
+/// that the text is shortened with an ellipsis.
 fn rasterize(text: &str, px: f32, color: [u8; 3], max_width: f32) -> Option<Raster> {
     let font = FontRef::try_from_slice(INTER_SEMIBOLD).ok()?;
     let scaled = font.as_scaled(PxScale::from(px));
@@ -132,8 +132,8 @@ fn rasterize(text: &str, px: f32, color: [u8; 3], max_width: f32) -> Option<Rast
     })
 }
 
-/// Il titolo di una finestra, tenuto nei suoi dati: si rasterizza solo quando cambiano
-/// testo, stato, scala o larghezza disponibile.
+/// The title of a window, kept in its data: it is rasterized only when text, state, scale
+/// or available width change.
 #[derive(Default)]
 pub struct Title {
     state: RefCell<Option<Cached>>,
@@ -142,14 +142,14 @@ pub struct Title {
 struct Cached {
     key: (String, [u8; 3], u32, i32),
     buffer: TextureBuffer<GlesTexture>,
-    /// Posizione della linea di base nel raster, in punti.
+    /// Position of the baseline in the raster, in points.
     ascent: f64,
     size: Size<i32, Logical>,
 }
 
 impl Title {
-    /// L'elemento del titolo per una cornice (logica, nell'output). Niente se il testo è
-    /// vuoto o non c'è spazio.
+    /// The title element for a frame (logical, in the output). Nothing if the text is
+    /// empty or there is no room.
     pub fn element(
         &self,
         renderer: &mut GlesRenderer,
@@ -198,7 +198,7 @@ impl Title {
             ) {
                 Ok(buffer) => buffer,
                 Err(err) => {
-                    warn!("titolo non caricato: {err:?}");
+                    warn!("title not uploaded: {err:?}");
                     return None;
                 }
             };
@@ -210,7 +210,7 @@ impl Title {
             });
         }
         let cached = state.as_ref()?;
-        // Centrato nella cornice, senza toccare i pulsanti.
+        // Centered in the frame, without touching the buttons.
         let x = (f64::from(frame.loc.x)
             + (f64::from(frame.size.w) - f64::from(cached.size.w)) / 2.0)
             .max(f64::from(frame.loc.x) + MARGIN);
@@ -234,17 +234,17 @@ mod tests {
 
     #[test]
     fn titles_rasterize_and_shorten_to_fit() {
-        let raster = rasterize("Documenti", 15.0, ACTIVE, 1000.0).unwrap();
+        let raster = rasterize("Documents", 15.0, ACTIVE, 1000.0).unwrap();
         assert!(
             raster.width > 40 && raster.height >= 15,
             "{}x{}",
             raster.width,
             raster.height
         );
-        // Qualche pixel pieno: il testo c'è.
+        // A few full pixels: the text is there.
         assert!(raster.pixels.chunks(4).any(|p| p[3] > 200));
-        let short = rasterize("Un titolo molto lungo per la barra", 15.0, ACTIVE, 80.0).unwrap();
+        let short = rasterize("A very long title for the bar", 15.0, ACTIVE, 80.0).unwrap();
         assert!(short.width <= 80, "{}", short.width);
-        assert!(rasterize("Titolo", 15.0, ACTIVE, 1.0).is_none());
+        assert!(rasterize("Title", 15.0, ACTIVE, 1.0).is_none());
     }
 }

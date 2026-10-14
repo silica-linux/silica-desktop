@@ -20,15 +20,15 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Da gl_FragCoord alla posizione nell'area dell'effetto, in pixel fisici.
+// From gl_FragCoord to the position in the effect area, in physical pixels.
 uniform vec3 frag_to_local_x;
 uniform vec3 frag_to_local_y;
-// La cornice della finestra e la miniatura di destinazione: x0, y0, x1, y1 nell'area.
+// The window frame and the destination thumbnail: x0, y0, x1, y1 in the area.
 uniform vec4 window_rect;
 uniform vec4 target_rect;
-// Piega dell'imbuto, discesa del bordo superiore e di quello inferiore (0–1).
+// Funnel bend, descent of the top edge and of the bottom edge (0–1).
 uniform vec3 motion;
-// Dove sta la cornice nell'istantanea: origine e dimensione in coordinate della texture.
+// Where the frame is in the snapshot: origin and size in texture coordinates.
 uniform vec4 frame_uv;
 
 float ease(float x) {
@@ -40,14 +40,14 @@ void main() {
     vec3 frag = vec3(gl_FragCoord.xy, 1.0);
     vec2 p = vec2(dot(frag_to_local_x, frag), dot(frag_to_local_y, frag));
 
-    // Il contenuto sta fra il bordo superiore e quello inferiore, che scendono ognuno con la sua
-    // curva verso la miniatura.
+    // The content lies between the top edge and the bottom edge, which each come down with
+    // their own curve towards the thumbnail.
     float top = mix(window_rect.y, target_rect.y, motion.y);
     float bottom = mix(window_rect.w, target_rect.w, motion.z);
 
-    // L'imbuto: a ogni riga dello schermo i bordi vanno dalla larghezza della finestra a quella
-    // della miniatura con una smoothstep fra la cima della finestra e la cima della miniatura,
-    // scalata dalla piega.
+    // The funnel: on every screen row the edges go from the window width to the thumbnail
+    // width with a smoothstep between the top of the window and the top of the thumbnail,
+    // scaled by the bend.
     float span = target_rect.y - window_rect.y;
     float u = abs(span) < 1.0 ? 1.0 : (p.y - window_rect.y) / span;
     float k = motion.x * ease(u);

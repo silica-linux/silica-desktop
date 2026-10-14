@@ -1,7 +1,7 @@
-//! Il fondale della barra dei menu: in macOS 27 la barra non ha materiale, ma sopra lo
-//! sfondo del desktop c'è un gradiente che comprime le luci nei primi ~120 pt
-//! (`plan/reference/glass.md`, "Barra dei menu · gradiente"; identico in chiaro e scuro).
-//! Si applica allo sfondo del desktop, sotto le finestre.
+//! The menu bar backdrop: in macOS 27 the bar has no material, but above the desktop
+//! wallpaper there is a gradient that compresses the highlights in the first ~120 pt
+//! (`plan/reference/glass.md`, "Menu bar · gradient"; identical in light and dark).
+//! It applies to the desktop wallpaper, below the windows.
 
 use std::cell::RefCell;
 
@@ -15,13 +15,13 @@ use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform}
 
 use crate::glass::render_to_texture;
 
-/// Altezza dell'effetto: sparisce a y ≈ 115–120 pt.
+/// Height of the effect: it disappears at y ≈ 115–120 pt.
 pub const HEIGHT_PT: f64 = 120.0;
 
-/// Livelli dopo il gradiente: righe y 0, 30, 45, 60, 80, 100, 120 pt; colonne 96, 112,
-/// …, 240, 255. Dalla tabella misurata; dove la ripresa era coperta dai widget si usa
-/// 96 → 96 (sotto ~108 lo sfondo non cambia) e il bianco (255) è estrapolato dalle due
-/// colonne prima, salvo la riga 0 (bianco → 176, misurato).
+/// Levels after the gradient: rows y 0, 30, 45, 60, 80, 100, 120 pt; columns 96, 112,
+/// …, 240, 255. From the measured table; where the capture was covered by widgets it uses
+/// 96 → 96 (below ~108 the wallpaper does not change) and white (255) is extrapolated from the
+/// two previous columns, except row 0 (white → 176, measured).
 pub const TABLE: [[f32; 11]; 7] = [
     [
         96., 110., 112., 116., 121., 127., 135., 144., 154., 165., 176.,
@@ -67,13 +67,13 @@ fn table_uniform() -> UniformValue {
 
 type Signature = Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>;
 
-/// Il fondale fra un frame e l'altro: si ridisegna solo se cambia lo sfondo.
+/// The backdrop between frames: it is redrawn only if the wallpaper changes.
 #[derive(Default)]
 pub struct Backdrop {
     state: RefCell<Option<Cached>>,
 }
 
-/// Lo sfondo per cui è stata fatta la texture, la texture, id e commit dell'elemento.
+/// The wallpaper the texture was made for, the texture, the element's id and commit.
 type Cached = (
     Signature,
     Rectangle<i32, Physical>,
@@ -83,8 +83,8 @@ type Cached = (
 );
 
 impl Backdrop {
-    /// L'elemento del fondale sopra `behind` (lo sfondo del desktop, dal primo piano),
-    /// largo quanto l'output.
+    /// The backdrop element over `behind` (the desktop wallpaper, from the front),
+    /// as wide as the output.
     pub fn element<E: RenderElement<GlesRenderer>>(
         &self,
         renderer: &mut GlesRenderer,
@@ -169,7 +169,7 @@ impl Element for ToneElement {
         &self,
         _scale: Scale<f64>,
     ) -> smithay::backend::renderer::utils::OpaqueRegions<i32, Physical> {
-        // Copre lo sfondo per intero: quello che c'è sotto non serve ridisegnarlo.
+        // It covers the wallpaper entirely: what is below does not need redrawing.
         smithay::backend::renderer::utils::OpaqueRegions::from_slice(&[Rectangle::from_size(
             self.area.size,
         )])
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn the_reference_gray_becomes_the_measured_bar_background() {
-        // #7a7b80 (luminanza ~122,9) in cima diventa ~111 (#6f7075): fra le colonne 112 e 128.
+        // #7a7b80 (luminance ~122.9) at the top becomes ~111 (#6f7075): between columns 112 and 128.
         let l = 0.2126 * 122.0 + 0.7152 * 123.0 + 0.0722 * 128.0;
         let f = (l - 112.0) / 16.0;
         let top = TABLE[0][1] + (TABLE[0][2] - TABLE[0][1]) * f;

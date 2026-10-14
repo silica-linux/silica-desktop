@@ -1,7 +1,6 @@
-//! Piccoli elementi disegnati da Ossido sulla CPU: capsule, linee e testo in Inter, caricati
-//! come texture e tenuti in cache finché non cambia il contenuto. Servono all'interfaccia che
-//! il compositor disegna da sé (la barra degli spazi di Panorama), dove un client Flutter non
-//! c'è.
+//! Small elements drawn by Ossido on the CPU: capsules, lines and text in Inter, uploaded
+//! as textures and cached until the content changes. They serve the interface the
+//! compositor draws by itself (Panorama's spaces bar), where there is no Flutter client.
 
 use std::cell::RefCell;
 
@@ -16,7 +15,7 @@ use tracing::warn;
 const INTER_REGULAR: &[u8] = include_bytes!("../fonts/Inter-Regular.ttf");
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.ttf");
 
-/// Peso del testo.
+/// Text weight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Weight {
     Regular,
@@ -33,7 +32,7 @@ impl Weight {
     }
 }
 
-/// Larghezza di un testo in punti.
+/// Width of a text in points.
 pub fn text_width(text: &str, size: f32, weight: Weight) -> f32 {
     let Some(font) = weight.font() else {
         return 0.0;
@@ -52,7 +51,7 @@ pub fn text_width(text: &str, size: f32, weight: Weight) -> f32 {
     width
 }
 
-/// Una tela RGBA premoltiplicata, in pixel; le coordinate dei metodi sono in punti.
+/// A premultiplied RGBA canvas, in pixels; the method coordinates are in points.
 pub struct Canvas {
     width: u32,
     height: u32,
@@ -60,7 +59,7 @@ pub struct Canvas {
     pixels: Vec<[f32; 4]>,
 }
 
-/// Distanza con segno da un rettangolo con angoli di raggio `r` (negativa dentro).
+/// Signed distance from a rectangle with corners of radius `r` (negative inside).
 fn rounded_distance(px: f32, py: f32, rect: [f32; 4], r: f32) -> f32 {
     let [x, y, w, h] = rect;
     let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
@@ -76,7 +75,7 @@ impl Canvas {
     fn new(size: Size<f64, Logical>, scale: f32) -> Option<Self> {
         let width = (size.w as f32 * scale).ceil().max(1.0) as u32;
         let height = (size.h as f32 * scale).ceil().max(1.0) as u32;
-        // Al più 4096 × 4096: un errore nei dati non deve allocare gigabyte.
+        // At most 4096 × 4096: an error in the data must not allocate gigabytes.
         if width > 4096 || height > 4096 {
             return None;
         }
@@ -88,7 +87,7 @@ impl Canvas {
         })
     }
 
-    /// Copre il pixel con `color` (RGBA 0–255) per una copertura 0–1 ("over").
+    /// Covers the pixel with `color` (RGBA 0–255) for a coverage 0–1 ("over").
     fn blend(&mut self, x: u32, y: u32, color: [u8; 4], coverage: f32) {
         if coverage <= 0.0 || x >= self.width || y >= self.height {
             return;
@@ -104,12 +103,12 @@ impl Canvas {
         }
     }
 
-    /// Riempie un rettangolo arrotondato (punti).
+    /// Fills a rounded rectangle (points).
     pub fn fill_rounded(&mut self, rect: [f32; 4], radius: f32, color: [u8; 4]) {
         self.shape(rect, radius, color, |d| (0.5 - d).clamp(0.0, 1.0));
     }
 
-    /// Riempie un rettangolo diritto (punti): copertura per area, senza distanze.
+    /// Fills a straight rectangle (points): coverage by area, without distances.
     pub fn fill_rect(&mut self, rect: [f32; 4], color: [u8; 4]) {
         let s = self.scale;
         let (x0, y0) = (rect[0] * s, rect[1] * s);
@@ -127,7 +126,7 @@ impl Canvas {
         }
     }
 
-    /// Il contorno di `width` punti, centrato sul bordo del rettangolo.
+    /// The outline of `width` points, centered on the rectangle edge.
     pub fn stroke_rounded(&mut self, rect: [f32; 4], radius: f32, width: f32, color: [u8; 4]) {
         let half = width * self.scale / 2.0;
         self.shape(rect, radius, color, |d| {
@@ -150,7 +149,7 @@ impl Canvas {
         }
     }
 
-    /// Una linea di `width` punti con le estremità arrotondate.
+    /// A line of `width` points with rounded ends.
     pub fn line(&mut self, from: [f32; 2], to: [f32; 2], width: f32, color: [u8; 4]) {
         let s = self.scale;
         let (ax, ay, bx, by) = (from[0] * s, from[1] * s, to[0] * s, to[1] * s);
@@ -172,7 +171,7 @@ impl Canvas {
         }
     }
 
-    /// Scrive `text` con la linea di base in `origin` (punti); restituisce la larghezza.
+    /// Writes `text` with the baseline at `origin` (points); returns the width.
     pub fn text(
         &mut self,
         origin: [f32; 2],
@@ -226,15 +225,15 @@ impl Canvas {
     }
 }
 
-/// Un elemento disegnato sulla tela, ridisegnato solo quando cambia la chiave.
+/// An element drawn on the canvas, redrawn only when the key changes.
 #[derive(Default)]
 pub struct Sprite {
     cached: RefCell<Option<(String, TextureBuffer<GlesTexture>)>>,
 }
 
 impl Sprite {
-    /// L'elemento grande `size` punti in `location` (punti nell'output), disegnato da
-    /// `draw` quando `key` cambia. `alpha` per le dissolvenze.
+    /// The element `size` points large at `location` (points in the output), drawn by
+    /// `draw` when `key` changes. `alpha` for fades.
     #[allow(clippy::too_many_arguments)]
     pub fn element(
         &self,
@@ -268,7 +267,7 @@ impl Sprite {
             ) {
                 Ok(buffer) => buffer,
                 Err(err) => {
-                    warn!("elemento disegnato non caricato: {err:?}");
+                    warn!("drawn element not uploaded: {err:?}");
                     return None;
                 }
             };
@@ -296,24 +295,24 @@ mod tests {
     fn shapes_and_text_cover_the_right_pixels() {
         let mut canvas = Canvas::new(Size::from((40.0, 20.0)), 1.0).unwrap();
         canvas.fill_rounded([0.0, 0.0, 40.0, 20.0], 6.0, [255, 0, 0, 255]);
-        // Centro pieno, angolo vuoto.
+        // Full center, empty corner.
         let at = |c: &Canvas, x: u32, y: u32| c.pixels[(y * c.width + x) as usize];
         assert_eq!(at(&canvas, 20, 10), [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(at(&canvas, 0, 0)[3], 0.0);
-        // Un rettangolo a mezzo pixel copre a metà il bordo.
+        // A rectangle at half a pixel covers the edge by half.
         canvas.fill_rect([0.0, 0.0, 2.5, 1.0], [0, 255, 0, 255]);
         assert_eq!(at(&canvas, 1, 0), [0.0, 1.0, 0.0, 1.0]);
         assert!((at(&canvas, 2, 0)[1] - 0.5).abs() < 1e-6);
         let width = canvas.text(
             [2.0, 15.0],
-            "Spazio 1",
+            "Desktop 1",
             13.0,
             Weight::Regular,
             [0, 0, 0, 255],
         );
-        assert!((width - text_width("Spazio 1", 13.0, Weight::Regular)).abs() < 0.01);
+        assert!((width - text_width("Desktop 1", 13.0, Weight::Regular)).abs() < 0.01);
         assert!(width > 40.0);
-        // Una tela enorme si rifiuta.
+        // A huge canvas is refused.
         assert!(Canvas::new(Size::from((10000.0, 10.0)), 1.0).is_none());
     }
 }

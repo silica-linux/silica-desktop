@@ -1,5 +1,5 @@
-//! Angoli delle finestre: superellisse misurata su macOS 27 (`plan/reference/windows.md`,
-//! "Finestre · forma e angoli"), applicata con uno shader alle superfici della finestra.
+//! Window corners: superellipse measured on macOS 27 (`plan/reference/windows.md`,
+//! "Windows · shape and corners"), applied with a shader to the window surfaces.
 
 use smithay::backend::renderer::Frame;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -11,14 +11,14 @@ use smithay::backend::renderer::gles::{
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-/// Superellisse |x/r|ⁿ + |y/r|ⁿ = 1 che riproduce la maschera degli angoli misurata
-/// (errore quadratico 0,42 sui pixel mancanti; r e n sono correlati, la coppia non è
-/// determinata). In punti logici.
+/// Superellipse |x/r|ⁿ + |y/r|ⁿ = 1 that reproduces the measured corner mask
+/// (squared error 0.42 on the missing pixels; r and n are correlated, the pair is not
+/// determined). In logical points.
 pub const CORNER_RADIUS: f64 = 33.5;
 pub const CORNER_EXPONENT: f32 = 4.5;
 
-/// Il raggio in pixel fisici per una finestra di questa dimensione: non oltre metà del
-/// lato più corto, perché i riquadri degli angoli non si sovrappongano.
+/// The radius in physical pixels for a window of this size: not more than half the
+/// shorter side, so that the corner boxes do not overlap.
 pub fn radius_for(geometry: Size<f64, Physical>, scale: f64) -> f64 {
     (CORNER_RADIUS * scale)
         .min(geometry.w / 2.0)
@@ -38,9 +38,9 @@ pub const UNIFORMS: [(&str, smithay::backend::renderer::gles::UniformType); 5] =
     ]
 };
 
-/// Le due righe della trasformazione affine da gl_FragCoord alla posizione nella finestra.
-/// Il frame disegna l'output con `transform` (winit: Flipped180, cattura: Normal), quindi
-/// le coordinate del framebuffer si riportano all'output con l'inversa.
+/// The two rows of the affine transform from gl_FragCoord to the position in the window.
+/// The frame draws the output with `transform` (winit: Flipped180, capture: Normal), so
+/// the framebuffer coordinates are brought back to the output with the inverse.
 pub(crate) fn frag_to_local(
     output: Size<i32, Physical>,
     window: Rectangle<f64, Physical>,
@@ -61,19 +61,19 @@ pub(crate) fn frag_to_local(
     )
 }
 
-/// Una superficie della finestra (principale o sottosuperficie), scalata attorno a un
-/// punto durante le animazioni (scala 1 a riposo).
+/// A window surface (main or subsurface), scaled around a point during the
+/// animations (scale 1 at rest).
 pub type WindowSurface = RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>;
 
-/// Una superficie della finestra con gli angoli tagliati. Senza programma (shader non
-/// compilato) si disegna com'è.
+/// A window surface with the corners cut. Without a program (shader not
+/// compiled) it is drawn as it is.
 pub struct RoundedSurface {
     inner: WindowSurface,
-    /// La geometria della finestra nell'output, in pixel fisici.
+    /// The window geometry in the output, in physical pixels.
     window: Rectangle<f64, Physical>,
     radius: f64,
     scale: f64,
-    /// Dimensione dell'output in pixel fisici, prima della trasformazione del frame.
+    /// Output size in physical pixels, before the frame transform.
     output: Size<i32, Physical>,
     program: Option<GlesTexProgram>,
 }
@@ -97,8 +97,8 @@ impl RoundedSurface {
         }
     }
 
-    /// `shift`: di quanto il frame sposta l'elemento rispetto all'output (cattura del vetro
-    /// in una texture più piccola, sempre con trasformazione Normal).
+    /// `shift`: how much the frame moves the element relative to the output (glass capture
+    /// into a smaller texture, always with the Normal transform).
     fn uniforms(&self, transform: Transform, shift: Point<i32, Physical>) -> Vec<Uniform<'static>> {
         let (mut x, mut y) = frag_to_local(self.output, self.window, transform);
         if transform == Transform::Normal {
@@ -117,7 +117,7 @@ impl RoundedSurface {
         ]
     }
 
-    /// I quattro riquadri degli angoli, relativi all'origine dell'elemento.
+    /// The four corner boxes, relative to the element's origin.
     fn corner_squares(&self, scale: Scale<f64>) -> [Rectangle<i32, Physical>; 4] {
         let origin = self.inner.geometry(scale).loc.to_f64();
         let local = self.window.loc - origin;
@@ -171,8 +171,8 @@ impl Element for RoundedSurface {
         self.inner.damage_since(scale, commit)
     }
 
-    /// Gli angoli tagliati non sono più opachi: si tolgono dalle regioni opache, o il
-    /// damage tracker salterebbe quello che c'è sotto.
+    /// The cut corners are no longer opaque: they are removed from the opaque regions, or the
+    /// damage tracker would skip what is below.
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         let opaque = self.inner.opaque_regions(scale);
         if self.program.is_none() {
@@ -214,7 +214,7 @@ impl RenderElement<GlesRenderer> for RoundedSurface {
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
-        // Con gli angoli tagliati il buffer non si può mostrare così com'è (piani DRM).
+        // With the corners cut the buffer cannot be shown as it is (DRM planes).
         if self.program.is_some() {
             return None;
         }
@@ -226,7 +226,7 @@ impl RenderElement<GlesRenderer> for RoundedSurface {
 mod tests {
     use super::*;
 
-    /// Applica la trasformazione dello shader a un punto del framebuffer.
+    /// Applies the shader transform to a framebuffer point.
     fn local(rows: ([f32; 3], [f32; 3]), x: f32, y: f32) -> (f32, f32) {
         let (rx, ry) = rows;
         (rx[0] * x + rx[1] * y + rx[2], ry[0] * x + ry[1] * y + ry[2])
@@ -236,9 +236,9 @@ mod tests {
     fn fragment_maps_to_window_for_offscreen_and_winit_frames() {
         let window = Rectangle::new(Point::from((10.0, 5.0)), Size::from((40.0, 20.0)));
         let map = |transform| frag_to_local(Size::from((100, 50)), window, transform);
-        // Cattura fuori schermo (Normal): il framebuffer coincide con l'output.
+        // Offscreen capture (Normal): the framebuffer coincides with the output.
         assert_eq!(local(map(Transform::Normal), 10.5, 5.5), (0.5, 0.5));
-        // Finestra winit (Flipped180): la riga 0 dell'output è in cima al framebuffer GL.
+        // winit window (Flipped180): row 0 of the output is at the top of the GL framebuffer.
         assert_eq!(local(map(Transform::Flipped180), 10.5, 44.5), (0.5, 0.5));
     }
 

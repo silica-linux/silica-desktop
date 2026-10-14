@@ -1,12 +1,11 @@
-//! Vetro: lo sfondo dietro una superficie, sfocato e trasformato nel colore del
-//! materiale, disegnato nelle regioni dichiarate con `silica-glass-v1`.
+//! Glass: the background behind a surface, blurred and transformed into the material
+//! color, drawn in the regions declared with `silica-glass-v1`.
 //!
-//! Per ogni superficie con vetro: si ridisegnano gli elementi che le stanno dietro in una
-//! texture fuori schermo (regioni più il margine della sfocatura), si sfoca con una
-//! gaussiana separabile, si mescola la quota nitida misurata, e un `GlassElement` per
-//! regione la disegna con la matrice di colore e gli angoli a superellisse. Le texture si
-//! riusano finché lo sfondo non cambia. Parametri da `plan/reference/glass.md` e
-//! `menubar.md` (aspetto chiaro).
+//! For every surface with glass: the elements behind it are redrawn into an offscreen
+//! texture (regions plus the blur margin), blurred with a separable Gaussian, mixed with the
+//! measured sharp share, and a `GlassElement` per region draws it with the color matrix and
+//! superellipse corners. The textures are reused while the background does not change.
+//! Parameters from `plan/reference/glass.md` and `menubar.md` (light appearance).
 
 use std::cell::RefCell;
 
@@ -20,26 +19,26 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-/// Parametri di un materiale: sfocatura, quota nitida e colore (`out = M · in + b` sui
-/// valori sRGB codificati, 0–1).
+/// Parameters of a material: blur, sharp share and color (`out = M · in + b` on the encoded
+/// sRGB values, 0–1).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MaterialParams {
-    /// σ della gaussiana in punti.
+    /// σ of the Gaussian in points.
     pub sigma: f64,
-    /// Quota dell'immagine nitida mescolata a quella sfocata.
+    /// Share of the sharp image mixed with the blurred one.
     pub sharp: f32,
     pub matrix: [[f32; 3]; 3],
     pub offset: [f32; 3],
-    /// La lente del bordo.
+    /// The edge lens.
     pub lens: Lens,
-    /// La riga del bordo e la sfumatura interna.
+    /// The edge row and the inner glow.
     pub edge: Edge,
-    /// Spazio sotto il quale due regioni di questo materiale si fondono (0: mai).
+    /// Gap below which two regions of this material merge (0: never).
     pub merge_pt: f32,
 }
 
-/// Il bordo del vetro: sopra e sotto la riga di 1 pt `rim` si aggiunge al materiale, poi
-/// una sfumatura `glow · e^(−t/decay)`; ai lati la riga è nero con alfa `side_dark`.
+/// The glass edge: on top and at the bottom the 1 pt `rim` row is added to the material, then
+/// a glow `glow · e^(−t/decay)`; on the sides the row is black with alpha `side_dark`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Edge {
     pub rim: [f32; 3],
@@ -48,10 +47,10 @@ pub struct Edge {
     pub side_dark: f32,
 }
 
-/// La lente del bordo: per ogni lato, da quale distanza dal bordo (s) il vetro preleva lo
-/// sfondo per un pixel a distanza t, in punti, con punti (t, s) a t crescente (al più 8).
-/// s > t ingrandisce (preleva più verso l'interno), s < 0 preleva fuori dal bordo. Prima
-/// del primo punto vale il primo, oltre l'ultimo s = t.
+/// The edge lens: for every side, from which distance from the edge (s) the glass samples the
+/// background for a pixel at distance t, in points, with (t, s) points at increasing t (at most
+/// 8). s > t magnifies (samples further inside), s < 0 samples outside the edge. Before the
+/// first point the first one applies, past the last one s = t.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Lens {
     pub side: &'static [(f32, f32)],
@@ -60,7 +59,7 @@ pub struct Lens {
 }
 
 impl Lens {
-    /// Quanto lontano fuori dal bordo può prelevare, in punti.
+    /// How far outside the edge it can sample, in points.
     pub fn outward_reach(&self) -> f32 {
         [self.side, self.top, self.bottom]
             .iter()
@@ -68,10 +67,10 @@ impl Lens {
             .fold(0.0, f32::max)
     }
 
-    /// Le tre curve come array di `mat4` (colonne: t0, s0, t1, s1), scalate in pixel.
+    /// The three curves as arrays of `mat4` (columns: t0, s0, t1, s1), scaled to pixels.
     fn uniform(&self, px: f32) -> UniformValue {
         let pack = |curve: &[(f32, f32)]| {
-            // I posti vuoti hanno t enorme: lo shader si ferma lì.
+            // Empty slots have a huge t: the shader stops there.
             let mut m = [1.0e6_f32; 16];
             for ([slot_t, slot_s], (t, s)) in m.as_chunks_mut::<2>().0.iter_mut().zip(curve) {
                 *slot_t = t * px;
@@ -86,10 +85,10 @@ impl Lens {
     }
 }
 
-/// Bordo comune ai vetri misurati (Dock, moduli, HUD, notifiche, Spotlight): sul grigio
-/// del Dock la riga di 1 pt sopra e sotto vale +60, +60, +63 sul riempimento, la
-/// sfumatura interna +13, +8, +5, +3, +2, +1 (≈ 13·e^(−t/2,2)), additiva anche su nero;
-/// ai lati 1 pt scuro (`#3c3c40` su `#818289`: nero con alfa 0,535). `dock.md`, `glass.md`.
+/// Edge shared by the measured glasses (Dock, modules, HUD, notifications, Spotlight): on the
+/// Dock's gray the 1 pt row on top and at the bottom is +60, +60, +63 over the fill, the
+/// inner glow +13, +8, +5, +3, +2, +1 (≈ 13·e^(−t/2.2)), additive even over black;
+/// on the sides 1 dark pt (`#3c3c40` over `#818289`: black with alpha 0.535). `dock.md`, `glass.md`.
 const EDGE: Edge = Edge {
     rim: [60.0 / 255.0, 60.0 / 255.0, 63.0 / 255.0],
     glow: 13.0 / 255.0,
@@ -97,10 +96,10 @@ const EDGE: Edge = Edge {
     side_dark: 0.535,
 };
 
-/// Bordo dei moduli del Centro di controllo (Liquid Glass `regular`): più marcato di quello
-/// del Dock. Riga superiore `#bfc0c7`–`#c7c8cf` su un riempimento `#6a6b70`–`#6e6f73`
-/// (+86), sfumatura +18, +9, +4, +2 (decadimento ~1,4 pt), lati `#27282c` (nero con alfa
-/// ~0,63). `controlcenter.md`, "CC · bordo luminoso e riempimento".
+/// Edge of the Control Center modules (`regular` Liquid Glass): stronger than the Dock's.
+/// Top row `#bfc0c7`–`#c7c8cf` over a `#6a6b70`–`#6e6f73` fill (+86), glow +18, +9, +4, +2
+/// (decay ~1.4 pt), sides `#27282c` (black with alpha ~0.63). `controlcenter.md`,
+/// "CC · luminous edge and fill".
 const REGULAR_EDGE: Edge = Edge {
     rim: [86.0 / 255.0, 86.0 / 255.0, 88.0 / 255.0],
     glow: 18.0 / 255.0,
@@ -108,11 +107,11 @@ const REGULAR_EDGE: Edge = Edge {
     side_dark: 0.63,
 };
 
-/// Bordo delle notifiche: la riga di 1 pt è scura tutto intorno ed è **fuori** dalla
-/// cornice (il client allarga la regione di 1 pt per lato): sopra `#5e6064` e sotto
-/// `#636367` su un riempimento ~`#c0` (−98), ai lati `#393a3d` (nero con alfa ~0,70).
-/// Dentro, la prima riga sopra e sotto è più chiara di ~22 livelli e la sfumatura si
-/// assorbe in 2 pt (`d6 c3 c1 bf`). `notifications.md`, "Banner · materiale su grigio".
+/// Edge of notifications: the 1 pt row is dark all around and is **outside** the frame (the
+/// client widens the region by 1 pt per side): `#5e6064` on top and `#636367` at the bottom
+/// over a ~`#c0` fill (−98), `#393a3d` on the sides (black with alpha ~0.70). Inside, the
+/// first row on top and at the bottom is ~22 levels lighter and the glow is absorbed in
+/// 2 pt (`d6 c3 c1 bf`). `notifications.md`, "Banner · material over gray".
 const NOTIFICATION_EDGE: Edge = Edge {
     rim: [-98.0 / 255.0, -97.0 / 255.0, -98.0 / 255.0],
     glow: 22.0 / 255.0,
@@ -120,9 +119,9 @@ const NOTIFICATION_EDGE: Edge = Edge {
     side_dark: 0.70,
 };
 
-/// Bordo del Dock in scuro: riga sopra e sotto `#8e8f95` sul riempimento `#68696e`
-/// (+38, +38, +39), sfumatura interna +8, +5, +3, +2, +1, +1 (≈ 8·e^(−t/2,2)), lati
-/// `#2f3033` (nero con alfa ~0,545). `dock.md`, tabella del fondo.
+/// Dock edge in dark: row on top and at the bottom `#8e8f95` over the `#68696e` fill
+/// (+38, +38, +39), inner glow +8, +5, +3, +2, +1, +1 (≈ 8·e^(−t/2.2)), sides
+/// `#2f3033` (black with alpha ~0.545). `dock.md`, background table.
 const DARK_EDGE: Edge = Edge {
     rim: [38.0 / 255.0, 38.0 / 255.0, 39.0 / 255.0],
     glow: 8.0 / 255.0,
@@ -130,8 +129,8 @@ const DARK_EDGE: Edge = Edge {
     side_dark: 0.545,
 };
 
-/// Fondo del Dock, chiaro: σ 2,5–3,25 pt (si usa 2,75), w 0,28, matrice libera
-/// (rmse 2,45) con b = (37,3; 39,3; 36,8).
+/// Dock background, light: σ 2.5–3.25 pt (2.75 is used), w 0.28, free matrix
+/// (rmse 2.45) with b = (37.3; 39.3; 36.8).
 pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     sigma: 2.75,
     sharp: 0.28,
@@ -146,8 +145,8 @@ pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Fondo del Dock, scuro: σ 2,5–3,25 pt (si usa 2,875, a metà), w 0,28, matrice libera
-/// (rmse 4,71) con b = (16,2; 15,7; 16,3) (glass.md, "Vetro · Dock", tabelle "Scuro").
+/// Dock background, dark: σ 2.5–3.25 pt (2.875 is used, halfway), w 0.28, free matrix
+/// (rmse 4.71) with b = (16.2; 15.7; 16.3) (glass.md, "Glass · Dock", "Dark" tables).
 pub const CLEAR_DARK: MaterialParams = MaterialParams {
     sigma: 2.875,
     sharp: 0.28,
@@ -162,8 +161,8 @@ pub const CLEAR_DARK: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Lente del Dock: ai lati fino a ~5 pt verso l'interno a 6 pt dal bordo, nulla oltre
-/// ~22 pt; sopra ≤ 1 pt, sotto ~3 pt (glass.md, "Vetro · Dock · Rifrazione").
+/// Dock lens: on the sides up to ~5 pt inwards at 6 pt from the edge, nothing beyond
+/// ~22 pt; on top ≤ 1 pt, at the bottom ~3 pt (glass.md, "Glass · Dock · Refraction").
 const DOCK_LENS: Lens = Lens {
     side: &[
         (0.0, 0.0),
@@ -191,8 +190,8 @@ const DOCK_LENS: Lens = Lens {
     ],
 };
 
-/// Moduli del Centro di controllo, chiaro: σ 4,5 pt, w 0,04, matrice libera (rmse 3,33)
-/// con b = (30,6; 32,0; 30,3); identica in scuro (glass.md, "Centro di controllo").
+/// Control Center modules, light: σ 4.5 pt, w 0.04, free matrix (rmse 3.33)
+/// with b = (30.6; 32.0; 30.3); identical in dark (glass.md, "Control Center").
 pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     sigma: 4.5,
     sharp: 0.04,
@@ -207,9 +206,9 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Moduli del Centro di controllo, scuro: stessa sfocatura, matrice dello scuro (rmse 1,82)
-/// con b = (31,2; 32,5; 30,8), quasi uguale alla chiara; bordo come in chiaro ("stesso
-/// identico aspetto in chiaro e in scuro su grigio", controlcenter.md).
+/// Control Center modules, dark: same blur, dark matrix (rmse 1.82) with
+/// b = (31.2; 32.5; 30.8), almost the same as the light one; edge as in light ("same
+/// identical look in light and dark over gray", controlcenter.md).
 pub const REGULAR_DARK: MaterialParams = MaterialParams {
     matrix: [
         [0.942, -0.289, -0.041],
@@ -220,11 +219,11 @@ pub const REGULAR_DARK: MaterialParams = MaterialParams {
     ..REGULAR_LIGHT
 };
 
-/// La lente del Liquid Glass, misurata sui moduli del Centro di controllo: fra ~6 e
-/// ~24 pt dal bordo ingrandisce (fino a ~4 pt verso l'interno), nei ~6 pt esterni preleva
-/// lo sfondo che sta fuori dal modulo, fino a ~25 pt oltre il bordo, schiacciato. Sopra la
-/// fascia esterna è di ~2 pt. Il lato inferiore non è misurato: come quello superiore.
-/// Incertezza ±3 pt nella fascia esterna (glass.md, "Rifrazione, molto più forte").
+/// The Liquid Glass lens, measured on the Control Center modules: between ~6 and ~24 pt from
+/// the edge it magnifies (up to ~4 pt inwards), in the outer ~6 pt it samples the background
+/// outside the module, up to ~25 pt past the edge, squeezed. On top the outer band is ~2 pt.
+/// The bottom side is not measured: like the top one. Uncertainty ±3 pt in the outer band
+/// (glass.md, "Refraction, much stronger").
 const LIQUID_LENS: Lens = Lens {
     side: &[
         (0.0, -25.0),
@@ -249,7 +248,7 @@ const LIQUID_LENS: Lens = Lens {
     ],
 };
 
-/// Menu, chiaro: σ ≈ 9 pt, componente nitida trascurabile, matrice (rmse 4,1) con
+/// Menus, light: σ ≈ 9 pt, negligible sharp component, matrix (rmse 4.1) with
 /// b = (142, 140, 140).
 pub const THICK_LIGHT: MaterialParams = MaterialParams {
     sigma: 9.0,
@@ -260,7 +259,7 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
         [-0.166, -0.263, 0.899],
     ],
     offset: [142.0 / 255.0, 140.0 / 255.0, 140.0 / 255.0],
-    // Nei menu la sfocatura nasconde la rifrazione: ≤ 1–2 pt ai lati.
+    // In menus the blur hides the refraction: ≤ 1–2 pt on the sides.
     lens: Lens {
         side: &[
             (0.0, 0.0),
@@ -277,12 +276,12 @@ pub const THICK_LIGHT: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Menu, scuro: σ ≈ 9 pt come in chiaro (8,7 dalle strisce), matrice dello scuro
-/// (menubar.md, "Colore"). Il trasferimento scuro è una curva a S che la matrice segue male
-/// (rmse 9,9; con b = (44, 47, 45) il grigio `#7a7b80` darebbe ~96 invece di 111): l'offset
-/// è ricalcolato perché sul grigio il riempimento sia quello misurato, `#6f7075`; il nero
-/// dà allora ~59, come le strisce (58). Bordo come in chiaro (il filo del menu scuro non è
-/// misurato nella forma del modello).
+/// Menus, dark: σ ≈ 9 pt as in light (8.7 from the stripes), dark matrix (menubar.md,
+/// "Color"). The dark transfer is an S-curve the matrix follows poorly (rmse 9.9; with
+/// b = (44, 47, 45) the gray `#7a7b80` would give ~96 instead of 111): the offset is
+/// recomputed so that over gray the fill is the measured one, `#6f7075`; black then gives
+/// ~59, like the stripes (58). Edge as in light (the dark menu's rim is not measured in the
+/// model's form).
 pub const THICK_DARK: MaterialParams = MaterialParams {
     matrix: [
         [0.891, -0.347, -0.113],
@@ -316,9 +315,9 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 16] = [
     ("side_dark", UniformType::_1f),
 ];
 
-/// Fin dove arriva la lente dentro il vetro (l'ultimo punto delle curve), in punti: la
-/// normale si calcola su angoli almeno così ampi, perché sulla diagonale di un angolo
-/// retto non salti.
+/// How far the lens reaches inside the glass (the last point of the curves), in points: the
+/// normal is computed on corners at least this wide, so that it does not jump on the diagonal
+/// of a right angle.
 fn lens_extent(lens: &Lens) -> f32 {
     [lens.side, lens.top, lens.bottom]
         .iter()
@@ -326,9 +325,9 @@ fn lens_extent(lens: &Lens) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// Livelli di qualità del vetro: pieno (sfoca tutto quello che sta dietro), smerigliato
-/// statico (solo lo sfondo del desktop: si ricalcola di rado), opaco (il materiale sopra il
-/// colore del desktop, senza sfocatura). Per le GPU deboli (piano, "Rischi").
+/// Glass quality levels: full (blurs everything behind), static frosted (only the desktop
+/// wallpaper: recomputed rarely), opaque (the material over the desktop color, without blur).
+/// For weak GPUs (plan, "Risks").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlassQuality {
     Full,
@@ -346,13 +345,13 @@ impl GlassQuality {
     }
 }
 
-/// Vetro delle notifiche, aspetto chiaro: banner e Centro notifiche. Sfocatura σ 10–11 pt
-/// senza componente nitida; matrice della seconda notifica del Centro, la più affidabile
-/// (rmse 3,5; la carta in cima a una pila ha più offset e meno guadagno). L'offset misurato
-/// lì (141, 139, 139) include lo scrim del Centro: qui è ricalcolato perché sul grigio di
-/// riferimento (`#7a7b80`) il riempimento sia quello del banner isolato, `#c0c1c6`. Vicino ai
-/// bordi alto e basso un leggero ingrandimento orizzontale (~4 % a 5–6 pt), invisibile
-/// sotto questa sfocatura: nessuna lente (notifications.md, "Banner").
+/// Notification glass, light appearance: banners and Notification Center. Blur σ 10–11 pt
+/// without a sharp component; matrix of the Center's second notification, the most reliable
+/// (rmse 3.5; the card on top of a stack has more offset and less gain). The offset measured
+/// there (141, 139, 139) includes the Center's scrim: here it is recomputed so that over the
+/// reference gray (`#7a7b80`) the fill is that of the isolated banner, `#c0c1c6`. Near the
+/// top and bottom edges a slight horizontal magnification (~4 % at 5–6 pt), invisible under
+/// this blur: no lens (notifications.md, "Banner").
 pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
     sigma: 10.5,
     sharp: 0.03,
@@ -368,15 +367,15 @@ pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
         bottom: &[],
     },
     edge: NOTIFICATION_EDGE,
-    // Carte separate anche a pochi punti l'una dall'altra (Centro notifiche).
+    // Cards separate even a few points apart (Notification Center).
     merge_pt: 0.0,
 };
 
-/// Vetro delle notifiche, scuro: σ 10,75–11 pt (si usa 10,9), w 0,02, matrice della seconda
-/// notifica (rmse 7,43). Come in chiaro l'offset misurato include lo scrim del Centro: qui è
-/// ricalcolato perché sul grigio il riempimento sia quello del banner isolato, `#75767b`
-/// (notifications.md, "Matrice di colore" e "Centro"). Il bordo scuro non è misurato: come
-/// in chiaro.
+/// Notification glass, dark: σ 10.75–11 pt (10.9 is used), w 0.02, matrix of the second
+/// notification (rmse 7.43). As in light the measured offset includes the Center's scrim: here
+/// it is recomputed so that over gray the fill is that of the isolated banner, `#75767b`
+/// (notifications.md, "Color matrix" and "Center"). The dark edge is not measured: as in
+/// light.
 pub const NOTIFICATION_DARK: MaterialParams = MaterialParams {
     sigma: 10.9,
     sharp: 0.02,
@@ -389,41 +388,42 @@ pub const NOTIFICATION_DARK: MaterialParams = MaterialParams {
     ..NOTIFICATION_LIGHT
 };
 
-/// Spazio fra due regioni dello stesso materiale sotto il quale si uniscono in una sola
-/// forma, come gocce (unione morbida delle distanze, k = 2 · MERGE_PT: due bordi a distanza
-/// g si toccano quando g < k / 2). Limiti misurati: i pulsanti circolari di Spotlight a
-/// 10 pt dal pannello restano separati (spotlight.md) e i moduli del Centro di controllo,
-/// i cui vetri distano 10 pt in orizzontale (il bordo laterale sporge di 1 pt), non hanno
-/// alcun ponte né rigonfiamento sul bordo (controlcenter.md): k ≤ 10, cioè al più 5. Il valore esatto non è misurato (plan/reference/RICHIESTE.md, G-02).
+/// Gap between two regions of the same material below which they join into a single shape,
+/// like drops (smooth union of the distances, k = 2 · MERGE_PT: two edges at distance g touch
+/// when g < k / 2). Measured limits: Spotlight's round buttons 10 pt from the panel stay
+/// separate (spotlight.md) and the Control Center modules, whose glasses are 10 pt apart
+/// horizontally (the side edge sticks out by 1 pt), have no bridge or bulge on the edge
+/// (controlcenter.md): k ≤ 10, that is at most 5. The exact value is not measured
+/// (plan/reference/RICHIESTE.md, G-02).
 pub const MERGE_PT: f32 = 5.0;
-/// Regioni che lo shader fonde insieme al più: oltre, gruppi separati.
+/// Regions the shader merges together at most: beyond that, separate groups.
 const MAX_SHAPES: usize = 8;
 
-/// Oltre questo σ (pixel) si sfoca a metà o a un quarto della risoluzione: il nucleo
-/// dello shader arriva a 48 pixel.
+/// Beyond this σ (pixels) blurring happens at half or a quarter of the resolution: the shader
+/// kernel reaches 48 pixels.
 const MAX_SIGMA_PX: f64 = 12.0;
 
-/// Una regione di vetro nell'output, in pixel fisici.
+/// A glass region in the output, in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhysicalRegion {
     pub rect: Rectangle<i32, Physical>,
     pub radius: f64,
     pub material: MaterialParams,
-    /// Opacità della composizione (0–1): non cambia lo sfondo sfocato, solo il disegno.
+    /// Compositing opacity (0–1): it does not change the blurred background, only the drawing.
     pub opacity: f32,
-    /// Pixel fisici per punto.
+    /// Physical pixels per point.
     pub scale: f64,
-    /// Una punta rivolta in basso invece di un rettangolo (`add_tip`).
+    /// A downward tip instead of a rectangle (`add_tip`).
     pub tip: bool,
-    /// Una punta rivolta in alto (`add_upward_tip`).
+    /// An upward tip (`add_upward_tip`).
     pub tip_up: bool,
-    /// Le regioni si fondono solo nello stesso gruppo.
+    /// Regions merge only within the same group.
     pub group: u32,
 }
 
 impl PhysicalRegion {
-    /// Stessa forma e stesso materiale: lo sfondo sfocato si può riusare anche se
-    /// l'opacità è cambiata (una dissolvenza non rifà la sfocatura a ogni frame).
+    /// Same shape and same material: the blurred background can be reused even if the
+    /// opacity changed (a fade does not redo the blur on every frame).
     fn same_shape(&self, other: &Self) -> bool {
         self.rect == other.rect
             && self.radius == other.radius
@@ -435,10 +435,10 @@ impl PhysicalRegion {
     }
 }
 
-/// Lo stato degli elementi dietro il vetro: se non cambia, la texture si riusa.
+/// The state of the elements behind the glass: if it does not change, the texture is reused.
 type Signature = Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>;
 
-/// Il vetro di una superficie fra un frame e l'altro (nei dati della superficie).
+/// The glass of a surface between frames (in the surface data).
 #[derive(Default)]
 pub struct GlassCache {
     state: RefCell<Option<Cached>>,
@@ -449,13 +449,13 @@ struct Cached {
     signature: Signature,
     regions: Vec<PhysicalRegion>,
     bbox: Rectangle<i32, Physical>,
-    /// Una texture sfocata per materiale presente, nell'ordine delle regioni.
+    /// One blurred texture per material present, in the order of the regions.
     textures: Vec<(MaterialParams, GlesTexture)>,
     ids: Vec<Id>,
     commit: CommitCounter,
 }
 
-/// I programmi del vetro.
+/// The glass programs.
 #[derive(Clone)]
 pub struct GlassPrograms {
     pub blur: GlesTexProgram,
@@ -463,10 +463,10 @@ pub struct GlassPrograms {
 }
 
 impl GlassCache {
-    /// Gli elementi del vetro per queste regioni, dato quello che sta dietro (`behind`,
-    /// dal primo piano allo sfondo) e la sua parte fissa (`behind_static`: sfondo del
-    /// desktop, per lo smerigliato). Errore se il renderer non riesce a disegnare fuori
-    /// schermo: il chiamante salta il vetro per questo frame.
+    /// The glass elements for these regions, given what is behind (`behind`, from the front
+    /// to the back) and its fixed part (`behind_static`: the desktop wallpaper, for the
+    /// frosted level). Error if the renderer cannot draw offscreen: the caller skips the glass
+    /// for this frame.
     #[allow(clippy::too_many_arguments)]
     pub fn elements<E: RenderElement<GlesRenderer>>(
         &self,
@@ -532,7 +532,7 @@ impl GlassCache {
                     .all(|(a, b)| a.same_shape(b))
                 && cached.bbox == bbox
         });
-        // Solo l'opacità è cambiata: stesse texture, elementi nuovi da ridisegnare.
+        // Only the opacity changed: same textures, new elements to redraw.
         if reuse
             && let Some(cached) = state.as_mut()
             && cached.regions != regions
@@ -595,7 +595,7 @@ impl GlassCache {
                     .1
                     .clone();
                 let scale = shapes.first()?.scale;
-                // L'unione morbida esce dalle regioni al più di k / 4 = merge_pt / 2.
+                // The smooth union goes out of the regions by at most k / 4 = merge_pt / 2.
                 let bulge = (f64::from(material.merge_pt) * scale * 0.5).ceil() as i32 + 1;
                 let area = shapes
                     .iter()
@@ -620,8 +620,8 @@ impl GlassCache {
     }
 }
 
-/// Le regioni raggruppate per materiale e gruppo del client (nell'ordine in cui compaiono),
-/// al più `MAX_SHAPES` per gruppo: le regioni di un gruppo si fondono fra loro.
+/// The regions grouped by material and client group (in the order they appear), at most
+/// `MAX_SHAPES` per group: the regions of a group merge with each other.
 fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
     let mut groups: Vec<Vec<PhysicalRegion>> = Vec::new();
     for region in regions {
@@ -644,9 +644,9 @@ fn buffer_size(size: Size<i32, Physical>) -> Size<i32, Buffer> {
     size.to_logical(1).to_buffer(1, Transform::Normal)
 }
 
-/// Disegna `elements` (dal primo piano allo sfondo) sopra `clear_color` in una texture
-/// nuova che copre `bbox` dell'output: lo sfondo del vetro, l'istantanea di una finestra
-/// che si chiude.
+/// Draws `elements` (from the front to the back) over `clear_color` into a new texture
+/// covering `bbox` of the output: the glass background, the snapshot of a closing
+/// window.
 pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
     renderer: &mut GlesRenderer,
     elements: &[E],
@@ -668,14 +668,14 @@ pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
             let damage = [Rectangle::new(visible.loc - geometry.loc, visible.size)];
             element.draw(&mut frame, element.src(), dst, &damage, &[])?;
         }
-        // Stesso contesto GL per chi userà la texture: l'ordine dei comandi basta.
+        // Same GL context for whoever uses the texture: the order of the commands is enough.
         let _sync = frame.finish()?;
     }
     Ok(texture)
 }
 
-/// Una passata: `source` (grande `from`) disegnata in una texture nuova grande `to`,
-/// sopra `under` se c'è.
+/// One pass: `source` (`from` large) drawn into a new texture `to` large, over `under` if
+/// present.
 #[allow(clippy::too_many_arguments)]
 fn pass(
     renderer: &mut GlesRenderer,
@@ -718,13 +718,13 @@ fn pass(
             program,
             uniforms,
         )?;
-        // Stesso contesto GL per chi userà la texture: l'ordine dei comandi basta.
+        // Same GL context for whoever uses the texture: the order of the commands is enough.
         let _sync = frame.finish()?;
     }
     Ok(texture)
 }
 
-/// Sfoca la cattura con il σ del materiale e mescola la quota nitida.
+/// Blurs the capture with the material's σ and mixes in the sharp share.
 fn blur(
     renderer: &mut GlesRenderer,
     programs: &GlassPrograms,
@@ -734,7 +734,7 @@ fn blur(
     scale: f64,
 ) -> Result<GlesTexture, GlesError> {
     let sigma = material.sigma * scale;
-    // Riduzione: con σ grande si sfoca a metà o a un quarto della risoluzione.
+    // Reduction: with a large σ blurring happens at half or a quarter of the resolution.
     let factor = if sigma > MAX_SIGMA_PX * 2.0 {
         4
     } else if sigma > MAX_SIGMA_PX {
@@ -765,7 +765,7 @@ fn blur(
             None,
         )?;
     }
-    // Ritorno alla risoluzione piena, con la quota nitida sotto: w · nitida + (1 − w) · sfocata.
+    // Back to full resolution, with the sharp share below: w · sharp + (1 − w) · blurred.
     pass(
         renderer,
         &current,
@@ -778,17 +778,17 @@ fn blur(
     )
 }
 
-/// Una regione di vetro pronta da disegnare.
+/// A glass region ready to draw.
 #[derive(Debug, Clone)]
 pub struct GlassElement {
     id: Id,
     commit: CommitCounter,
-    /// Lo sfondo sfocato, grande quanto `bbox`.
+    /// The blurred background, as large as `bbox`.
     texture: GlesTexture,
     bbox: Rectangle<i32, Physical>,
-    /// Dove si disegna: le regioni del gruppo più lo spazio della fusione.
+    /// Where it is drawn: the regions of the group plus the merging room.
     area: Rectangle<i32, Physical>,
-    /// Le regioni del gruppo (stesso materiale, al più `MAX_SHAPES`).
+    /// The regions of the group (same material, at most `MAX_SHAPES`).
     shapes: Vec<PhysicalRegion>,
     program: GlesTexProgram,
 }
@@ -836,8 +836,8 @@ impl RenderElement<GlesRenderer> for GlassElement {
         let lens = first.material.lens;
         let edge = first.material.edge;
         let px = first.scale as f32;
-        // Le regioni rispetto alla texture: fino a 8 rettangoli in due mat4 (una colonna
-        // per rettangolo: x, y, larghezza, altezza) e i raggi in una mat4.
+        // The regions relative to the texture: up to 8 rectangles in two mat4 (one column per
+        // rectangle: x, y, width, height) and the radii in a mat4.
         let mut rects = [[0.0_f32; 16]; 2];
         let mut radii = [0.0_f32; 16];
         for (i, shape) in self.shapes.iter().take(MAX_SHAPES).enumerate() {
@@ -854,7 +854,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
             {
                 slot.copy_from_slice(&values);
             }
-            // Raggio negativo: una punta (lo shader la riconosce dal segno); −2 rivolta in alto.
+            // Negative radius: a tip (the shader recognizes it by the sign); −2 points up.
             if let Some(slot) = radii.get_mut(i) {
                 *slot = if shape.tip_up {
                     -2.0

@@ -1,12 +1,12 @@
-//! L'effetto "genio" della riduzione nel Dock e del ripristino (`plan/reference/windows.md`,
-//! "Riduzione nel Dock e ripristino"; curve in [`crate::animation::genie_minimize`]).
+//! The "genie" effect of minimizing into the Dock and restoring (`plan/reference/windows.md`,
+//! "Minimizing into the Dock and restoring"; curves in [`crate::animation::genie_minimize`]).
 //!
-//! L'istantanea della finestra si deforma in un imbuto verso la miniatura: a ogni riga dello
-//! schermo i bordi passano dalla larghezza della finestra a quella della miniatura con una
-//! smoothstep fra la cima della finestra e la cima della miniatura (misurata sui fotogrammi),
-//! mentre il bordo superiore e quello inferiore del contenuto scendono ognuno con la sua curva.
-//! Lo shader campiona l'istantanea al contrario: per ogni pixel dell'area dell'effetto trova il
-//! punto della cornice che ci finisce.
+//! The window snapshot bends into a funnel towards the thumbnail: on every screen row the
+//! edges go from the window width to the thumbnail width with a smoothstep between the top
+//! of the window and the top of the thumbnail (measured on the frames), while the top and
+//! bottom edges of the content each come down with their own curve. The shader samples the
+//! snapshot the other way round: for every pixel of the effect area it finds the point of
+//! the frame that lands there.
 
 use smithay::backend::renderer::Frame;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
@@ -30,13 +30,13 @@ pub const UNIFORMS: [(&str, UniformType); 6] = [
     ("frame_uv", UniformType::_4f),
 ];
 
-/// Un genio nel frame: l'istantanea, dove sta la cornice, la miniatura e la forma corrente.
+/// A genie in the frame: the snapshot, where the frame is, the thumbnail and the current shape.
 #[derive(Debug)]
 pub struct GenieElement {
     id: Id,
     commit: CommitCounter,
     inner: TextureRenderElement<GlesTexture>,
-    /// L'area dell'effetto nell'output: cornice e miniatura insieme.
+    /// The effect area in the output: frame and thumbnail together.
     area: Rectangle<i32, Physical>,
     window: Rectangle<f64, Physical>,
     target: Rectangle<f64, Physical>,
@@ -46,17 +46,17 @@ pub struct GenieElement {
     program: Option<GlesTexProgram>,
 }
 
-/// I dati di un genio per [`GenieElement::new`].
+/// The data of a genie for [`GenieElement::new`].
 pub struct GenieParts {
     pub id: Id,
     pub commit: CommitCounter,
     pub context_id: smithay::backend::renderer::ContextId<GlesTexture>,
     pub texture: GlesTexture,
-    /// Dove sta l'istantanea nell'output, in pixel fisici.
+    /// Where the snapshot is in the output, in physical pixels.
     pub snapshot: Rectangle<i32, Physical>,
-    /// La cornice della finestra (senza ombra) nell'output.
+    /// The window frame (without shadow) in the output.
     pub window: Rectangle<f64, Physical>,
-    /// La miniatura di destinazione nell'output.
+    /// The destination thumbnail in the output.
     pub target: Rectangle<f64, Physical>,
     pub shape: GenieShape,
     pub output: Size<i32, Physical>,
@@ -64,7 +64,7 @@ pub struct GenieParts {
 }
 
 impl GenieElement {
-    /// None se l'area è vuota o fuori dall'output.
+    /// None if the area is empty or outside the output.
     pub fn new(parts: GenieParts) -> Option<Self> {
         let union = parts.window.merge(parts.target);
         let area = Rectangle::new(
@@ -78,7 +78,7 @@ impl GenieElement {
         if area.is_empty() || parts.snapshot.is_empty() {
             return None;
         }
-        // La cornice dentro l'istantanea, in coordinate della texture (0–1, dall'alto).
+        // The frame inside the snapshot, in texture coordinates (0–1, from the top).
         let snap = parts.snapshot.to_f64();
         let mut frame_uv = [
             ((parts.window.loc.x - snap.loc.x) / snap.size.w) as f32,
@@ -194,11 +194,11 @@ impl RenderElement<GlesRenderer> for GenieElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        // Senza lo shader niente genio: la finestra sparisce subito (mai una texture stirata).
+        // Without the shader no genie: the window disappears right away (never a stretched texture).
         let Some(program) = &self.program else {
             return Ok(());
         };
-        // Il frame può disegnare l'area spostata (offscreen): la trasformazione segue `dst`.
+        // The frame may draw the area shifted (offscreen): the transform follows `dst`.
         let shift = self.area.loc - dst.loc;
         let uniforms = self.uniforms(frame.transformation(), shift);
         frame.override_default_tex_program(program.clone(), uniforms);

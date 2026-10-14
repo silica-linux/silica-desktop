@@ -1,6 +1,6 @@
 [package]
 name = "ossido-render"
-description = "Renderer GLES di Ossido e shader del vetro"
+description = "Ossido's GLES renderer and glass shaders"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

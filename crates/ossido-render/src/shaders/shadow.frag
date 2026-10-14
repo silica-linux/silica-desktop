@@ -8,21 +8,21 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Tutto in punti logici, relativo all'area dell'elemento.
+// Everything in logical points, relative to the element area.
 uniform vec4 window_rect;
 uniform float radius;
 uniform float exponent;
-// Profilo misurato: alfa(d) = amplitude · ½·erfc((d − shift) / (√2·sigma)), con l'ombra
-// spostata in basso di offset_y.
+// Measured profile: alpha(d) = amplitude · ½·erfc((d − shift) / (√2·sigma)), with the shadow
+// shifted down by offset_y.
 uniform float offset_y;
 uniform float amplitude;
 uniform float shift;
 uniform float sigma;
-// Anello di 1 pt a contatto con la finestra.
+// 1 pt ring in contact with the window.
 uniform float ring_side;
 uniform float ring_top;
 
-// Distanza con segno (positiva fuori) da un rettangolo con angoli a superellisse.
+// Signed distance (positive outside) from a rectangle with superellipse corners.
 float shape_distance(vec2 p, vec4 rect) {
     vec2 half_size = rect.zw * 0.5;
     vec2 d = abs(p - (rect.xy + half_size)) - (half_size - vec2(radius));
@@ -34,7 +34,7 @@ float shape_distance(vec2 p, vec4 rect) {
     return max(d.x, d.y) - radius;
 }
 
-// erfc con l'approssimazione 7.1.26 di Abramowitz e Stegun (errore < 1,5e-7).
+// erfc with the approximation 7.1.26 of Abramowitz and Stegun (error < 1.5e-7).
 float erfc_approx(float x) {
     float z = abs(x);
     float t = 1.0 / (1.0 + 0.3275911 * z);
@@ -47,7 +47,7 @@ float erfc_approx(float x) {
 void main() {
     vec2 p = v_coords * size;
     float body = shape_distance(p, window_rect);
-    // d = 1 è il primo pixel dopo l'anello: il centro di quel pixel è a 1,5 dal bordo.
+    // d = 1 is the first pixel after the ring: the center of that pixel is 1.5 from the edge.
     vec4 shadow_rect = window_rect + vec4(0.0, offset_y, 0.0, 0.0);
     float d = shape_distance(p, shadow_rect) - 0.5;
     float shadow = amplitude * 0.5 * erfc_approx((d - shift) / (1.41421356 * sigma));

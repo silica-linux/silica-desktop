@@ -1,8 +1,8 @@
-//! Renderer GLES di Ossido e shader del vetro.
+//! Ossido's GLES renderer and glass shaders.
 //!
-//! Gli effetti sono elementi di rendering di smithay che Ossido mette nella lista
-//! dell'output. I parametri vengono dalle misure di macOS 27 in `plan/reference/`, citate
-//! accanto a ogni costante.
+//! The effects are smithay render elements that Ossido puts in the output's list. The
+//! parameters come from the macOS 27 measurements in `plan/reference/`, cited next to every
+//! constant.
 
 pub mod animation;
 pub mod backdrop;
@@ -21,49 +21,34 @@ use smithay::backend::renderer::gles::{
 };
 use tracing::warn;
 
-/// I programmi compilati per un renderer. Se uno shader non compila, l'effetto manca ma
-/// Ossido continua a disegnare (mai crashare).
+/// The programs compiled for a renderer. If a shader does not compile, the effect is missing
+/// but Ossido keeps drawing (never crash).
 #[derive(Clone, Default)]
 pub struct Shaders {
     pub corners: Option<GlesTexProgram>,
     pub shadow: Option<GlesPixelProgram>,
     pub titlebar: Option<GlesPixelProgram>,
-    /// Il bordo interno di 1 pt delle finestre in scuro.
+    /// The 1 pt inner border of windows in dark.
     pub border: Option<GlesPixelProgram>,
     pub glass: Option<glass::GlassPrograms>,
     pub tone: Option<GlesTexProgram>,
-    /// La deformazione a imbuto della riduzione nel Dock.
+    /// The funnel deformation of minimizing into the Dock.
     pub genie: Option<GlesTexProgram>,
 }
 
-/// I programmi del renderer, compilati alla prima richiesta e tenuti nel contesto EGL.
+/// The renderer programs, compiled on the first request and kept in the EGL context.
 pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
     if let Some(shaders) = renderer.egl_context().user_data().get::<Shaders>() {
         return shaders.clone();
     }
-    let corners = compile_texture(renderer, "angoli", corners::SHADER, &corners::UNIFORMS);
-    let shadow = compile_pixel(renderer, "ombra", shadow::SHADER, &shadow::UNIFORMS);
-    let titlebar = compile_pixel(
-        renderer,
-        "barra del titolo",
-        titlebar::SHADER,
-        &titlebar::UNIFORMS,
-    );
-    let border = compile_pixel(
-        renderer,
-        "bordo della finestra",
-        border::SHADER,
-        &border::UNIFORMS,
-    );
-    let blur = compile_texture(
-        renderer,
-        "sfocatura",
-        glass::BLUR_SHADER,
-        &glass::BLUR_UNIFORMS,
-    );
+    let corners = compile_texture(renderer, "corners", corners::SHADER, &corners::UNIFORMS);
+    let shadow = compile_pixel(renderer, "shadow", shadow::SHADER, &shadow::UNIFORMS);
+    let titlebar = compile_pixel(renderer, "title bar", titlebar::SHADER, &titlebar::UNIFORMS);
+    let border = compile_pixel(renderer, "window border", border::SHADER, &border::UNIFORMS);
+    let blur = compile_texture(renderer, "blur", glass::BLUR_SHADER, &glass::BLUR_UNIFORMS);
     let material = compile_texture(
         renderer,
-        "materiale",
+        "material",
         glass::MATERIAL_SHADER,
         &glass::MATERIAL_UNIFORMS,
     );
@@ -72,11 +57,11 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         .map(|(blur, material)| glass::GlassPrograms { blur, material });
     let tone = compile_texture(
         renderer,
-        "fondale della barra",
+        "bar backdrop",
         backdrop::SHADER,
         &backdrop::UNIFORMS,
     );
-    let genie = compile_texture(renderer, "genio", genie::SHADER, &genie::UNIFORMS);
+    let genie = compile_texture(renderer, "genie", genie::SHADER, &genie::UNIFORMS);
     let shaders = Shaders {
         corners,
         shadow,
@@ -106,7 +91,7 @@ fn compile_texture(
     match renderer.compile_custom_texture_shader(source, &names) {
         Ok(program) => Some(program),
         Err(err) => {
-            warn!("shader {name} non compilato, effetto disattivato: {err:?}");
+            warn!("shader {name} not compiled, effect disabled: {err:?}");
             None
         }
     }
@@ -125,7 +110,7 @@ fn compile_pixel(
     match renderer.compile_custom_pixel_shader(source, &names) {
         Ok(program) => Some(program),
         Err(err) => {
-            warn!("shader {name} non compilato, effetto disattivato: {err:?}");
+            warn!("shader {name} not compiled, effect disabled: {err:?}");
             None
         }
     }

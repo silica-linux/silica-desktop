@@ -1,7 +1,6 @@
-//! Ombra delle finestre, misurata su macOS 27 (`plan/reference/windows.md`,
-//! "Finestre · ombra"): nera, profilo da sfocatura gaussiana, spostata in basso, più
-//! ampia per la finestra attiva, con un anello di 1 pt a contatto; in scuro circa il doppio
-//! più forte.
+//! Window shadow, measured on macOS 27 (`plan/reference/windows.md`,
+//! "Windows · shadow"): black, Gaussian-blur profile, shifted down, wider for the active
+//! window, with a 1 pt contact ring; in dark about twice as strong.
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -10,24 +9,24 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use crate::cache::ShaderCache;
 use crate::corners::{CORNER_EXPONENT, CORNER_RADIUS};
 
-/// Parametri di un'ombra, in punti logici; alfa da 0 a 1.
+/// Parameters of a shadow, in logical points; alpha from 0 to 1.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowStyle {
-    /// Ampiezza A/255 dell'adattamento alfa(d) = A·½·erfc((d − s)/(√2 σ)).
+    /// Amplitude A/255 of the fit alpha(d) = A·½·erfc((d − s)/(√2 σ)).
     pub amplitude: f32,
     pub shift: f32,
     pub sigma: f32,
-    /// Spostamento verticale dell'ombra (verso il basso).
+    /// Vertical shift of the shadow (downwards).
     pub offset_y: f32,
-    /// Alfa dell'anello di 1 pt a contatto: lati e sopra.
+    /// Alpha of the 1 pt contact ring: sides and top.
     pub ring_side: f32,
     pub ring_top: f32,
-    /// Estensione dell'ombra oltre la finestra: lati, sopra, sotto (dove arriva a zero).
+    /// Extent of the shadow beyond the window: sides, top, bottom (where it reaches zero).
     pub extent: (i32, i32, i32),
 }
 
-/// Finestra attiva, aspetto chiaro: A 100, s 0,5, σ 19,5, spostamento 18, anello 81 e 54,
-/// margini 56 / 38 / 74.
+/// Active window, light appearance: A 100, s 0.5, σ 19.5, shift 18, ring 81 and 54,
+/// margins 56 / 38 / 74.
 pub const ACTIVE_LIGHT: ShadowStyle = ShadowStyle {
     amplitude: 100.0 / 255.0,
     shift: 0.5,
@@ -38,8 +37,8 @@ pub const ACTIVE_LIGHT: ShadowStyle = ShadowStyle {
     extent: (56, 38, 74),
 };
 
-/// Finestra inattiva, aspetto chiaro: A 72, s −2, σ 8,5, spostamento 7, anello 59 e 44,
-/// margini 23 / 16 / 30.
+/// Inactive window, light appearance: A 72, s −2, σ 8.5, shift 7, ring 59 and 44,
+/// margins 23 / 16 / 30.
 pub const INACTIVE_LIGHT: ShadowStyle = ShadowStyle {
     amplitude: 72.0 / 255.0,
     shift: -2.0,
@@ -50,9 +49,9 @@ pub const INACTIVE_LIGHT: ShadowStyle = ShadowStyle {
     extent: (23, 16, 30),
 };
 
-/// Finestra attiva, aspetto scuro: A 190, s −1, σ 20, stesso spostamento (18), anello 243 ai
-/// lati e 239 sopra (praticamente un bordo nero di 1 pt). Margini come in chiaro: il profilo
-/// arriva a 1 a d = 48 (windows.md, "Finestre · ombra").
+/// Active window, dark appearance: A 190, s −1, σ 20, same shift (18), ring 243 on the
+/// sides and 239 on top (practically a 1 pt black border). Margins as in light: the profile
+/// reaches 1 at d = 48 (windows.md, "Windows · shadow").
 pub const ACTIVE_DARK: ShadowStyle = ShadowStyle {
     amplitude: 190.0 / 255.0,
     shift: -1.0,
@@ -63,8 +62,8 @@ pub const ACTIVE_DARK: ShadowStyle = ShadowStyle {
     extent: (56, 38, 74),
 };
 
-/// Finestra inattiva, aspetto scuro: A 194, s −4, σ 9, spostamento 7, anello 223 e 215,
-/// margini come in chiaro (il profilo è a 0 a d = 20).
+/// Inactive window, dark appearance: A 194, s −4, σ 9, shift 7, ring 223 and 215,
+/// margins as in light (the profile is at 0 at d = 20).
 pub const INACTIVE_DARK: ShadowStyle = ShadowStyle {
     amplitude: 194.0 / 255.0,
     shift: -4.0,
@@ -75,7 +74,7 @@ pub const INACTIVE_DARK: ShadowStyle = ShadowStyle {
     extent: (23, 16, 30),
 };
 
-/// L'ombra di una finestra secondo lo stato e l'aspetto.
+/// The shadow of a window according to state and appearance.
 pub fn style(active: bool, dark: bool) -> ShadowStyle {
     match (active, dark) {
         (true, false) => ACTIVE_LIGHT,
@@ -98,14 +97,14 @@ pub const UNIFORMS: [(&str, UniformType); 9] = [
     ("ring_top", UniformType::_1f),
 ];
 
-/// L'ombra di una finestra, tenuta nei dati della finestra.
+/// The shadow of a window, kept in the window's data.
 #[derive(Default)]
 pub struct WindowShadow {
     cache: ShaderCache<(Size<i32, Logical>, ShadowStyle)>,
 }
 
 impl WindowShadow {
-    /// L'elemento dell'ombra per una finestra con questa cornice (logica, nell'output).
+    /// The shadow element for a window with this frame (logical, in the output).
     pub fn element(
         &self,
         program: &GlesPixelProgram,

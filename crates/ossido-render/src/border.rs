@@ -1,6 +1,6 @@
-//! Il bordo interno delle finestre in aspetto scuro: 1 pt più chiaro del fondo lungo tutto il
-//! contorno, sopra il contenuto (`plan/reference/windows.md`, "Finestre · bordo e fondo"). In
-//! chiaro non c'è.
+//! The inner border of windows in the dark appearance: 1 pt lighter than the background along
+//! the whole outline, above the content (`plan/reference/windows.md`, "Windows · border and
+//! background"). In light there is none.
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -9,7 +9,7 @@ use smithay::utils::{Logical, Size};
 use crate::cache::ShaderCache;
 use crate::corners::{CORNER_EXPONENT, CORNER_RADIUS};
 
-/// I colori del bordo (sRGB 0–1): riga superiore, lati, riga inferiore.
+/// The border colors (sRGB 0–1): top row, sides, bottom row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BorderStyle {
     pub top: [f32; 3],
@@ -22,15 +22,15 @@ const fn gray(level: u8) -> [f32; 3] {
     [v, v, v]
 }
 
-/// Attiva, scuro: `#3d3d3d` (61) su tutti i lati, contro il fondo `#272728`.
+/// Active, dark: `#3d3d3d` (61) on every side, against the `#272728` background.
 pub const ACTIVE_DARK: BorderStyle = BorderStyle {
     top: gray(0x3d),
     side: gray(0x3d),
     bottom: gray(0x3d),
 };
 
-/// Inattiva, scuro: `#404041` sopra (64), `#3a3a3b` a sinistra (58). La riga inferiore non è
-/// misurata: come i lati.
+/// Inactive, dark: `#404041` on top (64), `#3a3a3b` on the left (58). The bottom row is not
+/// measured: like the sides.
 pub const INACTIVE_DARK: BorderStyle = BorderStyle {
     top: [
         0x40 as f32 / 255.0,
@@ -49,7 +49,7 @@ pub const INACTIVE_DARK: BorderStyle = BorderStyle {
     ],
 };
 
-/// Il bordo di una finestra secondo stato e aspetto; niente in chiaro.
+/// The border of a window according to state and appearance; none in light.
 pub fn style(active: bool, dark: bool) -> Option<BorderStyle> {
     match (dark, active) {
         (false, _) => None,
@@ -68,14 +68,14 @@ pub const UNIFORMS: [(&str, UniformType); 6] = [
     ("bottom", UniformType::_3f),
 ];
 
-/// Il bordo di una finestra, tenuto nei suoi dati.
+/// The border of a window, kept in its data.
 #[derive(Default)]
 pub struct WindowBorder {
     cache: ShaderCache<(Size<i32, Logical>, BorderStyle, u32)>,
 }
 
 impl WindowBorder {
-    /// L'elemento del bordo per una cornice (logica, nell'output).
+    /// The border element for a frame (logical, in the output).
     pub fn element(
         &self,
         program: &GlesPixelProgram,

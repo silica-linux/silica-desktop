@@ -8,17 +8,17 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// In punti logici; l'elemento copre la cornice della finestra.
+// In logical points; the element covers the window frame.
 uniform float radius;
 uniform float exponent;
-// Punti per pixel fisico, per l'antialiasing.
+// Points per physical pixel, for antialiasing.
 uniform float pixel;
-// Colori della riga superiore, dei lati e della riga inferiore.
+// Colors of the top row, of the sides and of the bottom row.
 uniform vec3 top;
 uniform vec3 side;
 uniform vec3 bottom;
 
-// Distanza con segno (positiva fuori) dal contorno a superellisse della finestra.
+// Signed distance (positive outside) from the window's superellipse outline.
 float shape_distance(vec2 p) {
     vec2 half_size = size * 0.5;
     vec2 d = abs(p - half_size) - (half_size - vec2(radius));
@@ -37,9 +37,9 @@ float cover(float distance) {
 void main() {
     vec2 p = v_coords * size;
     float d = shape_distance(p);
-    // La fascia di 1 pt appena dentro il contorno.
+    // The 1 pt band just inside the outline.
     float band = cover(d) - cover(d + 1.0);
-    // Il lato più vicino sceglie il colore.
+    // The nearest side chooses the color.
     float left_right = min(p.x, size.x - p.x);
     vec3 color = side;
     if (p.y < left_right && p.y <= size.y - p.y) {

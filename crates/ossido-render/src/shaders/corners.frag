@@ -20,17 +20,17 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Da gl_FragCoord alla posizione nella finestra, in pixel fisici (riga x e riga y di una
-// trasformazione affine).
+// From gl_FragCoord to the position in the window, in physical pixels (x row and y row of an
+// affine transform).
 uniform vec3 frag_to_local_x;
 uniform vec3 frag_to_local_y;
-// Dimensione della finestra, raggio ed esponente della superellisse degli angoli.
+// Window size, radius and exponent of the corner superellipse.
 uniform vec2 geo_size;
 uniform float radius;
 uniform float exponent;
 
-// Copertura dell'angolo: |x/r|^n + |y/r|^n <= 1 nel riquadro r × r di ogni angolo.
-// Fuori dalla finestra (popup, ombre del client) e lontano dagli angoli non taglia.
+// Corner coverage: |x/r|^n + |y/r|^n <= 1 in the r × r box of every corner.
+// Outside the window (popups, client shadows) and far from the corners it does not cut.
 float corner_coverage(vec2 p) {
     if (p.x < 0.0 || p.y < 0.0 || p.x > geo_size.x || p.y > geo_size.y) {
         return 1.0;

@@ -20,14 +20,14 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// Il gradiente sotto la barra dei menu (glass.md, "Barra dei menu · gradiente"): la
-// luminanza dello sfondo passa per una tabella che comprime le luci in cima e svanisce
-// verso il basso; lo spostamento è uguale per i tre canali (il ciano scende di 68 in
-// ogni canale, il magenta scuro non cambia).
-// Tabella: 7 righe (y 0, 30, 45, 60, 80, 100, 120 pt) per 11 livelli (96, 112, …, 240,
-// 255), in 5 mat4 letti in ordine.
+// The gradient below the menu bar (glass.md, "Menu bar · gradient"): the luminance of the
+// wallpaper goes through a table that compresses the highlights at the top and fades
+// downwards; the shift is the same for the three channels (cyan drops by 68 in every
+// channel, dark magenta does not change).
+// Table: 7 rows (y 0, 30, 45, 60, 80, 100, 120 pt) by 11 levels (96, 112, …, 240,
+// 255), in 5 mat4 read in order.
 uniform mat4 tone[5];
-// Altezza della texture in pixel e pixel per punto.
+// Texture height in pixels and pixels per point.
 uniform float tex_height;
 uniform float scale_px;
 
@@ -47,7 +47,7 @@ float level(int c) {
     return c == 10 ? 255.0 : 96.0 + 16.0 * float(c);
 }
 
-// La luminanza dopo la tabella alla riga y (pt), per una luminanza 0–255.
+// The luminance after the table at row y (pt), for a luminance 0–255.
 float mapped(float l, float y) {
     if (l <= 96.0 || y >= 120.0) {
         return l;
