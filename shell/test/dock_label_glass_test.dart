@@ -55,7 +55,8 @@ void main() {
       expect(label.regions().last['material'], menu.regions().last['material']);
       expect(label.regions().first['radius'], labelHeight / 2);
 
-      // No background of its own: neither the gradient nor the border painter.
+      // No background of its own: neither the gradient nor the border painter (the shadow is an
+      // image, see CachedShadow).
       final painters = tester
           .widgetList<CustomPaint>(
             find.descendant(
@@ -64,9 +65,9 @@ void main() {
             ),
           )
           .map((p) => p.painter?.runtimeType.toString());
-      expect(painters, contains('_LabelShadow'));
+      expect(painters, contains('_ShadowImagePainter'));
       expect(
-        painters.where((p) => p != '_LabelShadow' && p != 'null'),
+        painters.where((p) => p != '_ShadowImagePainter' && p != 'null'),
         isEmpty,
       );
     });

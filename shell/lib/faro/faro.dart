@@ -25,6 +25,7 @@ import '../system/desktop_entries.dart';
 import '../system/open_app.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
+import '../system/shadow_image.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 import 'answers.dart';
@@ -1941,7 +1942,8 @@ class _FallbackGlyphPainter extends CustomPainter {
 }
 
 /// The shadow of a glass panel drawn only outside the panel: under the glass, which Ossido
-/// composes behind the surface, it must darken nothing (a BoxShadow would).
+/// composes behind the surface, it must darken nothing (a BoxShadow would). Drawn through an
+/// image ([CachedShadow]): it fades with an Opacity ancestor under Impeller.
 class OuterShadow extends StatelessWidget {
   const OuterShadow({
     super.key,
@@ -1959,8 +1961,10 @@ class OuterShadow extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-    painter: _OuterShadowPainter(radius, blurRadius, offset, color),
+  Widget build(BuildContext context) => CachedShadow(
+    cacheKey: Object.hash(radius, blurRadius, offset, color),
+    bleed: blurRadius * 3 + offset.distance,
+    paintShadow: _OuterShadowPainter(radius, blurRadius, offset, color).paint,
     child: child,
   );
 }

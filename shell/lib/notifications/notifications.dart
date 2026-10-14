@@ -24,6 +24,7 @@ import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
+import '../system/shadow_image.dart';
 import '../system/shell_channel.dart';
 import '../system/system_status.dart';
 import 'banner.dart';
@@ -969,7 +970,13 @@ class NotificationCard extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         if (shadow)
-          const Positioned.fill(child: CustomPaint(painter: _OutsideShadow())),
+          const Positioned.fill(
+            child: CachedShadow(
+              cacheKey: 'notification card',
+              bleed: 60,
+              paintShadow: _paintOutsideShadow,
+            ),
+          ),
         // The dark border line sits 1 pt outside the frame: the glass is 1 pt wider per
         // side and Ossido draws the line there.
         const Positioned(
@@ -1146,35 +1153,28 @@ class NotificationCard extends StatelessWidget {
   }
 }
 
-class _OutsideShadow extends CustomPainter {
-  const _OutsideShadow();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final card = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      const Radius.circular(cardRadius),
-    );
-    canvas
-      ..save()
-      ..clipPath(
-        Path.combine(
-          PathOperation.difference,
-          Path()..addRect((Offset.zero & size).inflate(60)),
-          Path()..addRRect(card),
-        ),
-      )
-      ..drawRRect(
-        card.shift(shadowOffset),
-        Paint()
-          ..color = shadowColor
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, shadowSigma),
-      )
-      ..restore();
-  }
-
-  @override
-  bool shouldRepaint(_OutsideShadow old) => false;
+/// The card's shadow, outside the card only.
+void _paintOutsideShadow(Canvas canvas, Size size) {
+  final card = RRect.fromRectAndRadius(
+    Offset.zero & size,
+    const Radius.circular(cardRadius),
+  );
+  canvas
+    ..save()
+    ..clipPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect((Offset.zero & size).inflate(60)),
+        Path()..addRRect(card),
+      ),
+    )
+    ..drawRRect(
+      card.shift(shadowOffset),
+      Paint()
+        ..color = shadowColor
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, shadowSigma),
+    )
+    ..restore();
 }
 
 /// The app icon: the notification image, the requested icon, the one of the desktop

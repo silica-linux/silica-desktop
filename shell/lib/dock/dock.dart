@@ -30,6 +30,7 @@ import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/folder_style.dart';
 import '../system/layer_control.dart';
+import '../system/shadow_image.dart';
 import '../system/app_registry.dart';
 import '../system/shell_channel.dart';
 import '../system/sounds.dart';
@@ -2669,8 +2670,13 @@ class DockLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (context, box) => CustomPaint(
-        painter: _LabelShadow(box.maxWidth, MenuColors.of(context).shadow),
+      builder: (context, box) => CachedShadow(
+        cacheKey: Object.hash(box.maxWidth, MenuColors.of(context).shadow),
+        bleed: 60,
+        paintShadow: _LabelShadow(
+          box.maxWidth,
+          MenuColors.of(context).shadow,
+        ).paint,
         child: Align(
           alignment: Alignment.topCenter,
           child: SizedBox(
