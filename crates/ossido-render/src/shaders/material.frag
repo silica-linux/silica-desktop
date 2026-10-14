@@ -68,7 +68,7 @@ float rounded_distance(vec2 p, vec4 rect, float r) {
 // rounded apex touching the bottom side. A rounded isosceles triangle: apex radius ~2 pt, the
 // sides' angle solved so that the rounded bottom lands on the rectangle's bottom
 // (misc.md, Dock context menu: base ~22 pt, ~9 pt deep, round bottom). The triangle goes on
-// into the body, so its base never shows.
+// into the body, cut just above the base, so its base never shows.
 float iso_triangle(vec2 p, vec2 q) {
     // Apex at the origin, opening towards +y, half-width q.x at height q.y (iquilezles).
     p.x = abs(p.x);
@@ -98,7 +98,10 @@ float tip_distance(vec2 p, vec2 size) {
     float apex = depth - ra / max(sin_t, 0.05);
     float reach = apex + 2.0 * height;
     vec2 local = vec2(p.x - half_base, apex - p.y);
-    return iso_triangle(local, vec2(reach * tan_t, reach)) - ra;
+    // Cut a little above the base: the triangle keeps widening inside the body and, with the
+    // tip near a corner, it would stick out of the body's side as a wedge.
+    float overlap = 2.0 * scale_px;
+    return max(iso_triangle(local, vec2(reach * tan_t, reach)) - ra, -p.y - overlap);
 }
 
 // Smooth (polynomial) minimum: the bridge between two nearby shapes.

@@ -660,6 +660,45 @@ fn a_tip_joins_its_body_in_one_shape() {
     assert_eq!(glass_list(&ossido)[0]["regions"][1]["shape"], "tip");
 }
 
+/// The Dock menu with its tip near the left corner (the body 122 × 69, the tip 15 pt from the
+/// left edge): the tip's triangle must not show outside the body above its base. It used to
+/// go on into the body, widening, and stuck out of the left side as a wedge.
+#[test]
+fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
+    let ossido = Headless::start_with("glass-tip-corner", SHOT, &["--background", "7a7b80"]);
+    let size = (240, 120);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
+    glass
+        .set_glass_with(|g| {
+            g.add_region(50, 10, 122, 69, 12.0, Material::Thick);
+            g.add_tip(65, 79, 24, 10, Material::Thick, 1.0);
+        })
+        .unwrap();
+    let image = shot(&ossido, "glass-tip-corner.png");
+    let background = [0x7a_u8, 0x7b, 0x80];
+    let lift = |c: [u8; 3]| {
+        c.iter()
+            .zip(background)
+            .map(|(a, b)| f64::from(*a) - f64::from(b))
+            .sum::<f64>()
+    };
+    let fill = lift(rgb(&image, 32 + 110, 32 + 40));
+    // Left of the body, along its height except the rounded corners: the background (the
+    // dark outline just outside the edge is allowed, glass is not).
+    for y in 24..66 {
+        for x in 38..49 {
+            let got = rgb(&image, 32 + x, 32 + y);
+            assert!(
+                lift(got) / fill < 0.3,
+                "glass left of the body at ({x}, {y}): {got:?}"
+            );
+        }
+    }
+    // The tip itself is still there.
+    let tip = rgb(&image, 32 + 77, 32 + 82);
+    assert!(lift(tip) / fill > 0.5, "the tip is gone: {tip:?}");
+}
+
 #[test]
 fn notification_glass_matches_the_isolated_banner() {
     // The isolated banner on the reference gray: #bfc0c5 on top, #c2c3c8 at the bottom
