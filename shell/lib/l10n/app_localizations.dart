@@ -677,7 +677,7 @@ abstract class AppLocalizations {
   /// Screenshot options section
   ///
   /// In en, this message translates to:
-  /// **'Delay'**
+  /// **'Timer'**
   String get delay;
 
   /// Screenshot delay option
@@ -695,7 +695,7 @@ abstract class AppLocalizations {
   /// Screenshot option
   ///
   /// In en, this message translates to:
-  /// **'Thumbnail after capture'**
+  /// **'Show Floating Thumbnail'**
   String get thumbnailAfterCapture;
 
   /// Screenshot bar button
@@ -743,14 +743,20 @@ abstract class AppLocalizations {
   /// Screenshot option: the bar reopens with the last selection
   ///
   /// In en, this message translates to:
-  /// **'Keep Last Selection'**
+  /// **'Remember Last Selection'**
   String get shotKeepSelection;
 
   /// Screenshot option: draw the mouse pointer into captures
   ///
   /// In en, this message translates to:
-  /// **'Include the Pointer'**
+  /// **'Show Mouse Pointer'**
   String get shotIncludePointer;
+
+  /// Screenshot options section (capture modes): what goes into the picture
+  ///
+  /// In en, this message translates to:
+  /// **'Capture'**
+  String get shotCaptureSection;
 
   /// Screenshot thumbnail menu
   ///
@@ -767,19 +773,13 @@ abstract class AppLocalizations {
   /// Screenshot thumbnail menu
   ///
   /// In en, this message translates to:
-  /// **'Copy to Clipboard'**
+  /// **'Save to Clipboard'**
   String get shotSaveToClipboard;
-
-  /// Screenshot thumbnail menu: a folder chosen before
-  ///
-  /// In en, this message translates to:
-  /// **'Save to “{name}”'**
-  String shotSaveToFolder(String name);
 
   /// Screenshot thumbnail menu: the default image viewer
   ///
   /// In en, this message translates to:
-  /// **'Open with {app}'**
+  /// **'Open in {app}'**
   String shotOpenWith(String app);
 
   /// Screenshot thumbnail menu: the file manager

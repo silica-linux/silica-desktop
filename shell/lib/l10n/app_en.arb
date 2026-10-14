@@ -432,7 +432,7 @@
   "@saveTo": {
     "description": "Screenshot options section"
   },
-  "delay": "Delay",
+  "delay": "Timer",
   "@delay": {
     "description": "Screenshot options section"
   },
@@ -449,7 +449,7 @@
       }
     }
   },
-  "thumbnailAfterCapture": "Thumbnail after capture",
+  "thumbnailAfterCapture": "Show Floating Thumbnail",
   "@thumbnailAfterCapture": {
     "description": "Screenshot option"
   },
@@ -481,13 +481,17 @@
   "@shotChooseFolder": {
     "description": "Title of the folder chooser for screenshots"
   },
-  "shotKeepSelection": "Keep Last Selection",
+  "shotKeepSelection": "Remember Last Selection",
   "@shotKeepSelection": {
     "description": "Screenshot option: the bar reopens with the last selection"
   },
-  "shotIncludePointer": "Include the Pointer",
+  "shotIncludePointer": "Show Mouse Pointer",
   "@shotIncludePointer": {
     "description": "Screenshot option: draw the mouse pointer into captures"
+  },
+  "shotCaptureSection": "Capture",
+  "@shotCaptureSection": {
+    "description": "Screenshot options section (capture modes): what goes into the picture"
   },
   "shotSaveToDesktop": "Save to Desktop",
   "@shotSaveToDesktop": {
@@ -497,20 +501,11 @@
   "@shotSaveToDocuments": {
     "description": "Screenshot thumbnail menu"
   },
-  "shotSaveToClipboard": "Copy to Clipboard",
+  "shotSaveToClipboard": "Save to Clipboard",
   "@shotSaveToClipboard": {
     "description": "Screenshot thumbnail menu"
   },
-  "shotSaveToFolder": "Save to “{name}”",
-  "@shotSaveToFolder": {
-    "description": "Screenshot thumbnail menu: a folder chosen before",
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "shotOpenWith": "Open with {app}",
+  "shotOpenWith": "Open in {app}",
   "@shotOpenWith": {
     "description": "Screenshot thumbnail menu: the default image viewer",
     "placeholders": {
