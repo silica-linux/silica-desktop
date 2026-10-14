@@ -90,6 +90,18 @@ use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
 
 /// Il canale per regione d'input e tastiera di un layer (componenti della shell).
+/// Il canale dello stato dell'app (StringCodec).
+const LIFECYCLE_CHANNEL: &str = "flutter/lifecycle";
+
+/// Il messaggio di `flutter/lifecycle` per una finestra attiva o no.
+fn lifecycle_message(active: bool) -> &'static str {
+    if active {
+        "AppLifecycleState.resumed"
+    } else {
+        "AppLifecycleState.inactive"
+    }
+}
+
 const LAYER_CHANNEL: &str = "silica/layer";
 
 /// Il canale dell'aspetto della finestra (`silica-window-v1`): contenuto a tutta finestra con la
@@ -180,6 +192,8 @@ struct App {
     /// `silica-window-v1`: il gestore e l'oggetto della finestra (creato alla prima richiesta).
     appearance_manager: Option<SilicaWindowManagerV1>,
     appearance: Option<SilicaWindowV1>,
+    /// La finestra attiva per Ossido (`activated` di xdg_toplevel), come l'ha saputo Flutter.
+    activated: Option<bool>,
     /// Il seat del puntatore e il seriale dell'ultima pressione (per spostare la finestra).
     seat: Option<wl_seat::WlSeat>,
     press_serial: u32,
@@ -475,6 +489,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=1, ())
             .ok(),
         appearance: None,
+        activated: None,
         seat: None,
         press_serial: 0,
         glass: Glass::new(
@@ -637,6 +652,17 @@ impl App {
                 b"[null]".to_vec()
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// `flutter/lifecycle`: la finestra attiva è `resumed`, le altre `inactive` (le app ne
+    /// seguono lo stato con `AppLifecycleListener`, per i colori della finestra inattiva).
+    fn send_lifecycle(&mut self, active: bool) {
+        if let Some(engine) = &self.engine
+            && let Err(err) =
+                engine.send_message(LIFECYCLE_CHANNEL, lifecycle_message(active).as_bytes())
+        {
+            warn!("flutter/lifecycle: {err}");
         }
     }
 
@@ -1083,6 +1109,11 @@ impl WindowHandler for App {
             (Some(w), Some(h)) => (w.get(), h.get()),
             _ => (0, 0),
         };
+        let active = configure.is_activated();
+        if self.activated != Some(active) {
+            self.activated = Some(active);
+            self.send_lifecycle(active);
+        }
         self.configured(qh, size);
     }
 }
@@ -1409,5 +1440,16 @@ impl wayland_client::Dispatch<ExtForeignToplevelHandleV1, ()> for App {
         {
             warn!("elenco delle finestre a Dart: {err}");
         }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::lifecycle_message;
+
+    #[test]
+    fn la_finestra_attiva_e_resumed_le_altre_inactive() {
+        assert_eq!(lifecycle_message(true), "AppLifecycleState.resumed");
+        assert_eq!(lifecycle_message(false), "AppLifecycleState.inactive");
     }
 }
