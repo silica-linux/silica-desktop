@@ -58,6 +58,9 @@ trait Sound1 {
     fn play_sound(&self, name: &str) -> zbus::Result<()>;
     fn ui_sounds_enabled(&self) -> zbus::Result<bool>;
     fn set_ui_sounds_enabled(&self, enabled: bool) -> zbus::Result<()>;
+    fn play_alert(&self, name: &str) -> zbus::Result<()>;
+    fn alert_sounds(&self) -> zbus::Result<Vec<String>>;
+    fn play_volume_feedback(&self) -> zbus::Result<bool>;
 }
 
 fn temp_dir(tag: &str) -> PathBuf {
@@ -196,6 +199,86 @@ fn a_missing_player_is_not_an_error() {
         // Without a file the setting lives in memory.
         proxy.set_ui_sounds_enabled(false).await.unwrap();
         assert!(!proxy.ui_sounds_enabled().await.unwrap());
+    });
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn alerts_play_at_the_alert_volume() {
+    let dir = temp_dir("alert");
+    let sounds = dir.join("sounds");
+    std::fs::create_dir_all(&sounds).unwrap();
+    for name in [
+        "alert-crystal.wav",
+        "alert-drop.wav",
+        "volume-feedback.wav",
+        "trash-move.wav",
+    ] {
+        std::fs::write(sounds.join(name), b"RIFF").unwrap();
+    }
+    let log = dir.join("played.log");
+    let player = dir.join("pw-play");
+    std::fs::write(
+        &player,
+        format!("#!/bin/sh\necho \"$@\" >> '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&player, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let settings = dir.join("sound.json");
+    std::fs::write(
+        &settings,
+        r#"{"uiSounds": false, "alert": "alert-drop", "alertVolume": 0.5}"#,
+    )
+    .unwrap();
+    let bus = Bus::start();
+    zbus::block_on(async {
+        let server = bus.connect().await;
+        server
+            .object_server()
+            .at(
+                SOUND_PATH,
+                Sound::new(SoundConfig {
+                    player: player.clone(),
+                    dirs: vec![sounds.clone()],
+                    settings_file: Some(settings.clone()),
+                }),
+            )
+            .await
+            .unwrap();
+        let client = bus.connect().await;
+        let proxy = Sound1Proxy::builder(&client)
+            .destination(server.unique_name().unwrap().to_owned())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        assert_eq!(
+            proxy.alert_sounds().await.unwrap(),
+            ["alert-crystal", "alert-drop"]
+        );
+        // The chosen alert, at its volume, even with the interface sounds off.
+        proxy.play_alert("").await.unwrap();
+        let line = format!("--volume=0.500 {}", sounds.join("alert-drop.wav").display());
+        assert_eq!(played(&log, 1), [line]);
+        // A preview of another alert.
+        proxy.play_alert("alert-crystal").await.unwrap();
+        assert!(played(&log, 2)[1].ends_with("alert-crystal.wav"));
+        assert!(proxy.play_alert("trash-move").await.is_err());
+        // Volume feedback is off by default; the setting turns it on.
+        assert!(!proxy.play_volume_feedback().await.unwrap());
+        proxy.set_ui_sounds_enabled(true).await.unwrap();
+        let saved = std::fs::read_to_string(&settings).unwrap();
+        assert!(
+            saved.contains("alert-drop") && saved.contains("uiSounds"),
+            "{saved}"
+        );
+        std::fs::write(&settings, r#"{"volumeFeedback": true, "alertVolume": 0}"#).unwrap();
+        assert!(proxy.play_volume_feedback().await.unwrap());
+        assert!(played(&log, 3)[2].ends_with("volume-feedback.wav"));
+        // Alert volume 0: silence.
+        proxy.play_alert("").await.unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 3);
     });
     std::fs::remove_dir_all(&dir).unwrap();
 }

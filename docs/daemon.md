@@ -216,9 +216,26 @@ for apps and the shell.
   `InvalidArgs`, a name with no file `FileNotFound`. At most 4 sounds play at once (more are
   dropped, not an error); without `pw-play` nothing plays and nothing fails.
 - `UiSoundsEnabled() → b` and `SetUiSoundsEnabled(b)`: "Play user interface sound effects", on
-  by default, saved as `{"ui_sounds": false}` in `$XDG_CONFIG_HOME/silica/sound.json`. The file
-  is read again on each sound, so a change made elsewhere applies at once. Signal
-  `UiSoundsChanged(b)`.
+  by default, saved as `uiSounds` in `$XDG_CONFIG_HOME/silica/sound.json` (the other keys of
+  the file stay; the older `ui_sounds` is still read). The file is read again on each sound,
+  so a change made elsewhere applies at once. Signal `UiSoundsChanged(b)`.
+- `PlayAlert(s name)`: plays the alert sound at the alert volume (`pw-play --volume`). Empty
+  `name`: the chosen one (`alert` in `sound.json`, default `alert-crystal`); otherwise an
+  `alert-*` name, for Settings' preview (anything else is `InvalidArgs`). Alerts play even
+  with the interface sounds off; with `alertVolume` 0 nothing plays.
+- `AlertSounds() → as`: the `alert-*` sounds found, sorted (the choices of the Alert sound
+  pop-up).
+- `PlayVolumeFeedback() → b`: plays `volume-feedback` when `volumeFeedback` is on (off by
+  default); true if it played. For the volume keys.
+
+`sound.json`, written by Settings:
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `uiSounds` | boolean | true |
+| `alert` | string, an `alert-*` sound | `alert-crystal` |
+| `alertVolume` | number 0–1, relative to the output volume | 1 |
+| `volumeFeedback` | boolean | false |
 
 Where the sounds are looked for, first match wins: `$SILICA_SOUNDS_DIR`, then
 `$XDG_DATA_HOME/silica/sounds`, then `silica/sounds` in each of `$XDG_DATA_DIRS`. The sounds
@@ -233,6 +250,8 @@ points `SILICA_SOUNDS_DIR` there, `cargo xtask os deploy` copies them into the s
 | `trash-empty` | the Trash emptied |
 | `file-transfer` | a copy or move finished (drag and drop, paste, a drop on a Dock folder) |
 | `screen-capture` | a screenshot taken (⇧⌘3, ⇧⌘4, ⇧⌘5, also to the clipboard); provisional, not measured |
+| `alert-crystal`, `alert-woodblock`, `alert-drop`, `alert-pebble` | alerts (`PlayAlert`) |
+| `volume-feedback` | the volume keys with `volumeFeedback` on (`PlayVolumeFeedback`) |
 
 ```
 gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \

@@ -67,6 +67,51 @@
       }
     }
   },
+  "alert-crystal": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "alert-crystal-A.wav",
+        "description": "Alert: two small glass bowls struck together, a fifth apart (E6, B6)."
+      }
+    }
+  },
+  "alert-woodblock": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "alert-woodblock-A.wav",
+        "description": "Alert: two quick knocks on a tuned wooden bar (A5), the second softer."
+      }
+    }
+  },
+  "alert-drop": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "alert-drop-A.wav",
+        "description": "Alert: a bubble-like resonance whose pitch rises quickly, with a faint tick."
+      }
+    }
+  },
+  "alert-pebble": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "alert-pebble-A.wav",
+        "description": "Alert: a pebble on a small steel dish, bright and short."
+      }
+    }
+  },
+  "volume-feedback": {
+    "chosen": "A",
+    "candidates": {
+      "A": {
+        "file": "volume-feedback-A.wav",
+        "description": "Volume keys: one soft, short tap on a tuned bar (E6)."
+      }
+    }
+  },
   "screen-capture": {
     "chosen": "A",
     "candidates": {
