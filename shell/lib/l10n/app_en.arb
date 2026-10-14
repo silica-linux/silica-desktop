@@ -461,6 +461,81 @@
   "@capture": {
     "description": "Screenshot bar button"
   },
+  "shotDesktop": "Desktop",
+  "@shotDesktop": {
+    "description": "Screenshot destination (Options menu)"
+  },
+  "shotDocuments": "Documents",
+  "@shotDocuments": {
+    "description": "Screenshot destination (Options menu)"
+  },
+  "shotClipboard": "Clipboard",
+  "@shotClipboard": {
+    "description": "Screenshot destination (Options menu)"
+  },
+  "shotOtherFolder": "Other Folder…",
+  "@shotOtherFolder": {
+    "description": "Screenshot destination: choose a folder (Options menu)"
+  },
+  "shotChooseFolder": "Choose where screenshots go",
+  "@shotChooseFolder": {
+    "description": "Title of the folder chooser for screenshots"
+  },
+  "shotKeepSelection": "Keep Last Selection",
+  "@shotKeepSelection": {
+    "description": "Screenshot option: the bar reopens with the last selection"
+  },
+  "shotIncludePointer": "Include the Pointer",
+  "@shotIncludePointer": {
+    "description": "Screenshot option: draw the mouse pointer into captures"
+  },
+  "shotSaveToDesktop": "Save to Desktop",
+  "@shotSaveToDesktop": {
+    "description": "Screenshot thumbnail menu"
+  },
+  "shotSaveToDocuments": "Save to Documents",
+  "@shotSaveToDocuments": {
+    "description": "Screenshot thumbnail menu"
+  },
+  "shotSaveToClipboard": "Copy to Clipboard",
+  "@shotSaveToClipboard": {
+    "description": "Screenshot thumbnail menu"
+  },
+  "shotSaveToFolder": "Save to “{name}”",
+  "@shotSaveToFolder": {
+    "description": "Screenshot thumbnail menu: a folder chosen before",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shotOpenWith": "Open with {app}",
+  "@shotOpenWith": {
+    "description": "Screenshot thumbnail menu: the default image viewer",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "shotShowIn": "Show in {app}",
+  "@shotShowIn": {
+    "description": "Screenshot thumbnail menu: the file manager",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "shotDelete": "Delete",
+  "@shotDelete": {
+    "description": "Screenshot thumbnail menu"
+  },
+  "shotClose": "Close",
+  "@shotClose": {
+    "description": "Screenshot thumbnail menu: saves and closes the thumbnail"
+  },
   "faroCompletionAction": "— {action}",
   "@faroCompletionAction": {
     "description": "Inline completion in the Faro field for a fallback search row",

@@ -157,6 +157,8 @@ pub struct State {
     pub titlebar_press_count: u64,
     /// How many screenshots were written (the temporary file name).
     pub screenshot_count: u64,
+    /// The settings of the screenshot shortcuts (`screenshot.settings`): the pointer drawn in.
+    pub screenshot_settings: silica_control::ScreenshotSettings,
     /// Button symbols: when the pointer entered the group and when it left it.
     pub buttons_hover: Option<ButtonsHover>,
     /// Window dragged by the bar, with the grab point relative to the frame.
@@ -358,6 +360,7 @@ impl State {
             titlebar_press_inside: false,
             titlebar_press_count: 0,
             screenshot_count: 0,
+            screenshot_settings: silica_control::ScreenshotSettings::default(),
             buttons_hover: None,
             moving: None,
             resizing: None,

@@ -79,6 +79,19 @@ pub struct RegionParams {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clipboard: bool,
+}
+
+impl RegionParams {
+    pub fn options(&self) -> CaptureOptions {
+        CaptureOptions {
+            pointer: self.pointer,
+            clipboard: self.clipboard,
+        }
+    }
 }
 
 /// An app by app_id (`app.force_quit`).
@@ -96,12 +109,68 @@ pub struct QuitParams {
     pub app_id: Option<String>,
 }
 
-/// A point of the screen in logical points (`screenshot.window_at`).
+/// The window under a point, in logical points (`screenshot.window_at`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PointParams {
+pub struct WindowShotParams {
     pub x: f64,
     pub y: f64,
+    /// With the window's shadow on a transparent background (default true); false: the
+    /// frame only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<bool>,
+    /// No window there (the desktop): the whole screen instead of an error.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub or_screen: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clipboard: bool,
+}
+
+impl WindowShotParams {
+    pub fn options(&self) -> CaptureOptions {
+        CaptureOptions {
+            pointer: self.pointer,
+            clipboard: self.clipboard,
+        }
+    }
+}
+
+/// What every screenshot command may add: the pointer drawn into the image, and the
+/// clipboard as the destination (the shell copies the image instead of saving a file).
+/// The parameters of `screenshot.screen`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureOptions {
+    /// Draw the pointer into the image; without it, Ossido's own setting
+    /// (`screenshot.settings`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<bool>,
+    /// The capture goes to the clipboard.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clipboard: bool,
+}
+
+/// The screenshot settings Ossido keeps for its own shortcuts (`screenshot.settings`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenshotSettings {
+    /// Draw the pointer into the captures.
+    pub pointer: bool,
+}
+
+/// What Ossido announces to the shell after a capture (broadcast topic `screenshot`, as
+/// JSON): the temporary PNG, its size, whether it goes to the clipboard and a sequence
+/// number (two equal captures are still two announcements).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaptureAnnouncement {
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub clipboard: bool,
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -16,6 +16,7 @@ use wayland_client::protocol::wl_data_device_manager::{self, WlDataDeviceManager
 use wayland_client::protocol::wl_data_offer::{self, WlDataOffer};
 use wayland_client::protocol::wl_data_source::{self, WlDataSource};
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
+use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::protocol::wl_shm::{self, WlShm};
@@ -33,6 +34,10 @@ use wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
 use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::{self, ZwlrLayerShellV1};
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
+    self, ZwlrLayerSurfaceV1,
+};
 
 /// Size and color of the client window (ARGB8888 in memory: B, G, R, A).
 pub const WINDOW: (u32, u32) = (100, 60);
@@ -74,6 +79,9 @@ struct App {
     offer_mimes: Vec<String>,
     drag_entered: Option<u32>,
     dropped: bool,
+    layer_shell: Option<ZwlrLayerShellV1>,
+    /// The size Ossido gave a layer surface (`zwlr_layer_surface_v1.configure`).
+    layer_size: Option<(u32, u32)>,
 }
 
 impl Dispatch<WlRegistry, ()> for App {
@@ -108,6 +116,9 @@ impl Dispatch<WlRegistry, ()> for App {
                 }
                 "zxdg_decoration_manager_v1" => {
                     state.decorations = Some(registry.bind(name, 1, qh, ()));
+                }
+                "zwlr_layer_shell_v1" => {
+                    state.layer_shell = Some(registry.bind(name, 1, qh, ()));
                 }
                 _ => {}
             }
@@ -277,6 +288,29 @@ impl Dispatch<WlDataSource, ()> for App {
     }
 }
 
+impl Dispatch<ZwlrLayerSurfaceV1, ()> for App {
+    fn event(
+        state: &mut Self,
+        surface: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zwlr_layer_surface_v1::Event::Configure {
+            serial,
+            width,
+            height,
+        } = event
+        {
+            surface.ack_configure(serial);
+            state.layer_size = Some((width, height));
+        }
+    }
+}
+
+delegate_noop!(App: ignore ZwlrLayerShellV1);
+delegate_noop!(App: WlRegion);
 delegate_noop!(App: ignore WlCompositor);
 delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore WlBuffer);
@@ -356,10 +390,12 @@ pub struct TestWindow {
     queue: EventQueue<App>,
     app: App,
     surface: WlSurface,
-    xdg_surface: XdgSurface,
+    /// None for a layer surface ([`TestWindow::open_overlay`]).
+    xdg_surface: Option<XdgSurface>,
     /// An open popup: its surface, xdg role objects and buffer.
     popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
-    _toplevel: XdgToplevel,
+    _toplevel: Option<XdgToplevel>,
+    _layer: Option<ZwlrLayerSurfaceV1>,
     _decoration: Option<ZxdgToplevelDecorationV1>,
     glass: Option<SilicaGlassV1>,
     appearance: Option<SilicaWindowV1>,
@@ -463,10 +499,90 @@ impl TestWindow {
             queue,
             app,
             surface,
-            xdg_surface,
+            xdg_surface: Some(xdg_surface),
             popup: None,
-            _toplevel: toplevel,
+            _toplevel: Some(toplevel),
+            _layer: None,
             _decoration: decoration,
+            glass: None,
+            appearance: None,
+            buffer,
+        }
+    }
+
+    /// A full-screen overlay layer surface (like the shell's screenshot layer), transparent,
+    /// that takes the pointer only in `input` (x, y, width, height, surface coordinates),
+    /// filled there with `RED_BGRA`.
+    #[allow(dead_code)]
+    pub fn open_overlay(socket: &Path, input: (i32, i32, i32, i32)) -> Self {
+        let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
+        let mut queue = conn.new_event_queue();
+        let qh = queue.handle();
+        let mut app = App::default();
+        conn.display().get_registry(&qh, ());
+        queue.roundtrip(&mut app).unwrap();
+        let compositor = app.compositor.clone().expect("wl_compositor missing");
+        let shm = app.shm.clone().expect("wl_shm missing");
+        let surface = compositor.create_surface(&qh, ());
+        let layer = app
+            .layer_shell
+            .clone()
+            .expect("zwlr_layer_shell_v1 missing")
+            .get_layer_surface(
+                &surface,
+                None,
+                zwlr_layer_shell_v1::Layer::Overlay,
+                "test-overlay".to_owned(),
+                &qh,
+                (),
+            );
+        layer.set_anchor(
+            zwlr_layer_surface_v1::Anchor::Top
+                | zwlr_layer_surface_v1::Anchor::Bottom
+                | zwlr_layer_surface_v1::Anchor::Left
+                | zwlr_layer_surface_v1::Anchor::Right,
+        );
+        surface.commit();
+        while app.layer_size.is_none() {
+            queue.blocking_dispatch(&mut app).unwrap();
+        }
+        let (w, h) = app.layer_size.unwrap();
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        let (ix, iy, iw, ih) = input;
+        for y in iy.max(0)..(iy + ih).min(h as i32) {
+            for x in ix.max(0)..(ix + iw).min(w as i32) {
+                let at = ((y as u32 * w + x as u32) * 4) as usize;
+                pixels[at..at + 4].copy_from_slice(&RED_BGRA);
+            }
+        }
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&pixels).unwrap();
+        let pool = shm.create_pool(file.as_fd(), (w * h * 4) as i32, &qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            w as i32,
+            h as i32,
+            (w * 4) as i32,
+            wl_shm::Format::Argb8888,
+            &qh,
+            (),
+        );
+        let region = compositor.create_region(&qh, ());
+        region.add(ix, iy, iw, ih);
+        surface.set_input_region(Some(&region));
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, w as i32, h as i32);
+        surface.commit();
+        queue.roundtrip(&mut app).unwrap();
+        Self {
+            queue,
+            app,
+            surface,
+            xdg_surface: None,
+            popup: None,
+            _toplevel: None,
+            _layer: Some(layer),
+            _decoration: None,
             glass: None,
             appearance: None,
             buffer,
@@ -489,7 +605,7 @@ impl TestWindow {
         positioner.set_anchor_rect(at.0, at.1, 1, 1);
         let surface = compositor.create_surface(&qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
-        let popup = xdg_surface.get_popup(Some(&self.xdg_surface), &positioner, &qh, ());
+        let popup = xdg_surface.get_popup(self.xdg_surface.as_ref(), &positioner, &qh, ());
         popup.grab(&seat, serial);
         surface.commit();
         self.queue.roundtrip(&mut self.app).unwrap();
@@ -616,8 +732,8 @@ impl TestWindow {
     /// Ossido's bar), then the commit.
     #[allow(dead_code)]
     pub fn set_fixed_size(&mut self, (w, h): (i32, i32)) {
-        self._toplevel.set_min_size(w, h);
-        self._toplevel.set_max_size(w, h);
+        self._toplevel.as_ref().unwrap().set_min_size(w, h);
+        self._toplevel.as_ref().unwrap().set_max_size(w, h);
         self.surface.commit();
         self.queue.roundtrip(&mut self.app).unwrap();
     }
@@ -647,7 +763,7 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
         let seat = self.app.seat.clone().expect("wl_seat missing");
         let serial = self.app.press_serial.expect("no press received");
-        self._toplevel._move(&seat, serial);
+        self._toplevel.as_ref().unwrap()._move(&seat, serial);
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
@@ -677,6 +793,20 @@ impl TestWindow {
     /// `payload`, and a `side` × `side` icon of a solid color (BGRA).
     #[allow(dead_code)]
     pub fn start_drag(&mut self, mime: &str, payload: &[u8], side: u32, color: [u8; 4]) {
+        self.start_drag_at(mime, payload, side, color, (0, 0));
+    }
+
+    /// Like `start_drag`, with the icon grabbed at `hotspot` (its pixel that stays under the
+    /// pointer: the icon is attached at minus that offset).
+    #[allow(dead_code)]
+    pub fn start_drag_at(
+        &mut self,
+        mime: &str,
+        payload: &[u8],
+        side: u32,
+        color: [u8; 4],
+        hotspot: (i32, i32),
+    ) {
         let device = self.data_device();
         let qh = self.queue.handle();
         let manager = self.app.data_manager.clone().unwrap();
@@ -705,7 +835,7 @@ impl TestWindow {
         );
         let serial = self.app.press_serial.expect("no press received");
         device.start_drag(Some(&source), &self.surface, Some(&icon), serial);
-        icon.attach(Some(&buffer), 0, 0);
+        icon.attach(Some(&buffer), -hotspot.0, -hotspot.1);
         icon.damage_buffer(0, 0, side as i32, side as i32);
         icon.commit();
         self.app.drag_source = Some(source);
@@ -769,7 +899,7 @@ impl TestWindow {
     /// Destroys the toplevel (the window closes) leaving the surface alive.
     #[allow(dead_code)]
     pub fn destroy_toplevel(&mut self) {
-        self._toplevel.destroy();
+        self._toplevel.as_ref().unwrap().destroy();
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 

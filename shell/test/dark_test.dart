@@ -236,7 +236,11 @@ void main() {
       ShellChannel.channel,
       (call) async => true,
     );
-    await tester.pumpWidget(dark(const ScreenshotLayer()));
+    final dir = Directory.systemTemp.createTempSync('shot-dark');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    await tester.pumpWidget(
+      dark(ScreenshotLayer(settingsFile: File('${dir.path}/screenshot.json'))),
+    );
     await send(tester, 'screenshot.toolbar');
     await tester.pump();
     // Measured over grey (K-06): glyphs and "Options" #c7c8cd, chosen glyph #dbdde2.
@@ -248,7 +252,7 @@ void main() {
     final chosen = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('mode screen')),
+            of: find.byKey(const ValueKey('mode selection')),
             matching: find.byType(Container),
           )
           .first,

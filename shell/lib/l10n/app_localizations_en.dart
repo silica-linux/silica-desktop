@@ -354,6 +354,57 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capture => 'Capture';
 
   @override
+  String get shotDesktop => 'Desktop';
+
+  @override
+  String get shotDocuments => 'Documents';
+
+  @override
+  String get shotClipboard => 'Clipboard';
+
+  @override
+  String get shotOtherFolder => 'Other Folder…';
+
+  @override
+  String get shotChooseFolder => 'Choose where screenshots go';
+
+  @override
+  String get shotKeepSelection => 'Keep Last Selection';
+
+  @override
+  String get shotIncludePointer => 'Include the Pointer';
+
+  @override
+  String get shotSaveToDesktop => 'Save to Desktop';
+
+  @override
+  String get shotSaveToDocuments => 'Save to Documents';
+
+  @override
+  String get shotSaveToClipboard => 'Copy to Clipboard';
+
+  @override
+  String shotSaveToFolder(String name) {
+    return 'Save to “$name”';
+  }
+
+  @override
+  String shotOpenWith(String app) {
+    return 'Open with $app';
+  }
+
+  @override
+  String shotShowIn(String app) {
+    return 'Show in $app';
+  }
+
+  @override
+  String get shotDelete => 'Delete';
+
+  @override
+  String get shotClose => 'Close';
+
+  @override
   String faroCompletionAction(String action) {
     return '— $action';
   }

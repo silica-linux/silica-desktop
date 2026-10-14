@@ -710,6 +710,96 @@ abstract class AppLocalizations {
   /// **'Capture'**
   String get capture;
 
+  /// Screenshot destination (Options menu)
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get shotDesktop;
+
+  /// Screenshot destination (Options menu)
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get shotDocuments;
+
+  /// Screenshot destination (Options menu)
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard'**
+  String get shotClipboard;
+
+  /// Screenshot destination: choose a folder (Options menu)
+  ///
+  /// In en, this message translates to:
+  /// **'Other Folder…'**
+  String get shotOtherFolder;
+
+  /// Title of the folder chooser for screenshots
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where screenshots go'**
+  String get shotChooseFolder;
+
+  /// Screenshot option: the bar reopens with the last selection
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Last Selection'**
+  String get shotKeepSelection;
+
+  /// Screenshot option: draw the mouse pointer into captures
+  ///
+  /// In en, this message translates to:
+  /// **'Include the Pointer'**
+  String get shotIncludePointer;
+
+  /// Screenshot thumbnail menu
+  ///
+  /// In en, this message translates to:
+  /// **'Save to Desktop'**
+  String get shotSaveToDesktop;
+
+  /// Screenshot thumbnail menu
+  ///
+  /// In en, this message translates to:
+  /// **'Save to Documents'**
+  String get shotSaveToDocuments;
+
+  /// Screenshot thumbnail menu
+  ///
+  /// In en, this message translates to:
+  /// **'Copy to Clipboard'**
+  String get shotSaveToClipboard;
+
+  /// Screenshot thumbnail menu: a folder chosen before
+  ///
+  /// In en, this message translates to:
+  /// **'Save to “{name}”'**
+  String shotSaveToFolder(String name);
+
+  /// Screenshot thumbnail menu: the default image viewer
+  ///
+  /// In en, this message translates to:
+  /// **'Open with {app}'**
+  String shotOpenWith(String app);
+
+  /// Screenshot thumbnail menu: the file manager
+  ///
+  /// In en, this message translates to:
+  /// **'Show in {app}'**
+  String shotShowIn(String app);
+
+  /// Screenshot thumbnail menu
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get shotDelete;
+
+  /// Screenshot thumbnail menu: saves and closes the thumbnail
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get shotClose;
+
   /// Inline completion in the Faro field for a fallback search row
   ///
   /// In en, this message translates to:

@@ -123,7 +123,8 @@ protocol is the same JSON lines as the control channel, and only the commands in
 `silica_control::actions::ACTIONS` run there:
 
 - `launcher.toggle`, `faro.toggle`;
-- `screenshot.toolbar`, `screenshot.screen`, `screenshot.selection`;
+- `screenshot.toolbar`, `screenshot.screen`, `screenshot.selection`,
+  `screenshot.screen_clipboard`, `screenshot.selection_clipboard`;
 - `panorama.toggle`, `notifications.toggle`, `controlcenter.toggle`.
 
 Anything else is refused. The client is `silica-action <action>`, which finds the socket

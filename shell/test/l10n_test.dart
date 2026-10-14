@@ -1,6 +1,8 @@
 // The shell's texts follow the system language: English by default, Italian when the
 // system asks for it (one check per component).
 
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,7 +107,13 @@ void main() {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(italian(const ScreenshotLayer()));
+    final dir = Directory.systemTemp.createTempSync('shot-it');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    await tester.pumpWidget(
+      italian(
+        ScreenshotLayer(settingsFile: File('${dir.path}/screenshot.json')),
+      ),
+    );
     await command(tester, 'screenshot.toolbar');
     await tester.pump();
     expect(find.text('Acquisisci'), findsOneWidget);
@@ -116,7 +124,7 @@ void main() {
         (_) => false,
         texts: lookupAppLocalizations(const Locale('it')),
       ),
-      'Schermata del 2026-10-14 alle 04.12.33.png',
+      'Istantanea schermo 2026-10-14 alle 04.12.33.png',
     );
   });
 }

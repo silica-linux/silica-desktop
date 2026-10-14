@@ -83,7 +83,9 @@ class ShellComponent extends StatelessWidget {
       'switcher' => Stack(
         children: [
           AppSwitcher(entries: loadDesktopEntries(locale: systemLanguage())),
-          const ScreenshotLayer(),
+          ScreenshotLayer(
+            entries: loadDesktopEntries(locale: systemLanguage()),
+          ),
           ForceQuitLayer(entries: loadDesktopEntries(locale: systemLanguage())),
         ],
       ),

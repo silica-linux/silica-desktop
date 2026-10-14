@@ -149,6 +149,10 @@ The clipboard history, for Faro's clipboard scope (`crates/daemon/src/clipboard.
   is `text`, `image` (a PNG kept in `$XDG_RUNTIME_DIR/silica/clipboard/`) or `files`, a
   `text/uri-list`.
 - `Copy(t id) → b`: puts the entry back on the clipboard, from the daemon's own source.
+- `CopyImage(s path) → b`: puts a PNG file on the clipboard as `image/png` (a screenshot sent
+  to the clipboard: ⌃⇧⌘3, ⌃⇧⌘4, or the "Clipboard" place of the screenshot tools). The file
+  is read before the call returns, so the caller may delete it right after. False if it is
+  not a PNG or is larger than 128 MiB.
 - `Remove(t id) → b` and `Clear()`.
 - Signal `Changed()` on every change.
 
@@ -192,6 +196,7 @@ points `SILICA_SOUNDS_DIR` there, `cargo xtask os deploy` copies them into the s
 | `trash-drag` | items dropped on the Dock's Trash |
 | `trash-empty` | the Trash emptied |
 | `file-transfer` | a copy or move finished (drag and drop, paste, a drop on a Dock folder) |
+| `screen-capture` | a screenshot taken (⇧⌘3, ⇧⌘4, ⇧⌘5, also to the clipboard); provisional, not measured |
 
 ```
 gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \

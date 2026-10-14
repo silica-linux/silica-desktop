@@ -16,6 +16,9 @@ abstract final class UiSound {
 
   /// A copy or move finished (a drop on a Dock folder).
   static const String fileTransfer = 'file-transfer';
+
+  /// A screenshot taken.
+  static const String screenCapture = 'screen-capture';
 }
 
 /// Plays interface sound `name`; never fails.
