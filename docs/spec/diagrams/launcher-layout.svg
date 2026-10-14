@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 380" font-family="Inter, sans-serif" font-size="10">
+  <title>Launcher panel layout (scale 1:2, 844 x 577 pt)</title>
+  <rect width="520" height="380" fill="#ffffff"/>
+  <g transform="translate(20,20)">
+    <rect x="0" y="0" width="422" height="288.5" rx="12.5" fill="#c8c9ce" stroke="#444548" stroke-width="0.5"/>
+    <!-- header 56 -->
+    <rect x="11" y="13" width="12.5" height="11" fill="#494a4f"/>
+    <rect x="30.5" y="6" width="1" height="15.5" fill="#16171c"/>
+    <text x="34" y="20" font-size="13" fill="#494a4f">Apps</text>
+    <text x="400" y="20" fill="#494a4f">…</text>
+    <!-- separator at 56 -->
+    <line x1="10" y1="28" x2="412" y2="28" stroke="#afb0b5" stroke-width="0.5"/>
+    <!-- capsules 26 tall at y 67 -->
+    <rect x="10" y="33.5" width="81" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="95" y="33.5" width="43" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="142" y="33.5" width="42.5" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="188.5" y="33.5" width="43" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="235.5" y="33.5" width="42.5" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="282" y="33.5" width="83" height="13" rx="4.5" fill="#d9dadf"/>
+    <rect x="369" y="33.5" width="43" height="13" rx="4.5" fill="#d9dadf"/>
+    <!-- grid: cell 112.5 pitch -> 56.25; first cell y 115 -> 57.5; icon 61 -> 30.5 at cell+7 -->
+    <g fill="#9a9ba0">
+      <rect x="23.75" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="80" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="136.25" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="192.5" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="248.75" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="305" y="61" width="30.5" height="30.5" rx="7"/>
+      <rect x="361.25" y="61" width="30.5" height="30.5" rx="7"/>
+    </g>
+    <line x1="10" y1="110" x2="403.5" y2="110" stroke="#afb0b5" stroke-width="0.5"/>
+    <g fill="#9a9ba0">
+      <rect x="23.75" y="119.5" width="30.5" height="30.5" rx="7"/>
+      <rect x="80" y="119.5" width="30.5" height="30.5" rx="7"/>
+      <rect x="136.25" y="119.5" width="30.5" height="30.5" rx="7"/>
+      <rect x="23.75" y="170.5" width="30.5" height="30.5" rx="7"/>
+      <rect x="80" y="170.5" width="30.5" height="30.5" rx="7"/>
+    </g>
+    <!-- scrollbar 11 wide, 3 from right -->
+    <rect x="415" y="72" width="5.5" height="192.5" rx="2.75" fill="#f2f2f2"/>
+    <rect x="415" y="72" width="5.5" height="72.5" rx="2.75" fill="#808080"/>
+  </g>
+  <text x="20" y="330">844 × 577 pt, radius 25 · header 56 · capsules 26 tall, r 9, gap 8</text>
+  <text x="20" y="346">grid 7 columns, pitch 112.5 × 102, icon 61 · recents row then a 1 pt separator</text>
+  <text x="20" y="362">scroll bar 11 pt, always visible, 3 pt from the right edge</text>
+</svg>
