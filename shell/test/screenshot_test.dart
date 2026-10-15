@@ -14,6 +14,7 @@ import 'package:silica_shell/screenshot/screenshot.dart';
 import 'package:silica_shell/screenshot/selection.dart';
 import 'package:silica_shell/screenshot/services.dart';
 import 'package:silica_shell/screenshot/toolbar.dart' show ShotToolbar;
+import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_ui/silica_ui.dart' show MenuPanel;
 
@@ -893,6 +894,25 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(services.captures, ['screenshot.screen']);
+  });
+
+  testWidgets('⇧⌘5: the close × is drawn, centred in its 18 pt circle (#166)', (
+    tester,
+  ) async {
+    await pumpLayer(tester);
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    expect(find.text('×'), findsNothing);
+    final glyph = find.byKey(const ValueKey('close glyph'));
+    expect(tester.widget<CustomPaint>(glyph).painter, isA<CrossGlyph>());
+    final circle = tester.getRect(
+      find.ancestor(of: glyph, matching: find.byType(Container)).first,
+    );
+    expect(circle.size, const Size(18, 18));
+    expect(tester.getRect(glyph).center, circle.center);
+    // The circle sits in the middle of the bar's height.
+    final bar = tester.getRect(find.byType(ShotToolbar));
+    expect(circle.center.dy - bar.top, closeTo(26, 0.5));
   });
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {

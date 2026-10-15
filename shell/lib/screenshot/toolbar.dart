@@ -12,6 +12,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../system/cross_glyph.dart';
 import 'settings.dart';
 
 const Size toolbarSize = Size(545, 52);
@@ -205,10 +206,13 @@ class ShotToolbar extends StatelessWidget {
                         color: c.closeFill,
                         shape: BoxShape.circle,
                       ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '×',
-                        style: uiText(size: 13, color: c.closeGlyph),
+                      child: CustomPaint(
+                        key: const ValueKey('close glyph'),
+                        painter: CrossGlyph(
+                          c.closeGlyph,
+                          arm: 3.2,
+                          stroke: 1.5,
+                        ),
                       ),
                     ),
                   ),

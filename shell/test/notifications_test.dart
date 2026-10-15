@@ -9,6 +9,7 @@ import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
 import 'package:silica_shell/notifications/settings.dart';
+import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/system_status.dart';
 
 class FakeSource extends ChangeNotifier implements NotificationsSource {
@@ -223,6 +224,34 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('Notifications'), findsNothing);
+  });
+
+  testWidgets('the group header clear button is a drawn, centred × (#166)', (
+    tester,
+  ) async {
+    final source = FakeSource()
+      ..items[1] = note(1, minute: 1)
+      ..items[2] = note(2, minute: 2);
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Titolo 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('×'), findsNothing);
+    final glyph = find.byKey(const ValueKey('group clear glyph'));
+    expect(glyph, findsOneWidget);
+    final paint = tester.widget<CustomPaint>(glyph);
+    expect(paint.painter, isA<CrossGlyph>());
+    // The glyph box is the circle: 20 x 20, so the cross is centred on it.
+    expect(tester.getSize(glyph), const Size(groupPillHeight, groupPillHeight));
+    expect(
+      tester.getRect(glyph).center,
+      tester
+          .getRect(
+            find.ancestor(of: glyph, matching: find.byType(AnimatedContainer)),
+          )
+          .center,
+    );
   });
 
   test('per-app styles from notifications.json', () {
