@@ -5,13 +5,22 @@
 // - Actions: the system actions of the command catalog (silica-daemon,
 //   dev.frascella.Silica.Actions1) and the apps' own actions (.desktop Actions).
 // - Clipboard: the clipboard history (silica-daemon, dev.frascella.Silica.Clipboard1).
-// The reference's actions and clipboard scopes are not measured: their rows reuse the
-// measured result rows (PROVISIONAL).
+// The files scope is a 640 x 547 pt grid of 5 columns; the actions scope lists everything
+// in sections per app, sorted alphabetically. The clipboard scope's rows reuse the measured
+// result rows (PROVISIONAL: it was not measured).
 
 part of 'faro.dart';
 
 /// What Faro searches.
 enum FaroScope { all, files, actions, clipboard }
+
+/// The scope Cmd+2..4 open (Cmd+1 is the Launcher).
+FaroScope? scopeOfDigit(LogicalKeyboardKey key) {
+  if (key == LogicalKeyboardKey.digit2) return FaroScope.files;
+  if (key == LogicalKeyboardKey.digit3) return FaroScope.actions;
+  if (key == LogicalKeyboardKey.digit4) return FaroScope.clipboard;
+  return null;
+}
 
 /// A file found by the index (folders are [FolderItem]).
 class FileItem extends FaroItem {
@@ -245,6 +254,7 @@ List<FaroItem> scopeItems(
   required ClipboardHistory clipboard,
   String Function(SystemAction)? labelOf,
   String? under,
+  String systemSection = 'System',
 }) {
   final q = query.trim().toLowerCase();
   bool matches(String text) => q.isEmpty || text.toLowerCase().contains(q);
@@ -252,25 +262,35 @@ List<FaroItem> scopeItems(
     case FaroScope.all:
       return const [];
     case FaroScope.files:
-      if (q.isEmpty && under == null) return const [];
+      // Nothing typed: the recent files and folders fill the grid.
       return [
         for (final hit in folders.search(
           query,
           limit: 40,
           files: true,
           under: under,
-          minLength: under == null ? 2 : 0,
+          minLength: 0,
         ))
           hit.isFolder ? FolderItem(hit) : FileItem(hit),
       ];
     case FaroScope.actions:
-      return [
+      // Sections per app, alphabetically; inside a section, alphabetically by action.
+      final rows = <(String, String, FaroItem)>[
         for (final a in actions.actions)
-          if (matches(labelOf?.call(a) ?? a.label)) ActionItem(a),
+          if (matches(labelOf?.call(a) ?? a.label))
+            (systemSection, labelOf?.call(a) ?? a.label, ActionItem(a)),
         for (final e in entries.values)
           for (final a in e.actions)
-            if (matches('${e.name} ${a.name}')) AppActionItem(e, a),
+            if (matches('${e.name} ${a.name}'))
+              (e.name, a.name, AppActionItem(e, a)),
       ];
+      rows.sort((x, y) {
+        final bySection = x.$1.toLowerCase().compareTo(y.$1.toLowerCase());
+        return bySection != 0
+            ? bySection
+            : x.$2.toLowerCase().compareTo(y.$2.toLowerCase());
+      });
+      return [for (final r in rows) r.$3];
     case FaroScope.clipboard:
       final clips = [
         for (final c in clipboard.entries)

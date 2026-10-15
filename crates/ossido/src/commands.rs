@@ -39,7 +39,8 @@ use silica_control::commands::{
     SPACE_REMOVE, SpaceInfo, WINDOW_MOVE_TO_SPACE,
 };
 use silica_control::commands::{
-    LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_NEXT, SWITCHER_PREVIOUS,
+    LAUNCHER_TOGGLE, SWITCHER_CANCEL, SWITCHER_COMMIT, SWITCHER_EXPOSE, SWITCHER_NEXT,
+    SWITCHER_PREVIOUS,
 };
 use silica_control::commands::{MinimizeEffectParams, WINDOW_MINIMIZE_EFFECT};
 use silica_control::commands::{OUTPUT_COLOR_TEMPERATURE, OUTPUT_CONFIGURE, OUTPUT_LIST};
@@ -353,7 +354,7 @@ impl State {
                 self.switcher_active = true;
                 Ok(json!({ "forwarded": self.forward_to_shell(id) }))
             }
-            SWITCHER_COMMIT | SWITCHER_CANCEL => {
+            SWITCHER_COMMIT | SWITCHER_CANCEL | SWITCHER_EXPOSE => {
                 self.switcher_active = false;
                 Ok(json!({ "forwarded": self.forward_to_shell(id) }))
             }

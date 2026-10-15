@@ -1622,6 +1622,12 @@ abstract class AppLocalizations {
   /// **'Clipboard'**
   String get faroScopeClipboard;
 
+  /// Faro actions scope: the section heading of the system's own actions (the apps' sections carry the app name)
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get faroSectionSystem;
+
   /// Faro placeholder in the files scope
   ///
   /// In en, this message translates to:

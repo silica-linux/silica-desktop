@@ -1144,6 +1144,10 @@
   "@faroScopeClipboard": {
     "description": "Faro round button and token: the clipboard history"
   },
+  "faroSectionSystem": "System",
+  "@faroSectionSystem": {
+    "description": "Faro actions scope: the section heading of the system's own actions (the apps' sections carry the app name)"
+  },
   "faroSearchFiles": "Search Files",
   "@faroSearchFiles": {
     "description": "Faro placeholder in the files scope"

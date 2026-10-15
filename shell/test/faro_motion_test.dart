@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/faro/faro.dart';
 import 'package:silica_shell/faro/folders.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 const entries = {
   'calc': DesktopEntry(id: 'calc', name: 'Calculator', exec: 'calc'),
@@ -57,6 +58,33 @@ void main() {
         }
       },
     );
+
+    test(
+      'engaged field and discs settle by ~630 ms and ~660 ms after they start',
+      () {
+        final w = samples(
+          SpringSimulation(engageWidthSpring, 640, 384, 0),
+          900,
+        );
+        for (var t = 630; t <= 900; t++) {
+          expect(w[t], closeTo(384, 1), reason: 't = $t ms');
+        }
+        final d = samples(
+          SpringSimulation(engageButtonsSpring, 0, 146, 0),
+          900,
+        );
+        for (var t = 660; t <= 900; t++) {
+          expect(d[t], closeTo(146, 1), reason: 't = $t ms');
+        }
+        expect(engageDelay, const Duration(milliseconds: 60));
+      },
+    );
+
+    test('a scope change overshoots by +5 pt on its travel', () {
+      final s = samples(SpringSimulation(scopeSpring, 56, 547, 0), 800);
+      final high = s.reduce((a, b) => a > b ? a : b);
+      expect(high - 547, closeTo(5, 0.5));
+    });
 
     test('the tables: fade, Launcher scale, return to Faro', () {
       expect(opacityAt(0), 0.22);
@@ -125,6 +153,13 @@ void main() {
       },
     );
 
+    /// Frames of 16 ms for `ms` (a timer fires at its time, an animation then runs).
+    Future<void> run(WidgetTester tester, int ms) async {
+      for (var t = 0; t < ms; t += 16) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
     Future<TestGesture> hover(Offset at) async {
       final mouse = await t.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(5, 5));
@@ -133,60 +168,76 @@ void main() {
     }
 
     testWidgets(
-      'hover: the panel narrows first, the buttons follow 80 ms later',
+      'hover: after 60 ms the capsule becomes a 384 pt field (settled ~690 ms) and '
+      'four discs (~800 ms)',
       (tester) async {
         await open(tester);
         await tester.pumpAndSettle();
         final frame = panel();
-        // The pointer on the right part of the frame, where the buttons will be.
         final mouse = await hover(Offset(frame.right - 40, frame.center.dy));
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 60));
-        expect(panel().width, lessThan(640));
-        // The buttons wait 80 ms: not there yet.
+        // The 60 ms wait: nothing moves yet.
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(panel().width, 640);
         expect(button(3), findsNothing);
-        await tester.pump(const Duration(milliseconds: 40));
-        await tester.pump(const Duration(milliseconds: 16));
-        // Coming out from behind the panel's right edge.
-        final early = tester.getRect(button(3));
-        expect(early.left, lessThan(panel().right));
-        await tester.pump(const Duration(milliseconds: 80));
-        // Undershoot of the width near +180 ms.
-        expect(panel().width, lessThan(384));
-        await tester.pump(const Duration(milliseconds: 500));
-        expect(panel().width, closeTo(384, 1));
+        await run(tester, 40);
+        await run(tester, 16);
+        expect(panel().width, lessThan(640));
+        // The discs wait 80 ms more.
+        expect(button(3), findsNothing);
+        await run(tester, 100);
+        expect(button(3), findsOneWidget);
+        // Settled: the field ~690 ms after the pointer entered, the discs ~800 ms.
+        await run(tester, 450);
+        expect(panel().width, closeTo(384, 1.5));
+        await run(tester, 120);
         final last = tester.getRect(button(3));
         expect(last.right, closeTo(frame.left + 640, 1.5));
         expect(
           tester.getRect(button(1)).left - tester.getRect(button(0)).left,
           closeTo(64, 0.5),
         );
-        // The pointer stays over the buttons: they don't go away.
-        await tester.pump(const Duration(milliseconds: 500));
+        // The pointer going away does not take them back: they stay while Faro is open.
+        await mouse.moveTo(Offset(frame.center.dx, frame.bottom + 300));
+        await run(tester, 1500);
+        expect(panel().width, closeTo(384, 0.5));
         expect(button(0), findsOneWidget);
         await mouse.removePointer();
       },
     );
 
-    testWidgets('leaving halfway reverses without a jump', (tester) async {
+    testWidgets('leaving within 60 ms changes nothing', (tester) async {
       await open(tester);
       await tester.pumpAndSettle();
       final frame = panel();
       final mouse = await hover(frame.center);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      var width = panel().width;
+      await tester.pump(const Duration(milliseconds: 30));
       await mouse.moveTo(Offset(frame.center.dx, frame.bottom + 200));
-      // Frame by frame the width changes by less than the spring's top speed allows
-      // (~5 pt/ms measured: 16 ms frames, under 90 pt) and never teleports to 640.
-      for (var i = 0; i < 60; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-        final w = panel().width;
-        expect((w - width).abs(), lessThan(90), reason: 'frame $i');
-        width = w;
-      }
-      expect(panel().width, closeTo(640, 0.5));
+      await run(tester, 1000);
+      expect(panel().width, 640);
       expect(button(0), findsNothing);
+      await mouse.removePointer();
+    });
+
+    testWidgets('the discs have no tooltip, hover or pressed state', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.pumpAndSettle();
+      final mouse = await hover(panel().center);
+      await run(tester, 1500);
+      expect(find.byType(SilicaTooltip), findsNothing);
+      // Over a disc and pressed: still no tooltip, and the glass is not interactive.
+      await mouse.moveTo(tester.getCenter(button(2)));
+      await run(tester, 2000);
+      await mouse.down(tester.getCenter(button(2)));
+      await run(tester, 300);
+      expect(find.byType(SilicaTooltip), findsNothing);
+      final glass = tester.widget<LiquidGlass>(
+        find.descendant(of: button(2), matching: find.byType(LiquidGlass)),
+      );
+      expect(glass.interactive, isFalse);
+      await mouse.up();
       await mouse.removePointer();
     });
 

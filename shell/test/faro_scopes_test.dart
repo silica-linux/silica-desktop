@@ -208,6 +208,132 @@ void main() {
     },
   );
 
+  Future<void> command(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(key);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+  }
+
+  Rect panelRect(WidgetTester tester) =>
+      tester.getRect(find.byKey(const ValueKey('faro panel')));
+
+  testWidgets('Cmd+1..4 open the scopes and switch straight between them', (
+    tester,
+  ) async {
+    await open(tester);
+    await command(tester, LogicalKeyboardKey.digit2);
+    expect(find.text('Search Files'), findsOneWidget);
+    await command(tester, LogicalKeyboardKey.digit3);
+    expect(find.text('Search Actions'), findsOneWidget);
+    await command(tester, LogicalKeyboardKey.digit4);
+    expect(find.text('Search Clipboard'), findsOneWidget);
+    await command(tester, LogicalKeyboardKey.digit2);
+    expect(find.text('Search Files'), findsOneWidget);
+    expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
+    // Cmd+1 is the Applications disc: the Launcher; from there Cmd+3 goes to Actions.
+    await command(tester, LogicalKeyboardKey.digit1);
+    expect(find.byKey(const ValueKey('faro scope token')), findsNothing);
+    expect(find.text('Search Files'), findsNothing);
+    await command(tester, LogicalKeyboardKey.digit3);
+    expect(find.text('Search Actions'), findsOneWidget);
+  });
+
+  testWidgets('files: 640 x 547 with a grid of 5 columns', (tester) async {
+    await open(tester);
+    await command(tester, LogicalKeyboardKey.digit2);
+    final rect = panelRect(tester);
+    expect(rect.width, closeTo(640, 0.5));
+    expect(rect.height, closeTo(547, 0.5));
+    final grid = tester.widget<GridView>(
+      find.byKey(const ValueKey('faro files grid')),
+    );
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 5);
+    // Nothing typed: the recent files and folders fill the grid, side by side.
+    expect(find.text('plan.md'), findsOneWidget);
+    final first = tester.getCenter(find.text('Projects'));
+    final second = tester.getCenter(find.text('Silica'));
+    expect(second.dy, first.dy);
+    expect(second.dx - first.dx, closeTo(124, 0.5));
+  });
+
+  testWidgets('Esc in a scope clears the text, then leaves the scope', (
+    tester,
+  ) async {
+    await open(tester);
+    await command(tester, LogicalKeyboardKey.digit3);
+    await tester.enterText(find.byType(EditableText), 'shot');
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      isEmpty,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('faro scope token')), findsNothing);
+    expect(find.byKey(const ValueKey('faro panel')), findsOneWidget);
+  });
+
+  testWidgets(
+    'the scope persists across close and reopen; closing takes 100 ms',
+    (tester) async {
+      await open(tester);
+      await command(tester, LogicalKeyboardKey.digit3);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byKey(const ValueKey('faro panel')), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byKey(const ValueKey('faro panel')), findsNothing);
+      (tester.state(find.byType(Faro)) as dynamic).reopenForTest();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
+      expect(find.text('Screenshot'), findsOneWidget);
+    },
+  );
+
+  testWidgets('actions: sections per app, sorted alphabetically', (
+    tester,
+  ) async {
+    await open(tester);
+    await command(tester, LogicalKeyboardKey.digit3);
+    double at(String text) => tester.getCenter(find.text(text)).dy;
+    double section(String name) =>
+        tester.getCenter(find.byKey(ValueKey('faro section $name'))).dy;
+    final browser = section('Browser');
+    final newPrivate = at('New Private Window');
+    final newWindow = at('New Window');
+    final system = section('System');
+    final toggle = at('Toggle appearance');
+    final shot = at('Screenshot');
+    // Sections alphabetical (Browser before System); inside them, by name.
+    expect(browser, lessThan(newPrivate));
+    expect(newPrivate, lessThan(newWindow));
+    expect(newWindow, lessThan(system));
+    expect(system, lessThan(shot));
+    expect(shot, lessThan(toggle));
+  });
+
+  testWidgets('a pill inserts the files token and keeps the typed text', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.enterText(find.byType(EditableText), 'plan');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Files').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      'plan',
+    );
+  });
+
   test('desktop actions are read from the entry', () {
     final web = entries['web']!;
     expect(

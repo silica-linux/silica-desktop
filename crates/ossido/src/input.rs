@@ -323,6 +323,11 @@ impl State {
                     if pressed && key == "Escape" {
                         return FilterResult::Intercept(silica_control::commands::SWITCHER_CANCEL);
                     }
+                    // Up or Down: App Exposé of the chosen app (the switcher goes away and
+                    // Exposé stays after the Logo key is released).
+                    if pressed && (key == "Up" || key == "Down") {
+                        return FilterResult::Intercept(silica_control::commands::SWITCHER_EXPOSE);
+                    }
                     if !pressed && (key == "Super_L" || key == "Super_R") {
                         logo_released.set(true);
                     }

@@ -350,6 +350,15 @@ fn the_logo_key_drives_the_app_switcher() {
     key("Shift_L", Some(false));
     key("Escape", None);
     key("Super_L", Some(false));
+    // Up and Down open App Exposé of the chosen app; the release afterwards confirms nothing.
+    key("Super_L", Some(true));
+    key("Tab", None);
+    key("Up", None);
+    key("Super_L", Some(false));
+    key("Super_L", Some(true));
+    key("Tab", None);
+    key("Down", None);
+    key("Super_L", Some(false));
     let output = child.wait_with_output().unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
     let commands: Vec<&str> = out
@@ -363,7 +372,11 @@ fn the_logo_key_drives_the_app_switcher() {
             "switcher.next",
             "switcher.commit",
             "switcher.previous",
-            "switcher.cancel"
+            "switcher.cancel",
+            "switcher.next",
+            "switcher.expose",
+            "switcher.next",
+            "switcher.expose"
         ],
         "{out}"
     );
