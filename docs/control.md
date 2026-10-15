@@ -47,6 +47,8 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `switcher.commit`, `switcher.cancel` | — | `forwarded`: closes the switcher activating the chosen app, or without changing app |
 | `launcher.toggle` | — | `forwarded`: opens or closes the app launcher (Faro in grid mode) |
 | `app.quit` | — | `closed`: asks all the windows of the frontmost app to close (Logo+Q) |
+| `app.menu` | — | `app_id`, `serial` (0 without menus), `model`: the menus the frontmost app published (silica-menu-v1, `docs/protocols.md`), as the menu bar receives them |
+| `app.menu_activate` | `id` | `app_id`, `id`: chooses an item of the frontmost app's menus, as a click in the bar; error if the app published none |
 | `faro.toggle` | — | `forwarded`: shell components that received it (Logo+Space) |
 | `notifications.toggle` | — | `forwarded`: opens or closes the Notification Center (click on the clock) |
 | `controlcenter.toggle` | — | `forwarded`: opens or closes the Control Center (icon in the bar) |

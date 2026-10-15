@@ -46,6 +46,10 @@ pub const WINDOW_ARRANGE_4: &str = "window.arrange_4";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
 pub const APP_QUIT: &str = "app.quit";
+/// The frontmost app's menus, as the menu bar shows them (silica-menu-v1, #25).
+pub const APP_MENU: &str = "app.menu";
+/// Chooses an item of the frontmost app's menus: `{"id": n}`.
+pub const APP_MENU_ACTIVATE: &str = "app.menu_activate";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
 pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
@@ -732,6 +736,27 @@ pub const CATALOG: &[CommandSpec] = &[
             json!({
                 "type": "object",
                 "properties": {"app_id": {"type": "string"}},
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: APP_MENU,
+        label: "App menus",
+        description: "The menus the frontmost app published for the menu bar: `app_id`, `serial` (0 if it published none) and `model` (silica-menu-v1 JSON, null if none).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: APP_MENU_ACTIVATE,
+        label: "Choose an app menu item",
+        description: "Chooses the item `id` of the frontmost app's menus, as a click in the menu bar does.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"id": {"type": "integer", "minimum": 0}},
+                "required": ["id"],
                 "additionalProperties": false
             })
         },

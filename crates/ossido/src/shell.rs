@@ -53,7 +53,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            7,
+            8,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -139,6 +139,7 @@ impl State {
         handle.send_title(&title);
         handle.send_app_id(&app_id);
         handle.send_done();
+        self.reannounce_app_menu();
     }
 
     /// The window is closed: it leaves the list.
@@ -225,6 +226,8 @@ impl State {
     /// the focus change callback, with the surface: reading the focus from the keyboard in
     /// there would take its lock again.
     pub fn announce_focus(&mut self, focus: Option<&WlSurface>) {
+        // The frontmost app's menus follow the focus (silica-menu-v1, #25).
+        self.announce_app_menu(focus);
         let identifier = self.identifier_of(focus);
         if self.announced_focus.as_deref() == Some(identifier.as_str()) {
             return;
@@ -418,6 +421,7 @@ impl GlobalDispatch<SilicaShellManagerV1, ShellGlobal> for State {
                 manager.broadcast(topic.clone(), value.clone());
             }
         }
+        state.send_app_menu_to(&manager);
         state.shell_managers.push(manager);
     }
 
@@ -511,6 +515,11 @@ impl Dispatch<SilicaShellManagerV1, ()> for State {
             }
             silica_shell_manager_v1::Request::ClearTransient { surface } => {
                 state.clear_shell_transient(&surface);
+            }
+            silica_shell_manager_v1::Request::ActivateMenuItem { serial, id } => {
+                if !state.activate_menu_item(serial, id) {
+                    info!("shell: menu {serial} is gone, item {id} dropped");
+                }
             }
             silica_shell_manager_v1::Request::Destroy => {}
             _ => {}

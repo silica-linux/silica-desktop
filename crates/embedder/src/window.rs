@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::SilicaGlassV1;
+use silica_protocols::menu::client::silica_menu_manager_v1::SilicaMenuManagerV1;
+use silica_protocols::menu::client::silica_menu_v1::{self, SilicaMenuV1};
 use silica_protocols::shell::client::silica_shell_manager_v1::{
     Outside, Rule, SilicaShellManagerV1,
 };
@@ -277,6 +279,8 @@ struct App {
     press_serial: u32,
     /// Windows and commands for the shell components (`silica/shell`).
     shell: ShellLink,
+    /// The app's menus for the menu bar (`silica/menu`, `menu.rs`).
+    menu: crate::menu::MenuLink,
     /// For the input regions (`silica/layer`).
     compositor: CompositorState,
     /// The `silica/dbus` channel, on a separate thread.
@@ -659,9 +663,14 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         press_serial: 0,
         glass,
         glass_sync,
+        menu: crate::menu::MenuLink::new(
+            globals
+                .bind::<SilicaMenuManagerV1, App, ()>(&qh, 1..=1, ())
+                .ok(),
+        ),
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=7, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=8, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -777,6 +786,7 @@ impl App {
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
+            crate::menu::CHANNEL => self.menu.handle_call(&message.data, &self.qh),
             LAYER_CHANNEL => self.handle_layer_call(&message.data),
             WINDOW_CHANNEL => self.handle_window_call(&message.data),
             crate::drag::CHANNEL => self.handle_drag_call(&message.data),
@@ -2564,6 +2574,27 @@ wayland_client::delegate_noop!(App: ignore SilicaGlassManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaWindowManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaWindowV1);
 wayland_client::delegate_noop!(App: ignore SilicaGlassV1);
+wayland_client::delegate_noop!(App: ignore SilicaMenuManagerV1);
+
+/// An item of the app's menus chosen in the bar (`menu.rs`).
+impl wayland_client::Dispatch<SilicaMenuV1, ()> for App {
+    fn event(
+        app: &mut Self,
+        _: &SilicaMenuV1,
+        event: silica_menu_v1::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_menu_v1::Event::Activated { id } = event
+            && let Some(engine) = &app.engine
+            && let Err(err) =
+                engine.send_message(crate::menu::CHANNEL, &crate::menu::activated_message(id))
+        {
+            warn!("silica/menu: {err}");
+        }
+    }
+}
 impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
     fn event(
         app: &mut Self,
@@ -2602,6 +2633,17 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
                 "args": null,
             }))
             .unwrap_or_default(),
+            // The frontmost app's menus (silica-menu-v1, #25).
+            Event::AppMenu {
+                app_id,
+                serial,
+                fd,
+                size,
+            } => {
+                let message = crate::menu::shell_message(&app_id, serial, fd, size);
+                app.shell.remember_app_menu(&message);
+                message
+            }
             // Long press on the green button: the arrangement popover.
             Event::WindowMenu { identifier, x, y } => serde_json::to_vec(&serde_json::json!({
                 "method": "windowMenu",

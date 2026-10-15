@@ -1,6 +1,7 @@
 //! Ossido, the Wayland compositor of Silica.
 
 mod app_frames;
+mod app_menu;
 pub mod backend;
 mod capture;
 pub mod commands;

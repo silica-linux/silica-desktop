@@ -4,6 +4,7 @@
 //! - `silica-shell-v1` (`xml/silica-shell-v1.xml`): shell commands to Ossido.
 //! - `silica-window-v1` (`xml/silica-window-v1.xml`): appearance of an app window
 //!   (full-size content with Ossido's buttons on top).
+//! - `silica-menu-v1` (`xml/silica-menu-v1.xml`): an app's menus in the global menu bar.
 //!
 //! The server side (`server`) is for Ossido, the client side (`client`) for the embedder.
 
@@ -147,4 +148,54 @@ pub mod window {
 
         wayland_scanner::generate_client_code!("xml/silica-window-v1.xml");
     }
+}
+
+/// `silica-menu-v1`.
+pub mod menu {
+    #[cfg(feature = "server")]
+    #[allow(
+        missing_docs,
+        clippy::all,
+        clippy::pedantic,
+        unused_imports,
+        non_upper_case_globals
+    )]
+    pub mod server {
+        use wayland_server;
+        use wayland_server::protocol::*;
+
+        pub mod __interfaces {
+            use wayland_server::protocol::__interfaces::*;
+            wayland_scanner::generate_interfaces!("xml/silica-menu-v1.xml");
+        }
+        use self::__interfaces::*;
+
+        wayland_scanner::generate_server_code!("xml/silica-menu-v1.xml");
+    }
+
+    #[cfg(feature = "client")]
+    #[allow(
+        missing_docs,
+        clippy::all,
+        clippy::pedantic,
+        unused_imports,
+        non_upper_case_globals
+    )]
+    pub mod client {
+        use wayland_client;
+        use wayland_client::protocol::*;
+
+        pub mod __interfaces {
+            use wayland_client::protocol::__interfaces::*;
+            wayland_scanner::generate_interfaces!("xml/silica-menu-v1.xml");
+        }
+        use self::__interfaces::*;
+
+        wayland_scanner::generate_client_code!("xml/silica-menu-v1.xml");
+    }
+
+    /// The largest model in bytes (`silica_menu_v1.limits.max_model_size`).
+    pub const MAX_MODEL_SIZE: usize = 262_144;
+
+    pub mod model;
 }

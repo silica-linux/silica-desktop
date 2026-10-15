@@ -7,6 +7,8 @@ use std::path::Path;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
+use silica_protocols::menu::client::silica_menu_manager_v1::SilicaMenuManagerV1;
+use silica_protocols::menu::client::silica_menu_v1::{self, SilicaMenuV1};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
 use wayland_client::protocol::wl_buffer::WlBuffer;
@@ -88,6 +90,9 @@ struct App {
     layer_shell: Option<ZwlrLayerShellV1>,
     /// The size Ossido gave a layer surface (`zwlr_layer_surface_v1.configure`).
     layer_size: Option<(u32, u32)>,
+    /// silica-menu-v1: the manager and the ids of the items chosen in the bar.
+    menu_manager: Option<SilicaMenuManagerV1>,
+    menu_activations: Vec<u32>,
 }
 
 impl Dispatch<WlRegistry, ()> for App {
@@ -125,6 +130,9 @@ impl Dispatch<WlRegistry, ()> for App {
                 }
                 "zwlr_layer_shell_v1" => {
                     state.layer_shell = Some(registry.bind(name, 1, qh, ()));
+                }
+                "silica_menu_manager_v1" => {
+                    state.menu_manager = Some(registry.bind(name, 1, qh, ()));
                 }
                 _ => {}
             }
@@ -331,6 +339,22 @@ delegate_noop!(App: ignore SilicaGlassV1);
 delegate_noop!(App: ignore SilicaWindowManagerV1);
 delegate_noop!(App: ignore SilicaWindowV1);
 delegate_noop!(App: XdgPositioner);
+delegate_noop!(App: ignore SilicaMenuManagerV1);
+
+impl Dispatch<SilicaMenuV1, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &SilicaMenuV1,
+        event: silica_menu_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_menu_v1::Event::Activated { id } = event {
+            state.menu_activations.push(id);
+        }
+    }
+}
 
 impl Dispatch<XdgPopup, ()> for App {
     fn event(
@@ -420,6 +444,8 @@ pub struct TestWindow {
     _decoration: Option<ZxdgToplevelDecorationV1>,
     glass: Option<SilicaGlassV1>,
     appearance: Option<SilicaWindowV1>,
+    /// The app's menu object (silica-menu-v1), after the first `set_menu_model`.
+    menu: Option<SilicaMenuV1>,
     buffer: WlBuffer,
 }
 
@@ -527,6 +553,7 @@ impl TestWindow {
             _decoration: decoration,
             glass: None,
             appearance: None,
+            menu: None,
             buffer,
         }
     }
@@ -606,6 +633,7 @@ impl TestWindow {
             _decoration: None,
             glass: None,
             appearance: None,
+            menu: None,
             buffer,
         }
     }
@@ -1004,6 +1032,48 @@ impl TestWindow {
         let size = self.app.configured_size.unwrap_or((1, 1));
         self.commit_size(size);
         size
+    }
+
+    /// Publishes the app's menus (silica-menu-v1) as this JSON, in a memfd.
+    #[allow(dead_code)]
+    pub fn set_menu_model(&mut self, json: &str) {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .menu_manager
+            .clone()
+            .expect("silica_menu_manager_v1 missing");
+        let menu = self
+            .menu
+            .get_or_insert_with(|| manager.get_menu(&qh, ()))
+            .clone();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        menu.set_model(file.as_fd(), json.len() as u32);
+        // A bad model ends the connection: `disconnected` tells.
+        let _ = self.queue.roundtrip(&mut self.app);
+    }
+
+    /// The app has no menus any more.
+    #[allow(dead_code)]
+    pub fn destroy_menu(&mut self) {
+        if let Some(menu) = self.menu.take() {
+            menu.destroy();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// The items chosen in the bar since the last call.
+    #[allow(dead_code)]
+    pub fn menu_activations(&mut self) -> Vec<u32> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        std::mem::take(&mut self.app.menu_activations)
+    }
+
+    /// Whether Ossido closed the connection (a protocol error).
+    #[allow(dead_code)]
+    pub fn disconnected(&mut self) -> bool {
+        self.queue.roundtrip(&mut self.app).is_err()
     }
 
     /// Reads the incoming events and tells whether Ossido asked to close.

@@ -179,6 +179,70 @@ against other processes of the same user: that will come with the app sandbox.
   otherRule, press, scroll}`, where `press` and `scroll` are the version 6 fallback;
   `clearTransient`) and `silica/shell` (`transientDismissed`).
 
+## silica-menu-v1: the apps' menus in the menu bar
+
+An app publishes its menus (app menu, File, Edit, View, Window, Help and its own) and the menu
+bar shows those of the frontmost app (silica-desktop#25).
+
+- `silica_menu_manager_v1.get_menu` gives the client's `silica_menu_v1` (one per client: the
+  menus belong to the app, which updates them when its active window changes).
+- `silica_menu_v1.set_model(fd, size)` replaces the whole model: UTF-8 JSON in a file
+  (a sealed memfd), at most 256 KiB, read at once from offset 0. The format:
+
+  ```json
+  {"menus": [
+    {"label": "Calculator", "role": "app", "items": [
+      {"id": 1, "label": "", "role": "about"},
+      {"separator": true},
+      {"label": "", "role": "quit"}
+    ]},
+    {"label": "View", "items": [
+      {"id": 3, "label": "Basic", "checked": true,
+       "shortcut": {"key": "1", "meta": true}},
+      {"id": 4, "label": "Decimal Places", "items": [{"id": 5, "label": "8"}]}
+    ]}
+  ]}
+  ```
+
+  `role` on a menu: `app`, `window`, `help`. On an item: a system item the bar runs itself
+  when it has no `id` (`quit`, `services`, `hide`, `hide_others`, `show_all`, `close`,
+  `minimize`, `fullscreen`, `bring_all_to_front`), or the standard meaning of an app item
+  (`about`, `settings`, `undo`, `redo`, `cut`, `copy`, `paste`, `delete`, `select_all`,
+  `help`), which lets the bar give it its label and shortcut in the user's language when the
+  app leaves `label` empty. `shortcut.meta` is ⌘ (the Logo key). Unknown keys are ignored.
+  Limits: 32 menus, 4096 items, items at most 4 levels below a top-level menu, labels of 256
+  bytes; a model past them, unreadable or not JSON is the `invalid_model` error (the client
+  is disconnected, Ossido goes on). Ossido keeps it in normal form (`model.rs` in
+  `silica-protocols`: defaults written out, unknown keys dropped); the embedder checks it with
+  the same code before sending.
+- event `silica_menu_v1.activated(id)`: the user chose the item in the bar. The model may have
+  changed in between: the app ignores ids it no longer knows.
+- Shell side (`silica_shell_manager_v1` version 8): the event `app_menu(app_id, serial, fd,
+  size)` carries the frontmost app's model in normal form (sealed memfd, read from offset 0),
+  on binding and whenever the frontmost app or its model changes; `serial` 0 and `size` 0
+  when that app published none. While a shell menu has the keyboard the frontmost app stays
+  the window on top, as for `focused`. `activate_menu_item(serial, id)` sends the choice back;
+  an old serial does nothing.
+- Control channel: `app.menu` and `app.menu_activate` (`docs/control.md`).
+
+Keyboard shortcuts stay inside the app: the model only shows them. The app handles its keys
+itself while it has the keyboard (silica_ui's `SilicaMenuBar` binds the shortcuts of its
+items), and the system ones (⌘Q, ⌘W, ⌘M) are Ossido's catalog shortcuts.
+
+Why a Wayland protocol and not a D-Bus menu model (`org.gtk.Menus`, `com.canonical.dbusmenu`):
+the menus are tied to a client and its windows, which only the compositor knows (focus, the
+windowless frontmost app, the desktop's owner), and Ossido already brokers the shell's state
+over `silica-shell-v1`; a D-Bus model would need a second channel, a registration step to tie
+a bus name to a surface (KDE's `org_kde_kwin_appmenu`, GTK's `gtk_shell1`) and a menu/action
+split to keep in sync. One JSON document per change is also what Flutter's own
+`PlatformMenuDelegate` produces. Third-party GTK and Qt menus can come later as a bridge that
+reads their D-Bus model and publishes it here.
+
+On the app side the embedder exposes the `silica/menu` channel (`setMenus`, `clearMenus`,
+`isSupported`; `activated id` back), and on the shell side `silica/shell` gets `appMenu`
+and `activateMenuItem` (`crates/embedder/src/menu.rs`). Apps use silica_ui's `SilicaMenuBar`
+(adoption guide in silica-ui, `docs/app-menus.md`).
+
 ## Drag between apps (`wl_data_device`)
 
 Standard protocol, no extension. Ossido draws the drag icon (`start_drag`) with its corner on

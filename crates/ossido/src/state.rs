@@ -104,6 +104,8 @@ pub struct State {
     pub shell_states: std::collections::BTreeMap<String, String>,
     /// The last focused window announced to the shell.
     pub announced_focus: Option<String>,
+    /// The apps' menus for the global menu bar (`silica-menu-v1`, #25).
+    pub app_menus: crate::app_menu::AppMenus,
     pub seat: Seat<State>,
 
     /// Number of windows opened so far, to cascade them.
@@ -268,6 +270,7 @@ impl State {
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
         let glass_manager_state = crate::glass::GlassManagerState::new(&dh);
         let window_manager_state = crate::window_appearance::WindowManagerState::new(&dh);
+        let app_menus = crate::app_menu::AppMenus::new(&dh);
         let foreign_toplevel_list = crate::shell::toplevel_list(&dh);
         let shell_manager_state = crate::shell::ShellManagerState::new(&dh);
         let mut seat_state = SeatState::new();
@@ -357,6 +360,7 @@ impl State {
             transient_press: false,
             shell_states: std::collections::BTreeMap::new(),
             announced_focus: None,
+            app_menus,
             seat,
             mapped: 0,
             next_window_id: 0,

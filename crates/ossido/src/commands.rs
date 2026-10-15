@@ -21,6 +21,7 @@ use silica_control::commands::{
     SCREENSHOT_SCREEN_CLIPBOARD, SCREENSHOT_SELECTION, SCREENSHOT_SELECTION_CLIPBOARD,
     SCREENSHOT_SETTINGS, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT, SCREENSHOT_WINDOW_VEIL,
 };
+use silica_control::commands::{APP_MENU, APP_MENU_ACTIVATE};
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
@@ -422,6 +423,15 @@ impl State {
                 let toplevel = window.toplevel().ok_or("window without a toplevel")?;
                 toplevel.send_close();
                 Ok(Value::Null)
+            }
+            APP_MENU => Ok(self.app_menu_state()),
+            APP_MENU_ACTIVATE => {
+                let id = params
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .and_then(|id| u32::try_from(id).ok())
+                    .ok_or("id: an item of the menus")?;
+                self.app_menu_activate(id)
             }
             APP_QUIT => {
                 let silica_control::QuitParams { app_id } = parse(params)?;
