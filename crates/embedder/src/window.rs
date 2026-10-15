@@ -385,6 +385,8 @@ struct App {
     /// the app registry with its socket.
     app_id: String,
     quit_with_last_window: bool,
+    /// A helper process (`--helper`): it ends with its window, whatever the app asks.
+    helper: bool,
     hidden_since: Option<std::time::Instant>,
     /// The app answers `reopen` itself (silica_ui `SilicaApp`): it builds its new window and
     /// calls `openWindow`, and only then the window comes back (APP-LC). Without it the
@@ -426,6 +428,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
 
     // Launched again while its window is hidden: the running process shows it (#142).
     if options.layer.is_none()
+        && !options.helper
         && options.dart_args.is_empty()
         && crate::app_lifecycle::forward(&options.app_id)
     {
@@ -793,6 +796,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         exit: false,
         app_id: options.app_id.clone(),
         quit_with_last_window: false,
+        helper: options.helper,
         hidden_since: None,
         handles_reopen: false,
         free_run_until: None,
@@ -801,7 +805,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         registration: None,
         registry_listener: None,
     };
-    if options.layer.is_none() {
+    if options.layer.is_none() && !options.helper {
         app.register(&event_loop.handle());
     }
 
@@ -1227,7 +1231,12 @@ impl App {
                 .as_ref()
                 .is_some_and(|manager| wayland_client::Proxy::version(manager) >= 2);
         let others = self.others_on_screen(id);
-        match views::closing(id, others, self.quit_with_last_window, hideable) {
+        match views::closing(
+            id,
+            others,
+            self.quit_with_last_window || self.helper,
+            hideable,
+        ) {
             Closing::Exit => self.exit = true,
             Closing::HideMain { last } => self.hide_main(last),
             Closing::Remove { last } => {

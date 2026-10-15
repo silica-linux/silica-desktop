@@ -117,6 +117,11 @@ pub struct Options {
     /// views through backing stores, in software or with OpenGL ES (Vulkan becomes OpenGL ES
     /// with Impeller). The app opens them with `openWindow` on `silica/window`.
     pub multi_window: bool,
+    /// A helper process of the app (`--helper`), such as the Open and Save dialog the portal
+    /// starts: it is not the app's running instance. It never hands over to the running
+    /// process, stays out of the app registry (a reopen from the Dock never reaches it) and
+    /// ends with its window.
+    pub helper: bool,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` of the workspace, where `cargo xtask engine` puts it.
