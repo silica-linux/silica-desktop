@@ -41,7 +41,12 @@ const BLUE: [u8; 4] = [255, 0, 0, 255];
 
 #[test]
 fn windows_spread_out_and_a_click_picks_one() {
-    let ossido = Headless::start("panorama");
+    // On the reference gray: the bar material gives the measured fill over it.
+    let ossido = Headless::start_with(
+        "panorama",
+        (common::WIDTH, common::HEIGHT),
+        &["--background", "7a7b80"],
+    );
     let _red = TestWindow::open_pixels(&ossido.wayland, "red", (100, 60), &solid((100, 60), RED));
     let _blue =
         TestWindow::open_pixels(&ossido.wayland, "blue", (100, 60), &solid((100, 60), BLUE));
@@ -328,15 +333,17 @@ fn the_wallpaper_of_a_space_fits_its_thumbnail() {
         right[2] > 200 && right[0] < 60,
         "right of the thumbnail: {right:?}"
     );
-    // Around it the bar, not the wallpaper at full size.
+    // Around it the bar (a tinted blur), not the wallpaper at full size.
     for (x, y) in [
         (t.x + t.width + 40.0, middle),
         (t.x - 40.0, middle),
         (t.x + t.width / 2.0, 10.0),
     ] {
         let [r, g, b] = rgb_at(&shot, x, y);
+        let pure_red = r > 200 && g < 60 && b < 60;
+        let pure_blue = b > 200 && r < 60 && g < 60;
         assert!(
-            r.abs_diff(g) < 12 && g.abs_diff(b) < 12 && r > 120,
+            !pure_red && !pure_blue,
             "bar at ({x}, {y}): {:?}",
             [r, g, b]
         );
@@ -405,4 +412,82 @@ fn the_wallpaper_blurs_and_the_desktop_hides() {
     let shot = screenshot(&ossido);
     assert!(row(&shot).iter().any(|&v| v < 10) && row(&shot).iter().any(|&v| v > 245));
     assert_eq!(icon(&shot), [0, 255, 0]);
+}
+
+/// A solid `#7a7b80` wallpaper, the gray of the reference sessions.
+fn reference_gray(ossido: &Headless) -> TestWindow {
+    // BGRA.
+    wallpaper(ossido, |_, _, _, _| [0x80, 0x7b, 0x7a, 255])
+}
+
+fn near(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
+    got.iter()
+        .zip(want)
+        .all(|(a, b)| a.abs_diff(b) <= tolerance)
+}
+
+#[test]
+fn the_spaces_bar_material_gives_the_measured_colors_on_the_reference_gray() {
+    for (dark, compact, bottom) in [
+        (false, [0x9e, 0x9f, 0xa5], [0xa4, 0xa5, 0xab]),
+        (true, [0x55, 0x56, 0x5b], [0x5b, 0x5c, 0x61]),
+    ] {
+        let name = if dark {
+            "panorama-bar-dark"
+        } else {
+            "panorama-bar-light"
+        };
+        let extra: &[&str] = if dark { &["--appearance", "dark"] } else { &[] };
+        let ossido = Headless::start_with(name, (1280, 800), extra);
+        let _wallpaper = reference_gray(&ossido);
+        let mut c = ossido.client();
+        c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
+            .unwrap();
+        c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+        let shot = screenshot(&ossido);
+        let got = rgb_at(&shot, 100.0, 10.0);
+        assert!(near(got, compact, 2), "dark {dark}, compact bar: {got:?}");
+        c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+            .unwrap();
+        assert_eq!(state(&ossido).expansion, 1.0);
+        let shot = screenshot(&ossido);
+        let top = rgb_at(&shot, 100.0, 5.0);
+        let low = rgb_at(&shot, 100.0, 150.0);
+        assert!(near(top, compact, 2), "dark {dark}, expanded top: {top:?}");
+        assert!(
+            near(low, bottom, 2),
+            "dark {dark}, expanded bottom: {low:?}"
+        );
+        c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    }
+}
+
+#[test]
+fn the_spaces_bar_blurs_what_is_under_it() {
+    let ossido = Headless::start_with("panorama-bar-blur", (1280, 800), &[]);
+    // Black and white stripes 48 px wide.
+    let _wallpaper = wallpaper(&ossido, |x, _, _, _| {
+        if x % 96 < 48 {
+            [0, 0, 0, 255]
+        } else {
+            [255, 255, 255, 255]
+        }
+    });
+    let mut c = ossido.client();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
+        .unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    let shot = screenshot(&ossido);
+    // Tinted sharp stripes would go from ~73 (black) to ~251 (white): blurred, the
+    // stripes merge into lighter grays.
+    let row: Vec<u8> = (60..300)
+        .map(|x| rgb_at(&shot, f64::from(x), 3.0)[0])
+        .collect();
+    assert!(
+        row.iter().all(|&v| (85..=240).contains(&v)),
+        "bar not blurred: {row:?}"
+    );
+    // Still stripes, softened: what is under it shows through.
+    let (low, high) = (row.iter().min().unwrap(), row.iter().max().unwrap());
+    assert!(high - low > 20, "nothing shows through the bar: {row:?}");
 }

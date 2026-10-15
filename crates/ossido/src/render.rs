@@ -57,7 +57,13 @@ render_elements! {
     Solid=SolidColorRenderElement,
     /// A space's desktop wallpaper shrunk into its thumbnail in the spaces bar.
     Thumbnail=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
+    /// A blurred capture: the Panorama wallpaper, the spaces bar material.
+    Blurred=ossido_render::backdrop::BlurredElement,
 }
+
+/// The blur under the spaces bar, between frames.
+#[derive(Default)]
+struct BarMaterial(ossido_render::backdrop::BlurredBackdrop);
 
 /// The opacity of a shell layer while Panorama is open: the menu bar and the desktop (its
 /// icons) fade out as Panorama opens and come back as it closes (`missioncontrol.md`: in
@@ -912,6 +918,7 @@ pub fn output_elements(
     }
     // Panorama: the dragged window, the space thumbnails and the spaces bar, which comes
     // down over the fading menu bar.
+    let mut bar_id: Option<Id> = None;
     if let Some(panorama) = &context.panorama {
         let output_logical = output_size.to_f64().to_logical(scale);
         if let Some((window, rect)) = &panorama.drag
@@ -1002,11 +1009,13 @@ pub fn output_elements(
             expansion: panorama.expansion,
             backdrop: context.clear_color.map(to_u8),
             labels: panorama.labels.clone(),
+            dark: context.dark,
         };
         if panorama.mode == crate::panorama::Mode::Panorama
             && let Some(bar) =
                 crate::panorama::bar_element(renderer, sprite, &look, panorama.progress, scale)
         {
+            bar_id = Some(bar.id().clone());
             elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
                 bar,
                 Point::default(),
@@ -1195,31 +1204,19 @@ pub fn output_elements(
             let cache = output
                 .user_data()
                 .get_or_insert(ossido_render::backdrop::BlurredBackdrop::default);
-            match cache.texture(
+            let full = Rectangle::from_size(output_size);
+            match cache.element(
                 renderer,
                 programs,
                 behind,
-                output_size,
+                full,
+                full,
                 scale,
                 crate::panorama::BACKDROP_BLUR_PT,
                 context.clear_color,
+                alpha,
             ) {
-                Ok((texture, id)) => {
-                    let size = texture.size().to_logical(1, Transform::Normal);
-                    Some(TextureRenderElement::from_static_texture(
-                        id,
-                        renderer.context_id(),
-                        Point::<f64, Physical>::default(),
-                        texture,
-                        1,
-                        Transform::Normal,
-                        Some(alpha),
-                        None,
-                        Some(size),
-                        None,
-                        Kind::Unspecified,
-                    ))
-                }
+                Ok(element) => element,
                 Err(err) => {
                     warn!("Panorama backdrop blur skipped: {err:?}");
                     None
@@ -1316,14 +1313,7 @@ pub fn output_elements(
     }
     // Above the wallpaper and its gradient, below the windows and the Dock.
     if let Some(blur) = panorama_blur {
-        elements.insert(
-            background_start,
-            OutputElement::Texture(RescaleRenderElement::from_element(
-                blur,
-                Point::default(),
-                1.0,
-            )),
-        );
+        elements.insert(background_start, OutputElement::Blurred(blur));
         for anchor in &mut anchors {
             anchor.index = after_insert(anchor.index, background_start);
         }
@@ -1418,6 +1408,43 @@ pub fn output_elements(
                 Some(Err(err)) => warn!("glass skipped in this frame: {err:?}"),
                 None => {}
             }
+        }
+    }
+    // The spaces bar is a material: the blur of everything under it, just behind it. Live:
+    // it is redone when what is under it changes (windows passing under it).
+    if let Some(panorama) = &context.panorama
+        && let Some(id) = &bar_id
+        && let Some(programs) = &shaders.glass
+        && let Some(at) = elements.iter().position(|element| element.id() == id)
+    {
+        let width = f64::from(output_size.w) / scale;
+        let output_rect = Rectangle::from_size(output_size);
+        let area = crate::panorama::bar_capture_rect(width)
+            .to_physical_precise_round(scale)
+            .intersection(output_rect);
+        let dst = crate::panorama::bar_material_rect(width, panorama.expansion, panorama.progress)
+            .to_physical_precise_round(scale);
+        let behind = elements.get(at + 1..).unwrap_or_default();
+        let cache = output.user_data().get_or_insert(BarMaterial::default);
+        let material = area.map(|area| {
+            cache.0.element(
+                renderer,
+                programs,
+                behind,
+                area,
+                dst,
+                scale,
+                crate::panorama::BAR_BLUR_PT,
+                context.clear_color,
+                crate::panorama::bar_alpha(panorama.progress),
+            )
+        });
+        match material {
+            Some(Ok(Some(material))) => {
+                elements.insert(at + 1, OutputElement::Blurred(material));
+            }
+            Some(Err(err)) => warn!("spaces bar material skipped: {err:?}"),
+            _ => {}
         }
     }
     if let Some((icon, at)) = &context.drag_icon {
