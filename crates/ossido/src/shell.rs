@@ -53,7 +53,7 @@ pub struct ShellManagerState;
 impl ShellManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
         dh.create_global::<State, SilicaShellManagerV1, _>(
-            7,
+            8,
             ShellGlobal {
                 filter: Box::new(is_shell_client),
             },
@@ -284,10 +284,17 @@ impl State {
         let Some(identifier) = toplevel_handle(window).map(|h| h.identifier()) else {
             return 0;
         };
+        let appearance = window
+            .toplevel()
+            .and_then(|toplevel| crate::window_appearance::override_of(toplevel.wl_surface()))
+            .map_or(0, |dark| if dark { 2 } else { 1 });
         self.shell_managers.retain(|manager| manager.is_alive());
         let mut sent = 0;
         for manager in &self.shell_managers {
             if manager.version() >= 3 {
+                if manager.version() >= 8 {
+                    manager.window_menu_appearance(identifier.clone(), appearance);
+                }
                 manager.window_menu(identifier.clone(), point.x, point.y);
                 sent += 1;
             }

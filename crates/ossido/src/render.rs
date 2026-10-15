@@ -521,8 +521,11 @@ fn window_elements(
     offset: Point<i32, Logical>,
     factor: f64,
     buttons: ButtonsLook,
-    dark: bool,
+    system_dark: bool,
 ) -> Vec<OutputElement> {
+    // Everything drawn for the window (buttons, bar, title, border, shadow) follows the
+    // window's own appearance when the app overrides the system's (`silica-window-v1`).
+    let dark = crate::window_appearance::window_dark(window, system_dark);
     let render_location = (location - window.geometry().loc - output_origin + offset)
         .to_physical_precise_round(scale);
     let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
@@ -1206,6 +1209,8 @@ pub fn output_elements(
     if let Some(programs) = &shaders.glass {
         let output_rect = Rectangle::from_size(output_size);
         for anchor in anchors.iter().rev() {
+            // The glass a window declares follows that window's appearance.
+            let dark = crate::window_appearance::surface_dark(&anchor.surface, context.dark);
             let regions: Vec<PhysicalRegion> = anchor
                 .glass
                 .clone()
@@ -1221,12 +1226,12 @@ pub fn output_elements(
                     ),
                     radius: region.radius * scale,
                     // The kind's own tone, edge and lens; the panels take the declared material.
-                    material: region.kind().kind().material(context.dark).unwrap_or(
+                    material: region.kind().kind().material(dark).unwrap_or(
                         match region.material {
-                            Material::Clear if context.dark => CLEAR_DARK,
-                            Material::Thick if context.dark => THICK_DARK,
-                            Material::Regular if context.dark => REGULAR_DARK,
-                            Material::Notification if context.dark => NOTIFICATION_DARK,
+                            Material::Clear if dark => CLEAR_DARK,
+                            Material::Thick if dark => THICK_DARK,
+                            Material::Regular if dark => REGULAR_DARK,
+                            Material::Notification if dark => NOTIFICATION_DARK,
                             Material::Clear => CLEAR_LIGHT,
                             Material::Thick => THICK_LIGHT,
                             Material::Regular => REGULAR_LIGHT,
@@ -1247,7 +1252,7 @@ pub fn output_elements(
                     // The kind's settings; its shadow only where the client asked Ossido to
                     // draw it (it draws its own otherwise).
                     profile: {
-                        let profile = region.kind().kind().profile(context.dark);
+                        let profile = region.kind().kind().profile(dark);
                         if region.shadow {
                             profile
                         } else {

@@ -14,6 +14,7 @@ use common::client::TestWindow;
 use common::{Headless, pixel_in};
 use serde_json::{Value, json};
 use silica_control::commands::{INPUT_POINTER_MOVE, WINDOW_LIST, WINDOW_MOVE, WindowInfo};
+use silica_protocols::window::client::silica_window_v1::Appearance;
 
 const SIZE: (u32, u32) = (640, 400);
 const BAR: i32 = 32;
@@ -204,4 +205,106 @@ fn appearance_flag_is_validated() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
+}
+
+/// A window that overrides the appearance (`silica-window-v1` `set_appearance`) in a light
+/// session draws the dark bar, buttons and inner border, as in a dark session.
+#[test]
+fn a_dark_window_in_a_light_session_draws_the_dark_traffic_lights_and_bar() {
+    let ossido = start("override-dark", "light");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "dark", (240, 140));
+    window.set_appearance(Appearance::Dark);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let info = windows(&ossido).remove(0);
+    let shot = shot(&ossido, "appearance-override-dark");
+
+    assert_near(
+        &shot,
+        (info.x + 150, info.y - 16),
+        [39, 39, 40],
+        1,
+        "dark bar",
+    );
+    assert_near(
+        &shot,
+        button(&info, 0),
+        [0xf2, 0x60, 0x56],
+        32,
+        "dark close",
+    );
+    assert_near(
+        &shot,
+        button(&info, 2),
+        [0x39, 0xc1, 0x01],
+        32,
+        "dark full screen",
+    );
+    assert_near(
+        &shot,
+        (info.x + 150, info.y - BAR),
+        [0x3d; 3],
+        2,
+        "dark top border",
+    );
+}
+
+/// The override works both ways, and `system` gives the session's appearance back.
+#[test]
+fn a_light_window_in_a_dark_session_stays_light_and_system_follows_the_session() {
+    let ossido = start("override-light", "dark");
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "light", (240, 140));
+    window.set_appearance(Appearance::Light);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let info = windows(&ossido).remove(0);
+    let image = shot(&ossido, "appearance-override-light");
+    assert_near(
+        &image,
+        (info.x + 150, info.y - 16),
+        [255, 255, 255],
+        1,
+        "light bar",
+    );
+    assert_near(
+        &image,
+        button(&info, 0),
+        [0xf8, 0x7d, 0x77],
+        12,
+        "light close",
+    );
+
+    window.set_appearance(Appearance::System);
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let image = shot(&ossido, "appearance-override-system");
+    assert_near(
+        &image,
+        (info.x + 150, info.y - 16),
+        [39, 39, 40],
+        1,
+        "the dark session's bar again",
+    );
+}
+
+/// Two windows in one session: only the one that overrides is dark.
+#[test]
+fn the_override_is_per_window() {
+    let ossido = start("override-per-window", "light");
+    let mut dark = TestWindow::open_decorated(&ossido.wayland, "dark", (240, 140));
+    dark.set_appearance(Appearance::Dark);
+    let dark_info = windows(&ossido).remove(0);
+    let _plain = TestWindow::open_decorated(&ossido.wayland, "plain", (120, 80));
+    let plain = windows(&ossido).remove(0);
+    let mut client = ossido.client();
+    client
+        .call(WINDOW_MOVE, json!({"id": plain.id, "x": 450, "y": 250}))
+        .unwrap();
+    let image = shot(&ossido, "appearance-override-two");
+    assert_near(
+        &image,
+        (dark_info.x + 150, dark_info.y - 16),
+        // Inactive here (the other window was opened after it): the dark inactive bar.
+        [47, 47, 48],
+        1,
+        "the overriding window",
+    );
+    assert_near(&image, (455, 250 - 16), [255, 255, 255], 8, "the other one");
 }

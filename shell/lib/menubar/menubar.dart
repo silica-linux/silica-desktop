@@ -110,6 +110,19 @@ Future<void>? _dates;
   return (policy: TransientPolicy.menu, owner: systemOwner);
 }
 
+/// `child` in the appearance of a window that overrides the system's (`brightness`), as a
+/// `SilicaAppearanceScope` would: the library reads the brightness from `MediaQuery`. null
+/// leaves the system's.
+Widget _withBrightness(Brightness? brightness, Widget child) {
+  if (brightness == null) return child;
+  return Builder(
+    builder: (context) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(platformBrightness: brightness),
+      child: child,
+    ),
+  );
+}
+
 class MenuBar extends StatefulWidget {
   const MenuBar({
     super.key,
@@ -416,7 +429,7 @@ class _MenuBarState extends State<MenuBar> {
     widget.media?.addListener(_changed);
     _scheduleTick();
     _windowMenus = ShellChannel.instance.windowMenus.listen(
-      (menu) => _openWindowMenu(menu.tip),
+      (menu) => _openWindowMenu(menu.tip, menu.brightness),
     );
     _dismissed = ShellChannel.instance.transientDismissed.listen(
       (_) => _transientDismissed(),
@@ -428,14 +441,22 @@ class _MenuBarState extends State<MenuBar> {
   /// The arrangement popover of a window (long press on the green button): the tip at the
   /// point given by Ossido. While it is open the surface covers the screen but takes the
   /// pointer only on the popover; a click outside closes it (#149).
-  StreamSubscription<({String id, Offset tip})>? _windowMenus;
+  StreamSubscription<({String id, Offset tip, Brightness? brightness})>?
+  _windowMenus;
   Offset? _windowMenuTip;
 
-  Future<void> _openWindowMenu(Offset tip) async {
+  /// The popover follows the appearance of the window it was opened from when that window
+  /// overrides the system's (null: the system's).
+  Brightness? _windowMenuBrightness;
+
+  Future<void> _openWindowMenu(Offset tip, Brightness? brightness) async {
     _closeMenu();
     final screen = await LayerControl.outputSize();
     if (!mounted) return;
-    setState(() => _windowMenuTip = tip);
+    setState(() {
+      _windowMenuTip = tip;
+      _windowMenuBrightness = brightness;
+    });
     LayerControl.size(0, screen?.height ?? tip.dy + 400);
     LayerControl.inputRegion([_barRect]);
     LayerControl.keyboard('exclusive');
@@ -807,18 +828,21 @@ class _MenuBarState extends State<MenuBar> {
                 ),
                 if (_windowMenuTip case final tip?)
                   Positioned.fill(
-                    child: MenuHost(
-                      key: ValueKey(tip),
-                      entries: windowMenuEntries(
-                        (id) => ShellChannel.instance.execute(id),
-                        texts: l10nOf(context),
+                    child: _withBrightness(
+                      _windowMenuBrightness,
+                      MenuHost(
+                        key: ValueKey(tip),
+                        entries: windowMenuEntries(
+                          (id) => ShellChannel.instance.execute(id),
+                          texts: l10nOf(context),
+                        ),
+                        anchor: Offset.zero,
+                        tip: tip,
+                        tipUp: true,
+                        top: barHeight,
+                        onDismissed: _closeWindowMenu,
+                        onRectsChanged: _menuRegion,
                       ),
-                      anchor: Offset.zero,
-                      tip: tip,
-                      tipUp: true,
-                      top: barHeight,
-                      onDismissed: _closeWindowMenu,
-                      onRectsChanged: _menuRegion,
                     ),
                   ),
                 if (_power case final action?)

@@ -90,6 +90,31 @@ depth is where the rounded apex (radius ~2.5 pt) ends, and the sides join the bo
 
 The current regions are read with `glass.list` (`docs/control.md`).
 
+## silica-window-v1
+
+How an app presents its window to Ossido. Everything is per toplevel (the surface with the
+`xdg_toplevel` role) and double-buffered: it becomes current at the next `wl_surface.commit`.
+
+- `silica_window_manager_v1.get_window(id, surface)`: one window object per surface (a second
+  one is the `already_has_window` error). Version 3 is the current one; a client may bind any
+  version, and the requests of the later ones are simply not available to it.
+- `silica_window_v1.set_full_size_content(toolbar_height)`: the app draws its own toolbar
+  (unified with the title bar); Ossido only draws the window buttons over it, centred in
+  `toolbar_height` (0: Ossido's own bar; clamped to 200).
+- `silica_window_v1.set_hidden(hidden)` (version 2): takes the window off the screen without
+  closing it (the app keeps running with no window, #142). Applied at once.
+- `silica_window_v1.set_appearance(appearance)` (version 3): `system` (0, the default), `light`
+  (1) or `dark` (2). The window overrides the system appearance, as `NSWindow.appearance`
+  does on macOS, for everything Ossido draws for it: the traffic lights (TL-GLASS dark or
+  light), the plain title bar and the title colour, the shadow and the 1 pt inner border,
+  the glass regions the window declares with `silica-glass-v1` (the dark or light tones and
+  profiles of their kinds and materials), and the arrangement popover opened from its
+  buttons (below). An unknown value is the `invalid_appearance` error. `destroy` goes back
+  to `system`. A window that is not overridden follows the system, which also follows a
+  change of it; the override never changes the system appearance or other windows.
+  Dart: `SilicaWindow.setAppearance` (`silica/window` › `setAppearance {appearance}`), which
+  `SilicaAppearanceScope` and `SilicaApp.appearance` of silica_ui call.
+
 ## silica-shell-v1 and the window list
 
 Reserved for the shell components: processes with `SILICA_SHELL=1` in the environment, which
@@ -112,6 +137,10 @@ against other processes of the same user: that will come with the app sandbox.
   the green button, or the pointer resting on it, for 0.8 s; the menu bar opens the arrangement popover with
   the tip at x, y, and the entries run `window.tile_*`, `window.arrange_*` and
   `window.fullscreen` on the focused window.
+- event `silica_shell_manager_v1.window_menu_appearance(identifier, appearance)` (version 8):
+  sent right before `window_menu`, for the same window: 0 follows the system, 1 light, 2 dark
+  (the window's `set_appearance`). The shell draws the popover in that appearance
+  (`silica/shell` › `windowMenuAppearance {id, appearance}` before `windowMenu`).
 - `silica_shell_manager_v1.broadcast(topic, value)` and the event of the same name
   (version 4): a component's state for the others (`controlcenter.open`,
   `notifications.open`: the capsules in the bar). Ossido sends it back to everyone, sender

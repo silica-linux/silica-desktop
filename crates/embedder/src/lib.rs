@@ -26,6 +26,7 @@ mod shell;
 mod termgrid;
 mod text_input;
 mod window;
+mod window_appearance;
 
 use std::path::PathBuf;
 

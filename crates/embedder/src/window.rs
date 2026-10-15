@@ -628,7 +628,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
         appearance_manager: globals
-            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=2, ())
+            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=3, ())
             .ok(),
         appearance: None,
         activated: None,
@@ -661,7 +661,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         glass_sync,
         shell: ShellLink::new(
             globals
-                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=7, ())
+                .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=8, ())
                 .ok(),
             globals
                 .bind::<ExtForeignToplevelListV1, App, ()>(&qh, 1..=1, ())
@@ -816,6 +816,9 @@ impl App {
     /// The `silica/window` channel (JSONMethodCodec):
     /// - `setFullSizeContent {toolbarHeight}`: full-size content (0 goes back to Ossido's
     ///   bar); answers whether Ossido offers it;
+    /// - `setAppearance {appearance}` (`"system"`, `"light"`, `"dark"`): the app overrides the
+    ///   system appearance for everything Ossido draws for this window; answers whether
+    ///   Ossido offers it (version 3);
     /// - `startMove`: moves the window with the pointer (from the app's toolbar);
     /// - `setSize {width, height}`: the app chooses its window size (logical pixels);
     /// - `setSizeLimits {minWidth?, minHeight?, maxWidth?, maxHeight?}`: limits for resizing;
@@ -841,6 +844,24 @@ impl App {
                     .appearance
                     .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
                 object.set_full_size_content(height);
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("setAppearance") => {
+                // The override for everything Ossido draws for this window (version 3).
+                let (Some(manager), Some(appearance)) = (
+                    &self.appearance_manager,
+                    crate::window_appearance::parse(call.get("args")),
+                ) else {
+                    return crate::text_input::success(serde_json::json!(false));
+                };
+                if wayland_client::Proxy::version(manager) < 3 {
+                    return crate::text_input::success(serde_json::json!(false));
+                }
+                let object = self
+                    .appearance
+                    .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+                object.set_appearance(appearance);
                 window.commit();
                 crate::text_input::success(serde_json::json!(true))
             }
@@ -2600,6 +2621,15 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
             Event::Dismissed { .. } => serde_json::to_vec(&serde_json::json!({
                 "method": "transientDismissed",
                 "args": null,
+            }))
+            .unwrap_or_default(),
+            // The appearance of the window of the popover that follows.
+            Event::WindowMenuAppearance {
+                identifier,
+                appearance,
+            } => serde_json::to_vec(&serde_json::json!({
+                "method": "windowMenuAppearance",
+                "args": { "id": identifier, "appearance": crate::window_appearance::name(appearance) },
             }))
             .unwrap_or_default(),
             // Long press on the green button: the arrangement popover.

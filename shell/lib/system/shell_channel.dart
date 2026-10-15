@@ -55,15 +55,34 @@ class ShellChannel {
           }
         case 'transientDismissed':
           _transientDismissed.add(null);
+        case 'windowMenuAppearance':
+          // Right before `windowMenu`, for the same window.
+          final args = call.arguments;
+          if (args is Map) {
+            _menuAppearance = (
+              id: '${args['id'] ?? ''}',
+              brightness: switch (args['appearance']) {
+                'dark' => ui.Brightness.dark,
+                'light' => ui.Brightness.light,
+                _ => null,
+              },
+            );
+          }
         case 'windowMenu':
           final args = call.arguments;
           if (args is Map) {
             final x = args['x'];
             final y = args['y'];
             if (x is num && y is num) {
+              final id = '${args['id'] ?? ''}';
+              final known = _menuAppearance;
+              _menuAppearance = null;
               _windowMenus.add((
-                id: '${args['id'] ?? ''}',
+                id: id,
                 tip: ui.Offset(x.toDouble(), y.toDouble()),
+                brightness: known != null && known.id == id
+                    ? known.brightness
+                    : null,
               ));
             }
           }
@@ -95,12 +114,19 @@ class ShellChannel {
   Future<bool> broadcast(String topic, String value) =>
       _call('broadcast', {'topic': topic, 'value': value});
 
-  final StreamController<({String id, ui.Offset tip})> _windowMenus =
-      StreamController.broadcast();
+  final StreamController<
+    ({String id, ui.Offset tip, ui.Brightness? brightness})
+  >
+  _windowMenus = StreamController.broadcast();
+
+  /// The appearance Ossido reported for the window of the next popover.
+  ({String id, ui.Brightness? brightness})? _menuAppearance;
 
   /// Long press on the green button of a window: the arrangement popover, with the tip at
-  /// `tip` (screen coordinates).
-  Stream<({String id, ui.Offset tip})> get windowMenus => _windowMenus.stream;
+  /// `tip` (screen coordinates). `brightness` is the appearance the window overrides the
+  /// system's with (`SilicaAppearance`), null when it follows the system.
+  Stream<({String id, ui.Offset tip, ui.Brightness? brightness})>
+  get windowMenus => _windowMenus.stream;
 
   final StreamController<void> _transientDismissed =
       StreamController.broadcast();
