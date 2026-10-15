@@ -388,6 +388,8 @@ struct App {
     /// A helper process (`--helper`): it ends with its window, whatever the app asks.
     helper: bool,
     hidden_since: Option<std::time::Instant>,
+    /// Windows whose `closeRequested` the app has not answered yet.
+    close_asked: std::collections::BTreeSet<i64>,
     /// The app answers `reopen` itself (silica_ui `SilicaApp`): it builds its new window and
     /// calls `openWindow`, and only then the window comes back (APP-LC). Without it the
     /// hidden window comes back at once.
@@ -798,6 +800,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         quit_with_last_window: false,
         helper: options.helper,
         hidden_since: None,
+        close_asked: std::collections::BTreeSet::new(),
         handles_reopen: false,
         free_run_until: None,
         show_pending: false,
@@ -1195,6 +1198,7 @@ impl App {
             }
             ViewEvent::Removed(id) => self.forget_view(id),
             ViewEvent::CloseAnswered(id, handled) => {
+                self.close_asked.remove(&id);
                 if !handled {
                     self.close_view(id);
                 }
@@ -1317,7 +1321,7 @@ impl App {
         }
     }
 
-    /// The close button of window `id` (not the main one): the app decides (`closeRequested`
+    /// The close button of window `id` (the main one too): the app decides (`closeRequested`
     /// answered true: it closes the window itself, after asking to save a draft); otherwise,
     /// or with no answer, the window closes now.
     fn request_close(&mut self, id: i64) {
@@ -1325,20 +1329,22 @@ impl App {
             self.close_view(id);
             return;
         };
+        if !self.close_asked.insert(id) {
+            // The app is still answering the previous request (a confirmation is up).
+            return;
+        }
         let events = events.clone();
         let sent = engine.send_message_with_reply(
             WINDOW_CHANNEL,
             &crate::drag::call("closeRequested", serde_json::json!({ "viewId": id })),
             move |reply| {
-                let handled = serde_json::from_slice::<serde_json::Value>(&reply)
-                    .ok()
-                    .and_then(|reply| reply.get(0).and_then(serde_json::Value::as_bool))
-                    .unwrap_or(false);
+                let handled = close_answer(&reply);
                 let _ = events.send(ViewEvent::CloseAnswered(id, handled));
             },
         );
         if let Err(err) = sent {
             warn!("closeRequested: {err}");
+            self.close_asked.remove(&id);
             self.close_view(id);
         }
     }
@@ -2639,10 +2645,8 @@ impl LayerShellHandler for App {
 
 impl WindowHandler for App {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
-        match self.view_of(window.wl_surface()) {
-            Some(MAIN_VIEW) => self.close_view(MAIN_VIEW),
-            Some(id) => self.request_close(id),
-            None => {}
+        if let Some(id) = self.view_of(window.wl_surface()) {
+            self.request_close(id);
         }
     }
 
@@ -3312,9 +3316,29 @@ impl wayland_client::Dispatch<ExtForeignToplevelHandleV1, ()> for App {
     }
 }
 
+/// The app's answer to `closeRequested` (a JSONMethodCodec success envelope): true when the
+/// app closes the window itself or keeps it open. No handler (an empty reply, an error, an
+/// older silica_ui) or a malformed reply is false: the window closes now.
+fn close_answer(reply: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(reply)
+        .ok()
+        .and_then(|reply| reply.get(0).and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod lifecycle_tests {
-    use super::lifecycle_message;
+    use super::{close_answer, lifecycle_message};
+
+    #[test]
+    fn the_apps_answer_to_a_close_request_defaults_to_closing() {
+        assert!(close_answer(b"[true]"));
+        assert!(!close_answer(b"[false]"));
+        assert!(!close_answer(b""));
+        assert!(!close_answer(b"[null]"));
+        assert!(!close_answer(b"[\"error\",\"x\",null]"));
+        assert!(!close_answer(b"not json"));
+    }
 
     #[test]
     fn window_sides_from_the_app_are_bounded() {
