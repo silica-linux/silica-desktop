@@ -21,6 +21,8 @@ use silica_control::commands::{
     SCREENSHOT_SCREEN_CLIPBOARD, SCREENSHOT_SELECTION, SCREENSHOT_SELECTION_CLIPBOARD,
     SCREENSHOT_SETTINGS, SCREENSHOT_TOOLBAR, SCREENSHOT_WINDOW_AT, SCREENSHOT_WINDOW_VEIL,
 };
+use silica_control::commands::{APP_HIDE, APP_HIDE_OTHERS, APP_SHOW_ALL};
+use silica_control::commands::{APP_MENU, APP_MENU_ACTIVATE};
 use silica_control::commands::{APP_QUIT, GestureParams, INPUT_GESTURE};
 use silica_control::commands::{
     CONTROLCENTER_TOGGLE, EnabledParams, SYSTEM_BLUETOOTH, SYSTEM_BRIGHTNESS,
@@ -370,6 +372,16 @@ impl State {
                 {
                     self.switch_space(space, std::time::Instant::now());
                 }
+                // A window of a hidden app: the app comes back.
+                let hidden = target.id.and_then(|id| {
+                    self.hidden_apps
+                        .windows()
+                        .find(|w| Self::window_id(w) == Some(id))
+                        .cloned()
+                });
+                if let Some(window) = hidden {
+                    self.unhide_for(&window);
+                }
                 let window = match target.id.and_then(|id| self.minimized_window(id)) {
                     Some(window) => {
                         self.restore_window(&window);
@@ -424,6 +436,25 @@ impl State {
                 toplevel.send_close();
                 Ok(Value::Null)
             }
+            APP_MENU => Ok(self.app_menu_state()),
+            APP_HIDE => {
+                let silica_control::QuitParams { app_id } = parse(params)?;
+                let app = app_id
+                    .or_else(|| self.front_app_id())
+                    .ok_or("no app in front")?;
+                let hidden = self.hide_app(&app);
+                Ok(json!({ "app_id": app, "hidden": hidden }))
+            }
+            APP_HIDE_OTHERS => Ok(json!({ "hidden": self.hide_other_apps() })),
+            APP_SHOW_ALL => Ok(json!({ "shown": self.show_all_apps() })),
+            APP_MENU_ACTIVATE => {
+                let id = params
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .and_then(|id| u32::try_from(id).ok())
+                    .ok_or("id: an item of the menus")?;
+                self.app_menu_activate(id)
+            }
             APP_QUIT => {
                 let silica_control::QuitParams { app_id } = parse(params)?;
                 // No window focused: the frontmost windowless app (#142), if any.
@@ -447,6 +478,7 @@ impl State {
                         .space
                         .elements()
                         .chain(self.minimized.iter().map(|(w, _)| w))
+                        .chain(self.hidden_apps.windows())
                         .chain(self.workspaces.stored.iter().flatten().map(|(w, _)| w))
                         .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
                         .cloned()
@@ -883,6 +915,7 @@ impl State {
             .space
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
+            .chain(self.hidden_apps.windows())
             .chain(self.workspaces.stored.iter().flatten().map(|(w, _)| w))
             .filter(|w| crate::panorama::window_app(w).as_deref() == Some(app_id))
             .filter_map(|w| {

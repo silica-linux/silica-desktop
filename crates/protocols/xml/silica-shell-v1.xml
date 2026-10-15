@@ -220,5 +220,29 @@
       </description>
       <arg name="surface" type="object" interface="wl_surface"/>
     </event>
+
+    <event name="app_menu" since="8">
+      <description summary="the menus of the frontmost app">
+        The menus the frontmost app published with silica-menu-v1, checked and rewritten by
+        Ossido in the same JSON format, in a sealed file of size bytes from offset 0. app_id
+        is the frontmost app (empty with none); serial names the app's menu object for
+        activate_menu_item, 0 (with size 0) when the app published no menus. Sent on binding
+        and every time the frontmost app or its menus change; while a menu or panel of the
+        shell has the keyboard the frontmost app does not change.
+      </description>
+      <arg name="app_id" type="string"/>
+      <arg name="serial" type="uint"/>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </event>
+
+    <request name="activate_menu_item" since="8">
+      <description summary="an item of the app's menus was chosen">
+        Ossido sends activated with the id to the menu object with this serial, if it still
+        exists; an old serial does nothing.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="id" type="uint"/>
+    </request>
   </interface>
 </protocol>

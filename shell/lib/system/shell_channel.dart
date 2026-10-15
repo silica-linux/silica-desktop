@@ -8,6 +8,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'app_menu_model.dart';
+
 /// An open window.
 @immutable
 class Toplevel {
@@ -68,6 +70,8 @@ class ShellChannel {
               },
             );
           }
+        case 'appMenu':
+          appMenu.value = AppMenuState.fromJson(call.arguments);
         case 'windowMenu':
           final args = call.arguments;
           if (args is Map) {
@@ -133,6 +137,15 @@ class ShellChannel {
 
   /// A press outside this component's open menu or panel ended it (#149).
   Stream<void> get transientDismissed => _transientDismissed.stream;
+
+  /// The frontmost app's menus (silica-menu-v1, #25), on every change.
+  final ValueNotifier<AppMenuState> appMenu = ValueNotifier(
+    const AppMenuState(),
+  );
+
+  /// An item of the frontmost app's menus was chosen: the app receives it.
+  Future<bool> activateMenuItem(int serial, int id) =>
+      _call('activateMenuItem', {'serial': serial, 'id': id});
 
   /// The identifier of the focused window (empty: none).
   final ValueNotifier<String> focused = ValueNotifier('');
@@ -215,6 +228,9 @@ class ShellChannel {
         if (list is List)
           for (final id in list) '$id',
       ];
+      appMenu.value = AppMenuState.fromJson(
+        await channel.invokeMethod<Object?>('appMenu'),
+      );
     } on MissingPluginException {
       // Outside Silica.
     }

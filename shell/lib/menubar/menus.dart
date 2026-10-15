@@ -1,6 +1,6 @@
-// The bar menus until the global app menu arrives (M7): the app menu and the menus with
-// actions Ossido can do by itself (catalog commands). The logo menu is in logo_menu.dart.
-// Menus without actions (Edit, until apps publish their own menus: #24, #25) are not shown,
+// The bar menus of an app that published none (silica-menu-v1, #25; an app's own menus are in
+// app_menus.dart): the app menu and the menus with actions Ossido can do by itself (catalog
+// commands). The logo menu is in logo_menu.dart. Menus without actions (Edit) are not shown,
 // so no title in the bar is dead. Help opens Silica's documentation.
 
 import 'package:silica_ui/silica_ui.dart';

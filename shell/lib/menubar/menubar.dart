@@ -19,10 +19,12 @@ import '../faro/launcher.dart' show RecentApps;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/open_app.dart';
+import '../system/app_menu_model.dart';
 import '../system/shell_channel.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/system_status.dart';
+import 'app_menus.dart';
 import 'desktop_menu.dart';
 import 'logo_menu.dart';
 import 'menubar_config.dart';
@@ -67,7 +69,7 @@ const double menuShadowRoom = 40;
 /// White at 90 % (status icons and clock: 241 over 112).
 const Color statusColor = Color(0xE6FFFFFF);
 
-/// The app menu items until the global menu arrives (M7): generic ids, shown with
+/// The menus of an app that published none (silica-menu-v1, #25): generic ids, shown with
 /// `menuTitle`.
 const List<String> genericMenus = ['file', 'edit', 'view', 'window', 'help'];
 
@@ -179,11 +181,78 @@ class _MenuBarState extends State<MenuBar> {
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _switchTimer;
 
-  static const List<String> _menuNames = ['logo', 'app', ...genericMenus];
+  /// The bar items with a menu: the logo, the app menu, then the app's own menus
+  /// (`menu0`, `menu1`… from its model) or the generic ones.
+  List<String> get _menuNames {
+    final own = _appMenus();
+    return [
+      'logo',
+      'app',
+      if (own == null)
+        ...genericMenus
+      else
+        for (var i = 1; i < own.length; i++) 'menu$i',
+    ];
+  }
+
+  /// The frontmost app's own menus (the app menu first), null if it published none. Built
+  /// again only when the model, the windows, the focus or the language change.
+  List<BarMenu>? _appMenus() {
+    final shell = ShellChannel.instance;
+    final state = shell.appMenu.value;
+    final key = (
+      state,
+      shell.toplevels.value,
+      shell.focused.value,
+      l10nOf(context).localeName,
+      shell.states.value['app.frontmost'],
+    );
+    if (key == _appMenusKey) return _appMenusCache;
+    _appMenusKey = key;
+    return _appMenusCache = _composeAppMenus(state);
+  }
+
+  Object? _appMenusKey;
+  List<BarMenu>? _appMenusCache;
+
+  List<BarMenu>? _composeAppMenus(AppMenuState state) {
+    final shell = ShellChannel.instance;
+    final menus = state.menus;
+    if (!state.hasMenus || menus == null) return null;
+    final focused = shell.focusedToplevel;
+    final appId = focused?.appId ?? state.appId;
+    return composeAppMenus(
+      menus,
+      appName: _appNameFromEntries,
+      texts: l10nOf(context),
+      windows: [
+        for (final t in shell.toplevels.value)
+          if (t.appId == appId && appId.isNotEmpty) t,
+      ],
+      focusedWindow: shell.focused.value,
+      actions: AppMenuActions(
+        activate: (id) => shell.activateMenuItem(state.serial, id),
+        run: (id) => shell.execute(id),
+        activateWindow: (id) => shell.activate(id),
+        openUrl: (url) => shell.launch('xdg-open ${shellQuote(url)}'),
+        // Ossido hides apps (app.hide, app.hide_others, app.show_all).
+        systemHide: true,
+      ),
+    );
+  }
 
   GlobalKey _keyFor(String name) => _itemKeys.putIfAbsent(name, GlobalKey.new);
 
-  List<MenuEntry> _entries(String name) => name == 'battery'
+  List<MenuEntry> _entries(String name) {
+    final own = name == 'app' || name.startsWith('menu') ? _appMenus() : null;
+    if (own != null) {
+      final index = name == 'app' ? 0 : int.tryParse(name.substring(4)) ?? -1;
+      return index >= 0 && index < own.length ? own[index].entries : const [];
+    }
+    return _systemEntries(name);
+  }
+
+  List<MenuEntry> _systemEntries(String name) => name == 'battery'
       ? _batteryMenu()
       : name == 'logo'
       ? logoMenu(
@@ -420,6 +489,7 @@ class _MenuBarState extends State<MenuBar> {
     _config.addListener(_changed);
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
+    ShellChannel.instance.appMenu.addListener(_changed);
     ShellChannel.instance.states.addListener(_changed);
     ShellChannel.instance.states.addListener(_desktopMenuChanged);
     widget.system?.addListener(_changed);
@@ -623,6 +693,7 @@ class _MenuBarState extends State<MenuBar> {
     _switchTimer?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
+    ShellChannel.instance.appMenu.removeListener(_changed);
     ShellChannel.instance.states.removeListener(_changed);
     ShellChannel.instance.states.removeListener(_desktopMenuChanged);
     widget.system?.removeListener(_changed);
@@ -637,7 +708,10 @@ class _MenuBarState extends State<MenuBar> {
     if (mounted) setState(() {});
   }
 
-  String get _appName {
+  /// The app menu's title: the name the app gives its menu, else its entry's name.
+  String get _appName => _appMenus()?.first.title ?? _appNameFromEntries;
+
+  String get _appNameFromEntries {
     final window = ShellChannel.instance.focusedToplevel;
     // An app that closed its last window stays frontmost (#142, APP-LC): Ossido announces it.
     final windowless =
@@ -759,13 +833,17 @@ class _MenuBarState extends State<MenuBar> {
             child: Row(
               children: [
                 _item(_appName, bold, key: _keyFor('app')),
-                for (final menu in genericMenus)
-                  if (_entries(menu).isNotEmpty)
-                    _item(
-                      menuTitle(l10nOf(context), menu),
-                      regular,
-                      key: _keyFor(menu),
-                    ),
+                if (_appMenus() case final own?)
+                  for (var i = 1; i < own.length; i++)
+                    _item(own[i].title, regular, key: _keyFor('menu$i'))
+                else
+                  for (final menu in genericMenus)
+                    if (_entries(menu).isNotEmpty)
+                      _item(
+                        menuTitle(l10nOf(context), menu),
+                        regular,
+                        key: _keyFor(menu),
+                      ),
               ],
             ),
           ),
