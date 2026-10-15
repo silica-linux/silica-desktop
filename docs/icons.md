@@ -34,10 +34,28 @@ Code: `shell/lib/system/silica_icons.dart`.
   overflows by 100/824 per side;
 - superellipse mask per corner, n 2.6, radius 0.32 × side
   (`plan/reference/icons.md`); faded bright edge and shadow below the body;
-- neutral shadow below the layers with `"shadow": "neutral"`;
-- dark theme from the `-dark` files, chosen from the platform brightness;
-- clock: hands rotated every second (seconds from 64 pt), every 20 s below that;
-  calendar: month in Italian and day, updated at midnight.
+- **rendered PNGs** (silica-icons ≥ 0.6, `rendered` in `icon.json`, silica_ui ≥ 0.37): each
+  of the six icon styles (`IconAppearance`: Default, Dark, Clear and Tinted, light and dark)
+  has the whole icon at 1024 px with relief, shadows and glass baked in. When the pack has
+  the PNG of the style, `SilicaIcon` draws it (decoded at a power of two from 64 to 1024 px,
+  mipmapped) instead of composing the SVG layers; mask, rim and drop shadow above stay the
+  shell's. Clear blurs the backdrop behind its translucent body;
+- the **SVG layers** are composed only for a custom tint (the Tinted PNGs carry the default
+  blue, `defaultIconTint`), for packs without `rendered` and if a PNG does not decode:
+  neutral shadow below the layers with `"shadow": "neutral"`, `-dark` files for the dark
+  styles, generated glass or tint background with the foreground recoloured for Clear and
+  Tinted;
+- the shell draws the Default style everywhere: the icon style is a setting that has no
+  backend yet (Settings › Appearance, settings#60), and the system dark appearance does not
+  change the icons (MU-20);
+- dynamic content stays on top of the PNG: clock hands rotated every second (seconds from
+  64 pt), every 20 s below that; calendar month (localized) and day, updated at midnight.
+  In Clear and Tinted they are recoloured like the foreground.
+
+The app icons of silica-icons 0.6: `apps` (Launchpad), calculator, calendar, clock, disks,
+fonts, mail, mission-control, mustache, notes, password-manager, photo-viewer (also Preview),
+photos, reminders, screenshot, settings, terminal, text-editor. `store` and `help` were
+removed: an entry that still names them gets its theme icon or the initial.
 
 ## Folders
 
@@ -78,7 +96,8 @@ apps' canvas (`SilicaIcon(…, besideApps: true)`, silica_ui ≥ 0.17): side = b
 
 ## SVG limits
 
-flutter_svg does not apply SVG filters. On loading the shell:
+flutter_svg does not apply SVG filters, so the composed layers are flat (the rendered PNGs
+have the effects). On loading the shell:
 
 - removes the path copies that only serve the shadows (`<use filter=…>`);
 - turns blurred ellipses and circles into a radial gradient;

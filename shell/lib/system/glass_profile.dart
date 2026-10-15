@@ -1,7 +1,8 @@
 // The glass profile of the shell's surfaces (silica-glass-v1 version 7, silica-desktop#168):
-// Ossido picks the blur, lens, edge, tint and shadow of each kind of surface. The pinned
-// silica_ui has no `Glass.profile` yet (it comes with 0.29.0): until then [ProfiledGlass] adds
-// the `profile` key to the regions its glass sends on the `silica/glass` channel.
+// Ossido picks the blur, lens, edge, tint and shadow of each kind of surface. [ProfiledGlass]
+// adds the `profile` key to the regions its glass sends on the `silica/glass` channel. silica_ui
+// has had `Glass.profile` since 0.29.0, but without `popover` and the turned frame below, so the
+// shell keeps its own (`surface`, left null in silica_ui's field).
 //
 // Turned glass (silica-glass-v1 version 8): a glass under a rotation (the fan's labels, turned
 // with their icon) also sends its `frame`, the transform of its own rectangle, so Ossido draws
@@ -28,19 +29,20 @@ enum ShellGlassProfile {
 class ProfiledGlass extends Glass {
   const ProfiledGlass({
     super.key,
-    required this.profile,
+    required ShellGlassProfile profile,
     super.radius,
     super.material,
     super.group,
     super.tip,
     super.child,
-  });
+  }) : surface = profile;
 
-  final ShellGlassProfile profile;
+  /// The kind of surface (the constructor's `profile`).
+  final ShellGlassProfile surface;
 
   @override
   RenderGlass createRenderObject(BuildContext context) => RenderProfiledGlass(
-    profile: profile,
+    profile: surface,
     radius: radius,
     material: material,
     group: group,
@@ -50,7 +52,7 @@ class ProfiledGlass extends Glass {
   @override
   void updateRenderObject(BuildContext context, RenderGlass renderObject) {
     super.updateRenderObject(context, renderObject);
-    if (renderObject is RenderProfiledGlass) renderObject.profile = profile;
+    if (renderObject is RenderProfiledGlass) renderObject.surface = surface;
   }
 }
 
@@ -65,8 +67,8 @@ class RenderProfiledGlass extends RenderGlass {
   }) : _profile = profile;
 
   ShellGlassProfile _profile;
-  ShellGlassProfile get profile => _profile;
-  set profile(ShellGlassProfile value) {
+  ShellGlassProfile get surface => _profile;
+  set surface(ShellGlassProfile value) {
     if (value == _profile) return;
     _profile = value;
     GlassRegistry.instance.schedule();
