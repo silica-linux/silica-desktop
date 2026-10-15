@@ -78,14 +78,15 @@ fn dark_windows_use_the_measured_bar_buttons_and_inner_border() {
         1,
         "background",
     );
-    // Dark active buttons at the center: `#f26056`, `#fdc002`, `#39c101`.
-    assert_near(&shot, button(&info, 0), [0xf2, 0x60, 0x56], 8, "close");
-    assert_near(&shot, button(&info, 1), [0xfd, 0xc0, 0x02], 8, "minimize");
+    // Dark active buttons at the center: `#f26056`, `#fdc002`, `#39c101`. The center row
+    // lies between the darker band (30–45 %) and the glow (75–80 %), hence the tolerance.
+    assert_near(&shot, button(&info, 0), [0xf2, 0x60, 0x56], 32, "close");
+    assert_near(&shot, button(&info, 1), [0xfd, 0xc0, 0x02], 32, "minimize");
     assert_near(
         &shot,
         button(&info, 2),
         [0x39, 0xc1, 0x01],
-        8,
+        32,
         "full screen",
     );
     // 1 pt inner border `#3d3d3d`: above the bar, on the left and at the bottom on the content.

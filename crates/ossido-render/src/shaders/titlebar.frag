@@ -37,15 +37,15 @@ uniform float button_x;
 uniform float button_y;
 // 1 = dark appearance (windows.md: "Dark" tables of the buttons).
 uniform float dark;
-// Glass reflections of the buttons (TL-GLASS, provisional), colored and gray discs:
-// specular (alpha, center y, half width, half height), inner rim (alpha, radius, half
-// width), bottom glow (alpha, center y, radius). Mirrored by `titlebar::Reflection`.
-uniform vec4 spec_c;
-uniform vec4 rim_c;
-uniform vec4 glow_c;
-uniform vec4 spec_g;
-uniform vec4 rim_g;
-uniform vec4 glow_g;
+// Glass of the buttons (TL-GLASS), mirrored by `titlebar::Glass`: angle from the vertical
+// axis over which the outline goes from its top/bottom color to its side color; light only,
+// share of the side outline kept at the top and bottom; the darker band start, the glow
+// center y and its radius (0 = no glow), in points from the disc center; alpha of the 1 pt
+// shadow under the disc.
+uniform float edge_fade;
+uniform float edge_weak;
+uniform vec3 glass;
+uniform float shadow;
 
 float shape_distance(vec2 p, vec4 rect) {
     vec2 half_size = rect.zw * 0.5;
@@ -74,26 +74,34 @@ vec3 gradient(float dy, vec3 top, vec3 middle, vec3 bottom) {
                     : mix(middle, bottom, clamp(dy / 5.0, 0.0, 1.0));
 }
 
-// Whiteness added by the glass reflections at a point relative to the disc center.
-float reflections(vec2 d, vec4 spec, vec4 rim, vec4 glow) {
-    float s = spec.x * (1.0 - smoothstep(0.0, 1.0, length((d - vec2(0.0, spec.y)) / spec.zw)));
-    float r = rim.x * max(0.0, 1.0 - abs(length(d) - rim.y) / rim.z);
-    float g = glow.x * (1.0 - smoothstep(0.0, 1.0, length(d - vec2(0.0, glow.y)) / glow.z));
-    return clamp(s + r + g, 0.0, 1.0);
+// Dark fill: lighter row under the top arc, the darkest band, then the round glow in the
+// lower half (`top`, `band`, `glow` are the colors of the centre column).
+vec3 glass_fill(vec2 d, vec3 top, vec3 band, vec3 glow_color) {
+    vec3 f = mix(top, band, clamp((d.y + 6.0) / (glass.x + 6.0), 0.0, 1.0));
+    float t = glass.z > 0.0 ? clamp(length(d - vec2(0.0, glass.y)) / glass.z, 0.0, 1.0) : 1.0;
+    float g = 1.0 - t * t;
+    return mix(f, glow_color, g);
 }
 
+// `glassy`: dark colored disc (band and glow); `grey`: inactive or disabled.
 vec4 button(vec2 p, vec2 center, vec3 top, vec3 middle, vec3 bottom, vec3 outline_side,
-            vec3 outline_top, vec3 outline_bottom, vec3 shift, bool grey) {
+            vec3 outline_top, vec3 outline_bottom, vec3 shift, bool grey, bool glassy) {
     vec2 d = p - center;
     float r = length(d);
     float disc = cover(r - 7.0);
-    vec3 fill = clamp(gradient(d.y, top, middle, bottom) + shift, 0.0, 1.0);
-    vec3 outline = d.y < 0.0 ? mix(outline_side, outline_top, -d.y / 7.0)
-                             : mix(outline_side, outline_bottom, d.y / 7.0);
+    vec3 plain = glassy ? glass_fill(d, top, middle, bottom) : gradient(d.y, top, middle, bottom);
+    vec3 fill = clamp(plain + shift, 0.0, 1.0);
+    // Outline: the side color at the sides, the top/bottom one towards the vertical axis
+    // (dark: the 1 px light arc).
+    float theta = atan(abs(d.x), max(abs(d.y), 0.0001));
+    float arc = 1.0 - smoothstep(0.0, edge_fade, theta);
+    vec3 edge = d.y < 0.0 ? outline_top : outline_bottom;
+    vec3 outline = mix(outline_side, edge, arc);
     float ring = clamp(r - 6.0, 0.0, 1.0);
     vec3 base = mix(fill, outline, ring);
-    float shine = grey ? reflections(d, spec_g, rim_g, glow_g) : reflections(d, spec_c, rim_c, glow_c);
-    return vec4(mix(base, vec3(1.0), shine), 1.0) * disc;
+    // Light: faint 1 pt shadow under the disc.
+    float under = (grey || shadow <= 0.0) ? 0.0 : shadow * cover(length(d - vec2(0.0, 1.0)) - 7.0);
+    return over(vec4(base, 1.0) * disc, vec4(0.0, 0.0, 0.0, under));
 }
 
 // Symbols when the pointer passes, centered on the button.
@@ -141,27 +149,33 @@ void main() {
     vec3 grey_c, grey_t, grey_b, grey_o, grey_ot, grey_ob;
     bool lit = active > 0.5 || symbols > 0.0;
     bool is_dark = dark > 0.5;
+    bool glassy = is_dark && lit;
     if (is_dark) {
-        // Dark: luminous outline on top and at the bottom.
-        close_c = vec3(0.949, 0.376, 0.337); close_t = vec3(0.973, 0.388, 0.353); close_b = vec3(0.933, 0.400, 0.376);
+        // Dark (center column): top, darkest band (c), glow (b); the outline is the side
+        // color plus the light arc on top (ot) and at the bottom (ob).
+        close_t = vec3(0.973, 0.388, 0.353); close_c = vec3(0.961, 0.318, 0.271); close_b = vec3(0.937, 0.412, 0.388);
         close_o = vec3(0.933, 0.333, 0.286); close_ot = vec3(0.980, 0.694, 0.655); close_ob = vec3(0.984, 0.678, 0.647);
-        min_c = vec3(0.992, 0.753, 0.008); min_t = vec3(0.980, 0.710, 0.000); min_b = vec3(0.992, 0.804, 0.161);
+        min_t = vec3(0.980, 0.710, 0.000); min_c = vec3(0.988, 0.698, 0.000); min_b = vec3(0.996, 0.812, 0.188);
         min_o = vec3(0.973, 0.725, 0.016); min_ot = vec3(0.984, 0.933, 0.353); min_ob = vec3(0.984, 0.973, 0.412);
-        zoom_c = vec3(0.224, 0.757, 0.004); zoom_t = vec3(0.004, 0.737, 0.000); zoom_b = vec3(0.294, 0.757, 0.200);
+        zoom_t = vec3(0.275, 0.769, 0.102); zoom_c = vec3(0.004, 0.737, 0.000); zoom_b = vec3(0.314, 0.769, 0.224);
         zoom_o = vec3(0.035, 0.725, 0.004); zoom_ot = vec3(0.588, 0.984, 0.471); zoom_ob = vec3(0.545, 0.984, 0.463);
-        // Inactive: outline only on top and at the bottom, none on the sides.
-        grey_c = vec3(0.302, 0.302, 0.302); grey_t = vec3(0.322, 0.322, 0.325); grey_b = vec3(0.282, 0.282, 0.286);
-        grey_o = grey_c; grey_ot = vec3(0.600, 0.600, 0.600); grey_ob = vec3(0.565, 0.565, 0.569);
+        // Inactive (lum 85 at the top, 77 at the bottom): the same arcs (154 / 146), no side
+        // outline, no glow.
+        grey_c = vec3(0.318); grey_t = vec3(0.333); grey_b = vec3(0.302);
+        grey_o = grey_c; grey_ot = vec3(0.604); grey_ob = vec3(0.573);
     } else {
-        // Light: outline darker than the background, the same all around.
-        close_c = vec3(0.973, 0.490, 0.467); close_t = vec3(0.996, 0.431, 0.400); close_b = vec3(0.961, 0.545, 0.514);
-        close_o = vec3(0.867, 0.302, 0.278); close_ot = close_o; close_ob = close_o;
-        min_c = vec3(0.988, 0.788, 0.231); min_t = vec3(0.988, 0.722, 0.180); min_b = vec3(0.996, 0.827, 0.267);
-        min_o = vec3(0.816, 0.553, 0.043); min_ot = min_o; min_ob = min_o;
-        zoom_c = vec3(0.522, 0.839, 0.376); zoom_t = vec3(0.384, 0.816, 0.180); zoom_b = vec3(0.600, 0.851, 0.475);
-        zoom_o = vec3(0.318, 0.620, 0.196); zoom_ot = zoom_o; zoom_ob = zoom_o;
-        grey_c = vec3(0.918, 0.922, 0.925); grey_t = vec3(0.925, 0.929, 0.933); grey_b = vec3(0.925, 0.922, 0.941);
-        grey_o = vec3(0.765, 0.765, 0.780); grey_ot = vec3(0.902, 0.906, 0.910); grey_ob = vec3(0.890, 0.890, 0.906);
+        // Light: darker outline, strongest at the sides and weaker (edge_weak) at the top
+        // and bottom; plain vertical gradient.
+        close_t = vec3(0.996, 0.431, 0.400); close_b = vec3(0.973, 0.557, 0.525); close_c = (close_t + close_b) * 0.5;
+        close_o = vec3(0.871, 0.306, 0.282); close_ot = mix(close_t, close_o, edge_weak); close_ob = mix(close_b, close_o, edge_weak);
+        min_t = vec3(0.992, 0.725, 0.184); min_b = vec3(0.996, 0.827, 0.282); min_c = (min_t + min_b) * 0.5;
+        min_o = vec3(0.816, 0.553, 0.043); min_ot = mix(min_t, min_o, edge_weak); min_ob = mix(min_b, min_o, edge_weak);
+        zoom_t = vec3(0.384, 0.816, 0.180); zoom_b = vec3(0.604, 0.855, 0.486); zoom_c = (zoom_t + zoom_b) * 0.5;
+        zoom_o = vec3(0.318, 0.620, 0.196); zoom_ot = mix(zoom_t, zoom_o, edge_weak); zoom_ob = mix(zoom_b, zoom_o, edge_weak);
+        // Inactive: near white (lum 240 → 246), grey outline at the sides (~203), softer at
+        // the top (239) and bottom (236).
+        grey_t = vec3(0.941); grey_b = vec3(0.965); grey_c = (grey_t + grey_b) * 0.5;
+        grey_o = vec3(0.796); grey_ot = vec3(0.937); grey_ob = vec3(0.925);
     }
     if (!lit) {
         close_c = grey_c; close_t = grey_t; close_b = grey_b;
@@ -185,17 +199,17 @@ void main() {
     vec2 c1 = vec2(button_x, button_y);
     vec2 c2 = vec2(button_x + 23.0, button_y);
     vec2 c3 = vec2(button_x + 46.0, button_y);
-    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s, !lit),
+    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s, !lit, glassy),
                  color);
     if (min_off) {
-        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true), color);
+        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, false), color);
     } else {
-        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s, !lit), color);
+        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s, !lit, glassy), color);
     }
     if (zoom_off) {
-        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true), color);
+        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, false), color);
     } else {
-        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s, !lit), color);
+        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s, !lit, glassy), color);
     }
 
     if (symbols > 0.0) {
