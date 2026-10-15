@@ -74,6 +74,14 @@ pub struct LayerOptions {
     pub namespace: String,
 }
 
+/// One more shell layer drawn by the same engine (`--view`, #201): a view of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayerView {
+    pub layer: LayerOptions,
+    /// Initial size in logical pixels (the sides anchored on both edges are the compositor's).
+    pub size: (u32, u32),
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Renderer {
     #[default]
@@ -86,6 +94,58 @@ pub enum Renderer {
     /// Vulkan with Impeller (swapchain on the Wayland surface). Without Vulkan it falls back to
     /// OpenGL ES with Impeller.
     Vulkan,
+}
+
+/// How the views of an engine with several of them draw when the renderer is Vulkan
+/// (silica-desktop#203). Measured in the VM (docs/vm.md, "Renderers with several views").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MultiViewRenderer {
+    /// Impeller into Vulkan backing stores: needs an engine with the
+    /// [`IMPELLER_VULKAN_BACKING_STORES`] patch.
+    Impeller,
+    /// Skia into Vulkan backing stores (every engine).
+    Skia,
+    /// OpenGL ES with Impeller, a blit per frame into each view's EGL surface (before #203).
+    Gl,
+}
+
+/// The engine patch that gives Impeller Vulkan backing stores
+/// (`crates/embedder/engine-patches`, upstream flutter/flutter#193003).
+pub const IMPELLER_VULKAN_BACKING_STORES: &str = "impeller-vulkan-backing-stores";
+
+/// The renderer of several views on Vulkan: `choice` is `SILICA_MULTI_VIEW_RENDERER`
+/// (`impeller`, `skia`, `gl`), `impeller_backing_stores` whether the engine has them.
+/// Impeller when it can, as one view draws; Skia otherwise.
+pub fn multi_view_renderer(
+    choice: Option<&str>,
+    impeller_backing_stores: bool,
+) -> MultiViewRenderer {
+    let best = if impeller_backing_stores {
+        MultiViewRenderer::Impeller
+    } else {
+        MultiViewRenderer::Skia
+    };
+    match choice.map(str::trim) {
+        Some("gl") => MultiViewRenderer::Gl,
+        Some("skia") => MultiViewRenderer::Skia,
+        _ => best,
+    }
+}
+
+/// The patches the release engine was built with: `silica-patches` next to
+/// `libflutter_engine.so`, one name per line (`cargo xtask engine --release`). The engines
+/// Google publishes have none.
+pub fn engine_has_patch(library: &std::path::Path, patch: &str) -> bool {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(library.with_file_name("silica-patches")) else {
+        return false;
+    };
+    let mut text = String::new();
+    // A short list: anything past 4 KiB is not ours.
+    if file.take(4096).read_to_string(&mut text).is_err() {
+        return false;
+    }
+    text.lines().any(|line| line.trim() == patch)
 }
 
 /// GL drivers that rasterize on the CPU, from Mesa's `GL_RENDERER`.
@@ -105,6 +165,8 @@ pub struct Options {
     /// For a layer, the sides anchored on both edges are decided by the compositor.
     pub size: (u32, u32),
     pub layer: Option<LayerOptions>,
+    /// More shell layers in this engine, after the main one (`--view`, #201).
+    pub layer_views: Vec<LayerView>,
     pub renderer: Renderer,
     /// AOT-compiled `libapp.so`, for a release engine; ignored with a debug engine.
     pub aot: Option<PathBuf>,
@@ -147,7 +209,49 @@ pub fn release_engine_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::is_software_gl;
+    use super::{
+        IMPELLER_VULKAN_BACKING_STORES, MultiViewRenderer, engine_has_patch, is_software_gl,
+        multi_view_renderer,
+    };
+
+    #[test]
+    fn several_views_draw_with_impeller_only_where_the_engine_can() {
+        assert_eq!(multi_view_renderer(None, true), MultiViewRenderer::Impeller);
+        assert_eq!(multi_view_renderer(None, false), MultiViewRenderer::Skia);
+        assert_eq!(multi_view_renderer(Some("gl"), true), MultiViewRenderer::Gl);
+        assert_eq!(
+            multi_view_renderer(Some("skia"), true),
+            MultiViewRenderer::Skia
+        );
+        // Impeller cannot be forced on an engine without its Vulkan backing stores.
+        assert_eq!(
+            multi_view_renderer(Some("impeller"), false),
+            MultiViewRenderer::Skia
+        );
+        assert_eq!(
+            multi_view_renderer(Some("nonsense"), true),
+            MultiViewRenderer::Impeller
+        );
+    }
+
+    #[test]
+    fn engine_patches_are_read_from_next_to_the_library() {
+        let dir = std::env::temp_dir().join(format!("silica-patches-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let library = dir.join("libflutter_engine.so");
+        assert!(!engine_has_patch(&library, IMPELLER_VULKAN_BACKING_STORES));
+        std::fs::write(
+            dir.join("silica-patches"),
+            format!("other\n {IMPELLER_VULKAN_BACKING_STORES} \n"),
+        )
+        .unwrap();
+        assert!(engine_has_patch(&library, IMPELLER_VULKAN_BACKING_STORES));
+        assert!(!engine_has_patch(&library, "impeller"));
+        // Garbage (not UTF-8) is no patch, not a crash.
+        std::fs::write(dir.join("silica-patches"), [0xff, 0xfe, 0x00]).unwrap();
+        assert!(!engine_has_patch(&library, IMPELLER_VULKAN_BACKING_STORES));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn software_gl_drivers_are_recognised() {

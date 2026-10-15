@@ -254,6 +254,9 @@ const Offset detailPad = Offset(-detailLeft, -detailTop);
 
 class _ControlCenterState extends State<ControlCenter>
     with TickerProviderStateMixin {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _surface;
+
   late final AnimationController _anim;
 
   /// The open detail (or opening or closing) and its transformation (value = ms).
@@ -283,21 +286,22 @@ class _ControlCenterState extends State<ControlCenter>
   @override
   void initState() {
     super.initState();
+    _surface = LayerControl.of(context);
     _anim = AnimationController(vsync: this)
       ..addListener(() => setState(() {}));
     widget.system.addListener(_changed);
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'controlcenter.toggle') _toggle();
     });
-    _dismissed = ShellChannel.instance.transientDismissed.listen(
+    _dismissed = _surface.transientDismissed.listen(
       (_) => _transientDismissed(),
     );
     ShellChannel.instance.states.addListener(_statesChanged);
     if (widget.startOpen) {
       _show();
     } else {
-      LayerControl.inputRegion(const []);
-      LayerControl.keyboard('none');
+      _surface.inputRegion(const []);
+      _surface.keyboard('none');
     }
   }
 
@@ -350,12 +354,9 @@ class _ControlCenterState extends State<ControlCenter>
     _region = rect;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || (!_open && _wifiMenuRight == null)) return;
-      final supported = await LayerControl.transient(
-        rects: [rect],
-        policy: policy,
-      );
+      final supported = await _surface.transient(rects: [rect], policy: policy);
       if (!mounted || (!_open && _wifiMenuRight == null)) return;
-      LayerControl.inputRegion(supported ? [rect] : null);
+      _surface.inputRegion(supported ? [rect] : null);
     });
   }
 
@@ -400,8 +401,8 @@ class _ControlCenterState extends State<ControlCenter>
       _detailData = const DetailData();
     });
     _region = null;
-    LayerControl.inputRegion(const []);
-    LayerControl.keyboard('exclusive');
+    _surface.inputRegion(const []);
+    _surface.keyboard('exclusive');
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _menuFocus.requestFocus(),
     );
@@ -430,9 +431,9 @@ class _ControlCenterState extends State<ControlCenter>
     if (announce) ShellChannel.instance.broadcast('statusmenu', '');
     if (!_open) {
       _region = null;
-      LayerControl.clearTransient();
-      LayerControl.keyboard('none');
-      LayerControl.inputRegion(const []);
+      _surface.clearTransient();
+      _surface.keyboard('none');
+      _surface.inputRegion(const []);
     }
   }
 
@@ -503,8 +504,8 @@ class _ControlCenterState extends State<ControlCenter>
     setState(() => _open = true);
     ShellChannel.instance.broadcast('controlcenter.open', '1');
     _region = null;
-    LayerControl.inputRegion(const []);
-    LayerControl.keyboard('exclusive');
+    _surface.inputRegion(const []);
+    _surface.keyboard('exclusive');
     _anim.duration = openDuration;
     _anim.forward(from: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
@@ -563,9 +564,9 @@ class _ControlCenterState extends State<ControlCenter>
     setState(() => _open = false);
     ShellChannel.instance.broadcast('controlcenter.open', '0');
     _region = null;
-    LayerControl.clearTransient();
-    LayerControl.keyboard('none');
-    LayerControl.inputRegion(const []);
+    _surface.clearTransient();
+    _surface.keyboard('none');
+    _surface.inputRegion(const []);
     _anim.duration = closeDuration;
     _anim.forward(from: 0);
   }

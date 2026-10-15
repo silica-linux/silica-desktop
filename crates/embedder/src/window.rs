@@ -71,7 +71,7 @@ use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporter
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::{self, ZxdgImportedV2};
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 
-use crate::{LayerKeyboard, LayerKind, Options, Renderer};
+use crate::{LayerKeyboard, LayerKind, MultiViewRenderer, Options, Renderer};
 
 /// A drag that left this window (`silica/drag` › `start`).
 struct DragOut {
@@ -255,6 +255,8 @@ struct View {
     export: Option<crate::foreign::Export<ZxdgExportedV2, ResponseHandle>>,
     /// Being removed: the engine is asked to drop the view; the surface waits for it.
     removing: bool,
+    /// A shell layer's namespace (`menubar`, `dock`…): Dart picks what to draw by it.
+    namespace: Option<String>,
 }
 
 impl View {
@@ -277,6 +279,7 @@ impl View {
             open_reply: None,
             export: None,
             removing: false,
+            namespace: None,
         }
     }
 
@@ -320,6 +323,8 @@ struct App {
     next_view: i64,
     /// For new windows: the xdg shell and the engine thread's view events.
     xdg_shell: Option<XdgShell>,
+    /// For the shell layers drawn as more views of this engine (`--view`, #201).
+    layer_shell: Option<LayerShell>,
     view_events: Option<channel::Sender<ViewEvent>>,
     /// The view under the pointer and the one with the keyboard.
     pointer_view: i64,
@@ -430,6 +435,56 @@ struct App {
     registry_listener: Option<std::os::unix::net::UnixListener>,
 }
 
+/// A layer surface for `layer` on `surface`, of `size` logical pixels (the sides anchored on
+/// both edges are the compositor's), committed so that the compositor configures it.
+fn create_layer(
+    shell: &LayerShell,
+    qh: &QueueHandle<App>,
+    surface: wl_surface::WlSurface,
+    layer: &crate::LayerOptions,
+    size: (u32, u32),
+) -> LayerSurface {
+    let level = match layer.layer {
+        LayerKind::Background => Layer::Background,
+        LayerKind::Bottom => Layer::Bottom,
+        LayerKind::Top => Layer::Top,
+        LayerKind::Overlay => Layer::Overlay,
+    };
+    let surface =
+        shell.create_layer_surface(qh, surface, level, Some(layer.namespace.clone()), None);
+    let mut anchor = Anchor::empty();
+    for (on, edge) in [
+        (layer.anchor.top, Anchor::TOP),
+        (layer.anchor.bottom, Anchor::BOTTOM),
+        (layer.anchor.left, Anchor::LEFT),
+        (layer.anchor.right, Anchor::RIGHT),
+    ] {
+        anchor.set(edge, on);
+    }
+    surface.set_anchor(anchor);
+    // A size anchored to both sides is decided by the compositor (0).
+    let (w, h) = size;
+    let width = if layer.anchor.left && layer.anchor.right {
+        0
+    } else {
+        w
+    };
+    let height = if layer.anchor.top && layer.anchor.bottom {
+        0
+    } else {
+        h
+    };
+    surface.set_size(width, height);
+    surface.set_exclusive_zone(layer.exclusive_zone);
+    surface.set_keyboard_interactivity(match layer.keyboard {
+        LayerKeyboard::None => KeyboardInteractivity::None,
+        LayerKeyboard::Exclusive => KeyboardInteractivity::Exclusive,
+        LayerKeyboard::OnDemand => KeyboardInteractivity::OnDemand,
+    });
+    surface.commit();
+    surface
+}
+
 /// How long a hidden app may draw to tear its closed window down (#142).
 const TEARDOWN: Duration = Duration::from_millis(250);
 /// How long an app has to build its new window after a reopen before it is shown anyway.
@@ -489,6 +544,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let shm = Shm::bind(&globals, &qh)?;
     let surface = compositor.create_surface(&qh);
     let mut xdg_shell = None;
+    let mut layer_shell = None;
     let mut parent_import = None;
     let surface = match &options.layer {
         None => {
@@ -513,69 +569,41 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(layer) => {
             let shell = LayerShell::bind(&globals, &qh)?;
-            let level = match layer.layer {
-                LayerKind::Background => Layer::Background,
-                LayerKind::Bottom => Layer::Bottom,
-                LayerKind::Top => Layer::Top,
-                LayerKind::Overlay => Layer::Overlay,
-            };
-            let surface = shell.create_layer_surface(
-                &qh,
-                surface,
-                level,
-                Some(layer.namespace.clone()),
-                None,
-            );
-            let mut anchor = Anchor::empty();
-            for (on, edge) in [
-                (layer.anchor.top, Anchor::TOP),
-                (layer.anchor.bottom, Anchor::BOTTOM),
-                (layer.anchor.left, Anchor::LEFT),
-                (layer.anchor.right, Anchor::RIGHT),
-            ] {
-                anchor.set(edge, on);
-            }
-            surface.set_anchor(anchor);
-            // A size anchored to both sides is decided by the compositor (0).
-            let (w, h) = options.size;
-            let width = if layer.anchor.left && layer.anchor.right {
-                0
-            } else {
-                w
-            };
-            let height = if layer.anchor.top && layer.anchor.bottom {
-                0
-            } else {
-                h
-            };
-            surface.set_size(width, height);
-            surface.set_exclusive_zone(layer.exclusive_zone);
-            surface.set_keyboard_interactivity(match layer.keyboard {
-                LayerKeyboard::None => KeyboardInteractivity::None,
-                LayerKeyboard::Exclusive => KeyboardInteractivity::Exclusive,
-                LayerKeyboard::OnDemand => KeyboardInteractivity::OnDemand,
-            });
-            surface.commit();
+            let surface = create_layer(&shell, &qh, surface, layer, options.size);
+            layer_shell = Some(shell);
             Shell::Layer(surface)
         }
     };
 
     crate::trace::mark("shell surface committed");
-    // Several windows are for apps: a shell layer has its one surface.
-    let multi_view = options.multi_window && options.layer.is_none();
+    // Several windows are for apps; a shell layer has its one surface, unless the shell
+    // draws its layers in one engine (`--view`, #201).
+    let multi_view =
+        (options.multi_window && options.layer.is_none()) || !options.layer_views.is_empty();
     let mut engine_args = options.engine_args.clone();
     // Vulkan with Impeller; if Vulkan is not there (or does not present on this surface) it
-    // falls back to OpenGL ES with Impeller. Several windows need backing stores, which
-    // Impeller has only on OpenGL ES at the pinned engine (`ffi/compositor.rs`).
+    // falls back to OpenGL ES with Impeller. Several views draw into Vulkan backing stores
+    // (`ffi/compositor.rs`): with Impeller where the engine has them, otherwise with Skia
+    // (`crate::multi_view_renderer`, #203).
+    let multi_view_renderer = crate::multi_view_renderer(
+        std::env::var("SILICA_MULTI_VIEW_RENDERER").ok().as_deref(),
+        crate::engine_has_patch(&options.library, crate::IMPELLER_VULKAN_BACKING_STORES),
+    );
     let vulkan = match options.renderer {
-        Renderer::Vulkan if multi_view => {
-            info!("several windows: OpenGL ES with Impeller (no Vulkan backing stores)");
+        Renderer::Vulkan if multi_view && multi_view_renderer == MultiViewRenderer::Gl => {
+            info!("several views: OpenGL ES with Impeller (SILICA_MULTI_VIEW_RENDERER=gl)");
             None
         }
         Renderer::Vulkan => match VulkanSurface::new(&conn, surface.wl_surface(), options.size) {
             Ok(vulkan) => {
                 info!("renderer Vulkan: {}", vulkan.renderer());
-                engine_args.push("--enable-impeller".to_owned());
+                if !multi_view || multi_view_renderer == MultiViewRenderer::Impeller {
+                    engine_args.push("--enable-impeller".to_owned());
+                }
+                if multi_view {
+                    info!("several views: {multi_view_renderer:?} on Vulkan");
+                    vulkan.set_multi_view(multi_view_renderer == MultiViewRenderer::Impeller);
+                }
                 Some(vulkan)
             }
             Err(err) => {
@@ -778,10 +806,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         output_state: OutputState::new(&globals, &qh),
         shm,
         pool,
-        views: BTreeMap::from([(MAIN_VIEW, View::new(surface, options.size, 1, true))]),
+        views: BTreeMap::from([(MAIN_VIEW, {
+            let mut view = View::new(surface, options.size, 1, true);
+            view.namespace = options.layer.as_ref().map(|layer| layer.namespace.clone());
+            view
+        })]),
         multi_view,
         next_view: MAIN_VIEW + 1,
         xdg_shell,
+        layer_shell,
         view_events: Some(view_sender),
         pointer_view: MAIN_VIEW,
         keyboard_view: None,
@@ -864,6 +897,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
     if options.layer.is_none() && !options.helper {
         app.register(&event_loop.handle());
+    }
+    for view in &options.layer_views {
+        app.open_layer(view);
     }
 
     // Appearance: light until the portal says otherwise, then on every change.
@@ -1234,6 +1270,11 @@ impl App {
         {
             return refuse(self, reply, &err.to_string());
         }
+        if let Some(vulkan) = engine.vulkan()
+            && let Err(err) = vulkan.add_view(id, view.surface.wl_surface())
+        {
+            return refuse(self, reply, &err.to_string());
+        }
         self.glass.insert(
             id,
             self.glass_manager.clone(),
@@ -1244,6 +1285,55 @@ impl App {
         // may be drawn on an xdg surface before it is configured.
         view.open_reply = reply;
         info!("window {id} opened: {:?} {:?}", spec.title, spec.size);
+        self.views.insert(id, view);
+    }
+
+    /// The shell layers of this engine, for `silica/layer` `views`: `[{viewId, namespace}]`,
+    /// the views the engine has added (Dart sees them in `PlatformDispatcher.views`).
+    fn layer_views(&self) -> Vec<serde_json::Value> {
+        self.views
+            .iter()
+            .filter(|(_, view)| (view.added || view.adding) && !view.removing)
+            .filter_map(|(id, view)| {
+                let namespace = view.namespace.as_ref()?;
+                Some(serde_json::json!({ "viewId": id, "namespace": namespace }))
+            })
+            .collect()
+    }
+
+    /// One more shell layer drawn by this engine (`--view`, #201): its own layer surface,
+    /// added to the engine at its first configure, like a new window.
+    fn open_layer(&mut self, spec: &crate::LayerView) {
+        let (Some(layer_shell), Some(engine)) = (&self.layer_shell, &self.engine) else {
+            warn!("--view {}: no layer shell", spec.layer.namespace);
+            return;
+        };
+        let id = self.next_view;
+        self.next_view = self.next_view.saturating_add(1);
+        let surface = self.compositor.create_surface(&self.qh);
+        let layer = create_layer(layer_shell, &self.qh, surface, &spec.layer, spec.size);
+        let scale = self.views.get(&MAIN_VIEW).map_or(1, |view| view.scale);
+        let mut view = View::new(Shell::Layer(layer), spec.size, scale, false);
+        view.namespace = Some(spec.layer.namespace.clone());
+        if let Some(gl) = engine.gl()
+            && let Err(err) = gl.add_view(id, view.surface.wl_surface(), view.physical())
+        {
+            warn!("layer {}: {err}", spec.layer.namespace);
+            return;
+        }
+        if let Some(vulkan) = engine.vulkan()
+            && let Err(err) = vulkan.add_view(id, view.surface.wl_surface())
+        {
+            warn!("layer {}: {err}", spec.layer.namespace);
+            return;
+        }
+        self.glass.insert(
+            id,
+            self.glass_manager.clone(),
+            &self.conn,
+            view.surface.wl_surface(),
+        );
+        info!("layer {id} opened: {}", spec.layer.namespace);
         self.views.insert(id, view);
     }
 
@@ -1438,6 +1528,9 @@ impl App {
         }
         if let Some(gl) = self.engine.as_ref().and_then(Engine::gl) {
             gl.remove_view(id);
+        }
+        if let Some(vulkan) = self.engine.as_ref().and_then(Engine::vulkan) {
+            vulkan.remove_view(id);
         }
         self.glass.remove(id);
         if let Some(mut view) = self.views.remove(&id) {
@@ -2244,8 +2337,13 @@ impl App {
             return Vec::new();
         };
         let args = call.get("args").cloned().unwrap_or(serde_json::Value::Null);
-        let Some(View { surface, .. }) = self.views.get(&MAIN_VIEW) else {
-            return Vec::new();
+        if call.get("method").and_then(serde_json::Value::as_str) == Some("views") {
+            return text_input::success(serde_json::Value::Array(self.layer_views()));
+        }
+        // The layer the call is for (`viewId`, #201); the main one without it.
+        let target = views::view_arg(&call);
+        let Some(View { surface, .. }) = self.views.get(&target) else {
+            return text_input::success(serde_json::json!(false));
         };
         let done = match call.get("method").and_then(serde_json::Value::as_str) {
             Some("setKeyboardInteractivity") => {
@@ -2535,8 +2633,18 @@ impl App {
             return true;
         }
         match &self.engine {
-            Some(engine) if self.gl && id == MAIN_VIEW => engine.gl_presented(),
-            Some(engine) if self.gl => engine.gl().is_some_and(|gl| gl.view_presented(id)),
+            Some(engine) if self.gl && id == MAIN_VIEW => {
+                engine.gl_presented()
+                    || engine
+                        .vulkan()
+                        .is_some_and(|vulkan| vulkan.view_presented(id))
+            }
+            Some(engine) if self.gl => {
+                engine.gl().is_some_and(|gl| gl.view_presented(id))
+                    || engine
+                        .vulkan()
+                        .is_some_and(|vulkan| vulkan.view_presented(id))
+            }
             _ => false,
         }
     }
@@ -2847,11 +2955,12 @@ impl LayerShellHandler for App {
         &mut self,
         _: &Connection,
         qh: &QueueHandle<Self>,
-        _: &LayerSurface,
+        layer: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
-        self.configured(MAIN_VIEW, qh, configure.new_size);
+        let id = self.view_of(layer.wl_surface()).unwrap_or(MAIN_VIEW);
+        self.configured(id, qh, configure.new_size);
     }
 }
 
@@ -3484,9 +3593,10 @@ impl wayland_client::Dispatch<SilicaShellManagerV1, ()> for App {
             }))
             .unwrap_or_default(),
             // A press outside the open menu or panel ended it (#149).
-            Event::Dismissed { .. } => serde_json::to_vec(&serde_json::json!({
+            // With several layers in this engine, the view whose transient ended.
+            Event::Dismissed { surface } => serde_json::to_vec(&serde_json::json!({
                 "method": "transientDismissed",
-                "args": null,
+                "args": app.view_of(&surface).map(|id| serde_json::json!({ "viewId": id })),
             }))
             .unwrap_or_default(),
             // The appearance of the window of the popover that follows.

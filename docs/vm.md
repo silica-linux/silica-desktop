@@ -194,3 +194,64 @@ Per phase after, warm (ms from process start): Wayland 1, Vulkan instance 10 to 
 swapchain 35, engine library, AOT data and initialisation 5, engine started +10, Dart's first
 frame request +15, first present +30 to 50, window mapped in Ossido +10 to 30. Settings logs its
 own steps with `SETTINGS_STARTUP_LOG=1`.
+
+## Renderers with several views (#203)
+
+An app with several windows (`--multi-window`) and the shell's layers in one engine draw
+through the engine's backing stores. With `--renderer vulkan` the backing store of a view is
+the next image of that view's own swapchain, and the views of a frame are presented together
+with one `vkQueuePresentKHR` when the raster task ends: no copy, the buffers reach Ossido as
+dmabufs (`WAYLAND_DEBUG` shows `zwp_linux_buffer_params_v1.add` for every image, no `wl_shm`).
+Impeller draws them with the engine patch `impeller-vulkan-backing-stores`
+(`docs/engine-release.md`); an engine without it (the debug one) draws them with Skia on Vulkan.
+`SILICA_MULTI_VIEW_RENDERER=gl|skia` forces the OpenGL ES path of before or Skia.
+
+Measured on 2026-10-15/16 in the dev VM (Venus on Intel Iris Xe, 1920x1200) with
+`testapps/framebench` (24 moving cards with shadows and text, 1000x700 window, second window
+480x360), 600 frames after 120 of warm-up, release engine. Milliseconds, `FrameTiming`;
+median of three runs (runs where the VM stalled for a second, a QEMU display artefact, are
+left out of the median when another run is clean).
+
+| Renderer | Views | Raster p50 | Raster p95 | Build + raster p50 | Frame interval p50 / p95 |
+| --- | --- | --- | --- | --- | --- |
+| Impeller, Vulkan, root surface (one view, before) | 1 | 3.5 | 13.0 | 6.8 | 11.6 / 17.7 |
+| Impeller, OpenGL ES, backing stores (several views, before) | 1 | 1.5 | 9.7 | 4.2 | 10.3 / 17.2 |
+| Impeller, OpenGL ES, backing stores | 2 | 3.8 | 11.2 | 8.2 | 13.3 / 18.6 |
+| Skia, Vulkan, backing stores | 1 | 4.1 | 17.2 | 7.8 | 13.6 / 18.8 |
+| Skia, Vulkan, backing stores | 2 | 4.7 | 10.6 | 8.0 | 9.3 / 17.4 |
+| **Impeller, Vulkan, backing stores (now)** | 1 | **1.0** | **3.9** | **3.9** | 12.4 / 17.8 |
+| **Impeller, Vulkan, backing stores (now)** | 2 | **1.8** | **9.4** | **7.0** | 13.9 / 19.0 |
+
+With Vulkan backing stores the present runs after the raster task (it is not in the raster
+time); with the root surface and with OpenGL ES it is. Presenting each view on its own made two
+views wait twice for the GPU inside Venus's present (raster p50 15 ms with two windows) before
+the presents were batched. Skia also stalls: in the first round
+of measurements three of six Skia runs had stalls of about 1 s, none of the six
+Impeller runs on Vulkan. Without the patch Skia keeps Vulkan and zero copy, but it loses the lens glass
+refraction of silica_ui (shader image filters need Impeller).
+
+## The shell in one engine (#201)
+
+The session starts the shell as one embedder process, kept running by Ossido
+(`--keep-shell`: it is started again if it crashes, as checked in the VM with `kill -9`): every
+layer is a view of the same engine (`--view`), each still its own layer surface with its
+layer, anchor, size, exclusive zone and keyboard mode. Dart builds one view per layer
+(`ShellViews`), and a view is drawn again only when something in it changed: while Faro
+animates, the wallpaper, menu bar, Dock and the other overlays present no frame. Mustache's
+desktop icons stay their own process.
+
+Measured in the dev VM on 2026-10-16, before (seven processes, the commit before #201) and
+after, each three times after a session restart, back to back under one hold of the VM:
+
+| | Shell processes | RSS | PSS |
+| --- | --- | --- | --- |
+| Before | 7 | 524–528 MiB | 173–176 MiB |
+| After | 1 | 83–88 MiB | 53–58 MiB |
+
+Login to first frame (Ossido's `startup_ms` of the layers, from the launch to the first
+buffer): with the VM's window visible, before 0.85–0.97 s for the wallpaper, menu bar and
+Dock (1.37 s until the last overlay drew its first, empty, frame), after 0.85–1.50 s (the
+overlays draw nothing until they open). During the back-to-back runs the VM's window was not
+visible and QEMU served the GPU in one-second steps (see "Launch times"): before 9.0–23.6 s,
+median 17.6 s, after 9.9–17.6 s, median 10.0 s; those numbers say more about the stalls than
+about the shell.

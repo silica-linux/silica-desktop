@@ -172,16 +172,17 @@ pub struct Callbacks {
     pub platform_message: Box<dyn Fn(PlatformMessage) + Send + Sync>,
     /// With an EGL surface the engine draws with OpenGL ES, otherwise in software.
     pub gl: Option<GlSurface>,
-    /// With a Vulkan swapchain the engine draws with Impeller on Vulkan (it takes precedence
-    /// over `gl`).
+    /// With a Vulkan swapchain the engine draws on Vulkan (it takes precedence over `gl`):
+    /// with Impeller, or with Skia for several views on an engine without Impeller's Vulkan
+    /// backing stores.
     pub vulkan: Option<VulkanSurface>,
     /// The frame pace comes from the embedder (compositor frame callbacks); without it, the
     /// engine uses its own 60 Hz timer, unrelated to the compositor.
     pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
     /// The raster thread's tasks and frames, numbered (the raster thread is the embedder's).
     pub frames: Arc<FrameClock>,
-    /// Several views (windows) in this engine: it composes through backing stores
-    /// (`compositor.rs`), in software or with OpenGL ES (not with `vulkan`).
+    /// Several views (windows, shell layers) in this engine: it composes through backing
+    /// stores (`compositor.rs`), in software, with OpenGL ES or with Vulkan.
     pub multi_view: bool,
 }
 
@@ -731,6 +732,19 @@ impl Engine {
         // The raster thread is the embedder's: its tasks are numbered (`FrameClock`).
         callbacks.frames.set_time(api.time);
         let raster = RasterRunner::start(Arc::clone(&callbacks.frames), api.run_task, api.time)?;
+        // Several views on Vulkan: the views of a frame are presented together, when its raster
+        // task ends (`VulkanSurface::flush_presents`).
+        if callbacks.multi_view && callbacks.vulkan.is_some() {
+            let address = user_data as usize;
+            raster.on_task_end(move || {
+                // SAFETY: address is the Callbacks given to the engine, kept by Engine until after
+                // the raster thread is stopped (fields drop in declaration order: `raster` first).
+                let callbacks = unsafe { self::callbacks(address as *mut c_void) };
+                if let Some(vulkan) = &callbacks.vulkan {
+                    vulkan.flush_presents();
+                }
+            });
+        }
         let render_runner = Box::new(FlutterTaskRunnerDescription {
             struct_size: size_of::<FlutterTaskRunnerDescription>(),
             user_data: raster.user_data(),
@@ -846,7 +860,8 @@ impl Engine {
                 create_backing_store_callback: Some(compositor::create_backing_store),
                 collect_backing_store_callback: Some(compositor::collect_backing_store),
                 present_layers_callback: None,
-                avoid_backing_store_cache: false,
+                // A Vulkan backing store is a swapchain image: a new one every frame.
+                avoid_backing_store_cache: callbacks.vulkan.is_some(),
                 present_view_callback: Some(compositor::present_view),
             })
         });
@@ -1039,6 +1054,11 @@ impl Engine {
     /// The EGL contexts and surfaces, with the OpenGL ES renderer.
     pub fn gl(&self) -> Option<&GlSurface> {
         self._callbacks.gl.as_ref()
+    }
+
+    /// The Vulkan device and swapchains, with the Vulkan renderer.
+    pub fn vulkan(&self) -> Option<&VulkanSurface> {
+        self._callbacks.vulkan.as_ref()
     }
 
     /// Brings the EGL surface (if any) to `width`×`height` physical pixels. Must be called

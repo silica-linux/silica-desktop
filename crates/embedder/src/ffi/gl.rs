@@ -65,6 +65,8 @@ type BlitFn = unsafe extern "C" fn(i32, i32, i32, i32, i32, i32, i32, i32, u32, 
 type GetIntegerFn = unsafe extern "C" fn(u32, *mut i32);
 type IsEnabledFn = unsafe extern "C" fn(u32) -> u8;
 type CapabilityFn = unsafe extern "C" fn(u32);
+type ClearColorFn = unsafe extern "C" fn(f32, f32, f32, f32);
+type ClearFn = unsafe extern "C" fn(u32);
 
 /// The GL entry points of the backing stores and their presentation (several views).
 #[derive(Clone, Copy)]
@@ -89,6 +91,8 @@ struct GlFns {
     is_enabled: IsEnabledFn,
     enable: CapabilityFn,
     disable: CapabilityFn,
+    clear_color: ClearColorFn,
+    clear: ClearFn,
 }
 
 impl GlFns {
@@ -123,6 +127,8 @@ impl GlFns {
             is_enabled: load!("glIsEnabled", IsEnabledFn),
             enable: load!("glEnable", CapabilityFn),
             disable: load!("glDisable", CapabilityFn),
+            clear_color: load!("glClearColor", ClearColorFn),
+            clear: load!("glClear", ClearFn),
         })
     }
 
@@ -649,6 +655,61 @@ impl GlSurface {
             redraw();
         }
         swapped
+    }
+
+    /// Presents a fully transparent frame on view `view_id` (the engine draws no layer for
+    /// an empty scene, `compositor.rs`). On the raster thread.
+    pub(super) fn clear_view(&self, view_id: i64) -> bool {
+        let Some(fns) = self.fns else {
+            return false;
+        };
+        let clear = |surface: egl::Surface| -> bool {
+            if self
+                .egl
+                .make_current(
+                    self.display,
+                    Some(surface),
+                    Some(surface),
+                    Some(self.context),
+                )
+                .is_err()
+            {
+                return false;
+            }
+            let draw = fns.binding(GL_FRAMEBUFFER_BINDING);
+            // SAFETY: the context is current with the view's surface; the default framebuffer
+            // is cleared, then the binding and the scissor test are restored.
+            unsafe {
+                let scissor = (fns.is_enabled)(GL_SCISSOR_TEST) != 0;
+                if scissor {
+                    (fns.disable)(GL_SCISSOR_TEST);
+                }
+                (fns.bind_framebuffer)(GL_FRAMEBUFFER, 0);
+                (fns.clear_color)(0.0, 0.0, 0.0, 0.0);
+                (fns.clear)(GL_COLOR_BUFFER_BIT);
+                (fns.bind_framebuffer)(GL_FRAMEBUFFER, draw);
+                if scissor {
+                    (fns.enable)(GL_SCISSOR_TEST);
+                }
+            }
+            self.egl.swap_buffers(self.display, surface).is_ok()
+        };
+        let cleared = if view_id == 0 {
+            clear(self.surface)
+        } else {
+            match self.views.lock() {
+                Ok(views) => views.get(&view_id).is_none_or(|view| clear(view.surface)),
+                Err(_) => false,
+            }
+        };
+        // The engine keeps drawing with its context on the main surface.
+        let _ = self.egl.make_current(
+            self.display,
+            Some(self.surface),
+            Some(self.surface),
+            Some(self.context),
+        );
+        cleared
     }
 
     pub(super) fn proc_address(&self, name: &str) -> *mut c_void {

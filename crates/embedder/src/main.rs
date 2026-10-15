@@ -5,6 +5,7 @@
 //!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] [--helper] [--parent HANDLE] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NAME]
+//!     [--view --layer … --size WxH … --namespace NAME]...
 //! ```
 //!
 //! `BUNDLE` is the `flutter_assets` folder of `flutter build bundle`; `DIR` contains
@@ -12,13 +13,18 @@
 //! the AOT code is needed: `--aot`, or `libapp.so` next to `BUNDLE`
 //! (`cargo xtask bundle <app> --release`). `--helper` starts a helper process of the app (the
 //! portal's Open and Save dialog): not the app's running instance, and it ends with its window.
+//! Every `--view` adds another shell layer to the same engine (#201): its own
+//! wlr-layer-shell surface with the layer, anchor, size, exclusive zone, keyboard mode and
+//! namespace that follow it; Dart draws it as one more view (`silica/layer` `views`).
 //! `--parent HANDLE` (an xdg-foreign v2 handle, bare or `wayland:HANDLE`) makes another app's
 //! window the parent of this one: the dialog is attached to the app that asked for it.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use silica_embedder::{Anchors, LayerKeyboard, LayerKind, LayerOptions, Options, Renderer};
+use silica_embedder::{
+    Anchors, LayerKeyboard, LayerKind, LayerOptions, LayerView, Options, Renderer,
+};
 use tracing_subscriber::EnvFilter;
 
 fn main() -> ExitCode {
@@ -66,6 +72,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut multi_window = false;
     let mut helper = false;
     let mut parent = None;
+    // The layer groups closed by `--view`: the first is the main view, the others more views.
+    let mut groups: Vec<(Option<LayerOptions>, (u32, u32))> = Vec::new();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
@@ -114,6 +122,11 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                 };
             }
             "--namespace" => layer_options(&mut layer).namespace = value()?,
+            // Another shell layer in the same engine (#201): the layer options after it are its.
+            "--view" => {
+                groups.push((layer.take(), size));
+                size = (800, 600);
+            }
             "--aot" => aot = Some(PathBuf::from(value()?)),
             "--engine-arg" => engine_args.push(value()?),
             "--dart-arg" => dart_args.push(value()?),
@@ -140,6 +153,19 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             other => dart_args.push(other.to_owned()),
         }
     }
+    groups.push((layer, size));
+    let mut groups = groups.into_iter();
+    let (layer, size) = groups.next().unwrap_or((None, size));
+    let layer_views = groups
+        .map(|(layer, size)| {
+            layer
+                .map(|layer| LayerView { layer, size })
+                .ok_or("--view needs its own --layer")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !layer_views.is_empty() && layer.is_none() {
+        return Err("--view is for shell layers: the main view needs --layer too".to_owned());
+    }
     let engine_dir = engine_dir.unwrap_or_else(silica_embedder::default_engine_dir);
     let bundle: PathBuf = bundle.ok_or("the bundle folder (flutter_assets) is missing")?;
     let aot = aot.or_else(|| {
@@ -152,6 +178,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         icu_data: engine_dir.join("icudtl.dat"),
         size,
         layer,
+        layer_views,
         renderer,
         aot,
         engine_args,
@@ -215,6 +242,60 @@ mod tests {
         let empty = parse(args(&["/b", "--parent", ""])).unwrap();
         assert_eq!(empty.parent, None);
         assert!(parse(args(&["/b", "--parent"])).is_err());
+    }
+
+    #[test]
+    fn every_view_is_a_layer_of_its_own() {
+        let options = parse(args(&[
+            "--layer",
+            "background",
+            "--anchor",
+            "top,bottom,left,right",
+            "--size",
+            "1280x800",
+            "--namespace",
+            "wallpaper",
+            "--view",
+            "--layer",
+            "top",
+            "--anchor",
+            "top,left,right",
+            "--size",
+            "1280x30",
+            "--exclusive-zone",
+            "30",
+            "--namespace",
+            "menubar",
+            "--view",
+            "--layer",
+            "overlay",
+            "--keyboard",
+            "on-demand",
+            "--namespace",
+            "faro",
+            "--dart-arg",
+            "shell",
+            "/bundle/flutter_assets",
+        ]))
+        .unwrap();
+        let main = options.layer.unwrap();
+        assert_eq!(main.namespace, "wallpaper");
+        assert_eq!(options.size, (1280, 800));
+        assert_eq!(options.layer_views.len(), 2);
+        let bar = &options.layer_views[0];
+        assert_eq!(bar.layer.namespace, "menubar");
+        assert_eq!(bar.layer.exclusive_zone, 30);
+        assert!(bar.layer.anchor.top && !bar.layer.anchor.bottom);
+        assert_eq!(bar.size, (1280, 30));
+        let faro = &options.layer_views[1];
+        assert_eq!(faro.layer.layer, LayerKind::Overlay);
+        assert_eq!(faro.layer.keyboard, LayerKeyboard::OnDemand);
+        assert_eq!(faro.size, (800, 600));
+        assert_eq!(options.dart_args, ["shell"]);
+        // A view without its layer, or views without a main layer, are refused.
+        assert!(parse(args(&["--layer", "top", "--view", "/b"])).is_err());
+        assert!(parse(args(&["--view", "--layer", "top", "/b"])).is_err());
+        assert!(parse(args(&["/b"])).unwrap().layer_views.is_empty());
     }
 
     #[test]

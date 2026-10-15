@@ -1,6 +1,9 @@
 // The Silica shell: one component per process, chosen by the first argument of main
 // (silica-embedder --dart-arg dock). Today: dock (the real apps), dock-demo (placeholders),
 // menubar, wallpaper, faro, notifications, controlcenter, switcher.
+//
+// `shell` draws every component in one engine (#201): the embedder gives each layer its own
+// view (`--view`), named by its namespace, which is the component's name.
 
 import 'dart:io';
 
@@ -21,6 +24,8 @@ import 'system/shell_channel.dart';
 import 'forcequit/force_quit.dart';
 import 'screenshot/screenshot.dart';
 import 'switcher/switcher.dart';
+import 'system/layer_control.dart';
+import 'system/shell_views.dart';
 import 'system/system_status.dart';
 import 'system/media.dart';
 import 'wallpaper/wallpaper.dart';
@@ -45,7 +50,7 @@ const List<Item> placeholderItems = [
   Item.app('Trash', trash: true),
 ];
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   final component = args.isEmpty ? 'dock' : args.first;
   // Debug only: SILICA_TIME_DILATION=10 slows every animation of the shell tenfold, to look
   // at transitions frame by frame (docs/vm.md › Looking at animations).
@@ -53,8 +58,25 @@ void main(List<String> args) {
     Platform.environment['SILICA_TIME_DILATION'] ?? '',
   );
   if (dilation != null && dilation > 0) timeDilation = dilation;
+  if (component == 'shell') {
+    WidgetsFlutterBinding.ensureInitialized();
+    final namespaces = await LayerControl.views();
+    runWidget(
+      ShellViews(
+        namespaces: namespaces,
+        builder: (namespace) => ShellComponent(component: namespace),
+      ),
+    );
+    return;
+  }
   runApp(ShellComponent(component: component));
 }
+
+/// The desktop entries, read once for every component of this process (each gets its own
+/// map: a component may change its copy).
+Map<String, DesktopEntry> desktopEntries() =>
+    Map.of(_desktopEntries ??= loadDesktopEntries(locale: systemLanguage()));
+Map<String, DesktopEntry>? _desktopEntries;
 
 class ShellComponent extends StatelessWidget {
   const ShellComponent({super.key, required this.component});
@@ -66,7 +88,7 @@ class ShellComponent extends StatelessWidget {
     final Widget child = switch (component) {
       'dock-demo' => const Dock(items: placeholderItems),
       'menubar' => MenuBar(
-        entries: loadDesktopEntries(locale: systemLanguage()),
+        entries: desktopEntries(),
         onSearch: () => ShellChannel.instance.execute('faro.toggle'),
         onClock: () => ShellChannel.instance.execute('notifications.toggle'),
         onControls: () => ShellChannel.instance.execute('controlcenter.toggle'),
@@ -74,7 +96,7 @@ class ShellComponent extends StatelessWidget {
         media: MediaPlayers.instance,
       ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
-      'faro' => Faro(entries: loadDesktopEntries(locale: systemLanguage())),
+      'faro' => Faro(entries: desktopEntries()),
       'notifications' => NotificationsLayer(
         source: DBusNotifications(),
         system: DBusSystem(),
@@ -83,16 +105,11 @@ class ShellComponent extends StatelessWidget {
       // The app switcher never takes input: the same layer hosts the screenshots.
       'switcher' => Stack(
         children: [
-          AppSwitcher(entries: loadDesktopEntries(locale: systemLanguage())),
-          ScreenshotLayer(
-            entries: loadDesktopEntries(locale: systemLanguage()),
-          ),
-          ForceQuitLayer(entries: loadDesktopEntries(locale: systemLanguage())),
+          AppSwitcher(entries: desktopEntries()),
+          ScreenshotLayer(entries: desktopEntries()),
+          ForceQuitLayer(entries: desktopEntries()),
           // The polkit agent's password dialog, above everything else here.
-          AuthLayer(
-            source: DBusAuth(),
-            entries: loadDesktopEntries(locale: systemLanguage()),
-          ),
+          AuthLayer(source: DBusAuth(), entries: desktopEntries()),
         ],
       ),
       _ => const LiveDock(),

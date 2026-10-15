@@ -42,6 +42,23 @@ silica-embedder --engine target/flutter-engine/<ENGINE_VERSION>-release \
 The embedder finds `libapp.so` next to `flutter_assets` (or with `--aot`). With the debug
 engine the AOT code is ignored; with the release one the debug bundle is refused.
 
+## Engine patches
+
+`cargo xtask engine --release` applies every `crates/embedder/engine-patches/*.patch` to the
+checkout before building (a patch already applied is left alone) and writes their names, one
+per line, into `silica-patches` next to `libflutter_engine.so`. The embedder reads that file
+to know what the engine can do; the debug engine Google publishes has none of them.
+
+| Patch | What | Upstream |
+| --- | --- | --- |
+| `impeller-vulkan-backing-stores` | Impeller draws into Vulkan backing stores: apps with several windows and a shell with several layers render with Impeller on Vulkan, with no copy (#203). Without it they draw with Skia on Vulkan | flutter/flutter#193003 (open), issue flutter/flutter#187525 |
+
+When `ENGINE_VERSION` moves to a revision that contains a patch's change, the patch applies
+in reverse and is reported as already applied. Delete it then, together with the embedder's
+check for it (`engine_has_patch` in `crates/embedder/src/window.rs`): every engine of that
+revision, the debug one included, has the change. A patch that neither applies nor is there
+stops the build.
+
 ## When the Flutter version changes
 
 After the steps in `docs/gate1-embedder.md` (update `ENGINE_VERSION`, `engine`,

@@ -17,9 +17,18 @@ class LayerWish {
 }
 
 class LayerArbiter {
-  LayerArbiter._();
+  LayerArbiter._(this.layer);
 
-  static final LayerArbiter instance = LayerArbiter._();
+  /// The arbiter of `layer`: one per layer surface (several layers share an engine, #201).
+  factory LayerArbiter.of(LayerControl layer) =>
+      _arbiters.putIfAbsent(layer, () => LayerArbiter._(layer));
+
+  static final Map<LayerControl, LayerArbiter> _arbiters = {};
+
+  /// The arbiter of the process's only layer.
+  static LayerArbiter get instance => LayerArbiter.of(LayerControl.main);
+
+  final LayerControl layer;
 
   final Map<Object, LayerWish> _wishes = {};
 
@@ -35,9 +44,7 @@ class LayerArbiter {
   void _apply() {
     final wishes = _wishes.values;
     final all = wishes.any((w) => w.rects == null);
-    LayerControl.inputRegion(
-      all ? null : [for (final w in wishes) ...?w.rects],
-    );
-    LayerControl.keyboard(wishes.any((w) => w.keyboard) ? 'exclusive' : 'none');
+    layer.inputRegion(all ? null : [for (final w in wishes) ...?w.rects]);
+    layer.keyboard(wishes.any((w) => w.keyboard) ? 'exclusive' : 'none');
   }
 }

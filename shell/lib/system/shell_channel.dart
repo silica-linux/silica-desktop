@@ -56,7 +56,10 @@ class ShellChannel {
             };
           }
         case 'transientDismissed':
-          _transientDismissed.add(null);
+          // With several layers in one engine (#201) the embedder names the view.
+          final args = call.arguments;
+          final view = args is Map ? args['viewId'] : null;
+          _transientDismissed.add(view is int ? view : null);
         case 'windowMenuAppearance':
           // Right before `windowMenu`, for the same window.
           final args = call.arguments;
@@ -132,11 +135,18 @@ class ShellChannel {
   Stream<({String id, ui.Offset tip, ui.Brightness? brightness})>
   get windowMenus => _windowMenus.stream;
 
-  final StreamController<void> _transientDismissed =
+  /// The view whose transient ended, null when the embedder does not say.
+  final StreamController<int?> _transientDismissed =
       StreamController.broadcast();
 
   /// A press outside this component's open menu or panel ended it (#149).
-  Stream<void> get transientDismissed => _transientDismissed.stream;
+  Stream<void> get transientDismissed => transientDismissedFor(null);
+
+  /// The same for the layer of view `viewId` when the shell's layers share one engine
+  /// (#201): the others' dismissals are not its. Null: every dismissal (one layer per
+  /// process).
+  Stream<void> transientDismissedFor(int? viewId) => _transientDismissed.stream
+      .where((view) => viewId == null || view == null || view == viewId);
 
   /// The frontmost app's menus (silica-menu-v1, #25), on every change.
   final ValueNotifier<AppMenuState> appMenu = ValueNotifier(

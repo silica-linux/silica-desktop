@@ -167,6 +167,9 @@ class MenuBar extends StatefulWidget {
 }
 
 class _MenuBarState extends State<MenuBar> {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   Timer? _timer;
 
   /// The open menu (`logo`, `app` or the item name) and the item rectangles.
@@ -379,9 +382,9 @@ class _MenuBarState extends State<MenuBar> {
     // The surface grows to the screen, but takes the pointer only on the bar and the menus
     // (`_menuRegion`, from the menu's rectangles): the windows below keep their hover, and a
     // press outside arrives from Ossido as transientDismissed (#149).
-    LayerControl.size(0, anchor.dy + size.height + menuShadowRoom);
-    LayerControl.inputRegion([_barRect]);
-    LayerControl.keyboard('exclusive');
+    _layer.size(0, anchor.dy + size.height + menuShadowRoom);
+    _layer.inputRegion([_barRect]);
+    _layer.keyboard('exclusive');
     _coverScreen();
   }
 
@@ -402,7 +405,7 @@ class _MenuBarState extends State<MenuBar> {
       desktopMenu: _desktopMenuAt != null,
       frontmost: ShellChannel.instance.frontmostAppId,
     );
-    final supported = await LayerControl.transient(
+    final supported = await _layer.transient(
       rects: menus,
       policy: policy,
       owner: owner,
@@ -411,7 +414,7 @@ class _MenuBarState extends State<MenuBar> {
         (_open == null && _windowMenuTip == null && _desktopMenuAt == null)) {
       return;
     }
-    LayerControl.inputRegion(supported ? [_barRect, ...menus] : null);
+    _layer.inputRegion(supported ? [_barRect, ...menus] : null);
   }
 
   /// A press outside the open menu ended it (Ossido, #149).
@@ -427,7 +430,7 @@ class _MenuBarState extends State<MenuBar> {
   Future<void> _coverScreen() async {
     final screen = await LayerControl.outputSize();
     if (!mounted || _open == null || screen == null) return;
-    LayerControl.size(0, screen.height);
+    _layer.size(0, screen.height);
   }
 
   void _closeMenu() {
@@ -437,10 +440,10 @@ class _MenuBarState extends State<MenuBar> {
       _open = null;
       _openEntries = null;
     });
-    LayerControl.clearTransient();
-    LayerControl.keyboard('none');
-    LayerControl.inputRegion(null);
-    LayerControl.size(0, barHeight);
+    _layer.clearTransient();
+    _layer.keyboard('none');
+    _layer.inputRegion(null);
+    _layer.size(0, barHeight);
   }
 
   /// → and ←: the neighbouring menu (only those with items).
@@ -486,6 +489,7 @@ class _MenuBarState extends State<MenuBar> {
   @override
   void initState() {
     super.initState();
+    _layer = LayerControl.of(context);
     _config.addListener(_changed);
     ShellChannel.instance.toplevels.addListener(_changed);
     ShellChannel.instance.focused.addListener(_changed);
@@ -501,9 +505,7 @@ class _MenuBarState extends State<MenuBar> {
     _windowMenus = ShellChannel.instance.windowMenus.listen(
       (menu) => _openWindowMenu(menu.tip, menu.brightness),
     );
-    _dismissed = ShellChannel.instance.transientDismissed.listen(
-      (_) => _transientDismissed(),
-    );
+    _dismissed = _layer.transientDismissed.listen((_) => _transientDismissed());
   }
 
   StreamSubscription<void>? _dismissed;
@@ -527,9 +529,9 @@ class _MenuBarState extends State<MenuBar> {
       _windowMenuTip = tip;
       _windowMenuBrightness = brightness;
     });
-    LayerControl.size(0, screen?.height ?? tip.dy + 400);
-    LayerControl.inputRegion([_barRect]);
-    LayerControl.keyboard('exclusive');
+    _layer.size(0, screen?.height ?? tip.dy + 400);
+    _layer.inputRegion([_barRect]);
+    _layer.keyboard('exclusive');
   }
 
   /// The desktop context menu: the wallpaper announces `desktopmenu` = "x y", the file
@@ -577,9 +579,9 @@ class _MenuBarState extends State<MenuBar> {
       _desktopMenuAt = at;
       _desktopMenuEntries = _desktopEntries();
     });
-    LayerControl.size(0, screen?.height ?? at.dy + 400);
-    LayerControl.inputRegion([_barRect]);
-    LayerControl.keyboard('exclusive');
+    _layer.size(0, screen?.height ?? at.dy + 400);
+    _layer.inputRegion([_barRect]);
+    _layer.keyboard('exclusive');
   }
 
   void _closeDesktopMenu({bool announce = true}) {
@@ -592,10 +594,10 @@ class _MenuBarState extends State<MenuBar> {
       _desktopMenuState = '';
       ShellChannel.instance.broadcast('desktopmenu', '');
     }
-    LayerControl.clearTransient();
-    LayerControl.keyboard('none');
-    LayerControl.inputRegion(null);
-    LayerControl.size(0, barHeight);
+    _layer.clearTransient();
+    _layer.keyboard('none');
+    _layer.inputRegion(null);
+    _layer.size(0, barHeight);
   }
 
   List<MenuEntry> _desktopEntries() {
@@ -641,9 +643,9 @@ class _MenuBarState extends State<MenuBar> {
     final screen = await LayerControl.outputSize();
     if (!mounted) return;
     setState(() => _power = action);
-    LayerControl.size(0, screen?.height ?? 800);
-    LayerControl.inputRegion(null);
-    LayerControl.keyboard('exclusive');
+    _layer.size(0, screen?.height ?? 800);
+    _layer.inputRegion(null);
+    _layer.keyboard('exclusive');
   }
 
   Future<void> _runPower(PowerAction action) => runPower(
@@ -654,18 +656,18 @@ class _MenuBarState extends State<MenuBar> {
   void _closePower() {
     if (_power == null) return;
     setState(() => _power = null);
-    LayerControl.keyboard('none');
-    LayerControl.inputRegion(null);
-    LayerControl.size(0, barHeight);
+    _layer.keyboard('none');
+    _layer.inputRegion(null);
+    _layer.size(0, barHeight);
   }
 
   void _closeWindowMenu() {
     if (_windowMenuTip == null) return;
     setState(() => _windowMenuTip = null);
-    LayerControl.clearTransient();
-    LayerControl.keyboard('none');
-    LayerControl.inputRegion(null);
-    LayerControl.size(0, barHeight);
+    _layer.clearTransient();
+    _layer.keyboard('none');
+    _layer.inputRegion(null);
+    _layer.size(0, barHeight);
   }
 
   // The next minute, aligned with the clock.

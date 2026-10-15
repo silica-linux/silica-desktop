@@ -92,7 +92,7 @@ void main() {
 
     test('sends the owner, both rules and the version 6 fallback', () async {
       expect(
-        await LayerControl.transient(
+        await LayerControl.main.transient(
           rects: const [Rect.fromLTWH(1, 2, 3, 4)],
           owner: 'dev.example.Doc',
         ),
@@ -111,7 +111,7 @@ void main() {
     });
 
     test('panels fall back to letting everything through', () async {
-      await LayerControl.transient(policy: TransientPolicy.panel);
+      await LayerControl.main.transient(policy: TransientPolicy.panel);
       final args = calls.single.arguments as Map;
       expect(args['owner'], systemOwner);
       expect(args['press'], 'pass_through');
@@ -121,7 +121,7 @@ void main() {
     test(
       'the Dock menu falls back to a consumed press, the wheel passing',
       () async {
-        await LayerControl.transient(policy: TransientPolicy.dockMenu);
+        await LayerControl.main.transient(policy: TransientPolicy.dockMenu);
         final args = calls.single.arguments as Map;
         expect(args['ownerRule'], 'activate');
         expect(args['press'], 'consume');

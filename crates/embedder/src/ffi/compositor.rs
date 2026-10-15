@@ -10,12 +10,16 @@
 //! - OpenGL ES (Skia or Impeller): a framebuffer with a texture and a depth-stencil
 //!   renderbuffer per backing store; `present_view` blits it on the view's EGL surface and
 //!   swaps ([`super::GlSurface::present_view`]).
+//! - Vulkan (#203): the backing store is the next image of the view's own swapchain;
+//!   `present_view` presents it, with no copy ([`super::VulkanSurface::acquire_target`]).
+//!   The engine asks for a new backing store every frame (`avoid_backing_store_cache`): the
+//!   image it drew last is the compositor's until the swapchain gives it back. Impeller has
+//!   Vulkan backing stores only in an engine with the patch of `crates/embedder/engine-patches`;
+//!   otherwise the engine draws them with Skia (`window.rs`, `multi_view_renderer`).
 //!
-//! Impeller on Vulkan has no backing stores at the pinned engine (`CreateEmbedderRenderTarget`
-//! answers "Unimplemented"): a multi-window app draws with OpenGL ES there.
-//!
-//! The root surface is still acquired and submitted by the rasterizer for every view; its
-//! present callbacks do nothing in this mode (`present`, `gl_present` in `mod.rs`).
+//! With OpenGL ES the root surface is still acquired and submitted by the rasterizer for every
+//! view; its present callbacks do nothing in this mode (`present`, `gl_present` in `mod.rs`).
+//! With Vulkan the engine does not draw the root surface at all when there is a compositor.
 
 use std::ffi::c_void;
 
@@ -23,10 +27,23 @@ use super::bindings::{
     FlutterBackingStore, FlutterBackingStoreConfig, FlutterBackingStoreType,
     FlutterLayerContentType, FlutterOpenGLBackingStore, FlutterOpenGLBackingStore__bindgen_ty_1,
     FlutterOpenGLFramebuffer, FlutterOpenGLTargetType, FlutterPresentViewInfo,
-    FlutterSoftwareBackingStore,
+    FlutterSoftwareBackingStore, FlutterVulkanBackingStore, FlutterVulkanImage,
 };
 use super::gl::{GL_RGBA8, GlTarget};
+use super::vulkan::VulkanTarget;
 use super::{Frame, callbacks};
+
+/// A Vulkan backing store: the view's swapchain image and its description for the engine,
+/// which points into this allocation (the `user_data` of the `FlutterBackingStore`, freed in
+/// `collect_backing_store`).
+struct VulkanStore {
+    target: VulkanTarget,
+    image: FlutterVulkanImage,
+}
+
+/// The image stays the swapchain's: nothing to free when the engine lets it go (Skia calls
+/// this when its surface goes; the store itself is freed in `collect_backing_store`).
+unsafe extern "C" fn keep_vulkan_image(_user_data: *mut c_void) {}
 
 /// A backing store's side in physical pixels: at least 1, at most 16384.
 fn side(value: f64) -> Option<u32> {
@@ -75,6 +92,29 @@ pub(super) unsafe extern "C" fn create_backing_store(
     let out = unsafe { &mut *out };
     out.user_data = std::ptr::null_mut();
     out.did_update = true;
+    if let Some(vulkan) = &callbacks.vulkan {
+        let Some(target) = vulkan.acquire_target(config.view_id, (width, height)) else {
+            return false;
+        };
+        let image = FlutterVulkanImage {
+            struct_size: size_of::<FlutterVulkanImage>(),
+            image: target.image,
+            format: target.format,
+        };
+        let store = Box::into_raw(Box::new(VulkanStore { target, image }));
+        out.type_ = FlutterBackingStoreType::kFlutterBackingStoreTypeVulkan;
+        out.user_data = store.cast::<c_void>();
+        out.__bindgen_anon_1.vulkan = FlutterVulkanBackingStore {
+            struct_size: size_of::<FlutterVulkanBackingStore>(),
+            // SAFETY: store was just leaked from a valid Box and stays where it is until
+            // collect_backing_store takes it back; the engine reads the image while it creates
+            // its render target.
+            image: unsafe { &raw const (*store).image },
+            user_data: std::ptr::null_mut(),
+            destruction_callback: Some(keep_vulkan_image),
+        };
+        return true;
+    }
     if let Some(gl) = &callbacks.gl {
         let Some(target) = gl.create_target(width, height) else {
             return false;
@@ -117,11 +157,30 @@ pub(super) unsafe extern "C" fn create_backing_store(
     true
 }
 
-/// The resources go with the destruction callbacks of the stores themselves.
+/// The software and OpenGL resources go with the destruction callbacks of the stores
+/// themselves; a Vulkan store gives its image back to the view's swapchain here.
 pub(super) unsafe extern "C" fn collect_backing_store(
-    _store: *const FlutterBackingStore,
-    _user_data: *mut c_void,
+    store: *const FlutterBackingStore,
+    user_data: *mut c_void,
 ) -> bool {
+    if store.is_null() {
+        return true;
+    }
+    // SAFETY: the engine passes one of the stores create_backing_store filled, valid for the
+    // call.
+    let store = unsafe { &*store };
+    if store.type_ != FlutterBackingStoreType::kFlutterBackingStoreTypeVulkan
+        || store.user_data.is_null()
+    {
+        return true;
+    }
+    // SAFETY: a Vulkan store's user_data is the VulkanStore leaked in create_backing_store; the
+    // engine collects every store once.
+    let vulkan_store = unsafe { Box::from_raw(store.user_data.cast::<VulkanStore>()) };
+    // SAFETY: user_data is the compositor's, the Callbacks given to FlutterEngineRun.
+    if let Some(vulkan) = &unsafe { callbacks(user_data) }.vulkan {
+        vulkan.release_target(&vulkan_store.target);
+    }
     true
 }
 
@@ -149,11 +208,31 @@ pub(super) unsafe extern "C" fn present_view(info: *const FlutterPresentViewInfo
         // SAFETY: the content type says the union holds a backing store pointer.
         .map(|layer| (unsafe { layer.__bindgen_anon_1.backing_store }, layer.size));
     let Some((store, size)) = store.filter(|(store, _)| !store.is_null()) else {
+        // An empty scene (a closed panel): the engine drew nothing, the view is cleared so its
+        // last frame does not stay on screen.
+        callbacks.frames.before_present(info.view_id);
+        if let Some(vulkan) = &callbacks.vulkan {
+            return vulkan.present_clear(info.view_id);
+        }
+        if let Some(gl) = &callbacks.gl {
+            return gl.clear_view(info.view_id);
+        }
         return true;
     };
     // SAFETY: a non-null backing store of a layer is valid during the call; it is one of
     // ours (create_backing_store), filled with the type it says.
     let store = unsafe { &*store };
+    if store.type_ == FlutterBackingStoreType::kFlutterBackingStoreTypeVulkan {
+        let (Some(vulkan), false) = (&callbacks.vulkan, store.user_data.is_null()) else {
+            return false;
+        };
+        // SAFETY: a Vulkan store's user_data is our VulkanStore, alive until it is collected
+        // (after this call).
+        let vulkan_store = unsafe { &*store.user_data.cast::<VulkanStore>() };
+        // The present commits the view's surface: what goes with this frame is sent before it.
+        callbacks.frames.before_present(info.view_id);
+        return vulkan.present_target(&vulkan_store.target);
+    }
     if store.type_ == FlutterBackingStoreType::kFlutterBackingStoreTypeOpenGL {
         let Some(gl) = &callbacks.gl else {
             return false;
