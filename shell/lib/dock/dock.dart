@@ -737,9 +737,12 @@ class _LiveDockState extends State<LiveDock> {
 const Color separatorColor = Color(0xFF484950);
 const Color indicatorColor = Color(0xFF03040B);
 
-/// Icon menu (D-04): it appears after ~575 ms of pressing (550–600 measured), it drags
-/// beyond 5 pt; the tip touches ~11 pt above the bottom of the Dock.
-const Duration longPressMenu = Duration(milliseconds: 575);
+/// Icon menu (D-04): the label hides at ~530 ms of pressing, the menu opens at 583–613 ms
+/// (598 ms here), and the press becomes a drag beyond 5 pt; the tip touches ~11 pt above
+/// the bottom of the Dock. A click and a short press leave the label as it is; a right click
+/// hides it at once. Once hidden for a menu it stays hidden until the pointer leaves the icon.
+const Duration longPressLabelHide = Duration(milliseconds: 530);
+const Duration longPressMenu = Duration(milliseconds: 598);
 const double dragThreshold = 5;
 const double menuTipAboveDock = 11;
 
@@ -1023,6 +1026,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   bool _menuByLongPress = false;
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _longPress;
+
+  /// Hides the label shortly before a long press opens the menu.
+  Timer? _labelOff;
+
+  /// The icon whose label was hidden for its menu: it stays hidden until the pointer leaves it.
+  int? _labelHeldOff;
   Offset? _downAt;
   int? _downIndex;
 
@@ -1436,6 +1445,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _labelAnim.dispose();
     _labelTimer?.cancel();
     _longPress?.cancel();
+    _labelOff?.cancel();
     _ghostTicker.dispose();
     _slotTicker.dispose();
     _stackAnim.dispose();
@@ -1499,6 +1509,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
     final (x, y, side) = iconRect(l, index, size.height);
     _longPress?.cancel();
+    _labelOff?.cancel();
     _longPress = null;
     _showLabel(null);
     setState(() {
@@ -1557,6 +1568,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     });
   }
 
+  /// Hides the label of `index` for its menu, until the pointer leaves the icon.
+  void _hideLabelForMenu(int index) {
+    _labelTimer?.cancel();
+    _labelTimer = null;
+    _labelHeldOff = index;
+    _labelAnim.value = 0;
+    if (mounted) setState(() => _labelIndex = null);
+  }
+
   /// Opens the menu of an item (D-04): the icon stays pressed, the label disappears.
   void _openMenu(int index, {required bool longPress}) {
     final entries = widget.menuFor?.call(_items[index]) ?? const [];
@@ -1567,7 +1587,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _menuByLongPress = longPress;
       _pressed = index;
     });
-    _showLabel(null);
+    _hideLabelForMenu(index);
   }
 
   /// With the menu open the Dock has the keyboard: Option swaps the alternate items (D-04:
@@ -1642,6 +1662,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     _downAt = p;
     _downIndex = index;
     _longPress?.cancel();
+    _labelOff?.cancel();
+    final menu = widget.menuFor?.call(_items[index]) ?? const [];
+    if (menu.isNotEmpty) {
+      _labelOff = Timer(longPressLabelHide, () => _hideLabelForMenu(index));
+    }
     _longPress = Timer(longPressMenu, () {
       _longPress = null;
       _openMenu(index, longPress: true);
@@ -1659,6 +1684,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       // Beyond 5 pt the press becomes a drag.
       _startDrag(p, size);
       _longPress?.cancel();
+      _labelOff?.cancel();
       _longPress = null;
     }
     if (_menuIndex != null) _menuKey.currentState?.pointerMoved(p);
@@ -1673,6 +1699,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (_longPress != null) {
       // A click: the item under the pointer, if it is the same as at the press.
       _longPress?.cancel();
+      _labelOff?.cancel();
       _longPress = null;
       final index = itemAt(l, _items, p.dx);
       setState(() => _pressed = null);
@@ -1929,6 +1956,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// The label follows the cell under the pointer: immediately from one icon to the next.
   void _showLabel(int? index) {
+    if (index != _labelHeldOff) _labelHeldOff = null;
+    if (index != null && index == _labelHeldOff) return;
     if (index != null) {
       _labelTimer?.cancel();
       _labelTimer = null;
@@ -2182,6 +2211,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           onPointerCancel: (_) {
             if (_drag != null) setState(() => _drag = null);
             _longPress?.cancel();
+            _labelOff?.cancel();
             _longPress = null;
             if (_menuIndex == null) setState(() => _pressed = null);
           },

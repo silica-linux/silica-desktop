@@ -95,18 +95,123 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Apri Terminal'), findsNothing);
-    // Long press on the second icon: the menu appears after ~575 ms.
+    // Long press on the second icon: the menu appears after ~598 ms.
     final second = Offset(rest.center(1), icon.dy);
     final gesture = await tester.startGesture(second);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Apri Note'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 110));
     expect(find.text('Apri Note'), findsOneWidget);
     // Dragging onto the entry and releasing chooses it.
     await gesture.moveTo(tester.getCenter(find.text('Apri Note')));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 150));
     expect(log, ['attiva Terminal', 'menu Note']);
+  });
+
+  group('the label and the menu of an icon', () {
+    late TestGesture mouse;
+    late Offset icon;
+    late Offset other;
+    late List<String> log;
+
+    Future<void> open(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      log = [];
+      const items = [
+        Item.app('Terminal', command: 'term'),
+        Item.app('Note', command: 'note'),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(
+            items: items,
+            onActivate: (item) => log.add('activate ${item.label}'),
+            menuFor: (item) => [MenuAction('Open ${item.label}')],
+          ),
+        ),
+      );
+      final rest = layout(items, width: 1280, height: 300);
+      icon = Offset(rest.center(0), 300 - bottomGap - backgroundHeight / 2);
+      other = Offset(rest.center(1), icon.dy);
+      mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(0, 0));
+      await mouse.moveTo(icon);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Terminal'), findsOneWidget);
+    }
+
+    testWidgets('a click and a short press leave the label', (tester) async {
+      await open(tester);
+      final press = await tester.startGesture(
+        icon,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Terminal'), findsOneWidget);
+      await press.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Terminal'), findsOneWidget);
+      expect(log, ['activate Terminal']);
+      await mouse.removePointer();
+    });
+
+    testWidgets(
+      'a long press hides the label at ~530 ms and opens the menu at ~598 ms',
+      (tester) async {
+        await open(tester);
+        final press = await tester.startGesture(
+          icon,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(find.text('Terminal'), findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 40));
+        // 540 ms: the label is gone, the menu not yet there.
+        expect(find.text('Terminal'), findsNothing);
+        expect(find.text('Open Terminal'), findsNothing);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(find.text('Open Terminal'), findsNothing);
+        await tester.pump(const Duration(milliseconds: 30));
+        // 610 ms: the menu opens within 583-613 ms.
+        expect(find.text('Open Terminal'), findsOneWidget);
+        await press.up();
+        await tester.pump();
+        await mouse.removePointer();
+      },
+    );
+
+    testWidgets(
+      'a right click hides the label at once and it stays hidden until the '
+      'pointer leaves the icon',
+      (tester) async {
+        await open(tester);
+        await tester.tapAt(icon, buttons: kSecondaryButton);
+        await tester.pump();
+        expect(find.text('Terminal'), findsNothing);
+        expect(find.text('Open Terminal'), findsOneWidget);
+        // Closed with the pointer still on the icon: the label does not come back.
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Open Terminal'), findsNothing);
+        await mouse.moveTo(icon + const Offset(1, 0));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Terminal'), findsNothing);
+        // Over another icon, and back: the label returns.
+        await mouse.moveTo(other);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Note'), findsOneWidget);
+        await mouse.moveTo(icon);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Terminal'), findsOneWidget);
+        await mouse.removePointer();
+      },
+    );
   });
 
   testWidgets('the open submenu is part of the input region', (tester) async {
