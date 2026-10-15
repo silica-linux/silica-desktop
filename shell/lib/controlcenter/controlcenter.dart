@@ -31,6 +31,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../l10n/l10n.dart';
 import '../menubar/menubar.dart' show barHeight;
+import '../system/glass_profile.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/shadow_image.dart';
@@ -481,10 +482,10 @@ class _ControlCenterState extends State<ControlCenter>
                   ),
                 ],
               ),
-              child: LiquidGlass(
+              child: ProfiledGlass(
+                profile: ShellGlassProfile.panel,
                 radius: detailRadius,
                 material: GlassMaterial.regular,
-                interactive: false,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(detailRadius),
                   child: content.build(),
@@ -741,10 +742,10 @@ class _ControlCenterState extends State<ControlCenter>
                               rect: _glassRect(value.rect).shift(detailPad),
                               child: Opacity(
                                 opacity: othersAlpha,
-                                child: LiquidGlass(
+                                child: ProfiledGlass(
+                                  profile: ShellGlassProfile.module,
                                   radius: value.radius,
                                   material: GlassMaterial.regular,
-                                  interactive: false,
                                   child: const SizedBox.expand(),
                                 ),
                               ),
@@ -752,10 +753,10 @@ class _ControlCenterState extends State<ControlCenter>
                         if (detail case (final rect, final radius, _))
                           Positioned.fromRect(
                             rect: rect.shift(detailPad),
-                            child: LiquidGlass(
+                            child: ProfiledGlass(
+                              profile: ShellGlassProfile.module,
                               radius: radius,
                               material: GlassMaterial.regular,
-                              interactive: false,
                               child: const SizedBox.expand(),
                             ),
                           ),
@@ -2203,10 +2204,10 @@ class _PrivacyPill extends StatelessWidget {
       label: text,
       child: GestureDetector(
         onTap: onTap,
-        child: LiquidGlass(
+        child: ProfiledGlass(
+          profile: ShellGlassProfile.control,
           radius: pillHeight / 2,
           material: GlassMaterial.regular,
-          interactive: false,
           child: Padding(
             padding: const EdgeInsets.only(left: 11, right: 14),
             child: Row(
@@ -2269,10 +2270,10 @@ class _EditButton extends StatelessWidget {
     child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: LiquidGlass(
+      child: ProfiledGlass(
+        profile: ShellGlassProfile.control,
         radius: editButton.height / 2,
         material: GlassMaterial.regular,
-        interactive: false,
         child: Center(
           child: Text(
             label,

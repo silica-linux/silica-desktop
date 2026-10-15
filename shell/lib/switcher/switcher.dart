@@ -20,6 +20,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/desktop_entries.dart';
+import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
@@ -255,10 +256,10 @@ class SwitcherPanel extends StatelessWidget {
               top: top,
               width: width,
               height: height,
-              child: LiquidGlass(
+              child: ProfiledGlass(
+                profile: ShellGlassProfile.dock,
                 radius: panelRadius * k,
                 material: GlassMaterial.clear,
-                interactive: false,
                 child: const SizedBox.expand(),
               ),
             ),

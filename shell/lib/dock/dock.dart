@@ -29,6 +29,7 @@ import '../l10n/l10n.dart';
 import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/folder_style.dart';
+import '../system/glass_profile.dart';
 import '../system/layer_control.dart';
 import '../system/shadow_image.dart';
 import '../system/app_registry.dart';
@@ -2170,10 +2171,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     top: by,
                     width: bw,
                     height: bh,
-                    child: const LiquidGlass(
+                    child: const ProfiledGlass(
+                      profile: ShellGlassProfile.dock,
                       radius: backgroundRadius,
                       material: GlassMaterial.clear,
-                      interactive: false,
                       child: SizedBox.expand(),
                     ),
                   ),
@@ -2680,10 +2681,10 @@ class DockLabel extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: SizedBox(
             height: labelHeight,
-            child: LiquidGlass(
+            child: ProfiledGlass(
+              profile: ShellGlassProfile.tooltip,
               radius: labelHeight / 2,
               material: material,
-              interactive: false,
               tip: GlassTip(
                 x: box.maxWidth / 2,
                 width: labelTipWidth,

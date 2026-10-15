@@ -16,6 +16,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../menubar/menubar.dart' show barHeight;
 import '../l10n/l10n.dart';
+import '../system/glass_profile.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
 
@@ -216,7 +217,8 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       right: -1,
                       top: 0,
                       bottom: 0,
-                      child: Glass(
+                      child: ProfiledGlass(
+                        profile: ShellGlassProfile.module,
                         radius: hudRadius,
                         material: GlassMaterial.regular,
                       ),

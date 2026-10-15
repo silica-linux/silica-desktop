@@ -22,6 +22,7 @@ import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
 import '../system/folder_icons.dart';
 import '../system/folder_style.dart';
+import '../system/glass_profile.dart';
 import 'stack_settings.dart';
 
 const int fanMax = 15;
@@ -428,10 +429,10 @@ class GridStack extends StatelessWidget {
               radius: gridRadius,
               blurRadius: 30,
               offset: const Offset(0, 8),
-              child: LiquidGlass(
+              child: ProfiledGlass(
+                profile: ShellGlassProfile.panel,
                 radius: gridRadius,
                 material: GlassMaterial.thick,
-                interactive: false,
                 tip: GlassTip(
                   x: tipX,
                   width: gridTipBase - 14,

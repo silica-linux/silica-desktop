@@ -26,6 +26,7 @@ import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
 import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
+import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
 import '../system/silica_icons.dart';
@@ -389,10 +390,10 @@ class AuthDialogState extends State<AuthDialog>
             blurRadius: 40,
             offset: const Offset(0, 10),
             color: const Color(0x4D000000),
-            child: LiquidGlass(
+            child: ProfiledGlass(
+              profile: ShellGlassProfile.sheet,
               radius: trashAlertRadius,
               material: GlassMaterial.thick,
-              interactive: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(15, 19, 15, 15),
                 child: Column(

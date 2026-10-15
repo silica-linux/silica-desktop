@@ -41,7 +41,9 @@ void main() {
         ),
       );
       final glasses = tester
-          .renderObjectList<RenderGlass>(find.byType(Glass))
+          .renderObjectList<RenderGlass>(
+            find.byWidgetPredicate((w) => w is Glass),
+          )
           .toList();
       expect(glasses, hasLength(2));
       final label = glasses[0];
@@ -54,6 +56,9 @@ void main() {
       expect(label.regions(), hasLength(2));
       expect(label.regions().last['material'], menu.regions().last['material']);
       expect(label.regions().first['radius'], labelHeight / 2);
+      // A label's glass profile (#168); the menu takes the material's default.
+      expect(label.regions().map((r) => r['profile']), everyElement('tooltip'));
+      expect(menu.regions().first.containsKey('profile'), isFalse);
 
       // No background of its own: neither the gradient nor the border painter (the shadow is an
       // image, see CachedShadow).

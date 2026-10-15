@@ -6,6 +6,7 @@ import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/main.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/system/layer_control.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
@@ -526,7 +527,7 @@ void main() {
           child: Dock(items: placeholderItems, revealAtStart: true),
         ),
       );
-      final glass = find.byType(LiquidGlass);
+      final glass = find.byType(ProfiledGlass);
       const restTop = 200 - bottomGap - backgroundHeight;
       // The first frame: nothing of the Dock on screen, not even its glass.
       expect(tester.getTopLeft(glass).dy, greaterThanOrEqualTo(200));

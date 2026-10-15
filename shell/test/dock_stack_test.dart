@@ -7,6 +7,7 @@ import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 void main() {
@@ -129,7 +130,7 @@ void main() {
     expect(find.text('documento-1.txt'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);
     // 7 columns: 7 × 128 + 34 = 930 pt.
-    final panel = tester.getRect(find.byType(LiquidGlass).last);
+    final panel = tester.getRect(find.byType(ProfiledGlass).last);
     expect(panel.width, closeTo(930, 1));
   });
 

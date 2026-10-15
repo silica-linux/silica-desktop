@@ -12,6 +12,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
+import '../system/glass_profile.dart';
 import '../system/sounds.dart';
 
 const Size trashAlertSize = Size(292, 268);
@@ -167,10 +168,10 @@ class TrashAlert extends StatelessWidget {
         blurRadius: 40,
         offset: const Offset(0, 10),
         color: const Color(0x4D000000),
-        child: LiquidGlass(
+        child: ProfiledGlass(
+          profile: ShellGlassProfile.sheet,
           radius: trashAlertRadius,
           material: GlassMaterial.thick,
-          interactive: false,
           child: Stack(
             children: [
               Positioned(

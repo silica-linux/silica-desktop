@@ -9,9 +9,9 @@ import 'package:silica_shell/controlcenter/detail.dart' show detailWidth;
 import 'package:silica_shell/controlcenter/edit.dart';
 import 'package:silica_shell/controlcenter/modules.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
-import 'package:silica_ui/silica_ui.dart' show LiquidGlass;
 
 class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   FakeSystem(super.value);
@@ -708,7 +708,7 @@ void main() {
             .getRect(
               find.ancestor(
                 of: find.text('Firefox recently'),
-                matching: find.byType(LiquidGlass),
+                matching: find.byType(ProfiledGlass),
               ),
             )
             .top,

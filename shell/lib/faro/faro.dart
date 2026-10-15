@@ -22,6 +22,7 @@ import '../dock/stack.dart' show fileIcon;
 import '../l10n/l10n.dart';
 import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
+import '../system/glass_profile.dart';
 import '../system/open_app.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
@@ -967,10 +968,10 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
       blurRadius: 42,
       offset: const Offset(0, 20),
       color: _c.shadow(const Color(0x40000000)),
-      child: LiquidGlass(
+      child: ProfiledGlass(
+        profile: ShellGlassProfile.panel,
         radius: panelRadius,
         material: GlassMaterial.thick,
-        interactive: false,
         child: ClipRect(
           child: OverflowBox(
             alignment: Alignment.topLeft,
@@ -1652,6 +1653,9 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         label: name,
         child: GestureDetector(
           onTap: onTap,
+          // Interactive (it swells under the finger): a LiquidGlass, which takes a profile only
+          // from silica_ui 0.29 (`profile: GlassProfile.control`, #168). Until then the thick
+          // material's default, the menu's.
           child: LiquidGlass(
             radius: circle / 2,
             material: GlassMaterial.thick,
@@ -1702,10 +1706,10 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
                     blurRadius: 36,
                     color: _c.shadow(const Color(0x5C000000)),
                     offset: const Offset(0, 17),
-                    child: LiquidGlass(
+                    child: ProfiledGlass(
+                      profile: ShellGlassProfile.panel,
                       radius: launcherRadius,
                       material: GlassMaterial.thick,
-                      interactive: false,
                       child: Launcher(
                         entries: widget.entries,
                         recents: _recentIds,

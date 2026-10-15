@@ -7,7 +7,7 @@ import 'package:silica_shell/dock/apps.dart';
 import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/options.dart';
-import 'package:silica_ui/silica_ui.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 
 void main() {
   test('dock.json options: defaults, then the values Settings writes', () {
@@ -46,7 +46,7 @@ void main() {
           child: Dock(items: items, autohide: true),
         ),
       );
-      double glassTop() => tester.getRect(find.byType(LiquidGlass)).top;
+      double glassTop() => tester.getRect(find.byType(ProfiledGlass)).top;
       final shownTop = 300 - bottomGap - backgroundHeight;
       // Hidden below the screen.
       expect(glassTop(), greaterThanOrEqualTo(300));

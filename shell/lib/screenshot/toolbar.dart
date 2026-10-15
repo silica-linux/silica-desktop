@@ -12,6 +12,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../system/glass_profile.dart';
+
 import 'settings.dart';
 
 const Size toolbarSize = Size(545, 52);
@@ -167,10 +169,10 @@ class ShotToolbar extends StatelessWidget {
     );
     return SizedBox.fromSize(
       size: toolbarSize,
-      child: LiquidGlass(
+      child: ProfiledGlass(
+        profile: ShellGlassProfile.control,
         radius: 18,
         material: GlassMaterial.regular,
-        interactive: false,
         child: Container(
           key: const ValueKey('screenshot bar'),
           decoration: BoxDecoration(

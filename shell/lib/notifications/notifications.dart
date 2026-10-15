@@ -22,6 +22,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../menubar/menubar.dart' show barHeight;
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
+import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
 import '../system/shadow_image.dart';
@@ -984,7 +985,8 @@ class NotificationCard extends StatelessWidget {
           top: -1,
           right: -1,
           bottom: -1,
-          child: Glass(
+          child: ProfiledGlass(
+            profile: ShellGlassProfile.banner,
             radius: cardRadius + 1,
             material: GlassMaterial.notification,
           ),
