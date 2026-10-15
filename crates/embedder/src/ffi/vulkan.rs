@@ -982,6 +982,141 @@ impl VulkanSurface {
         self.note_presented(&presented);
     }
 
+    /// Presents a fully transparent frame on view `view_id`, at the size it last had. With a
+    /// compositor the engine draws no layer for an empty scene (a closed panel, a layer
+    /// with nothing left to show): without this the view's last frame would stay on screen.
+    pub(super) fn present_clear(&self, view_id: i64) -> bool {
+        let Ok(mut chains) = self.chains.lock() else {
+            return false;
+        };
+        let Some(chain) = chains.get_mut(&view_id) else {
+            return true;
+        };
+        let extent = chain.swap.extent;
+        if extent.width == 0 || extent.height == 0 {
+            // Nothing shown yet: nothing to clear.
+            return true;
+        }
+        if chain.outstanding {
+            return false;
+        }
+        let Some((image, _)) = self.acquire(chain, (extent.width, extent.height)) else {
+            return false;
+        };
+        let Some(index) = chain.swap.current.take() else {
+            return false;
+        };
+        let image = vk::Image::from_raw(image);
+        let range = vk::ImageSubresourceRange::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .level_count(1)
+            .layer_count(1);
+        let barrier = |old, new, src, dst| {
+            vk::ImageMemoryBarrier::default()
+                .src_access_mask(src)
+                .dst_access_mask(dst)
+                .old_layout(old)
+                .new_layout(new)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(image)
+                .subresource_range(range)
+        };
+        let alloc = vk::CommandBufferAllocateInfo::default()
+            .command_pool(self.pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+        // SAFETY: valid pool and device; the command buffer and the fence are used once here
+        // and freed after the fence says the GPU is done with them. The image is the one just
+        // acquired; the clear needs TRANSFER_DST, which the swapchain asks for when supported.
+        unsafe {
+            let Some(cmd) = self
+                .device
+                .allocate_command_buffers(&alloc)
+                .ok()
+                .and_then(|buffers| buffers.first().copied())
+            else {
+                return false;
+            };
+            let Ok(fence) = self
+                .device
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+            else {
+                self.device.free_command_buffers(self.pool, &[cmd]);
+                return false;
+            };
+            let recorded = self
+                .device
+                .begin_command_buffer(
+                    cmd,
+                    &vk::CommandBufferBeginInfo::default()
+                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                )
+                .and_then(|()| {
+                    self.device.cmd_pipeline_barrier(
+                        cmd,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::DependencyFlags::empty(),
+                        &[],
+                        &[],
+                        &[barrier(
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::AccessFlags::empty(),
+                            vk::AccessFlags::TRANSFER_WRITE,
+                        )],
+                    );
+                    self.device.cmd_clear_color_image(
+                        cmd,
+                        image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 0.0],
+                        },
+                        &[range],
+                    );
+                    self.device.cmd_pipeline_barrier(
+                        cmd,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                        vk::DependencyFlags::empty(),
+                        &[],
+                        &[],
+                        &[barrier(
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::ImageLayout::PRESENT_SRC_KHR,
+                            vk::AccessFlags::TRANSFER_WRITE,
+                            vk::AccessFlags::MEMORY_READ,
+                        )],
+                    );
+                    self.device.end_command_buffer(cmd)
+                });
+            let commands = [cmd];
+            let signal = [self.transitioned];
+            let submit = vk::SubmitInfo::default()
+                .command_buffers(&commands)
+                .signal_semaphores(&signal);
+            let swapchains = [chain.swap.swapchain];
+            let indices = [index];
+            let present = vk::PresentInfoKHR::default()
+                .wait_semaphores(&signal)
+                .swapchains(&swapchains)
+                .image_indices(&indices);
+            let presented = recorded.is_ok() && {
+                let _queue = queue_lock();
+                self.device
+                    .queue_submit(self.queue, &[submit], fence)
+                    .and_then(|()| self.swapchain_fn.queue_present(self.queue, &present))
+                    .is_ok()
+            };
+            let _ = self.device.wait_for_fences(&[fence], true, 1_000_000_000);
+            self.device.destroy_fence(fence, None);
+            self.device.free_command_buffers(self.pool, &[cmd]);
+            presented
+        }
+    }
+
     /// The engine gave `target` back: the view may have its next backing store.
     pub(super) fn release_target(&self, target: &VulkanTarget) {
         if let Ok(mut chains) = self.chains.lock()

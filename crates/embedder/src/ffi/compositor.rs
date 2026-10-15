@@ -208,6 +208,15 @@ pub(super) unsafe extern "C" fn present_view(info: *const FlutterPresentViewInfo
         // SAFETY: the content type says the union holds a backing store pointer.
         .map(|layer| (unsafe { layer.__bindgen_anon_1.backing_store }, layer.size));
     let Some((store, size)) = store.filter(|(store, _)| !store.is_null()) else {
+        // An empty scene (a closed panel): the engine drew nothing, the view is cleared so its
+        // last frame does not stay on screen.
+        callbacks.frames.before_present(info.view_id);
+        if let Some(vulkan) = &callbacks.vulkan {
+            return vulkan.present_clear(info.view_id);
+        }
+        if let Some(gl) = &callbacks.gl {
+            return gl.clear_view(info.view_id);
+        }
         return true;
     };
     // SAFETY: a non-null backing store of a layer is valid during the call; it is one of
