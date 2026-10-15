@@ -942,6 +942,23 @@ pub fn output_elements(
                 context.dark,
             ));
         }
+        // The close buttons, in front of the thumbnails.
+        let close_sprite = output
+            .user_data()
+            .get_or_insert(crate::panorama::CloseSprite::default);
+        if let Some(buttons) = crate::panorama::close_buttons_element(
+            renderer,
+            close_sprite,
+            &panorama.close_buttons,
+            output_logical.w,
+            scale,
+        ) {
+            elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
+                buttons,
+                Point::default(),
+                1.0,
+            )));
+        }
         for thumbnail in &panorama.thumbnails {
             let s = thumbnail.rect.size.w / output_logical.w.max(1.0);
             for (window, location) in thumbnail.windows.iter().rev() {

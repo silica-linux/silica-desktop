@@ -89,6 +89,19 @@ const RING_GAP: f64 = 1.0;
 const RING_COLOR: [u8; 4] = [0x3b, 0x99, 0xfd, 0xff];
 /// Labels below the thumbnails: size ~12 pt, baseline 18 pt below the thumbnail.
 const THUMB_LABEL_SIZE: f32 = 12.0;
+/// Close button of a space (spaces.md › close button; missioncontrol.md › PA-14): white disc
+/// ~22 pt centered on the thumbnail's top-left corner, gray `#878787` cross of two 2 pt
+/// strokes ~8–9 pt across, soft shadow ~4 pt a little below; `#e3e3e3` while pressed.
+/// It appears after ~1.03 s on the thumbnail, at once on a neighbor while one is showing,
+/// on all of them with ⌥.
+const CLOSE_RADIUS: f64 = 11.0;
+const CLOSE_CROSS: f64 = 4.25;
+const CLOSE_FILL: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+const CLOSE_PRESSED: [u8; 4] = [0xe3, 0xe3, 0xe3, 0xff];
+const CLOSE_CROSS_COLOR: [u8; 4] = [0x87, 0x87, 0x87, 0xff];
+const CLOSE_DELAY_MS: f64 = 1030.0;
+/// Crossing the gap to a neighbor keeps the button showing for this long (not measured).
+const CLOSE_REARM_MS: f64 = 300.0;
 const THUMB_LABEL_BASELINE: f64 = 18.0;
 /// The "+" comes down with the bar: center at y 20 compact, 101.5 expanded.
 const PLUS_Y: f64 = 20.0;
@@ -540,8 +553,32 @@ pub struct Panorama {
     pub returning: Option<Returning>,
     /// The space thumbnails, laid out when the bar expands.
     pub row: Option<crate::thumbnail_row::Row>,
+    /// The thumbnail under the pointer, for its close button.
+    pub hover: Option<Hover>,
+    /// A close button just left with its button showing: a neighbor shows its own at once.
+    pub rearm_until: Option<Instant>,
+    /// The close button pressed (the space goes on release over it).
+    pub close_press: Option<usize>,
+    /// The "+" pressed (the space is added on release over it).
+    pub plus_press: bool,
     /// The time of the last frame.
     pub clock: Instant,
+}
+
+/// The thumbnail under the pointer and since when.
+#[derive(Clone, Copy, Debug)]
+pub struct Hover {
+    pub index: usize,
+    pub since: Instant,
+    /// Shown at once (coming from a neighbor that showed its button).
+    pub at_once: bool,
+}
+
+/// A space close button in the frame: its center and whether it is pressed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CloseButton {
+    pub center: Point<f64, Logical>,
+    pub pressed: bool,
 }
 
 /// A space thumbnail in the frame: where it is and the windows of the space (from bottom to
@@ -565,6 +602,8 @@ pub struct PanoramaView {
     pub thumbnail_rects: Vec<Rectangle<f64, Logical>>,
     /// Whether the "+" shows (not at the maximum of spaces).
     pub plus: bool,
+    /// The close buttons showing.
+    pub close_buttons: Vec<CloseButton>,
     /// The dragged window and its frame at this moment.
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
     /// The label of each space.
@@ -839,6 +878,10 @@ impl State {
             drag: None,
             returning: None,
             row: None,
+            hover: None,
+            rearm_until: None,
+            close_press: None,
+            plus_press: false,
             clock: now,
         });
         if self.animation_speed <= 0.0 {
@@ -1028,7 +1071,91 @@ impl State {
             drag,
             labels: self.space_labels(),
             plus: self.workspaces.count() < crate::workspaces::MAX_SPACES,
+            close_buttons: self
+                .close_buttons()
+                .into_iter()
+                .map(|(index, mut center)| {
+                    center.y += lift;
+                    CloseButton {
+                        center,
+                        pressed: panorama.close_press == Some(index),
+                    }
+                })
+                .collect(),
         })
+    }
+
+    /// The close buttons showing (space index, center at rest).
+    fn close_buttons(&self) -> Vec<(usize, Point<f64, Logical>)> {
+        let Some(panorama) = self.panorama.as_ref() else {
+            return Vec::new();
+        };
+        if panorama.expansion < THUMBS_FULL || !panorama.opening || self.workspaces.count() <= 1 {
+            return Vec::new();
+        }
+        let rects = self.thumbnail_rects_now();
+        let corner = |index: usize| rects.get(index).map(|r| (index, r.loc));
+        if self.alt_held() {
+            return (0..rects.len()).filter_map(corner).collect();
+        }
+        let delay = CLOSE_DELAY_MS * self.animation_speed.max(0.0);
+        panorama
+            .hover
+            .filter(|hover| {
+                hover.at_once
+                    || panorama
+                        .clock
+                        .saturating_duration_since(hover.since)
+                        .as_secs_f64()
+                        * 1000.0
+                        >= delay
+            })
+            .and_then(|hover| corner(hover.index))
+            .into_iter()
+            .collect()
+    }
+
+    /// The close button under the point.
+    fn close_button_at(&self, location: Point<f64, Logical>) -> Option<usize> {
+        self.close_buttons()
+            .into_iter()
+            .find(|(_, center)| {
+                (location.x - center.x).hypot(location.y - center.y) <= CLOSE_RADIUS
+            })
+            .map(|(index, _)| index)
+    }
+
+    /// The pointer over the thumbnails: which one shows its close button.
+    fn track_hover(&mut self, location: Point<f64, Logical>, now: Instant) {
+        let showing = self.close_buttons();
+        let on_button = self.close_button_at(location);
+        let over = self.thumbnail_at(location).or(on_button);
+        let speed = self.animation_speed.max(0.0);
+        let Some(panorama) = self.panorama.as_mut() else {
+            return;
+        };
+        match (over, panorama.hover) {
+            (Some(index), Some(hover)) if hover.index == index => {}
+            (Some(index), _) => {
+                let rearmed =
+                    !showing.is_empty() || panorama.rearm_until.is_some_and(|until| now <= until);
+                panorama.hover = Some(Hover {
+                    index,
+                    since: now,
+                    at_once: rearmed,
+                });
+                panorama.rearm_until = None;
+            }
+            (None, Some(_)) => {
+                if !showing.is_empty() {
+                    panorama.rearm_until = Some(
+                        now + std::time::Duration::from_secs_f64(CLOSE_REARM_MS * speed / 1000.0),
+                    );
+                }
+                panorama.hover = None;
+            }
+            (None, None) => {}
+        }
     }
 
     /// A space was added at the end: with the bar expanded its thumbnail slides in.
@@ -1094,6 +1221,7 @@ impl State {
         if !panorama.expanded && location.y < BAR_HEIGHT {
             self.expand_spaces_bar(true, now);
         }
+        self.track_hover(location, now);
     }
 
     /// The space of the thumbnail under the point, with the bar expanded.
@@ -1124,13 +1252,21 @@ impl State {
             self.close_panorama(now, None);
             return;
         }
+        if panorama.mode == Mode::Panorama
+            && let Some(index) = self.close_button_at(location)
+        {
+            if let Some(panorama) = self.panorama.as_mut() {
+                panorama.close_press = Some(index);
+            }
+            return;
+        }
         if panorama.mode == Mode::Panorama && location.y < bar_height(expansion) {
             if self.workspaces.count() < crate::workspaces::MAX_SPACES
                 && plus_rect(width, expansion).contains(location)
             {
-                // The bar redraws by itself: its key is the number of spaces.
-                if let Err(err) = self.add_space() {
-                    tracing::info!("panorama: {err}");
+                // Added on release (spaces.md › add animation).
+                if let Some(panorama) = self.panorama.as_mut() {
+                    panorama.plus_press = true;
                 }
                 return;
             }
@@ -1177,6 +1313,31 @@ impl State {
     /// Release: a window not moved goes to the front and Panorama closes; one dragged onto a
     /// thumbnail moves to that space, elsewhere it goes back to its place.
     pub fn panorama_release(&mut self, location: Point<f64, Logical>, now: Instant) {
+        // A close button: the space goes if the pointer is still on it.
+        if let Some(index) = self.panorama.as_mut().and_then(|p| p.close_press.take()) {
+            if self.close_button_at(location) == Some(index) {
+                if let Err(err) = self.remove_space(index) {
+                    tracing::info!("panorama: {err}");
+                }
+                if let Some(panorama) = self.panorama.as_mut() {
+                    panorama.hover = None;
+                }
+            }
+            return;
+        }
+        if self
+            .panorama
+            .as_mut()
+            .is_some_and(|p| std::mem::take(&mut p.plus_press))
+        {
+            let expansion = self.panorama.as_ref().map_or(0.0, |p| p.expansion);
+            if plus_rect(self.output_size().w, expansion).contains(location)
+                && let Err(err) = self.add_space()
+            {
+                tracing::info!("panorama: {err}");
+            }
+            return;
+        }
         let Some(drag) = self.panorama.as_mut().and_then(|p| p.drag.take()) else {
             return;
         };
@@ -1467,6 +1628,75 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     canvas.line([cx - half, cy], [cx + half, cy], 2.0, plus_color);
     canvas.line([cx, cy - half], [cx, cy + half], 2.0, plus_color);
 }
+
+/// Draws the close buttons (`origin`: where the canvas starts in the output).
+pub fn draw_close_buttons(canvas: &mut Canvas, buttons: &[CloseButton]) {
+    for button in buttons {
+        let (x, y) = (button.center.x as f32, button.center.y as f32);
+        let r = CLOSE_RADIUS as f32;
+        // Soft shadow, a little below.
+        for k in 1..=4 {
+            let grow = k as f32;
+            let alpha = (12 - 2 * k) as u8;
+            canvas.fill_rounded(
+                [
+                    x - r - grow,
+                    y - r - grow + 1.5,
+                    2.0 * (r + grow),
+                    2.0 * (r + grow),
+                ],
+                r + grow,
+                [0, 0, 0, alpha],
+            );
+        }
+        canvas.fill_rounded(
+            [x - r, y - r, 2.0 * r, 2.0 * r],
+            r,
+            if button.pressed {
+                CLOSE_PRESSED
+            } else {
+                CLOSE_FILL
+            },
+        );
+        let c = CLOSE_CROSS as f32;
+        canvas.line([x - c, y - c], [x + c, y + c], 2.0, CLOSE_CROSS_COLOR);
+        canvas.line([x - c, y + c], [x + c, y - c], 2.0, CLOSE_CROSS_COLOR);
+    }
+}
+
+/// The close buttons as an element over the whole bar.
+pub fn close_buttons_element(
+    renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
+    sprite: &CloseSprite,
+    buttons: &[CloseButton],
+    width: f64,
+    scale: f64,
+) -> Option<
+    smithay::backend::renderer::element::texture::TextureRenderElement<
+        smithay::backend::renderer::gles::GlesTexture,
+    >,
+> {
+    if buttons.is_empty() {
+        return None;
+    }
+    let key: Vec<String> = buttons
+        .iter()
+        .map(|b| format!("{:.1},{:.1},{}", b.center.x, b.center.y, b.pressed))
+        .collect();
+    sprite.0.element(
+        renderer,
+        &key.join(";"),
+        Size::from((width, EXPANDED_HEIGHT)),
+        Point::from((0.0, 0.0)),
+        scale,
+        1.0,
+        |canvas| draw_close_buttons(canvas, buttons),
+    )
+}
+
+/// The cached drawing of the close buttons (in the output's data).
+#[derive(Default)]
+pub struct CloseSprite(Sprite);
 
 /// The spaces bar as an element, already moved up as much as the opening needs.
 pub fn bar_element(

@@ -557,3 +557,74 @@ fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_
     assert_eq!((t[0].x, t[1].x), (480.0, 656.0));
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
 }
+
+fn wait_for(ossido: &Headless, what: impl Fn(&PanoramaState) -> bool) -> PanoramaState {
+    for _ in 0..200 {
+        let s = state(ossido);
+        if what(&s) {
+            return s;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("Panorama did not get there: {:?}", state(ossido));
+}
+
+#[test]
+fn a_space_closes_from_the_button_on_its_thumbnail() {
+    // Real durations: the button waits ~1 s.
+    let ossido = Headless::start_with(
+        "panorama-close-space",
+        (1280, 800),
+        &["--animation-scale", "1"],
+    );
+    let _wallpaper = reference_gray(&ossido);
+    let size = (200, 150);
+    let _red = TestWindow::open_pixels(&ossido.wayland, "red", size, &solid(size, RED));
+    let mut c = ossido.client();
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    let red_id = windows(&ossido)[0].id;
+    c.call(
+        silica_control::commands::WINDOW_MOVE_TO_SPACE,
+        json!({"id": red_id, "index": 1}),
+    )
+    .unwrap();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
+        .unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    wait_for(&ossido, |s| s.progress >= 1.0);
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let s = wait_for(&ossido, |s| s.expansion >= 1.0);
+    let t = s.thumbnails[1];
+    let white = |shot: &[u8]| near(rgb_at(shot, t.x + 6.0, t.y - 6.0), [255, 255, 255], 3);
+    // On the thumbnail: no button yet...
+    c.call(
+        INPUT_POINTER_MOVE,
+        json!({"x": t.x + t.width / 2.0, "y": t.y + t.height / 2.0}),
+    )
+    .unwrap();
+    assert!(!white(&screenshot(&ossido)), "the button shows at once");
+    // ...after ~1 s, a white disc on its top-left corner with a gray cross in the middle.
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    let shot = screenshot(&ossido);
+    assert!(
+        white(&shot),
+        "no close button: {:?}",
+        rgb_at(&shot, t.x + 6.0, t.y - 6.0)
+    );
+    let cross = rgb_at(&shot, t.x, t.y);
+    assert!(cross[0] < 200 && cross[0] > 60, "cross: {cross:?}");
+    // Press and release on it: the space goes, its window moves to the previous one.
+    c.call(INPUT_POINTER_MOVE, json!({"x": t.x + 3.0, "y": t.y + 3.0}))
+        .unwrap();
+    c.call(INPUT_POINTER_BUTTON, json!({"pressed": true}))
+        .unwrap();
+    assert_eq!(spaces(&ossido).len(), 3, "removed on press");
+    c.call(INPUT_POINTER_BUTTON, json!({"pressed": false}))
+        .unwrap();
+    let after = spaces(&ossido);
+    assert_eq!(after.len(), 2);
+    assert!(after[0].windows.contains(&red_id), "{after:?}");
+    assert!(state(&ossido).open);
+}
