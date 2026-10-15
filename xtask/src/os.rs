@@ -852,6 +852,12 @@ fn prepare_guest_bus(share: &Path) -> Result<()> {
                 dev_service_file(name, binary)
             ));
             stale.push(format!("/usr/libexec/silica/{binary}"));
+            // The share's own copy from an earlier deploy runs the old binary until it exits:
+            // stopped, the bus activates the new one at the next call. The daemon is left
+            // alone: the session restarts it with --replace.
+            if binary != "silica-daemon" {
+                stale.push(format!("{GUEST_RUN}/bin/{binary}"));
+            }
         } else {
             // Nothing to point at: an override left by an earlier deploy would be dangling.
             script.push_str(&format!("rm -f {file}\n"));
@@ -876,7 +882,7 @@ fn prepare_guest_bus(share: &Path) -> Result<()> {
          DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
          systemctl --user daemon-reload || true\n"
     ));
-    // Packaged daemons still running (exact command line, in the guest's process table).
+    // Stale daemons still running (exact command line, in the guest's process table).
     for path in stale {
         script.push_str(&format!(
             "pids=$(pgrep -x -f '{path}' || true); [ -z \"$pids\" ] || kill $pids || true\n"
