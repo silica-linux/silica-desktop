@@ -17,8 +17,9 @@ use tracing::{info, warn};
 
 use crate::state::State;
 
-/// Long press on the green button before the arrangement popover: between 0.4 s (not there)
-/// and 1.4 s (there) in windows.md; provisional until W-08 measures the delay.
+/// Delay before the arrangement popover on the green button: the pointer resting on it
+/// opens the popover after ~0.8 s (windows.md, TL-GLASS #94). The long press uses the same
+/// delay (between 0.4 s, not there, and 1.4 s, there).
 pub const WINDOW_MENU_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// The window has Ossido's bar: server-side mode already confirmed to the client, and it is
@@ -180,6 +181,30 @@ impl State {
         });
         if let Err(err) = inserted {
             warn!("popover timer: {err}");
+        }
+    }
+
+    /// The pointer came onto the green button: after `WINDOW_MENU_DELAY` still resting on
+    /// it (no press needed), the shell opens the arrangement popover. Once per entry.
+    pub fn arm_zoom_hover(&mut self, window: &Window) {
+        self.titlebar_press_count = self.titlebar_press_count.wrapping_add(1);
+        let id = self.titlebar_press_count;
+        self.zoom_hover = Some((window.clone(), id));
+        let window = window.clone();
+        let timer = Timer::from_duration(WINDOW_MENU_DELAY);
+        let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
+            let state = &mut data.state;
+            let same = state.zoom_hover.as_ref() == Some(&(window.clone(), id))
+                && state.titlebar_press.is_none();
+            if same && let Some(frame) = state.window_frame(&window) {
+                let (x, y) = titlebar::button_centers(button_bar_height(&window))[2];
+                let point = frame.loc + Point::from((x.round() as i32, (y + 7.0).round() as i32));
+                state.announce_window_menu(&window, point);
+            }
+            TimeoutAction::Drop
+        });
+        if let Err(err) = inserted {
+            warn!("hover popover timer: {err}");
         }
     }
 

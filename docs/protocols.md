@@ -75,7 +75,7 @@ against other processes of the same user: that will come with the app sandbox.
 - event `silica_shell_manager_v1.focused(identifier)`: the focused window (empty if none),
   on connection and at every change.
 - event `silica_shell_manager_v1.window_menu(identifier, x, y)` (version 3): long press on
-  the green button (provisional: 0.8 s, W-08); the menu bar opens the arrangement popover with
+  the green button, or the pointer resting on it, for 0.8 s; the menu bar opens the arrangement popover with
   the tip at x, y, and the entries run `window.tile_*`, `window.arrange_*` and
   `window.fullscreen` on the focused window.
 - `silica_shell_manager_v1.broadcast(topic, value)` and the event of the same name

@@ -169,6 +169,9 @@ pub struct State {
     /// How many button presses there have been: the long-press timer on the green button
     /// acts only if the press is still the one that started it.
     pub titlebar_press_count: u64,
+    /// The pointer resting on the green button (window and the id of the timer armed on
+    /// entering): after `WINDOW_MENU_DELAY` the arrangement popover opens (TL-GLASS, #94).
+    pub zoom_hover: Option<(Window, u64)>,
     /// How many screenshots were written (the temporary file name).
     pub screenshot_count: u64,
     /// The settings of the screenshot shortcuts (`screenshot.settings`): the pointer drawn in.
@@ -381,6 +384,7 @@ impl State {
             titlebar_press: None,
             titlebar_press_inside: false,
             titlebar_press_count: 0,
+            zoom_hover: None,
             screenshot_count: 0,
             screenshot_settings: silica_control::ScreenshotSettings::default(),
             buttons_hover: None,

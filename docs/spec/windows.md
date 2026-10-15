@@ -242,8 +242,9 @@ At rest in an active window. Each disc has a vertical gradient, more saturated a
   - On exit they start fading about 60 ms later and are gone by about 110–130 ms.
 - **Disabled buttons:** minimise and full screen on a window that cannot be resized are
   **grey discs** even in an active window, and show no symbol on hover. Close stays red.
-- **Long press on the green button:** about 1.4 s; nothing at 0.4 s, and plain hover never
-  opens it. It opens a **tiling popover** below the button, with its tip at the button:
+- **Long press on the green button:** about 1.4 s; nothing at 0.4 s. The pointer resting
+  on it also opens the popover, after about 0.8 s, and it closes when the pointer
+  comes back and leaves. It opens a **tiling popover** below the button, with its tip at the button:
   1. a "move and resize" group: four icons for the left, right, top and bottom halves;
   2. a "fill and arrange" group: four icons for fill, and for two, three and four windows;
   3. a separator;

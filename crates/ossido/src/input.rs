@@ -109,6 +109,23 @@ impl State {
             _ => false,
         };
         self.titlebar_hover = hover;
+        // Resting on the green button opens the arrangement popover (TL-GLASS, #94).
+        let on_zoom = match &hit {
+            Some(Hit::Titlebar(window, Part::Zoom, _))
+                if !crate::render::buttons_disabled(window).zoom() =>
+            {
+                Some(window.clone())
+            }
+            _ => None,
+        };
+        match on_zoom {
+            Some(window) => {
+                if self.zoom_hover.as_ref().map(|(w, _)| w) != Some(&window) {
+                    self.arm_zoom_hover(&window);
+                }
+            }
+            None => self.zoom_hover = None,
+        }
         // Ossido's own shapes: the resize edges (MU-08) win over the client below, the bar
         // and the desktop have the arrow; elsewhere the client's choice.
         let edges = if let Some(resize) = &self.resizing {

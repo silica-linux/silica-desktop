@@ -124,7 +124,7 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
         "close symbol",
     );
 
-    // A second window far away makes the first inactive: gray buttons `#eaebec`.
+    // A second window far away makes the first inactive: near-white buttons (TL-GLASS: lum 240 at the top to 246 at the bottom).
     let _second = TestWindow::open_decorated(&ossido.wayland, "second", (120, 80));
     let second = windows(&ossido).remove(0);
     client
@@ -141,7 +141,7 @@ fn hovering_the_buttons_shows_the_symbols_and_inactive_buttons_are_gray() {
         assert_near(
             &inactive,
             button(&first, index),
-            [0xea, 0xeb, 0xec],
+            [0xf3, 0xf3, 0xf3],
             6,
             "inactive button",
         );
