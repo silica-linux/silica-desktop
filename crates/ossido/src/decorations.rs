@@ -17,10 +17,12 @@ use tracing::{info, warn};
 
 use crate::state::State;
 
-/// Delay before the arrangement popover on the green button: the pointer resting on it
-/// opens the popover after ~0.8 s (windows.md, TL-GLASS #94). The long press uses the same
-/// delay (between 0.4 s, not there, and 1.4 s, there).
-pub const WINDOW_MENU_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
+/// Delay before the arrangement popover on the green button with the pointer resting on it:
+/// 810–817 ms measured (BACKLOG-1 / W-08).
+pub const WINDOW_MENU_HOVER_DELAY: std::time::Duration = std::time::Duration::from_millis(813);
+
+/// Delay of the popover with the button pressed: 620–635 ms measured.
+pub const WINDOW_MENU_PRESS_DELAY: std::time::Duration = std::time::Duration::from_millis(628);
 
 /// The window has Ossido's bar: server-side mode already confirmed to the client, and it is
 /// not full screen (there the bar disappears, as in the recordings).
@@ -155,14 +157,14 @@ impl State {
     }
 
     /// Runs the bar button released over the same button.
-    /// Press on the green button: after `WINDOW_MENU_DELAY` with the button still held on it,
+    /// Press on the green button: after `WINDOW_MENU_PRESS_DELAY` with the button still held on it,
     /// the shell opens the arrangement popover and the release no longer toggles full screen
-    /// (windows.md: at 0.4 s it is not there, at 1.4 s it is; the real delay is W-08).
+    /// (windows.md: at 0.4 s it is not there, at 1.4 s it is; measured: ~628 ms).
     pub fn arm_window_menu(&mut self, window: &Window) {
         self.titlebar_press_count = self.titlebar_press_count.wrapping_add(1);
         let press = self.titlebar_press_count;
         let window = window.clone();
-        let timer = Timer::from_duration(WINDOW_MENU_DELAY);
+        let timer = Timer::from_duration(WINDOW_MENU_PRESS_DELAY);
         let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
             let state = &mut data.state;
             let same = state.titlebar_press_count == press
@@ -184,14 +186,14 @@ impl State {
         }
     }
 
-    /// The pointer came onto the green button: after `WINDOW_MENU_DELAY` still resting on
+    /// The pointer came onto the green button: after `WINDOW_MENU_HOVER_DELAY` still resting on
     /// it (no press needed), the shell opens the arrangement popover. Once per entry.
     pub fn arm_zoom_hover(&mut self, window: &Window) {
         self.titlebar_press_count = self.titlebar_press_count.wrapping_add(1);
         let id = self.titlebar_press_count;
         self.zoom_hover = Some((window.clone(), id));
         let window = window.clone();
-        let timer = Timer::from_duration(WINDOW_MENU_DELAY);
+        let timer = Timer::from_duration(WINDOW_MENU_HOVER_DELAY);
         let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
             let state = &mut data.state;
             let same = state.zoom_hover.as_ref() == Some(&(window.clone(), id))

@@ -10,6 +10,7 @@ mod control;
 mod cursor;
 mod cursor_theme;
 mod decorations;
+pub mod display_layout;
 mod displays;
 mod dmabuf;
 #[cfg(feature = "drm")]

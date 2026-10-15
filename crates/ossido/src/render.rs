@@ -122,6 +122,9 @@ struct ButtonsLook {
     symbols: f32,
     pressed: Option<u8>,
     alt: bool,
+    /// The window dragged in Panorama: it casts the active window's shadow, scaled with it
+    /// (BACKLOG-1 / #74).
+    lifted: bool,
 }
 
 /// The buttons that make no sense: minimize and full screen for a dialog (it has a parent),
@@ -271,15 +274,32 @@ pub struct Morph {
     pub from: Rectangle<f64, Logical>,
     pub to: Rectangle<f64, Logical>,
     pub start: Instant,
-    pub entering: bool,
+    pub kind: MorphKind,
+}
+
+/// What moves the frame: entering or leaving full screen, or a tiling from the popover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MorphKind {
+    Enter,
+    Exit,
+    Tile,
 }
 
 impl Morph {
     fn duration(&self) -> std::time::Duration {
-        if self.entering {
-            animation::FULLSCREEN_ENTER
-        } else {
-            animation::FULLSCREEN_EXIT
+        match self.kind {
+            MorphKind::Enter => animation::FULLSCREEN_ENTER,
+            MorphKind::Exit => animation::FULLSCREEN_EXIT,
+            MorphKind::Tile => animation::TILE,
+        }
+    }
+
+    /// The fraction of the way after `ms` of the animation.
+    pub fn fraction(&self, ms: f64) -> f64 {
+        match self.kind {
+            MorphKind::Enter => animation::fullscreen_enter(ms),
+            MorphKind::Exit => animation::fullscreen_exit(ms),
+            MorphKind::Tile => animation::tile(ms),
         }
     }
 
@@ -292,11 +312,7 @@ impl Morph {
             return None;
         }
         let ms = progress * duration.as_secs_f64() * 1000.0;
-        let f = if self.entering {
-            animation::fullscreen_enter(ms)
-        } else {
-            animation::fullscreen_exit(ms)
-        };
+        let f = self.fraction(ms);
         let lerp = |a: f64, b: f64| a + (b - a) * f;
         Some(Rectangle::new(
             (
@@ -507,6 +523,12 @@ fn fit(from: Rectangle<f64, Logical>, to: Rectangle<f64, Logical>) -> (Point<i32
     (offset, factor)
 }
 
+/// Whether the window casts the active shadow: the active window, and the one dragged in
+/// Panorama.
+fn shadow_active(active: bool, look: ButtonsLook) -> bool {
+    active || look.lifted
+}
+
 /// The elements of a window, from the front to the back (surfaces, bar, shadow), moved by
 /// `offset` and scaled by `factor` around the center of the frame.
 #[allow(clippy::too_many_arguments)]
@@ -618,7 +640,7 @@ fn window_elements(
         }
     }
     if let Some(program) = &shaders.shadow {
-        let style = ossido_render::shadow::style(active, dark);
+        let style = ossido_render::shadow::style(shadow_active(active, buttons), dark);
         window.user_data().insert_if_missing(WindowShadow::default);
         if let Some(shadow) = window.user_data().get::<WindowShadow>() {
             elements.push(OutputElement::Shader(RescaleRenderElement::from_element(
@@ -867,7 +889,10 @@ pub fn output_elements(
                 scale,
                 offset,
                 factor,
-                ButtonsLook::default(),
+                ButtonsLook {
+                    lifted: true,
+                    ..ButtonsLook::default()
+                },
                 context.dark,
             ));
         }
@@ -1075,6 +1100,7 @@ pub fn output_elements(
                 symbols: view.symbols,
                 pressed: view.pressed,
                 alt: context.alt,
+                lifted: false,
             },
             _ => ButtonsLook::default(),
         };
@@ -1311,8 +1337,46 @@ pub fn output_elements(
 
 #[cfg(test)]
 mod tests {
-    use super::{MinimizeEffect, after_insert, scale_effect};
-    use smithay::utils::{Physical, Rectangle};
+    use super::{
+        ButtonsLook, MinimizeEffect, MorphKind, after_insert, scale_effect, shadow_active,
+    };
+    use smithay::utils::{Logical, Physical, Rectangle};
+    use std::time::Instant;
+
+    #[test]
+    fn the_dragged_window_casts_the_active_shadow() {
+        let lifted = ButtonsLook {
+            lifted: true,
+            ..ButtonsLook::default()
+        };
+        assert!(shadow_active(false, lifted));
+        assert!(shadow_active(true, ButtonsLook::default()));
+        assert!(!shadow_active(false, ButtonsLook::default()));
+    }
+
+    #[test]
+    fn a_tiling_morph_ends_at_the_target_without_overshoot() {
+        let from = Rectangle::<f64, Logical>::new((100.0, 100.0).into(), (400.0, 300.0).into());
+        let to = Rectangle::<f64, Logical>::new((0.0, 30.0).into(), (1600.0, 870.0).into());
+        let start = Instant::now();
+        let morph = super::Morph {
+            from,
+            to,
+            start,
+            kind: MorphKind::Tile,
+        };
+        let at = |ms: u64| morph.rect(start + std::time::Duration::from_millis(ms), 1.0);
+        // Nothing moves for the first ~40 ms, then it slows down towards the exact frame.
+        assert_eq!(at(0), Some(from));
+        assert_eq!(at(30), Some(from));
+        let mid = at(190).expect("halfway");
+        assert!(mid.size.w > 400.0 && mid.size.w < 1600.0);
+        let late = at(370).expect("almost there");
+        assert!(late.size.w <= 1600.0 && late.size.w > 1590.0);
+        // After ~380 ms the animation is over: the real frame is the target.
+        assert_eq!(at(380), None);
+        assert_eq!(at(1000), None);
+    }
 
     #[test]
     fn scale_effect_lands_the_window_in_its_cell_keeping_the_aspect() {
