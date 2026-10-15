@@ -38,6 +38,38 @@ use crate::state::{Ossido, State};
 /// When no page flip is pending, the interval at which the loop checks for a new frame
 /// (animations, frame callbacks): a frame with no damage is not queued and brings no vblank.
 const IDLE_FRAME: Duration = Duration::from_micros(16_667);
+/// Ticks in a row with nothing drawn before the output counts as idle: from then on a tick
+/// builds a frame only when something happened (`State::wake`), so a still desktop costs
+/// nothing (#202).
+const QUIET_TICKS: u32 = 3;
+/// While idle, how often a tick still builds a frame: a change no event announced (a timed
+/// layer placement) shows within this.
+const IDLE_RECHECK: Duration = Duration::from_millis(250);
+
+/// What a frame tick knows to decide whether to build a frame.
+#[derive(Debug, Clone, Copy)]
+struct Tick {
+    /// Something happened since the last tick (`State::redraw`).
+    woken: bool,
+    /// Ossido is animating (`State::compositor_animating`).
+    animating: bool,
+    /// The light or dark appearance changed since the last frame.
+    appearance_changed: bool,
+    /// Ticks in a row that drew nothing.
+    quiet: u32,
+    /// Since the last frame built.
+    since_frame: Duration,
+}
+
+/// Whether a tick builds a frame: always while something moves or just changed; on an idle
+/// output only when woken, plus a slow recheck.
+fn frame_due(tick: Tick) -> bool {
+    tick.woken
+        || tick.animating
+        || tick.appearance_changed
+        || tick.quiet < QUIET_TICKS
+        || tick.since_frame >= IDLE_RECHECK
+}
 
 pub struct DrmBackend {
     pub renderer: GlesRenderer,
@@ -52,6 +84,11 @@ pub struct DrmBackend {
     surface: Option<OutputSurface>,
     /// A frame is queued for scanout and waits for its vblank.
     pending: bool,
+    /// Frames built in a row with nothing to draw (see [`frame_due`]).
+    quiet: u32,
+    /// When the last frame was built, and with which appearance.
+    last_frame: Instant,
+    last_dark: bool,
     /// The default cursor, drawn when no client sets one and there is no theme.
     cursor: Option<GlesTexture>,
     /// The frames of the theme already uploaded, by name, scale (×100) and frame, with their
@@ -254,6 +291,9 @@ pub fn init_drm(
         devices: Vec::new(),
         surface,
         pending: false,
+        quiet: 0,
+        last_frame: Instant::now(),
+        last_dark: false,
         cursor: None,
         cursors: std::collections::HashMap::new(),
     };
@@ -275,9 +315,12 @@ pub fn init_drm(
     }
 
     let handle = event_loop.handle();
-    handle.insert_source(session_events, |event, _, data| match event {
-        SessionEvent::PauseSession => data.state.drm_pause(),
-        SessionEvent::ActivateSession => data.state.drm_activate(),
+    handle.insert_source(session_events, |event, _, data| {
+        data.state.wake();
+        match event {
+            SessionEvent::PauseSession => data.state.drm_pause(),
+            SessionEvent::ActivateSession => data.state.drm_activate(),
+        }
     })?;
     handle.insert_source(drm_events, |event, _, data| match event {
         DrmEvent::VBlank(crtc) => data.state.drm_vblank(crtc),
@@ -285,11 +328,13 @@ pub fn init_drm(
     })?;
     let udev = UdevBackend::new(&seat).map_err(|e| format!("udev: {e}"))?;
     handle.insert_source(udev, |event, _, data| {
+        data.state.wake();
         if let UdevEvent::Changed { device_id } = event {
             data.state.drm_changed(device_id);
         }
     })?;
     handle.insert_source(LibinputInputBackend::new(libinput), |event, _, data| {
+        data.state.wake();
         match &event {
             InputEvent::DeviceAdded { device } => {
                 info!("input device: {}", device.name());
@@ -303,7 +348,7 @@ pub fn init_drm(
         data.state.process_input_event(event);
     })?;
     handle.insert_source(Timer::from_duration(IDLE_FRAME), |_, _, data| {
-        data.state.render_drm();
+        data.state.drm_tick();
         TimeoutAction::ToDuration(IDLE_FRAME)
     })?;
     info!("drm backend ready");
@@ -700,6 +745,27 @@ impl State {
         }
     }
 
+    /// The frame tick: builds a frame only if one may have something to draw (see
+    /// [`frame_due`]); an idle output with no event costs nothing.
+    fn drm_tick(&mut self) {
+        let woken = std::mem::take(&mut self.redraw);
+        let animating = self.compositor_animating();
+        let dark = self.dark();
+        let Some(backend) = self.drm_backend() else {
+            return;
+        };
+        let tick = Tick {
+            woken,
+            animating,
+            appearance_changed: backend.last_dark != dark,
+            quiet: backend.quiet,
+            since_frame: backend.last_frame.elapsed(),
+        };
+        if frame_due(tick) {
+            self.render_drm();
+        }
+    }
+
     /// Draws a frame and queues it for scanout, unless one is already waiting for its
     /// vblank or the session is not active.
     pub fn render_drm(&mut self) {
@@ -849,9 +915,21 @@ impl State {
             Ok(true)
         })();
         match queued {
-            Ok(queued) => backend.pending = queued,
-            Err(err) => warn!("DRM frame: {err}"),
+            Ok(queued) => {
+                backend.pending = queued;
+                backend.quiet = if queued {
+                    0
+                } else {
+                    backend.quiet.saturating_add(1)
+                };
+            }
+            Err(err) => {
+                backend.quiet = 0;
+                warn!("DRM frame: {err}");
+            }
         }
+        backend.last_frame = now;
+        backend.last_dark = dark;
         self.perf.rendered(now.elapsed());
         self.send_frames();
     }
@@ -871,10 +949,62 @@ fn default_cursor(renderer: &mut GlesRenderer) -> Option<GlesTexture> {
 
 #[cfg(test)]
 mod tests {
-    use super::preferred_mode;
+    use super::{IDLE_RECHECK, QUIET_TICKS, Tick, frame_due, preferred_mode};
+    use std::time::Duration;
 
     #[test]
     fn no_modes_no_preferred_mode() {
         assert_eq!(preferred_mode(&[]), None);
+    }
+
+    /// A still output: nothing happened, nothing moves, quiet for a while, checked just now.
+    fn idle() -> Tick {
+        Tick {
+            woken: false,
+            animating: false,
+            appearance_changed: false,
+            quiet: QUIET_TICKS,
+            since_frame: Duration::from_millis(16),
+        }
+    }
+
+    #[test]
+    fn no_frame_is_built_when_nothing_happened() {
+        assert!(!frame_due(idle()));
+        assert!(!frame_due(Tick {
+            quiet: u32::MAX,
+            ..idle()
+        }));
+    }
+
+    #[test]
+    fn an_event_an_animation_or_a_new_appearance_build_a_frame() {
+        assert!(frame_due(Tick {
+            woken: true,
+            ..idle()
+        }));
+        assert!(frame_due(Tick {
+            animating: true,
+            ..idle()
+        }));
+        assert!(frame_due(Tick {
+            appearance_changed: true,
+            ..idle()
+        }));
+    }
+
+    #[test]
+    fn frames_go_on_for_a_few_ticks_after_the_last_damage() {
+        for quiet in 0..QUIET_TICKS {
+            assert!(frame_due(Tick { quiet, ..idle() }), "{quiet}");
+        }
+    }
+
+    #[test]
+    fn an_idle_output_is_still_checked_now_and_then() {
+        assert!(frame_due(Tick {
+            since_frame: IDLE_RECHECK,
+            ..idle()
+        }));
     }
 }

@@ -313,6 +313,16 @@ impl CursorTheme {
         Some(((animation.name.clone(), scale_key, index), image.clone()))
     }
 
+    /// Whether `icon` at `scale` is an animated cursor (it changes frame with time alone).
+    /// Only cursors already shown (in the cache) count: a new one is loaded by the next frame.
+    pub fn is_animated(&self, icon: CursorIcon, scale: f64) -> bool {
+        let scale_key = (scale * 100.0).round().max(1.0) as u32;
+        self.cache
+            .get(&(icon.name(), scale_key))
+            .and_then(Option::as_ref)
+            .is_some_and(|animation| animation.total_ms > 0)
+    }
+
     fn load_animation(&self, icon: CursorIcon, want: u32) -> Option<Animation> {
         for name in candidate_names(icon) {
             for dir in &self.dirs {

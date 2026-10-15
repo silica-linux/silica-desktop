@@ -65,6 +65,7 @@ impl State {
             let inserted =
                 self.loop_handle
                     .insert_source(receiver, |event, _, ossido: &mut Ossido| {
+                        ossido.state.wake();
                         if let channel::Event::Msg(index) = event {
                             ossido.state.kept_exited(index);
                         }
@@ -118,6 +119,7 @@ impl State {
                 let inserted =
                     self.loop_handle
                         .insert_source(timer, move |_, _, ossido: &mut Ossido| {
+                            ossido.state.wake();
                             ossido.state.keep_start(index);
                             TimeoutAction::Drop
                         });

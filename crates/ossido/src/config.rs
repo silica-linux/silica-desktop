@@ -454,6 +454,7 @@ pub fn watch(handle: &LoopHandle<'static, Ossido>, dir: &Path) -> Result<(), Str
         .insert_source(
             Generic::new(fd, Interest::READ, Mode::Level),
             |_, fd, data| {
+                data.state.wake();
                 let mut names: Vec<String> = Vec::new();
                 let mut buffer = [std::mem::MaybeUninit::<u8>::uninit(); 4096];
                 let mut reader = inotify::Reader::new(&*fd, &mut buffer);
