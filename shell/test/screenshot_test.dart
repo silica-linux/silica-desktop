@@ -13,7 +13,8 @@ import 'package:silica_shell/screenshot/files.dart';
 import 'package:silica_shell/screenshot/screenshot.dart';
 import 'package:silica_shell/screenshot/selection.dart';
 import 'package:silica_shell/screenshot/services.dart';
-import 'package:silica_shell/screenshot/toolbar.dart' show ShotToolbar;
+import 'package:silica_shell/screenshot/toolbar.dart'
+    show ShotToolbar, actionBlue, optionsGap;
 import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_ui/silica_ui.dart' show MenuPanel;
@@ -913,6 +914,93 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     // The circle sits in the middle of the bar's height.
     final bar = tester.getRect(find.byType(ShotToolbar));
     expect(circle.center.dy - bar.top, closeTo(26, 0.5));
+  });
+
+  testWidgets('⇧⌘5: every button has a tooltip, in English', (tester) async {
+    await pumpLayer(tester);
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    final tips = {
+      'close bar': 'Close',
+      'mode screen': 'Capture Entire Screen',
+      'mode window': 'Capture Selected Window',
+      'mode selection': 'Capture Selected Portion',
+      'record screen': 'Record Entire Screen',
+      'record window': 'Record Selected Window',
+      'record selection': 'Record Selected Portion',
+      'options': 'Options',
+      'capture': 'Capture',
+    };
+    for (final MapEntry(:key, :value) in tips.entries) {
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(5, 5));
+      await mouse.moveTo(tester.getCenter(find.byKey(ValueKey(key))));
+      await tester.pump();
+      // Not at once: after the delay (the previous one is gone).
+      // (The Capture button's own label has the same text as its tooltip.)
+      final label = key == 'capture' ? 1 : 0;
+      expect(find.text(value), findsNWidgets(label), reason: key);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text(value), findsNWidgets(label + 1), reason: key);
+      await mouse.moveTo(const Offset(5, 5));
+      await tester.pump(const Duration(seconds: 1));
+      await mouse.removePointer();
+    }
+  });
+
+  test('⇧⌘5: the tooltips are translated into Italian', () {
+    final it = lookupAppLocalizations(const Locale('it'));
+    expect(it.shotTipClose, 'Chiudi');
+    expect(it.shotTipCaptureScreen, 'Acquisisci l\'intero schermo');
+    expect(it.shotTipCaptureWindow, 'Acquisisci la finestra selezionata');
+    expect(it.shotTipCaptureSelection, 'Acquisisci la porzione selezionata');
+    expect(it.shotTipRecordScreen, 'Registra l\'intero schermo');
+    expect(it.shotTipRecordWindow, 'Registra la finestra selezionata');
+    expect(it.shotTipRecordSelection, 'Registra la porzione selezionata');
+    expect(it.shotTipOptions, 'Opzioni');
+    expect(it.shotTipCapture, 'Acquisisci');
+  });
+
+  testWidgets('⇧⌘5: Capture is the solid blue 80 × 50 button', (tester) async {
+    await pumpLayer(tester);
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    final fill = find.byKey(const ValueKey('capture fill'));
+    expect(tester.getSize(fill), const Size(80, 50));
+    final box = tester.widget<Container>(fill).decoration! as BoxDecoration;
+    expect(box.color, actionBlue);
+    expect(
+      find.descendant(of: fill, matching: find.text('Capture')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Options: the menu opens clear of the bar, not over it', (
+    tester,
+  ) async {
+    await pumpLayer(tester);
+    await send(tester, 'command', 'screenshot.toolbar');
+    await tester.pump();
+    final bar = tester.getRect(find.byType(ShotToolbar));
+    await tester.tap(find.byKey(const ValueKey('options')));
+    await tester.pump();
+    final menu = tester.getRect(find.byType(MenuPanel));
+    expect(menu.bottom, lessThanOrEqualTo(bar.top - optionsGap + 1));
+    expect(menu.overlaps(bar), isFalse);
+    // Bar dragged to the top: no room above, the menu opens below it.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.dragFrom(
+      bar.topLeft + const Offset(377, 26),
+      const Offset(0, -700),
+    );
+    await tester.pump();
+    final top = tester.getRect(find.byType(ShotToolbar));
+    await tester.tap(find.byKey(const ValueKey('options')));
+    await tester.pump();
+    final below = tester.getRect(find.byType(MenuPanel));
+    expect(below.top, greaterThanOrEqualTo(top.bottom));
+    expect(below.overlaps(top), isFalse);
   });
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {
