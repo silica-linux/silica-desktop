@@ -713,12 +713,6 @@ abstract class AppLocalizations {
   /// Tooltip of a button of the screenshot bar
   ///
   /// In en, this message translates to:
-  /// **'Close'**
-  String get shotTipClose;
-
-  /// Tooltip of a button of the screenshot bar
-  ///
-  /// In en, this message translates to:
   /// **'Capture Entire Screen'**
   String get shotTipCaptureScreen;
 
@@ -751,18 +745,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Record Selected Portion'**
   String get shotTipRecordSelection;
-
-  /// Tooltip of a button of the screenshot bar
-  ///
-  /// In en, this message translates to:
-  /// **'Options'**
-  String get shotTipOptions;
-
-  /// Tooltip of a button of the screenshot bar
-  ///
-  /// In en, this message translates to:
-  /// **'Capture'**
-  String get shotTipCapture;
 
   /// Screenshot destination (Options menu)
   ///

@@ -354,9 +354,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capture => 'Capture';
 
   @override
-  String get shotTipClose => 'Close';
-
-  @override
   String get shotTipCaptureScreen => 'Capture Entire Screen';
 
   @override
@@ -373,12 +370,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shotTipRecordSelection => 'Record Selected Portion';
-
-  @override
-  String get shotTipOptions => 'Options';
-
-  @override
-  String get shotTipCapture => 'Capture';
 
   @override
   String get shotDesktop => 'Desktop';
