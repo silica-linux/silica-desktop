@@ -36,6 +36,16 @@ pub struct DialogRequest {
     pub directory: bool,
     pub current_name: Option<String>,
     pub current_folder: Option<String>,
+    /// The xdg-foreign v2 handle of the app's window ([`parent_handle`]): the dialog is
+    /// attached to it.
+    pub parent: Option<String>,
+}
+
+/// The Wayland handle in the portal's `parent_window` (`wayland:<handle>`, an xdg-foreign v2
+/// export of the app's window); none for an X11 window (`x11:<xid>`) or no window (empty).
+pub fn parent_handle(parent_window: &str) -> Option<String> {
+    let handle = parent_window.strip_prefix("wayland:")?.trim();
+    (!handle.is_empty()).then(|| handle.to_owned())
 }
 
 /// The words of an `Exec` line (Desktop Entry specification quoting), without the field
@@ -97,9 +107,14 @@ pub fn desktop_exec(text: &str) -> Option<String> {
 /// Mustache's command line for the dialog: `Exec` plus the arguments for Dart. The dialog is
 /// a helper process of the embedder (`--helper`): not the running Mustache, which a click in
 /// the Dock must reach, and it ends with its window, so that a closed dialog still answers.
+/// With the app's window (`--parent`) the dialog opens over it and gives it the focus back.
 pub fn dialog_command(exec: &str, kind: DialogKind, request: &DialogRequest) -> Vec<String> {
     let mut words = exec_words(exec);
     words.push("--helper".to_owned());
+    if let Some(parent) = &request.parent {
+        words.push("--parent".to_owned());
+        words.push(parent.clone());
+    }
     let mut arg = |value: String| {
         words.push("--dart-arg".to_owned());
         words.push(value);
@@ -211,6 +226,32 @@ mod tests {
                 "--multiple",
                 "--dart-arg",
                 "--folder=/home/io",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_dialog_is_attached_to_the_wayland_parent_window() {
+        assert_eq!(parent_handle("wayland:Zx81").as_deref(), Some("Zx81"));
+        assert_eq!(parent_handle("x11:0x3a00004"), None);
+        assert_eq!(parent_handle(""), None);
+        assert_eq!(parent_handle("wayland:"), None);
+        assert_eq!(parent_handle("Zx81"), None);
+        let request = DialogRequest {
+            parent: parent_handle("wayland:Zx81"),
+            ..DialogRequest::default()
+        };
+        let words = dialog_command("emb /b", DialogKind::Save, &request);
+        assert_eq!(
+            words,
+            [
+                "emb",
+                "/b",
+                "--helper",
+                "--parent",
+                "Zx81",
+                "--dart-arg",
+                "--dialog=save",
             ]
         );
     }

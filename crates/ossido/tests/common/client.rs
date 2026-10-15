@@ -31,6 +31,10 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1:
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
     self, ZxdgToplevelDecorationV1,
 };
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_exported_v2::{self, ZxdgExportedV2};
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporterV2;
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::ZxdgImportedV2;
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 use wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
 use wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
 use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
@@ -93,6 +97,10 @@ struct App {
     /// silica-menu-v1: the manager and the ids of the items chosen in the bar.
     menu_manager: Option<SilicaMenuManagerV1>,
     menu_activations: Vec<u32>,
+    /// xdg-foreign v2: the globals and the handle of this window, once exported.
+    exporter: Option<ZxdgExporterV2>,
+    importer: Option<ZxdgImporterV2>,
+    exported_handle: Option<String>,
 }
 
 impl Dispatch<WlRegistry, ()> for App {
@@ -134,6 +142,8 @@ impl Dispatch<WlRegistry, ()> for App {
                 "silica_menu_manager_v1" => {
                     state.menu_manager = Some(registry.bind(name, 1, qh, ()));
                 }
+                "zxdg_exporter_v2" => state.exporter = Some(registry.bind(name, 1, qh, ())),
+                "zxdg_importer_v2" => state.importer = Some(registry.bind(name, 1, qh, ())),
                 _ => {}
             }
         }
@@ -389,6 +399,25 @@ impl Dispatch<ZxdgToplevelDecorationV1, ()> for App {
     }
 }
 
+impl Dispatch<ZxdgExportedV2, ()> for App {
+    fn event(
+        state: &mut Self,
+        _: &ZxdgExportedV2,
+        event: zxdg_exported_v2::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_exported_v2::Event::Handle { handle } = event {
+            state.exported_handle = Some(handle);
+        }
+    }
+}
+
+delegate_noop!(App: ignore ZxdgExporterV2);
+delegate_noop!(App: ignore ZxdgImporterV2);
+delegate_noop!(App: ignore ZxdgImportedV2);
+
 impl Dispatch<XdgToplevel, ()> for App {
     fn event(
         state: &mut Self,
@@ -446,6 +475,9 @@ pub struct TestWindow {
     appearance: Option<SilicaWindowV1>,
     /// The app's menu object (silica-menu-v1), after the first `set_menu_model`.
     menu: Option<SilicaMenuV1>,
+    /// xdg-foreign: this window exported, or another app's window imported as its parent.
+    exported: Option<ZxdgExportedV2>,
+    imported: Option<ZxdgImportedV2>,
     buffer: WlBuffer,
 }
 
@@ -458,6 +490,9 @@ thread_local! {
     pub static GLASS_VERSION: std::cell::Cell<u32> = const { std::cell::Cell::new(4) };
     /// The app_id of the windows this thread opens (none if empty).
     pub static APP_ID: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// An xdg-foreign handle: the windows this thread opens import it as their parent before
+    /// their title and app id (none if empty).
+    pub static FOREIGN_PARENT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 impl TestWindow {
@@ -508,6 +543,16 @@ impl TestWindow {
         let surface = compositor.create_surface(&qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
         let toplevel = xdg_surface.get_toplevel(&qh, ());
+        let parent = FOREIGN_PARENT.with(|handle| handle.borrow().clone());
+        let imported = (!parent.is_empty()).then(|| {
+            let imported = app
+                .importer
+                .clone()
+                .expect("zxdg_importer_v2 missing")
+                .import_toplevel(parent, &qh, ());
+            imported.set_parent_of(&surface);
+            imported
+        });
         toplevel.set_title(title.to_owned());
         let app_id = APP_ID.with(|id| id.borrow().clone());
         if !app_id.is_empty() {
@@ -554,6 +599,8 @@ impl TestWindow {
             glass: None,
             appearance: None,
             menu: None,
+            exported: None,
+            imported,
             buffer,
         }
     }
@@ -634,6 +681,8 @@ impl TestWindow {
             glass: None,
             appearance: None,
             menu: None,
+            exported: None,
+            imported: None,
             buffer,
         }
     }
@@ -969,6 +1018,27 @@ impl TestWindow {
         offer.finish();
         self.queue.roundtrip(&mut self.app).unwrap();
         data
+    }
+
+    /// Exports the window (xdg-foreign v2) and returns its handle.
+    #[allow(dead_code)]
+    pub fn export(&mut self) -> String {
+        let exporter = self.app.exporter.clone().expect("zxdg_exporter_v2 missing");
+        let qh = self.queue.handle();
+        self.exported = Some(exporter.export_toplevel(&self.surface, &qh, ()));
+        while self.app.exported_handle.is_none() {
+            self.queue.blocking_dispatch(&mut self.app).unwrap();
+        }
+        self.app.exported_handle.clone().unwrap()
+    }
+
+    /// Destroys the imported parent handle: the xdg-foreign relationship ends.
+    #[allow(dead_code)]
+    pub fn drop_imported(&mut self) {
+        if let Some(imported) = self.imported.take() {
+            imported.destroy();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// Destroys the toplevel (the window closes) leaving the surface alive.

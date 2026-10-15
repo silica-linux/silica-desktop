@@ -1,11 +1,11 @@
 //! Minimized and full-screen windows.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::render::MorphKind;
 use crate::state::State;
@@ -424,12 +424,100 @@ pub fn child_location(
     (x, y).into()
 }
 
-/// The parent's surface of a window (`xdg_toplevel.set_parent`).
+/// Where the frame of a dialog `size` big goes to be centered over its parent's frame, kept
+/// in the usable area (its top never under the menu bar).
+pub fn centered_over(
+    parent: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+) -> Point<i32, Logical> {
+    let center =
+        |start: i32, outer: i32, inner: i32| start.saturating_add(outer.saturating_sub(inner) / 2);
+    let x = center(parent.loc.x, parent.size.w, size.w);
+    let y = center(parent.loc.y, parent.size.h, size.h);
+    let x = x
+        .min(
+            area.loc
+                .x
+                .saturating_add(area.size.w.saturating_sub(size.w)),
+        )
+        .max(area.loc.x);
+    let y = y
+        .min(
+            area.loc
+                .y
+                .saturating_add(area.size.h.saturating_sub(size.h)),
+        )
+        .max(area.loc.y);
+    (x, y).into()
+}
+
+/// The parent's surface of a window (`xdg_toplevel.set_parent`, or an xdg-foreign handle).
 fn parent_of(window: &Window) -> Option<WlSurface> {
     window.toplevel()?.parent()
 }
 
+/// The last parent a window had: the focus goes back to it when the window closes, even when
+/// the relationship ended first (an xdg-foreign import destroyed before the toplevel).
+struct LastParent(RefCell<Option<WlSurface>>);
+
+/// A dialog of another app (xdg-foreign parent) waiting for its first buffer to be centered
+/// over its parent.
+struct CenterOnParent(Cell<bool>);
+
+/// Remembers `parent` as the parent of `window` ([`last_parent`]).
+pub fn remember_parent(window: &Window, parent: &WlSurface) {
+    let data = window.user_data();
+    data.insert_if_missing(|| LastParent(RefCell::new(None)));
+    if let Some(last) = data.get::<LastParent>() {
+        last.0.replace(Some(parent.clone()));
+    }
+}
+
+/// The parent `window` last had, if any.
+pub fn last_parent(window: &Window) -> Option<WlSurface> {
+    window
+        .user_data()
+        .get::<LastParent>()
+        .and_then(|last| last.0.borrow().clone())
+}
+
+/// `window` is centered over its parent when its first buffer arrives
+/// ([`State::center_on_parent`]).
+pub fn center_at_first_buffer(window: &Window) {
+    let data = window.user_data();
+    data.insert_if_missing(|| CenterOnParent(Cell::new(true)));
+    if let Some(pending) = data.get::<CenterOnParent>() {
+        pending.0.set(true);
+    }
+}
+
 impl State {
+    /// A dialog of another app (xdg-foreign parent, [`center_at_first_buffer`]) that now has
+    /// its size goes to the middle of its parent, the whole frame (bar included) on screen.
+    pub fn center_on_parent(&mut self, window: &Window) {
+        let Some(pending) = window.user_data().get::<CenterOnParent>() else {
+            return;
+        };
+        if !pending.0.get() || window.geometry().size.is_empty() {
+            return;
+        }
+        pending.0.set(false);
+        let Some(parent) = parent_of(window).and_then(|parent| self.window_for(&parent)) else {
+            return;
+        };
+        let (Some(parent_frame), Some(frame), Some(location)) = (
+            self.window_frame(&parent),
+            self.window_frame(window),
+            self.space.element_location(window),
+        ) else {
+            return;
+        };
+        let to = centered_over(parent_frame, frame.size, self.usable_area());
+        let at = location + (to - frame.loc);
+        self.space.map_element(window.clone(), at, false);
+    }
+
     /// The window that takes the keyboard when `closing` (focused) goes: its parent if on
     /// screen, else the topmost other window of the same app (macOS gives the focus to the
     /// app's next window); none otherwise.
@@ -510,5 +598,32 @@ mod tests {
         assert_eq!(child_location((1580, 900).into(), area), (1536, 866).into());
         // A parent above the area (under the menu bar): the child comes down into it.
         assert_eq!(child_location((-200, -100).into(), area), (0, 30).into());
+    }
+
+    #[test]
+    fn dialogs_of_other_apps_are_centered_over_their_parent_and_on_screen() {
+        let area = Rectangle::new((0, 30).into(), (1600, 900).into());
+        let parent = Rectangle::new((200, 100).into(), (800, 600).into());
+        assert_eq!(
+            centered_over(parent, (400, 300).into(), area),
+            (400, 250).into()
+        );
+        // A dialog bigger than its parent spills over evenly.
+        assert_eq!(
+            centered_over(parent, (1000, 700).into(), area),
+            (100, 50).into()
+        );
+        // A parent near the top left: the dialog stays under the menu bar and on screen.
+        let corner = Rectangle::new((-300, 0).into(), (400, 100).into());
+        assert_eq!(
+            centered_over(corner, (400, 300).into(), area),
+            (0, 30).into()
+        );
+        // Near the bottom right.
+        let low = Rectangle::new((1500, 850).into(), (400, 200).into());
+        assert_eq!(
+            centered_over(low, (400, 300).into(), area),
+            (1200, 630).into()
+        );
     }
 }

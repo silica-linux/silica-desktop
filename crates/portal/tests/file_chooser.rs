@@ -101,7 +101,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
                 .open_file(
                     ObjectPath::try_from("/org/freedesktop/portal/desktop/request/1").unwrap(),
                     "org.example.App",
-                    "",
+                    "wayland:Zx81handle",
                     "Choose",
                     options,
                 )
@@ -126,6 +126,8 @@ fn open_file_runs_mustache_and_returns_its_uris() {
         [
             "--bundle",
             "--helper",
+            "--parent",
+            "Zx81handle",
             "--dart-arg",
             "--dialog=open",
             "--dart-arg",

@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! silica-embedder [--engine DIR] [--size WxH] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
-//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] [--helper] BUNDLE
+//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] [--helper] [--parent HANDLE] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NAME]
 //! ```
@@ -12,6 +12,8 @@
 //! the AOT code is needed: `--aot`, or `libapp.so` next to `BUNDLE`
 //! (`cargo xtask bundle <app> --release`). `--helper` starts a helper process of the app (the
 //! portal's Open and Save dialog): not the app's running instance, and it ends with its window.
+//! `--parent HANDLE` (an xdg-foreign v2 handle, bare or `wayland:HANDLE`) makes another app's
+//! window the parent of this one: the dialog is attached to the app that asked for it.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -63,6 +65,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut app_id = "dev.frascella.silica.Flutter".to_owned();
     let mut multi_window = false;
     let mut helper = false;
+    let mut parent = None;
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
@@ -118,6 +121,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--app-id" => app_id = value()?,
             "--multi-window" => multi_window = true,
             "--helper" => helper = true,
+            "--parent" => parent = silica_embedder::parent_handle(&value()?),
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -156,6 +160,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         app_id,
         multi_window,
         helper,
+        parent,
     })
 }
 
@@ -188,6 +193,28 @@ mod tests {
         assert_eq!(options.dart_args, ["--dialog=open"]);
         let plain = parse(args(&["/bundle/flutter_assets"])).unwrap();
         assert!(!plain.helper);
+        assert_eq!(plain.parent, None);
+    }
+
+    #[test]
+    fn the_portal_dialog_gets_its_parent_window() {
+        // The portal adds `--parent` with the requesting window's xdg-foreign handle.
+        let options = parse(args(&[
+            "/bundle/flutter_assets",
+            "--helper",
+            "--parent",
+            "Zx81handle",
+            "--dart-arg",
+            "--dialog=open",
+        ]))
+        .unwrap();
+        assert_eq!(options.parent.as_deref(), Some("Zx81handle"));
+        assert_eq!(options.dart_args, ["--dialog=open"]);
+        let prefixed = parse(args(&["/b", "--parent", "wayland:abc"])).unwrap();
+        assert_eq!(prefixed.parent.as_deref(), Some("abc"));
+        let empty = parse(args(&["/b", "--parent", ""])).unwrap();
+        assert_eq!(empty.parent, None);
+        assert!(parse(args(&["/b", "--parent"])).is_err());
     }
 
     #[test]

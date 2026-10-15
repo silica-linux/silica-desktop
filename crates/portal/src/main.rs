@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use silica_portal::{
     BUS_NAME, DialogKind, DialogRequest, OBJECT_PATH, RESPONSE_CANCELLED, RESPONSE_OK,
-    RESPONSE_OTHER, dialog_command, find_mustache_exec, parse_uris, path_from_bytes,
+    RESPONSE_OTHER, dialog_command, find_mustache_exec, parent_handle, parse_uris, path_from_bytes,
 };
 use zbus::interface;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
@@ -35,7 +35,11 @@ fn option_path(options: &HashMap<String, OwnedValue>, key: &str) -> Option<Strin
     path_from_bytes(&bytes)
 }
 
-fn request(title: &str, options: &HashMap<String, OwnedValue>) -> DialogRequest {
+fn request(
+    parent_window: &str,
+    title: &str,
+    options: &HashMap<String, OwnedValue>,
+) -> DialogRequest {
     DialogRequest {
         title: title.to_owned(),
         accept_label: option_string(options, "accept_label"),
@@ -43,6 +47,7 @@ fn request(title: &str, options: &HashMap<String, OwnedValue>) -> DialogRequest 
         directory: option_bool(options, "directory"),
         current_name: option_string(options, "current_name"),
         current_folder: option_path(options, "current_folder"),
+        parent: parent_handle(parent_window),
     }
 }
 
@@ -106,22 +111,22 @@ impl FileChooser {
         &self,
         _handle: ObjectPath<'_>,
         _app_id: &str,
-        _parent_window: &str,
+        parent_window: &str,
         title: &str,
         options: HashMap<String, OwnedValue>,
     ) -> (u32, Results) {
-        run_dialog(DialogKind::Open, request(title, &options)).await
+        run_dialog(DialogKind::Open, request(parent_window, title, &options)).await
     }
 
     async fn save_file(
         &self,
         _handle: ObjectPath<'_>,
         _app_id: &str,
-        _parent_window: &str,
+        parent_window: &str,
         title: &str,
         options: HashMap<String, OwnedValue>,
     ) -> (u32, Results) {
-        run_dialog(DialogKind::Save, request(title, &options)).await
+        run_dialog(DialogKind::Save, request(parent_window, title, &options)).await
     }
 
     #[zbus(property)]
