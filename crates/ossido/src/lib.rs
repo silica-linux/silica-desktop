@@ -20,6 +20,8 @@ mod drm;
 mod egl;
 mod gestures;
 mod glass;
+#[cfg(test)]
+mod glass_equivalence;
 mod handlers;
 mod idle;
 mod input;

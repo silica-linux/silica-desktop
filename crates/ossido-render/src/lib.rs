@@ -56,9 +56,29 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         glass::MATERIAL_SHADER,
         &glass::MATERIAL_UNIFORMS,
     );
+    let downsample = compile_texture(
+        renderer,
+        "blur downsample",
+        glass::DOWNSAMPLE_SHADER,
+        &glass::DOWNSAMPLE_UNIFORMS,
+    );
+    let upsample = compile_texture(
+        renderer,
+        "blur upsample",
+        glass::UPSAMPLE_SHADER,
+        &glass::UPSAMPLE_UNIFORMS,
+    );
     let glass = blur
         .zip(material)
-        .map(|(blur, material)| glass::GlassPrograms { blur, material });
+        .zip(downsample.clone().zip(upsample.clone()))
+        .map(
+            |((blur, material), (downsample, upsample))| glass::GlassPrograms {
+                blur,
+                material,
+                downsample,
+                upsample,
+            },
+        );
     let tone = compile_texture(
         renderer,
         "bar backdrop",
@@ -78,9 +98,14 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         bar_material::BLUR_SHADER,
         &bar_material::BLUR_UNIFORMS,
     );
-    let bar = bar_tone
-        .zip(bar_blur)
-        .map(|(tone, blur)| bar_material::BarPrograms { tone, blur });
+    let bar = bar_tone.zip(bar_blur).zip(downsample.zip(upsample)).map(
+        |((tone, blur), (downsample, upsample))| bar_material::BarPrograms {
+            tone,
+            blur,
+            downsample,
+            upsample,
+        },
+    );
     let shaders = Shaders {
         corners,
         shadow,

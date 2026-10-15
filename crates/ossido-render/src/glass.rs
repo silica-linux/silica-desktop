@@ -505,6 +505,18 @@ pub const SHEET_DARK: MaterialParams = MaterialParams {
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
+/// A reduced blur drawn back at full size.
+pub const UPSAMPLE_SHADER: &str = include_str!("shaders/upsample.frag");
+pub const UPSAMPLE_UNIFORMS: [(&str, UniformType); 1] = [("tex_size", UniformType::_2f)];
+/// The box prefilter of a reduced-resolution blur.
+pub const DOWNSAMPLE_SHADER: &str = include_str!("shaders/downsample.frag");
+pub const DOWNSAMPLE_UNIFORMS: [(&str, UniformType); 5] = [
+    ("src_size", UniformType::_2f),
+    ("out_size", UniformType::_2f),
+    ("factor", UniformType::_1f),
+    ("pad", UniformType::_1f),
+    ("mirror", UniformType::_1f),
+];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
 pub const MATERIAL_UNIFORMS: [(&str, UniformType); 27] = [
     ("tex_size", UniformType::_2f),
@@ -728,9 +740,10 @@ pub const MERGE_PT: f32 = 5.0;
 /// Regions the shader merges together at most: beyond that, separate groups.
 const MAX_SHAPES: usize = 8;
 
-/// Beyond this σ (pixels) blurring happens at half or a quarter of the resolution: the shader
-/// kernel reaches 48 pixels.
-const MAX_SIGMA_PX: f64 = 12.0;
+/// The smallest σ, in pixels of the reduced texture, a reduced blur runs with: below it the
+/// factor halves (a kind's factor is validated by the equivalence test, this only guards
+/// against a σ the test did not see).
+const MIN_REDUCED_SIGMA_PX: f64 = 1.5;
 
 /// Where a tip points: its apex at the middle of that side of its rectangle, its base on the
 /// opposite one.
@@ -950,6 +963,7 @@ impl PhysicalRegion {
         BlurKey {
             sigma: self.sigma(),
             sharp: self.material.sharp,
+            factor: self.profile.blur_scale.factor(self.scale),
         }
     }
 
@@ -974,15 +988,79 @@ impl PhysicalRegion {
     }
 }
 
-/// The blur of a texture: σ in points and the sharp share.
+/// The blur of a texture: σ in points, the sharp share and the resolution factor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BlurKey {
     sigma: f64,
     sharp: f32,
+    factor: u32,
 }
 
-/// The state of the elements behind the glass: if it does not change, the texture is reused.
-type Signature = Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>;
+/// One element behind the glass as the blurred texture saw it: everything the damage tracker
+/// compares to decide that an element must be redrawn.
+#[derive(Debug, Clone, PartialEq)]
+struct Seen {
+    id: Id,
+    commit: CommitCounter,
+    geometry: Rectangle<i32, Physical>,
+    src: Rectangle<f64, Buffer>,
+    transform: Transform,
+    alpha: f32,
+}
+
+impl Seen {
+    fn of<E: Element>(element: &E, scale: f64) -> Self {
+        Self {
+            id: element.id().clone(),
+            commit: element.current_commit(),
+            geometry: element.geometry(Scale::from(scale)),
+            src: element.src(),
+            transform: element.transform(),
+            alpha: element.alpha(),
+        }
+    }
+}
+
+/// The elements of `behind` that reach into `bbox`, from the front, with what they show.
+fn seen_in<E: Element>(
+    behind: &[E],
+    bbox: Rectangle<i32, Physical>,
+    scale: f64,
+) -> Vec<(Seen, &E)> {
+    behind
+        .iter()
+        .filter(|element| element.geometry(Scale::from(scale)).overlaps(bbox))
+        .map(|element| (Seen::of(element, scale), element))
+        .collect()
+}
+
+/// Whether the pixels behind the glass inside `bbox` are still the ones the texture was made
+/// from: the same elements in the same order, at the same place, with the same source,
+/// transform and alpha, and any new commit of theirs damaging only outside `bbox`. Anything
+/// else (an element that moved, appeared, went away or changed under the glass) means
+/// recomputing.
+fn unchanged<E: Element>(
+    before: &[Seen],
+    now: &[(Seen, &E)],
+    bbox: Rectangle<i32, Physical>,
+    scale: f64,
+) -> bool {
+    before.len() == now.len()
+        && before.iter().zip(now).all(|(old, (new, element))| {
+            old.id == new.id
+                && old.geometry == new.geometry
+                && old.src == new.src
+                && old.transform == new.transform
+                && old.alpha.to_bits() == new.alpha.to_bits()
+                && (old.commit == new.commit
+                    || element
+                        .damage_since(Scale::from(scale), Some(old.commit))
+                        .iter()
+                        .all(|rect| {
+                            !Rectangle::new(rect.loc + new.geometry.loc, rect.size).overlaps(bbox)
+                        }))
+        })
+}
 
 /// The glass of a surface between frames (in the surface data).
 #[derive(Default)]
@@ -992,7 +1070,11 @@ pub struct GlassCache {
 
 struct Cached {
     quality: GlassQuality,
-    signature: Signature,
+    /// What was behind, element by element, when the textures were made.
+    seen: Vec<Seen>,
+    /// The output scale and the color under everything the textures were made with.
+    scale: f64,
+    clear_color: [f32; 4],
     regions: Vec<PhysicalRegion>,
     bbox: Rectangle<i32, Physical>,
     /// One blurred texture per blur present, in the order of the regions.
@@ -1006,6 +1088,10 @@ struct Cached {
 pub struct GlassPrograms {
     pub blur: GlesTexProgram,
     pub material: GlesTexProgram,
+    /// The box prefilter of the reduced-resolution blur.
+    pub downsample: GlesTexProgram,
+    /// The reduced blur drawn back at full size.
+    pub upsample: GlesTexProgram,
 }
 
 impl GlassCache {
@@ -1057,22 +1143,17 @@ impl GlassCache {
         else {
             return Ok(Vec::new());
         };
-        let signature: Signature = behind
-            .iter()
-            .filter(|element| element.geometry(Scale::from(scale)).overlaps(bbox))
-            .map(|element| {
-                (
-                    element.id().clone(),
-                    element.current_commit(),
-                    element.geometry(Scale::from(scale)),
-                )
-            })
-            .collect();
+        let now = seen_in(behind, bbox, scale);
 
+        // The textures are reused only if nothing they were made from changed: the elements
+        // behind (where the glass reads), the glass's own shapes and materials, the quality,
+        // the scale and the clear color. When in doubt they are made again.
         let mut state = self.state.borrow_mut();
         let reuse = state.as_ref().is_some_and(|cached| {
             cached.quality == quality
-                && cached.signature == signature
+                && cached.scale.to_bits() == scale.to_bits()
+                && cached.clear_color.map(f32::to_bits) == clear_color.map(f32::to_bits)
+                && unchanged(&cached.seen, &now, bbox, scale)
                 && cached.regions.len() == regions.len()
                 && cached
                     .regions
@@ -1081,13 +1162,16 @@ impl GlassCache {
                     .all(|(a, b)| a.same_shape(b))
                 && cached.bbox == bbox
         });
-        // Only the opacity changed: same textures, new elements to redraw.
-        if reuse
-            && let Some(cached) = state.as_mut()
-            && cached.regions != regions
-        {
-            cached.regions = regions.to_vec();
-            cached.commit.increment();
+        let seen: Vec<Seen> = now.into_iter().map(|(seen, _)| seen).collect();
+        if reuse && let Some(cached) = state.as_mut() {
+            // New commits that damaged only outside the glass: the next comparison starts from
+            // them.
+            cached.seen = seen.clone();
+            // Only the opacity changed: same textures, new elements to redraw.
+            if cached.regions != regions {
+                cached.regions = regions.to_vec();
+                cached.commit.increment();
+            }
         }
         if !reuse {
             let sharp = render_to_texture(renderer, behind, bbox, scale, clear_color)?;
@@ -1112,7 +1196,9 @@ impl GlassCache {
             commit.increment();
             *state = Some(Cached {
                 quality,
-                signature,
+                seen,
+                scale,
+                clear_color,
                 regions: regions.to_vec(),
                 bbox,
                 textures,
@@ -1210,30 +1296,55 @@ pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
     Ok(texture)
 }
 
-/// One pass: `source` (`from` large) drawn into a new texture `to` large, over `under` if
-/// present.
+/// One pass: the part `src` of `source` drawn into a new 8-bit texture `to` large, over
+/// `under` (as large as `to`) if present.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn pass(
     renderer: &mut GlesRenderer,
     source: &GlesTexture,
-    from: Size<i32, Physical>,
+    src: Rectangle<f64, Buffer>,
     to: Size<i32, Physical>,
     program: Option<&GlesTexProgram>,
     uniforms: &[Uniform<'_>],
     alpha: f32,
     under: Option<&GlesTexture>,
 ) -> Result<GlesTexture, GlesError> {
-    let mut texture = renderer.create_buffer(Fourcc::Abgr8888, buffer_size(to))?;
+    pass_in(
+        renderer,
+        Fourcc::Abgr8888,
+        source,
+        src,
+        to,
+        program,
+        uniforms,
+        alpha,
+        under,
+    )
+}
+
+/// `pass` into a texture of `format`.
+#[allow(clippy::too_many_arguments)]
+fn pass_in(
+    renderer: &mut GlesRenderer,
+    format: Fourcc,
+    source: &GlesTexture,
+    src: Rectangle<f64, Buffer>,
+    to: Size<i32, Physical>,
+    program: Option<&GlesTexProgram>,
+    uniforms: &[Uniform<'_>],
+    alpha: f32,
+    under: Option<&GlesTexture>,
+) -> Result<GlesTexture, GlesError> {
+    let mut texture = renderer.create_buffer(format, buffer_size(to))?;
     {
         let mut target = renderer.bind(&mut texture)?;
         let mut frame = renderer.render(&mut target, to, Transform::Normal)?;
         let full = [Rectangle::from_size(to)];
         frame.clear([0.0, 0.0, 0.0, 0.0].into(), &full)?;
-        let src = Rectangle::from_size(buffer_size(from).to_f64());
         if let Some(under) = under {
             frame.render_texture_from_to(
                 under,
-                src,
+                whole(to),
                 Rectangle::from_size(to),
                 &full,
                 &[],
@@ -1260,6 +1371,241 @@ pub(crate) fn pass(
     Ok(texture)
 }
 
+/// The whole of a texture `size` large, as a source rectangle.
+pub(crate) fn whole(size: Size<i32, Physical>) -> Rectangle<f64, Buffer> {
+    Rectangle::from_size(buffer_size(size).to_f64())
+}
+
+/// What lies past the edges of a blurred capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlurEdge {
+    /// The edge pixels repeat (the glass: a capture cut by the output's edge).
+    Clamp,
+    /// The capture is mirrored (the spaces bar, missioncontrol.md › MC-BLUR).
+    Mirror,
+}
+
+/// A blurred texture, possibly smaller than its source.
+pub(crate) struct Blurred {
+    pub texture: GlesTexture,
+    /// The size of `texture`: smaller than the source if the blur was reduced.
+    pub size: Size<i32, Physical>,
+    /// The part of `texture` that covers the source, to draw it back at full size.
+    pub src: Rectangle<f64, Buffer>,
+}
+
+impl Blurred {
+    /// Drawn into a new texture `size` large (the source's), with `alpha` over `under`: the
+    /// reduced texture through the upsampling program, a full-size one as it is.
+    pub(crate) fn back(
+        &self,
+        renderer: &mut GlesRenderer,
+        upsample: &GlesTexProgram,
+        size: Size<i32, Physical>,
+        alpha: f32,
+        under: Option<&GlesTexture>,
+    ) -> Result<GlesTexture, GlesError> {
+        if self.size == size {
+            return pass(
+                renderer,
+                &self.texture,
+                self.src,
+                size,
+                None,
+                &[],
+                alpha,
+                under,
+            );
+        }
+        let uniforms = [Uniform::new(
+            "tex_size",
+            UniformValue::_2f(self.size.w as f32, self.size.h as f32),
+        )];
+        pass(
+            renderer,
+            &self.texture,
+            self.src,
+            size,
+            Some(upsample),
+            &uniforms,
+            alpha,
+            under,
+        )
+    }
+}
+
+/// The factor actually used for a blur of σ `sigma` pixels at `factor` (1, 2, 4 or 8): halved
+/// while the reduced σ would fall under `MIN_REDUCED_SIGMA_PX`.
+pub fn effective_factor(sigma: f64, factor: u32) -> u32 {
+    let mut factor = match factor {
+        0..=1 => 1,
+        2..=3 => 2,
+        4..=7 => 4,
+        _ => 8,
+    };
+    while factor > 1 && reduced_sigma(sigma, factor) < MIN_REDUCED_SIGMA_PX {
+        factor /= 2;
+    }
+    factor
+}
+
+/// σ in pixels of the texture reduced by `factor`. Averaging over f × f pixels adds
+/// (f² − 1) / 12 pixels² of variance, the bilinear upsampling f² / 4 − (f² − 1) / 12 on
+/// average over the phases: f² / 4 together, taken out of σ² so that the total spread is the
+/// full-resolution one.
+fn reduced_sigma(sigma: f64, factor: u32) -> f64 {
+    if factor <= 1 {
+        return sigma;
+    }
+    let f = f64::from(factor);
+    (sigma * sigma - f * f / 4.0).max(0.0).sqrt() / f
+}
+
+/// The format of the reduced textures: half floats, so that the extra passes of a reduced
+/// blur (the prefilter) add no 8-bit rounding of their own; the full-resolution blur keeps
+/// 8 bits, as it always had.
+const REDUCED_FORMAT: Fourcc = Fourcc::Abgr16161616f;
+
+/// A separable Gaussian of σ `sigma` pixels over `source` (`size` large) at 1/`factor` of the
+/// resolution (`effective_factor`): a box prefilter down to ceil(size / factor), then the two
+/// blur passes there with the reduced σ, in half floats. At factor 1, or where the renderer
+/// cannot draw into half floats, it is the plain full-resolution blur.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gaussian(
+    renderer: &mut GlesRenderer,
+    blur: &GlesTexProgram,
+    downsample: &GlesTexProgram,
+    edge: BlurEdge,
+    source: &GlesTexture,
+    size: Size<i32, Physical>,
+    sigma: f64,
+    factor: u32,
+) -> Result<Blurred, GlesError> {
+    let factor = effective_factor(sigma, factor);
+    if factor > 1 {
+        match reduced(
+            renderer, blur, downsample, edge, source, size, sigma, factor,
+        ) {
+            Ok(blurred) => return Ok(blurred),
+            // When in doubt, full resolution.
+            Err(err) => tracing::debug!("reduced blur unavailable, full resolution: {err:?}"),
+        }
+    }
+    let texture = blur_passes(
+        renderer,
+        blur,
+        source.clone(),
+        size,
+        sigma as f32,
+        Fourcc::Abgr8888,
+    )?;
+    Ok(Blurred {
+        texture,
+        size,
+        src: whole(size),
+    })
+}
+
+/// The reduced blur of `gaussian`, `factor` > 1.
+#[allow(clippy::too_many_arguments)]
+fn reduced(
+    renderer: &mut GlesRenderer,
+    blur: &GlesTexProgram,
+    downsample: &GlesTexProgram,
+    edge: BlurEdge,
+    source: &GlesTexture,
+    size: Size<i32, Physical>,
+    sigma: f64,
+    factor: u32,
+) -> Result<Blurred, GlesError> {
+    let f = factor as i32;
+    let sigma_small = reduced_sigma(sigma, factor);
+    // A border as wide as the reduced kernel around the source: there the reduced texture
+    // holds the source extended past its edge as the full-resolution blur extends it, rather
+    // than a box mean that a single edge column (a line at the screen's edge) would not match.
+    let pad = (3.0 * sigma_small).ceil() as i32 + 1;
+    let small = Size::from((
+        (size.w.max(1) + f - 1) / f + 2 * pad,
+        (size.h.max(1) + f - 1) / f + 2 * pad,
+    ));
+    let uniforms = [
+        Uniform::new("src_size", UniformValue::_2f(size.w as f32, size.h as f32)),
+        Uniform::new(
+            "out_size",
+            UniformValue::_2f(small.w as f32, small.h as f32),
+        ),
+        Uniform::new("factor", UniformValue::_1f(factor as f32)),
+        Uniform::new("pad", UniformValue::_1f(pad as f32)),
+        Uniform::new(
+            "mirror",
+            UniformValue::_1f(if edge == BlurEdge::Mirror { 1.0 } else { 0.0 }),
+        ),
+    ];
+    let prefiltered = pass_in(
+        renderer,
+        REDUCED_FORMAT,
+        source,
+        whole(size),
+        small,
+        Some(downsample),
+        &uniforms,
+        1.0,
+        None,
+    )?;
+    let texture = blur_passes(
+        renderer,
+        blur,
+        prefiltered,
+        small,
+        sigma_small as f32,
+        REDUCED_FORMAT,
+    )?;
+    // The source covers size / factor of the reduced texture, inside the border.
+    let src = Rectangle::new(
+        Point::from((f64::from(pad), f64::from(pad))),
+        Size::from((
+            f64::from(size.w) / f64::from(factor),
+            f64::from(size.h) / f64::from(factor),
+        )),
+    );
+    Ok(Blurred {
+        texture,
+        size: small,
+        src,
+    })
+}
+
+/// The horizontal and vertical passes of a Gaussian of σ `sigma` texture pixels over
+/// `texture` (`size` large), into textures of `format`.
+fn blur_passes(
+    renderer: &mut GlesRenderer,
+    blur: &GlesTexProgram,
+    texture: GlesTexture,
+    size: Size<i32, Physical>,
+    sigma: f32,
+    format: Fourcc,
+) -> Result<GlesTexture, GlesError> {
+    let mut current = texture;
+    for step in [(1.0 / size.w as f32, 0.0), (0.0, 1.0 / size.h as f32)] {
+        let uniforms = [
+            Uniform::new("step", UniformValue::_2f(step.0, step.1)),
+            Uniform::new("sigma", UniformValue::_1f(sigma)),
+        ];
+        current = pass_in(
+            renderer,
+            format,
+            &current,
+            whole(size),
+            size,
+            Some(blur),
+            &uniforms,
+            1.0,
+            None,
+        )?;
+    }
+    Ok(current)
+}
+
 /// Blurs the capture with the σ and mixes in the sharp share.
 fn blur(
     renderer: &mut GlesRenderer,
@@ -1269,46 +1615,21 @@ fn blur(
     key: BlurKey,
     scale: f64,
 ) -> Result<GlesTexture, GlesError> {
-    let sigma = key.sigma * scale;
-    // Reduction: with a large σ blurring happens at half or a quarter of the resolution.
-    let factor = if sigma > MAX_SIGMA_PX * 2.0 {
-        4
-    } else if sigma > MAX_SIGMA_PX {
-        2
-    } else {
-        1
-    };
-    let small = Size::from(((size.w / factor).max(1), (size.h / factor).max(1)));
-    let mut current = if factor > 1 {
-        pass(renderer, sharp, size, small, None, &[], 1.0, None)?
-    } else {
-        sharp.clone()
-    };
-    let sigma_small = (sigma / f64::from(factor)) as f32;
-    for step in [(1.0 / small.w as f32, 0.0), (0.0, 1.0 / small.h as f32)] {
-        let uniforms = [
-            Uniform::new("step", UniformValue::_2f(step.0, step.1)),
-            Uniform::new("sigma", UniformValue::_1f(sigma_small)),
-        ];
-        current = pass(
-            renderer,
-            &current,
-            small,
-            small,
-            Some(&programs.blur),
-            &uniforms,
-            1.0,
-            None,
-        )?;
-    }
-    // Back to full resolution, with the sharp share below: w · sharp + (1 − w) · blurred.
-    pass(
+    let blurred = gaussian(
         renderer,
-        &current,
-        small,
+        &programs.blur,
+        &programs.downsample,
+        BlurEdge::Clamp,
+        sharp,
         size,
-        None,
-        &[],
+        key.sigma * scale,
+        key.factor,
+    )?;
+    // Back to full resolution, with the sharp share below: w · sharp + (1 − w) · blurred.
+    blurred.back(
+        renderer,
+        &programs.upsample,
+        size,
         1.0 - key.sharp,
         Some(sharp),
     )
