@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 // The Dock label (TIP-01) is glass drawn by Ossido like the menus: same material, same
@@ -50,7 +51,9 @@ void main() {
       final menu = glasses[1];
       expect(label.material, GlassMaterial.thick);
       expect(label.material, menu.material);
-      expect(label.group, menu.group);
+      // Its own glass group, below the menu's: the two never merge (glass_groups.dart).
+      expect(label.group, DockGlass.label);
+      expect(label.group, lessThan(menu.group));
       expect(label.regions().first['opacity'], menu.regions().first['opacity']);
       expect(label.tip, isNotNull);
       expect(label.regions(), hasLength(2));

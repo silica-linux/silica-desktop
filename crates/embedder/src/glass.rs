@@ -34,8 +34,9 @@ pub struct Region {
     /// `add_upward_tip`), left or right (version 6, `add_side_tip`).
     pub tip: Option<Tip>,
     /// Regions merge only within the same group; a higher group is drawn on top
-    /// (version 4, `separate`).
-    pub group: u32,
+    /// (version 4, `separate`). Signed: a shell puts what must stay under its menus (group 0
+    /// and up, as `silica_ui` numbers them) in negative groups.
+    pub group: i32,
     /// The kind of surface (`profile`: `menu`, `panel`, `module`, `control`, `dock`,
     /// `tooltip`, `sheet`, `banner`; version 7, `set_profile`). Default: from the material.
     pub profile: Profile,
@@ -120,10 +121,9 @@ impl Region {
                 Some("tip-right") => Some(Tip::Right),
                 _ => None,
             },
-            group: value
-                .get("group")
-                .and_then(Value::as_u64)
-                .map_or(0, |g| u32::try_from(g).unwrap_or(u32::MAX)),
+            group: value.get("group").and_then(Value::as_i64).map_or(0, |g| {
+                i32::try_from(g).unwrap_or(if g < 0 { i32::MIN } else { i32::MAX })
+            }),
             profile: profile_named(value.get("profile").and_then(Value::as_str)),
             shadow: false,
         };
@@ -502,7 +502,7 @@ mod tests {
             {"x": 0, "y": 0, "width": 8, "height": 22, "shape": "tip-right"},
             {"x": 0, "y": 0, "width": 8, "height": 22, "shape": "tip-sideways"}
         ]));
-        let summary: Vec<(u32, Option<Tip>)> = regions.iter().map(|r| (r.group, r.tip)).collect();
+        let summary: Vec<(i32, Option<Tip>)> = regions.iter().map(|r| (r.group, r.tip)).collect();
         assert_eq!(
             summary,
             [
@@ -515,5 +515,19 @@ mod tests {
                 (1, None)
             ]
         );
+    }
+
+    #[test]
+    fn negative_groups_sort_below_zero_and_out_of_range_ones_saturate() {
+        let regions = parse_regions(&json!([
+            {"x": 0, "y": 0, "width": 10, "height": 10},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": 1},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": -900},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": -1000},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": -99999999999i64},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "group": 99999999999i64}
+        ]));
+        let groups: Vec<i32> = regions.iter().map(|r| r.group).collect();
+        assert_eq!(groups, [i32::MIN, -1000, -900, 0, 1, i32::MAX]);
     }
 }

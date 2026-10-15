@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,25 +17,39 @@ void main() {
         .setMockMethodCallHandler(GlassRegistry.channel, (call) async => true);
   });
 
-  test(
-    'the fan follows the measurements (pitch and shift widened by fanSpread, provisional)',
-    () {
-      // Icon at x 1703.7, Dock area from y 1351 (dock-stacks.md, 10 files).
-      Rect rect(int i) {
-        final s = fanSlot(i);
-        final c = const Offset(1703.7, 1351) + s.center;
-        return Rect.fromCenter(center: c, width: s.side, height: s.side);
-      }
-
-      expect(rect(0).left, closeTo(1673.1, 0.2));
-      expect(rect(0).top, closeTo(1278.1, 0.3));
-      expect(rect(9).left, closeTo(1673.1 + 66.6 * fanSpread, 0.3));
-      expect(rect(9).top, closeTo(1351 - 72.8 - 64.6 * 9 * fanSpread, 1.5));
-      expect(rect(15).left, closeTo(1673.1 + 177.8 * fanSpread, 0.3));
-      expect(fanSlot(15).side, closeTo(82.3, 0.2));
-      expect(fanSlot(5).angle, greaterThan(fanSlot(1).angle));
-    },
-  );
+  test('the fan follows the measurements (DOCK-FAN)', () {
+    // Stack item centre x 1672.2, Dock top edge 1356 (the Dock area 7 pt higher), 10 files and
+    // "open in Finder" (dock-stacks.md, DOCK-FAN): measured icon centres and AX sides.
+    const centres = [
+      (1674.0, 1311.0, 65.8),
+      (1676.0, 1247.0, 67.1),
+      (1680.0, 1183.0, 68.4),
+      (1685.0, 1119.0, 69.6),
+      (1692.0, 1055.0, 70.9),
+      (1700.0, 991.0, 72.1),
+      (1709.0, 927.0, 73.2),
+      (1720.0, 863.0, 74.4),
+      (1733.0, 799.0, 75.5),
+      (1746.0, 735.0, 76.5),
+      (1761.0, 671.0, 77.6),
+    ];
+    for (var i = 0; i < centres.length; i++) {
+      final s = fanSlot(i);
+      final (x, y, frame) = centres[i];
+      expect(1672.2 + s.center.dx, closeTo(x, 1.6), reason: 'x of $i');
+      expect(1356 - 5 + s.center.dy, closeTo(y, 0.6), reason: 'y of $i');
+      expect(s.frame, closeTo(frame, 0.2), reason: 'frame of $i');
+      expect(s.side, fanIcon);
+    }
+    // ~1.6° for the first, ~1.22° more per item.
+    expect(fanSlot(0).angle * 180 / math.pi, closeTo(1.6, 0.01));
+    expect(
+      (fanSlot(9).angle - fanSlot(8).angle) * 180 / math.pi,
+      closeTo(1.22, 0.01),
+    );
+    // Centres 64 pt apart vertically.
+    expect(fanSlot(4).center.dy - fanSlot(5).center.dy, closeTo(64, 1e-9));
+  });
 
   test('automatic view and grid shape', () {
     expect(automaticView(10), StackView.fan);
