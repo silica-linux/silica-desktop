@@ -205,12 +205,19 @@ impl XdgShellHandler for State {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        let focused = self
+            .seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some_and(|focus| &focus == surface.wl_surface());
         // The window fades out from its last image: the surface still has the buffer.
         if let Some(window) = self.window_for(surface.wl_surface()) {
-            // Its app's next window opens here (APP-LC).
-            if let (Some(app), Some(location)) = (
+            // Its app's next window opens here (APP-LC); a child window (Info, compose)
+            // leaves the app's place alone.
+            if let (Some(app), Some(location), None) = (
                 crate::panorama::window_app(&window),
                 self.space.element_location(&window),
+                surface.parent(),
             ) {
                 self.app_frames.remember(
                     &app,
@@ -221,12 +228,43 @@ impl XdgShellHandler for State {
                 );
             }
             self.start_closing(&window);
+            // The keyboard was there: it goes to the window's parent, or to the app's next
+            // window (closing an Info window gives the focus back to its browser window).
+            if focused {
+                let next = self.next_focus_after(&window, surface.parent());
+                if next.is_some() {
+                    self.focus_window(next);
+                }
+            }
         }
         self.unpublish_toplevel(&surface);
     }
 
     fn title_changed(&mut self, surface: ToplevelSurface) {
         self.update_toplevel(&surface);
+    }
+
+    /// A child window (`set_parent`: Get Info, a compose window) opens over its parent,
+    /// offset so the parent's bar stays visible, rather than in the cascade.
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        let Some(window) = self.window_for(surface.wl_surface()) else {
+            return;
+        };
+        let fresh = window
+            .user_data()
+            .get::<FreshWindow>()
+            .is_some_and(|fresh| fresh.0.get());
+        let Some(parent) = surface.parent().and_then(|parent| self.window_for(&parent)) else {
+            return;
+        };
+        if !fresh {
+            return;
+        }
+        let Some(parent_at) = self.space.element_location(&parent) else {
+            return;
+        };
+        let at = crate::windows::child_location(parent_at, self.usable_area());
+        self.space.map_element(window, at, true);
     }
 
     fn app_id_changed(&mut self, surface: ToplevelSurface) {
@@ -239,7 +277,8 @@ impl XdgShellHandler for State {
             .user_data()
             .get::<FreshWindow>()
             .is_some_and(|fresh| fresh.0.replace(false));
-        if !fresh {
+        // A child window stays over its parent (`parent_changed`).
+        if !fresh || surface.parent().is_some() {
             return;
         }
         if let Some(app) = crate::panorama::window_app(&window)

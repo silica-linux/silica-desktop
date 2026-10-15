@@ -196,6 +196,19 @@ impl Session {
         });
         assert!(found, "pixel ({x}, {y}) = {last:?}, expected {color:?}");
     }
+
+    /// Like `expect_pixel`, within a few levels (the faint edge of another window's shadow).
+    fn expect_pixel_near(&self, x: u32, y: u32, color: [u8; 4]) {
+        let mut last = [0; 4];
+        let found = wait_until(|| {
+            last = self.pixel(x, y);
+            last.iter().zip(color).all(|(a, b)| a.abs_diff(b) <= 4)
+        });
+        assert!(
+            found,
+            "pixel ({x}, {y}) = {last:?}, expected about {color:?}"
+        );
+    }
 }
 
 impl Drop for Session {
@@ -560,17 +573,36 @@ fn second_window(session: &Session) -> WindowInfo {
     })
 }
 
-/// A point of `main` not covered by `other` (logical), inset from the edges.
+/// The point of `main` (logical) farthest from `other` and from its shadow, away from the
+/// edges and the rounded corners.
 fn uncovered(main: &WindowInfo, other: &WindowInfo) -> (i32, i32) {
-    let inside = |(x, y): (i32, i32)| {
-        x >= other.x && x < other.x + other.width && y >= other.y && y < other.y + other.height
+    const EDGE: i32 = 12;
+    const CORNER: i32 = 34;
+    let distance = |(x, y): (i32, i32)| {
+        let dx = (other.x - x).max(x - (other.x + other.width)).max(0);
+        let dy = (other.y - y).max(y - (other.y + other.height)).max(0);
+        dx.max(dy)
     };
-    let (left, top) = (main.x + 30, main.y + 60);
-    let (right, bottom) = (main.x + main.width - 30, main.y + main.height - 60);
-    [(left, top), (right, top), (left, bottom), (right, bottom)]
-        .into_iter()
-        .find(|point| !inside(*point))
-        .expect("the second window covers the whole main window")
+    let corner = |(x, y): (i32, i32)| {
+        let near = |v: i32, start: i32, len: i32| v - start < CORNER || start + len - v < CORNER;
+        near(x, main.x, main.width) && near(y, main.y, main.height)
+    };
+    let points = (main.x + EDGE..main.x + main.width - EDGE)
+        .step_by(4)
+        .flat_map(|x| {
+            (main.y + EDGE..main.y + main.height - EDGE)
+                .step_by(4)
+                .map(move |y| (x, y))
+        });
+    let best = points
+        .filter(|point| !corner(*point))
+        .max_by_key(|point| distance(*point))
+        .expect("a window without points");
+    assert!(
+        distance(best) >= 30,
+        "the second window covers the main one"
+    );
+    best
 }
 
 /// Several windows in one process (#146): F2 opens a second view in its own xdg_toplevel,
@@ -593,13 +625,21 @@ fn second_window_opens_draws_and_closes(name: &str, renderer: &[&str]) {
     session.expect_pixel(second.x as u32 + 100, second.y as u32 + 60, SECOND);
     // The main window still draws its own view.
     let (x, y) = uncovered(&main, &second);
-    session.expect_pixel(x as u32, y as u32, IDLE);
+    session.expect_pixel_near(x as u32, y as u32, IDLE);
 
     // The keyboard goes to the window that has it: the second window's field, not the main
     // window's (the engine is told which view has the focus).
     client.call(INPUT_TYPE, json!({"text": "word"})).unwrap();
     session.expect_pixel(second.x as u32 + 100, second.y as u32 + 30, TYPED);
-    session.expect_pixel(x as u32, y as u32, IDLE);
+    session.expect_pixel_near(x as u32, y as u32, IDLE);
+
+    // A child window (set_parent): it opened over its parent, offset, and a click on the
+    // parent does not bury it.
+    assert_eq!((second.x, second.y), (main.x + 40, main.y + 40));
+    client.call(INPUT_CLICK, json!({"x": x, "y": y})).unwrap();
+    session.expect_pixel_near(x as u32, y as u32, TAPPED);
+    let order: Vec<u64> = app_windows(&session).iter().map(|w| w.id).collect();
+    assert_eq!(order, [second.id, main.id], "the child window went behind");
 
     // A tap in the second window: the app closes it (closeWindow); the process stays.
     client
@@ -614,6 +654,11 @@ fn second_window_opens_draws_and_closes(name: &str, renderer: &[&str]) {
     );
     let embedder = session.embedder.as_mut().unwrap();
     assert!(embedder.try_wait().unwrap().is_none(), "the app ended");
+    // The keyboard is back in the parent window, with its field focused again.
+    client.call(INPUT_TYPE, json!({"text": "word"})).unwrap();
+    session.expect_pixel_near(x as u32, y as u32, TYPED);
+    client.call(INPUT_KEY, json!({"key": "Escape"})).unwrap();
+    session.expect_pixel_near(x as u32, y as u32, IDLE);
 
     // Again, closed by its close button: Ossido asks, the app answers closeRequested.
     client.call(INPUT_KEY, json!({"key": "F2"})).unwrap();

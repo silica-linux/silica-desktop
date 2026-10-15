@@ -796,6 +796,7 @@ impl State {
             .and_then(|w| w.toplevel().map(|t| t.wl_surface().clone()));
         if let Some(window) = &window {
             self.space.raise_element(window, true);
+            self.raise_children(window);
         }
         // A layer with exclusive keyboard above the windows keeps the focus (wlr-layer-shell).
         let focus = self.exclusive_layer_surface().or(focus);
