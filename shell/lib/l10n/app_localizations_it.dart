@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -839,6 +840,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get faroScopeClipboard => 'Appunti';
+
+  @override
+  String get faroSectionSystem => 'Sistema';
 
   @override
   String get faroSearchFiles => 'Cerca nei file';
