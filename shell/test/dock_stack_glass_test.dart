@@ -1,7 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +29,7 @@ void main() {
   late Directory dir;
   late List<String> opened;
   late Offset stackIcon;
+  late double secondX;
 
   /// The menu of the open stack's own icon (right click on it).
   Future<void> openMenu(WidgetTester tester) async {
@@ -48,6 +50,7 @@ void main() {
     int files, {
     StackSettings settings = const StackSettings(),
     void Function(Directory)? prepare,
+    List<Item> others = const [],
   }) async {
     dir = Directory.systemTemp.createTempSync('Downloads');
     addTearDown(() => dir.deleteSync(recursive: true));
@@ -59,7 +62,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     opened = [];
-    final items = [Item.app('Downloads', command: 'x', folder: dir.path)];
+    final items = [Item.app('Downloads', command: 'x', folder: dir.path), ...others];
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
@@ -75,6 +78,7 @@ void main() {
       ),
     );
     final rest = layout(items, width: 2560, height: 1440);
+    secondX = items.length > 1 ? rest.center(1) : 0;
     stackIcon = Offset(rest.center(0), 1440 - bottomGap - backgroundHeight / 2);
     await tester.tapAt(stackIcon);
     for (var i = 0; i < 6; i++) {
@@ -584,5 +588,52 @@ void main() {
     expect(symbolSvg('chevron-down', env: env), contains('<svg'));
     expect(symbolSvg('missing', env: env), isNull);
     expect(symbolSvg('../x', env: env), isNull);
+  });
+
+  for (final content in [StackContent.fan, StackContent.grid]) {
+    testWidgets('hover label: none for the open stack, others below it '
+        '(${content.name})', (tester) async {
+      await openStack(
+        tester,
+        3,
+        settings: StackSettings(content: content),
+        others: [Item.app('Notes', command: 'notes')],
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(5, 5));
+      // The open stack's own item: no label.
+      await mouse.moveTo(stackIcon);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(
+        find.widgetWithText(DockLabel, 'Downloads'),
+        findsNothing,
+        reason: 'no hover label for the open stack',
+      );
+      // Another item: its label shows, in a glass group below the stack's.
+      final other = Offset(secondX, stackIcon.dy);
+      await mouse.moveTo(other);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.widgetWithText(DockLabel, 'Notes'), findsOneWidget);
+      final groups = regions().map((r) => r.$1).toSet();
+      expect(groups, contains(DockGlass.label));
+      // The stack's own glass is above the label's group.
+      expect(
+        groups.where((g) => g > DockGlass.label),
+        isNotEmpty,
+        reason: 'the stack draws above the hover label',
+      );
+    });
+  }
+
+  test('glass order: Dock, hover label, stack panel, fan labels', () {
+    expect(DockGlass.dock, lessThan(DockGlass.label));
+    expect(DockGlass.label, lessThan(DockGlass.gridPanel));
+    expect(DockGlass.gridPanel, lessThan(DockGlass.fanLabel(0)));
+    expect(DockGlass.label, lessThan(DockGlass.fanLabel(0)));
+    expect(DockGlass.fanLabel(1000), lessThan(0));
   });
 }

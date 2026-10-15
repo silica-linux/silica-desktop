@@ -2044,7 +2044,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         );
         final (bx, by, bw, bh) = l.background;
         final label = _labelIndex;
-        final hovered = !dragging && label != null && label < _items.length
+        // No label for the open stack's own item (its button closes the stack); the other
+        // labels stay below the stack (DockGlass).
+        final hovered =
+            !dragging &&
+                label != null &&
+                label < _items.length &&
+                label != _stackIndex
             ? label
             : null;
         // During and right after the drag the icons slide into place (~265 ms).

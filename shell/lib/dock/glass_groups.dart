@@ -9,21 +9,25 @@
 // …, on top of everything else. That is why everything below them is negative (the embedder
 // accepts signed groups and sorts them; Ossido only sees the order).
 
-/// Bottom to top.
+/// Bottom to top: the Dock, the hover label, the stack panel, the fan labels, the menus. The
+/// hover label sits below the stack (and is not shown at all for the open stack's own item).
 abstract final class DockGlass {
   /// The Dock's background.
   static const int dock = -1000;
 
+  /// The hover label and the "Remove" capsule while dragging.
+  static const int label = -900;
+
   /// The grid panel (with its tip).
-  static const int gridPanel = -900;
+  static const int gridPanel = -800;
 
   /// The fan's item labels: one group each ([fanLabel]).
-  static const int fanLabels = -800;
+  static const int fanLabels = -700;
 
-  /// The hover label and the "Remove" capsule while dragging.
-  static const int label = -100;
+  /// How many fan labels get a group of their own before the last one is shared.
+  static const int fanLabelSlots = 100;
 
   /// The glass group of the fan label of item `index` (from the bottom).
   static int fanLabel(int index) =>
-      fanLabels + index.clamp(0, label - fanLabels - 1);
+      fanLabels + index.clamp(0, fanLabelSlots - 1);
 }
