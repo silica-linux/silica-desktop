@@ -66,7 +66,7 @@ pub fn install_app(app: &str) -> Result<()> {
     Ok(())
 }
 
-/// The shell's own applications (`shell/linux/*.desktop.in`: Apps, Screenshot), their
+/// The shell's own applications (`shell/linux/*.desktop.in`: Apps, Mission Control, Screenshot), their
 /// `@ACTION@` replaced with `action` (the `silica-action` binary): `(file name, entry)`.
 pub fn shell_entries(root: &Path, action: &str) -> Result<Vec<(String, String)>> {
     let dir = root.join("shell/linux");
@@ -184,6 +184,7 @@ mod tests {
             names,
             [
                 "dev.frascella.Apps.desktop",
+                "dev.frascella.MissionControl.desktop",
                 "dev.frascella.Screenshot.desktop"
             ]
         );
@@ -193,12 +194,26 @@ mod tests {
             "{apps}"
         );
         assert!(apps.contains("X-Silica-Icon=apps"), "{apps}");
-        let shot = &entries[1].1;
+        let mission = &entries[1].1;
+        assert!(
+            mission.contains("Exec=/opt/silica-action panorama.toggle"),
+            "{mission}"
+        );
+        assert!(
+            mission.contains("X-Silica-Icon=mission-control"),
+            "{mission}"
+        );
+        assert!(mission.contains("Categories=Utility;"), "{mission}");
+        let shot = &entries[2].1;
         assert!(
             shot.contains("Exec=/opt/silica-action screenshot.toolbar"),
             "{shot}"
         );
         assert!(shot.contains("Categories=Utility;"), "{shot}");
-        assert!(!apps.contains("@ACTION@") && !shot.contains("@ACTION@"));
+        assert!(
+            !apps.contains("@ACTION@")
+                && !mission.contains("@ACTION@")
+                && !shot.contains("@ACTION@")
+        );
     }
 }
