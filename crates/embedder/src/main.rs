@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! silica-embedder [--engine DIR] [--size WxH] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
-//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] BUNDLE
+//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NAME]
 //! ```
@@ -60,6 +60,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut dart_args = Vec::new();
     let mut title = "Silica".to_owned();
     let mut app_id = "dev.frascella.silica.Flutter".to_owned();
+    let mut multi_window = false;
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
@@ -113,6 +114,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--dart-arg" => dart_args.push(value()?),
             "--title" => title = value()?,
             "--app-id" => app_id = value()?,
+            "--multi-window" => multi_window = true,
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -149,6 +151,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         dart_args,
         title,
         app_id,
+        multi_window,
     })
 }
 

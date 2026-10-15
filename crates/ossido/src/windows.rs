@@ -220,6 +220,11 @@ impl State {
     /// the shell's list and the focus, fading out like a closed window, and waits in `hidden`
     /// with its position. A minimized window is hidden too, from the Dock.
     pub fn hide_window(&mut self, surface: &WlSurface) {
+        let focused = self
+            .seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some_and(|focus| &focus == surface);
         let on_screen = self
             .space
             .elements()
@@ -243,7 +248,17 @@ impl State {
         };
         self.withdraw_toplevel(&entry.0);
         let app = crate::panorama::window_app(&entry.0);
+        // Another window of the app (its Get Info, #146) takes the focus it had.
+        let next = if focused {
+            self.next_focus_after(&entry.0, None)
+        } else {
+            None
+        };
         self.hidden.push(entry);
+        if next.is_some() {
+            self.focus_window(next);
+            return;
+        }
         // As on the reference (APP-LC) the app stays frontmost with no window: no other
         // window takes the focus, and the menu bar keeps showing the app.
         self.set_windowless_front(app);
@@ -388,6 +403,78 @@ impl State {
 /// Saved position of a minimized window.
 pub type Minimized = (Window, Point<i32, Logical>);
 
+/// How far a child window (Get Info, a compose window) opens from its parent's corner: the
+/// parent's bar and buttons stay visible.
+const CHILD_OFFSET: i32 = 40;
+
+/// Where a child window of a parent at `parent` opens, kept on screen (64 points of it at
+/// least inside the usable area, as the app's remembered place).
+pub fn child_location(
+    parent: Point<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+) -> Point<i32, Logical> {
+    let x = parent.x.saturating_add(CHILD_OFFSET).clamp(
+        area.loc.x,
+        area.loc.x.saturating_add((area.size.w - 64).max(0)),
+    );
+    let y = parent.y.saturating_add(CHILD_OFFSET).clamp(
+        area.loc.y,
+        area.loc.y.saturating_add((area.size.h - 64).max(0)),
+    );
+    (x, y).into()
+}
+
+/// The parent's surface of a window (`xdg_toplevel.set_parent`).
+fn parent_of(window: &Window) -> Option<WlSurface> {
+    window.toplevel()?.parent()
+}
+
+impl State {
+    /// The window that takes the keyboard when `closing` (focused) goes: its parent if on
+    /// screen, else the topmost other window of the same app (macOS gives the focus to the
+    /// app's next window); none otherwise.
+    pub fn next_focus_after(&self, closing: &Window, parent: Option<WlSurface>) -> Option<Window> {
+        let on_screen = |surface: &WlSurface| {
+            self.space
+                .elements()
+                .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+                .cloned()
+        };
+        if let Some(parent) = parent.as_ref().and_then(on_screen) {
+            return Some(parent);
+        }
+        let app = crate::panorama::window_app(closing)?;
+        self.space
+            .elements()
+            .rev()
+            .filter(|w| *w != closing)
+            .find(|w| crate::panorama::window_app(w).as_deref() == Some(app.as_str()))
+            .cloned()
+    }
+
+    /// Keeps the child windows of `window` (and theirs) above it after it was raised: an
+    /// Info or compose window never goes behind its parent.
+    pub fn raise_children(&mut self, window: &Window) {
+        let mut parents = vec![window.clone()];
+        while let Some(parent) = parents.pop() {
+            let Some(surface) = parent.toplevel().map(|t| t.wl_surface().clone()) else {
+                continue;
+            };
+            // Bottom to top: raising them in this order keeps their own stacking.
+            let children: Vec<Window> = self
+                .space
+                .elements()
+                .filter(|w| parent_of(w).as_ref() == Some(&surface))
+                .cloned()
+                .collect();
+            for child in children {
+                self.space.raise_element(&child, false);
+                parents.push(child);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,5 +500,15 @@ mod tests {
             Rectangle::new((800, 480).into(), (800, 450).into())
         );
         assert!(arrangement(area, 0).is_empty());
+    }
+
+    #[test]
+    fn child_windows_open_over_their_parent_and_on_screen() {
+        let area = Rectangle::new((0, 30).into(), (1600, 900).into());
+        assert_eq!(child_location((100, 80).into(), area), (140, 120).into());
+        // A parent near the bottom right: the child stays reachable.
+        assert_eq!(child_location((1580, 900).into(), area), (1536, 866).into());
+        // A parent above the area (under the menu bar): the child comes down into it.
+        assert_eq!(child_location((-200, -100).into(), area), (0, 30).into());
     }
 }

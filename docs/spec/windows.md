@@ -318,6 +318,24 @@ At rest in an active window. Each disc has a vertical gradient, more saturated a
 - **Capsules:** lighter than the background in dark, darker in light.
 - **Window buttons:** more saturated in dark, with a bright outline.
 
+## Several windows of one app
+
+An app process can have several windows (silica-desktop#146): Get Info, a compose window,
+File › New Window, one window per document. The app opts in with the embedder's
+`--multi-window` (its `.desktop` entry) and opens them with silica_ui's
+`SilicaWindows.openWindow`; each is an engine view with its own `xdg_toplevel`.
+
+- **Child windows** (`parent`, `xdg_toplevel.set_parent`: Get Info, compose) open 40 pt right
+  and below their parent's corner, kept on screen, and always stay above it: a click on the
+  parent raises it with its children. For now Ossido disables their minimise and zoom buttons,
+  as for a dialog; which buttons the reference's Get Info keeps is not measured yet.
+- **Focus:** when the focused window closes or hides, the keyboard goes to its parent, or else
+  to the app's topmost other window; with none, the app stays frontmost windowless (APP-LC).
+- **Grouping:** all the windows share the app id, so the Dock, the switcher and the Window
+  menu show them under the same app.
+- **Lifecycle:** closing the main window hides it while other windows stay; the last window
+  on screen makes the app windowless, or ends it when it quits with its last window.
+
 ## Not measured yet
 
 - The colour of the shadow at the corners and on short edges.

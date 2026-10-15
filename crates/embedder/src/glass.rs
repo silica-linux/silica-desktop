@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use silica_protocols::glass::MAX_REGIONS;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{
@@ -241,14 +241,15 @@ impl Glass {
         }
     }
 
-    /// Takes in a channel call, as soon as the platform task delivering it runs (one main
-    /// loop turn sooner than the reply). `raster_seq` is the raster task that presents the
-    /// frame the regions were measured on (`PlatformMessage::raster_seq`). Returns whether the
-    /// surface must be committed now: the regions go with their frame, and only when that
-    /// frame is already on screen they need a commit of their own.
-    pub fn receive<D>(
+    /// Takes in the regions of a `setRegions` (`args`, a list) for this surface, as soon as
+    /// the platform task delivering them runs (one main loop turn sooner than the reply).
+    /// `raster_seq` is the raster task that presents the frame the regions were measured on
+    /// (`PlatformMessage::raster_seq`). Returns whether the surface must be committed now:
+    /// the regions go with their frame, and only when that frame is already on screen they
+    /// need a commit of their own.
+    pub fn set_from<D>(
         &mut self,
-        message: &[u8],
+        args: &Value,
         raster_seq: u64,
         surface: &WlSurface,
         qh: &QueueHandle<D>,
@@ -256,29 +257,13 @@ impl Glass {
     where
         D: Dispatch<SilicaGlassV1, ()> + 'static,
     {
-        let Ok(call) = serde_json::from_slice::<Value>(message) else {
-            return false;
-        };
-        match call.get("method").and_then(Value::as_str) {
-            Some("setRegions") => {
-                let regions = parse_regions(call.get("args").unwrap_or(&Value::Null));
-                self.set_regions(regions, raster_seq, surface, qh)
-            }
-            _ => false,
-        }
+        self.set_regions(parse_regions(args), raster_seq, surface, qh)
     }
 
-    /// The reply to a channel call (JSON method codec), once [`Glass::receive`] took it in.
-    pub fn reply(&self, message: &[u8]) -> Vec<u8> {
-        let Ok(call) = serde_json::from_slice::<Value>(message) else {
-            return Vec::new();
-        };
-        match call.get("method").and_then(Value::as_str) {
-            // `isSupported`: does Ossido offer glass? Without it, the app draws an opaque
-            // background.
-            Some("setRegions" | "isSupported") => reply(json!(self.manager.is_some())),
-            _ => Vec::new(),
-        }
+    /// Whether Ossido offers glass (`isSupported`: without it, the app draws an opaque
+    /// background).
+    pub fn supported(&self) -> bool {
+        self.manager.is_some()
     }
 
     fn set_regions<D>(
@@ -498,11 +483,10 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
     }
 }
 
-use crate::text_input::success as reply;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn regions_are_validated_before_reaching_ossido() {
