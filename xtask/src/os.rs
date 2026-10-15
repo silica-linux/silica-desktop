@@ -32,6 +32,11 @@ use silica_control::commands::{PERF_FRAMES, UI_SCREENSHOT};
 
 use crate::{Result, cargo_command, flutter, root, status};
 
+// The embedder's driver choice, shared to pick the host's drivers for Venus.
+#[path = "../../crates/embedder/src/vulkan_drivers.rs"]
+#[allow(dead_code)]
+mod vulkan_drivers;
+
 /// Host ports (never 7979/7980, the development sessions on the host): Ossido's control
 /// channel (SSH tunnel), the guest's SSH server, QEMU's monitor.
 const CONTROL_PORT: u16 = 7993;
@@ -311,6 +316,12 @@ fn start(args: &[String]) -> Result<()> {
             "type=11,value=io.systemd.credential.binary:{name}={value}"
         ));
     }
+    if options.graphics == Graphics::Venus
+        && let Some(files) = host_vulkan_drivers()
+    {
+        eprintln!("xtask: Venus on the host's display GPU: VK_DRIVER_FILES={files}");
+        qemu.env("VK_DRIVER_FILES", files);
+    }
     // X11 (XWayland): the window can then be moved to another workspace with wmctrl.
     qemu.env("GDK_BACKEND", "x11")
         .stdin(Stdio::null())
@@ -338,6 +349,25 @@ fn start(args: &[String]) -> Result<()> {
         key.display()
     );
     Ok(())
+}
+
+/// The host's Vulkan drivers for Venus (#191): only those of the GPU that drives the display.
+/// Each Vulkan instance of the guest becomes one on the host, which otherwise loads every
+/// driver and initialises every GPU (a discrete NVIDIA, llvmpipe): 100 to 200 ms per app
+/// launch, against 15 ms with the integrated GPU alone, which the embedder picks anyway.
+/// `None` (all drivers) when the user chose them or the GPU is not known.
+fn host_vulkan_drivers() -> Option<String> {
+    if vulkan_drivers::user_chooses() {
+        return None;
+    }
+    let kernel = vulkan_drivers::primary_kernel_drivers(Path::new("/sys/class/drm"));
+    let dirs = vulkan_drivers::manifest_dirs(|name| std::env::var(name).ok());
+    let drivers = vulkan_drivers::select(&kernel, &vulkan_drivers::read_manifests(&dirs))?;
+    let files: Vec<String> = drivers
+        .iter()
+        .map(|driver| driver.manifest.display().to_string())
+        .collect();
+    Some(files.join(":"))
 }
 
 fn which(name: &str) -> bool {
