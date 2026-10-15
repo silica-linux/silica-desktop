@@ -1,6 +1,6 @@
 # App icons in the shell
 
-The icons come from the `silica-linux/silica-icons` repo (CC BY-SA 4.0), which is not
+The icons come from the `silica-os/silica-icons` repo (CC BY-SA 4.0), which is not
 included in this repository: the shell reads them from disk. The format is described in
 `docs/icon-format.md` of that repo.
 

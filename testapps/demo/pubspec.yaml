@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   silica_ui:
     git:
-      url: https://github.com/silica-linux/silica-ui.git
+      url: https://github.com/silica-os/silica-ui.git
       ref: v0.4.0
 
 dev_dependencies:

@@ -6,7 +6,7 @@ environment written from scratch in Rust, with the visual language of macOS 27
 
 ## Session start
 
-1. Look at the project board (https://github.com/orgs/silica-linux/projects/1): milestones and
+1. Look at the project board (https://github.com/orgs/silica-os/projects/1): milestones and
    issues of every repository are the plan. `plan/STATUS.md` and `plan/execution-plan.md`
    (local, gitignored) keep only the context.
 2. For the expected behaviour: `plan/reference/*.md` (measured observations of macOS 27).
@@ -44,7 +44,7 @@ environment written from scratch in Rust, with the visual language of macOS 27
   closing the task.
 - Parity in `ROADMAP.md` is updated only from measured metrics, never estimated by the agent.
 - Every bug, gap or provisional value has an issue on GitHub (shared labels, milestone, on the
-  board); commits that close one say `Fixes silica-linux/<repo>#N`. Measurement requests are
+  board); commits that close one say `Fixes silica-os/<repo>#N`. Measurement requests are
   issues in silica-reference (label `measurement`). Never paste reference captures or text
   into public repositories.
 - English everywhere: code, comments, tests, docs, commits. User-visible texts are localized:
@@ -89,10 +89,10 @@ Assets:
   `cargo xtask assets` (part of `cargo xtask ci`) blocks files without a row.
 - Allowed licenses: the project's own original work, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache.
   Graphics generated in code are preferred.
-- App, file and system icons: repo `silica-linux/silica-icons`, license
+- App, file and system icons: repo `silica-os/silica-icons`, license
   CC BY-SA 4.0. Pointer cursors are not ours: the standard Adwaita XCursor theme
   (`XCURSOR_THEME`, Fedora package `adwaita-cursor-theme`); the repo
-  `silica-linux/silica-cursors` is archived.
+  `silica-os/silica-cursors` is archived.
 - Release wallpapers: our own photos or photographers' with a written transfer of rights,
   or Wikimedia Commons with a compatible license.
 
@@ -117,7 +117,7 @@ plan/                  gitignored: status, plan, macOS references
 Flutter, and `ossido` does not depend on `daemon`.
 
 This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repositories of
-`silica-linux`:
+`silica-os`:
 
 | Repository | What | License |
 | --- | --- | --- |

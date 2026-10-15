@@ -70,7 +70,7 @@ window on the user's screen, so the work can be watched while it happens. Keep o
 for the whole session: `deploy` restarts the Silica session inside it.
 
 ```bash
-gh release download -R silica-linux/silica-os -p '*.qcow2' -D ~/silica-vm   # once
+gh release download -R silica-os/silica-os -p '*.qcow2' -D ~/silica-vm   # once
 cargo xtask os start          # the VM in a full-screen window ("Silica OS (dev)")
 cargo xtask os deploy         # build Ossido, the embedder, the services and the shell, run them
 cargo xtask os deploy --apps  # the apps too (mustache, mail, terminal, clock, calculator, settings)

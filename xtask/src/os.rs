@@ -193,7 +193,7 @@ fn find_image(explicit: Option<PathBuf>) -> Result<PathBuf> {
         .collect();
     images.sort_by_key(|path| std::fs::metadata(path).and_then(|m| m.modified()).ok());
     images.pop().ok_or(format!(
-        "no silica-os-*.qcow2 in {}: gh release download -R silica-linux/silica-os -p '*.qcow2' -D {}",
+        "no silica-os-*.qcow2 in {}: gh release download -R silica-os/silica-os -p '*.qcow2' -D {}",
         dir.display(),
         dir.display()
     ))

@@ -7,11 +7,11 @@ here.
 ## Where the references go
 
 macOS screenshots and notes never enter the Silica repo (`plan/` is gitignored).
-They live in the private repo `silica-linux/silica-reference`, cloned into
+They live in the private repo `silica-os/silica-reference`, cloned into
 `plan/reference/`:
 
 ```bash
-gh repo clone silica-linux/silica-reference plan/reference
+gh repo clone silica-os/silica-reference plan/reference
 ```
 
 Structure:

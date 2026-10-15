@@ -19,7 +19,7 @@ String menuTitle(AppLocalizations l, String id) => switch (id) {
 
 /// Where Help › Silica Help leads.
 const String silicaHelpUrl =
-    'https://github.com/silica-linux/silica-desktop#readme';
+    'https://github.com/silica-os/silica-desktop#readme';
 
 /// The items of a bar menu (by id); `run` runs an Ossido command, `openUrl` opens a link.
 List<MenuEntry> barMenu(
