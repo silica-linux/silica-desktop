@@ -13,7 +13,7 @@ use smithay::backend::renderer::gles::{
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::glass::render_to_texture;
+use crate::glass::{GlassPrograms, blur_texture, render_to_texture};
 
 /// Height of the effect: it disappears at y ≈ 115–120 pt.
 pub const HEIGHT_PT: f64 = 120.0;
@@ -208,7 +208,89 @@ impl RenderElement<GlesRenderer> for ToneElement {
     }
 }
 
-/// A blurred capture (the spaces bar material), drawn at `dst`.
+/// What a blurred capture was made from: the elements (with their opacity: the menu bar
+/// fades under the spaces bar), the captured area, the σ.
+type BlurSignature = (Signature, Vec<u32>, Rectangle<i32, Physical>, u64);
+
+/// A blurred capture of what lies behind (the Panorama wallpaper, the spaces bar material):
+/// it is redone only when what is behind it in `area` (or the σ) changes, so a still
+/// background costs one blur and a moving one is blurred live.
+#[derive(Default)]
+pub struct BlurredBackdrop {
+    state: RefCell<Option<(BlurSignature, GlesTexture, Id)>>,
+}
+
+impl BlurredBackdrop {
+    /// `behind` (from the front) captured over `area` of the output and blurred with σ
+    /// `sigma_pt`, drawn into `dst` (output pixels, inside `area`) with `alpha`. A new
+    /// id for every new texture, so the damage tracker redraws it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn element<E: RenderElement<GlesRenderer>>(
+        &self,
+        renderer: &mut GlesRenderer,
+        programs: &GlassPrograms,
+        behind: &[E],
+        area: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        scale: f64,
+        sigma_pt: f64,
+        clear_color: [f32; 4],
+        alpha: f32,
+    ) -> Result<Option<BlurredElement>, GlesError> {
+        let Some(dst) = dst.intersection(area).filter(|r| !r.is_empty()) else {
+            return Ok(None);
+        };
+        let overlapping = || {
+            behind
+                .iter()
+                .filter(move |e| e.geometry(Scale::from(scale)).overlaps(area))
+        };
+        let signature: BlurSignature = (
+            overlapping()
+                .map(|e| {
+                    (
+                        e.id().clone(),
+                        e.current_commit(),
+                        e.geometry(Scale::from(scale)),
+                    )
+                })
+                .collect(),
+            overlapping().map(|e| e.alpha().to_bits()).collect(),
+            area,
+            sigma_pt.to_bits(),
+        );
+        let mut state = self.state.borrow_mut();
+        let fresh = !matches!(state.as_ref(), Some((s, ..)) if *s == signature);
+        if fresh {
+            let sharp = render_to_texture(renderer, behind, area, scale, clear_color)?;
+            let blurred = blur_texture(renderer, programs, &sharp, area.size, sigma_pt, scale)?;
+            *state = Some((signature, blurred, Id::new()));
+        }
+        let Some((_, texture, id)) = state.as_ref() else {
+            return Err(GlesError::FramebufferBindingError);
+        };
+        let src = Rectangle::new(
+            (dst.loc - area.loc).to_f64().to_logical(1.0).to_buffer(
+                1.0,
+                Transform::Normal,
+                &area.size.to_f64().to_logical(1.0),
+            ),
+            dst.size
+                .to_f64()
+                .to_logical(1.0)
+                .to_buffer(1.0, Transform::Normal),
+        );
+        Ok(Some(BlurredElement {
+            id: id.clone(),
+            texture: texture.clone(),
+            src,
+            dst,
+            alpha,
+        }))
+    }
+}
+
+/// A part of a blurred capture, drawn where it was taken.
 #[derive(Debug, Clone)]
 pub struct BlurredElement {
     id: Id,
@@ -216,24 +298,6 @@ pub struct BlurredElement {
     src: Rectangle<f64, Buffer>,
     dst: Rectangle<i32, Physical>,
     alpha: f32,
-}
-
-impl BlurredElement {
-    pub fn new(
-        id: Id,
-        texture: GlesTexture,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        alpha: f32,
-    ) -> Self {
-        Self {
-            id,
-            texture,
-            src,
-            dst,
-            alpha,
-        }
-    }
 }
 
 impl Element for BlurredElement {

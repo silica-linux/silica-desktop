@@ -350,7 +350,7 @@ fn the_wallpaper_of_a_space_fits_its_thumbnail() {
 }
 
 #[test]
-fn the_wallpaper_stays_as_at_rest_and_the_desktop_hides() {
+fn the_wallpaper_blurs_and_the_desktop_hides() {
     let ossido = Headless::start_with("panorama-backdrop", (1280, 800), &[]);
     // Black and white stripes 48 px wide.
     let _wallpaper = wallpaper(&ossido, |x, _, _, _| {
@@ -390,13 +390,13 @@ fn the_wallpaper_stays_as_at_rest_and_the_desktop_hides() {
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     assert_eq!(state(&ossido).progress, 1.0);
     let shot = screenshot(&ossido);
-    // The wallpaper behind the windows is untouched: no blur, dimming or tint (MC-BLUR).
-    let open = row(&shot);
+    // The stripes merge into grays: no black or white left.
+    let blurred = row(&shot);
     assert!(
-        open.contains(&0) && open.contains(&255),
-        "the wallpaper changed: {open:?}"
+        blurred.iter().all(|&v| (40..=215).contains(&v)),
+        "stripes still sharp: {blurred:?}"
     );
-    // The desktop icons are gone: the wallpaper shows in their place.
+    // The desktop icons are gone: the blurred wallpaper shows in their place.
     let [r, g, b] = icon(&shot);
     assert!(
         g.abs_diff(r) < 12 && g.abs_diff(b) < 12,
@@ -461,16 +461,14 @@ fn the_spaces_bar_material_gives_the_measured_colors_on_the_reference_gray() {
 }
 
 #[test]
-fn the_spaces_bar_tones_then_blurs_the_wallpaper_under_it() {
-    // Dark, as measured (missioncontrol.md › MC-BLUR).
-    let ossido = Headless::start_with("panorama-bar-blur", (1280, 800), &["--appearance", "dark"]);
-    // Left half: black and white stripes 16 px wide; right half: black above y 20, white below.
-    let _wallpaper = wallpaper(&ossido, |x, y, w, _| {
-        let white = if x < w / 2 { x % 32 >= 16 } else { y >= 20 };
-        if white {
-            [255, 255, 255, 255]
-        } else {
+fn the_spaces_bar_blurs_what_is_under_it() {
+    let ossido = Headless::start_with("panorama-bar-blur", (1280, 800), &[]);
+    // Black and white stripes 48 px wide.
+    let _wallpaper = wallpaper(&ossido, |x, _, _, _| {
+        if x % 96 < 48 {
             [0, 0, 0, 255]
+        } else {
+            [255, 255, 255, 255]
         }
     });
     let mut c = ossido.client();
@@ -478,20 +476,18 @@ fn the_spaces_bar_tones_then_blurs_the_wallpaper_under_it() {
         .unwrap();
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     let shot = screenshot(&ossido);
-    // The stripes are wiped out at (T(0) + T(255)) / 2 = 72, not at the toned mean gray (~85):
-    // the tone comes before the blur.
-    for x in (100..500).step_by(7) {
-        let v = rgb_at(&shot, f64::from(x), 20.0);
-        assert!(near(v, [72, 72, 72], 3), "stripes at {x}: {v:?}");
-    }
-    // The step at y 20 under the 40 pt bar: only what is under the bar counts (mirrored at
-    // its edges): a mild ramp from ~64 at the top to ~84 at the bottom, neutral gray.
-    let top = rgb_at(&shot, 960.0, 1.0);
-    let bottom = rgb_at(&shot, 960.0, 38.0);
-    assert!(near(top, [64, 64, 64], 6), "top: {top:?}");
-    assert!(near(bottom, [84, 84, 84], 6), "bottom: {bottom:?}");
-    // Below the bar the wallpaper is as at rest (after the shadow).
-    assert_eq!(rgb_at(&shot, 960.0, 300.0), [255, 255, 255]);
+    // Tinted sharp stripes would go from ~73 (black) to ~251 (white): blurred, the
+    // stripes merge into lighter grays.
+    let row: Vec<u8> = (60..300)
+        .map(|x| rgb_at(&shot, f64::from(x), 3.0)[0])
+        .collect();
+    assert!(
+        row.iter().all(|&v| (85..=240).contains(&v)),
+        "bar not blurred: {row:?}"
+    );
+    // Still stripes, softened: what is under it shows through.
+    let (low, high) = (row.iter().min().unwrap(), row.iter().max().unwrap());
+    assert!(high - low > 20, "nothing shows through the bar: {row:?}");
 }
 
 #[test]
