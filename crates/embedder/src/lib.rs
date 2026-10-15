@@ -87,7 +87,7 @@ pub enum Renderer {
 }
 
 /// How the views of an engine with several of them draw when the renderer is Vulkan
-/// (silica-desktop#203). Measured in the VM (docs/vulkan-multi-view.md).
+/// (silica-desktop#203). Measured in the VM (docs/vm.md, "Renderers with several views").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MultiViewRenderer {
     /// Impeller into Vulkan backing stores: needs an engine with the

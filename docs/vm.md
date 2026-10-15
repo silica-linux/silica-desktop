@@ -168,3 +168,38 @@ Per phase, warm, headless, local copy (Clock, ms from process start): Wayland 2,
 about 15, engine started +15, Dart `main` to the first frame request 30 to 150, first frame
 to present 40 to 120. Settings logs its own steps with `SETTINGS_STARTUP_LOG=1`: `main` to the
 first frame 63 ms.
+
+## Renderers with several views (#203)
+
+An app with several windows (`--multi-window`) and the shell's layers in one engine draw
+through the engine's backing stores. With `--renderer vulkan` the backing store of a view is
+the next image of that view's own swapchain, and the views of a frame are presented together
+with one `vkQueuePresentKHR` when the raster task ends: no copy, the buffers reach Ossido as
+dmabufs (`WAYLAND_DEBUG` shows `zwp_linux_buffer_params_v1.add` for every image, no `wl_shm`).
+Impeller draws them with the engine patch `impeller-vulkan-backing-stores`
+(`docs/engine-release.md`); an engine without it (the debug one) draws them with Skia on Vulkan.
+`SILICA_MULTI_VIEW_RENDERER=gl|skia` forces the OpenGL ES path of before or Skia.
+
+Measured on 2026-10-15/16 in the dev VM (Venus on Intel Iris Xe, 1920x1200) with
+`testapps/framebench` (24 moving cards with shadows and text, 1000x700 window, second window
+480x360), 600 frames after 120 of warm-up, release engine. Milliseconds, `FrameTiming`;
+median of three runs (runs where the VM stalled for a second, a QEMU display artefact, are
+left out of the median when another run is clean).
+
+| Renderer | Views | Raster p50 | Raster p95 | Build + raster p50 | Frame interval p50 / p95 |
+| --- | --- | --- | --- | --- | --- |
+| Impeller, Vulkan, root surface (one view, before) | 1 | 3.5 | 13.0 | 6.8 | 11.6 / 17.7 |
+| Impeller, OpenGL ES, backing stores (several views, before) | 1 | 1.5 | 9.7 | 4.2 | 10.3 / 17.2 |
+| Impeller, OpenGL ES, backing stores | 2 | 3.8 | 11.2 | 8.2 | 13.3 / 18.6 |
+| Skia, Vulkan, backing stores | 1 | 4.1 | 17.2 | 7.8 | 13.6 / 18.8 |
+| Skia, Vulkan, backing stores | 2 | 4.7 | 10.6 | 8.0 | 9.3 / 17.4 |
+| **Impeller, Vulkan, backing stores (now)** | 1 | **1.0** | **3.9** | **3.9** | 12.4 / 17.8 |
+| **Impeller, Vulkan, backing stores (now)** | 2 | **1.8** | **9.4** | **7.0** | 13.9 / 19.0 |
+
+With Vulkan backing stores the present runs after the raster task (it is not in the raster
+time); with the root surface and with OpenGL ES it is. Presenting each view on its own made two
+views wait twice for the GPU inside Venus's present (raster p50 15 ms with two windows) before
+the presents were batched. Skia also stalls: in the first round
+of measurements three of six Skia runs had stalls of about 1 s, none of the six
+Impeller runs on Vulkan. Without the patch Skia keeps Vulkan and zero copy, but it loses the lens glass
+refraction of silica_ui (shader image filters need Impeller).
