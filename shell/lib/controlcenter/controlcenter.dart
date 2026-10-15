@@ -6,7 +6,7 @@
 // columns 12 pt apart, 14 pt from the right edge, the first module at y 42; 64 pt rows at
 // a 76 pitch. 140 × 64 capsules (radius 32) with a 36 pt disc 14 pt from the edge and the
 // text at 56 pt; the media module 140 × 140 (radius 35); Display and Sound 292 × 64
-// (radius ~28) with a knobless slider. A wide soft shadow around the stack; opening and
+// (radius ~28) with a slider whose knob shows only on hover. A wide soft shadow around the stack; opening and
 // closing with the opacities and the scale measured frame by frame.
 //
 // Which modules, in which order and size: `modules.dart` (the reference's default, or the
@@ -919,7 +919,7 @@ class _ControlCenterState extends State<ControlCenter>
           setState(() => _moduleMenu = (key, d.globalPosition)),
       child: _module(key, s),
     );
-    if (!_editing) return module;
+    if (!_editing) return _ModuleHover(radius: slot.radius, child: module);
     return DragTarget<String>(
       onAcceptWithDetails: (d) => _placeModule(d.data, before: key),
       builder: (context, candidates, _) => Draggable<String>(
@@ -1326,7 +1326,7 @@ class _ControlCenterState extends State<ControlCenter>
   }
 }
 
-class _Capsule extends StatefulWidget {
+class _Capsule extends StatelessWidget {
   const _Capsule({
     required this.glyph,
     required this.title,
@@ -1358,95 +1358,84 @@ class _Capsule extends StatefulWidget {
   final VoidCallback? onOpen;
 
   @override
-  State<_Capsule> createState() => _CapsuleState();
-}
-
-/// The ">" arrow of modules with a detail, on hover: on the right, above the text (which
-/// shortens). Position and size estimated from the capture (CC-01).
-const double hoverChevronRight = 16;
-
-class _CapsuleState extends State<_Capsule> {
-  bool _hover = false;
-
-  @override
   Widget build(BuildContext context) {
-    final widget = this.widget;
-    final arrow = _hover && widget.onOpen != null && widget.enabled;
-    final capsule = MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: Stack(
-        children: [
-          // Text: detail (or, without one, the same effect as the disc).
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: widget.onOpen ?? widget.onTap,
-              behavior: HitTestBehavior.opaque,
-            ),
+    final widget = this;
+    final hover = ModuleHoverScope.of(context);
+    final arrowable = widget.onOpen != null && widget.enabled;
+    final capsule = Stack(
+      children: [
+        // Text: detail (or, without one, the same effect as the disc).
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: widget.onOpen ?? widget.onTap,
+            behavior: HitTestBehavior.opaque,
           ),
-          Positioned(
-            left: discInset,
-            top: discInset,
-            width: disc,
-            height: disc,
-            child: GestureDetector(
-              onTap: widget.onTap,
-              child: _HoverSpring(
-                hover: _hover && widget.enabled,
-                scale: discHoverScale,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.active ? discOn : discOff,
-                  ),
-                  child: Center(
-                    child: Glyph(
-                      widget.glyph,
-                      color: widget.active ? widget.activeGlyph : glyphOff,
-                      level: widget.glyphLevel,
-                    ),
-                  ),
+        ),
+        Positioned(
+          left: discInset,
+          top: discInset,
+          width: disc,
+          height: disc,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.active ? discOn : discOff,
+              ),
+              child: Center(
+                child: Glyph(
+                  widget.glyph,
+                  color: widget.active ? widget.activeGlyph : glyphOff,
+                  level: widget.glyphLevel,
                 ),
               ),
             ),
           ),
-          Positioned(
-            left: textLeft,
-            right: arrow ? hoverChevronRight + 12 : 10,
-            top: 0,
-            bottom: 0,
-            child: IgnorePointer(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // As in the reference long texts wrap ("Full immersion", the name of a
-                  // network), at most two lines each.
+        ),
+        Positioned(
+          left: textLeft,
+          right:
+              10 + (arrowable ? hover.progress * (hoverChevronRight + 2) : 0),
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // As in the reference long texts wrap ("Full immersion", the name of a
+                // network), at most two lines each.
+                Text(
+                  widget.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: _text(titleSize, weight: FontWeight.w600),
+                ),
+                if (widget.subtitle.isNotEmpty)
                   Text(
-                    widget.title,
+                    widget.subtitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: _text(titleSize, weight: FontWeight.w600),
+                    style: _text(subtitleSize),
                   ),
-                  if (widget.subtitle.isNotEmpty)
-                    Text(
-                      widget.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: _text(subtitleSize),
-                    ),
-                ],
+              ],
+            ),
+          ),
+        ),
+        if (arrowable)
+          Positioned(
+            right: hoverChevronRight,
+            top: (rowHeight - 12) / 2,
+            child: IgnorePointer(
+              child: Opacity(
+                key: const ValueKey('detail chevron'),
+                opacity: hover.progress,
+                child: const Chevron(color: textColor),
               ),
             ),
           ),
-          if (arrow)
-            const Positioned(
-              right: hoverChevronRight,
-              top: (rowHeight - 12) / 2,
-              child: IgnorePointer(child: Chevron(color: textColor)),
-            ),
-        ],
-      ),
+      ],
     );
     if (widget.enabled) return capsule;
     return Semantics(
@@ -1470,57 +1459,204 @@ Duration untilEvening(DateTime now) {
   return end.difference(now);
 }
 
-/// Hover animation of the Control Center buttons (CC-HOVER requested: the values are
-/// provisional). The button grows slightly and its highlight fades in along a spring-like
-/// curve with a small overshoot; leaving it settles back along the same curve.
-const Duration hoverDuration = Duration(milliseconds: 280);
-const Curve hoverSpring = Cubic(0.34, 1.4, 0.64, 1);
+/// The ">" arrow of modules with a detail, at the right end of the title row: it fades in
+/// with the module's hover and the text shortens to make room (CC-HOVER).
+const double hoverChevronRight = 16;
 
-/// Provisional: the scale of the round toggles and of the module discs under the pointer.
-const double roundHoverScale = 1.06;
-const double discHoverScale = 1.08;
+/// Hover of a Control Center module (controlcenter.md, CC-HOVER): the whole module lifts by
+/// about 7 levels (white at 4.7 %), with no scale; inner buttons have no hover of their own.
+/// The change starts after ~50 ms (10 %), is half done at ~150 ms and done at ~300 ms, the
+/// same in and out and for every module.
+const Duration hoverDuration = Duration(milliseconds: 300);
+const Color moduleHoverLift = Color(0x0CFFFFFF);
 
-/// Provisional: the highlight of an off round toggle under the pointer (as before).
-const Color roundHoverFill = Color(0x12FFFFFF);
+/// The volume knob (~18 x 14 pt) shows ~330 ms after the pointer enters the module and goes
+/// ~60 ms after it leaves.
+const Duration knobDelay = Duration(milliseconds: 330);
+const Duration knobLeaveDelay = Duration(milliseconds: 60);
+const Size knobSize = Size(18, 14);
 
-class _HoverSpring extends StatelessWidget {
-  const _HoverSpring({
-    required this.hover,
-    required this.scale,
-    required this.child,
-    this.highlight,
+/// 10 % at 50 ms, 50 % at 150 ms, 100 % at 300 ms: a mild ease-out.
+class HoverCurve extends Curve {
+  const HoverCurve();
+
+  static const List<(double, double)> _points = [
+    (0, 0),
+    (50 / 300, 0.1),
+    (150 / 300, 0.5),
+    (1, 1),
+  ];
+
+  @override
+  double transformInternal(double t) {
+    for (var i = 1; i < _points.length; i++) {
+      final (x1, y1) = _points[i];
+      if (t <= x1) {
+        final (x0, y0) = _points[i - 1];
+        return y0 + (y1 - y0) * (t - x0) / (x1 - x0);
+      }
+    }
+    return 1;
+  }
+}
+
+/// What a module's content reads from its wrapper: whether the pointer is on the module and
+/// how far the hover has gone (0..1).
+@immutable
+class ModuleHoverState {
+  const ModuleHoverState(this.hovered, this.progress);
+  final bool hovered;
+  final double progress;
+}
+
+class ModuleHoverScope extends InheritedWidget {
+  const ModuleHoverScope({
+    super.key,
+    required this.state,
+    required super.child,
   });
 
-  final bool hover;
-  final double scale;
+  final ModuleHoverState state;
 
-  /// The disc painted behind the child, faded in with the hover; none when null.
-  final Color? highlight;
+  static ModuleHoverState of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ModuleHoverScope>()?.state ??
+      const ModuleHoverState(false, 0);
+
+  @override
+  bool updateShouldNotify(ModuleHoverScope old) =>
+      old.state.hovered != state.hovered ||
+      old.state.progress != state.progress;
+}
+
+/// Wraps a module of the stack: the hover lift over the whole module (its [radius]) and the
+/// scope its content reads.
+class _ModuleHover extends StatefulWidget {
+  const _ModuleHover({required this.radius, required this.child});
+
+  final double radius;
   final Widget child;
 
   @override
+  State<_ModuleHover> createState() => _ModuleHoverState();
+}
+
+class _ModuleHoverState extends State<_ModuleHover>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: hoverDuration,
+  );
+  // Entering follows the curve; leaving is its mirror in time (10 % at 55 ms, half at 150 ms).
+  double get _progress {
+    const curve = HoverCurve();
+    final v = _controller.value;
+    return _hover ? curve.transform(v) : curve.flipped.transform(v);
+  }
+
+  bool _hover = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _set(bool hover) {
+    _hover = hover;
+    hover ? _controller.forward() : _controller.reverse();
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: hover ? 1 : 0),
-      duration: hoverDuration,
-      curve: hoverSpring,
-      child: child,
-      builder: (context, t, child) {
-        final fill = highlight;
-        return Transform.scale(
-          key: const ValueKey('hover scale'),
-          scale: 1 + (scale - 1) * t,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: fill == null
-                  ? null
-                  : fill.withValues(alpha: fill.a * t.clamp(0.0, 1.0)),
-            ),
-            child: child,
+    return MouseRegion(
+      onEnter: (_) => _set(true),
+      onExit: (_) => _set(false),
+      child: AnimatedBuilder(
+        animation: _controller,
+        child: widget.child,
+        builder: (context, child) => ModuleHoverScope(
+          state: ModuleHoverState(_hover, _progress),
+          child: Stack(
+            fit: StackFit.passthrough,
+            clipBehavior: Clip.none,
+            children: [
+              // Same extent as the module's glass (1 pt more left and right).
+              Positioned(
+                left: -1,
+                right: -1,
+                top: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    key: const ValueKey('module hover'),
+                    decoration: BoxDecoration(
+                      color: moduleHoverLift.withValues(
+                        alpha: moduleHoverLift.a * _progress,
+                      ),
+                      borderRadius: BorderRadius.circular(widget.radius),
+                    ),
+                  ),
+                ),
+              ),
+              child!,
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+/// The volume knob: a light capsule, shown only while the pointer is on the module (after
+/// [knobDelay], gone [knobLeaveDelay] after leaving).
+class _Knob extends StatefulWidget {
+  const _Knob();
+
+  @override
+  State<_Knob> createState() => _KnobState();
+}
+
+class _KnobState extends State<_Knob> {
+  bool _shown = false;
+  bool? _target;
+  Timer? _timer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hovered = ModuleHoverScope.of(context).hovered;
+    if (hovered == _target) return;
+    _target = hovered;
+    _timer?.cancel();
+    if (hovered == _shown) return;
+    _timer = Timer(hovered ? knobDelay : knobLeaveDelay, () {
+      if (mounted) setState(() => _shown = hovered);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_shown) return const SizedBox.shrink();
+    return const DecoratedBox(
+      key: ValueKey('volume knob'),
+      decoration: BoxDecoration(
+        color: Color(0xFFF0F0F1),
+        borderRadius: BorderRadius.all(Radius.circular(7)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1548,26 +1684,19 @@ class _RoundToggle extends StatefulWidget {
 }
 
 class _RoundToggleState extends State<_RoundToggle> {
-  bool _hover = false;
-
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final tile = _HoverSpring(
-      hover: _hover && enabled,
-      scale: roundHoverScale,
-      highlight: widget.active ? null : roundHoverFill,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: widget.active ? discOn : null,
-        ),
-        child: Center(
-          child: Glyph(
-            widget.glyph,
-            color: widget.active ? const Color(0xFF000000) : glyphOff,
-            size: 24,
-          ),
+    final tile = DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: widget.active ? discOn : null,
+      ),
+      child: Center(
+        child: Glyph(
+          widget.glyph,
+          color: widget.active ? const Color(0xFF000000) : glyphOff,
+          size: 24,
         ),
       ),
     );
@@ -1577,11 +1706,7 @@ class _RoundToggleState extends State<_RoundToggle> {
       toggled: widget.active,
       label: widget.label,
       child: enabled
-          ? MouseRegion(
-              onEnter: (_) => setState(() => _hover = true),
-              onExit: (_) => setState(() => _hover = false),
-              child: GestureDetector(onTap: widget.onTap, child: tile),
-            )
+          ? GestureDetector(onTap: widget.onTap, child: tile)
           : AbsorbPointer(
               child: Opacity(opacity: disabledOpacity, child: tile),
             ),
@@ -1609,7 +1734,8 @@ class _Media extends StatefulWidget {
 /// `#b7b8bd` artist (one line each) from (14, 64); three 30 × 30 buttons centered at y 111
 /// and x 30 / 70 / 110. Glyphs: active `#b7b8bd` (white ~52 % over the `#696a6f` background),
 /// disabled `#9d9ea3` (~35 %); with the pointer on the module everything brightens by ~7
-/// levels and the glyph under the pointer goes to `#bebfc4`; pressed it turns white `#f7f7f8`, without a pill.
+/// levels (the module hover, `ModuleHoverScope`: the buttons have no hover of their own); pressed a glyph turns
+/// white `#f7f7f8`, without a pill.
 const double mediaButtonSide = 30;
 const List<double> mediaButtonCenters = [30, 70, 110];
 const double mediaArtRadius = 8;
@@ -1617,16 +1743,10 @@ const Color mediaTitle = Color(0xE6FFFFFF);
 const Color mediaSubtitle = Color(0x85FFFFFF);
 const double mediaGlyphActive = 0.52;
 const double mediaGlyphDisabled = 0.35;
-const double mediaGlyphHover = 0.55;
 const double mediaGlyphPressed = 0.96;
-
-/// The module under the pointer: +7 levels on the background (`#6a6b70` → `#717277`).
-const Color mediaHover = Color(0x0CFFFFFF);
 
 class _MediaState extends State<_Media> {
   final MediaPlayers _players = MediaPlayers.instance;
-  bool _hover = false;
-  String? _hovered;
   String? _pressed;
 
   @override
@@ -1680,37 +1800,29 @@ class _MediaState extends State<_Media> {
         ? mediaGlyphDisabled
         : _pressed == key
         ? mediaGlyphPressed
-        : _hovered == key
-        ? mediaGlyphHover
         : mediaGlyphActive;
     return Positioned(
       left: centerX - mediaButtonSide / 2,
       top: 111 - mediaButtonSide / 2,
       width: mediaButtonSide,
       height: mediaButtonSide,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = key),
-        onExit: (_) => setState(() {
-          if (_hovered == key) _hovered = null;
-        }),
-        child: GestureDetector(
-          key: ValueKey(key),
-          behavior: HitTestBehavior.opaque,
-          onTapDown: enabled ? (_) => setState(() => _pressed = key) : null,
-          onTapCancel: () => setState(() => _pressed = null),
-          onTapUp: (_) => setState(() => _pressed = null),
-          onTap: enabled ? onTap : null,
-          child: Center(
-            child: CustomPaint(
-              size: switch (transport) {
-                _Transport.play => const Size(17, 20),
-                _Transport.pause => const Size(15, 20),
-                _ => const Size(22, 13),
-              },
-              painter: _TransportPainter(
-                transport,
-                const Color(0xFFFFFFFF).withValues(alpha: alpha),
-              ),
+      child: GestureDetector(
+        key: ValueKey(key),
+        behavior: HitTestBehavior.opaque,
+        onTapDown: enabled ? (_) => setState(() => _pressed = key) : null,
+        onTapCancel: () => setState(() => _pressed = null),
+        onTapUp: (_) => setState(() => _pressed = null),
+        onTap: enabled ? onTap : null,
+        child: Center(
+          child: CustomPaint(
+            size: switch (transport) {
+              _Transport.play => const Size(17, 20),
+              _Transport.pause => const Size(15, 20),
+              _ => const Size(22, 13),
+            },
+            painter: _TransportPainter(
+              transport,
+              const Color(0xFFFFFFFF).withValues(alpha: alpha),
             ),
           ),
         ),
@@ -1722,104 +1834,85 @@ class _MediaState extends State<_Media> {
   Widget build(BuildContext context) {
     final now = _players.now;
     final active = now != null;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: active ? widget.onOpen : null,
-            ),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: active ? widget.onOpen : null,
           ),
-          if (_hover)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  key: ValueKey('media under pointer'),
-                  decoration: BoxDecoration(
-                    color: mediaHover,
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(mediaRadius),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          Positioned(
-            left: 14,
-            top: 14,
-            width: 40,
-            height: 40,
-            child: IgnorePointer(child: _art(now)),
-          ),
-          Positioned(
-            left: 14,
-            right: 12,
-            top: 64,
-            child: IgnorePointer(
-              child: active
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+        ),
+        Positioned(
+          left: 14,
+          top: 14,
+          width: 40,
+          height: 40,
+          child: IgnorePointer(child: _art(now)),
+        ),
+        Positioned(
+          left: 14,
+          right: 12,
+          top: 64,
+          child: IgnorePointer(
+            child: active
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        now.title.isEmpty
+                            ? l10nOf(context).mediaUntitled
+                            : now.title,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: _text(
+                          titleSize,
+                          weight: FontWeight.w600,
+                        ).copyWith(color: mediaTitle),
+                      ),
+                      if (now.byline.isNotEmpty)
                         Text(
-                          now.title.isEmpty
-                              ? l10nOf(context).mediaUntitled
-                              : now.title,
+                          now.byline,
                           maxLines: 1,
                           softWrap: false,
                           overflow: TextOverflow.ellipsis,
                           style: _text(
-                            titleSize,
-                            weight: FontWeight.w600,
-                          ).copyWith(color: mediaTitle),
+                            subtitleSize,
+                          ).copyWith(color: mediaSubtitle),
                         ),
-                        if (now.byline.isNotEmpty)
-                          Text(
-                            now.byline,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: _text(subtitleSize)
-                                .copyWith(color: mediaSubtitle),
-                          ),
-                      ],
-                    )
-                  : Text(
-                      l10nOf(context).mediaNothingPlaying,
-                      style: _text(
-                        titleSize,
-                        weight: FontWeight.w600,
-                      ).copyWith(height: 15 / titleSize),
-                    ),
-            ),
+                    ],
+                  )
+                : Text(
+                    l10nOf(context).mediaNothingPlaying,
+                    style: _text(
+                      titleSize,
+                      weight: FontWeight.w600,
+                    ).copyWith(height: 15 / titleSize),
+                  ),
           ),
-          _button(
-            key: 'precedente',
-            transport: _Transport.previous,
-            centerX: mediaButtonCenters[0],
-            enabled: active && now.canPrevious,
-            onTap: active ? _players.previous : null,
-          ),
-          _button(
-            key: 'riproduci',
-            transport: active && now.playing
-                ? _Transport.pause
-                : _Transport.play,
-            centerX: mediaButtonCenters[1],
-            enabled: active,
-            onTap: active ? _players.playPause : null,
-          ),
-          _button(
-            key: 'successivo',
-            transport: _Transport.next,
-            centerX: mediaButtonCenters[2],
-            enabled: active && now.canNext,
-            onTap: active ? _players.next : null,
-          ),
-        ],
-      ),
+        ),
+        _button(
+          key: 'precedente',
+          transport: _Transport.previous,
+          centerX: mediaButtonCenters[0],
+          enabled: active && now.canPrevious,
+          onTap: active ? _players.previous : null,
+        ),
+        _button(
+          key: 'riproduci',
+          transport: active && now.playing ? _Transport.pause : _Transport.play,
+          centerX: mediaButtonCenters[1],
+          enabled: active,
+          onTap: active ? _players.playPause : null,
+        ),
+        _button(
+          key: 'successivo',
+          transport: _Transport.next,
+          centerX: mediaButtonCenters[2],
+          enabled: active && now.canNext,
+          onTap: active ? _players.next : null,
+        ),
+      ],
     );
   }
 }
@@ -2164,6 +2257,17 @@ class _SliderModule extends StatelessWidget {
               ),
               child: CustomPaint(painter: _OutputsGlyph()),
             ),
+          ),
+        if (enabled)
+          Positioned(
+            left:
+                trackLeft +
+                sliderFill(value, length: _length) -
+                knobSize.width / 2,
+            top: trackCenter - knobSize.height / 2,
+            width: knobSize.width,
+            height: knobSize.height,
+            child: const IgnorePointer(child: _Knob()),
           ),
         Positioned(
           left: 260 - (onOutputs == null ? 0 : outputsShift),

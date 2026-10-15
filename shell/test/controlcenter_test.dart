@@ -120,50 +120,53 @@ const Map<String, String> noConfig = {
 };
 
 void main() {
-  test('the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch', () {
-    // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
-    // (Wi-Fi at 2254,42 without the privacy pill).
-    final slots = layoutModules(laptop);
-    expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
-    expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-    expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-    expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
-    expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
-    expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
-    expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
-    expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
-    expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
-    expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
-    expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
-    expect(slots['wifi']!.radius, 32);
-    expect(slots['staging']!.radius, 32);
-    expect(slots['media']!.radius, 35);
-    expect(slots['display']!.radius, 28);
-    // The battery is not in the default; Display is there without a backlight too
-    // (its track then shows no fill, controlcenter.md › sliders).
-    expect(slots.containsKey('battery'), isFalse);
-    final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
-    expect(desktop['display']!.rect.top, 304);
+  test(
+    'the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch',
+    () {
+      // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
+      // (Wi-Fi at 2254,42 without the privacy pill).
+      final slots = layoutModules(laptop);
+      expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
+      expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
+      expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
+      expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
+      expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
+      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
+      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
+      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
+      expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
+      expect(slots['wifi']!.radius, 32);
+      expect(slots['staging']!.radius, 32);
+      expect(slots['media']!.radius, 35);
+      expect(slots['display']!.radius, 28);
+      // The battery is not in the default; Display is there without a backlight too
+      // (its track then shows no fill, controlcenter.md › sliders).
+      expect(slots.containsKey('battery'), isFalse);
+      final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
+      expect(desktop['display']!.rect.top, 304);
 
-    // A user's arrangement: modules pack in order at the first free spot; the battery
-    // only shows on a machine with one.
-    final mine = layoutModules(laptop, const [
-      CcModule('dark', ModuleSize.small),
-      CcModule('wifi', ModuleSize.medium),
-      CcModule('battery', ModuleSize.medium),
-      CcModule('capture', ModuleSize.small),
-      CcModule('sound', ModuleSize.wide),
-    ]);
-    expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
-    expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
-    expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-    expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
-    expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
-    final noBattery = layoutModules(const SystemSnapshot(), const [
-      CcModule('battery', ModuleSize.medium),
-    ]);
-    expect(noBattery, isEmpty);
-  });
+      // A user's arrangement: modules pack in order at the first free spot; the battery
+      // only shows on a machine with one.
+      final mine = layoutModules(laptop, const [
+        CcModule('dark', ModuleSize.small),
+        CcModule('wifi', ModuleSize.medium),
+        CcModule('battery', ModuleSize.medium),
+        CcModule('capture', ModuleSize.small),
+        CcModule('sound', ModuleSize.wide),
+      ]);
+      expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
+      expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
+      expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
+      expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
+      final noBattery = layoutModules(const SystemSnapshot(), const [
+        CcModule('battery', ModuleSize.medium),
+      ]);
+      expect(noBattery, isEmpty);
+    },
+  );
 
   test('the slider fills up to x0 + 10 + v · (L − 20)', () {
     expect(sliderFill(0), 10);
@@ -483,7 +486,7 @@ void main() {
   );
 
   testWidgets(
-    'media module: 30 × 30 buttons at a 40 pitch, glyphs and hover (CC-04)',
+    'media module: 30 × 30 buttons at a 40 pitch, glyphs and module hover (CC-04)',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -516,15 +519,13 @@ void main() {
                   .painter!
               as dynamic;
       expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
-      // The pointer on the module brightens it (+7 levels).
+      // The buttons have no hover of their own: the pointer on one gives the module's.
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
       await mouse.moveTo(play.center);
-      await tester.pump();
-      expect(find.byKey(const ValueKey('media under pointer')), findsOneWidget);
-      await mouse.moveTo(Offset.zero);
-      await tester.pump();
-      expect(find.byKey(const ValueKey('media under pointer')), findsNothing);
+      await tester.pumpAndSettle();
+      expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
+      expect(hoverLift(tester), closeTo(1, 1e-6));
       await mouse.removePointer();
     },
   );
@@ -722,50 +723,108 @@ void main() {
     },
   );
 
-  testWidgets(
-    'hover animates the round buttons and the module discs (CC-HOVER)',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
-        ),
-      );
-      await sendCommand(tester, 'controlcenter.toggle');
-      await tester.pumpAndSettle();
-      final dark = find.bySemanticsLabel('Dark Mode');
-      double scaleOf() => tester
-          .widget<Transform>(
-            find
-                .descendant(
-                  of: dark,
-                  matching: find.byKey(const ValueKey('hover scale')),
-                )
-                .first,
-          )
-          .transform
-          .getMaxScaleOnAxis();
-      expect(scaleOf(), 1);
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: Offset.zero);
-      await mouse.moveTo(tester.getCenter(dark));
-      // Not instantaneous: part-way through the animation the scale is between the ends.
-      await tester.pump();
-      await tester.pump(hoverDuration ~/ 4);
-      final mid = scaleOf();
-      expect(mid, greaterThan(1));
-      await tester.pumpAndSettle();
-      expect(scaleOf(), closeTo(roundHoverScale, 1e-6));
-      await mouse.moveTo(Offset.zero);
-      await tester.pump();
-      await tester.pump(hoverDuration ~/ 4);
-      expect(scaleOf(), lessThan(roundHoverScale));
-      await tester.pumpAndSettle();
-      expect(scaleOf(), closeTo(1, 1e-6));
-      await mouse.removePointer();
-    },
-  );
+  testWidgets('hover lifts the whole module with no scale (CC-HOVER)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
+      ),
+    );
+    await sendCommand(tester, 'controlcenter.toggle');
+    await tester.pumpAndSettle();
+    final wifi = find.text('Wi-Fi');
+    final before = tester.getRect(wifi);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    expect(hoverLift(tester), 0);
+    await mouse.moveTo(tester.getCenter(wifi));
+    await tester.pump();
+    // Timing: 10 % at ~50 ms, half at ~150 ms, done at ~300 ms.
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(hoverLift(tester), closeTo(0.1, 0.02));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(hoverLift(tester), closeTo(0.5, 0.02));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(hoverLift(tester), closeTo(1, 1e-6));
+    // About 7 levels: white at 4.7 %, and the module does not move or grow.
+    expect(moduleHoverLift.a * 255, closeTo(12, 0.5));
+    expect(tester.getRect(wifi), before);
+    expect(find.byKey(const ValueKey('hover scale')), findsNothing);
+    // The ">" of a module with a detail fades in with it.
+    double chevron() => tester
+        .widgetList<Opacity>(find.byKey(const ValueKey('detail chevron')))
+        .first
+        .opacity;
+    expect(chevron(), closeTo(1, 1e-6));
+    // The same curve leaving.
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(hoverLift(tester), closeTo(0.9, 0.02));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(hoverLift(tester), closeTo(0.5, 0.02));
+    await tester.pumpAndSettle();
+    expect(hoverLift(tester), 0);
+    expect(chevron(), 0);
+
+    // A button inside the module gives the same hover, nothing of its own.
+    final dark = find.bySemanticsLabel('Dark Mode');
+    await mouse.moveTo(tester.getCenter(dark));
+    await tester.pumpAndSettle();
+    expect(hoverLift(tester), closeTo(1, 1e-6));
+    await mouse.removePointer();
+  });
+
+  testWidgets('the volume knob shows only on hover, after ~330 ms', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
+      ),
+    );
+    await sendCommand(tester, 'controlcenter.toggle');
+    await tester.pumpAndSettle();
+    final knob = find.byKey(const ValueKey('volume knob'));
+    expect(knob, findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Sound')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(knob, findsNothing);
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(knob, findsOneWidget);
+    expect(tester.getSize(knob), knobSize);
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(knob, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(knob, findsNothing);
+    await mouse.removePointer();
+  });
+}
+
+/// The strongest hover lift among the modules, as a fraction of the full one (0..1).
+double hoverLift(WidgetTester tester) {
+  var best = 0.0;
+  for (final box in tester.widgetList<DecoratedBox>(
+    find.byKey(const ValueKey('module hover')),
+  )) {
+    final color = (box.decoration as BoxDecoration).color!;
+    best = best > color.a / moduleHoverLift.a
+        ? best
+        : color.a / moduleHoverLift.a;
+  }
+  return best;
 }
