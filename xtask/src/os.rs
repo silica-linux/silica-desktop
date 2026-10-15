@@ -56,6 +56,7 @@ const APPS: &[&str] = &[
     "clock",
     "calculator",
     "settings",
+    "preview",
 ];
 
 pub fn os(args: &[String]) -> Result<()> {
