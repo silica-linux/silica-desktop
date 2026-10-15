@@ -16,6 +16,7 @@ mod codec;
 pub mod dbus;
 mod drag;
 mod ffi;
+mod foreign;
 mod glass;
 mod keyboard;
 mod keymap;
@@ -33,6 +34,7 @@ mod window_appearance;
 
 use std::path::PathBuf;
 
+pub use foreign::parent_handle;
 pub use window::run;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +124,9 @@ pub struct Options {
     /// process, stays out of the app registry (a reopen from the Dock never reaches it) and
     /// ends with its window.
     pub helper: bool,
+    /// Another app's window as the parent of this one (`--parent`, an xdg-foreign v2
+    /// handle): the portal's dialog is attached to the app that asked for it.
+    pub parent: Option<String>,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` of the workspace, where `cargo xtask engine` puts it.

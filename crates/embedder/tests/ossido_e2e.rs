@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use silica_control::commands::{
-    INPUT_CLICK, INPUT_KEY, INPUT_TYPE, LAYER_LIST, LayerInfo, WINDOW_CLOSE, WINDOW_LIST,
-    WindowInfo,
+    INPUT_CLICK, INPUT_KEY, INPUT_TYPE, LAYER_LIST, LayerInfo, WINDOW_CLOSE, WINDOW_FOCUS,
+    WINDOW_LIST, WindowInfo,
 };
 use silica_control::{Client, ScreenshotParams};
 
@@ -682,4 +682,82 @@ fn a_second_window_opens_draws_and_closes_in_software() {
 #[test]
 fn a_second_window_opens_draws_and_closes_with_gl() {
     second_window_opens_draws_and_closes("multi-gl", &["--renderer", "gl"]);
+}
+
+/// Every window in the session, top first.
+fn all_windows(session: &Session) -> Vec<WindowInfo> {
+    let list = session.client().call(WINDOW_LIST, Value::Null).unwrap();
+    serde_json::from_value(list).unwrap()
+}
+
+/// The window titled `title`, once listed at its size.
+fn titled(session: &Session, title: &str) -> Option<WindowInfo> {
+    all_windows(session)
+        .into_iter()
+        .find(|w| w.title.as_deref() == Some(title) && w.width > 0)
+}
+
+/// The portal's dialog (xdg-foreign v2): an app exports its window (`exportHandle`, F3 in the
+/// demo) and another app's helper process opens with `--parent`: centered over it, kept
+/// above it, and when it closes the focus goes back to it, not to the dialog app's other
+/// window.
+#[test]
+fn a_helper_window_with_a_parent_handle_is_attached_to_it() {
+    const OTHER: &str = "dev.frascella.silica.Other";
+    let mut session = Session::start("foreign", (800, 600), 1, (300, 200));
+    let main = session.window();
+    let with = |size, extra: &[&str]| {
+        let mut args = size_args(size);
+        args.extend(extra.iter().map(|s| (*s).to_owned()));
+        args
+    };
+    // Another window of the dialog's app (the file manager's own window).
+    session.spawn(&with((200, 150), &["--app-id", OTHER, "--title", "Other"]));
+    let other = wait_for("the other app's window", || titled(&session, "Other"));
+
+    let mut client = session.client();
+    client.call(WINDOW_FOCUS, json!({"id": main.id})).unwrap();
+    client.call(INPUT_KEY, json!({"key": "F3"})).unwrap();
+    let identifier = wait_for("the exported handle", || {
+        session
+            .window()
+            .title
+            .filter(|title| title.starts_with("wayland:"))
+    });
+    let handle = identifier.trim_start_matches("wayland:").to_owned();
+
+    session.spawn(&with(
+        (160, 100),
+        &[
+            "--app-id", OTHER, "--title", "Dialog", "--helper", "--parent", &handle,
+        ],
+    ));
+    let dialog = wait_for("the dialog", || {
+        titled(&session, "Dialog").filter(|w| (w.width, w.height) == (160, 100))
+    });
+    let center = |w: &WindowInfo| (w.x + w.width / 2, w.y + w.height / 2);
+    let (dx, dy) = center(&dialog);
+    let (mx, my) = center(&main);
+    assert!(
+        dx.abs_diff(mx) <= 1 && dy.abs_diff(my) <= 1,
+        "the dialog {dialog:?} is not centered over {main:?}"
+    );
+    let order =
+        |session: &Session| -> Vec<u64> { all_windows(session).iter().map(|w| w.id).collect() };
+    assert_eq!(order(&session), [dialog.id, main.id, other.id]);
+
+    // Its parent brought forward: the dialog stays above it.
+    client.call(WINDOW_FOCUS, json!({"id": main.id})).unwrap();
+    assert_eq!(order(&session), [dialog.id, main.id, other.id]);
+
+    // The dialog closes (its process ends with it): the parent has the focus.
+    client.call(WINDOW_FOCUS, json!({"id": other.id})).unwrap();
+    client.call(WINDOW_FOCUS, json!({"id": dialog.id})).unwrap();
+    client.call(WINDOW_CLOSE, json!({"id": dialog.id})).unwrap();
+    assert!(
+        wait_until(|| titled(&session, "Dialog").is_none()),
+        "the dialog is still listed"
+    );
+    let focused = all_windows(&session).into_iter().find(|w| w.focused);
+    assert_eq!(focused.map(|w| w.id), Some(main.id));
 }

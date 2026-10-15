@@ -102,6 +102,10 @@ impl CompositorHandler for State {
             // A live resize (#160): the anchored sides stay still, the next size can leave.
             self.resize_commit(&root, new_buffer && root == *surface);
         }
+        // A dialog of another app is centered over its parent at its first buffer.
+        if let Some(window) = self.window_for(surface) {
+            self.center_on_parent(&window);
+        }
 
         if let Some(toplevel) = self.window_for(surface).and_then(|w| w.toplevel().cloned())
             && !toplevel.is_initial_configure_sent()
@@ -131,7 +135,7 @@ static FALLBACK_CLIENT_STATE: std::sync::LazyLock<CompositorClientState> =
     std::sync::LazyLock::new(CompositorClientState::default);
 
 impl State {
-    fn window_for(&self, surface: &WlSurface) -> Option<Window> {
+    pub(crate) fn window_for(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
@@ -214,10 +218,15 @@ impl XdgShellHandler for State {
         if let Some(window) = self.window_for(surface.wl_surface()) {
             // Its app's next window opens here (APP-LC); a child window (Info, compose)
             // leaves the app's place alone.
+            // The parent as last set: an xdg-foreign relationship may end before the window
+            // (the dialog's process exits and its imported handle goes first).
+            let parent = surface
+                .parent()
+                .or_else(|| crate::windows::last_parent(&window));
             if let (Some(app), Some(location), None) = (
                 crate::panorama::window_app(&window),
                 self.space.element_location(&window),
-                surface.parent(),
+                parent.as_ref(),
             ) {
                 self.app_frames.remember(
                     &app,
@@ -231,7 +240,7 @@ impl XdgShellHandler for State {
             // The keyboard was there: it goes to the window's parent, or to the app's next
             // window (closing an Info window gives the focus back to its browser window).
             if focused {
-                let next = self.next_focus_after(&window, surface.parent());
+                let next = self.next_focus_after(&window, parent);
                 if next.is_some() {
                     self.focus_window(next);
                 }
@@ -245,20 +254,39 @@ impl XdgShellHandler for State {
     }
 
     /// A child window (`set_parent`: Get Info, a compose window) opens over its parent,
-    /// offset so the parent's bar stays visible, rather than in the cascade.
+    /// offset so the parent's bar stays visible, rather than in the cascade. A window of
+    /// another app made a child through xdg-foreign (the portal's Open and Save dialog) is a
+    /// dialog attached to its parent: it is centered over it once its size is known.
     fn parent_changed(&mut self, surface: ToplevelSurface) {
         let Some(window) = self.window_for(surface.wl_surface()) else {
             return;
         };
+        let parent_surface = surface.parent();
+        if let Some(parent) = &parent_surface {
+            crate::windows::remember_parent(&window, parent);
+        }
         let fresh = window
             .user_data()
             .get::<FreshWindow>()
             .is_some_and(|fresh| fresh.0.get());
-        let Some(parent) = surface.parent().and_then(|parent| self.window_for(&parent)) else {
+        // Not on screen yet (no buffer): it may still be placed.
+        let unshown = window.geometry().size.is_empty();
+        let Some(parent) = parent_surface
+            .as_ref()
+            .and_then(|parent| self.window_for(parent))
+        else {
             return;
         };
-        if !fresh {
+        if !fresh && !unshown {
             return;
+        }
+        let other_app = parent_surface
+            .as_ref()
+            .and_then(|parent| parent.client())
+            .map(|client| client.id())
+            != surface.wl_surface().client().map(|client| client.id());
+        if other_app {
+            crate::windows::center_at_first_buffer(&window);
         }
         let Some(parent_at) = self.space.element_location(&parent) else {
             return;
@@ -423,5 +451,12 @@ smithay::delegate_ext_data_control!(State);
 delegate_output!(State);
 delegate_viewporter!(State);
 smithay::delegate_cursor_shape!(State);
+smithay::delegate_xdg_foreign!(State);
+
+impl smithay::wayland::xdg_foreign::XdgForeignHandler for State {
+    fn xdg_foreign_state(&mut self) -> &mut smithay::wayland::xdg_foreign::XdgForeignState {
+        &mut self.xdg_foreign_state
+    }
+}
 
 impl smithay::wayland::tablet_manager::TabletSeatHandler for State {}

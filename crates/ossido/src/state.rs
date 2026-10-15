@@ -92,6 +92,9 @@ pub struct State {
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
     pub xdg_decoration_state: XdgDecorationState,
+    /// xdg-foreign v2: an app's window becomes the parent of another app's window (the Open
+    /// and Save dialog of the portal is attached to the app that asked for it).
+    pub xdg_foreign_state: smithay::wayland::xdg_foreign::XdgForeignState,
     pub glass_manager_state: crate::glass::GlassManagerState,
     pub window_manager_state: crate::window_appearance::WindowManagerState,
     /// The windows for the shell (`ext-foreign-toplevel-list`, only to its components).
@@ -270,6 +273,7 @@ impl State {
         let layer_shell_state = WlrLayerShellState::new::<State>(&dh);
         let viewporter_state = ViewporterState::new::<State>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<State>(&dh);
+        let xdg_foreign_state = smithay::wayland::xdg_foreign::XdgForeignState::new::<State>(&dh);
         let glass_manager_state = crate::glass::GlassManagerState::new(&dh);
         let window_manager_state = crate::window_appearance::WindowManagerState::new(&dh);
         let app_menus = crate::app_menu::AppMenus::new(&dh);
@@ -353,6 +357,7 @@ impl State {
             dmabuf_state: DmabufState::new(),
             dmabuf_global: None,
             xdg_decoration_state,
+            xdg_foreign_state,
             glass_manager_state,
             window_manager_state,
             foreign_toplevel_list,

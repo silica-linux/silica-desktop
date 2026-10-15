@@ -66,6 +66,10 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_tople
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_list_v1::{
     self, ExtForeignToplevelListV1,
 };
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_exported_v2::{self, ZxdgExportedV2};
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporterV2;
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::{self, ZxdgImportedV2};
+use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 
 use crate::{LayerKeyboard, LayerKind, Options, Renderer};
 
@@ -247,6 +251,8 @@ struct View {
     adding: bool,
     /// `openWindow`'s reply, sent once the engine has added the view.
     open_reply: Option<ResponseHandle>,
+    /// xdg-foreign: the window exported for another app (`exportHandle`, `foreign.rs`).
+    export: Option<crate::foreign::Export<ZxdgExportedV2, ResponseHandle>>,
     /// Being removed: the engine is asked to drop the view; the surface waits for it.
     removing: bool,
 }
@@ -269,6 +275,7 @@ impl View {
             added,
             adding: false,
             open_reply: None,
+            export: None,
             removing: false,
         }
     }
@@ -330,6 +337,11 @@ struct App {
     glass_manager: Option<SilicaGlassManagerV1>,
     /// `silica-window-v1`: the manager (each view has its window object).
     appearance_manager: Option<SilicaWindowManagerV1>,
+    /// xdg-foreign v2: exports the windows for other apps (`exportHandle`), and the other
+    /// app's window imported as this window's parent (`--parent`).
+    exporter: Option<ZxdgExporterV2>,
+    /// Kept for the life of the process: destroying it would end the relationship.
+    _parent_import: Option<ZxdgImportedV2>,
     /// The app is active (a window of it is), as Flutter was told (`flutter/lifecycle`).
     app_active: Option<bool>,
     /// Drag between apps: the manager, the seat's device, the drag that left from here and
@@ -451,10 +463,22 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let shm = Shm::bind(&globals, &qh)?;
     let surface = compositor.create_surface(&qh);
     let mut xdg_shell = None;
+    let mut parent_import = None;
     let surface = match &options.layer {
         None => {
             let shell = XdgShell::bind(&globals, &qh)?;
             let window = shell.create_window(surface, WindowDecorations::RequestServer, &qh);
+            // The parent goes first: Ossido places a window when it learns its app id.
+            if let Some(handle) = &options.parent {
+                match globals.bind::<ZxdgImporterV2, App, ()>(&qh, 1..=1, ()) {
+                    Ok(importer) => {
+                        let imported = importer.import_toplevel(handle.clone(), &qh, ());
+                        imported.set_parent_of(window.wl_surface());
+                        parent_import = Some(imported);
+                    }
+                    Err(err) => warn!("--parent: no xdg-foreign importer ({err})"),
+                }
+            }
             window.set_title(options.title.clone());
             window.set_app_id(options.app_id.clone());
             window.commit();
@@ -744,6 +768,8 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         appearance_manager: globals
             .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=3, ())
             .ok(),
+        exporter: globals.bind::<ZxdgExporterV2, App, ()>(&qh, 1..=1, ()).ok(),
+        _parent_import: parent_import,
         app_active: None,
         data_manager: DataDeviceManagerState::bind(&globals, &qh).ok(),
         cursor_shapes:
@@ -885,14 +911,16 @@ impl App {
             }
             return;
         }
-        // `openWindow` answers once the engine has added the view (`view_event`).
+        // `openWindow` answers once the engine has added the view (`view_event`),
+        // `exportHandle` once the compositor sent the handle.
         if message.channel == WINDOW_CHANNEL
             && let Ok(call) = serde_json::from_slice::<serde_json::Value>(&message.data)
-            && call.get("method").and_then(serde_json::Value::as_str) == Some("openWindow")
         {
-            let reply = message.response;
-            self.open_view(&call, reply);
-            return;
+            match call.get("method").and_then(serde_json::Value::as_str) {
+                Some("openWindow") => return self.open_view(&call, message.response),
+                Some("exportHandle") => return self.export_handle(&call, message.response),
+                _ => {}
+            }
         }
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
@@ -942,7 +970,9 @@ impl App {
     ///   min = max makes the window fixed-size (Ossido then disables the zoom button).
     ///
     /// Every call takes an optional `viewId` (several windows, `views.rs`), which also adds
-    /// `closeWindow {viewId}` and `setTitle {viewId, title}`; `openWindow` is in `open_view`.
+    /// `closeWindow {viewId}` and `setTitle {viewId, title}`; `openWindow` is in `open_view`,
+    /// `exportHandle` (the window's xdg-foreign identifier for another app) in
+    /// `export_handle`.
     fn handle_window_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
@@ -1047,6 +1077,61 @@ impl App {
                 crate::text_input::success(serde_json::json!(true))
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// `exportHandle {viewId?}`: the window's xdg-foreign identifier (`"wayland:<handle>"`)
+    /// for another app (the portal's `parent_window`), or null (`foreign.rs`).
+    fn export_handle(&mut self, call: &serde_json::Value, mut reply: Option<ResponseHandle>) {
+        let id = views::view_arg(call);
+        let answer = match (&self.exporter, self.views.get_mut(&id)) {
+            (
+                Some(exporter),
+                Some(View {
+                    surface: Shell::Window(window),
+                    export,
+                    ..
+                }),
+            ) => {
+                let export = export.get_or_insert_with(|| {
+                    crate::foreign::Export::new(exporter.export_toplevel(
+                        window.wl_surface(),
+                        &self.qh,
+                        id,
+                    ))
+                });
+                match export.ask(&mut reply) {
+                    // Answered when the handle arrives (`export_ready`).
+                    None => return,
+                    Some(identifier) => serde_json::json!(identifier),
+                }
+            }
+            _ => serde_json::Value::Null,
+        };
+        self.respond_json(reply, answer, "exportHandle");
+    }
+
+    /// The compositor sent the handle of window `id`'s export: the waiting calls get it.
+    fn export_ready(&mut self, id: i64, handle: String) {
+        let Some(export) = self
+            .views
+            .get_mut(&id)
+            .and_then(|view| view.export.as_mut())
+        else {
+            return;
+        };
+        let (identifier, waiting) = export.ready(handle);
+        for reply in waiting {
+            self.respond_json(Some(reply), serde_json::json!(identifier), "exportHandle");
+        }
+    }
+
+    /// Answers a call on `silica/window` with `value` (JSONMethodCodec success).
+    fn respond_json(&self, reply: Option<ResponseHandle>, value: serde_json::Value, what: &str) {
+        if let (Some(engine), Some(handle)) = (&self.engine, reply)
+            && let Err(err) = engine.respond(handle, &crate::text_input::success(value))
+        {
+            warn!("{what} reply: {err}");
         }
     }
 
@@ -1299,6 +1384,12 @@ impl App {
         if let Some(mut view) = self.views.remove(&id) {
             if let Some(object) = view.appearance.take() {
                 object.destroy();
+            }
+            if let Some(export) = view.export.take() {
+                export.object.destroy();
+                for reply in export.waiting {
+                    self.respond_json(Some(reply), serde_json::Value::Null, "exportHandle");
+                }
             }
             info!("window {id} closed");
         }
@@ -3185,6 +3276,40 @@ wayland_client::delegate_noop!(App: ignore SilicaWindowManagerV1);
 wayland_client::delegate_noop!(App: ignore SilicaWindowV1);
 wayland_client::delegate_noop!(App: ignore SilicaGlassV1);
 wayland_client::delegate_noop!(App: ignore SilicaMenuManagerV1);
+wayland_client::delegate_noop!(App: ignore ZxdgExporterV2);
+wayland_client::delegate_noop!(App: ignore ZxdgImporterV2);
+
+/// The handle of a window exported for another app (`exportHandle`).
+impl wayland_client::Dispatch<ZxdgExportedV2, i64> for App {
+    fn event(
+        app: &mut Self,
+        _: &ZxdgExportedV2,
+        event: zxdg_exported_v2::Event,
+        id: &i64,
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_exported_v2::Event::Handle { handle } = event {
+            app.export_ready(*id, handle);
+        }
+    }
+}
+
+/// The parent window of `--parent` is gone (or the handle was never valid).
+impl wayland_client::Dispatch<ZxdgImportedV2, ()> for App {
+    fn event(
+        _: &mut Self,
+        _: &ZxdgImportedV2,
+        event: zxdg_imported_v2::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_imported_v2::Event::Destroyed = event {
+            info!("--parent: the parent window is gone");
+        }
+    }
+}
 
 /// An item of the app's menus chosen in the bar (`menu.rs`).
 impl wayland_client::Dispatch<SilicaMenuV1, ()> for App {

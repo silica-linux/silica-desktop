@@ -12,6 +12,8 @@
 //   own view, all [second] ([typed] once its own field holds the magic word): a tap in it
 //   closes it, and so does its close button (the app answers `closeRequested` and closes it
 //   itself).
+// - F3 exports the main window for another app (`exportHandle`, xdg-foreign) and shows the
+//   identifier it got ("wayland:<handle>") as the window title, for the tests to read.
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/services.dart';
@@ -94,6 +96,12 @@ class _DemoAppState extends State<DemoApp> {
     });
   }
 
+  Future<void> _exportWindow() async {
+    final handle = await windowChannel.invokeMethod<Object?>('exportHandle');
+    if (handle is! String) return;
+    await windowChannel.invokeMethod<Object?>('setTitle', {'title': handle});
+  }
+
   Future<void> _closeSecond(Object? id) async {
     if (id == null) return;
     await windowChannel.invokeMethod<Object?>('closeWindow', {'viewId': id});
@@ -116,6 +124,10 @@ class _DemoAppState extends State<DemoApp> {
     }
     if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.f2) {
       _openSecond();
+      return true;
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.f3) {
+      _exportWindow();
       return true;
     }
     return false;

@@ -76,4 +76,28 @@ void main() {
     // The main window is unchanged.
     expect(background(tester), idle);
   });
+
+  testWidgets('F3 exports the window and shows its handle as the title', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async {
+        calls.add(call);
+        return call.method == 'exportHandle' ? 'wayland:h4ndle' : true;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      ),
+    );
+    await tester.pumpWidget(const DemoApp());
+    await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+    await tester.pump();
+    expect(calls.map((call) => call.method), ['exportHandle', 'setTitle']);
+    expect(calls.last.arguments, {'title': 'wayland:h4ndle'});
+  });
 }
