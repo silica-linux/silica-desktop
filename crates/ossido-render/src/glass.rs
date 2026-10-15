@@ -19,6 +19,8 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
+use crate::glass_profile::{GlassProfile, lens_width};
+
 /// Parameters of a material: blur, sharp share and color (`out = M · in + b + q₂ · l² + q₃ · l³`
 /// on the encoded sRGB values, 0–1, l the mean of the input channels).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -238,6 +240,14 @@ impl Lens {
             .fold(0.0, f32::max)
     }
 
+    /// How far inside the edge it can sample, in points (the deepest source of the curves).
+    pub fn inward_reach(&self) -> f32 {
+        [self.side, self.top, self.bottom]
+            .iter()
+            .flat_map(|curve| curve.iter().map(|(t, s)| t.max(*s)))
+            .fold(0.0, f32::max)
+    }
+
     /// The three curves as arrays of `mat4` (columns: t0, s0, t1, s1), scaled to pixels.
     fn uniform(&self, px: f32) -> UniformValue {
         let pack = |curve: &[(f32, f32)]| {
@@ -441,7 +451,7 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 19] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 26] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -461,6 +471,13 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 19] = [
     ("edges", UniformType::Matrix4x4),
     ("fill_gray", UniformType::_1f),
     ("edge_power", UniformType::_1f),
+    ("lens_widths", UniformType::Matrix4x4),
+    ("refraction", UniformType::_1f),
+    ("rim", UniformType::_1f),
+    ("line", UniformType::_1f),
+    ("saturation", UniformType::_1f),
+    ("tint_color", UniformType::_4f),
+    ("shadow", UniformType::_3f),
 ];
 
 /// How fast each orientation's edge (top, sides, bottom) fades around a curve: its weight is
@@ -494,6 +511,11 @@ impl MaterialParams {
     /// The fill over the reference gray (`#7a7b80`), 0–1 luminance: the level the edge
     /// offsets were measured against.
     pub fn fill_on_gray(&self) -> f32 {
+        self.fill_on_gray_with(&GlassProfile::NEUTRAL)
+    }
+
+    /// The same with a profile's saturation and tint over the material.
+    pub fn fill_on_gray_with(&self, profile: &GlassProfile) -> f32 {
         let gray = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.0];
         let l = (gray[0] + gray[1] + gray[2]) / 3.0;
         let [q2, q3] = self.curve;
@@ -503,8 +525,22 @@ impl MaterialParams {
         let r = channel(self.matrix[0], self.offset[0], q2[0], q3[0]);
         let g = channel(self.matrix[1], self.offset[1], q2[1], q3[1]);
         let b = channel(self.matrix[2], self.offset[2], q2[2], q3[2]);
+        let [r, g, b] = profile_color(profile, [r, g, b]);
         ((r + g + b) / 3.0).clamp(0.01, 0.99)
     }
+}
+
+/// A profile's saturation and tint over a material color (the shader's, on the fill).
+pub fn profile_color(profile: &GlassProfile, [r, g, b]: [f32; 3]) -> [f32; 3] {
+    let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    let saturate = |c: f32| l + (c - l) * profile.saturation;
+    let [tr, tg, tb, amount] = profile.tint;
+    let tint = |c: f32, t: f32| c + (t - c) * amount;
+    [
+        tint(saturate(r), tr),
+        tint(saturate(g), tg),
+        tint(saturate(b), tb),
+    ]
 }
 
 /// How far the lens reaches inside the glass (the last point of the curves), in points: the
@@ -777,9 +813,31 @@ pub struct PhysicalRegion {
     pub tip: Option<Tip>,
     /// Regions merge only within the same group.
     pub group: u32,
+    /// The kind of surface: blur, lens, edge, tint and shadow over the material.
+    pub profile: GlassProfile,
 }
 
 impl PhysicalRegion {
+    /// σ of the blur in points: the profile's, or the material's.
+    pub fn sigma(&self) -> f64 {
+        self.profile.sigma.unwrap_or(self.material.sigma)
+    }
+
+    /// What the blurred texture depends on.
+    fn blur_key(&self) -> BlurKey {
+        BlurKey {
+            sigma: self.sigma(),
+            sharp: self.material.sharp,
+        }
+    }
+
+    /// How far the region draws beyond its shape, in pixels: the merging bulge and the shadow.
+    fn bleed(&self) -> i32 {
+        let bulge = f64::from(self.material.merge_pt) * 0.5;
+        let shadow = f64::from(self.profile.shadow.reach());
+        ((bulge + shadow) * self.scale).ceil() as i32 + 1
+    }
+
     /// Same shape and same material: the blurred background can be reused even if the
     /// opacity changed (a fade does not redo the blur on every frame).
     fn same_shape(&self, other: &Self) -> bool {
@@ -789,7 +847,15 @@ impl PhysicalRegion {
             && self.scale == other.scale
             && self.tip == other.tip
             && self.group == other.group
+            && self.profile == other.profile
     }
+}
+
+/// The blur of a texture: σ in points and the sharp share.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BlurKey {
+    sigma: f64,
+    sharp: f32,
 }
 
 /// The state of the elements behind the glass: if it does not change, the texture is reused.
@@ -806,8 +872,8 @@ struct Cached {
     signature: Signature,
     regions: Vec<PhysicalRegion>,
     bbox: Rectangle<i32, Physical>,
-    /// One blurred texture per material present, in the order of the regions.
-    textures: Vec<(MaterialParams, GlesTexture)>,
+    /// One blurred texture per blur present, in the order of the regions.
+    textures: Vec<(BlurKey, GlesTexture)>,
     ids: Vec<Id>,
     commit: CommitCounter,
 }
@@ -845,9 +911,12 @@ impl GlassCache {
         let margin = regions
             .iter()
             .map(|region| {
-                let reach =
-                    f64::from(region.material.lens.outward_reach() + region.material.merge_pt);
-                ((region.material.sigma * 3.0 + reach) * scale).ceil() as i32 + 2
+                let reach = f64::from(
+                    region.material.lens.outward_reach()
+                        + region.material.merge_pt
+                        + region.profile.shadow.reach(),
+                );
+                ((region.sigma() * 3.0 + reach) * scale).ceil() as i32 + 2
             })
             .max()
             .unwrap_or(0);
@@ -899,23 +968,14 @@ impl GlassCache {
         }
         if !reuse {
             let sharp = render_to_texture(renderer, behind, bbox, scale, clear_color)?;
-            let mut textures: Vec<(MaterialParams, GlesTexture)> = Vec::new();
+            let mut textures: Vec<(BlurKey, GlesTexture)> = Vec::new();
             for region in regions {
-                if textures
-                    .iter()
-                    .any(|(material, _)| *material == region.material)
-                {
+                let key = region.blur_key();
+                if textures.iter().any(|(k, _)| *k == key) {
                     continue;
                 }
-                let blurred = blur(
-                    renderer,
-                    programs,
-                    &sharp,
-                    bbox.size,
-                    region.material,
-                    scale,
-                )?;
-                textures.push((region.material, blurred));
+                let blurred = blur(renderer, programs, &sharp, bbox.size, key, scale)?;
+                textures.push((key, blurred));
             }
             let count = groups(regions).len();
             let (ids, mut commit) = match state.take() {
@@ -944,16 +1004,11 @@ impl GlassCache {
             .into_iter()
             .zip(&cached.ids)
             .filter_map(|(shapes, id)| {
-                let material = shapes.first()?.material;
-                let texture = cached
-                    .textures
-                    .iter()
-                    .find(|(m, _)| *m == material)?
-                    .1
-                    .clone();
-                let scale = shapes.first()?.scale;
-                // The smooth union goes out of the regions by at most k / 4 = merge_pt / 2.
-                let bulge = (f64::from(material.merge_pt) * scale * 0.5).ceil() as i32 + 1;
+                let key = shapes.first()?.blur_key();
+                let texture = cached.textures.iter().find(|(k, _)| *k == key)?.1.clone();
+                // The smooth union goes out of the regions by at most k / 4 = merge_pt / 2,
+                // the shadow by its reach.
+                let bulge = shapes.first()?.bleed();
                 let area = shapes
                     .iter()
                     .map(|shape| shape.rect)
@@ -977,7 +1032,7 @@ impl GlassCache {
     }
 }
 
-/// The regions grouped by material and client group (in the order they appear), at most
+/// The regions grouped by material, profile and client group (in the order they appear), at most
 /// `MAX_SHAPES` per group: the regions of a group merge with each other.
 fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
     let mut groups: Vec<Vec<PhysicalRegion>> = Vec::new();
@@ -986,6 +1041,7 @@ fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
             group.len() < MAX_SHAPES
                 && group.first().is_some_and(|first| {
                     first.material == region.material
+                        && first.profile == region.profile
                         && first.opacity == region.opacity
                         && first.group == region.group
                 })
@@ -1081,16 +1137,16 @@ fn pass(
     Ok(texture)
 }
 
-/// Blurs the capture with the material's σ and mixes in the sharp share.
+/// Blurs the capture with the σ and mixes in the sharp share.
 fn blur(
     renderer: &mut GlesRenderer,
     programs: &GlassPrograms,
     sharp: &GlesTexture,
     size: Size<i32, Physical>,
-    material: MaterialParams,
+    key: BlurKey,
     scale: f64,
 ) -> Result<GlesTexture, GlesError> {
-    let sigma = material.sigma * scale;
+    let sigma = key.sigma * scale;
     // Reduction: with a large σ blurring happens at half or a quarter of the resolution.
     let factor = if sigma > MAX_SIGMA_PX * 2.0 {
         4
@@ -1130,7 +1186,7 @@ fn blur(
         size,
         None,
         &[],
-        1.0 - material.sharp,
+        1.0 - key.sharp,
         Some(sharp),
     )
 }
@@ -1193,7 +1249,11 @@ impl RenderElement<GlesRenderer> for GlassElement {
         let [q2, q3] = first.material.curve;
         let lens = first.material.lens;
         let edge = first.material.edge;
+        let profile = first.profile;
         let px = first.scale as f32;
+        // The deepest the lens samples, for its width on each shape (`lens_width`).
+        let lens_reach_px = lens.inward_reach() * px;
+        let mut lens_widths = [profile.falloff; 16];
         // The regions relative to the texture: up to 8 rectangles in two mat4 (one column per
         // rectangle: x, y, width, height) and the radii in a mat4.
         let mut rects = [[0.0_f32; 16]; 2];
@@ -1230,6 +1290,10 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 {
                     slot.copy_from_slice(&profile.uniform(scale));
                 }
+            }
+            let thickness = shape.rect.size.w.min(shape.rect.size.h) as f32;
+            if let Some(slot) = lens_widths.get_mut(i) {
+                *slot = lens_width(thickness, lens_reach_px, profile.falloff);
             }
             if let Some(slot) = radii.get_mut(i) {
                 *slot = match shape.tip {
@@ -1288,9 +1352,37 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("edges", edge.uniform()),
             Uniform::new(
                 "fill_gray",
-                UniformValue::_1f(first.material.fill_on_gray()),
+                UniformValue::_1f(first.material.fill_on_gray_with(&profile)),
             ),
             Uniform::new("edge_power", UniformValue::_1f(EDGE_POWER)),
+            Uniform::new(
+                "lens_widths",
+                UniformValue::Matrix4x4 {
+                    matrices: vec![lens_widths],
+                    transpose: false,
+                },
+            ),
+            Uniform::new("refraction", UniformValue::_1f(profile.refraction)),
+            Uniform::new("rim", UniformValue::_1f(profile.rim)),
+            Uniform::new("line", UniformValue::_1f(profile.line)),
+            Uniform::new("saturation", UniformValue::_1f(profile.saturation)),
+            Uniform::new(
+                "tint_color",
+                UniformValue::_4f(
+                    profile.tint[0],
+                    profile.tint[1],
+                    profile.tint[2],
+                    profile.tint[3],
+                ),
+            ),
+            Uniform::new(
+                "shadow",
+                UniformValue::_3f(
+                    profile.shadow.opacity,
+                    profile.shadow.sigma * px,
+                    profile.shadow.offset_y * px,
+                ),
+            ),
         ];
         frame.render_texture_from_to(
             &self.texture,

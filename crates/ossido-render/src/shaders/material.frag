@@ -59,6 +59,17 @@ uniform float fill_gray;
 // from the side and the light rows by ~45° from the top (fit on the Control Center modules):
 // the square of the component spread the side line over the whole end, a black crescent.
 uniform float edge_power;
+// The profile of the surface kind (glass_profile.rs). The lens band's width per region (one
+// slot per region, like the radii: the profile's falloff narrowed to the region's thickness),
+// the lens strength, the edge light and dark, saturation and tint over the material, and the
+// shadow outside the shape (black alpha, σ and downward offset in pixels; 0 alpha: none).
+uniform mat4 lens_widths;
+uniform float refraction;
+uniform float rim;
+uniform float line;
+uniform float saturation;
+uniform vec4 tint_color;
+uniform vec3 shadow;
 
 float rounded_distance(vec2 p, vec4 rect, float r) {
     vec2 half_size = rect.zw * 0.5;
@@ -134,6 +145,25 @@ float smooth_min(float a, float b, float k) {
     }
     float h = max(k - abs(a - b), 0.0) / k;
     return min(a, b) - h * h * k * 0.25;
+}
+
+// The lens band's width of the region nearest to p.
+float lens_width_at(vec2 p) {
+    float best = 1.0e6;
+    float width = 1.0;
+    for (int i = 0; i < 8; i++) {
+        if (float(i) >= shape_count) {
+            break;
+        }
+        vec4 rect = shapes[i / 4][i - (i / 4) * 4];
+        float r = max(radii[i / 4][i - (i / 4) * 4], 0.0);
+        float d = rounded_distance(p, rect, r);
+        if (d < best) {
+            best = d;
+            width = lens_widths[i / 4][i - (i / 4) * 4];
+        }
+    }
+    return max(width, 0.05);
 }
 
 // Signed distance from the union of the regions, with corners at least `min_radius`.
@@ -232,9 +262,13 @@ void main() {
     float vertical = n.y * n.y;
 
     // Lens: the pixel at distance t samples the background at distance s along the normal
-    // (glass.md, "Refraction").
-    float source = mix(lens_source(lens[0], t),
-                       lens_source(n.y < 0.0 ? lens[1] : lens[2], t), vertical);
+    // (glass.md, "Refraction"). The profile scales the band's width (the curve keeps its
+    // shape: evaluated at t / width, its displacement times width) and the displacement.
+    float band = lens_width_at(p);
+    float tb = t / band;
+    float measured = mix(lens_source(lens[0], tb),
+                         lens_source(n.y < 0.0 ? lens[1] : lens[2], tb), vertical);
+    float source = t + refraction * band * (measured - tb);
     // Clamped to the texture: it repeats by default, and outside it lies the opposite side.
     vec2 half_texel = 0.5 / tex_size;
     vec2 sample_at = clamp((p + n * (t - source)) / tex_size, half_texel, vec2(1.0) - half_texel);
@@ -243,6 +277,10 @@ void main() {
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
     float luminance = (background.r + background.g + background.b) / 3.0;
     color += (curve2 + curve3 * luminance) * luminance * luminance;
+    // The profile over the material: saturation around the luminance, then the tint.
+    float rec709 = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    color = mix(vec3(rec709), color, saturation);
+    color = mix(color, tint_color.rgb, tint_color.a);
 
     // Edge: the measured profiles, weighted by the orientation of the true shape's normal
     // (top, sides, bottom), so corners, tips and merged bridges blend continuously.
@@ -259,6 +297,7 @@ void main() {
     float in_bottom = profile_at(edges[2], s_in);
     float offset_in = w_top * in_top + w_side * in_side + w_bottom * in_bottom
                     + w_shared * shared_value(in_top, in_side, in_bottom);
+    offset_in *= offset_in > 0.0 ? rim : line;
     if (offset_in > 0.0) {
         color += offset_in * min(vec3(1.0), (vec3(1.0) - color) / max(1.0 - fill_gray, 0.05));
     } else {
@@ -270,10 +309,20 @@ void main() {
     float out_bottom = outline_at(edges[2], u_out);
     float outline = w_top * out_top + w_side * out_side + w_bottom * out_bottom
                   + w_shared * min(out_top, min(out_side, out_bottom));
+    outline = clamp(outline * line, 0.0, 1.0);
 
     color = clamp(color, 0.0, 1.0);
     float coverage = clamp(0.5 - sd, 0.0, 1.0);
-    vec4 result = (vec4(color, 1.0) * coverage + vec4(0.0, 0.0, 0.0, outline * (1.0 - coverage))) * alpha;
+    vec4 result = vec4(color, 1.0) * coverage + vec4(0.0, 0.0, 0.0, outline * (1.0 - coverage));
+    // The shadow, under the glass and outside it: the falloff of a Gaussian edge (the logistic
+    // approximation of its integral) at the distance from the shape moved down by the offset.
+    if (shadow.x > 0.0) {
+        float ds = union_distance(p - vec2(0.0, shadow.z), 0.0);
+        float a = shadow.x / (1.0 + exp(1.702 * ds / max(shadow.y, 0.5)));
+        a *= clamp(sd + 0.5, 0.0, 1.0);
+        result += vec4(0.0, 0.0, 0.0, a) * (1.0 - result.a);
+    }
+    result *= alpha;
 #if defined(DEBUG_FLAGS)
     if (tint == 1.0)
         result = vec4(0.0, 0.2, 0.0, 0.2) + result * 0.8;

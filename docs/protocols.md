@@ -48,6 +48,19 @@ top.
   turned sideways: `left` has the apex at the middle of the left side and the base on the
   right one, `right` the other way round; the base is the rectangle's height, the depth its
   width. `silica_ui` sends `tip-left` and `tip-right`.
+- Since version 7: `set_profile(profile, shadow)`: the following regions belong to a kind of
+  surface, until the next `set_profile` or `clear`. Profiles: `menu`, `panel` (Notification
+  Center, search, launcher), `module` (Control Center modules, HUDs), `control` (small
+  controls on glass: toolbar buttons, pills), `dock`, `tooltip`, `sheet`, `banner`; `default`
+  derives the kind from the material (clear: dock, thick: menu, regular: module,
+  notification: banner). The material stays the base color; the profile sets the blur, the
+  lens (strength and how far it reaches from the edge), the edge light and dark line,
+  saturation and tint, and the shadow (`crates/ossido-render/src/glass_profile.rs`). With
+  `shadow` = `compositor` Ossido draws the profile's shadow outside the shape (the client then
+  draws none); with `client` it draws none. Unknown values are `invalid_profile`. On every
+  shape the lens narrows so it never samples past the far edge. `silica_ui` sends the
+  `profile` and `shadow` keys on the `silica/glass` channel (`Glass.profile`,
+  `Glass.profileShadow`); the embedder ignores them below version 7.
 
 The tip is a rounded isosceles triangle: the rectangle's base side is the triangle's base, its
 depth is where the rounded apex (radius ~2.5 pt) ends, and the sides join the body with a

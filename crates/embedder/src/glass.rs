@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use silica_protocols::glass::MAX_REGIONS;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
-use silica_protocols::glass::client::silica_glass_v1::{Material, Side, SilicaGlassV1};
+use silica_protocols::glass::client::silica_glass_v1::{
+    Material, Profile, Shadow, Side, SilicaGlassV1,
+};
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 
@@ -34,6 +36,26 @@ pub struct Region {
     /// Regions merge only within the same group; a higher group is drawn on top
     /// (version 4, `separate`).
     pub group: u32,
+    /// The kind of surface (`profile`: `menu`, `panel`, `module`, `control`, `dock`,
+    /// `tooltip`, `sheet`, `banner`; version 7, `set_profile`). Default: from the material.
+    pub profile: Profile,
+    /// Ossido draws the profile's shadow (`shadow`: true; only with a profile).
+    pub shadow: bool,
+}
+
+/// The profile named in the channel's JSON (unknown names: from the material).
+fn profile_named(name: Option<&str>) -> Profile {
+    match name {
+        Some("menu") => Profile::Menu,
+        Some("panel") => Profile::Panel,
+        Some("module") => Profile::Module,
+        Some("control") => Profile::Control,
+        Some("dock") => Profile::Dock,
+        Some("tooltip") => Profile::Tooltip,
+        Some("sheet") => Profile::Sheet,
+        Some("banner") => Profile::Banner,
+        _ => Profile::Default,
+    }
 }
 
 /// Where a tip points (`shape`: `tip`, `tip-up`, `tip-left`, `tip-right`).
@@ -102,6 +124,13 @@ impl Region {
                 .get("group")
                 .and_then(Value::as_u64)
                 .map_or(0, |g| u32::try_from(g).unwrap_or(u32::MAX)),
+            profile: profile_named(value.get("profile").and_then(Value::as_str)),
+            shadow: false,
+        };
+        let region = Self {
+            shadow: region.profile != Profile::Default
+                && value.get("shadow").and_then(Value::as_bool) == Some(true),
+            ..region
         };
         (region.width > 0 && region.height > 0).then_some(region)
     }
@@ -330,7 +359,10 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
     let notification = object.version() >= 2;
     let translucent = object.version() >= 3;
     let groups = object.version() >= 4;
+    let profiles = object.version() >= 7;
     let mut group = regions.first().map_or(0, |r| r.group);
+    // After `clear` the regions take the default profile, the client's shadow.
+    let mut profile = (Profile::Default, false);
     for region in regions {
         if region.tip.is_some_and(|tip| object.version() < tip.since()) {
             // An earlier Ossido cannot draw this tip.
@@ -339,6 +371,17 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
         if groups && region.group != group {
             object.separate();
             group = region.group;
+        }
+        if profiles && (region.profile, region.shadow) != profile {
+            profile = (region.profile, region.shadow);
+            object.set_profile(
+                region.profile,
+                if region.shadow {
+                    Shadow::Compositor
+                } else {
+                    Shadow::Client
+                },
+            );
         }
         let material = match region.material {
             Material::Notification if !notification => Material::Thick,
@@ -421,6 +464,31 @@ mod tests {
         ]));
         let opacities: Vec<f64> = regions.iter().map(|r| r.opacity).collect();
         assert_eq!(opacities, [1.0, 0.25, 1.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn profiles_are_parsed_and_the_shadow_needs_one() {
+        let regions = parse_regions(&json!([
+            {"x": 0, "y": 0, "width": 10, "height": 10},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "profile": "menu"},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "profile": "tooltip", "shadow": true},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "shadow": true},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "profile": "bubble", "shadow": true},
+            {"x": 0, "y": 0, "width": 10, "height": 10, "profile": 3, "shadow": "yes"}
+        ]));
+        let summary: Vec<(Profile, bool)> = regions.iter().map(|r| (r.profile, r.shadow)).collect();
+        assert_eq!(
+            summary,
+            [
+                (Profile::Default, false),
+                (Profile::Menu, false),
+                (Profile::Tooltip, true),
+                // No profile: no shadow to draw; unknown names fall back to the material.
+                (Profile::Default, false),
+                (Profile::Default, false),
+                (Profile::Default, false)
+            ]
+        );
     }
 
     #[test]

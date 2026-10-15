@@ -1240,6 +1240,16 @@ pub fn output_elements(
                         Shape::RightTip => Some(Tip::Right),
                     },
                     group: region.group,
+                    // The kind's settings; its shadow only where the client asked Ossido to
+                    // draw it (it draws its own otherwise).
+                    profile: {
+                        let profile = region.kind().kind().profile(context.dark);
+                        if region.shadow {
+                            profile
+                        } else {
+                            profile.without_shadow()
+                        }
+                    },
                 })
                 .collect();
             if regions.is_empty() {

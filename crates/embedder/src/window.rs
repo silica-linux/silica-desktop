@@ -549,7 +549,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let software_frames = Arc::clone(&glass_sync);
     let glass = Arc::new(Mutex::new(Glass::new(
         globals
-            .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=6, ())
+            .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=7, ())
             .ok(),
         Arc::clone(&glass_sync),
     )));

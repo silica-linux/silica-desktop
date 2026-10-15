@@ -13,7 +13,7 @@
     (text, icons) on top, with transparent pixels where the glass must show.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="6">
+  <interface name="silica_glass_manager_v1" version="7">
     <description summary="creates the glass object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -35,7 +35,7 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="6">
+  <interface name="silica_glass_v1" version="7">
     <description summary="glass regions of a surface">
       The state is double-buffered: clear and add_region change the pending state, which
       becomes current on the next wl_surface.commit. Coordinates are in the surface
@@ -65,10 +65,35 @@
       <entry name="right" value="1" summary="apex on the right side, base on the left side"/>
     </enum>
 
+    <enum name="profile" since="7">
+      <description summary="the kind of surface a glass belongs to">
+        The compositor picks the blur, the refraction (strength and how far it reaches from the
+        edge), the edge light, the tint and saturation and the shadow of each kind. The
+        material stays the base color of the glass. default: the kind follows from the
+        material (clear: dock, thick: menu, regular: module, notification: banner).
+      </description>
+      <entry name="default" value="0" summary="from the material"/>
+      <entry name="menu" value="1" summary="menus and context menus"/>
+      <entry name="panel" value="2" summary="large panels: Notification Center, search, launcher"/>
+      <entry name="module" value="3" summary="Control Center modules and HUDs"/>
+      <entry name="control" value="4" summary="small controls on glass: toolbar buttons, pills"/>
+      <entry name="dock" value="5" summary="the Dock and the app switcher"/>
+      <entry name="tooltip" value="6" summary="tooltips and labels"/>
+      <entry name="sheet" value="7" summary="sheets and alerts"/>
+      <entry name="banner" value="8" summary="notification banners"/>
+    </enum>
+
+    <enum name="shadow" since="7">
+      <description summary="who draws the shadow of a glass"/>
+      <entry name="client" value="0" summary="the client draws it (or there is none)"/>
+      <entry name="compositor" value="1" summary="the compositor draws the profile's shadow"/>
+    </enum>
+
     <enum name="error">
       <entry name="invalid_region" value="0"
              summary="negative or zero size, negative radius, unknown material or opacity outside 0–1"/>
       <entry name="too_many_regions" value="1" summary="more than 64 pending regions"/>
+      <entry name="invalid_profile" value="2" since="7" summary="unknown profile or shadow"/>
     </enum>
 
     <request name="clear">
@@ -154,6 +179,17 @@
       <arg name="side" type="uint" enum="side"/>
       <arg name="material" type="uint" enum="material"/>
       <arg name="opacity" type="fixed"/>
+    </request>
+
+    <request name="set_profile" since="7">
+      <description summary="the profile of the following regions">
+        The regions added after this request belong to this kind of surface, until the next
+        set_profile or clear (which goes back to default and client). With compositor, the
+        compositor draws the profile's shadow under the glass, outside its shape; the client
+        then draws none. Pending state like the regions.
+      </description>
+      <arg name="profile" type="uint" enum="profile"/>
+      <arg name="shadow" type="uint" enum="shadow"/>
     </request>
   </interface>
 </protocol>

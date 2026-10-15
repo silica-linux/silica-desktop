@@ -26,6 +26,50 @@ pub enum Material {
     Notification,
 }
 
+/// The kind of surface a region belongs to (`set_profile`, version 7): the renderer's
+/// `GlassKind`. Without one the material decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Profile {
+    Menu,
+    Panel,
+    Module,
+    Control,
+    Dock,
+    Tooltip,
+    Sheet,
+    Banner,
+}
+
+impl Profile {
+    /// The renderer's kind.
+    pub fn kind(self) -> ossido_render::glass_profile::GlassKind {
+        use ossido_render::glass_profile::GlassKind;
+        match self {
+            Self::Menu => GlassKind::Menu,
+            Self::Panel => GlassKind::Panel,
+            Self::Module => GlassKind::Module,
+            Self::Control => GlassKind::Control,
+            Self::Dock => GlassKind::Dock,
+            Self::Tooltip => GlassKind::Tooltip,
+            Self::Sheet => GlassKind::Sheet,
+            Self::Banner => GlassKind::Banner,
+        }
+    }
+}
+
+impl Material {
+    /// The kind a region of this material belongs to when it declares none.
+    pub fn default_profile(self) -> Profile {
+        match self {
+            Self::Clear => Profile::Dock,
+            Self::Thick => Profile::Menu,
+            Self::Regular => Profile::Module,
+            Self::Notification => Profile::Banner,
+        }
+    }
+}
+
 /// The shape of a region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,6 +103,18 @@ pub struct GlassRegion {
     /// Regions merge only within the same group; a later group is drawn on top
     /// (`separate`, version 4).
     pub group: u32,
+    /// The kind of surface (`set_profile`, version 7); none: from the material.
+    pub profile: Option<Profile>,
+    /// Ossido draws the profile's shadow (`set_profile` with `compositor`).
+    pub shadow: bool,
+}
+
+impl GlassRegion {
+    /// The kind of surface: the declared one, or the material's.
+    pub fn kind(&self) -> Profile {
+        self.profile
+            .unwrap_or_else(|| self.material.default_profile())
+    }
 }
 
 /// The double-buffered glass state of a surface.
@@ -67,6 +123,9 @@ pub struct GlassState {
     pub regions: Vec<GlassRegion>,
     /// The group of the next regions.
     pub group: u32,
+    /// The profile of the next regions, and whether Ossido draws its shadow.
+    pub profile: Option<Profile>,
+    pub shadow: bool,
 }
 
 impl Cacheable for GlassState {
@@ -99,7 +158,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(6, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(7, ());
         Self
     }
 }
@@ -176,7 +235,39 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
             silica_glass_v1::Request::Clear => pending(&mut |state| {
                 state.regions.clear();
                 state.group = 0;
+                state.profile = None;
+                state.shadow = false;
             }),
+            silica_glass_v1::Request::SetProfile { profile, shadow } => {
+                use silica_glass_v1::Profile as P;
+                let profile = match profile {
+                    WEnum::Value(P::Default) => Ok(None),
+                    WEnum::Value(P::Menu) => Ok(Some(Profile::Menu)),
+                    WEnum::Value(P::Panel) => Ok(Some(Profile::Panel)),
+                    WEnum::Value(P::Module) => Ok(Some(Profile::Module)),
+                    WEnum::Value(P::Control) => Ok(Some(Profile::Control)),
+                    WEnum::Value(P::Dock) => Ok(Some(Profile::Dock)),
+                    WEnum::Value(P::Tooltip) => Ok(Some(Profile::Tooltip)),
+                    WEnum::Value(P::Sheet) => Ok(Some(Profile::Sheet)),
+                    WEnum::Value(P::Banner) => Ok(Some(Profile::Banner)),
+                    _ => Err(()),
+                };
+                let shadow = match shadow {
+                    WEnum::Value(silica_glass_v1::Shadow::Client) => Ok(false),
+                    WEnum::Value(silica_glass_v1::Shadow::Compositor) => Ok(true),
+                    _ => Err(()),
+                };
+                match (profile, shadow) {
+                    (Ok(profile), Ok(shadow)) => pending(&mut |state| {
+                        state.profile = profile;
+                        state.shadow = shadow;
+                    }),
+                    _ => glass.post_error(
+                        silica_glass_v1::Error::InvalidProfile,
+                        "unknown profile or shadow",
+                    ),
+                }
+            }
             silica_glass_v1::Request::Separate => pending(&mut |state| {
                 state.group = state.group.saturating_add(1);
             }),
@@ -302,6 +393,8 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                             opacity,
                             shape,
                             group: state.group,
+                            profile: state.profile,
+                            shadow: state.shadow && state.profile.is_some(),
                         });
                     }
                 });

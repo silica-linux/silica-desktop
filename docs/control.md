@@ -58,7 +58,7 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `system.volume_up_fine`, `system.volume_down_fine`, `system.brightness_up_fine`, `system.brightness_down_fine` | — | `queued`; a quarter step, 1/64 (⌥⇧ with the keys) |
 | `system.keyboard_brightness` | `value` (0–1) | `queued`; the keyboard backlight (UPower), `false` without one |
 | `system.keyboard_brightness_up`, `system.keyboard_brightness_down` | — | `queued`; steps of 1/16 (keyboard backlight keys) |
-| `glass.list` | — | surfaces with glass (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`, `opacity`) |
+| `glass.list` | — | surfaces with glass (`silica-glass-v1`): `surface`, `x`, `y`, `regions` (`x`, `y`, `width`, `height`, `radius`, `material`, `opacity`, `shape`, `group`, `profile` (null: from the material), `shadow`) |
 | `layer.list` | — | shell layers: `namespace`, `layer`, `x`, `y`, `width`, `height`, `exclusive_zone`, `focused` |
 | `window.focus` | `id?` | — (also brings back a minimized window) |
 | `window.close` | `id?` | — |

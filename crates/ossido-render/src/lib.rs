@@ -11,6 +11,7 @@ pub mod cache;
 pub mod corners;
 pub mod genie;
 pub mod glass;
+pub mod glass_profile;
 pub mod shadow;
 pub mod sprite;
 pub mod title;

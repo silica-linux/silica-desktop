@@ -14,7 +14,7 @@ use common::Headless;
 use common::client::TestWindow;
 use serde_json::Value;
 use silica_control::commands::{GLASS_LIST, WINDOW_LIST};
-use silica_protocols::glass::client::silica_glass_v1::{Material, Side};
+use silica_protocols::glass::client::silica_glass_v1::{Material, Profile, Shadow, Side};
 
 fn glass_list(ossido: &Headless) -> Value {
     ossido.client().call(GLASS_LIST, Value::Null).unwrap()
@@ -935,4 +935,113 @@ fn the_dark_side_line_stays_on_the_side_of_a_capsule() {
     assert!(side > 0.45, "no dark line on the side: {side:.2}");
     assert!(darkness(45.0) < 0.3 * side, "45°: {:.2}", darkness(45.0));
     assert!(darkness(60.0) < 0.15 * side, "60°: {:.2}", darkness(60.0));
+}
+
+#[test]
+fn a_profile_applies_to_the_following_regions_until_clear() {
+    common::client::GLASS_VERSION.with(|v| v.set(7));
+    let ossido = Headless::start("glass-profile-list");
+    let mut window = TestWindow::open(&ossido.wayland, "glass");
+    window
+        .set_glass_with(|g| {
+            g.add_region(0, 0, 40, 20, 8.0, Material::Thick);
+            g.set_profile(Profile::Tooltip, Shadow::Compositor);
+            g.add_region(0, 30, 40, 20, 8.0, Material::Thick);
+            g.set_profile(Profile::Default, Shadow::Compositor);
+            g.add_region(0, 60, 40, 20, 8.0, Material::Thick);
+        })
+        .unwrap();
+    let list = glass_list(&ossido);
+    let regions = &list[0]["regions"];
+    assert_eq!(regions[0]["profile"], Value::Null, "{list}");
+    assert_eq!(regions[1]["profile"], "tooltip");
+    assert_eq!(regions[1]["shadow"], true);
+    // Without a profile there is no shadow of its own to draw.
+    assert_eq!(regions[2]["shadow"], false);
+    // `clear` goes back to the default.
+    window
+        .set_glass(&[(0, 0, 40, 20, 8.0, Material::Thick)])
+        .unwrap();
+    assert_eq!(glass_list(&ossido)[0]["regions"][0]["profile"], Value::Null);
+
+    let windows = ossido.client().call(WINDOW_LIST, Value::Null).unwrap();
+    assert!(windows.as_array().is_some_and(|list| !list.is_empty()));
+}
+
+/// The source of the lens at `t` pt from the left end of a 120 × 24 pill over a ramp
+/// (level = x), with a profile or the material's.
+fn pill_source(name: &str, profile: Option<Profile>) -> Vec<f64> {
+    common::client::GLASS_VERSION.with(|v| v.set(7));
+    let ossido = Headless::start_with(name, SHOT, &[]);
+    let (_back, mut glass) = full_screen_glass(&ossido, |x, _| {
+        let l = x.min(255) as u8;
+        [l, l, l]
+    });
+    glass
+        .set_glass_with(|g| {
+            if let Some(profile) = profile {
+                g.set_profile(profile, Shadow::Client);
+            }
+            g.add_region(40 + 60, 40 + 100, 120, 24, 12.0, Material::Regular);
+        })
+        .unwrap();
+    let image = shot(&ossido, &format!("{name}.png"));
+    (60..120)
+        .map(|x| f64::from(rgb(&image, x, 112)[1]))
+        .collect()
+}
+
+#[test]
+fn small_controls_refract_less_than_modules() {
+    // A 24 pt pill. With the module lens, scaled to the pill (it never samples past the far
+    // edge), the left end shows the ramp from well inside; with the control profile the
+    // displacement is about half (glass_profile.rs).
+    let module = pill_source("glass-pill-module", None);
+    let control = pill_source("glass-pill-control", Some(Profile::Control));
+    // The same fill far from the ends (at 40 pt the lens no longer acts).
+    let gain = (module[50] - module[40]) / 10.0;
+    assert!(gain > 0.2, "no ramp under the pill: {module:?}");
+    // At 3 pt from the edge: how far inwards each one moves the background, in pt.
+    let shift = |row: &[f64]| (row[3] - row[40]) / gain + 40.0 - 3.0;
+    let (m, c) = (shift(&module), shift(&control));
+    eprintln!("3 pt from the edge: module lens moves {m:.1} pt, control {c:.1} pt");
+    assert!(m > 2.0, "the module lens does not act on the pill: {m:.1}");
+    // Before the lens was fitted to the shape it read ~30 pt inside, past the far end.
+    assert!(m + 3.0 <= 24.0, "the lens samples past the pill: {m:.1}");
+    assert!(
+        c < 0.7 * m,
+        "the control lens is not gentler: {c:.1} against {m:.1}"
+    );
+}
+
+#[test]
+fn the_compositor_draws_the_profile_shadow_only_when_asked() {
+    common::client::GLASS_VERSION.with(|v| v.set(7));
+    let below = |name: &str, shadow: Shadow| {
+        let ossido = Headless::start_with(name, SHOT, &[]);
+        let (_back, mut glass) = full_screen_glass(&ossido, |_, _| [0xc0; 3]);
+        glass
+            .set_glass_with(|g| {
+                g.set_profile(Profile::Menu, shadow);
+                g.add_region(40 + 100, 40 + 100, 200, 120, 12.0, Material::Thick);
+            })
+            .unwrap();
+        let image = shot(&ossido, &format!("{name}.png"));
+        // 4 pt and 16 pt below the bottom edge, mid-width; and well above the top edge.
+        (
+            rgb(&image, 200, 224)[1],
+            rgb(&image, 200, 236)[1],
+            rgb(&image, 200, 80)[1],
+        )
+    };
+    let (near, far, above) = below("glass-shadow-compositor", Shadow::Compositor);
+    eprintln!("compositor shadow: {near} at 4 pt, {far} at 16 pt, {above} above");
+    assert!(near < 0xc0 - 10, "no shadow under the menu: {near}");
+    assert!(far > near, "the shadow does not fade: {near} then {far}");
+    assert!(above >= 0xc0 - 4, "the shadow sits above the menu: {above}");
+    let (near, _, _) = below("glass-shadow-client", Shadow::Client);
+    assert!(
+        near >= 0xc0 - 2,
+        "a shadow the client did not ask for: {near}"
+    );
 }
