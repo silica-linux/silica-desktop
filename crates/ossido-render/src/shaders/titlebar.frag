@@ -37,6 +37,15 @@ uniform float button_x;
 uniform float button_y;
 // 1 = dark appearance (windows.md: "Dark" tables of the buttons).
 uniform float dark;
+// Glass reflections of the buttons (TL-GLASS, provisional), colored and gray discs:
+// specular (alpha, center y, half width, half height), inner rim (alpha, radius, half
+// width), bottom glow (alpha, center y, radius). Mirrored by `titlebar::Reflection`.
+uniform vec4 spec_c;
+uniform vec4 rim_c;
+uniform vec4 glow_c;
+uniform vec4 spec_g;
+uniform vec4 rim_g;
+uniform vec4 glow_g;
 
 float shape_distance(vec2 p, vec4 rect) {
     vec2 half_size = rect.zw * 0.5;
@@ -65,8 +74,16 @@ vec3 gradient(float dy, vec3 top, vec3 middle, vec3 bottom) {
                     : mix(middle, bottom, clamp(dy / 5.0, 0.0, 1.0));
 }
 
+// Whiteness added by the glass reflections at a point relative to the disc center.
+float reflections(vec2 d, vec4 spec, vec4 rim, vec4 glow) {
+    float s = spec.x * (1.0 - smoothstep(0.0, 1.0, length((d - vec2(0.0, spec.y)) / spec.zw)));
+    float r = rim.x * max(0.0, 1.0 - abs(length(d) - rim.y) / rim.z);
+    float g = glow.x * (1.0 - smoothstep(0.0, 1.0, length(d - vec2(0.0, glow.y)) / glow.z));
+    return clamp(s + r + g, 0.0, 1.0);
+}
+
 vec4 button(vec2 p, vec2 center, vec3 top, vec3 middle, vec3 bottom, vec3 outline_side,
-            vec3 outline_top, vec3 outline_bottom, vec3 shift) {
+            vec3 outline_top, vec3 outline_bottom, vec3 shift, bool grey) {
     vec2 d = p - center;
     float r = length(d);
     float disc = cover(r - 7.0);
@@ -74,7 +91,9 @@ vec4 button(vec2 p, vec2 center, vec3 top, vec3 middle, vec3 bottom, vec3 outlin
     vec3 outline = d.y < 0.0 ? mix(outline_side, outline_top, -d.y / 7.0)
                              : mix(outline_side, outline_bottom, d.y / 7.0);
     float ring = clamp(r - 6.0, 0.0, 1.0);
-    return vec4(mix(fill, outline, ring), 1.0) * disc;
+    vec3 base = mix(fill, outline, ring);
+    float shine = grey ? reflections(d, spec_g, rim_g, glow_g) : reflections(d, spec_c, rim_c, glow_c);
+    return vec4(mix(base, vec3(1.0), shine), 1.0) * disc;
 }
 
 // Symbols when the pointer passes, centered on the button.
@@ -166,17 +185,17 @@ void main() {
     vec2 c1 = vec2(button_x, button_y);
     vec2 c2 = vec2(button_x + 23.0, button_y);
     vec2 c3 = vec2(button_x + 46.0, button_y);
-    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s),
+    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s, !lit),
                  color);
     if (min_off) {
-        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
+        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true), color);
     } else {
-        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s), color);
+        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s, !lit), color);
     }
     if (zoom_off) {
-        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift), color);
+        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true), color);
     } else {
-        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s), color);
+        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s, !lit), color);
     }
 
     if (symbols > 0.0) {
