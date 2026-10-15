@@ -466,6 +466,40 @@ impl Mode {
     }
 }
 
+/// A dragged window dropped away from a thumbnail: it goes back to its place (BACKLOG-1 /
+/// #74: ~500 ms, ease-out, no overshoot).
+#[derive(Clone)]
+pub struct Returning {
+    pub window: Window,
+    /// Where it was let go.
+    pub from: Rectangle<f64, Logical>,
+    pub start: Instant,
+    /// Fraction of the way, eased (0–1); updated on every frame.
+    pub fraction: f64,
+}
+
+/// The rectangle `fraction` of the way from `from` to `to`.
+pub fn lerp_rect(
+    from: Rectangle<f64, Logical>,
+    to: Rectangle<f64, Logical>,
+    fraction: f64,
+) -> Rectangle<f64, Logical> {
+    let lerp = |a: f64, b: f64| a + (b - a) * fraction;
+    Rectangle::new(
+        (lerp(from.loc.x, to.loc.x), lerp(from.loc.y, to.loc.y)).into(),
+        (lerp(from.size.w, to.size.w), lerp(from.size.h, to.size.h)).into(),
+    )
+}
+
+/// The eased fraction of the way back after `elapsed`, durations scaled by `speed`.
+pub fn return_fraction(elapsed: std::time::Duration, speed: f64) -> f64 {
+    ossido_render::animation::ease_out(ossido_render::animation::progress(
+        elapsed,
+        ossido_render::animation::PANORAMA_RETURN,
+        speed,
+    ))
+}
+
 pub struct Panorama {
     pub mode: Mode,
     pub opening: bool,
@@ -480,6 +514,8 @@ pub struct Panorama {
     pub expand_from: f64,
     pub expansion: f64,
     pub drag: Option<Drag>,
+    /// The window going back to its place after a drop that changed nothing.
+    pub returning: Option<Returning>,
 }
 
 /// A space thumbnail in the frame: where it is and the windows of the space (from bottom to
@@ -784,6 +820,7 @@ impl State {
             expand_from: 0.0,
             expansion: 0.0,
             drag: None,
+            returning: None,
         });
         if self.animation_speed <= 0.0 {
             self.advance_panorama(now);
@@ -800,6 +837,7 @@ impl State {
             panorama.from = panorama.progress;
             panorama.start = now;
             panorama.drag = None;
+            panorama.returning = None;
         }
         if let Some(window) = focus {
             self.focus_window(Some(window));
@@ -851,9 +889,35 @@ impl State {
         } else {
             panorama.expand_from * (1.0 - step)
         };
+        if let Some(back) = panorama.returning.as_mut() {
+            back.fraction = return_fraction(now.saturating_duration_since(back.start), speed);
+            if back.fraction >= 1.0 {
+                panorama.returning = None;
+            }
+        }
         if !panorama.opening && panorama.progress <= 0.0 {
             self.panorama = None;
         }
+    }
+
+    /// The dragged window is let go away from any thumbnail: it goes back to its place.
+    fn start_return(&mut self, drag: &Drag, now: Instant) {
+        if self.animation_speed <= 0.0 {
+            return;
+        }
+        let Some(panorama) = self.panorama.as_mut() else {
+            return;
+        };
+        let Some(placement) = panorama.placements.iter().find(|p| p.window == drag.window) else {
+            return;
+        };
+        let from = drag_rect(drag, placement.to, bar_height(panorama.expansion));
+        panorama.returning = Some(Returning {
+            window: drag.window.clone(),
+            from,
+            start: now,
+            fraction: 0.0,
+        });
     }
 
     /// The windows of every space at their positions (those of the active space from the Space).
@@ -887,7 +951,7 @@ impl State {
         } else {
             Vec::new()
         };
-        let drag = panorama.drag.as_ref().filter(|d| d.moved).and_then(|drag| {
+        let dragging = panorama.drag.as_ref().filter(|d| d.moved).and_then(|drag| {
             let placement = panorama
                 .placements
                 .iter()
@@ -895,6 +959,17 @@ impl State {
             Some((
                 drag.window.clone(),
                 drag_rect(drag, placement.to, bar_height(panorama.expansion)),
+            ))
+        });
+        let drag = dragging.or_else(|| {
+            let back = panorama.returning.as_ref()?;
+            let placement = panorama
+                .placements
+                .iter()
+                .find(|p| p.window == back.window)?;
+            Some((
+                back.window.clone(),
+                lerp_rect(back.from, placement.to, back.fraction),
             ))
         });
         Some(PanoramaView {
@@ -1028,14 +1103,16 @@ impl State {
         {
             return;
         }
-        let Some(index) = self.thumbnail_at(location) else {
+        let Some(index) = self
+            .thumbnail_at(location)
+            .filter(|index| *index != self.workspaces.active)
+        else {
+            self.start_return(&drag, now);
             return;
         };
-        if index == self.workspaces.active {
-            return;
-        }
         if let Err(err) = self.move_window_to_space(&drag.window, index) {
             tracing::info!("panorama: {err}");
+            self.start_return(&drag, now);
             return;
         }
         // The remaining windows are rearranged right away.
@@ -1274,6 +1351,39 @@ pub fn bar_element(
 
 #[cfg(test)]
 mod tests {
+    use super::{lerp_rect, return_fraction};
+    use smithay::utils::{Logical, Rectangle};
+    use std::time::Duration;
+
+    #[test]
+    fn a_dropped_window_goes_back_in_half_a_second_without_overshoot() {
+        let ms = Duration::from_millis;
+        assert_eq!(return_fraction(ms(0), 1.0), 0.0);
+        assert_eq!(return_fraction(ms(500), 1.0), 1.0);
+        assert_eq!(return_fraction(ms(900), 1.0), 1.0);
+        // Ease-out: more than half of the way at half the time, never past the end.
+        assert!(return_fraction(ms(250), 1.0) > 0.5);
+        let mut last = 0.0;
+        for t in 0..=500 {
+            let f = return_fraction(ms(t), 1.0);
+            assert!((0.0..=1.0).contains(&f) && f >= last, "{t} ms: {f}");
+            last = f;
+        }
+        // Slowed down x2 it takes twice as long; with animations off it is immediate.
+        assert!(return_fraction(ms(500), 2.0) < 1.0);
+        assert_eq!(return_fraction(ms(0), 0.0), 1.0);
+    }
+
+    #[test]
+    fn the_return_rectangle_interpolates_position_and_size() {
+        let from = Rectangle::<f64, Logical>::new((10.0, 20.0).into(), (100.0, 50.0).into());
+        let to = Rectangle::<f64, Logical>::new((110.0, 120.0).into(), (200.0, 150.0).into());
+        assert_eq!(lerp_rect(from, to, 0.0), from);
+        assert_eq!(lerp_rect(from, to, 1.0), to);
+        let half = lerp_rect(from, to, 0.5);
+        assert_eq!(half.loc, (60.0, 70.0).into());
+        assert_eq!(half.size, (150.0, 100.0).into());
+    }
 
     #[test]
     fn space_labels_follow_the_system_language() {

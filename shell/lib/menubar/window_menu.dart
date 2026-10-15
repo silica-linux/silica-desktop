@@ -1,21 +1,35 @@
 // The window arrangement popover (windows.md, long press on the green button;
-// measured in silica-reference, windows.md): a menu with its tip pointing up at the button,
-// 241 wide, two rows of four 25 × 20 icons at a 53.5 pitch (tops at +45 and +124 from the
-// panel edge) below their headings, then the full screen item (center at +179). The items
-// run Ossido's `window.tile_*` / `window.arrange_*` commands on the focused window (the one
-// of the button). Delay, animation and margins: W-08.
+// measured in silica-reference, BACKLOG-1 / W-08): a menu with its tip pointing up at the
+// button, 242 wide (229 tall with the "Move to" section), two rows of four cells of 54 × 44 holding 25 × 20 icons
+// (the pointer's highlight is 46 × 36) below their headings, then the full screen item.
+// The items run Ossido's `window.tile_*` / `window.arrange_*` commands on the focused window
+// (the one of the button). Esc closes it; moving the pointer away does not. The delay (hover
+// ~813 ms, press ~628 ms) and the animation of the frames are Ossido's.
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../l10n/l10n.dart';
 
-const double windowMenuWidth = 241;
+const double windowMenuWidth = 242;
 
-/// The icon row: 46 tall, icons from +16.
-const double windowMenuRow = 46;
+/// The panel's height with one display. The measured 229 includes the "Move to <display>"
+/// section (separator and item, 37 pt), which only exists with several displays; Ossido
+/// drives one for now.
+const double windowMenuHeight = 192;
+const double windowMenuHeightWithDisplays = 229;
+
+/// A cell of the icon rows: 54 × 44, the icon (25 × 20) centered in it.
+const Size windowMenuCell = Size(54, 44);
+const double windowMenuRow = 44;
 const Size windowMenuIcon = Size(25, 20);
-const double windowMenuPitch = 53.5;
+const double windowMenuPitch = 54;
+
+/// The highlight under the pointer.
+const Size windowMenuHover = Size(46, 36);
+
+/// Left margin of the first cell: four cells and the margins fill the panel's width.
+const double windowMenuMargin = (windowMenuWidth - 4 * windowMenuPitch) / 2;
 
 /// The parts of an icon: rectangles as fractions of the box; the first is the chosen window
 /// (dark), the others the other windows (grey).
@@ -90,8 +104,7 @@ MenuCustom _row(List<String> commands, ValueChanged<String> execute) =>
         children: [
           for (var i = 0; i < commands.length; i++)
             Positioned(
-              // Centers at 39, 92.5, 146, 199.5 from the panel edge.
-              left: 39 + windowMenuPitch * i - windowMenuPitch / 2,
+              left: windowMenuMargin + windowMenuPitch * i,
               width: windowMenuPitch,
               top: 0,
               bottom: 0,
@@ -137,10 +150,10 @@ class _TileButtonState extends State<_TileButton> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.onPressed,
         child: Align(
-          alignment: const Alignment(0, -0.30),
+          alignment: Alignment.center,
           child: Container(
-            width: windowMenuIcon.width + 10,
-            height: windowMenuIcon.height + 10,
+            width: windowMenuHover.width,
+            height: windowMenuHover.height,
             decoration: BoxDecoration(
               color: _hover
                   ? (dark ? const Color(0x1FFFFFFF) : const Color(0x14000000))

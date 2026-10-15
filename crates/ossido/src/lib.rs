@@ -10,6 +10,7 @@ mod control;
 mod cursor;
 mod cursor_theme;
 mod decorations;
+pub mod display_layout;
 mod displays;
 mod dmabuf;
 #[cfg(feature = "drm")]
@@ -186,7 +187,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         let addr = control::listen(&event_loop.handle(), port)?;
         println!("OSSIDO_CONTROL={addr}");
     }
-    // The actions socket, always: the Apps and Screenshot applications use it.
+    // The actions socket, always: the Apps, Mission Control and Screenshot applications use it.
     if let Some(path) = silica_control::actions::socket_path(&socket.to_string_lossy())
         && let Err(err) = control::listen_actions(&event_loop.handle(), &path)
     {

@@ -7,6 +7,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle};
 
+use crate::render::MorphKind;
 use crate::state::State;
 
 /// Where the window was before full screen, in its data: the geometry and the frame (with
@@ -27,7 +28,7 @@ pub fn is_fullscreen(window: &Window) -> bool {
 }
 
 /// An arrangement of the green button's popover (windows.md, W-08): a half of the usable area
-/// or all of it. Margins between the windows: none until W-08 measures them.
+/// or all of it, to the exact frame with no margins (BACKLOG-1 / W-08).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tile {
     Left,
@@ -106,9 +107,14 @@ impl State {
         window: &Window,
         frame: Rectangle<i32, Logical>,
     ) -> Result<(), String> {
-        if is_fullscreen(window) {
+        let was_fullscreen = is_fullscreen(window);
+        if was_fullscreen {
             self.toggle_fullscreen(window)?;
         }
+        let before = self
+            .space
+            .element_geometry(window)
+            .map(|geometry| crate::decorations::frame_of(window, geometry).to_f64());
         let toplevel = window.toplevel().ok_or("window without a toplevel")?;
         let bar = crate::decorations::titlebar_height(window);
         let size = (frame.size.w, frame.size.h.saturating_sub(bar).max(1));
@@ -118,6 +124,11 @@ impl State {
         toplevel.send_pending_configure();
         self.space
             .map_element(window.clone(), frame.loc + Point::from((0, bar)), false);
+        // The frame slides to its exact place (a window that left full screen has its own
+        // animation).
+        if let Some(before) = before.filter(|_| !was_fullscreen) {
+            self.start_morph(window, before, frame.to_f64(), MorphKind::Tile);
+        }
         Ok(())
     }
 
@@ -309,7 +320,7 @@ impl State {
                 self.space.map_element(window.clone(), previous.loc, true);
             }
             if let Some(frame) = frame {
-                self.start_morph(window, output.to_f64(), frame, false);
+                self.start_morph(window, output.to_f64(), frame, MorphKind::Exit);
             }
             if let Some(index) = owned {
                 let target = index.saturating_sub(1);
@@ -328,7 +339,7 @@ impl State {
             let frame = crate::decorations::frame_of(window, current).to_f64();
             before.0.set(Some(current));
             before.1.set(Some(frame));
-            self.start_morph(window, frame, output.to_f64(), true);
+            self.start_morph(window, frame, output.to_f64(), MorphKind::Enter);
             toplevel.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Fullscreen);
                 state.size = Some(output.size);
@@ -362,7 +373,7 @@ impl State {
         window: &Window,
         from: Rectangle<f64, Logical>,
         to: Rectangle<f64, Logical>,
-        entering: bool,
+        kind: crate::render::MorphKind,
     ) {
         if self.animation_speed <= 0.0 {
             return;
@@ -375,7 +386,7 @@ impl State {
                 from,
                 to,
                 start: std::time::Instant::now(),
-                entering,
+                kind,
             }));
         }
     }

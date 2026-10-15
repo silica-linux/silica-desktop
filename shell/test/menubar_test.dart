@@ -363,6 +363,30 @@ void main() {
       expect(panel.top, 208);
       expect(panel.left, 273);
       expect(panel.width, windowMenuWidth);
+      expect(panel.height, windowMenuHeight);
+      // Cells of 54 × 44 with the icon (25 × 20) and the pointer's highlight (46 × 36).
+      expect(
+        tester.getSize(find.byKey(const ValueKey('window.tile_left'))),
+        windowMenuCell,
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(0, 0));
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('window.tile_left'))),
+      );
+      await tester.pump();
+      final highlight = find.descendant(
+        of: find.byKey(const ValueKey('window.tile_left')),
+        matching: find.byWidgetPredicate(
+          (w) => w is Container && w.decoration != null,
+        ),
+      );
+      expect(tester.getSize(highlight), windowMenuHover);
+      // Moving the pointer away does not close it.
+      await mouse.moveTo(const Offset(900, 600));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Half of the screen'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('window.tile_left')));
       // Blink and fade of the closing (~380 ms).
       for (var i = 0; i < 12; i++) {

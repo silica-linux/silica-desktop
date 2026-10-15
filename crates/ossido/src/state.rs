@@ -170,7 +170,7 @@ pub struct State {
     /// acts only if the press is still the one that started it.
     pub titlebar_press_count: u64,
     /// The pointer resting on the green button (window and the id of the timer armed on
-    /// entering): after `WINDOW_MENU_DELAY` the arrangement popover opens (TL-GLASS, #94).
+    /// entering): after `WINDOW_MENU_HOVER_DELAY` the arrangement popover opens (TL-GLASS, #94).
     pub zoom_hover: Option<(Window, u64)>,
     /// How many screenshots were written (the temporary file name).
     pub screenshot_count: u64,

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Mission Control
+Name[it]=Mission Control
+Comment=An overview of open windows and Spaces
+Comment[it]=Una panoramica di finestre aperte e Spaces
+Exec=@ACTION@ panorama.toggle
+Icon=view-grid-symbolic
+X-Silica-Icon=mission-control
+Categories=Utility;
+Keywords=mission control;panorama;spaces;windows;expose;
+Keywords[it]=mission control;panorama;spaces;finestre;
+Terminal=false
+StartupNotify=false
+OnlyShowIn=Silica;
