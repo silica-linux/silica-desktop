@@ -208,36 +208,45 @@ impl RenderElement<GlesRenderer> for ToneElement {
     }
 }
 
-/// What the blurred backdrop was made from: the elements, the output area, the σ.
-type BlurSignature = (Signature, Rectangle<i32, Physical>, u64);
+/// What a blurred capture was made from: the elements (with their opacity: the menu bar
+/// fades under the spaces bar), the captured area, the σ.
+type BlurSignature = (Signature, Vec<u32>, Rectangle<i32, Physical>, u64);
 
-/// The desktop wallpaper blurred as a whole, for the Panorama backdrop: it is redone only
-/// when the wallpaper (or the σ, or the output) changes, so opening Panorama costs one blur.
+/// A blurred capture of what lies behind (the Panorama wallpaper, the spaces bar material):
+/// it is redone only when what is behind it in `area` (or the σ) changes, so a still
+/// background costs one blur and a moving one is blurred live.
 #[derive(Default)]
 pub struct BlurredBackdrop {
     state: RefCell<Option<(BlurSignature, GlesTexture, Id)>>,
 }
 
 impl BlurredBackdrop {
-    /// The blurred texture of `behind` (the desktop wallpaper, from the front) over the whole
-    /// output, with the element id to draw it with: a new id for every new texture, so the
-    /// damage tracker redraws it.
+    /// `behind` (from the front) captured over `area` of the output and blurred with σ
+    /// `sigma_pt`, drawn into `dst` (output pixels, inside `area`) with `alpha`. A new
+    /// id for every new texture, so the damage tracker redraws it.
     #[allow(clippy::too_many_arguments)]
-    pub fn texture<E: RenderElement<GlesRenderer>>(
+    pub fn element<E: RenderElement<GlesRenderer>>(
         &self,
         renderer: &mut GlesRenderer,
         programs: &GlassPrograms,
         behind: &[E],
-        output: Size<i32, Physical>,
+        area: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
         scale: f64,
         sigma_pt: f64,
         clear_color: [f32; 4],
-    ) -> Result<(GlesTexture, Id), GlesError> {
-        let area = Rectangle::from_size(output);
-        let signature: BlurSignature = (
+        alpha: f32,
+    ) -> Result<Option<BlurredElement>, GlesError> {
+        let Some(dst) = dst.intersection(area).filter(|r| !r.is_empty()) else {
+            return Ok(None);
+        };
+        let overlapping = || {
             behind
                 .iter()
-                .filter(|e| e.geometry(Scale::from(scale)).overlaps(area))
+                .filter(move |e| e.geometry(Scale::from(scale)).overlaps(area))
+        };
+        let signature: BlurSignature = (
+            overlapping()
                 .map(|e| {
                     (
                         e.id().clone(),
@@ -246,6 +255,7 @@ impl BlurredBackdrop {
                     )
                 })
                 .collect(),
+            overlapping().map(|e| e.alpha().to_bits()).collect(),
             area,
             sigma_pt.to_bits(),
         );
@@ -256,10 +266,86 @@ impl BlurredBackdrop {
             let blurred = blur_texture(renderer, programs, &sharp, area.size, sigma_pt, scale)?;
             *state = Some((signature, blurred, Id::new()));
         }
-        match state.as_ref() {
-            Some((_, texture, id)) => Ok((texture.clone(), id.clone())),
-            None => Err(GlesError::FramebufferBindingError),
-        }
+        let Some((_, texture, id)) = state.as_ref() else {
+            return Err(GlesError::FramebufferBindingError);
+        };
+        let src = Rectangle::new(
+            (dst.loc - area.loc).to_f64().to_logical(1.0).to_buffer(
+                1.0,
+                Transform::Normal,
+                &area.size.to_f64().to_logical(1.0),
+            ),
+            dst.size
+                .to_f64()
+                .to_logical(1.0)
+                .to_buffer(1.0, Transform::Normal),
+        );
+        Ok(Some(BlurredElement {
+            id: id.clone(),
+            texture: texture.clone(),
+            src,
+            dst,
+            alpha,
+        }))
+    }
+}
+
+/// A part of a blurred capture, drawn where it was taken.
+#[derive(Debug, Clone)]
+pub struct BlurredElement {
+    id: Id,
+    texture: GlesTexture,
+    src: Rectangle<f64, Buffer>,
+    dst: Rectangle<i32, Physical>,
+    alpha: f32,
+}
+
+impl Element for BlurredElement {
+    fn id(&self) -> &Id {
+        &self.id
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        CommitCounter::default()
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        self.src
+    }
+
+    fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.dst
+    }
+
+    fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    fn kind(&self) -> Kind {
+        Kind::Unspecified
+    }
+}
+
+impl RenderElement<GlesRenderer> for BlurredElement {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        frame.render_texture_from_to(
+            &self.texture,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            Transform::Normal,
+            self.alpha,
+            None,
+            &[],
+        )
     }
 }
 

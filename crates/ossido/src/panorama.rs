@@ -8,7 +8,8 @@
 //!   scaled rows, centered group.
 //! - The wallpaper does not darken but blurs as Panorama opens (`BACKDROP_BLUR_PT`); the
 //!   menu bar and the desktop icons fade out, the spaces bar comes down in the menu bar's
-//!   place, 40 pt tall (`#9e9fa5`, border `#58595c`, ~62 pt shadow); the Dock stays.
+//!   place, 40 pt tall: a material (blur of what is under it, tinted to `#9e9fa5` over the
+//!   reference gray), border `#58595c`, ~62 pt shadow; the Dock stays.
 //! - Opening and closing: progressive slowdown with a long tail, 50 % in ~40–54 ms, 90 % in
 //!   ~130–140 ms, done in ~300 ms (tables measured frame by frame).
 //! - A click on a window brings it to the front and closes Panorama; Esc or a click on the
@@ -26,14 +27,30 @@ use crate::state::State;
 /// Compact spaces bar.
 pub const BAR_HEIGHT: f64 = 40.0;
 pub const BAR_SHADOW: f64 = 62.0;
+/// The bar is a material: a blur of what is under it with a tint over it. The measured
+/// fills (over the solid `#7a7b80` wallpaper of the reference) are what the tint gives over
+/// that gray: light `#9e9fa5` (≈ white at 30 %), dark `#55565b` (≈ black at 31 %).
 const BAR_FILL: [u8; 4] = [0x9e, 0x9f, 0xa5, 0xff];
+const BAR_FILL_DARK: [u8; 4] = [0x55, 0x56, 0x5b, 0xff];
+/// Opacity of the light and dark tints (the lowest that reaches the measured colors).
+const BAR_TINT_ALPHA: f64 = 0.30;
+const BAR_TINT_ALPHA_BOTTOM: f64 = 0.35;
+const BAR_TINT_ALPHA_DARK: f64 = 0.31;
+/// The gray the bar colors were measured over.
+const REFERENCE_WALLPAPER: [u8; 3] = [0x7a, 0x7b, 0x80];
+/// σ of the blur under the bar, in points. Not measured (solid wallpaper in the reference).
+pub const BAR_BLUR_PT: f64 = 20.0;
 const BAR_BORDER: [u8; 4] = [0x58, 0x59, 0x5c, 0xff];
 /// The shadow below the bar darkens the wallpaper by ~24 levels out of 122 at the edge.
 const BAR_SHADOW_ALPHA: f32 = 0.2;
 const CAPSULE_FILL: [u8; 4] = [0x87, 0x88, 0x8e, 0xff];
 const CAPSULE_BORDER: [u8; 4] = [0x8d, 0x8e, 0x94, 0xff];
+const CAPSULE_FILL_DARK: [u8; 4] = [0x78, 0x79, 0x7e, 0xff];
+const CAPSULE_BORDER_DARK: [u8; 4] = [0x6e, 0x6f, 0x74, 0xff];
 const LABEL_COLOR: [u8; 4] = [0, 0, 0, 0xff];
+const LABEL_COLOR_DARK: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
 const PLUS_COLOR: [u8; 4] = [0x4c, 0x4c, 0x4c, 0xff];
+const PLUS_COLOR_DARK: [u8; 4] = [0xe5, 0xe5, 0xe5, 0xff];
 /// Labels: size ~13–14 pt; capsule of the current space 24 tall at 7 pt from the edge, with
 /// ~11 pt of margin around the text; 2 pt between one entry and the next.
 const LABEL_SIZE: f32 = 13.5;
@@ -58,6 +75,7 @@ const MARGIN_BOTTOM: f64 = 24.0;
 pub const EXPANDED_HEIGHT: f64 = 170.0;
 const EXPANDED_SHADOW: f64 = 40.0;
 const EXPANDED_FILL_BOTTOM: [u8; 4] = [0xa4, 0xa5, 0xab, 0xff];
+const EXPANDED_FILL_BOTTOM_DARK: [u8; 4] = [0x5b, 0x5c, 0x61, 0xff];
 const EXPANDED_FILL_FROM: f64 = 114.0;
 const EXPANDED_BORDER: [u8; 4] = [0x5f, 0x60, 0x63, 0xff];
 /// Thumbnails: 160 pt wide (16:9 on the reference screen), 52 pt from the edge, 32 pt
@@ -1184,6 +1202,45 @@ fn mix(a: [u8; 4], b: [u8; 4], t: f64) -> [u8; 4] {
     out
 }
 
+/// The tint (premultiplied, 0–255) that over the reference gray gives `target` with this
+/// opacity.
+fn tint(target: [u8; 4], alpha: f64) -> [f64; 4] {
+    let mut out = [0.0, 0.0, 0.0, alpha * 255.0];
+    for (o, (t, b)) in out.iter_mut().zip(target.iter().zip(REFERENCE_WALLPAPER)) {
+        *o = (f64::from(*t) - (1.0 - alpha) * f64::from(b)).clamp(0.0, alpha * 255.0);
+    }
+    out
+}
+
+/// The tint of the bar fill (straight RGBA) at `toward_bottom` (0 at the top, 1 at the bottom
+/// of the expanded bar).
+fn bar_tint(dark: bool, toward_bottom: f64) -> [u8; 4] {
+    let (top, bottom) = if dark {
+        (
+            tint(BAR_FILL_DARK, BAR_TINT_ALPHA_DARK),
+            tint(EXPANDED_FILL_BOTTOM_DARK, BAR_TINT_ALPHA_DARK),
+        )
+    } else {
+        (
+            tint(BAR_FILL, BAR_TINT_ALPHA),
+            tint(EXPANDED_FILL_BOTTOM, BAR_TINT_ALPHA_BOTTOM),
+        )
+    };
+    let t = toward_bottom.clamp(0.0, 1.0);
+    let mut premultiplied = [0.0; 4];
+    for (p, (a, b)) in premultiplied.iter_mut().zip(top.iter().zip(bottom)) {
+        *p = a + (b - a) * t;
+    }
+    let alpha = premultiplied[3].max(1e-6);
+    let [r, g, b, a] = premultiplied;
+    [
+        (r * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
+        (g * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
+        (b * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
+        a.round().clamp(0.0, 255.0) as u8,
+    ]
+}
+
 fn faded(color: [u8; 4], alpha: f64) -> [u8; 4] {
     let [r, g, b, a] = color;
     [
@@ -1205,6 +1262,8 @@ pub struct BarLook {
     pub backdrop: [u8; 4],
     /// The label of each space (desktops and full-screen apps).
     pub labels: Vec<String>,
+    /// Dark appearance.
+    pub dark: bool,
 }
 
 impl BarLook {
@@ -1217,7 +1276,8 @@ impl BarLook {
     /// Cache key: it changes with what is visible (height at the whole point).
     fn key(&self) -> String {
         format!(
-            "{}:{}:{}:{:?}:{}",
+            "{}:{}:{}:{}:{:?}:{}",
+            self.dark,
             self.count,
             self.active,
             (self.expansion * 1000.0).round(),
@@ -1237,7 +1297,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     for row in 0..rows {
         let y = row as f64;
         let toward_bottom = (y / EXPANDED_FILL_FROM).min(1.0) * e;
-        let color = mix(BAR_FILL, EXPANDED_FILL_BOTTOM, toward_bottom);
+        let color = bar_tint(look.dark, toward_bottom);
         let h = (height - y).min(1.0) as f32;
         canvas.fill_rect([0.0, row as f32, w, h], color);
     }
@@ -1251,6 +1311,16 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
         let alpha = (BAR_SHADOW_ALPHA * t * t * 255.0).round() as u8;
         canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
+    let (capsule_fill, capsule_border, label_color, plus_color) = if look.dark {
+        (
+            CAPSULE_FILL_DARK,
+            CAPSULE_BORDER_DARK,
+            LABEL_COLOR_DARK,
+            PLUS_COLOR_DARK,
+        )
+    } else {
+        (CAPSULE_FILL, CAPSULE_BORDER, LABEL_COLOR, PLUS_COLOR)
+    };
     // The compact entries vanish at the start of the expansion.
     let compact = 1.0 - e / 0.3;
     if compact > 0.0 {
@@ -1263,8 +1333,8 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                     r.size.w as f32,
                     r.size.h as f32,
                 ];
-                canvas.fill_rounded(rect, CAPSULE_RADIUS, faded(CAPSULE_FILL, compact));
-                canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, faded(CAPSULE_BORDER, compact));
+                canvas.fill_rounded(rect, CAPSULE_RADIUS, faded(capsule_fill, compact));
+                canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, faded(capsule_border, compact));
             }
             // Baseline: ~10 pt capitals centered in the capsule.
             let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 5.0) as f32;
@@ -1273,7 +1343,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                 &item.label,
                 LABEL_SIZE,
                 Weight::Regular,
-                faded(LABEL_COLOR, compact),
+                faded(label_color, compact),
             );
         }
     }
@@ -1316,7 +1386,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                 &label,
                 THUMB_LABEL_SIZE,
                 Weight::Regular,
-                faded(LABEL_COLOR, shown),
+                faded(label_color, shown),
             );
         }
     }
@@ -1324,8 +1394,8 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     let cx = (plus.loc.x + plus.size.w / 2.0) as f32;
     let cy = (plus.loc.y + plus.size.h / 2.0) as f32;
     let half = (PLUS_SIZE / 2.0) as f32 - 1.0;
-    canvas.line([cx - half, cy], [cx + half, cy], 2.0, PLUS_COLOR);
-    canvas.line([cx, cy - half], [cx, cy + half], 2.0, PLUS_COLOR);
+    canvas.line([cx - half, cy], [cx + half, cy], 2.0, plus_color);
+    canvas.line([cx, cy - half], [cx, cy + half], 2.0, plus_color);
 }
 
 /// The spaces bar as an element, already moved up as much as the opening needs.
@@ -1340,17 +1410,43 @@ pub fn bar_element(
         smithay::backend::renderer::gles::GlesTexture,
     >,
 > {
-    // The bottom edge of the bar comes down from 0 to 40 pt on the window curve; the
-    // shadow, which at rest is below, appears on the first frame.
-    let y = -(1.0 - progress) * (bar_height(look.expansion) + 1.0);
     sprite.element(
         renderer,
         &look.key(),
         Size::from((look.width, look.sprite_height())),
-        Point::from((0.0, y)),
+        Point::from((0.0, bar_top(look.expansion, progress))),
         scale,
-        (progress * 4.0).clamp(0.0, 1.0) as f32,
+        bar_alpha(progress),
         |canvas| draw_bar(canvas, look),
+    )
+}
+
+/// The top edge of the bar: its bottom edge comes down from 0 to 40 pt on the window curve.
+fn bar_top(expansion: f64, progress: f64) -> f64 {
+    -(1.0 - progress) * (bar_height(expansion) + 1.0)
+}
+
+/// The opacity of the bar while it comes down: the shadow, which at rest is below, appears
+/// on the first frame.
+pub fn bar_alpha(progress: f64) -> f32 {
+    (progress * 4.0).clamp(0.0, 1.0) as f32
+}
+
+/// Where the bar material (blur of what is under the bar) shows: the bar fill, without
+/// the border and the shadow.
+pub fn bar_material_rect(width: f64, expansion: f64, progress: f64) -> Rectangle<f64, Logical> {
+    Rectangle::new(
+        (0.0, bar_top(expansion, progress)).into(),
+        (width, bar_height(expansion)).into(),
+    )
+}
+
+/// The area captured for the bar material: the whole expanded bar and as much below it as
+/// the blur reaches, so it is not redone while the bar expands.
+pub fn bar_capture_rect(width: f64) -> Rectangle<f64, Logical> {
+    Rectangle::new(
+        (0.0, 0.0).into(),
+        (width, EXPANDED_HEIGHT + 3.0 * BAR_BLUR_PT).into(),
     )
 }
 
@@ -1476,6 +1572,53 @@ mod tests {
             }
         }
         assert!(layout(&[], area).is_empty());
+    }
+
+    #[test]
+    fn the_bar_tint_over_the_reference_gray_gives_the_measured_fills() {
+        let over = |tint: [u8; 4]| -> [u8; 3] {
+            let a = f64::from(tint[3]) / 255.0;
+            let mut out = [0; 3];
+            for (o, (c, b)) in out.iter_mut().zip(tint.iter().zip(REFERENCE_WALLPAPER)) {
+                *o = (f64::from(*c) * a + f64::from(b) * (1.0 - a)).round() as u8;
+            }
+            out
+        };
+        for (dark, at, want) in [
+            (false, 0.0, BAR_FILL),
+            (false, 1.0, EXPANDED_FILL_BOTTOM),
+            (true, 0.0, BAR_FILL_DARK),
+            (true, 1.0, EXPANDED_FILL_BOTTOM_DARK),
+        ] {
+            let tint = bar_tint(dark, at);
+            // Translucent: what is under it shows through.
+            assert!(tint[3] < 128, "{tint:?}");
+            let got = over(tint);
+            for (g, w) in got.iter().zip(want) {
+                assert!(
+                    g.abs_diff(w) <= 1,
+                    "dark {dark} at {at}: {got:?} instead of {want:?}"
+                );
+            }
+        }
+        // Halfway, between the two.
+        let half = over(bar_tint(false, 0.5));
+        assert!(half[0] > BAR_FILL[0] && half[0] < EXPANDED_FILL_BOTTOM[0]);
+    }
+
+    #[test]
+    fn the_bar_material_follows_the_bar_down_and_stays_in_the_capture() {
+        let capture = bar_capture_rect(1920.0);
+        for expansion in [0.0, 0.5, 1.0] {
+            for progress in [0.0, 0.3, 1.0] {
+                let r = bar_material_rect(1920.0, expansion, progress);
+                assert_eq!(r.size.h, bar_height(expansion));
+                assert!(r.loc.y <= 0.0 && r.loc.y + r.size.h <= capture.size.h);
+            }
+        }
+        assert_eq!(bar_material_rect(1920.0, 0.0, 1.0).loc.y, 0.0);
+        assert_eq!(bar_alpha(0.0), 0.0);
+        assert_eq!(bar_alpha(1.0), 1.0);
     }
 
     #[test]
