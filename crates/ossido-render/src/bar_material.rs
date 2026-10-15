@@ -13,7 +13,8 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::utils::{Physical, Rectangle, Scale, Size};
 
 use crate::backdrop::BlurredElement;
-use crate::glass::{buffer_size, pass, render_to_texture};
+use crate::glass::{BlurEdge, gaussian, pass, render_to_texture, whole};
+use crate::glass_profile::BlurScale;
 
 pub const TONE_SHADER: &str = include_str!("shaders/bar_tone.frag");
 pub const TONE_UNIFORMS: [(&str, UniformType); 3] = [
@@ -30,10 +31,18 @@ pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
 pub struct BarPrograms {
     pub tone: GlesTexProgram,
     pub blur: GlesTexProgram,
+    /// The box prefilter and the upsampling of the reduced-resolution blur (the glass's).
+    pub downsample: GlesTexProgram,
+    pub upsample: GlesTexProgram,
 }
 
-/// σ the blur kernel handles at full precision (it reaches 3σ ≤ 48 pixels).
-const MAX_SIGMA_PX: f64 = 16.0;
+/// At what fraction of the resolution the bar's blur (σ 26–27 pt) runs, chosen like the glass
+/// kinds' (`glass_profile::BlurScale`) by the equivalence test: mean / max against full
+/// resolution 0.21 / 1 at f2, 0.25 / 1 at f4, 0.29 / 1 at f8 (1×, 1.5× and 2×).
+pub const BLUR_SCALE: BlurScale = BlurScale {
+    below_2x: 8,
+    from_2x: 8,
+};
 
 /// The look of the bar the capture was made for.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,6 +57,8 @@ type Signature = (
     Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>,
     Rectangle<i32, Physical>,
     [u64; 3],
+    // The output scale and the clear color (bits).
+    [u64; 5],
 );
 
 /// The bar material between frames.
@@ -93,17 +104,25 @@ impl BarMaterial {
                 (tone.expansion * 1000.0).round().to_bits(),
                 tone.sigma_pt.to_bits(),
             ],
+            [
+                scale.to_bits(),
+                u64::from(clear_color[0].to_bits()),
+                u64::from(clear_color[1].to_bits()),
+                u64::from(clear_color[2].to_bits()),
+                u64::from(clear_color[3].to_bits()),
+            ],
         );
         let mut state = self.state.borrow_mut();
         if !matches!(state.as_ref(), Some((s, ..)) if *s == signature) {
             let sharp = render_to_texture(renderer, wallpaper, area, scale, clear_color)?;
-            let texture = material(renderer, programs, &sharp, area.size, scale, tone)?;
+            let factor = BLUR_SCALE.factor(scale);
+            let texture = material(renderer, programs, &sharp, area.size, scale, tone, factor)?;
             *state = Some((signature, texture, Id::new()));
         }
         let Some((_, texture, id)) = state.as_ref() else {
             return Err(GlesError::FramebufferBindingError);
         };
-        let src = Rectangle::from_size(buffer_size(area.size).to_f64());
+        let src = whole(area.size);
         Ok(Some(BlurredElement::new(
             id.clone(),
             texture.clone(),
@@ -114,15 +133,16 @@ impl BarMaterial {
     }
 }
 
-/// Tone at full resolution, halvings down to a σ the kernel handles, the two blur passes,
+/// Tone at full resolution, then the mirrored blur at the resolution `BLUR_SCALE` allows,
 /// back to full size.
-fn material(
+pub fn material(
     renderer: &mut GlesRenderer,
     programs: &BarPrograms,
     sharp: &GlesTexture,
     size: Size<i32, Physical>,
     scale: f64,
     tone: BarTone,
+    factor: u32,
 ) -> Result<GlesTexture, GlesError> {
     let uniforms = [
         Uniform::new(
@@ -135,46 +155,32 @@ fn material(
             UniformValue::_1f((f64::from(size.h) / scale) as f32),
         ),
     ];
-    let mut current = pass(
+    let toned = pass(
         renderer,
         sharp,
-        size,
+        whole(size),
         size,
         Some(&programs.tone),
         &uniforms,
         1.0,
         None,
     )?;
-    // Halvings average 2 × 2 pixels exactly (after the tone: fine stripes average to the
-    // mean of their toned values, as measured).
-    let mut sigma = tone.sigma_pt * scale;
-    let mut small = size;
-    while sigma > MAX_SIGMA_PX && small.w > 1 && small.h > 1 {
-        let half = Size::from(((small.w / 2).max(1), (small.h / 2).max(1)));
-        current = pass(renderer, &current, small, half, None, &[], 1.0, None)?;
-        small = half;
-        sigma /= 2.0;
+    // The blur after the tone: fine stripes average to the mean of their toned values, as
+    // measured.
+    let blurred = gaussian(
+        renderer,
+        &programs.blur,
+        &programs.downsample,
+        BlurEdge::Mirror,
+        &toned,
+        size,
+        tone.sigma_pt * scale,
+        factor,
+    )?;
+    if blurred.size == size {
+        return Ok(blurred.texture);
     }
-    for step in [(1.0 / small.w as f32, 0.0), (0.0, 1.0 / small.h as f32)] {
-        let uniforms = [
-            Uniform::new("step", UniformValue::_2f(step.0, step.1)),
-            Uniform::new("sigma", UniformValue::_1f(sigma as f32)),
-        ];
-        current = pass(
-            renderer,
-            &current,
-            small,
-            small,
-            Some(&programs.blur),
-            &uniforms,
-            1.0,
-            None,
-        )?;
-    }
-    if small == size {
-        return Ok(current);
-    }
-    pass(renderer, &current, small, size, None, &[], 1.0, None)
+    blurred.back(renderer, &programs.upsample, size, 1.0, None)
 }
 
 /// The tone curve of the shader, for tests and documentation: luminance `v` (0–255) at `y`

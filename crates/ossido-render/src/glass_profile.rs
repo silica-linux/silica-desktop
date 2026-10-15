@@ -89,6 +89,46 @@ pub struct GlassProfile {
     pub tint: [f32; 4],
     /// The shadow under the glass.
     pub shadow: GlassShadow,
+    /// At what fraction of the resolution its blur runs (#204).
+    pub blur_scale: BlurScale,
+}
+
+/// At what fraction of the resolution a kind's blur runs: the source is averaged over
+/// `factor` × `factor` pixels, blurred there with the σ that gives the same total spread and
+/// drawn back at full size. The factor is chosen per kind by the equivalence test (`ossido`,
+/// `glass_equivalence`): over wallpapers, text and sharp edges in light and dark, the glass
+/// drawn this way may differ from the full-resolution one by at most 1/255 on average and
+/// 3/255 at any pixel and channel. A kind that fails at a factor keeps a smaller one, down to
+/// full resolution (1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlurScale {
+    /// The factor on outputs below 2× (σ in pixels is the smallest there).
+    pub below_2x: u32,
+    /// The factor from 2× up.
+    pub from_2x: u32,
+}
+
+impl BlurScale {
+    /// Full resolution at every scale.
+    pub const FULL: Self = Self {
+        below_2x: 1,
+        from_2x: 1,
+    };
+
+    /// The factor on an output of this scale (1, 2, 4 or 8).
+    pub fn factor(self, scale: f64) -> u32 {
+        let factor = if scale >= 2.0 {
+            self.from_2x
+        } else {
+            self.below_2x
+        };
+        match factor {
+            0..=1 => 1,
+            2..=3 => 2,
+            4..=7 => 4,
+            _ => 8,
+        }
+    }
 }
 
 impl GlassProfile {
@@ -102,6 +142,7 @@ impl GlassProfile {
         saturation: 1.0,
         tint: [0.0; 4],
         shadow: GlassShadow::NONE,
+        blur_scale: BlurScale::FULL,
     };
 
     /// Without the shadow (the client draws its own).
@@ -193,6 +234,14 @@ impl GlassKind {
             Self::Dock => GlassProfile {
                 sigma: Some(2.8),
                 rim: if dark { 41.0 / 38.0 } else { 64.0 / 61.0 },
+                // Equivalence (mean / max levels against full resolution): 1×, σ 2.8 px, too
+                // small to reduce; 1.5× f2 0.69 / 3 (light), 0.76 / 3 (dark): passes, but the
+                // Dock is always on screen, so full resolution below 2×; 2× f2 0.47 / 2 and
+                // 0.52 / 2.
+                blur_scale: BlurScale {
+                    below_2x: 1,
+                    from_2x: 2,
+                },
                 ..neutral
             },
             // Measured: blur σ 8 pt in dark, 13 pt in light; thick glass, no lens. The shadow
@@ -201,6 +250,20 @@ impl GlassKind {
                 sigma: Some(if dark { 8.0 } else { 13.0 }),
                 refraction: 0.0,
                 shadow: menu_shadow,
+                // Equivalence: light 1× f4 0.21 / 2 (f8 0.53 / 3), 1.5× f4 0.19 / 2, 2× f8
+                // 0.22 / 2; dark (σ 8, its strong tone amplifies the rounding) 1× f2 0.51 / 3
+                // (f4 0.93 / 4 fails), 1.5× f2 0.29 / 3, 2× f2 0.40 / 3 (f8 fails).
+                blur_scale: if dark {
+                    BlurScale {
+                        below_2x: 2,
+                        from_2x: 2,
+                    }
+                } else {
+                    BlurScale {
+                        below_2x: 4,
+                        from_2x: 8,
+                    }
+                },
                 ..neutral
             },
             // Measured: blur σ 18 pt in dark, 13 pt in light; no lens; the menus' shadow.
@@ -208,6 +271,19 @@ impl GlassKind {
                 sigma: Some(if dark { 18.0 } else { 13.0 }),
                 refraction: 0.0,
                 shadow: menu_shadow,
+                // Equivalence: light as the menus (1× f4 0.21 / 2, 1.5× f4 0.19 / 2, 2× f8
+                // 0.22 / 2); dark 1× f8 0.52 / 2, 1.5× f8 0.29 / 2, 2× f8 0.29 / 2.
+                blur_scale: if dark {
+                    BlurScale {
+                        below_2x: 8,
+                        from_2x: 8,
+                    }
+                } else {
+                    BlurScale {
+                        below_2x: 4,
+                        from_2x: 8,
+                    }
+                },
                 ..neutral
             },
             // Measured: blur σ 4 pt; the edge light is +96 over the grey, against the
@@ -215,6 +291,12 @@ impl GlassKind {
             Self::Module => GlassProfile {
                 sigma: Some(4.0),
                 rim: 96.0 / 94.0,
+                // Equivalence: 1× f2 1.08 / 5 fails (σ 4 px is too small), so full resolution
+                // below 2×; 2× f2 0.39 / 2 (f4 1.06 / 5 fails).
+                blur_scale: BlurScale {
+                    below_2x: 1,
+                    from_2x: 2,
+                },
                 ..neutral
             },
             // Measured: the notification material (no lens). The shadow is the banners' own:
@@ -225,6 +307,12 @@ impl GlassKind {
                     opacity: 0.063,
                     sigma: 6.0,
                     offset_y: 4.0,
+                },
+                // Equivalence: 1× f4 0.27 / 2 (light), 0.32 / 2 (dark); 1.5× f4 0.24 / 2,
+                // 0.27 / 2; 2× f8 0.24 / 2, 0.28 / 2.
+                blur_scale: BlurScale {
+                    below_2x: 4,
+                    from_2x: 8,
                 },
                 ..neutral
             },
@@ -241,6 +329,21 @@ impl GlassKind {
                     sigma: 24.7,
                     offset_y: 20.0,
                 },
+                // Equivalence, over the thick and the regular material: light 1× f2 0.27 / 2
+                // and 0.30 / 2 (f4 0.41 / 3 on regular), 1.5× f2 0.17 / 2 and 0.30 / 2, 2× f4
+                // 0.21 / 2 and 0.30 / 2; dark (thick's strong tone) 1× f2 0.46 / 3, 1.5× f2
+                // 0.34 / 3, 2× f2 0.35 / 3.
+                blur_scale: if dark {
+                    BlurScale {
+                        below_2x: 2,
+                        from_2x: 2,
+                    }
+                } else {
+                    BlurScale {
+                        below_2x: 2,
+                        from_2x: 4,
+                    }
+                },
                 ..neutral
             },
             // Measured: blur σ ≈ 6 pt (the tone is the material's). Provisional: the edge light
@@ -252,6 +355,12 @@ impl GlassKind {
                 refraction: 0.5,
                 falloff: 0.6,
                 rim: 0.85,
+                // Equivalence: light 1× f2 0.40 / 2, 1.5× f2 0.29 / 2, 2× f4 0.27 / 2; dark 1×
+                // f2 0.71 / 3, 1.5× f2 0.47 / 3, 2× f2 0.46 / 3 (f4 0.48 / 4 fails).
+                blur_scale: BlurScale {
+                    below_2x: 2,
+                    from_2x: if dark { 2 } else { 4 },
+                },
                 ..neutral
             },
             // Tone measured (nearly opaque), no lens (thick glass). Provisional: the edge light
@@ -260,6 +369,12 @@ impl GlassKind {
                 refraction: 0.0,
                 rim: 0.7,
                 shadow: menu_shadow,
+                // Equivalence (nearly opaque: the blur barely shows): 1× f4 0.21 / 1, 1.5× f4
+                // 0.12 / 1, 2× f8 0.13 / 1.
+                blur_scale: BlurScale {
+                    below_2x: 4,
+                    from_2x: 8,
+                },
                 ..neutral
             },
             // Measured: opaque (the material is a flat fill), so the blur does not show; no
@@ -273,6 +388,11 @@ impl GlassKind {
                     opacity: 0.30,
                     sigma: 23.6,
                     offset_y: 10.0,
+                },
+                // Equivalence: opaque, the blur does not show (0 / 0 at every factor).
+                blur_scale: BlurScale {
+                    below_2x: 8,
+                    from_2x: 8,
                 },
                 ..neutral
             },
