@@ -2097,7 +2097,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             _stackRect = Rect.fromLTRB(
               iconX - 420,
               zoneTop + top.center.dy - top.side,
-              iconX + fanShift.last + 120,
+              iconX + top.center.dx + top.side / 2 + 120,
               zoneTop,
             );
             stackWidget = Positioned.fill(
@@ -2204,8 +2204,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         items[i].icon,
                         items[i],
                       )
-                    else if (items[i].icon case final source?)
-                      _icon(l, i, size.height, source, items[i], sliding),
+                    else if (items[i].icon != null || i == _stackIndex)
+                      _icon(
+                        l,
+                        i,
+                        size.height,
+                        items[i].icon,
+                        items[i],
+                        sliding,
+                      ),
                   if (widget.launcher.values.any((s) => s.badge != null))
                     Positioned.fill(
                       child: IgnorePointer(
@@ -2407,27 +2414,27 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     Layout l,
     int index,
     double height,
-    IconSource source,
+    IconSource? source,
     Item item,
     bool sliding,
   ) {
     final (x, y, side) = iconRect(l, index, height);
     // With the stack open the folder icon becomes the button that closes it (D-06).
-    final closer = _stackIndex == index ? findSilicaIcon('stack-close') : null;
-    final pile = closer == null ? _pileOf(item) : null;
-    final icon = closer != null
-        // The close button follows the appearance (dock-stacks.md, dark: translucent black
-        // over the Dock, white chevron); app icons do not.
-        ? SilicaIcon(
-            LayeredSource(closer),
+    final closing = _stackIndex == index;
+    final pile = closing ? null : _pileOf(item);
+    final icon = closing
+        // The close button: a glass circle with the silica-icons chevron (dock-stacks.md,
+        // "Close button of the open stack"; dark: white chevron, light: `#19191b`).
+        ? StackCloseButton(
             side: side,
-            besideApps: true,
             dark:
                 MediaQuery.maybePlatformBrightnessOf(context) ==
                 Brightness.dark,
           )
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
+        : source == null
+        ? const SizedBox.shrink()
         : SilicaIcon(source, side: side, besideApps: true);
     final live = _live[item];
     // The launch hop: 17 pt (about 18 with the magnification) in the same animation.
@@ -2657,10 +2664,18 @@ Path labelTipOutline() => Path()
 /// rim) and the same shadow, with the label's own measured shape: a capsule of
 /// [labelHeight] and the small tip below it ([labelTipWidth] x [labelTipDepth]).
 class DockLabel extends StatelessWidget {
-  const DockLabel({super.key, required this.text, required this.style});
+  const DockLabel({
+    super.key,
+    required this.text,
+    required this.style,
+    this.tip = true,
+  });
 
   final String text;
   final TextStyle style;
+
+  /// False for a label beside its object (the fan's item names): the same capsule, no tip.
+  final bool tip;
 
   /// The glass the label declares; the menus declare the same material
   /// (`MenuPanel`: `GlassMaterial.thick`, not interactive, no group).
@@ -2670,11 +2685,12 @@ class DockLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, box) => CachedShadow(
-        cacheKey: Object.hash(box.maxWidth, MenuColors.of(context).shadow),
+        cacheKey: Object.hash(box.maxWidth, MenuColors.of(context).shadow, tip),
         bleed: 60,
         paintShadow: _LabelShadow(
           box.maxWidth,
           MenuColors.of(context).shadow,
+          tip: tip,
         ).paint,
         child: Align(
           alignment: Alignment.topCenter,
@@ -2684,11 +2700,13 @@ class DockLabel extends StatelessWidget {
               radius: labelHeight / 2,
               material: material,
               interactive: false,
-              tip: GlassTip(
-                x: box.maxWidth / 2,
-                width: labelTipWidth,
-                height: labelTipDepth,
-              ),
+              tip: tip
+                  ? GlassTip(
+                      x: box.maxWidth / 2,
+                      width: labelTipWidth,
+                      height: labelTipDepth,
+                    )
+                  : null,
               child: Center(child: Text(text, style: style)),
             ),
           ),
@@ -2704,9 +2722,10 @@ const double labelTipDepth = 6.5;
 
 /// The menus' shadow (`MenuPanel`: blur 16 pt, 4 pt lower, not on the glass, tip included).
 class _LabelShadow extends CustomPainter {
-  const _LabelShadow(this.width, this.color);
+  const _LabelShadow(this.width, this.color, {this.tip = true});
   final double width;
   final Color color;
+  final bool tip;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2714,12 +2733,13 @@ class _LabelShadow extends CustomPainter {
       Rect.fromLTWH(0, 0, width, labelHeight),
       const Radius.circular(labelHeight / 2),
     );
-    final tip = labelTipOutline().shift(Offset(width / 2, labelHeight + 6.516));
-    final glass = Path.combine(
-      PathOperation.union,
-      Path()..addRRect(body),
-      tip,
-    );
+    final glass = tip
+        ? Path.combine(
+            PathOperation.union,
+            Path()..addRRect(body),
+            labelTipOutline().shift(Offset(width / 2, labelHeight + 6.516)),
+          )
+        : (Path()..addRRect(body));
     canvas
       ..save()
       ..clipPath(
@@ -2743,5 +2763,5 @@ class _LabelShadow extends CustomPainter {
 
   @override
   bool shouldRepaint(_LabelShadow old) =>
-      old.width != width || old.color != color;
+      old.width != width || old.color != color || old.tip != tip;
 }

@@ -12,13 +12,7 @@ import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
 import 'package:silica_shell/menubar/window_menu.dart';
 import 'package:silica_ui/silica_ui.dart'
-    show
-        MenuAction,
-        MenuCustom,
-        MenuDivider,
-        MenuEntry,
-        MenuHost,
-        MenuPanel;
+    show MenuAction, MenuCustom, MenuDivider, MenuEntry, MenuHost, MenuPanel;
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
