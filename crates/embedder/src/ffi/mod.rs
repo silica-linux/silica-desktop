@@ -21,6 +21,7 @@
     clippy::unwrap_used
 )]
 mod bindings;
+mod compositor;
 mod gl;
 pub mod pty;
 mod raster;
@@ -108,6 +109,8 @@ unsafe impl Send for Task {}
 /// A frame of the software renderer: rows of `stride` bytes, 32-bit pixels in the engine's
 /// native format (BGRA in memory on little-endian Linux).
 pub struct Frame {
+    /// The view (window) it was drawn for: 0 for the main one.
+    pub view_id: i64,
     pub width: u32,
     pub height: u32,
     pub stride: usize,
@@ -177,6 +180,9 @@ pub struct Callbacks {
     pub vsync: Option<Box<dyn Fn(VsyncBaton) + Send + Sync>>,
     /// The raster thread's tasks and frames, numbered (the raster thread is the embedder's).
     pub frames: Arc<FrameClock>,
+    /// Several views (windows) in this engine: it composes through backing stores
+    /// (`compositor.rs`), in software or with OpenGL ES (not with `vulkan`).
+    pub multi_view: bool,
 }
 
 /// Whoever waits to know whether the framework handled a key.
@@ -207,6 +213,8 @@ pub struct PointerEvent {
     /// Scroll in physical pixels, if the event is a wheel.
     pub scroll: Option<(f64, f64)>,
     pub timestamp_micros: u64,
+    /// The view (window) the pointer is in: 0 for the main one.
+    pub view_id: i64,
 }
 
 type InitializeFn = unsafe extern "C" fn(
@@ -260,6 +268,18 @@ type CreateAotFn = unsafe extern "C" fn(
     *mut FlutterEngineAOTData,
 ) -> FlutterEngineResult;
 type CollectAotFn = unsafe extern "C" fn(FlutterEngineAOTData) -> FlutterEngineResult;
+type AddViewFn =
+    unsafe extern "C" fn(FlutterEngine, *const bindings::FlutterAddViewInfo) -> FlutterEngineResult;
+type RemoveViewFn = unsafe extern "C" fn(
+    FlutterEngine,
+    *const bindings::FlutterRemoveViewInfo,
+) -> FlutterEngineResult;
+type ViewFocusFn = unsafe extern "C" fn(
+    FlutterEngine,
+    *const bindings::FlutterViewFocusEvent,
+) -> FlutterEngineResult;
+/// Whoever waits for a view to be added or removed (`true`: done).
+type ViewDone = Box<dyn FnOnce(bool) + Send>;
 
 /// The engine functions used here, resolved once at load time.
 struct Api {
@@ -282,6 +302,9 @@ struct Api {
     create_reply: CreateReplyFn,
     release_reply: ReleaseReplyFn,
     update_locales: UpdateLocalesFn,
+    add_view: AddViewFn,
+    remove_view: RemoveViewFn,
+    view_focus: ViewFocusFn,
 }
 
 macro_rules! symbol {
@@ -316,6 +339,8 @@ pub struct Engine {
     raster: RasterRunner,
     // Everything the engine keeps pointers to: it must live as long as the engine.
     _callbacks: Box<Callbacks>,
+    /// The compositor of the multi-view path (`compositor.rs`).
+    _compositor: Option<Box<bindings::FlutterCompositor>>,
     _runner: Box<FlutterTaskRunnerDescription>,
     _render_runner: Box<FlutterTaskRunnerDescription>,
     _runners: Box<FlutterCustomTaskRunners>,
@@ -349,6 +374,10 @@ unsafe extern "C" fn present(
 ) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    // With several views the frames come from `present_view`: the root surface shows nothing.
+    if callbacks.multi_view {
+        return true;
+    }
     let Some(len) = row_bytes.checked_mul(height) else {
         return false;
     };
@@ -362,6 +391,7 @@ unsafe extern "C" fn present(
         return false;
     };
     (callbacks.present)(Frame {
+        view_id: 0,
         width,
         height,
         stride: row_bytes,
@@ -398,14 +428,19 @@ unsafe extern "C" fn gl_make_resource_current(user_data: *mut c_void) -> bool {
 unsafe extern "C" fn gl_present(user_data: *mut c_void) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    // With several views the swaps happen in `present_view`: the root frame is not shown.
+    if callbacks.multi_view {
+        return true;
+    }
     // The swap commits the surface: what goes with this frame is sent before it.
-    callbacks.frames.before_present();
+    callbacks.frames.before_present(0);
     callbacks.gl.as_ref().is_some_and(GlSurface::present)
 }
 
 unsafe extern "C" fn gl_fbo(user_data: *mut c_void, info: *const FlutterFrameInfo) -> u32 {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     if let Some(gl) = unsafe { gl_surface(user_data) }
+        && !gl.multi_view()
         && !info.is_null()
     {
         // SAFETY: the engine passes a FlutterFrameInfo valid for the duration of the call.
@@ -488,7 +523,7 @@ unsafe extern "C" fn vulkan_present(
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
     // The present commits the surface: what goes with this frame is sent before it.
-    callbacks.frames.before_present();
+    callbacks.frames.before_present(0);
     callbacks
         .vulkan
         .as_ref()
@@ -583,6 +618,46 @@ unsafe extern "C" fn reply_received(data: *const u8, size: usize, user_data: *mu
     reply(bytes);
 }
 
+/// The metrics of view `view_id`.
+fn metrics(view_id: i64, width: u32, height: u32, pixel_ratio: f64) -> FlutterWindowMetricsEvent {
+    FlutterWindowMetricsEvent {
+        struct_size: size_of::<FlutterWindowMetricsEvent>(),
+        width: width as usize,
+        height: height as usize,
+        pixel_ratio,
+        view_id,
+        ..Default::default()
+    }
+}
+
+unsafe extern "C" fn view_added(result: *const bindings::FlutterAddViewResult) {
+    if result.is_null() {
+        return;
+    }
+    // SAFETY: the engine passes a result valid during the call.
+    let result = unsafe { &*result };
+    if result.user_data.is_null() {
+        return;
+    }
+    // SAFETY: user_data is the Box<ViewDone> of add_view; the engine calls this once.
+    let done = unsafe { Box::from_raw(result.user_data.cast::<ViewDone>()) };
+    done(result.added);
+}
+
+unsafe extern "C" fn view_removed(result: *const bindings::FlutterRemoveViewResult) {
+    if result.is_null() {
+        return;
+    }
+    // SAFETY: the engine passes a result valid during the call.
+    let result = unsafe { &*result };
+    if result.user_data.is_null() {
+        return;
+    }
+    // SAFETY: user_data is the Box<ViewDone> of remove_view; the engine calls this once.
+    let done = unsafe { Box::from_raw(result.user_data.cast::<ViewDone>()) };
+    done(result.removed);
+}
+
 unsafe extern "C" fn log_message(tag: *const c_char, message: *const c_char, _: *mut c_void) {
     let text = |ptr: *const c_char| {
         if ptr.is_null() {
@@ -626,6 +701,9 @@ impl Engine {
             create_reply: symbol!(library, FlutterPlatformMessageCreateResponseHandle),
             release_reply: symbol!(library, FlutterPlatformMessageReleaseResponseHandle),
             update_locales: symbol!(library, FlutterEngineUpdateLocales),
+            add_view: symbol!(library, FlutterEngineAddView),
+            remove_view: symbol!(library, FlutterEngineRemoveView),
+            view_focus: symbol!(library, FlutterEngineSendViewFocusEvent),
         };
 
         let callbacks = Box::new(callbacks);
@@ -749,6 +827,18 @@ impl Engine {
         let (Some(assets), Some(icu)) = (strings.first(), strings.get(1)) else {
             return Err(Error::Path("missing arguments".to_owned()));
         };
+        // Several views: the engine draws them into our backing stores (`compositor.rs`).
+        let compositor = callbacks.multi_view.then(|| {
+            Box::new(bindings::FlutterCompositor {
+                struct_size: size_of::<bindings::FlutterCompositor>(),
+                user_data,
+                create_backing_store_callback: Some(compositor::create_backing_store),
+                collect_backing_store_callback: Some(compositor::collect_backing_store),
+                present_layers_callback: None,
+                avoid_backing_store_cache: false,
+                present_view_callback: Some(compositor::present_view),
+            })
+        });
         let args = FlutterProjectArgs {
             struct_size: size_of::<FlutterProjectArgs>(),
             assets_path: assets.as_ptr(),
@@ -762,6 +852,7 @@ impl Engine {
             platform_message_callback: Some(platform_message),
             shutdown_dart_vm_when_done: true,
             aot_data,
+            compositor: compositor.as_deref().map_or(ptr::null(), ptr::from_ref),
             vsync_callback: if callbacks.vsync.is_some() {
                 Some(vsync)
             } else {
@@ -813,6 +904,7 @@ impl Engine {
             aot_data,
             raster,
             _callbacks: callbacks,
+            _compositor: compositor,
             _runner: runner,
             _render_runner: render_runner,
             _runners: runners,
@@ -844,24 +936,97 @@ impl Engine {
         result
     }
 
-    /// Size of the view in physical pixels and ratio of physical to logical pixels.
+    /// Size of view `view_id` in physical pixels and ratio of physical to logical pixels.
     pub fn send_window_metrics(
         &self,
+        view_id: i64,
         width: u32,
         height: u32,
         pixel_ratio: f64,
     ) -> Result<(), Error> {
-        let event = FlutterWindowMetricsEvent {
-            struct_size: size_of::<FlutterWindowMetricsEvent>(),
-            width: width as usize,
-            height: height as usize,
-            pixel_ratio,
-            ..Default::default()
-        };
+        let event = metrics(view_id, width, height, pixel_ratio);
         // SAFETY: the engine is alive; event is initialized and lives for the duration of the call.
         check("FlutterEngineSendWindowMetricsEvent", unsafe {
             (self.api.metrics)(self.engine, &event)
         })
+    }
+
+    /// Adds view `view_id` of `width`×`height` physical pixels (several windows, #146);
+    /// `done` learns from an engine thread whether it was added. Its surface must stay until
+    /// the view is removed.
+    pub fn add_view(
+        &self,
+        view_id: i64,
+        (width, height): (u32, u32),
+        pixel_ratio: f64,
+        done: impl FnOnce(bool) + Send + 'static,
+    ) -> Result<(), Error> {
+        let event = metrics(view_id, width, height, pixel_ratio);
+        let user_data = Box::into_raw(Box::new(Box::new(done) as ViewDone)).cast::<c_void>();
+        let info = bindings::FlutterAddViewInfo {
+            struct_size: size_of::<bindings::FlutterAddViewInfo>(),
+            view_id,
+            view_metrics: &event,
+            user_data,
+            add_view_callback: Some(view_added),
+        };
+        // SAFETY: the engine is alive; info and the metrics live during the call (the engine
+        // copies them); user_data passes to view_added, which frees it.
+        let result = unsafe { (self.api.add_view)(self.engine, &info) };
+        if result != FlutterEngineResult::kSuccess {
+            // Rejected: the callback is not called.
+            // SAFETY: user_data comes from Box::into_raw above and was not consumed.
+            drop(unsafe { Box::from_raw(user_data.cast::<ViewDone>()) });
+        }
+        check("FlutterEngineAddView", result)
+    }
+
+    /// Removes view `view_id`; `done` learns from an engine thread whether it was removed
+    /// (only then its surface may go).
+    pub fn remove_view(
+        &self,
+        view_id: i64,
+        done: impl FnOnce(bool) + Send + 'static,
+    ) -> Result<(), Error> {
+        let user_data = Box::into_raw(Box::new(Box::new(done) as ViewDone)).cast::<c_void>();
+        let info = bindings::FlutterRemoveViewInfo {
+            struct_size: size_of::<bindings::FlutterRemoveViewInfo>(),
+            view_id,
+            user_data,
+            remove_view_callback: Some(view_removed),
+        };
+        // SAFETY: the engine is alive; info lives during the call; user_data passes to
+        // view_removed, which frees it.
+        let result = unsafe { (self.api.remove_view)(self.engine, &info) };
+        if result != FlutterEngineResult::kSuccess {
+            // SAFETY: as in add_view.
+            drop(unsafe { Box::from_raw(user_data.cast::<ViewDone>()) });
+        }
+        check("FlutterEngineRemoveView", result)
+    }
+
+    /// Tells the framework which view has the keyboard focus (its `FocusManager` moves the
+    /// primary focus into that view).
+    pub fn send_view_focus(&self, view_id: i64, focused: bool) -> Result<(), Error> {
+        let event = bindings::FlutterViewFocusEvent {
+            struct_size: size_of::<bindings::FlutterViewFocusEvent>(),
+            view_id,
+            state: if focused {
+                bindings::FlutterViewFocusState::kFocused
+            } else {
+                bindings::FlutterViewFocusState::kUnfocused
+            },
+            direction: bindings::FlutterViewFocusDirection::kUndefined,
+        };
+        // SAFETY: the engine is alive; event lives during the call.
+        check("FlutterEngineSendViewFocusEvent", unsafe {
+            (self.api.view_focus)(self.engine, &event)
+        })
+    }
+
+    /// The EGL contexts and surfaces, with the OpenGL ES renderer.
+    pub fn gl(&self) -> Option<&GlSurface> {
+        self._callbacks.gl.as_ref()
     }
 
     /// Brings the EGL surface (if any) to `width`×`height` physical pixels. Must be called
@@ -931,6 +1096,7 @@ impl Engine {
             scroll_delta_y,
             device_kind: FlutterPointerDeviceKind::kFlutterPointerDeviceKindMouse,
             buttons: event.buttons,
+            view_id: event.view_id,
             ..Default::default()
         };
         // SAFETY: the engine is alive; raw is an initialized one-element array.

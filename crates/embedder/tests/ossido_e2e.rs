@@ -538,3 +538,103 @@ fn the_window_title_comes_from_the_command_line() {
     let window = session.window();
     assert_eq!(window.title.as_deref(), Some("Title test"));
 }
+
+const SECOND: [u8; 4] = [0x88, 0x33, 0xAA, 0xFF];
+
+/// The app's windows in the session, top first.
+fn app_windows(session: &Session) -> Vec<WindowInfo> {
+    let list = session.client().call(WINDOW_LIST, Value::Null).unwrap();
+    let windows: Vec<WindowInfo> = serde_json::from_value(list).unwrap();
+    windows
+        .into_iter()
+        .filter(|w| w.app_id.as_deref() == Some(APP_ID) && w.width > 0)
+        .collect()
+}
+
+/// The demo's second window (`F2`, testapps/demo), once it is listed at its size.
+fn second_window(session: &Session) -> WindowInfo {
+    wait_for("the second window", || {
+        app_windows(session)
+            .into_iter()
+            .find(|w| w.title.as_deref() == Some("Second") && (w.width, w.height) == (200, 120))
+    })
+}
+
+/// A point of `main` not covered by `other` (logical), inset from the edges.
+fn uncovered(main: &WindowInfo, other: &WindowInfo) -> (i32, i32) {
+    let inside = |(x, y): (i32, i32)| {
+        x >= other.x && x < other.x + other.width && y >= other.y && y < other.y + other.height
+    };
+    let (left, top) = (main.x + 30, main.y + 60);
+    let (right, bottom) = (main.x + main.width - 30, main.y + main.height - 60);
+    [(left, top), (right, top), (left, bottom), (right, bottom)]
+        .into_iter()
+        .find(|point| !inside(*point))
+        .expect("the second window covers the whole main window")
+}
+
+/// Several windows in one process (#146): F2 opens a second view in its own xdg_toplevel,
+/// both draw, a tap closes it from the app, its close button closes it through the app.
+fn second_window_opens_draws_and_closes(name: &str, renderer: &[&str]) {
+    let mut args = size_args((300, 200));
+    args.push("--multi-window".to_owned());
+    args.extend(renderer.iter().map(|s| (*s).to_owned()));
+    let mut session = Session::start_with(name, (800, 600), 1, &args);
+    let main = wait_for("the main window at 300 × 200", || {
+        Some(session.window()).filter(|w| (w.width, w.height) == (300, 200))
+    });
+    session.expect_pixel(main.x as u32 + 150, main.y as u32 + 100, IDLE);
+
+    // F2 in the main window: a second window of the same app, 200 × 120, all its color.
+    let mut client = session.client();
+    client.call(INPUT_KEY, json!({"key": "F2"})).unwrap();
+    let second = second_window(&session);
+    assert_ne!(second.id, main.id);
+    session.expect_pixel(second.x as u32 + 100, second.y as u32 + 60, SECOND);
+    // The main window still draws its own view.
+    let (x, y) = uncovered(&main, &second);
+    session.expect_pixel(x as u32, y as u32, IDLE);
+
+    // The keyboard goes to the window that has it: the second window's field, not the main
+    // window's (the engine is told which view has the focus).
+    client.call(INPUT_TYPE, json!({"text": "word"})).unwrap();
+    session.expect_pixel(second.x as u32 + 100, second.y as u32 + 30, TYPED);
+    session.expect_pixel(x as u32, y as u32, IDLE);
+
+    // A tap in the second window: the app closes it (closeWindow); the process stays.
+    client
+        .call(
+            INPUT_CLICK,
+            json!({"x": second.x + 100, "y": second.y + 60}),
+        )
+        .unwrap();
+    assert!(
+        wait_until(|| app_windows(&session).len() == 1),
+        "the second window is still listed"
+    );
+    let embedder = session.embedder.as_mut().unwrap();
+    assert!(embedder.try_wait().unwrap().is_none(), "the app ended");
+
+    // Again, closed by its close button: Ossido asks, the app answers closeRequested.
+    client.call(INPUT_KEY, json!({"key": "F2"})).unwrap();
+    let second = second_window(&session);
+    session.expect_pixel(second.x as u32 + 100, second.y as u32 + 60, SECOND);
+    client.call(WINDOW_CLOSE, json!({"id": second.id})).unwrap();
+    assert!(
+        wait_until(|| app_windows(&session).len() == 1),
+        "the closed second window is still listed"
+    );
+    assert_eq!(session.window().id, main.id);
+    let embedder = session.embedder.as_mut().unwrap();
+    assert!(embedder.try_wait().unwrap().is_none(), "the app ended");
+}
+
+#[test]
+fn a_second_window_opens_draws_and_closes_in_software() {
+    second_window_opens_draws_and_closes("multi-sw", &[]);
+}
+
+#[test]
+fn a_second_window_opens_draws_and_closes_with_gl() {
+    second_window_opens_draws_and_closes("multi-gl", &["--renderer", "gl"]);
+}

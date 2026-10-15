@@ -25,6 +25,7 @@ mod pty;
 mod shell;
 mod termgrid;
 mod text_input;
+mod views;
 mod window;
 
 use std::path::PathBuf;
@@ -109,6 +110,10 @@ pub struct Options {
     pub title: String,
     /// Window app id (`--app-id`): ties the window to its `.desktop` entry.
     pub app_id: String,
+    /// Several windows in this process (`--multi-window`, #146): the engine composes its
+    /// views through backing stores, in software or with OpenGL ES (Vulkan becomes OpenGL ES
+    /// with Impeller). The app opens them with `openWindow` on `silica/window`.
+    pub multi_window: bool,
 }
 
 /// `target/flutter-engine/<ENGINE_VERSION>` of the workspace, where `cargo xtask engine` puts it.

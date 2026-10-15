@@ -111,16 +111,12 @@ use crate::ffi::{
     Callbacks, Engine, EngineConfig, Frame, FrameClock, GlSurface, KeyEvent, PlatformMessage,
     PointerEvent, PointerPhase, ResponseHandle, Task, VsyncBaton, VulkanSurface,
 };
-use crate::glass::{self, Glass, GlassSync};
+use crate::glass;
 use crate::keyboard::{Keyboard, edit_key, raw_key_message};
 use crate::shell::{self, ShellLink};
+use crate::views::{self, Closing, GlassViews, MAIN_VIEW, WindowSpec, window_side};
 
 /// The app state channel (StringCodec).
-/// A window side requested by the app, in logical pixels: 1–8192, rounded.
-fn window_side(value: f64) -> Option<u32> {
-    (value.is_finite() && value >= 1.0).then(|| value.round().min(8192.0) as u32)
-}
-
 const LIFECYCLE_CHANNEL: &str = "flutter/lifecycle";
 
 /// How many software frames of a stale size may be dropped in a row before one is presented
@@ -220,13 +216,100 @@ impl Ord for Queued {
     }
 }
 
+/// A window of the app and its engine view (silica-desktop#146): the main one (view 0, the
+/// engine's implicit view, a window or a shell layer) and those opened with `openWindow`.
+struct View {
+    surface: Shell,
+    /// Size in logical pixels and scale factor of the surface.
+    size: (u32, u32),
+    scale: i32,
+    configured: bool,
+    /// The last software frame not yet presented.
+    pending: Option<Frame>,
+    /// Software frames of a stale size dropped in a row ([`drop_stale_frame`]).
+    stale_drops: u32,
+    /// Waiting for the compositor's frame callback before presenting again.
+    waiting_frame: bool,
+    /// A frame callback asked for the vsync and not yet arrived.
+    vsync_requested: bool,
+    buffer: Option<Buffer>,
+    /// Software has presented at least one frame (with OpenGL the EGL surface knows).
+    presented: bool,
+    /// `silica-window-v1`: the window object (created on the first request).
+    appearance: Option<SilicaWindowV1>,
+    /// The window active for Ossido (xdg_toplevel's `activated`).
+    activated: Option<bool>,
+    /// The engine has added the view (the main one always): frames and metrics may flow.
+    added: bool,
+    /// `FlutterEngineAddView` is under way.
+    adding: bool,
+    /// `openWindow`'s reply, sent once the engine has added the view.
+    open_reply: Option<ResponseHandle>,
+    /// Being removed: the engine is asked to drop the view; the surface waits for it.
+    removing: bool,
+}
+
+impl View {
+    fn new(surface: Shell, size: (u32, u32), scale: i32, added: bool) -> Self {
+        Self {
+            surface,
+            size,
+            scale,
+            configured: false,
+            pending: None,
+            stale_drops: 0,
+            waiting_frame: false,
+            vsync_requested: false,
+            buffer: None,
+            presented: false,
+            appearance: None,
+            activated: None,
+            added,
+            adding: false,
+            open_reply: None,
+            removing: false,
+        }
+    }
+
+    /// The size in physical pixels.
+    fn physical(&self) -> (u32, u32) {
+        let scale = u32::try_from(self.scale.max(1)).unwrap_or(1);
+        (
+            self.size.0.saturating_mul(scale),
+            self.size.1.saturating_mul(scale),
+        )
+    }
+}
+
+/// What the engine threads tell the main loop about the views.
+enum ViewEvent {
+    /// `FlutterEngineAddView` done (true: added).
+    Added(i64, bool),
+    /// `FlutterEngineRemoveView` done.
+    Removed(i64),
+    /// The app's answer to `closeRequested`: true if it closes the window itself.
+    CloseAnswered(i64, bool),
+}
+
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
     output_state: OutputState,
     shm: Shm,
     pool: SlotPool,
-    surface: Shell,
+    /// The windows, by engine view id; [`MAIN_VIEW`] is always there.
+    views: BTreeMap<i64, View>,
+    /// Several windows (`--multi-window`): the engine composes through backing stores.
+    multi_view: bool,
+    next_view: i64,
+    /// For new windows: the xdg shell and the engine thread's view events.
+    xdg_shell: Option<XdgShell>,
+    view_events: Option<channel::Sender<ViewEvent>>,
+    /// The view under the pointer and the one with the keyboard.
+    pointer_view: i64,
+    keyboard_view: Option<i64>,
+    /// The view a drag between apps is over.
+    drag_view: i64,
     pointer: Option<wl_pointer::WlPointer>,
     /// wp_cursor_shape_v1: Ossido draws the shape Flutter asks for (`flutter/mousecursor`).
     cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
@@ -238,16 +321,15 @@ struct App {
     keys: Keyboard,
     modifiers: Modifiers,
     text_input: TextInput,
-    /// Glass regions of the `Glass` widgets (`silica/glass`), taken in by the platform task
-    /// that delivers them (see `platform_message` in `run`).
-    glass: Arc<Mutex<Glass>>,
-    /// The same regions in step with the frames (software frames are committed here).
-    glass_sync: Arc<GlassSync>,
-    /// `silica-window-v1`: the manager and the window object (created on the first request).
+    /// Glass regions of the `Glass` widgets (`silica/glass`) of every window, taken in by the
+    /// platform task that delivers them (see `platform_message` in `run`) and kept in step
+    /// with the frames (software frames are committed here).
+    glass: Arc<GlassViews>,
+    glass_manager: Option<SilicaGlassManagerV1>,
+    /// `silica-window-v1`: the manager (each view has its window object).
     appearance_manager: Option<SilicaWindowManagerV1>,
-    appearance: Option<SilicaWindowV1>,
-    /// The window active for Ossido (xdg_toplevel's `activated`), as Flutter was told.
-    activated: Option<bool>,
+    /// The app is active (a window of it is), as Flutter was told (`flutter/lifecycle`).
+    app_active: Option<bool>,
     /// Drag between apps: the manager, the seat's device, the drag that left from here and
     /// the offer dropped here (the data arrives from a thread on `drops`).
     data_manager: Option<DataDeviceManagerState>,
@@ -288,26 +370,11 @@ struct App {
     tasks: BinaryHeap<Reverse<Queued>>,
     next_seq: u64,
 
-    /// Size in logical pixels and scale factor of the surface.
-    size: (u32, u32),
-    scale: i32,
-    configured: bool,
-    /// The last engine frame not yet presented.
-    pending: Option<Frame>,
-    /// Software frames of a stale size dropped in a row ([`drop_stale_frame`]).
-    stale_drops: u32,
-    /// Waiting for the compositor's frame callback before presenting again.
-    waiting_frame: bool,
-    buffer: Option<Buffer>,
     buttons: i64,
     /// With OpenGL the engine's swap attaches and commits: here only the scale is handled.
     gl: bool,
-    /// Software has presented at least one frame (with OpenGL the EGL surface knows).
-    presented: bool,
     /// The engine's vsync request waiting for the compositor's frame callback.
     vsync: Option<VsyncBaton>,
-    /// A frame callback asked for the vsync and not yet arrived.
-    vsync_requested: bool,
     exit: bool,
     /// The app lifecycle (silica-desktop#142, `app_lifecycle.rs`): the app id, whether the
     /// app ends with its last window, since when its window is hidden, and this process in
@@ -372,13 +439,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let compositor = CompositorState::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let surface = compositor.create_surface(&qh);
+    let mut xdg_shell = None;
     let surface = match &options.layer {
         None => {
-            let xdg_shell = XdgShell::bind(&globals, &qh)?;
-            let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &qh);
+            let shell = XdgShell::bind(&globals, &qh)?;
+            let window = shell.create_window(surface, WindowDecorations::RequestServer, &qh);
             window.set_title(options.title.clone());
             window.set_app_id(options.app_id.clone());
             window.commit();
+            xdg_shell = Some(shell);
             Shell::Window(window)
         }
         Some(layer) => {
@@ -430,10 +499,17 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Several windows are for apps: a shell layer has its one surface.
+    let multi_view = options.multi_window && options.layer.is_none();
     let mut engine_args = options.engine_args.clone();
     // Vulkan with Impeller; if Vulkan is not there (or does not present on this surface) it
-    // falls back to OpenGL ES with Impeller.
+    // falls back to OpenGL ES with Impeller. Several windows need backing stores, which
+    // Impeller has only on OpenGL ES at the pinned engine (`ffi/compositor.rs`).
     let vulkan = match options.renderer {
+        Renderer::Vulkan if multi_view => {
+            info!("several windows: OpenGL ES with Impeller (no Vulkan backing stores)");
+            None
+        }
         Renderer::Vulkan => match VulkanSurface::new(&conn, surface.wl_surface(), options.size) {
             Ok(vulkan) => {
                 info!("renderer Vulkan: {}", vulkan.renderer());
@@ -449,9 +525,13 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     };
     let gl = match options.renderer {
         Renderer::Vulkan if vulkan.is_some() => None,
-        Renderer::Gl | Renderer::Impeller | Renderer::Vulkan => {
+        Renderer::Gl | Renderer::Impeller | Renderer::Vulkan => 'gl: {
             let gl = GlSurface::new(&conn, surface.wl_surface(), options.size)?;
             info!("renderer OpenGL ES: {}", gl.renderer());
+            if multi_view && let Err(err) = gl.set_multi_view() {
+                warn!("{err}: drawing in software");
+                break 'gl None;
+            }
             if options.renderer != Renderer::Gl {
                 if crate::is_software_gl(gl.renderer()) {
                     warn!("Impeller crashes on a software GL driver: using Skia");
@@ -546,31 +626,45 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         .handle()
         .insert_source(frame_channel, move |event, _, app: &mut App| {
             if let Event::Msg(frame) = event {
-                app.pending = Some(frame);
-                app.present(&frame_qh);
+                let id = frame.view_id;
+                if let Some(view) = app.views.get_mut(&id) {
+                    view.pending = Some(frame);
+                    app.present(id, &frame_qh);
+                }
             }
         })
         .map_err(|e| format!("frame channel: {e}"))?;
+    let (view_sender, view_channel) = channel::channel::<ViewEvent>();
+    event_loop
+        .handle()
+        .insert_source(view_channel, |event, _, app: &mut App| {
+            if let Event::Msg(event) = event {
+                app.view_event(event);
+            }
+        })
+        .map_err(|e| format!("view channel: {e}"))?;
 
-    // The glass regions travel with the frames of the raster thread.
-    let glass_sync = Arc::new(GlassSync::new(conn.clone(), surface.wl_surface().clone()));
+    // The glass regions travel with the frames of the raster thread, window by window.
+    let glass = Arc::new(GlassViews::default());
+    let glass_manager = globals
+        .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=8, ())
+        .ok();
+    glass.insert(
+        MAIN_VIEW,
+        glass_manager.clone(),
+        &conn,
+        surface.wl_surface(),
+    );
     let frames = {
-        let before = Arc::clone(&glass_sync);
-        let after = Arc::clone(&glass_sync);
+        let before = Arc::clone(&glass);
+        let after = Arc::clone(&glass);
         Arc::new(FrameClock::new(
-            move |seq| before.before_present(seq),
+            move |view, seq| before.before_present(view, seq),
             move |seq| after.after_task(seq),
         ))
     };
-    let software_frames = Arc::clone(&glass_sync);
-    let glass = Arc::new(Mutex::new(Glass::new(
-        globals
-            .bind::<SilicaGlassManagerV1, App, ()>(&qh, 1..=8, ())
-            .ok(),
-        Arc::clone(&glass_sync),
-    )));
-    let (glass_inbox, glass_surface, glass_qh) =
-        (Arc::clone(&glass), surface.wl_surface().clone(), qh.clone());
+    let software_frames = Arc::clone(&glass);
+    let (glass_inbox, glass_qh) = (Arc::clone(&glass), qh.clone());
     let callbacks = Callbacks {
         platform_thread: std::thread::current().id(),
         post_task: Box::new(move |task| {
@@ -579,17 +673,14 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }),
         present: Box::new(move |frame: Frame| {
-            software_frames.software_frame(frame.raster_seq);
+            software_frames.software_frame(frame.view_id, frame.raster_seq);
             let _ = frame_sender.send(frame);
         }),
         platform_message: Box::new(move |message| {
             // The glass regions are taken in here, in the platform task that delivers them, to
             // reach their frame before the raster thread presents it (`GlassSync`).
-            if message.channel == glass::CHANNEL
-                && let Ok(mut glass) = glass_inbox.lock()
-                && glass.receive(&message.data, message.raster_seq, &glass_surface, &glass_qh)
-            {
-                glass_surface.commit();
+            if message.channel == glass::CHANNEL {
+                glass_inbox.receive(&message.data, message.raster_seq, &glass_qh);
             }
             // If the loop is closed the message falls with its handle: the engine is shutting
             // down and no longer waits for answers.
@@ -601,6 +692,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             let _ = vsync_sender.send(baton);
         })),
         frames,
+        multi_view,
     };
     let engine = Engine::run(
         &EngineConfig {
@@ -621,7 +713,14 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         output_state: OutputState::new(&globals, &qh),
         shm,
         pool,
-        surface,
+        views: BTreeMap::from([(MAIN_VIEW, View::new(surface, options.size, 1, true))]),
+        multi_view,
+        next_view: MAIN_VIEW + 1,
+        xdg_shell,
+        view_events: Some(view_sender),
+        pointer_view: MAIN_VIEW,
+        keyboard_view: None,
+        drag_view: MAIN_VIEW,
         pointer: None,
         keyboard: None,
         keys: Keyboard::default(),
@@ -630,8 +729,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         appearance_manager: globals
             .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=2, ())
             .ok(),
-        appearance: None,
-        activated: None,
+        app_active: None,
         data_manager: DataDeviceManagerState::bind(&globals, &qh).ok(),
         cursor_shapes:
             smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(
@@ -658,7 +756,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         seat: None,
         press_serial: 0,
         glass,
-        glass_sync,
+        glass_manager,
         shell: ShellLink::new(
             globals
                 .bind::<SilicaShellManagerV1, App, ()>(&qh, 1..=7, ())
@@ -674,18 +772,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         engine: Some(engine),
         tasks: BinaryHeap::new(),
         next_seq: 0,
-        size: options.size,
-        scale: 1,
-        configured: false,
-        pending: None,
-        stale_drops: 0,
-        waiting_frame: false,
-        buffer: None,
         buttons: 0,
         gl: gl_mode,
-        presented: false,
         vsync: None,
-        vsync_requested: false,
         exit: false,
         app_id: options.app_id.clone(),
         quit_with_last_window: false,
@@ -774,6 +863,15 @@ impl App {
             }
             return;
         }
+        // `openWindow` answers once the engine has added the view (`view_event`).
+        if message.channel == WINDOW_CHANNEL
+            && let Ok(call) = serde_json::from_slice::<serde_json::Value>(&message.data)
+            && call.get("method").and_then(serde_json::Value::as_str) == Some("openWindow")
+        {
+            let reply = message.response;
+            self.open_view(&call, reply);
+            return;
+        }
         let reply = match message.channel.as_str() {
             text_input::CHANNEL => self.text_input.handle_call(&message.data),
             shell::CHANNEL => self.shell.handle_call(&message.data, &self.qh),
@@ -783,11 +881,7 @@ impl App {
             crate::app_lifecycle::CHANNEL => self.handle_app_call(&message.data),
             crate::pty::CHANNEL => self.handle_pty_call(&message.data),
             // Already taken in by the platform task (`platform_message` in `run`): the reply.
-            glass::CHANNEL => self
-                .glass
-                .lock()
-                .map(|glass| glass.reply(&message.data))
-                .unwrap_or_default(),
+            glass::CHANNEL => self.glass.reply(&message.data),
             "flutter/platform" => self.handle_platform_call(&message.data),
             crate::mouse_cursor::CHANNEL => {
                 if let Some(kind) = crate::mouse_cursor::activate_kind(&message.data) {
@@ -820,14 +914,40 @@ impl App {
     /// - `setSize {width, height}`: the app chooses its window size (logical pixels);
     /// - `setSizeLimits {minWidth?, minHeight?, maxWidth?, maxHeight?}`: limits for resizing;
     ///   min = max makes the window fixed-size (Ossido then disables the zoom button).
+    ///
+    /// Every call takes an optional `viewId` (several windows, `views.rs`), which also adds
+    /// `closeWindow {viewId}` and `setTitle {viewId, title}`; `openWindow` is in `open_view`.
     fn handle_window_call(&mut self, data: &[u8]) -> Vec<u8> {
         let Ok(call) = serde_json::from_slice::<serde_json::Value>(data) else {
             return Vec::new();
         };
-        let Shell::Window(window) = &self.surface else {
+        let id = views::view_arg(&call);
+        let method = call.get("method").and_then(serde_json::Value::as_str);
+        if method == Some("closeWindow") {
+            self.close_view(id);
+            return crate::text_input::success(serde_json::Value::Null);
+        }
+        let Some(View {
+            surface: Shell::Window(window),
+            appearance,
+            ..
+        }) = self.views.get_mut(&id)
+        else {
             return crate::text_input::success(serde_json::json!(false));
         };
-        match call.get("method").and_then(serde_json::Value::as_str) {
+        match method {
+            Some("setTitle") => {
+                let title: String = call
+                    .pointer("/args/title")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(256)
+                    .collect();
+                window.set_title(title);
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
             Some("setFullSizeContent") => {
                 let Some(manager) = &self.appearance_manager else {
                     return crate::text_input::success(serde_json::json!(false));
@@ -835,10 +955,9 @@ impl App {
                 let height = call
                     .pointer("/args/toolbarHeight")
                     .and_then(serde_json::Value::as_f64)
-                    .filter(|h| h.is_finite() && *h >= 0.0)
-                    .map_or(0, |h| h.round().min(200.0) as u32);
-                let object = self
-                    .appearance
+                    .and_then(views::toolbar_height)
+                    .unwrap_or(0);
+                let object = appearance
                     .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
                 object.set_full_size_content(height);
                 window.commit();
@@ -876,13 +995,306 @@ impl App {
                 };
                 // A floating window may choose its own size: the next buffer has it and Ossido
                 // follows the committed geometry.
-                self.size = (width, height);
-                self.send_metrics();
+                if let Some(view) = self.views.get_mut(&id) {
+                    view.size = (width, height);
+                }
+                self.send_metrics(id);
                 let qh = self.qh.clone();
-                self.present(&qh);
+                self.present(id, &qh);
                 crate::text_input::success(serde_json::json!(true))
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// `openWindow` (several windows, `views.rs`): a new xdg_toplevel and its engine view.
+    /// `reply` gets the view id once the engine has added the view, or null.
+    fn open_view(&mut self, call: &serde_json::Value, reply: Option<ResponseHandle>) {
+        let refuse = |app: &Self, reply: Option<ResponseHandle>, why: &str| {
+            warn!("openWindow: {why}");
+            if let (Some(engine), Some(handle)) = (&app.engine, reply)
+                && let Err(err) =
+                    engine.respond(handle, &crate::text_input::success(serde_json::Value::Null))
+            {
+                warn!("openWindow reply: {err}");
+            }
+        };
+        let Some(spec) = call.get("args").and_then(WindowSpec::parse) else {
+            return refuse(self, reply, "no valid size");
+        };
+        if !self.multi_view {
+            return refuse(self, reply, "the app was not started with --multi-window");
+        }
+        if self.views.len() > views::MAX_WINDOWS {
+            return refuse(self, reply, "too many windows");
+        }
+        let (Some(xdg_shell), Some(engine)) = (&self.xdg_shell, &self.engine) else {
+            return refuse(self, reply, "no xdg shell");
+        };
+        let id = self.next_view;
+        self.next_view = self.next_view.saturating_add(1);
+        let surface = self.compositor.create_surface(&self.qh);
+        let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &self.qh);
+        // A child window stays above its parent and belongs to the same app (Info, compose).
+        // The parent goes first: Ossido places a window when it learns its app id.
+        if let Some(parent) = spec.parent
+            && let Some(View {
+                surface: Shell::Window(parent),
+                ..
+            }) = self.views.get(&parent)
+        {
+            window.set_parent(Some(parent));
+        }
+        window.set_title(spec.title.clone());
+        window.set_app_id(self.app_id.clone());
+        window.set_min_size(spec.min_size);
+        window.set_max_size(spec.max_size);
+        // The same scale as the main window until Ossido tells the window's own.
+        let scale = self.views.get(&MAIN_VIEW).map_or(1, |view| view.scale);
+        let mut view = View::new(Shell::Window(window), spec.size, scale, false);
+        if let (Some(height), Some(manager), Shell::Window(window)) =
+            (spec.toolbar_height, &self.appearance_manager, &view.surface)
+        {
+            let object = manager.get_window(window.wl_surface(), &self.qh, ());
+            object.set_full_size_content(height);
+            view.appearance = Some(object);
+        }
+        view.surface.commit();
+        if let Some(gl) = engine.gl()
+            && let Err(err) = gl.add_view(id, view.surface.wl_surface(), view.physical())
+        {
+            return refuse(self, reply, &err.to_string());
+        }
+        self.glass.insert(
+            id,
+            self.glass_manager.clone(),
+            &self.conn,
+            view.surface.wl_surface(),
+        );
+        // The engine gets the view at the window's first configure (`configured`): nothing
+        // may be drawn on an xdg surface before it is configured.
+        view.open_reply = reply;
+        info!("window {id} opened: {:?} {:?}", spec.title, spec.size);
+        self.views.insert(id, view);
+    }
+
+    /// Adds window `id`'s view to the engine, at its configured size.
+    fn add_to_engine(&mut self, id: i64) {
+        let (Some(engine), Some(events), Some(view)) =
+            (&self.engine, &self.view_events, self.views.get_mut(&id))
+        else {
+            return;
+        };
+        view.adding = true;
+        let events = events.clone();
+        let added = engine.add_view(
+            id,
+            view.physical(),
+            f64::from(view.scale.max(1)),
+            move |added| {
+                let _ = events.send(ViewEvent::Added(id, added));
+            },
+        );
+        if let Err(err) = added {
+            warn!("window {id}: {err}");
+            view.adding = false;
+            if let Some(handle) = view.open_reply.take() {
+                let _ =
+                    engine.respond(handle, &crate::text_input::success(serde_json::Value::Null));
+            }
+            self.forget_view(id);
+        }
+    }
+
+    /// The engine thread's news about a view.
+    fn view_event(&mut self, event: ViewEvent) {
+        match event {
+            ViewEvent::Added(id, added) => {
+                let Some(view) = self.views.get_mut(&id) else {
+                    return;
+                };
+                view.adding = false;
+                view.added = added;
+                if view.removing {
+                    // Closed while the engine was adding it.
+                    if added {
+                        self.remove_from_engine(id);
+                    } else {
+                        self.forget_view(id);
+                    }
+                    return;
+                }
+                let reply = view.open_reply.take();
+                let value = if added {
+                    serde_json::json!(id)
+                } else {
+                    serde_json::Value::Null
+                };
+                if let (Some(engine), Some(handle)) = (&self.engine, reply)
+                    && let Err(err) = engine.respond(handle, &crate::text_input::success(value))
+                {
+                    warn!("openWindow reply: {err}");
+                }
+                if added {
+                    self.send_metrics(id);
+                    if let Some(engine) = &self.engine {
+                        // The keyboard came to the window before its view existed.
+                        if self.keyboard_view == Some(id)
+                            && let Err(err) = engine.send_view_focus(id, true)
+                        {
+                            warn!("view focus: {err}");
+                        }
+                        if let Err(err) = engine.schedule_frame() {
+                            warn!("{err}");
+                        }
+                    }
+                } else {
+                    warn!("window {id}: the engine did not add its view");
+                    self.forget_view(id);
+                }
+            }
+            ViewEvent::Removed(id) => self.forget_view(id),
+            ViewEvent::CloseAnswered(id, handled) => {
+                if !handled {
+                    self.close_view(id);
+                }
+            }
+        }
+    }
+
+    /// The windows on screen other than `id` (the main one when not hidden; those being
+    /// removed do not count).
+    fn others_on_screen(&self, id: i64) -> usize {
+        self.views
+            .iter()
+            .filter(|(other, view)| {
+                **other != id
+                    && !view.removing
+                    && (**other != MAIN_VIEW || self.hidden_since.is_none())
+            })
+            .count()
+    }
+
+    /// Closes window `id`: its close button (after the app agreed, for a window other than
+    /// the main one), or the app's `closeWindow`. The app lifecycle covers every window
+    /// (APP-LC): only the last one on screen makes the app windowless, or ends it.
+    fn close_view(&mut self, id: i64) {
+        let Some(view) = self.views.get(&id) else {
+            return;
+        };
+        if view.removing || (id == MAIN_VIEW && self.hidden_since.is_some()) {
+            return;
+        }
+        let hideable = self.registration.is_some()
+            && self
+                .appearance_manager
+                .as_ref()
+                .is_some_and(|manager| wayland_client::Proxy::version(manager) >= 2);
+        let others = self.others_on_screen(id);
+        match views::closing(id, others, self.quit_with_last_window, hideable) {
+            Closing::Exit => self.exit = true,
+            Closing::HideMain { last } => self.hide_main(last),
+            Closing::Remove { last } => {
+                self.remove_view(id);
+                if last {
+                    self.became_windowless();
+                }
+            }
+        }
+    }
+
+    /// Window `id` goes: the engine drops its view first, then the window goes
+    /// (`forget_view`).
+    fn remove_view(&mut self, id: i64) {
+        let Some(view) = self.views.get_mut(&id) else {
+            return;
+        };
+        view.removing = true;
+        if let Some(handle) = view.open_reply.take()
+            && let Some(engine) = &self.engine
+        {
+            let _ = engine.respond(handle, &crate::text_input::success(serde_json::Value::Null));
+        }
+        match (view.added, view.adding) {
+            (true, _) => self.remove_from_engine(id),
+            // The engine is adding it: its Added event removes it.
+            (false, true) => {}
+            (false, false) => self.forget_view(id),
+        }
+    }
+
+    /// Asks the engine to remove view `id`; `forget_view` follows when it is done.
+    fn remove_from_engine(&mut self, id: i64) {
+        let (Some(engine), Some(events)) = (&self.engine, &self.view_events) else {
+            self.forget_view(id);
+            return;
+        };
+        let events = events.clone();
+        if let Err(err) = engine.remove_view(id, move |_| {
+            let _ = events.send(ViewEvent::Removed(id));
+        }) {
+            warn!("window {id}: {err}");
+            self.forget_view(id);
+        }
+    }
+
+    /// The window of view `id` goes, with its EGL surface and glass; the app learns it.
+    fn forget_view(&mut self, id: i64) {
+        if id == MAIN_VIEW {
+            return;
+        }
+        if let Some(gl) = self.engine.as_ref().and_then(Engine::gl) {
+            gl.remove_view(id);
+        }
+        self.glass.remove(id);
+        if let Some(mut view) = self.views.remove(&id) {
+            if let Some(object) = view.appearance.take() {
+                object.destroy();
+            }
+            info!("window {id} closed");
+        }
+        if self.pointer_view == id {
+            self.pointer_view = MAIN_VIEW;
+        }
+        if self.keyboard_view == Some(id) {
+            self.keyboard_view = None;
+        }
+        self.send_window_event("windowClosed", serde_json::json!({ "viewId": id }));
+        self.update_app_active();
+    }
+
+    /// A call to the app on `silica/window`.
+    fn send_window_event(&self, method: &str, args: serde_json::Value) {
+        if let Some(engine) = &self.engine
+            && let Err(err) = engine.send_message(WINDOW_CHANNEL, &crate::drag::call(method, args))
+        {
+            warn!("silica/window: {err}");
+        }
+    }
+
+    /// The close button of window `id` (not the main one): the app decides (`closeRequested`
+    /// answered true: it closes the window itself, after asking to save a draft); otherwise,
+    /// or with no answer, the window closes now.
+    fn request_close(&mut self, id: i64) {
+        let (Some(engine), Some(events)) = (&self.engine, &self.view_events) else {
+            self.close_view(id);
+            return;
+        };
+        let events = events.clone();
+        let sent = engine.send_message_with_reply(
+            WINDOW_CHANNEL,
+            &crate::drag::call("closeRequested", serde_json::json!({ "viewId": id })),
+            move |reply| {
+                let handled = serde_json::from_slice::<serde_json::Value>(&reply)
+                    .ok()
+                    .and_then(|reply| reply.get(0).and_then(serde_json::Value::as_bool))
+                    .unwrap_or(false);
+                let _ = events.send(ViewEvent::CloseAnswered(id, handled));
+            },
+        );
+        if let Err(err) = sent {
+            warn!("closeRequested: {err}");
+            self.close_view(id);
         }
     }
 
@@ -908,8 +1320,10 @@ impl App {
                     .unwrap_or_default();
                 // A very long title from an app must not become a problem for Ossido.
                 let title: String = label.chars().take(256).collect();
-                self.surface.set_title(&title);
-                self.surface.commit();
+                if let Some(view) = self.views.get(&MAIN_VIEW) {
+                    view.surface.set_title(&title);
+                    view.surface.commit();
+                }
                 b"[null]".to_vec()
             }
             _ => Vec::new(),
@@ -1009,7 +1423,7 @@ impl App {
             use crate::app_lifecycle::{Request, answer, read_request};
             match read_request(&stream) {
                 Some(Request::Status) => {
-                    let status = if self.hidden_since.is_some() {
+                    let status = if self.windowless() {
                         "hidden"
                     } else {
                         "visible"
@@ -1035,33 +1449,46 @@ impl App {
         }
     }
 
-    /// The app's last window closes (#142, APP-LC): the window goes away and the app keeps
-    /// running with no window, unless it ends with its last window (single-window apps such
-    /// as Calculator) or the system cannot hide it. The app learns it (`lastWindowClosed`)
-    /// and tears the closed window's content down: a reopen builds a new window, it does not
-    /// bring the old one back (that would be minimizing).
-    fn close_last_window(&mut self) {
-        let hideable = self.registration.is_some()
-            && self
-                .appearance_manager
-                .as_ref()
-                .is_some_and(|manager| wayland_client::Proxy::version(manager) >= 2);
-        if self.quit_with_last_window || !hideable {
-            self.exit = true;
-            return;
-        }
-        let (Some(manager), Shell::Window(window)) = (&self.appearance_manager, &self.surface)
+    /// No window of the app is on screen (the main one hidden, no other one open).
+    fn windowless(&self) -> bool {
+        self.hidden_since.is_some() && self.others_on_screen(MAIN_VIEW) == 0
+    }
+
+    /// The main window closes (#142, APP-LC): it goes away (hidden: the engine's implicit
+    /// view stays) and the app keeps running. When it was the `last` window on screen the
+    /// app becomes windowless (`became_windowless`).
+    fn hide_main(&mut self, last: bool) {
+        let Some(View {
+            surface: Shell::Window(window),
+            appearance,
+            activated,
+            ..
+        }) = self.views.get_mut(&MAIN_VIEW)
         else {
             self.exit = true;
             return;
         };
-        let object = self
-            .appearance
-            .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
-        object.set_hidden(1);
+        if let Some(manager) = &self.appearance_manager {
+            let object = appearance
+                .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+            object.set_hidden(1);
+        }
+        *activated = Some(false);
         self.hidden_since = Some(std::time::Instant::now());
         self.show_pending = false;
-        self.activated = Some(false);
+        self.send_window_event("windowClosed", serde_json::json!({ "viewId": MAIN_VIEW }));
+        if last {
+            self.became_windowless();
+        } else {
+            self.update_app_active();
+        }
+    }
+
+    /// The last window on screen closed (APP-LC): the app keeps running with no window. It
+    /// learns it (`lastWindowClosed`) and tears the closed window's content down: a reopen
+    /// builds a new window, it does not bring the old one back (that would be minimizing).
+    fn became_windowless(&mut self) {
+        self.app_active = Some(false);
         self.send_lifecycle(false);
         self.send_app("lastWindowClosed", serde_json::json!({}));
         // A few frames while hidden, so the app can drop the closed window's content.
@@ -1069,6 +1496,19 @@ impl App {
             self.free_run(TEARDOWN);
         }
         info!("{}: last window closed, the app keeps running", self.app_id);
+    }
+
+    /// `flutter/lifecycle` follows the app: resumed while one of its windows is active.
+    fn update_app_active(&mut self) {
+        let active = self.views.iter().any(|(id, view)| {
+            view.activated == Some(true) && !view.removing && {
+                *id != MAIN_VIEW || self.hidden_since.is_none()
+            }
+        });
+        if self.app_active != Some(active) {
+            self.app_active = Some(active);
+            self.send_lifecycle(active);
+        }
     }
 
     /// Lets the engine draw for `span` while the window is hidden.
@@ -1088,7 +1528,7 @@ impl App {
     /// app only learns about it. With none, an app that answers reopen builds its new window
     /// and calls `openWindow`; any other app gets its hidden window back at once.
     fn reopen(&mut self) {
-        let windowless = self.hidden_since.is_some();
+        let windowless = self.windowless();
         if windowless && self.handles_reopen {
             if !self.show_pending {
                 self.show_pending = true;
@@ -1141,7 +1581,11 @@ impl App {
         }
         self.show_pending = false;
         self.free_run_until = None;
-        if let Some(object) = &self.appearance {
+        if let Some(object) = self
+            .views
+            .get(&MAIN_VIEW)
+            .and_then(|view| view.appearance.as_ref())
+        {
             object.set_hidden(0);
         }
         // The engine draws again: the vsync it was waiting for, then the frame callbacks.
@@ -1162,6 +1606,9 @@ impl App {
         else {
             return;
         };
+        if !self.windowless() {
+            return;
+        }
         if since.elapsed() >= limit {
             if let Some(registration) = &self.registration {
                 registration.park();
@@ -1211,9 +1658,7 @@ impl App {
             // The app closes its window itself (its last tab, its shell exited): as the
             // close button.
             Some("closeWindow") => {
-                if self.hidden_since.is_none() {
-                    self.close_last_window();
-                }
+                self.close_view(MAIN_VIEW);
                 crate::text_input::success(serde_json::Value::Null)
             }
             Some("isHidden") => {
@@ -1414,9 +1859,17 @@ impl App {
             let surface = self.compositor.create_surface(&self.qh);
             Some((surface, buffer, width, height, icon.hotspot))
         });
+        // The drag starts in the window under the pointer.
+        let Some(origin) = self
+            .views
+            .get(&self.pointer_view)
+            .or_else(|| self.views.get(&MAIN_VIEW))
+        else {
+            return reply(false);
+        };
         source.start_drag(
             device,
-            self.surface.wl_surface(),
+            origin.surface.wl_surface(),
             icon.as_ref().map(|(surface, ..)| surface),
             self.press_serial,
         );
@@ -1476,7 +1929,10 @@ impl App {
     /// The data of a drop has arrived: the URIs to the app, then the offer closes.
     fn deliver_drop(&mut self, x: f64, y: f64, data: &[u8]) {
         let uris = crate::drag::parse_uri_list(data);
-        self.send_drag("drop", serde_json::json!({ "x": x, "y": y, "uris": uris }));
+        self.send_drag(
+            "drop",
+            serde_json::json!({ "x": x, "y": y, "uris": uris, "viewId": self.drag_view }),
+        );
         if let Some(offer) = self.dropped.take() {
             offer.finish();
             offer.destroy();
@@ -1526,6 +1982,9 @@ impl App {
             return Vec::new();
         };
         let args = call.get("args").cloned().unwrap_or(serde_json::Value::Null);
+        let Some(View { surface, .. }) = self.views.get(&MAIN_VIEW) else {
+            return Vec::new();
+        };
         let done = match call.get("method").and_then(serde_json::Value::as_str) {
             Some("setKeyboardInteractivity") => {
                 let mode = match args.get("mode").and_then(serde_json::Value::as_str) {
@@ -1533,7 +1992,7 @@ impl App {
                     Some("on-demand") => KeyboardInteractivity::OnDemand,
                     _ => KeyboardInteractivity::None,
                 };
-                match &self.surface {
+                match surface {
                     Shell::Layer(layer) => {
                         layer.set_keyboard_interactivity(mode);
                         true
@@ -1562,7 +2021,7 @@ impl App {
                         .filter(|v| v.is_finite())
                         .map(|v| v.round().clamp(0.0, 16384.0) as u32)
                 };
-                match (&self.surface, value("width"), value("height")) {
+                match (surface, value("width"), value("height")) {
                     (Shell::Layer(layer), Some(w), Some(h)) => {
                         layer.set_size(w, h);
                         true
@@ -1576,7 +2035,7 @@ impl App {
                     .and_then(serde_json::Value::as_f64)
                     .filter(|v| v.is_finite())
                     .map(|v| v.round().clamp(-1.0, 16384.0) as i32);
-                match (&self.surface, zone) {
+                match (surface, zone) {
                     (Shell::Layer(layer), Some(zone)) => {
                         layer.set_exclusive_zone(zone);
                         true
@@ -1587,12 +2046,12 @@ impl App {
             Some("setInputRegion") => match args.get("rects").and_then(serde_json::Value::as_array)
             {
                 None => {
-                    self.surface.wl_surface().set_input_region(None);
+                    surface.wl_surface().set_input_region(None);
                     true
                 }
                 Some(rects) => match self.region_from(rects) {
                     Some(region) => {
-                        self.surface
+                        surface
                             .wl_surface()
                             .set_input_region(Some(region.wl_region()));
                         true
@@ -1633,7 +2092,7 @@ impl App {
                                 if wayland_client::Proxy::version(manager) >= 7 =>
                             {
                                 manager.set_owned_transient(
-                                    self.surface.wl_surface(),
+                                    surface.wl_surface(),
                                     wl_region,
                                     owner.to_owned(),
                                     owner_rule,
@@ -1641,7 +2100,7 @@ impl App {
                                 );
                             }
                             _ => manager.set_transient(
-                                self.surface.wl_surface(),
+                                surface.wl_surface(),
                                 wl_region,
                                 outside("press"),
                                 outside("scroll"),
@@ -1658,7 +2117,7 @@ impl App {
                 .filter(|m| wayland_client::Proxy::version(*m) >= 6)
             {
                 Some(manager) => {
-                    manager.clear_transient(self.surface.wl_surface());
+                    manager.clear_transient(surface.wl_surface());
                     true
                 }
                 None => false,
@@ -1666,7 +2125,7 @@ impl App {
             _ => return Vec::new(),
         };
         if done {
-            self.surface.commit();
+            surface.commit();
         }
         text_input::success(serde_json::json!(done))
     }
@@ -1797,33 +2256,59 @@ impl App {
         }
     }
 
-    fn send_metrics(&self) {
-        let Some(engine) = &self.engine else {
+    /// The view whose window has `surface`.
+    fn view_of(&self, surface: &wl_surface::WlSurface) -> Option<i64> {
+        self.views
+            .iter()
+            .find(|(_, view)| view.surface.wl_surface() == surface)
+            .map(|(id, _)| *id)
+    }
+
+    /// Whether window `id` has shown a frame (software here, OpenGL or Vulkan in the engine).
+    fn view_presented(&self, id: i64) -> bool {
+        let Some(view) = self.views.get(&id) else {
+            return false;
+        };
+        if view.presented {
+            return true;
+        }
+        match &self.engine {
+            Some(engine) if self.gl && id == MAIN_VIEW => engine.gl_presented(),
+            Some(engine) if self.gl => engine.gl().is_some_and(|gl| gl.view_presented(id)),
+            _ => false,
+        }
+    }
+
+    fn send_metrics(&self, id: i64) {
+        let (Some(engine), Some(view)) = (&self.engine, self.views.get(&id)) else {
             return;
         };
-        let scale = u32::try_from(self.scale.max(1)).unwrap_or(1);
-        let (w, h) = (
-            self.size.0.saturating_mul(scale),
-            self.size.1.saturating_mul(scale),
-        );
+        if !view.added {
+            return;
+        }
+        let (w, h) = view.physical();
         // Before the first frame the EGL window takes the size at once (with d3d12 in WSL
         // Mesa applies a size only from the next buffer). Afterwards the raster thread
         // resizes it at the start of every frame, to that frame's size (`gl_fbo`; Vulkan
         // rebuilds its swapchain the same way): resizing it from here while a frame is being
         // drawn could reallocate the back buffer halfway through (a garbage frame, #160).
-        if !engine.gl_presented() {
+        if id == MAIN_VIEW && !engine.gl_presented() {
             engine.resize_surface(w, h);
         }
-        if let Err(err) = engine.send_window_metrics(w, h, f64::from(scale)) {
+        if let Err(err) = engine.send_window_metrics(id, w, h, f64::from(view.scale.max(1))) {
             warn!("{err}");
         }
     }
 
     fn send_pointer(&self, phase: PointerPhase, position: (f64, f64), scroll: Option<(f64, f64)>) {
-        let Some(engine) = &self.engine else {
+        let id = self.pointer_view;
+        let (Some(engine), Some(view)) = (&self.engine, self.views.get(&id)) else {
             return;
         };
-        let scale = f64::from(self.scale.max(1));
+        if !view.added {
+            return;
+        }
+        let scale = f64::from(view.scale.max(1));
         let event = PointerEvent {
             phase,
             x: position.0 * scale,
@@ -1831,18 +2316,32 @@ impl App {
             buttons: self.buttons,
             scroll: scroll.map(|(x, y)| (x * scale, y * scale)),
             timestamp_micros: engine.current_time() / 1000,
+            view_id: id,
         };
         if let Err(err) = engine.send_pointer(&event) {
             warn!("{err}");
         }
     }
 
-    /// The engine wants the next vsync: it arrives with the compositor's frame callback.
-    /// Before the first frame the compositor sends none, so it answers right away.
+    /// The windows on screen whose frame callbacks pace the engine.
+    fn pacing_views(&self) -> Vec<i64> {
+        self.views
+            .iter()
+            .filter(|(id, view)| {
+                view.added && !view.removing && (**id != MAIN_VIEW || self.hidden_since.is_none())
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// The engine wants the next vsync: it arrives with the compositor's frame callback of
+    /// a window on screen (the first that comes). Before a window's first frame the
+    /// compositor sends none, so it answers right away.
     fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
-        // A hidden window draws nothing (the engine waits until it comes back), except while
-        // the app tears down its closed window or builds the next one (#142).
-        if self.hidden_since.is_some() {
+        let pacing = self.pacing_views();
+        // No window on screen draws nothing (the engine waits until one comes back), except
+        // while the app tears down its closed window or builds the next one (#142).
+        if pacing.is_empty() {
             if self
                 .free_run_until
                 .is_some_and(|until| std::time::Instant::now() < until)
@@ -1853,21 +2352,28 @@ impl App {
             }
             return;
         }
-        let presented =
-            self.presented || (self.gl && self.engine.as_ref().is_some_and(Engine::gl_presented));
-        if !presented || !self.configured {
+        let ready = pacing.iter().all(|id| {
+            self.view_presented(*id) && self.views.get(id).is_some_and(|view| view.configured)
+        });
+        if !ready {
             self.answer_vsync(baton);
             return;
         }
         self.vsync = Some(baton);
-        // A frame callback already asked for (by the vsync or by the presentation) is enough.
-        if self.vsync_requested || self.waiting_frame {
-            return;
+        for id in pacing {
+            let Some(view) = self.views.get_mut(&id) else {
+                continue;
+            };
+            // A frame callback already asked for (by the vsync or by the presentation) is
+            // enough.
+            if view.vsync_requested || view.waiting_frame {
+                continue;
+            }
+            let surface = view.surface.wl_surface();
+            surface.frame(qh, surface.clone());
+            view.surface.commit();
+            view.vsync_requested = true;
         }
-        let surface = self.surface.wl_surface();
-        surface.frame(qh, surface.clone());
-        self.surface.commit();
-        self.vsync_requested = true;
     }
 
     fn answer_vsync(&self, baton: VsyncBaton) {
@@ -1880,27 +2386,33 @@ impl App {
         }
     }
 
-    /// Presents the last engine frame, if the compositor is ready to receive one.
-    fn present(&mut self, qh: &QueueHandle<Self>) {
-        if self.gl || self.waiting_frame || !self.configured {
+    /// Presents window `id`'s last software frame, if the compositor is ready for one.
+    fn present(&mut self, id: i64, qh: &QueueHandle<Self>) {
+        if self.gl {
             return;
         }
-        let Some(frame) = self.pending.take() else {
+        let Some(view) = self.views.get_mut(&id) else {
+            return;
+        };
+        if view.waiting_frame || !view.configured || !view.added {
+            return;
+        }
+        let Some(frame) = view.pending.take() else {
             return;
         };
         if drop_stale_frame(
             (frame.width, frame.height),
-            self.size,
-            self.scale,
-            self.stale_drops,
+            view.size,
+            view.scale,
+            view.stale_drops,
         ) {
-            self.stale_drops = self.stale_drops.saturating_add(1);
+            view.stale_drops = view.stale_drops.saturating_add(1);
             tracing::debug!(
-                "frame {}x{} dropped: the window is now {:?} at scale {}",
+                "frame {}x{} dropped: window {id} is now {:?} at scale {}",
                 frame.width,
                 frame.height,
-                self.size,
-                self.scale
+                view.size,
+                view.scale
             );
             if let Some(engine) = &self.engine
                 && let Err(err) = engine.schedule_frame()
@@ -1909,7 +2421,7 @@ impl App {
             }
             return;
         }
-        self.stale_drops = 0;
+        view.stale_drops = 0;
         let (Ok(width), Ok(height)) = (i32::try_from(frame.width), i32::try_from(frame.height))
         else {
             return;
@@ -1937,22 +2449,22 @@ impl App {
         }
 
         // The glass measured on this frame goes with its commit.
-        self.glass_sync.before_present(frame.raster_seq);
-        let surface = self.surface.wl_surface();
-        surface.set_buffer_scale(self.scale.max(1));
+        self.glass.before_present(id, frame.raster_seq);
+        let surface = view.surface.wl_surface();
+        surface.set_buffer_scale(view.scale.max(1));
         surface.damage_buffer(0, 0, width, height);
         surface.frame(qh, surface.clone());
         if let Err(err) = buffer.attach_to(surface) {
             warn!("buffer attach failed: {err}");
             return;
         }
-        self.surface.commit();
-        self.buffer = Some(buffer);
-        self.waiting_frame = true;
-        if !self.presented {
-            info!("first frame presented");
+        view.surface.commit();
+        view.buffer = Some(buffer);
+        view.waiting_frame = true;
+        if !view.presented {
+            info!("window {id}: first frame presented");
         }
-        self.presented = true;
+        view.presented = true;
     }
 }
 
@@ -1961,16 +2473,23 @@ impl CompositorHandler for App {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         factor: i32,
     ) {
-        if factor != self.scale && factor >= 1 {
-            self.scale = factor;
-            if self.gl {
+        let Some(id) = self.view_of(surface) else {
+            return;
+        };
+        let gl = self.gl;
+        let Some(view) = self.views.get_mut(&id) else {
+            return;
+        };
+        if factor != view.scale && factor >= 1 {
+            view.scale = factor;
+            if gl {
                 // It applies from the next commit, that is from the swap of the frame at the new size.
-                self.surface.wl_surface().set_buffer_scale(factor);
+                view.surface.wl_surface().set_buffer_scale(factor);
             }
-            self.send_metrics();
+            self.send_metrics(id);
         }
     }
 
@@ -1983,13 +2502,24 @@ impl CompositorHandler for App {
     ) {
     }
 
-    fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
-        self.waiting_frame = false;
-        self.vsync_requested = false;
+    fn frame(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+        let Some(id) = self.view_of(surface) else {
+            return;
+        };
+        if let Some(view) = self.views.get_mut(&id) {
+            view.waiting_frame = false;
+            view.vsync_requested = false;
+        }
         if let Some(baton) = self.vsync.take() {
             self.answer_vsync(baton);
         }
-        self.present(qh);
+        self.present(id, qh);
     }
 
     fn surface_enter(
@@ -2021,19 +2551,27 @@ impl OutputHandler for App {
 }
 
 impl App {
-    fn configured(&mut self, qh: &QueueHandle<Self>, size: (u32, u32)) {
-        let resized = size.0 > 0 && size.1 > 0 && size != self.size;
+    fn configured(&mut self, id: i64, qh: &QueueHandle<Self>, size: (u32, u32)) {
+        let Some(view) = self.views.get_mut(&id) else {
+            return;
+        };
+        let resized = size.0 > 0 && size.1 > 0 && size != view.size;
         if resized {
-            self.size = size;
+            view.size = size;
         }
-        self.configured = true;
+        view.configured = true;
+        // A new window's view joins the engine once it is configured, at its size.
+        if !view.added && !view.adding && !view.removing {
+            self.add_to_engine(id);
+            return;
+        }
         // The new size goes to the engine at once, and the frame for it starts now (#160):
         // the vsync waiting for the frame callback is answered without waiting for it.
-        self.send_metrics();
+        self.send_metrics(id);
         if resized && let Some(baton) = self.vsync.take() {
             self.answer_vsync(baton);
         }
-        self.present(qh);
+        self.present(id, qh);
     }
 }
 
@@ -2050,33 +2588,39 @@ impl LayerShellHandler for App {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
-        self.configured(qh, configure.new_size);
+        self.configured(MAIN_VIEW, qh, configure.new_size);
     }
 }
 
 impl WindowHandler for App {
-    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
-        self.close_last_window();
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
+        match self.view_of(window.wl_surface()) {
+            Some(MAIN_VIEW) => self.close_view(MAIN_VIEW),
+            Some(id) => self.request_close(id),
+            None => {}
+        }
     }
 
     fn configure(
         &mut self,
         _: &Connection,
         qh: &QueueHandle<Self>,
-        _: &Window,
+        window: &Window,
         configure: WindowConfigure,
         _: u32,
     ) {
+        let Some(id) = self.view_of(window.wl_surface()) else {
+            return;
+        };
         let size = match configure.new_size {
             (Some(w), Some(h)) => (w.get(), h.get()),
             _ => (0, 0),
         };
-        let active = configure.is_activated();
-        if self.activated != Some(active) {
-            self.activated = Some(active);
-            self.send_lifecycle(active);
+        if let Some(view) = self.views.get_mut(&id) {
+            view.activated = Some(configure.is_activated());
         }
-        self.configured(qh, size);
+        self.update_app_active();
+        self.configured(id, qh, size);
     }
 }
 
@@ -2176,9 +2720,11 @@ impl PointerHandler for App {
         events: &[SeatPointerEvent],
     ) {
         for event in events {
-            if &event.surface != self.surface.wl_surface() {
+            // Every event goes to the view of the window it happened in.
+            let Some(id) = self.view_of(&event.surface) else {
                 continue;
-            }
+            };
+            self.pointer_view = id;
             let position = event.position;
             match event.kind {
                 PointerEventKind::Enter { serial } => {
@@ -2267,11 +2813,21 @@ impl KeyboardHandler for App {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _: u32,
         _: &[u32],
         _: &[Keysym],
     ) {
+        // With several windows the framework moves its focus into the view with the keyboard
+        // (the Info window's field, not the main window's).
+        let id = self.view_of(surface);
+        self.keyboard_view = id;
+        if let (true, Some(id), Some(engine)) = (self.multi_view, id, &self.engine)
+            && self.views.get(&id).is_some_and(|view| view.added)
+            && let Err(err) = engine.send_view_focus(id, true)
+        {
+            warn!("view focus: {err}");
+        }
     }
 
     fn leave(
@@ -2279,7 +2835,7 @@ impl KeyboardHandler for App {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _: u32,
     ) {
         // Outside the window releases do not arrive: they are synthesized now.
@@ -2287,6 +2843,17 @@ impl KeyboardHandler for App {
         for event in self.keys.release_all(micros) {
             self.send_key(&event, None, None);
         }
+        if let (true, Some(id), Some(engine)) =
+            (self.multi_view, self.view_of(surface), &self.engine)
+            && self
+                .views
+                .get(&id)
+                .is_some_and(|view| view.added && !view.removing)
+            && let Err(err) = engine.send_view_focus(id, false)
+        {
+            warn!("view focus: {err}");
+        }
+        self.keyboard_view = None;
     }
 
     fn press_key(
@@ -2358,9 +2925,10 @@ impl DataDeviceHandler for App {
         y: f64,
         surface: &wl_surface::WlSurface,
     ) {
-        if surface != self.surface.wl_surface() {
+        let Some(id) = self.view_of(surface) else {
             return;
-        }
+        };
+        self.drag_view = id;
         let Some(offer) = self
             .data_device
             .as_ref()
@@ -2377,7 +2945,7 @@ impl DataDeviceHandler for App {
         offer.accept_mime_type(offer.serial, Some(crate::drag::URI_LIST.to_owned()));
         offer.set_actions(DndAction::Copy | DndAction::Move, DndAction::Copy);
         self.drag_in = true;
-        self.send_drag("enter", serde_json::json!({ "x": x, "y": y }));
+        self.send_drag("enter", serde_json::json!({ "x": x, "y": y, "viewId": id }));
     }
 
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
@@ -2388,7 +2956,10 @@ impl DataDeviceHandler for App {
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, x: f64, y: f64) {
         if self.drag_in {
-            self.send_drag("motion", serde_json::json!({ "x": x, "y": y }));
+            self.send_drag(
+                "motion",
+                serde_json::json!({ "x": x, "y": y, "viewId": self.drag_view }),
+            );
         }
     }
 

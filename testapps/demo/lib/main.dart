@@ -8,6 +8,12 @@
 //   otherwise [loDpi].
 // - At the top right a glass area ([glassSize], silica-glass-v1): the opaque background
 //   covers it, it is for the tests that read `glass.list`.
+// - F2 opens a second window ([secondTitle], [secondSize], silica-desktop#146) drawn in its
+//   own view, all [second] ([typed] once its own field holds the magic word): a tap in it
+//   closes it, and so does its close button (the app answers `closeRequested` and closes it
+//   itself).
+import 'dart:ui' show FlutterView;
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -20,6 +26,15 @@ const Color hiDpi = Color(0xFF00FF00);
 const double probeSize = 16;
 const String magicWord = 'word';
 const Size glassSize = Size(40, 20);
+const Color second = Color(0xFF8833AA);
+const String secondTitle = 'Second';
+const Size secondSize = Size(200, 120);
+
+/// The `silica/window` channel of the embedder (several windows).
+const MethodChannel windowChannel = MethodChannel(
+  'silica/window',
+  JSONMethodCodec(),
+);
 
 void main() => runApp(const DemoApp());
 
@@ -35,11 +50,53 @@ class _DemoAppState extends State<DemoApp> {
   final TextEditingController text = TextEditingController();
   final FocusNode textFocus = FocusNode();
 
+  /// The second window's view, while it is open.
+  FlutterView? secondView;
+
   @override
   void initState() {
     super.initState();
     text.addListener(() => setState(() {}));
     HardwareKeyboard.instance.addHandler(_onKey);
+    windowChannel.setMethodCallHandler(_onWindowCall);
+  }
+
+  Future<Object?> _onWindowCall(MethodCall call) async {
+    final args = call.arguments;
+    final id = args is Map ? args['viewId'] : null;
+    switch (call.method) {
+      case 'closeRequested':
+        // The app closes the window itself (it could ask to save first).
+        await _closeSecond(id);
+        return true;
+      case 'windowClosed':
+        if (id == secondView?.viewId) setState(() => secondView = null);
+    }
+    return null;
+  }
+
+  Future<void> _openSecond() async {
+    if (secondView != null) return;
+    final id = await windowChannel.invokeMethod<Object?>('openWindow', {
+      'title': secondTitle,
+      'width': secondSize.width,
+      'height': secondSize.height,
+      'minWidth': 150,
+      'minHeight': 100,
+      'parent': 0,
+    });
+    if (id is! int || !mounted) return;
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    setState(() {
+      for (final view in views) {
+        if (view.viewId == id) secondView = view;
+      }
+    });
+  }
+
+  Future<void> _closeSecond(Object? id) async {
+    if (id == null) return;
+    await windowChannel.invokeMethod<Object?>('closeWindow', {'viewId': id});
   }
 
   @override
@@ -57,6 +114,10 @@ class _DemoAppState extends State<DemoApp> {
       text.clear();
       return true;
     }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.f2) {
+      _openSecond();
+      return true;
+    }
     return false;
   }
 
@@ -67,6 +128,19 @@ class _DemoAppState extends State<DemoApp> {
 
   @override
   Widget build(BuildContext context) {
+    final view = secondView;
+    return ViewAnchor(
+      view: view == null
+          ? null
+          : View(
+              view: view,
+              child: SecondWindow(onTap: () => _closeSecond(view.viewId)),
+            ),
+      child: _main(context),
+    );
+  }
+
+  Widget _main(BuildContext context) {
     const white = Color(0xFFFFFFFF);
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -121,4 +195,56 @@ class _DemoAppState extends State<DemoApp> {
       ),
     );
   }
+}
+
+/// The second window's content: all [second], [typed] once its own field holds the magic
+/// word (the keyboard reaches the field of the window that has it); a tap calls [onTap].
+class SecondWindow extends StatefulWidget {
+  const SecondWindow({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<SecondWindow> createState() => _SecondWindowState();
+}
+
+class _SecondWindowState extends State<SecondWindow> {
+  final TextEditingController text = TextEditingController();
+  final FocusNode focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    text.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    text.dispose();
+    focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.ltr,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      child: ColoredBox(
+        color: text.text == magicWord ? typed : second,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: EditableText(
+            controller: text,
+            focusNode: focus,
+            autofocus: true,
+            style: const TextStyle(fontSize: 14, color: Color(0xFFFFFFFF)),
+            cursorColor: const Color(0xFFFFFFFF),
+            backgroundCursorColor: const Color(0xFF000000),
+          ),
+        ),
+      ),
+    ),
+  );
 }

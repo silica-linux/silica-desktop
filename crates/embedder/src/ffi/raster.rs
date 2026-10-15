@@ -19,6 +19,8 @@ use super::bindings::{FlutterEngine, FlutterEngineResult, FlutterTask};
 use super::{RunTaskFn, TimeFn};
 
 type Hook = Box<dyn Fn(u64) + Send + Sync>;
+/// Called with the view and the raster task of a frame about to be presented.
+type PresentHook = Box<dyn Fn(i64, u64) + Send + Sync>;
 
 /// The longest a frame waits, before its present, for the platform tasks already posted (the
 /// glass regions Dart sent after drawing it, still to be taken in by the main thread).
@@ -32,7 +34,7 @@ pub struct FrameClock {
     running: AtomicU64,
     /// Called on the raster thread right before a frame of task `n` is presented (with GL and
     /// Vulkan the driver commits the surface during the present).
-    before_present: Hook,
+    before_present: PresentHook,
     /// Called on the raster thread after task `n` has run.
     after_task: Hook,
     /// Platform tasks due at once (not delayed) posted and run so far.
@@ -44,7 +46,7 @@ pub struct FrameClock {
 
 impl FrameClock {
     pub fn new(
-        before_present: impl Fn(u64) + Send + Sync + 'static,
+        before_present: impl Fn(i64, u64) + Send + Sync + 'static,
         after_task: impl Fn(u64) + Send + Sync + 'static,
     ) -> Self {
         Self {
@@ -101,14 +103,14 @@ impl FrameClock {
     /// after drawing this frame are usually posted already, but the main thread may not have
     /// taken them in yet: the present waits (at most [`PLATFORM_WAIT`]) until the platform
     /// tasks posted so far have run, so the frame's commit carries them.
-    pub(super) fn before_present(&self) {
+    pub(super) fn before_present(&self, view_id: i64) {
         if let Ok(platform) = self.platform.lock() {
             let posted = platform.0;
             let _ = self
                 .platform_ran
                 .wait_timeout_while(platform, PLATFORM_WAIT, |p| p.1 < posted);
         }
-        (self.before_present)(self.running());
+        (self.before_present)(view_id, self.running());
     }
 }
 

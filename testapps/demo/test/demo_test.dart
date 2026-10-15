@@ -44,4 +44,36 @@ void main() {
     await tester.pump();
     expect(probe().color, hiDpi);
   });
+
+  testWidgets('F2 asks the embedder for a second window', (tester) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async {
+        calls.add(call);
+        // No view to build in the test: the embedder could not open it.
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      ),
+    );
+    await tester.pumpWidget(const DemoApp());
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pump();
+    expect(calls.single.method, 'openWindow');
+    expect(calls.single.arguments, {
+      'title': secondTitle,
+      'width': secondSize.width,
+      'height': secondSize.height,
+      'minWidth': 150,
+      'minHeight': 100,
+      'parent': 0,
+    });
+    // The main window is unchanged.
+    expect(background(tester), idle);
+  });
 }
