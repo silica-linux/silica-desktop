@@ -25,6 +25,7 @@ mod pty;
 mod shell;
 mod termgrid;
 mod text_input;
+mod trace;
 mod window;
 
 use std::path::PathBuf;

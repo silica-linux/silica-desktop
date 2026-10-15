@@ -39,8 +39,12 @@ const SSH_PORT: u16 = 7998;
 const MONITOR_PORT: u16 = 7996;
 /// Ossido's control channel inside the guest (loopback only).
 const GUEST_CONTROL: u16 = 7991;
-/// Where the guest mounts the host's share.
+/// Where the guest mounts the host's share (9p, no page cache): the staging area of `deploy`.
 const GUEST_SHARE: &str = "/run/silica-dev";
+/// Where the session runs from: a copy of the share on the guest's disk (`sync_to_guest_disk`).
+/// Reading the apps, the engine and the icons over 9p made every launch seconds slower, and each
+/// 9p request waits for QEMU's main loop (see docs/vm.md, "Launch times").
+const GUEST_RUN: &str = "/var/lib/silica-dev";
 /// The title of the VM's window.
 const TITLE: &str = "Silica OS (dev)";
 /// The user the image logs in automatically (silica-os, AUTOLOGIN_USER).
@@ -720,7 +724,7 @@ fn deploy(args: &[String]) -> Result<()> {
     }
     // The shell's own applications (Apps, Screenshot).
     for (name, entry) in
-        crate::install::shell_entries(&root, &format!("{GUEST_SHARE}/bin/silica-action"))?
+        crate::install::shell_entries(&root, &format!("{GUEST_RUN}/bin/silica-action"))?
     {
         write(&share.join("share/applications").join(name), &entry)?;
     }
@@ -748,6 +752,7 @@ fn deploy(args: &[String]) -> Result<()> {
     write_executable(&share.join("bin/silica-app"), &silica_app_script())?;
     write_executable(&share.join("session.sh"), &session_script())?;
 
+    sync_to_guest_disk()?;
     prepare_guest_bus(&share)?;
 
     eprintln!("xtask: restarting the session in the guest");
@@ -755,7 +760,7 @@ fn deploy(args: &[String]) -> Result<()> {
     std::thread::sleep(Duration::from_secs(3));
     wait_control(Duration::from_secs(120))?;
     let check = ssh_output(&format!(
-        "pgrep -a ossido | grep -c '{GUEST_SHARE}/bin/ossido' || true"
+        "pgrep -a ossido | grep -c '{GUEST_RUN}/bin/ossido' || true"
     ))?;
     if check.trim() == "0" {
         return Err(
@@ -763,7 +768,7 @@ fn deploy(args: &[String]) -> Result<()> {
                 .to_owned(),
         );
     }
-    eprintln!("xtask: deployed: the session runs from {GUEST_SHARE}");
+    eprintln!("xtask: deployed: the session runs from {GUEST_RUN}");
     Ok(())
 }
 
@@ -773,6 +778,38 @@ pub(crate) fn sibling(name: &str) -> Option<PathBuf> {
     let next = root().ok()?.parent().map(|dir| dir.join(name));
     let home = std::env::var_os("HOME").map(|home| Path::new(&home).join("silica").join(name));
     next.into_iter().chain(home).find(|dir| dir.is_dir())
+}
+
+/// Makes `GUEST_RUN` match the share, on the guest's disk, copying only what changed (size or
+/// modification time) and removing what the share no longer has: an incremental copy like
+/// `rsync -a --delete`, which the image does not ship. Runs in the guest, reading the share once
+/// (sequential reads over 9p are fast; the many small random requests of a launch are not).
+/// A file in use is unlinked before the new one is written, so running programs keep theirs.
+fn sync_to_guest_disk() -> Result<()> {
+    let script = format!(
+        r#"set -e
+export LC_ALL=C
+S={GUEST_SHARE}; L={GUEST_RUN}
+install -d "$L"
+T=$(mktemp -d)
+list() {{ (cd "$1" && find . \( -type f -o -type l \) -printf '%p\t%s\t%T@\t%l\n' | sort); }}
+list "$S" > "$T/src"
+list "$L" > "$T/dst"
+comm -23 "$T/src" "$T/dst" | cut -f1 > "$T/copy"
+comm -13 <(cut -f1 "$T/src" | sort) <(cut -f1 "$T/dst" | sort) > "$T/stale"
+(cd "$L" && xargs -r -d '\n' rm -f -- < "$T/stale")
+(cd "$S" && xargs -r -d '\n' cp -a --parents --remove-destination -t "$L" -- < "$T/copy")
+find "$L" -mindepth 1 -depth -type d -empty -delete
+# The share is mounted as bin_t: the copy gets the same label.
+chcon -R -t bin_t "$L" 2>/dev/null || true
+echo "$(wc -l < "$T/copy") files copied, $(wc -l < "$T/stale") removed"
+rm -rf "$T"
+"#
+    );
+    eprint!("xtask: copying the share to {GUEST_RUN} in the guest: ");
+    let out = ssh_output(&script)?;
+    eprintln!("{}", out.trim());
+    Ok(())
 }
 
 /// The D-Bus services of the image that the share replaces: (bus name, binary in the share).
@@ -786,7 +823,7 @@ const DEV_SERVICES: [(&str, &str); 2] = [
 /// activating the name while the dev daemon does not own it (a session restart) starts an old
 /// daemon from /usr/libexec/silica.
 fn dev_service_file(name: &str, binary: &str) -> String {
-    format!("[D-BUS Service]\nName={name}\nExec={GUEST_SHARE}/bin/{binary}\n")
+    format!("[D-BUS Service]\nName={name}\nExec={GUEST_RUN}/bin/{binary}\n")
 }
 
 /// Makes the guest's bus activate the share's services instead of the packaged ones, and stops
@@ -855,11 +892,8 @@ fn deploy_app(app: &Path, share: &Path) -> Result<()> {
         let text = std::fs::read_to_string(&template)
             .map_err(|e| format!("{}: {e}", template.display()))?;
         let entry = text
-            .replace("@EMBEDDER@", &format!("{GUEST_SHARE}/bin/silica-app"))
-            .replace(
-                "@BUNDLE@",
-                &format!("{GUEST_SHARE}/apps/{id}/flutter_assets"),
-            );
+            .replace("@EMBEDDER@", &format!("{GUEST_RUN}/bin/silica-app"))
+            .replace("@BUNDLE@", &format!("{GUEST_RUN}/apps/{id}/flutter_assets"));
         write(&share.join("share/applications").join(name), &entry)?;
         eprintln!("xtask: {id}");
     }
@@ -874,6 +908,14 @@ fn replace_file(from: &Path, to: &Path) -> Result<()> {
     let staged = to.with_extension("new");
     std::fs::copy(from, &staged)
         .map_err(|e| format!("{} → {}: {e}", from.display(), staged.display()))?;
+    // The same modification time as the source: an unchanged binary is not copied again into
+    // the guest's disk (`sync_to_guest_disk`).
+    if let Ok(modified) = std::fs::metadata(from).and_then(|m| m.modified()) {
+        let _ = std::fs::File::options()
+            .write(true)
+            .open(&staged)
+            .and_then(|file| file.set_modified(modified));
+    }
     std::fs::rename(&staged, to).map_err(|e| format!("{}: {e}", to.display()))
 }
 
@@ -898,7 +940,8 @@ fn swap_dir(staged: &Path, to: &Path) -> Result<()> {
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     let mut cp = Command::new("cp");
-    cp.arg("-rL").arg(from).arg(to);
+    // -p keeps the modification times: `sync_to_guest_disk` copies only what differs.
+    cp.arg("-rLp").arg(from).arg(to);
     if let Some(dir) = to.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
@@ -929,7 +972,7 @@ fn silica_app_script() -> String {
     format!(
         "#!/bin/sh\n\
          # Generated by `cargo xtask os deploy`: the embedder of the share with its engine.\n\
-         exec {GUEST_SHARE}/bin/silica-embedder --engine {GUEST_SHARE}/engine \\\n\
+         exec {GUEST_RUN}/bin/silica-embedder --engine {GUEST_RUN}/engine \\\n\
          \x20 --renderer \"${{SILICA_RENDERER:-vulkan}}\" \"$@\"\n"
     )
 }
@@ -938,12 +981,12 @@ fn silica_app_script() -> String {
 /// started by the hook in 50-dev.env, after the environment files were read.
 fn session_script() -> String {
     let components = crate::shell_component_args(
-        &format!("{GUEST_SHARE}/bin/silica-app"),
-        &format!("{GUEST_SHARE}/shell/flutter_assets"),
+        &format!("{GUEST_RUN}/bin/silica-app"),
+        &format!("{GUEST_RUN}/shell/flutter_assets"),
     );
     let desktop = crate::desktop_component_args(
-        &format!("{GUEST_SHARE}/bin/silica-app"),
-        &format!("{GUEST_SHARE}/apps/dev.frascella.Mustache/flutter_assets"),
+        &format!("{GUEST_RUN}/bin/silica-app"),
+        &format!("{GUEST_RUN}/apps/dev.frascella.Mustache/flutter_assets"),
     );
     let spawn: String = components
         .chunks(2)
@@ -958,9 +1001,12 @@ fn session_script() -> String {
     format!(
         r#"#!/bin/sh
 # Generated by `cargo xtask os deploy`: the Silica session from the host's share
-# ({GUEST_SHARE}), started by /etc/silica/session.env.d/50-dev.env instead of the installed
-# one. Same structure as silica-session (silica-packages).
-D={GUEST_SHARE}
+# ({GUEST_SHARE}, copied to {GUEST_RUN} on the guest's disk), started by
+# /etc/silica/session.env.d/50-dev.env instead of the installed one. Same structure as
+# silica-session (silica-packages).
+D={GUEST_RUN}
+# No copy yet (deploy syncs it before the restart): run from the share itself.
+[ -x "$D/bin/ossido" ] || D={GUEST_SHARE}
 exec >>"${{XDG_RUNTIME_DIR:-/tmp}}/silica-session.log" 2>&1
 echo "silica-session (dev): $(date)"
 export SILICA_RENDERER="${{SILICA_RENDERER:-vulkan}}"
@@ -972,6 +1018,9 @@ export XDG_DATA_DIRS="$D/share:${{XDG_DATA_DIRS:-/usr/local/share:/usr/share}}"
 # Pointer cursors: the standard Adwaita XCursor theme, for Ossido and for the apps (GTK, Qt,
 # the embedder).
 export XCURSOR_THEME=Adwaita XCURSOR_SIZE=24
+# Reads the engine and the apps once, in the background, so that the first launch of each does
+# not wait for the disk (a cold launch takes 1 to 2 s more than a warm one).
+(nice -n 19 find "$D/engine" "$D/apps" "$D/bin" -type f -exec cat {{}} + >/dev/null 2>&1 &)
 
 set -- \
 {spawn}
@@ -1051,24 +1100,28 @@ mod tests {
         let file = dev_service_file("dev.frascella.Silica", "silica-daemon");
         assert_eq!(
             file,
-            "[D-BUS Service]\nName=dev.frascella.Silica\nExec=/run/silica-dev/bin/silica-daemon\n"
+            "[D-BUS Service]\nName=dev.frascella.Silica\nExec=/var/lib/silica-dev/bin/silica-daemon\n"
         );
         assert!(!file.contains("/usr/libexec"));
     }
 
     #[test]
-    fn session_runs_from_the_share() {
+    fn session_runs_from_the_local_copy() {
         let script = session_script();
         assert!(script.contains("exec \"$D/bin/ossido\" $OSSIDO_ARGS"));
         assert!(
-            script
-                .contains("--namespace dock --dart-arg dock /run/silica-dev/shell/flutter_assets")
+            script.contains(
+                "--namespace dock --dart-arg dock /var/lib/silica-dev/shell/flutter_assets"
+            )
         );
         assert!(script.contains("SILICA_ICONS_DIR"));
+        // Before the first copy it falls back to the share.
+        assert!(script.contains("D=/var/lib/silica-dev"));
+        assert!(script.contains("|| D=/run/silica-dev"));
         // The file manager's desktop, kept running, when Mustache is deployed (#147).
-        assert!(script.contains("--keep-shell '/run/silica-dev/bin/silica-app --layer bottom"));
+        assert!(script.contains("--keep-shell '/var/lib/silica-dev/bin/silica-app --layer bottom"));
         assert!(script.contains(
-            "--namespace desktop-icons:dev.frascella.Mustache --dart-arg --desktop /run/silica-dev/apps/dev.frascella.Mustache/flutter_assets"
+            "--namespace desktop-icons:dev.frascella.Mustache --dart-arg --desktop /var/lib/silica-dev/apps/dev.frascella.Mustache/flutter_assets"
         ));
     }
 }

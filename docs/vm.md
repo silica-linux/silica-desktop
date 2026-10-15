@@ -102,7 +102,7 @@ How it works, without root on the host and without changing the image:
   through an SSH tunnel (guest 7991: SELinux keeps socket proxies from binding a port),
   QEMU's monitor on 127.0.0.1:7996. Never 7979/7980, the sessions on the host.
 - **The share.** `~/build/silica-os-dev/share` is mounted read-only with 9p on
-  `/run/silica-dev`: `bin/` (Ossido, embedder, services, CLI), `engine/`, `shell/`, `apps/`,
+  `/run/silica-dev` (staging; the session runs from its copy): `bin/` (Ossido, embedder, services, CLI), `engine/`, `shell/`, `apps/`,
   `share/applications/` (the apps' `.desktop` entries, before the installed ones), `icons/`
   (silica-icons) and `session.sh`. The hook in `50-dev.env` runs `session.sh` instead of the
   installed session when it exists; silica-session also has `SILICA_PREFIX` for the same.
@@ -116,6 +116,11 @@ How it works, without root on the host and without changing the image:
   by `silica`, reloads the user bus (`busctl --user call org.freedesktop.DBus /
   org.freedesktop.DBus ReloadConfig`) and kills the packaged daemons still running, found by
   exact command line with `pgrep -x -f` inside the guest only.
+- **Local copy.** `deploy` then copies the share onto the guest's disk, `/var/lib/silica-dev`
+  (incrementally: only files whose size or modification time changed, and it removes the ones
+  the share no longer has, like `rsync -a --delete`), and the session, the `.desktop` entries
+  and the D-Bus overrides run from there. The share stays the staging area (and the fallback
+  of `session.sh` before the first copy). See "Launch times".
 - **Binaries.** Built on the host: its glibc must not be newer than Fedora 44's (2.43),
   which `deploy` checks.
 - **Restart.** greetd logs in automatically only once per boot (its run file in `/run`):
@@ -135,3 +140,31 @@ The work directory is `~/build/silica-os-dev` (`SILICA_OS_DIR`).
   drawn yet). A glass change on a commit without a new buffer is a frame early or late: the
   embedder commits the glass regions with the frame they were measured on (`GlassSync` in
   `crates/embedder/src/glass.rs`).
+
+## Launch times
+
+Measured in the dev VM with Impeller on Vulkan (Venus), from the launch by Ossido to the first
+frame on screen (`perf.frames`, `startup_ms`), and in the embedder with
+`SILICA_STARTUP_TRACE=1` (one line per phase on stderr: process start, Wayland, renderer,
+engine library, AOT data, engine initialised, engine started, Dart's first frame request, first
+present; the platform messages are listed too, which dates what the app does in `main`).
+
+What decides the time:
+
+1. **The VM window must be visible.** With the QEMU window on another workspace (iconic, not
+   drawn) QEMU's main loop waits for the display, and everything that goes through it, the
+   virtio-gpu commands of Venus and every 9p request, is served in steps of about one second.
+   A launch then takes 2 to 15 s with stalls of whole seconds in random phases (Vulkan
+   initialisation, the Dart thread in `p9_client_rpc`, the first present). With
+   `cargo xtask os start --headless` (or the window in front) the same launches take 0.3 to
+   1 s. Measure with `--headless`.
+2. **9p.** The share is mounted without page cache: every launch reads the engine, `libapp.so`,
+   the assets, the icons (`SILICA_ICONS_DIR`) and the `.desktop` entries again, with many small
+   lookups (a Dart thread in `v9fs_vfs_lookup`). That is why `deploy` copies them to the disk.
+3. **Cold disk.** After `echo 3 > /proc/sys/vm/drop_caches` the same launch takes 1 to 3 s.
+
+Per phase, warm, headless, local copy (Clock, ms from process start): Wayland 2, renderer
+(Vulkan instance and device) 150 to 250 (GL: 45), engine library, AOT data and initialisation
+about 15, engine started +15, Dart `main` to the first frame request 30 to 150, first frame
+to present 40 to 120. Settings logs its own steps with `SETTINGS_STARTUP_LOG=1`: `main` to the
+first frame 63 ms.

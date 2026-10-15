@@ -398,6 +398,8 @@ unsafe extern "C" fn gl_make_resource_current(user_data: *mut c_void) -> bool {
 unsafe extern "C" fn gl_present(user_data: *mut c_void) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    crate::trace::mark_once(&FIRST, "first GL present");
     // The swap commits the surface: what goes with this frame is sent before it.
     callbacks.frames.before_present();
     callbacks.gl.as_ref().is_some_and(GlSurface::present)
@@ -487,6 +489,8 @@ unsafe extern "C" fn vulkan_present(
 ) -> bool {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    crate::trace::mark_once(&FIRST, "first Vulkan present");
     // The present commits the surface: what goes with this frame is sent before it.
     callbacks.frames.before_present();
     callbacks
@@ -498,6 +502,8 @@ unsafe extern "C" fn vulkan_present(
 unsafe extern "C" fn vsync(user_data: *mut c_void, baton: isize) {
     // SAFETY: user_data is the one passed to FlutterEngineRun (see `callbacks`).
     let callbacks = unsafe { callbacks(user_data) };
+    static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    crate::trace::mark_once(&FIRST, "first vsync request (Dart scheduled a frame)");
     if let Some(vsync) = &callbacks.vsync {
         vsync(VsyncBaton(baton));
     }
@@ -546,6 +552,9 @@ unsafe extern "C" fn platform_message(
         // SAFETY: message points to message_size valid bytes during the call; they are copied.
         unsafe { std::slice::from_raw_parts(message.message, message.message_size) }.to_vec()
     };
+    if crate::trace::enabled() {
+        crate::trace::mark(&format!("platform message {channel}"));
+    }
     let response =
         (!message.response_handle.is_null()).then_some(ResponseHandle(message.response_handle));
     (callbacks.platform_message)(PlatformMessage {
@@ -606,6 +615,7 @@ impl Engine {
         // initializers have no preconditions.
         let library = unsafe { FlutterEngineLib::new(config.library) }
             .map_err(|e| Error::Load(e.to_string()))?;
+        crate::trace::mark("engine library loaded");
         let api = Api {
             schedule_frame: symbol!(library, FlutterEngineScheduleFrame),
             on_vsync: symbol!(library, FlutterEngineOnVsync),
@@ -731,6 +741,7 @@ impl Engine {
             }
         };
 
+        crate::trace::mark("aot data ready");
         let mut strings = vec![
             c_path(config.assets)?,
             c_path(config.icu_data)?,
@@ -785,6 +796,7 @@ impl Engine {
                 &mut engine,
             )
         };
+        crate::trace::mark("engine initialized");
         let result = if result == FlutterEngineResult::kSuccess && !engine.is_null() {
             raster.set_engine(engine);
             // SAFETY: the engine was just initialized and has not run yet.

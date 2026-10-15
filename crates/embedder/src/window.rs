@@ -336,6 +336,7 @@ const TEARDOWN: Duration = Duration::from_millis(250);
 const BUILD_LIMIT: Duration = Duration::from_millis(500);
 
 pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
+    crate::trace::mark("run begin");
     for path in [&options.library, &options.icu_data] {
         if !path.exists() {
             return Err(format!("{} missing: run `cargo xtask engine`", path.display()).into());
@@ -369,6 +370,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         .insert(event_loop.handle())
         .map_err(|e| format!("Wayland source: {e}"))?;
 
+    crate::trace::mark("wayland connected");
     let compositor = CompositorState::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let surface = compositor.create_surface(&qh);
@@ -430,6 +432,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    crate::trace::mark("shell surface committed");
     let mut engine_args = options.engine_args.clone();
     // Vulkan with Impeller; if Vulkan is not there (or does not present on this surface) it
     // falls back to OpenGL ES with Impeller.
@@ -477,6 +480,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         Renderer::Software => None,
     };
+    crate::trace::mark("renderer ready");
     let gl_mode = gl.is_some() || vulkan.is_some();
 
     let (width, height) = options.size;
@@ -602,6 +606,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         })),
         frames,
     };
+    crate::trace::mark("engine run begin");
     let engine = Engine::run(
         &EngineConfig {
             library: &options.library,
@@ -613,6 +618,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         },
         callbacks,
     )?;
+    crate::trace::mark("engine run end");
     info!("engine started with {}", options.bundle.display());
 
     let mut app = App {
