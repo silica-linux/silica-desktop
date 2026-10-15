@@ -59,9 +59,9 @@ void main() {
       expect(label.regions(), hasLength(2));
       expect(label.regions().last['material'], menu.regions().last['material']);
       expect(label.regions().first['radius'], labelHeight / 2);
-      // A label's glass profile (#168); the menu takes the material's default.
+      // A label's glass profile (#168); the menu declares its own (silica_ui >= 0.29).
       expect(label.regions().map((r) => r['profile']), everyElement('tooltip'));
-      expect(menu.regions().first.containsKey('profile'), isFalse);
+      expect(menu.regions().first['profile'], 'menu');
 
       // No background of its own: neither the gradient nor the border painter (the shadow is an
       // image, see CachedShadow).
