@@ -2,8 +2,10 @@
 // components that keep running while hidden (a closed Faro must take neither pointer
 // nor keyboard).
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+
+import 'shell_channel.dart';
 
 /// What the surfaces outside an open menu or panel receive (silica-shell-v1 `rule`,
 /// #149). Whatever the rule, the wheel never closes anything, and Ossido shows the arrow
@@ -94,27 +96,67 @@ const String systemOwner = '';
 /// (`desktop-icons:<app id>`), resolved by Ossido.
 const String desktopOwner = 'desktop-icons';
 
+/// The layer surface of a shell component. With one component per process there is one
+/// ([LayerControl.main]); when the shell draws its layers as views of one engine (#201) each
+/// component reaches its own through [LayerScope] ([LayerControl.of]), and the calls name
+/// its view.
+@immutable
 class LayerControl {
-  const LayerControl._();
+  const LayerControl._(this.viewId);
+
+  /// The layer of view `viewId` of this engine.
+  const LayerControl.forView(int this.viewId);
+
+  /// The process's only layer: calls without a view.
+  static const LayerControl main = LayerControl._(null);
+
+  /// The layer of the component `context` belongs to: [main] outside a [LayerScope]. It does
+  /// not depend on the scope, so it may be read in `initState`.
+  static LayerControl of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<LayerScope>()?.control ?? main;
+
+  /// The view of this layer, null for [main].
+  final int? viewId;
 
   static const MethodChannel channel = MethodChannel(
     'silica/layer',
     JSONMethodCodec(),
   );
 
+  /// The shell layers of this engine: view id → namespace (`menubar`, `dock`…), the ones the
+  /// engine has added so far. Empty outside Silica or with one layer per process.
+  static Future<Map<int, String>> views() async {
+    try {
+      final list = await channel.invokeMethod<Object?>('views');
+      return {
+        if (list is List)
+          for (final item in list)
+            if (item is Map &&
+                item['viewId'] is int &&
+                item['namespace'] is String)
+              item['viewId'] as int: item['namespace'] as String,
+      };
+    } on MissingPluginException {
+      return const {};
+    }
+  }
+
+  /// A press outside this layer's open menu or panel ended it (#149).
+  Stream<void> get transientDismissed =>
+      ShellChannel.instance.transientDismissedFor(viewId);
+
   /// `none`, `exclusive` or `on-demand`.
-  static Future<void> keyboard(String mode) =>
+  Future<void> keyboard(String mode) =>
       _call('setKeyboardInteractivity', {'mode': mode});
 
   /// The surface receives the pointer only in these rectangles; null: everywhere.
-  static Future<void> inputRegion(List<Rect>? rects) =>
-      _call('setInputRegion', {
-        'rects': rects == null
-            ? null
-            : [
-                for (final r in rects) [r.left, r.top, r.width, r.height],
-              ],
-      });
+  Future<void> inputRegion(List<Rect>? rects) => _call('setInputRegion', {
+    'rects': rects == null
+        ? null
+        : [
+            for (final r in rects) [r.left, r.top, r.width, r.height],
+          ],
+  });
 
   /// A menu or panel of this surface is open (silica-shell-v1 version 6, #149): with the
   /// input region as small as the menu, the windows below keep the pointer; Ossido sends
@@ -123,24 +165,27 @@ class LayerControl {
   /// `policy.owner` ([systemOwner]: none, [desktopOwner]: the desktop's app). False when
   /// Ossido does not support it: then the caller covers the screen to see the clicks
   /// outside.
-  static Future<bool> transient({
+  Future<bool> transient({
     List<Rect>? rects,
     TransientPolicy policy = TransientPolicy.menu,
     String owner = systemOwner,
   }) async {
     try {
-      return await channel.invokeMethod<bool>('setTransient', {
-            'rects': rects == null
-                ? null
-                : [
-                    for (final r in rects) [r.left, r.top, r.width, r.height],
-                  ],
-            'owner': owner,
-            'ownerRule': policy.owner.name,
-            'otherRule': policy.other.name,
-            'press': policy._press,
-            'scroll': policy._scroll,
-          }) ??
+      return await channel.invokeMethod<bool>(
+            'setTransient',
+            _args({
+              'rects': rects == null
+                  ? null
+                  : [
+                      for (final r in rects) [r.left, r.top, r.width, r.height],
+                    ],
+              'owner': owner,
+              'ownerRule': policy.owner.name,
+              'otherRule': policy.other.name,
+              'press': policy._press,
+              'scroll': policy._scroll,
+            }),
+          ) ??
           false;
     } on MissingPluginException {
       return false;
@@ -148,14 +193,14 @@ class LayerControl {
   }
 
   /// The menu or panel was closed by the shell itself (no `transientDismissed` follows).
-  static Future<void> clearTransient() => _call('clearTransient', {});
+  Future<void> clearTransient() => _call('clearTransient', {});
 
   /// Surface size in points; 0 follows the anchors (the width of the bar).
-  static Future<void> size(double width, double height) =>
+  Future<void> size(double width, double height) =>
       _call('setSize', {'width': width, 'height': height});
 
   /// The exclusive zone in points (the Dock gives its room back while it hides itself).
-  static Future<void> exclusiveZone(double zone) =>
+  Future<void> exclusiveZone(double zone) =>
       _call('setExclusiveZone', {'zone': zone});
 
   /// The screen size in points (null outside Silica or when unknown).
@@ -174,11 +219,35 @@ class LayerControl {
     return null;
   }
 
-  static Future<void> _call(String method, Map<String, Object?> args) async {
+  /// The call's arguments, with this layer's view when it has one.
+  Map<String, Object?> _args(Map<String, Object?> args) =>
+      viewId == null ? args : {...args, 'viewId': viewId};
+
+  Future<void> _call(String method, Map<String, Object?> args) async {
     try {
-      await channel.invokeMethod<Object?>(method, args);
+      await channel.invokeMethod<Object?>(method, _args(args));
     } on MissingPluginException {
       // Outside Silica (tests).
     }
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is LayerControl && other.viewId == viewId;
+
+  @override
+  int get hashCode => viewId.hashCode;
+
+  @override
+  String toString() => 'LayerControl(view: $viewId)';
+}
+
+/// The layer of the shell component below it (#201): [LayerControl.of].
+class LayerScope extends InheritedWidget {
+  const LayerScope({super.key, required this.control, required super.child});
+
+  final LayerControl control;
+
+  @override
+  bool updateShouldNotify(LayerScope oldWidget) => control != oldWidget.control;
 }

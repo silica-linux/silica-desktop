@@ -33,6 +33,7 @@ import '../l10n/l10n.dart';
 import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/layer_arbiter.dart';
+import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import 'files.dart';
 import 'selection.dart';
@@ -142,6 +143,9 @@ class _Shot {
 
 class ScreenshotLayerState extends State<ScreenshotLayer>
     with TickerProviderStateMixin {
+  /// The arbiter of this component's layer surface (#201).
+  late final LayerArbiter _arbiter;
+
   late final ScreenshotServices _services =
       widget.services ?? SystemScreenshotServices(entries: widget.entries);
   late final File _settingsFile =
@@ -206,6 +210,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   @override
   void initState() {
     super.initState();
+    _arbiter = LayerArbiter.of(LayerControl.of(context));
     _commands = ShellChannel.instance.commands.listen((id) {
       switch (id) {
         case 'screenshot.selection':
@@ -223,7 +228,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
 
   @override
   void dispose() {
-    LayerArbiter.instance.remove(this);
+    _arbiter.remove(this);
     _commands?.cancel();
     _drags?.cancel();
     ShellChannel.instance.states.removeListener(_statesChanged);
@@ -353,7 +358,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     } else {
       wish = const LayerWish.none();
     }
-    LayerArbiter.instance.set(this, wish);
+    _arbiter.set(this, wish);
   }
 
   /// Hides the tools, counts down the timer if asked (from the bar), waits for Ossido to

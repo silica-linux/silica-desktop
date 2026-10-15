@@ -200,7 +200,7 @@ fn run(args: &[String]) -> Result<()> {
 }
 
 /// The full shell: Ossido and the embedder in release, the shell bundle (built if
-/// missing), and the components as `--spawn-shell` arguments (wallpaper, menu bar, Dock,
+/// missing), and the shell as one `--keep-shell` process with every layer (wallpaper, menu bar, Dock,
 /// Faro, notifications, Control Center, app switcher).
 fn shell_components() -> Result<Vec<String>> {
     let root = root()?;
@@ -262,36 +262,28 @@ pub(crate) fn desktop_component_args(embedder: &str, bundle: &str) -> Vec<String
     ]
 }
 
-/// `--spawn-shell` arguments for every shell component: `embedder` is the embedder command
-/// with its options, `bundle` the shell's `flutter_assets`.
+/// The shell's layers, as the embedder's layer options: wallpaper, menu bar, Dock, Faro, app
+/// switcher, notifications, Control Center. The namespace names the component Dart draws.
+pub(crate) const SHELL_LAYERS: [&str; 7] = [
+    "--layer background --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --namespace wallpaper",
+    "--layer top --anchor top,left,right --size 1280x30 --exclusive-zone 30 --namespace menubar",
+    "--layer top --anchor left,right,bottom --size 1280x200 --exclusive-zone 84 --namespace dock",
+    "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro",
+    "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace switcher",
+    "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace notifications",
+    "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace controlcenter",
+];
+
+/// Ossido's arguments for the shell: one embedder process (#201) that draws every layer of
+/// [`SHELL_LAYERS`] as a view of one engine (`--view`), each its own layer surface. It is
+/// kept running (`--keep-shell`): if it crashes, Ossido starts it again. `embedder` is the
+/// embedder command with its options, `bundle` the shell's `flutter_assets`.
 pub(crate) fn shell_component_args(embedder: &str, bundle: &str) -> Vec<String> {
-    let components = [
-        format!(
-            "--layer background --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --namespace wallpaper --dart-arg wallpaper {bundle}"
-        ),
-        format!(
-            "--layer top --anchor top,left,right --size 1280x30 --exclusive-zone 30 --namespace menubar --dart-arg menubar {bundle}"
-        ),
-        format!(
-            "--layer top --anchor left,right,bottom --size 1280x200 --exclusive-zone 84 --namespace dock --dart-arg dock {bundle}"
-        ),
-        format!(
-            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro --dart-arg faro {bundle}"
-        ),
-        format!(
-            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace switcher --dart-arg switcher {bundle}"
-        ),
-        format!(
-            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace notifications --dart-arg notifications {bundle}"
-        ),
-        format!(
-            "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace controlcenter --dart-arg controlcenter {bundle}"
-        ),
-    ];
-    components
-        .iter()
-        .flat_map(|args| ["--spawn-shell".to_owned(), format!("{embedder} {args}")])
-        .collect()
+    let layers = SHELL_LAYERS.join(" --view ");
+    vec![
+        "--keep-shell".to_owned(),
+        format!("{embedder} {layers} --dart-arg shell {bundle}"),
+    ]
 }
 
 /// On WSL2 the `$XDG_RUNTIME_DIR/wayland-0` link to WSLg is sometimes missing: in that case

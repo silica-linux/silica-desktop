@@ -15,6 +15,7 @@ import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
+import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 
@@ -130,6 +131,9 @@ class ForceQuitLayer extends StatefulWidget {
 }
 
 class _ForceQuitLayerState extends State<ForceQuitLayer> {
+  /// The arbiter of this component's layer surface (#201).
+  late final LayerArbiter _arbiter;
+
   StreamSubscription<String>? _commands;
   bool _open = false;
   String? _chosen;
@@ -138,6 +142,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
   @override
   void initState() {
     super.initState();
+    _arbiter = LayerArbiter.of(LayerControl.of(context));
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'app.force_quit_panel') _show();
     });
@@ -146,7 +151,7 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
 
   @override
   void dispose() {
-    LayerArbiter.instance.remove(this);
+    _arbiter.remove(this);
     _commands?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
     _focus.dispose();
@@ -196,13 +201,13 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
       _open = true;
       _chosen = top?.appId;
     });
-    LayerArbiter.instance.set(this, const LayerWish.all());
+    _arbiter.set(this, const LayerWish.all());
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
   void _hide() {
     setState(() => _open = false);
-    LayerArbiter.instance.set(this, const LayerWish.none());
+    _arbiter.set(this, const LayerWish.none());
   }
 
   void _quit() {

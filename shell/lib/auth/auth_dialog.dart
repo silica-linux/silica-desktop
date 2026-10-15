@@ -29,6 +29,7 @@ import '../system/desktop_entries.dart';
 import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
+import '../system/layer_control.dart';
 import '../system/silica_icons.dart';
 
 const double authDialogWidth = 292;
@@ -170,6 +171,9 @@ class AuthLayer extends StatefulWidget {
 }
 
 class _AuthLayerState extends State<AuthLayer> {
+  /// The arbiter of this component's layer surface (#201).
+  late final LayerArbiter _arbiter;
+
   final List<AuthRequest> _queue = [];
   StreamSubscription<AuthRequest>? _requested;
   StreamSubscription<int>? _closed;
@@ -177,6 +181,7 @@ class _AuthLayerState extends State<AuthLayer> {
   @override
   void initState() {
     super.initState();
+    _arbiter = LayerArbiter.of(LayerControl.of(context));
     _requested = widget.source.requested.listen(_add);
     _closed = widget.source.closed.listen(_remove);
     widget.source.pending().then((list) => list.forEach(_add));
@@ -184,7 +189,7 @@ class _AuthLayerState extends State<AuthLayer> {
 
   @override
   void dispose() {
-    LayerArbiter.instance.remove(this);
+    _arbiter.remove(this);
     _requested?.cancel();
     _closed?.cancel();
     super.dispose();
@@ -203,7 +208,7 @@ class _AuthLayerState extends State<AuthLayer> {
   }
 
   void _arbitrate() {
-    LayerArbiter.instance.set(
+    _arbiter.set(
       this,
       _queue.isEmpty ? const LayerWish.none() : const LayerWish.all(),
     );

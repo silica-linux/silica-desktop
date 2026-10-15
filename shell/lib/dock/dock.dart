@@ -56,6 +56,9 @@ class LiveDock extends StatefulWidget {
 }
 
 class _LiveDockState extends State<LiveDock> {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   late final Map<String, DesktopEntry> _entries = loadDesktopEntries(
     locale: systemLanguage(),
   );
@@ -233,6 +236,7 @@ class _LiveDockState extends State<LiveDock> {
   @override
   void initState() {
     super.initState();
+    _layer = LayerControl.of(context);
     ShellChannel.instance.toplevels.addListener(_changed);
     AppRegistry.instance.apps.addListener(_changed);
     AppRegistry.instance.start();
@@ -258,7 +262,7 @@ class _LiveDockState extends State<LiveDock> {
   /// What the options ask of the compositor: the room the Dock keeps (none while it hides
   /// itself) and the minimize effect.
   void _applyOptions() {
-    LayerControl.exclusiveZone(_o.autohide ? 0 : backgroundHeight + bottomGap);
+    _layer.exclusiveZone(_o.autohide ? 0 : backgroundHeight + bottomGap);
     ShellChannel.instance.execute('window.minimize_effect', {
       'effect': _o.minimizeEffect.name,
     });
@@ -1007,6 +1011,9 @@ class Dock extends StatefulWidget {
 }
 
 class _DockState extends State<Dock> with TickerProviderStateMixin {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   late final Ticker _ticker = createTicker(_tick);
 
   /// The label: the item it belongs to and its opacity.
@@ -1221,12 +1228,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _layer = LayerControl.of(context);
     _syncSlots(first: true);
     HardwareKeyboard.instance.addHandler(_onKey);
     _fileDrags = SilicaDrag.events.listen(_fileDrag);
-    _dismissed = ShellChannel.instance.transientDismissed.listen(
-      (_) => _transientDismissed(),
-    );
+    _dismissed = _layer.transientDismissed.listen((_) => _transientDismissed());
     if (!_iconsReady) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _waitForIcons());
       _iconsTimeout = Timer(iconsWaitLimit, _showAtStart);
@@ -1774,8 +1780,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (height != size.height) LayerControl.size(0, height);
-      LayerControl.inputRegion(
+      if (height != size.height) _layer.size(0, height);
+      _layer.inputRegion(
         waiting
             ? const <Rect>[]
             : catchAll
@@ -1784,30 +1790,30 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             ? [bottomRow]
             : rects,
       );
-      LayerControl.keyboard(
-        menu == null && alert == null ? 'none' : 'exclusive',
-      );
+      _layer.keyboard(menu == null && alert == null ? 'none' : 'exclusive');
       if (open) {
         _transientActive = true;
         // INPUT-01 (c): a left click on the app that was active only makes it active again
         // (its caret does not move); elsewhere clicks, right clicks and the wheel pass.
-        LayerControl.transient(
-          rects: rects,
-          policy: TransientPolicy.dockMenu,
-          owner: ShellChannel.instance.frontmostAppId,
-        ).then((supported) {
-          // Older Ossido: from now on the surface covers the screen while something is open.
-          if (!supported && mounted && _transientSupported) {
-            setState(() {
-              _transientSupported = false;
-              _transientActive = false;
-              _layerState = '';
+        _layer
+            .transient(
+              rects: rects,
+              policy: TransientPolicy.dockMenu,
+              owner: ShellChannel.instance.frontmostAppId,
+            )
+            .then((supported) {
+              // Older Ossido: from now on the surface covers the screen while something is open.
+              if (!supported && mounted && _transientSupported) {
+                setState(() {
+                  _transientSupported = false;
+                  _transientActive = false;
+                  _layerState = '';
+                });
+              }
             });
-          }
-        });
       } else if (_transientActive) {
         _transientActive = false;
-        LayerControl.clearTransient();
+        _layer.clearTransient();
       }
     });
   }

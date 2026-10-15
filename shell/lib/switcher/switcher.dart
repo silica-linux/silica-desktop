@@ -228,6 +228,9 @@ class AppSwitcher extends StatefulWidget {
 }
 
 class _AppSwitcherState extends State<AppSwitcher> {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   late final SwitcherModel _model = SwitcherModel(entries: widget.entries);
   StreamSubscription<String>? _commands;
   StreamSubscription<SilicaDragEvent>? _drags;
@@ -240,8 +243,9 @@ class _AppSwitcherState extends State<AppSwitcher> {
   @override
   void initState() {
     super.initState();
-    LayerControl.inputRegion(const []);
-    LayerControl.keyboard('none');
+    _layer = LayerControl.of(context);
+    _layer.inputRegion(const []);
+    _layer.keyboard('none');
     _shell.toplevels.addListener(_toplevels);
     _shell.focused.addListener(_focused);
     _toplevels();
@@ -325,7 +329,7 @@ class _AppSwitcherState extends State<AppSwitcher> {
               .map((f) => Rect.fromLTWH(f.left, f.top, f.width, f.height))
               .toList();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) LayerControl.inputRegion(rects);
+      if (mounted) _layer.inputRegion(rects);
     });
   }
 

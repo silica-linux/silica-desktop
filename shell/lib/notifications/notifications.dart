@@ -285,6 +285,9 @@ class _BannerEntry {
 
 class _NotificationsLayerState extends State<NotificationsLayer>
     with SingleTickerProviderStateMixin {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   /// Opening and closing of the Center: the value is the elapsed time, relative to the
   /// duration of the current phase.
   late final AnimationController _center;
@@ -307,6 +310,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   @override
   void initState() {
     super.initState();
+    _layer = LayerControl.of(context);
     _center = AnimationController(vsync: this)
       ..addListener(() => setState(() {}));
     widget.source.addListener(_changed);
@@ -314,7 +318,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
     _commands = ShellChannel.instance.commands.listen((id) {
       if (id == 'notifications.toggle') _toggleCenter();
     });
-    _dismissed = ShellChannel.instance.transientDismissed.listen((_) {
+    _dismissed = _layer.transientDismissed.listen((_) {
       if (!_centerOpen) return;
       _dismissedAt = DateTime.now();
       _closeCenter();
@@ -422,10 +426,10 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   /// windows below keep their hover. Without that support the Center covers the screen.
   void _updateInput() {
     if (_centerOpen) {
-      LayerControl.keyboard('exclusive');
+      _layer.keyboard('exclusive');
       final size = _size;
       if (size == null) {
-        LayerControl.inputRegion(null);
+        _layer.inputRegion(null);
         return;
       }
       final left = size.width - columnMargin - columnWidth - 8;
@@ -435,26 +439,25 @@ class _NotificationsLayerState extends State<NotificationsLayer>
         size.width - left,
         size.height - barHeight,
       );
-      LayerControl.transient(
-        rects: [column],
-        policy: TransientPolicy.panel,
-      ).then((supported) {
+      _layer.transient(rects: [column], policy: TransientPolicy.panel).then((
+        supported,
+      ) {
         if (mounted && _centerOpen) {
-          LayerControl.inputRegion(supported ? [column] : null);
+          _layer.inputRegion(supported ? [column] : null);
         }
       });
       return;
     }
-    LayerControl.clearTransient();
-    LayerControl.keyboard('none');
+    _layer.clearTransient();
+    _layer.keyboard('none');
     final size = _size;
     if (_banners.isEmpty || size == null) {
-      LayerControl.inputRegion(const []);
+      _layer.inputRegion(const []);
       return;
     }
     // The column at the top right, with room for the close button.
     final left = size.width - columnMargin - columnWidth - 8;
-    LayerControl.inputRegion([
+    _layer.inputRegion([
       Rect.fromLTWH(left, barHeight, size.width - left, 260),
     ]);
   }
@@ -529,7 +532,7 @@ class _NotificationsLayerState extends State<NotificationsLayer>
                     onReply: (text) =>
                         widget.source.reply(banner.notification.id, text),
                     onReplyFocus: (focused) =>
-                        LayerControl.keyboard(focused ? 'exclusive' : 'none'),
+                        _layer.keyboard(focused ? 'exclusive' : 'none'),
                   ),
                 ),
           ],

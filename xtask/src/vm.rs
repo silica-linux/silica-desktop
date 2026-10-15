@@ -594,7 +594,7 @@ mod tests {
     fn the_session_script_starts_ossido_on_drm_with_the_shell() {
         let script = run_session_script();
         assert!(script.contains("--backend drm --control 7991"));
-        assert!(script.contains("--spawn-shell '/opt/silica/bin/silica-embedder"));
+        assert!(script.contains("--keep-shell '/opt/silica/bin/silica-embedder"));
         assert!(script.contains("--namespace dock"));
     }
 

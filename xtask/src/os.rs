@@ -1146,11 +1146,16 @@ mod tests {
         assert!(script.contains("\n\"$D/bin/ossido\" $OSSIDO_ARGS"));
         assert!(script.contains("systemctl --user start silica-session.target"));
         assert!(script.contains("systemctl --user stop silica-session.target"));
+        // The whole shell in one kept process (#201): one view per layer.
         assert!(
-            script.contains(
-                "--namespace dock --dart-arg dock /var/lib/silica-dev/shell/flutter_assets"
-            )
+            script.contains("--keep-shell '/var/lib/silica-dev/bin/silica-app --layer background")
         );
+        assert!(script.contains("--namespace menubar --view --layer top"));
+        assert!(script.contains(
+            "--namespace controlcenter --dart-arg shell /var/lib/silica-dev/shell/flutter_assets"
+        ));
+        assert_eq!(script.matches("--namespace ").count(), 8);
+        assert!(!script.contains("--spawn-shell"));
         assert!(script.contains("SILICA_ICONS_DIR"));
         // Before the first copy it falls back to the share.
         assert!(script.contains("D=/var/lib/silica-dev"));

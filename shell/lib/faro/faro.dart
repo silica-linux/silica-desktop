@@ -202,6 +202,9 @@ const double keycapRadius = 5.5;
 
 class _FaroState extends State<Faro>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  /// This component's layer surface (several share one engine, #201).
+  late final LayerControl _layer;
+
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode();
   StreamSubscription<String>? _commands;
@@ -470,6 +473,7 @@ class _FaroState extends State<Faro>
   @override
   void initState() {
     super.initState();
+    _layer = LayerControl.of(context);
     WidgetsBinding.instance.addObserver(this);
     // Dates of the rows ("today, 14:56") in every language of the shell.
     initializeDateFormatting();
@@ -489,16 +493,14 @@ class _FaroState extends State<Faro>
       if (id == 'faro.toggle') _toggle();
       if (id == 'launcher.toggle') _toggleLauncher();
     });
-    _dismissed = ShellChannel.instance.transientDismissed.listen(
-      (_) => _transientDismissed(),
-    );
+    _dismissed = _layer.transientDismissed.listen((_) => _transientDismissed());
     if (widget.startLauncher) {
       _showLauncher();
     } else if (widget.startOpen) {
       _show();
     } else {
-      LayerControl.inputRegion(const []);
-      LayerControl.keyboard('none');
+      _layer.inputRegion(const []);
+      _layer.keyboard('none');
     }
   }
 
@@ -572,12 +574,12 @@ class _FaroState extends State<Faro>
     _regionKey = key;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || !_open) return;
-      final supported = await LayerControl.transient(
+      final supported = await _layer.transient(
         rects: rects,
         policy: TransientPolicy.panel,
       );
       if (!mounted || !_open) return;
-      LayerControl.inputRegion(supported ? rects : null);
+      _layer.inputRegion(supported ? rects : null);
     });
   }
 
@@ -631,7 +633,7 @@ class _FaroState extends State<Faro>
     _launcherClock.forward(from: 0);
     // The region follows the panel from the first frame (_syncRegion); until then nothing.
     _regionKey = '';
-    LayerControl.keyboard('exclusive');
+    _layer.keyboard('exclusive');
   }
 
   void _show() {
@@ -657,7 +659,7 @@ class _FaroState extends State<Faro>
     _rates.load(onDone: _tick);
     _loadScope(_scope);
     _regionKey = '';
-    LayerControl.keyboard('exclusive');
+    _layer.keyboard('exclusive');
     _spreadDelay?.cancel();
     _engageTimer?.cancel();
     _spread.value = 0;
@@ -688,9 +690,9 @@ class _FaroState extends State<Faro>
     setState(() => _closing = true);
     _spreadDelay?.cancel();
     _engageTimer?.cancel();
-    LayerControl.keyboard('none');
-    LayerControl.clearTransient();
-    LayerControl.inputRegion(const []);
+    _layer.keyboard('none');
+    _layer.clearTransient();
+    _layer.inputRegion(const []);
     _regionKey = '';
     _fade.reverse();
     if (!_launcher) {
