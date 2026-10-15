@@ -20,7 +20,8 @@ use common::Headless;
 use common::client::{APP_ID, TestWindow};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    APP_MENU, APP_MENU_ACTIVATE, WINDOW_FOCUS, WINDOW_LIST, WindowInfo,
+    APP_HIDE, APP_HIDE_OTHERS, APP_MENU, APP_MENU_ACTIVATE, APP_SHOW_ALL, WINDOW_FOCUS,
+    WINDOW_LIST, WindowInfo,
 };
 use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
@@ -265,4 +266,74 @@ fn a_bad_model_disconnects_only_its_app() {
     // Ossido keeps going and still serves the good app's menus.
     let state = ossido.client().call(APP_MENU, Value::Null).unwrap();
     assert_ne!(state["serial"], 0, "{state}");
+}
+
+/// The windows on screen, top first, with the focused one marked.
+fn on_screen(ossido: &Headless) -> Vec<(String, bool)> {
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    list.into_iter()
+        .filter(|w| !w.minimized)
+        .map(|w| (w.title.unwrap_or_default(), w.focused))
+        .collect()
+}
+
+fn open_as(ossido: &Headless, app: &str, title: &str) -> TestWindow {
+    APP_ID.with(|id| *id.borrow_mut() = app.to_owned());
+    let window = TestWindow::open(&ossido.wayland, title);
+    APP_ID.with(|id| id.borrow_mut().clear());
+    window
+}
+
+#[test]
+fn hide_hide_others_and_show_all() {
+    let ossido = Headless::start("app-hide");
+    let _a1 = open_as(&ossido, "org.silica.A", "a1");
+    let _a2 = open_as(&ossido, "org.silica.A", "a2");
+    let _b = open_as(&ossido, "org.silica.B", "b");
+    let _c = open_as(&ossido, "org.silica.C", "c");
+    let mut client = ossido.client();
+
+    // C in front: Hide takes it off the screen and B comes to the front.
+    let hidden = client.call(APP_HIDE, Value::Null).unwrap();
+    assert_eq!(hidden, json!({"app_id": "org.silica.C", "hidden": 1}));
+    assert_eq!(
+        on_screen(&ossido),
+        [
+            ("b".to_owned(), true),
+            ("a2".to_owned(), false),
+            ("a1".to_owned(), false)
+        ]
+    );
+    // Hide Others with B in front: only B stays.
+    let others = client.call(APP_HIDE_OTHERS, Value::Null).unwrap();
+    assert_eq!(others["hidden"], 2);
+    assert_eq!(on_screen(&ossido), [("b".to_owned(), true)]);
+    // Show All: everything back, B still in front.
+    let shown = client.call(APP_SHOW_ALL, Value::Null).unwrap();
+    assert_eq!(shown["shown"], 3);
+    let windows = on_screen(&ossido);
+    assert_eq!(windows.len(), 4, "{windows:?}");
+    assert_eq!(windows[0], ("b".to_owned(), true));
+}
+
+#[test]
+fn a_window_of_a_hidden_app_brings_it_back() {
+    let ossido = Headless::start("app-unhide");
+    let _a1 = open_as(&ossido, "org.silica.A", "a1");
+    let _a2 = open_as(&ossido, "org.silica.A", "a2");
+    let _b = open_as(&ossido, "org.silica.B", "b");
+    let a1 = window_id(&ossido, "a1");
+    ossido
+        .client()
+        .call(APP_HIDE, json!({"app_id": "org.silica.A"}))
+        .unwrap();
+    assert_eq!(on_screen(&ossido), [("b".to_owned(), true)]);
+    ossido
+        .client()
+        .call(WINDOW_FOCUS, json!({"id": a1}))
+        .unwrap();
+    let windows = on_screen(&ossido);
+    assert_eq!(windows.len(), 3, "{windows:?}");
+    assert_eq!(windows[0], ("a1".to_owned(), true));
 }

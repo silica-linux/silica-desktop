@@ -222,6 +222,8 @@ class _MenuBarState extends State<MenuBar> {
         run: (id) => shell.execute(id),
         activateWindow: (id) => shell.activate(id),
         openUrl: (url) => shell.launch('xdg-open ${shellQuote(url)}'),
+        // Ossido hides apps (app.hide, app.hide_others, app.show_all).
+        systemHide: true,
       ),
     );
   }

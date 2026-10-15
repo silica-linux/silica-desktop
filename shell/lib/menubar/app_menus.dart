@@ -60,11 +60,15 @@ List<BarMenu> composeAppMenus(
   AppLocalizations? texts,
 }) {
   final l = texts ?? englishTexts;
-  final build = _Builder(l, appName, actions);
   final appMenu = menus.where((m) => m.role == 'app').firstOrNull;
+  // The name the app gives itself (localized by the app) also names the system items.
+  final name = appMenu == null || appMenu.label.isEmpty
+      ? appName
+      : appMenu.label;
+  final build = _Builder(l, name, actions);
   final out = <BarMenu>[
     BarMenu(
-      title: appMenu == null || appMenu.label.isEmpty ? appName : appMenu.label,
+      title: name,
       app: true,
       entries: appMenu == null
           ? build.entries(const [AppMenuItem(role: 'quit')])

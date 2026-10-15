@@ -355,6 +355,21 @@ void main() {
       expect(find.text('Scientific'), findsNothing);
     });
 
+    testWidgets('the app menu hides the app through Ossido', (tester) async {
+      await pumpBar(tester);
+      await tester.tapAt(tester.getCenter(find.text('Calculator').first));
+      await tester.pump();
+      expect(find.text(englishTexts.hideOthers), findsOneWidget);
+      expect(find.text(englishTexts.showAll), findsOneWidget);
+      await tester.tapAt(
+        tester.getCenter(find.text(englishTexts.hideApp('Calculator'))),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+      final run = calls.where((c) => c.method == 'execute');
+      expect((run.single.arguments as Map)['id'], 'app.hide');
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('updates live and falls back to the generic menus', (
       tester,
     ) async {

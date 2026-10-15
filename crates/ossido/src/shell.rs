@@ -128,6 +128,7 @@ impl State {
             .space
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
+            .chain(self.hidden_apps.windows())
             .find(|w| w.toplevel() == Some(surface))
         else {
             return;
@@ -149,10 +150,12 @@ impl State {
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
             .chain(self.hidden.iter().map(|(w, _)| w))
+            .chain(self.hidden_apps.windows())
             .find(|w| w.toplevel() == Some(surface))
             .cloned();
         if let Some(window) = &window {
             self.withdraw_toplevel(window);
+            self.forget_hidden_window(window);
         }
         self.minimized
             .retain(|(w, _)| w.toplevel() != Some(surface));
@@ -338,11 +341,14 @@ impl State {
             .space
             .elements()
             .chain(self.minimized.iter().map(|(w, _)| w))
+            .chain(self.hidden_apps.windows())
             .find(|w| toplevel_handle(w).is_some_and(|handle| handle.identifier() == identifier))
             .cloned();
         let Some(window) = window else {
             return;
         };
+        // A window of a hidden app: the whole app comes back.
+        self.unhide_for(&window);
         // Like a click on the app in the Dock (dock.md, D-03): all the app windows on screen
         // come forward in their order, with the requested one on top. A minimized window
         // comes back by itself (the Dock, if they are all minimized, asks for the last one).

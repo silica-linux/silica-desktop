@@ -138,6 +138,8 @@ pub struct State {
     /// Windows hidden by their app (its last window closed, the app still running, #142),
     /// with the position they come back to.
     pub hidden: Vec<crate::windows::Minimized>,
+    /// The windows of hidden apps (Hide, Hide Others; `app_hide.rs`).
+    pub hidden_apps: crate::app_hide::HiddenApps,
     /// The app that stays frontmost after closing its last window (#142, APP-LC): no window
     /// has the focus, the menu bar shows that app and Cmd+Q quits it. Cleared when a window
     /// takes the focus.
@@ -378,6 +380,7 @@ impl State {
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),
             hidden: Vec::new(),
+            hidden_apps: crate::app_hide::HiddenApps::default(),
             windowless_front: None,
             app_frames: crate::app_frames::AppFrames::default(),
             keeper: crate::keep::Keeper::default(),
