@@ -559,7 +559,7 @@ fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_
 }
 
 fn wait_for(ossido: &Headless, what: impl Fn(&PanoramaState) -> bool) -> PanoramaState {
-    for _ in 0..200 {
+    for _ in 0..1000 {
         let s = state(ossido);
         if what(&s) {
             return s;
@@ -627,4 +627,62 @@ fn a_space_closes_from_the_button_on_its_thumbnail() {
     assert_eq!(after.len(), 2);
     assert!(after[0].windows.contains(&red_id), "{after:?}");
     assert!(state(&ossido).open);
+}
+
+/// The bounding box of the red pixels.
+fn red_box(shot: &[u8]) -> Option<(u32, u32, u32, u32)> {
+    let mut found: Option<(u32, u32, u32, u32)> = None;
+    for y in 0..800 {
+        for x in 0..1280 {
+            let [r, g, b] = rgb_at(shot, f64::from(x), f64::from(y));
+            if r > 200 && g < 60 && b < 60 {
+                found = Some(match found {
+                    None => (x, y, x, y),
+                    Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
+                });
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_click_on_a_thumbnail_magnifies_that_space() {
+    // Slowed down x5 to catch the magnification.
+    let ossido = Headless::start_with("panorama-zoom", (1280, 800), &["--animation-scale", "5"]);
+    let _wallpaper = reference_gray(&ossido);
+    let size = (400, 300);
+    let _red = TestWindow::open_pixels(&ossido.wayland, "red", size, &solid(size, RED));
+    let mut c = ossido.client();
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    let red_id = windows(&ossido)[0].id;
+    c.call(
+        silica_control::commands::WINDOW_MOVE_TO_SPACE,
+        json!({"id": red_id, "index": 1}),
+    )
+    .unwrap();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
+        .unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    wait_for(&ossido, |s| s.progress >= 1.0);
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let s = wait_for(&ossido, |s| s.expansion >= 0.99);
+    let t = s.thumbnails[1];
+    c.call(
+        INPUT_CLICK,
+        json!({"x": t.x + t.width / 2.0, "y": t.y + t.height / 2.0}),
+    )
+    .unwrap();
+    // The space is the current one at once (no slide)...
+    assert!(spaces(&ossido)[1].active);
+    let shot = screenshot(&ossido);
+    // ...and its window starts small, near its thumbnail, growing to its place.
+    let (x0, y0, x1, _) = red_box(&shot).expect("the window of the space is not drawn");
+    assert!(x1 - x0 < 300, "not magnifying: {:?}", (x0, y0, x1));
+    assert!(y0 < 400, "not coming from the bar: {:?}", (x0, y0, x1));
+    wait_for(&ossido, |s| s.mode.is_none());
+    let shot = screenshot(&ossido);
+    let (x0, _, x1, _) = red_box(&shot).unwrap();
+    assert!(x1 - x0 >= 398, "not back to full size: {:?}", (x0, x1));
 }

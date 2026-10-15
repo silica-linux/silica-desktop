@@ -919,6 +919,8 @@ pub fn output_elements(
     // Panorama: the dragged window, the space thumbnails and the spaces bar, which comes
     // down over the fading menu bar.
     let mut bar_id: Option<Id> = None;
+    let mut zoom_wallpaper: Vec<OutputElement> = Vec::new();
+    let mut bar_behind: Option<OutputElement> = None;
     if let Some(panorama) = &context.panorama {
         let output_logical = output_size.to_f64().to_logical(scale);
         if let Some((window, rect)) = &panorama.drag
@@ -1011,6 +1013,34 @@ pub fn output_elements(
                 );
             }
         }
+        // The space magnifying out of its thumbnail: its desktop wallpaper, behind its
+        // windows (inserted with the wallpaper below).
+        if let Some((_, rect)) = panorama.zoom {
+            let s = rect.size.w / output_logical.w.max(1.0);
+            let cell = rect.to_physical_precise_round(scale);
+            let origin = rect.loc.to_physical_precise_round(scale);
+            for layer in layer_map.layers_on(Layer::Background).rev() {
+                let Some(drawn) = crate::layers::drawn_layer(&layer_map, layer, layers_output)
+                else {
+                    continue;
+                };
+                let location = origin + drawn.loc.to_f64().to_physical_precise_round(scale);
+                zoom_wallpaper.extend(
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(
+                        layer as &LayerSurface,
+                        renderer,
+                        location,
+                        scale.into(),
+                        1.0,
+                    )
+                    .into_iter()
+                    .filter_map(|surface| fit_into_thumbnail(surface, origin, s, cell, scale))
+                    .map(OutputElement::Thumbnail),
+                );
+            }
+        }
         if panorama.mode == crate::panorama::Mode::App {
             app_labels(renderer, &mut elements, panorama, scale);
         }
@@ -1023,6 +1053,7 @@ pub fn output_elements(
             thumbnails: panorama.thumbnail_rects.clone(),
             active: context.spaces.1,
             plus: panorama.plus,
+            hidden: panorama.zoom.map(|(index, _)| index),
             expansion: panorama.expansion,
             backdrop: context.clear_color.map(to_u8),
             labels: panorama.labels.clone(),
@@ -1033,11 +1064,18 @@ pub fn output_elements(
                 crate::panorama::bar_element(renderer, sprite, &look, panorama.progress, scale)
         {
             bar_id = Some(bar.id().clone());
-            elements.push(OutputElement::Texture(RescaleRenderElement::from_element(
+            let bar = OutputElement::Texture(RescaleRenderElement::from_element(
                 bar,
                 Point::default(),
                 1.0,
-            )));
+            ));
+            // A space magnifying out of its thumbnail comes out in front of the bar: the bar
+            // goes behind the windows, just above the wallpaper.
+            if panorama.zoom.is_some() {
+                bar_behind = Some(bar);
+            } else {
+                elements.push(bar);
+            }
         }
     }
     let top_start = elements.len();
@@ -1333,6 +1371,22 @@ pub fn output_elements(
         elements.insert(background_start, OutputElement::Blurred(blur));
         for anchor in &mut anchors {
             anchor.index = after_insert(anchor.index, background_start);
+        }
+    }
+    if let Some(bar) = bar_behind {
+        elements.insert(background_start, bar);
+        for anchor in &mut anchors {
+            anchor.index = after_insert(anchor.index, background_start);
+        }
+    }
+    // Above the blurred wallpaper, below the windows: the space magnifying out of its thumbnail.
+    let zoomed = zoom_wallpaper.len();
+    if zoomed > 0 {
+        elements.splice(background_start..background_start, zoom_wallpaper);
+        for anchor in &mut anchors {
+            for _ in 0..zoomed {
+                anchor.index = after_insert(anchor.index, background_start);
+            }
         }
     }
 

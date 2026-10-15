@@ -561,6 +561,8 @@ pub struct Panorama {
     pub close_press: Option<usize>,
     /// The "+" pressed (the space is added on release over it).
     pub plus_press: bool,
+    /// The space being magnified out of its thumbnail as Panorama closes, and the thumbnail.
+    pub zoom: Option<(usize, Rectangle<f64, Logical>)>,
     /// The time of the last frame.
     pub clock: Instant,
 }
@@ -604,6 +606,9 @@ pub struct PanoramaView {
     pub plus: bool,
     /// The close buttons showing.
     pub close_buttons: Vec<CloseButton>,
+    /// The space magnified out of its thumbnail (closing after a click on it): its index and
+    /// where its desktop is now.
+    pub zoom: Option<(usize, Rectangle<f64, Logical>)>,
     /// The dragged window and its frame at this moment.
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
     /// The label of each space.
@@ -882,11 +887,55 @@ impl State {
             rearm_until: None,
             close_press: None,
             plus_press: false,
+            zoom: None,
             clock: now,
         });
         if self.animation_speed <= 0.0 {
             self.advance_panorama(now);
         }
+    }
+
+    /// A click on a space thumbnail: that space becomes the current one at once (no slide) and
+    /// Panorama closes magnifying its thumbnail to the whole screen: its windows grow from
+    /// their place in the thumbnail to their place on the desktop. The curve is Panorama's
+    /// closing one (the magnification is not measured).
+    pub fn zoom_into_space(&mut self, index: usize, now: Instant) {
+        let Some(rect) = self.thumbnail_rects_now().get(index).copied() else {
+            return;
+        };
+        if index != self.workspaces.active {
+            self.switch_space(index, now);
+            self.settle_transition();
+        }
+        let output = self
+            .space
+            .output_geometry(&self.output)
+            .unwrap_or_default()
+            .to_f64();
+        let s = rect.size.w / output.size.w.max(1.0);
+        let placements: Vec<Placement> = self
+            .space
+            .elements()
+            .filter_map(|window| {
+                let geometry = self.space.element_geometry(window)?;
+                let from = crate::decorations::frame_of(window, geometry).to_f64();
+                let to = Rectangle::new(
+                    rect.loc + (from.loc - output.loc).upscale(s),
+                    from.size.upscale(s),
+                );
+                Some(Placement {
+                    window: window.clone(),
+                    from,
+                    to,
+                })
+            })
+            .collect();
+        if let Some(panorama) = self.panorama.as_mut() {
+            panorama.placements = placements;
+            panorama.zoom = Some((index, rect));
+            panorama.hover = None;
+        }
+        self.close_panorama(now, None);
     }
 
     /// Closes Panorama; with `focus` it brings that window to the front.
@@ -1032,7 +1081,9 @@ impl State {
             self.thumbnail_rects_now()
                 .into_iter()
                 .zip(self.space_contents())
-                .map(|(rect, windows)| Thumbnail {
+                .enumerate()
+                .filter(|(index, _)| panorama.zoom.is_none_or(|(zoomed, _)| zoomed != *index))
+                .map(|(_, (rect, windows))| Thumbnail {
                     rect: Rectangle::new(rect.loc + Point::from((0.0, lift)), rect.size),
                     windows,
                 })
@@ -1071,6 +1122,11 @@ impl State {
             drag,
             labels: self.space_labels(),
             plus: self.workspaces.count() < crate::workspaces::MAX_SPACES,
+            zoom: panorama.zoom.map(|(index, rect)| {
+                let output = self.output_size();
+                let full = Rectangle::from_size(output);
+                (index, lerp_rect(full, rect, panorama.progress))
+            }),
             close_buttons: self
                 .close_buttons()
                 .into_iter()
@@ -1270,14 +1326,16 @@ impl State {
                 }
                 return;
             }
-            let index = if expansion < THUMBS_FROM {
-                bar_items(&self.space_labels(), width)
-                    .iter()
-                    .find(|item| item.rect.contains(location))
-                    .map(|item| item.index)
-            } else {
-                self.thumbnail_at(location)
-            };
+            if expansion >= THUMBS_FROM {
+                if let Some(index) = self.thumbnail_at(location) {
+                    self.zoom_into_space(index, now);
+                }
+                return;
+            }
+            let index = bar_items(&self.space_labels(), width)
+                .iter()
+                .find(|item| item.rect.contains(location))
+                .map(|item| item.index);
             if let Some(index) = index {
                 self.close_panorama(now, None);
                 self.switch_space(index, now);
@@ -1473,6 +1531,8 @@ pub struct BarLook {
     pub active: usize,
     /// Whether the "+" shows.
     pub plus: bool,
+    /// A thumbnail not drawn (the one magnifying out of the bar).
+    pub hidden: Option<usize>,
     pub expansion: f64,
     /// Color of the thumbnails behind the wallpaper (the desktop's).
     pub backdrop: [u8; 4],
@@ -1497,8 +1557,9 @@ impl BarLook {
             .map(|r| format!("{:.1},{:.1},{:.1}", r.loc.x, r.loc.y, r.size.w))
             .collect();
         format!(
-            "{}:{}:{}:{}:{}:{:?}:{}",
+            "{}:{:?}:{}:{}:{}:{}:{:?}:{}",
             self.dark,
+            self.hidden,
             self.plus,
             thumbs.join(";"),
             self.active,
@@ -1579,6 +1640,9 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     let shown = (e - THUMBS_FROM) / (THUMBS_FULL - THUMBS_FROM);
     if shown > 0.0 {
         for (index, r) in look.thumbnails.iter().copied().enumerate() {
+            if look.hidden == Some(index) {
+                continue;
+            }
             let rect = [
                 r.loc.x as f32,
                 r.loc.y as f32,
