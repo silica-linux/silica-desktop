@@ -288,3 +288,121 @@ fn trackpad_gestures_run_their_commands() {
     assert_eq!(gesture(&mut c, spread), json!("desktop.show"));
     assert_eq!(state(&ossido).mode.as_deref(), Some("desktop"));
 }
+
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
+
+const GREEN: [u8; 4] = [0, 255, 0, 255];
+
+/// A desktop wallpaper (background layer) painted by `paint`.
+fn wallpaper(ossido: &Headless, paint: impl Fn(u32, u32, u32, u32) -> [u8; 4]) -> TestWindow {
+    TestWindow::open_layer(&ossido.wayland, Layer::Background, "wallpaper", None, paint)
+}
+
+fn rgb_at(shot: &[u8], x: f64, y: f64) -> [u8; 3] {
+    let [r, g, b, _] = pixel_in(shot, 1280, x as u32, y as u32);
+    [r, g, b]
+}
+
+#[test]
+fn the_wallpaper_of_a_space_fits_its_thumbnail() {
+    let ossido = Headless::start_with("panorama-thumb-wallpaper", (1280, 800), &[]);
+    // Left half red, right half blue.
+    let _wallpaper = wallpaper(&ossido, |x, _, w, _| if x < w / 2 { RED } else { BLUE });
+    let mut c = ossido.client();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let s = state(&ossido);
+    assert_eq!(s.expansion, 1.0);
+    let t = s.thumbnails[0];
+    let shot = screenshot(&ossido);
+    // The whole wallpaper, shrunk: red on the left of the thumbnail, blue on the right.
+    let middle = t.y + t.height / 2.0;
+    let left = rgb_at(&shot, t.x + t.width * 0.25, middle);
+    let right = rgb_at(&shot, t.x + t.width * 0.75, middle);
+    assert!(
+        left[0] > 200 && left[2] < 60,
+        "left of the thumbnail: {left:?}"
+    );
+    assert!(
+        right[2] > 200 && right[0] < 60,
+        "right of the thumbnail: {right:?}"
+    );
+    // Around it the bar, not the wallpaper at full size.
+    for (x, y) in [
+        (t.x + t.width + 40.0, middle),
+        (t.x - 40.0, middle),
+        (t.x + t.width / 2.0, 10.0),
+    ] {
+        let [r, g, b] = rgb_at(&shot, x, y);
+        assert!(
+            r.abs_diff(g) < 12 && g.abs_diff(b) < 12 && r > 120,
+            "bar at ({x}, {y}): {:?}",
+            [r, g, b]
+        );
+    }
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+}
+
+#[test]
+fn the_wallpaper_blurs_and_the_desktop_hides() {
+    let ossido = Headless::start_with("panorama-backdrop", (1280, 800), &[]);
+    // Black and white stripes 48 px wide.
+    let _wallpaper = wallpaper(&ossido, |x, _, _, _| {
+        if x % 96 < 48 {
+            [0, 0, 0, 255]
+        } else {
+            [255, 255, 255, 255]
+        }
+    });
+    // A desktop icon: a green square in the middle of the desktop layer.
+    let _icons = TestWindow::open_layer(
+        &ossido.wayland,
+        Layer::Bottom,
+        "desktop-icons:test",
+        None,
+        |x, y, w, h| {
+            if x.abs_diff(w / 2) < 50 && y.abs_diff(h / 2) < 50 {
+                GREEN
+            } else {
+                [0; 4]
+            }
+        },
+    );
+    let mut c = ossido.client();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 799}))
+        .unwrap();
+    let row = |shot: &[u8]| -> Vec<u8> {
+        (100..300)
+            .map(|x| rgb_at(shot, f64::from(x), 600.0)[0])
+            .collect()
+    };
+    let icon = |shot: &[u8]| rgb_at(shot, 640.0, 400.0);
+    let shot = screenshot(&ossido);
+    assert!(row(&shot).iter().any(|&v| v < 10) && row(&shot).iter().any(|&v| v > 245));
+    assert_eq!(icon(&shot), [0, 255, 0]);
+
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    assert_eq!(state(&ossido).progress, 1.0);
+    let shot = screenshot(&ossido);
+    // The stripes merge into grays: no black or white left.
+    let blurred = row(&shot);
+    assert!(
+        blurred.iter().all(|&v| (40..=215).contains(&v)),
+        "stripes still sharp: {blurred:?}"
+    );
+    // The desktop icons are gone: the blurred wallpaper shows in their place.
+    let [r, g, b] = icon(&shot);
+    assert!(
+        g.abs_diff(r) < 12 && g.abs_diff(b) < 12,
+        "desktop icon still visible: {:?}",
+        [r, g, b]
+    );
+
+    // Closed: sharp wallpaper and icons again.
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    assert!(!state(&ossido).open);
+    let shot = screenshot(&ossido);
+    assert!(row(&shot).iter().any(|&v| v < 10) && row(&shot).iter().any(|&v| v > 245));
+    assert_eq!(icon(&shot), [0, 255, 0]);
+}

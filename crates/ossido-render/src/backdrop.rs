@@ -13,7 +13,7 @@ use smithay::backend::renderer::gles::{
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::glass::render_to_texture;
+use crate::glass::{GlassPrograms, blur_texture, render_to_texture};
 
 /// Height of the effect: it disappears at y ≈ 115–120 pt.
 pub const HEIGHT_PT: f64 = 120.0;
@@ -205,6 +205,61 @@ impl RenderElement<GlesRenderer> for ToneElement {
             Some(&self.program),
             &uniforms,
         )
+    }
+}
+
+/// What the blurred backdrop was made from: the elements, the output area, the σ.
+type BlurSignature = (Signature, Rectangle<i32, Physical>, u64);
+
+/// The desktop wallpaper blurred as a whole, for the Panorama backdrop: it is redone only
+/// when the wallpaper (or the σ, or the output) changes, so opening Panorama costs one blur.
+#[derive(Default)]
+pub struct BlurredBackdrop {
+    state: RefCell<Option<(BlurSignature, GlesTexture, Id)>>,
+}
+
+impl BlurredBackdrop {
+    /// The blurred texture of `behind` (the desktop wallpaper, from the front) over the whole
+    /// output, with the element id to draw it with: a new id for every new texture, so the
+    /// damage tracker redraws it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn texture<E: RenderElement<GlesRenderer>>(
+        &self,
+        renderer: &mut GlesRenderer,
+        programs: &GlassPrograms,
+        behind: &[E],
+        output: Size<i32, Physical>,
+        scale: f64,
+        sigma_pt: f64,
+        clear_color: [f32; 4],
+    ) -> Result<(GlesTexture, Id), GlesError> {
+        let area = Rectangle::from_size(output);
+        let signature: BlurSignature = (
+            behind
+                .iter()
+                .filter(|e| e.geometry(Scale::from(scale)).overlaps(area))
+                .map(|e| {
+                    (
+                        e.id().clone(),
+                        e.current_commit(),
+                        e.geometry(Scale::from(scale)),
+                    )
+                })
+                .collect(),
+            area,
+            sigma_pt.to_bits(),
+        );
+        let mut state = self.state.borrow_mut();
+        let fresh = !matches!(state.as_ref(), Some((s, ..)) if *s == signature);
+        if fresh {
+            let sharp = render_to_texture(renderer, behind, area, scale, clear_color)?;
+            let blurred = blur_texture(renderer, programs, &sharp, area.size, sigma_pt, scale)?;
+            *state = Some((signature, blurred, Id::new()));
+        }
+        match state.as_ref() {
+            Some((_, texture, id)) => Ok((texture.clone(), id.clone())),
+            None => Err(GlesError::FramebufferBindingError),
+        }
     }
 }
 

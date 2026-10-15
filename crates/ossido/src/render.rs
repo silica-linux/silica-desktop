@@ -21,8 +21,8 @@ use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
-use smithay::backend::renderer::element::utils::RescaleRenderElement;
-use smithay::backend::renderer::element::{AsRenderElements, Id, Kind};
+use smithay::backend::renderer::element::utils::{CropRenderElement, RescaleRenderElement};
+use smithay::backend::renderer::element::{AsRenderElements, Element, Id, Kind};
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
@@ -55,6 +55,48 @@ render_elements! {
     Genie=ossido_render::genie::GenieElement,
     /// The black band between two scrolling spaces.
     Solid=SolidColorRenderElement,
+    /// A space's desktop wallpaper shrunk into its thumbnail in the spaces bar.
+    Thumbnail=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
+}
+
+/// The opacity of a shell layer while Panorama is open: the menu bar and the desktop (its
+/// icons) fade out as Panorama opens and come back as it closes (`missioncontrol.md`: in
+/// Mission Control the menu bar and what is on the desktop disappear, the Dock stays).
+fn layer_alpha_in_panorama(namespace: &str, mode: crate::panorama::Mode, progress: f64) -> f32 {
+    use crate::panorama::Mode;
+    let fades = match mode {
+        Mode::Panorama => namespace == "menubar" || namespace.starts_with("desktop-icons"),
+        Mode::App => namespace == "menubar",
+        Mode::Desktop => false,
+    };
+    if fades {
+        (1.0 - progress).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    }
+}
+
+/// The opacity of the blurred wallpaper over the sharp one: in full Panorama it follows the
+/// opening (and the closing), elsewhere there is none.
+fn backdrop_blur_alpha(mode: crate::panorama::Mode, progress: f64) -> Option<f32> {
+    (mode == crate::panorama::Mode::Panorama && progress > 0.0)
+        .then(|| progress.clamp(0.0, 1.0) as f32)
+}
+
+/// Shrinks an element drawn at output size (origin `origin`) by `factor` around that origin
+/// and clips it to `cell`, the thumbnail in physical pixels. `None` when nothing is left.
+fn fit_into_thumbnail<E: Element>(
+    element: E,
+    origin: Point<i32, Physical>,
+    factor: f64,
+    cell: Rectangle<i32, Physical>,
+    scale: f64,
+) -> Option<CropRenderElement<RescaleRenderElement<E>>> {
+    CropRenderElement::from_element(
+        RescaleRenderElement::from_element(element, origin, factor),
+        scale,
+        cell,
+    )
 }
 
 /// The layers that belong to the space and scroll with it: the wallpaper and the menu bar
@@ -820,15 +862,9 @@ pub fn output_elements(
                 }
                 _ => vec![0.0],
             };
-            let alpha = match &context.panorama {
-                Some(panorama)
-                    if layer.namespace() == "menubar"
-                        && panorama.mode != crate::panorama::Mode::Desktop =>
-                {
-                    (1.0 - panorama.progress).clamp(0.0, 1.0) as f32
-                }
-                _ => 1.0,
-            };
+            let alpha = context.panorama.as_ref().map_or(1.0, |panorama| {
+                layer_alpha_in_panorama(layer.namespace(), panorama.mode, panorama.progress)
+            });
             for offset in offsets {
                 let location = (drawn.loc.to_f64() + Point::from((offset, 0.0)))
                     .to_physical_precise_round(scale);
@@ -923,14 +959,18 @@ pub fn output_elements(
                     context.dark,
                 ));
             }
-            // The desktop wallpaper, small.
+            // The desktop wallpaper, small. The surface element keeps its buffer at the
+            // output size whatever scale it is created with (only the subsurface offsets
+            // follow it), so it is drawn at full size from the thumbnail corner, shrunk
+            // around that corner and clipped to the thumbnail.
+            let cell = thumbnail.rect.to_physical_precise_round(scale);
             for layer in layer_map.layers_on(Layer::Background).rev() {
                 let Some(drawn) = crate::layers::drawn_layer(&layer_map, layer, layers_output)
                 else {
                     continue;
                 };
-                let location = (thumbnail.rect.loc + drawn.loc.to_f64().upscale(s))
-                    .to_physical_precise_round(scale);
+                let origin = thumbnail.rect.loc.to_physical_precise_round(scale);
+                let location = origin + drawn.loc.to_f64().to_physical_precise_round(scale);
                 elements.extend(
                     AsRenderElements::<GlesRenderer>::render_elements::<
                         WaylandSurfaceRenderElement<GlesRenderer>,
@@ -938,11 +978,12 @@ pub fn output_elements(
                         layer as &LayerSurface,
                         renderer,
                         location,
-                        (scale * s).into(),
+                        scale.into(),
                         1.0,
                     )
                     .into_iter()
-                    .map(OutputElement::Surface),
+                    .filter_map(|surface| fit_into_thumbnail(surface, origin, s, cell, scale))
+                    .map(OutputElement::Thumbnail),
                 );
             }
         }
@@ -1143,6 +1184,49 @@ pub fn output_elements(
     let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
 
+    // Panorama: the desktop wallpaper blurs as it opens (the blurred copy fades in above it).
+    let panorama_blur = context
+        .panorama
+        .as_ref()
+        .and_then(|panorama| backdrop_blur_alpha(panorama.mode, panorama.progress))
+        .and_then(|alpha| {
+            let programs = shaders.glass.as_ref()?;
+            let behind = elements.get(background_start..).unwrap_or_default();
+            let cache = output
+                .user_data()
+                .get_or_insert(ossido_render::backdrop::BlurredBackdrop::default);
+            match cache.texture(
+                renderer,
+                programs,
+                behind,
+                output_size,
+                scale,
+                crate::panorama::BACKDROP_BLUR_PT,
+                context.clear_color,
+            ) {
+                Ok((texture, id)) => {
+                    let size = texture.size().to_logical(1, Transform::Normal);
+                    Some(TextureRenderElement::from_static_texture(
+                        id,
+                        renderer.context_id(),
+                        Point::<f64, Physical>::default(),
+                        texture,
+                        1,
+                        Transform::Normal,
+                        Some(alpha),
+                        None,
+                        Some(size),
+                        None,
+                        Kind::Unspecified,
+                    ))
+                }
+                Err(err) => {
+                    warn!("Panorama backdrop blur skipped: {err:?}");
+                    None
+                }
+            }
+        });
+
     // App Exposé: at the top the wallpaper darkens (above the wallpaper, below the windows).
     if let Some(panorama) = &context.panorama
         && panorama.mode == crate::panorama::Mode::App
@@ -1228,6 +1312,20 @@ pub fn output_elements(
                 }
             }
             Err(err) => warn!("bar backdrop skipped: {err:?}"),
+        }
+    }
+    // Above the wallpaper and its gradient, below the windows and the Dock.
+    if let Some(blur) = panorama_blur {
+        elements.insert(
+            background_start,
+            OutputElement::Texture(RescaleRenderElement::from_element(
+                blur,
+                Point::default(),
+                1.0,
+            )),
+        );
+        for anchor in &mut anchors {
+            anchor.index = after_insert(anchor.index, background_start);
         }
     }
 
@@ -1347,6 +1445,106 @@ mod tests {
     };
     use smithay::utils::{Logical, Physical, Rectangle};
     use std::time::Instant;
+
+    /// Where the fitted wallpaper lands and the share of it that is visible.
+    type Fitted = (Rectangle<i32, Physical>, f64);
+
+    /// A layer at output size (like the desktop wallpaper) put in a space thumbnail.
+    fn wallpaper_in_thumbnail(
+        output: (f64, f64),
+        count: usize,
+        index: usize,
+        scale: f64,
+    ) -> (Rectangle<i32, Physical>, Option<Fitted>) {
+        use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+        use smithay::backend::renderer::element::{Element, Id, Kind};
+        use smithay::backend::renderer::utils::CommitCounter;
+        use smithay::utils::{Point, Scale, Size};
+        let output = Size::<f64, Logical>::from(output);
+        let rects = crate::panorama::thumbnail_rects(count, output);
+        let thumb = rects[index];
+        let s = thumb.size.w / output.w;
+        let cell = thumb.to_physical_precise_round(scale);
+        let origin: Point<i32, Physical> = thumb.loc.to_physical_precise_round(scale);
+        let full = Rectangle::new(origin, output.to_physical_precise_round(scale));
+        let wallpaper = SolidColorRenderElement::new(
+            Id::new(),
+            full,
+            CommitCounter::default(),
+            [0.2, 0.3, 0.4, 1.0],
+            Kind::Unspecified,
+        );
+        let whole = wallpaper.src();
+        // How much of the wallpaper is visible: all of it, not its top-left corner.
+        let fitted = super::fit_into_thumbnail(wallpaper, origin, s, cell, scale).map(|e| {
+            let shown = e.src();
+            (
+                e.geometry(Scale::from(scale)),
+                (shown.size.w * shown.size.h) / (whole.size.w * whole.size.h),
+            )
+        });
+        (cell, fitted)
+    }
+
+    #[test]
+    fn the_wallpaper_of_a_space_shrinks_into_its_thumbnail() {
+        // One and several spaces, scale 1 and 2, 16:10 and 16:9 outputs.
+        for (output, scale) in [
+            ((1920.0, 1200.0), 1.0),
+            ((1920.0, 1200.0), 2.0),
+            ((2560.0, 1440.0), 1.0),
+            ((1280.0, 800.0), 1.5),
+        ] {
+            for count in [1, 2, 5, 16] {
+                for index in 0..count {
+                    let (cell, fitted) = wallpaper_in_thumbnail(output, count, index, scale);
+                    let Some((fitted, shown)) = fitted else {
+                        panic!("{output:?} ×{scale} {index}/{count}: nothing drawn");
+                    };
+                    assert!(
+                        cell.contains_rect(fitted),
+                        "{output:?} ×{scale} {index}/{count}: {fitted:?} outside {cell:?}"
+                    );
+                    // It fills the thumbnail (±1 px of rounding).
+                    assert!(
+                        (fitted.size.w - cell.size.w).abs() <= 1
+                            && (fitted.size.h - cell.size.h).abs() <= 1
+                            && fitted.loc == cell.loc,
+                        "{output:?} ×{scale} {index}/{count}: {fitted:?} instead of {cell:?}"
+                    );
+                    assert!(
+                        shown > 0.97,
+                        "{output:?} ×{scale} {index}/{count}: only {shown:.3} of the wallpaper"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn full_panorama_hides_the_menu_bar_and_the_desktop_and_blurs_the_wallpaper() {
+        use crate::panorama::Mode;
+        let alpha = super::layer_alpha_in_panorama;
+        for namespace in ["menubar", "desktop-icons:dev.frascella.Mustache"] {
+            assert_eq!(alpha(namespace, Mode::Panorama, 0.0), 1.0);
+            assert_eq!(alpha(namespace, Mode::Panorama, 0.25), 0.75);
+            assert_eq!(alpha(namespace, Mode::Panorama, 1.0), 0.0);
+        }
+        // The Dock and the wallpaper stay.
+        assert_eq!(alpha("dock", Mode::Panorama, 1.0), 1.0);
+        assert_eq!(alpha("wallpaper", Mode::Panorama, 1.0), 1.0);
+        // App Exposé hides only the menu bar, Show Desktop nothing.
+        assert_eq!(alpha("menubar", Mode::App, 1.0), 0.0);
+        assert_eq!(alpha("desktop-icons:x", Mode::App, 1.0), 1.0);
+        assert_eq!(alpha("menubar", Mode::Desktop, 1.0), 1.0);
+
+        let blur = super::backdrop_blur_alpha;
+        assert_eq!(blur(Mode::Panorama, 0.0), None);
+        assert_eq!(blur(Mode::Panorama, 0.5), Some(0.5));
+        assert_eq!(blur(Mode::Panorama, 1.0), Some(1.0));
+        assert_eq!(blur(Mode::App, 1.0), None);
+        assert_eq!(blur(Mode::Desktop, 1.0), None);
+    }
 
     #[test]
     fn the_dragged_window_casts_the_active_shadow() {

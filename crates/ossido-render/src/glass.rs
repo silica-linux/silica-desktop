@@ -1260,6 +1260,23 @@ fn pass(
     Ok(texture)
 }
 
+/// Blurs `sharp` (`size` large) with a Gaussian of σ `sigma_pt` points, nothing of the sharp
+/// image left: the Panorama backdrop.
+pub fn blur_texture(
+    renderer: &mut GlesRenderer,
+    programs: &GlassPrograms,
+    sharp: &GlesTexture,
+    size: Size<i32, Physical>,
+    sigma_pt: f64,
+    scale: f64,
+) -> Result<GlesTexture, GlesError> {
+    let key = BlurKey {
+        sigma: sigma_pt,
+        sharp: 0.0,
+    };
+    blur(renderer, programs, sharp, size, key, scale)
+}
+
 /// Blurs the capture with the σ and mixes in the sharp share.
 fn blur(
     renderer: &mut GlesRenderer,

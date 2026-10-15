@@ -610,6 +610,30 @@ impl TestWindow {
     /// filled there with `RED_BGRA`.
     #[allow(dead_code)]
     pub fn open_overlay(socket: &Path, input: (i32, i32, i32, i32)) -> Self {
+        let (ix, iy, iw, ih) = input;
+        Self::open_layer(
+            socket,
+            zwlr_layer_shell_v1::Layer::Overlay,
+            "test-overlay",
+            Some(input),
+            |x, y, _, _| {
+                let inside =
+                    (ix..ix + iw).contains(&(x as i32)) && (iy..iy + ih).contains(&(y as i32));
+                if inside { RED_BGRA } else { [0; 4] }
+            },
+        )
+    }
+
+    /// A full-screen layer surface on `level` with this namespace, painted by `paint(x, y,
+    /// width, height)` (BGRA); `input` limits where it takes the pointer.
+    #[allow(dead_code)]
+    pub fn open_layer(
+        socket: &Path,
+        level: zwlr_layer_shell_v1::Layer,
+        namespace: &str,
+        input: Option<(i32, i32, i32, i32)>,
+        paint: impl Fn(u32, u32, u32, u32) -> [u8; 4],
+    ) -> Self {
         let conn = Connection::from_socket(UnixStream::connect(socket).unwrap()).unwrap();
         let mut queue = conn.new_event_queue();
         let qh = queue.handle();
@@ -623,31 +647,23 @@ impl TestWindow {
             .layer_shell
             .clone()
             .expect("zwlr_layer_shell_v1 missing")
-            .get_layer_surface(
-                &surface,
-                None,
-                zwlr_layer_shell_v1::Layer::Overlay,
-                "test-overlay".to_owned(),
-                &qh,
-                (),
-            );
+            .get_layer_surface(&surface, None, level, namespace.to_owned(), &qh, ());
         layer.set_anchor(
             zwlr_layer_surface_v1::Anchor::Top
                 | zwlr_layer_surface_v1::Anchor::Bottom
                 | zwlr_layer_surface_v1::Anchor::Left
                 | zwlr_layer_surface_v1::Anchor::Right,
         );
+        layer.set_exclusive_zone(-1);
         surface.commit();
         while app.layer_size.is_none() {
             queue.blocking_dispatch(&mut app).unwrap();
         }
         let (w, h) = app.layer_size.unwrap();
-        let mut pixels = vec![0u8; (w * h * 4) as usize];
-        let (ix, iy, iw, ih) = input;
-        for y in iy.max(0)..(iy + ih).min(h as i32) {
-            for x in ix.max(0)..(ix + iw).min(w as i32) {
-                let at = ((y as u32 * w + x as u32) * 4) as usize;
-                pixels[at..at + 4].copy_from_slice(&RED_BGRA);
+        let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                pixels.extend_from_slice(&paint(x, y, w, h));
             }
         }
         let mut file = tempfile::tempfile().unwrap();
@@ -662,9 +678,11 @@ impl TestWindow {
             &qh,
             (),
         );
-        let region = compositor.create_region(&qh, ());
-        region.add(ix, iy, iw, ih);
-        surface.set_input_region(Some(&region));
+        if let Some((ix, iy, iw, ih)) = input {
+            let region = compositor.create_region(&qh, ());
+            region.add(ix, iy, iw, ih);
+            surface.set_input_region(Some(&region));
+        }
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, w as i32, h as i32);
         surface.commit();

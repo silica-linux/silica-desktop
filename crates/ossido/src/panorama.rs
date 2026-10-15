@@ -6,8 +6,9 @@
 //!   their centers and there are 16 pt between them. The rule with many windows is not
 //!   measured yet (RICHIESTE-panorama.md, PA-10): if they do not fit at full size, balanced
 //!   scaled rows, centered group.
-//! - The wallpaper does not darken; the menu bar disappears and the spaces bar comes down in
-//!   its place, 40 pt tall (`#9e9fa5`, border `#58595c`, ~62 pt shadow); the Dock stays.
+//! - The wallpaper does not darken but blurs as Panorama opens (`BACKDROP_BLUR_PT`); the
+//!   menu bar and the desktop icons fade out, the spaces bar comes down in the menu bar's
+//!   place, 40 pt tall (`#9e9fa5`, border `#58595c`, ~62 pt shadow); the Dock stays.
 //! - Opening and closing: progressive slowdown with a long tail, 50 % in ~40–54 ms, 90 % in
 //!   ~130–140 ms, done in ~300 ms (tables measured frame by frame).
 //! - A click on a window brings it to the front and closes Panorama; Esc or a click on the
@@ -194,6 +195,10 @@ pub const APP_LABEL_GAP: f64 = 14.0;
 /// At the top the wallpaper darkens: from `#6f7075` at y 0 to `#7a7b80` at y 102.
 pub const APP_SHADE_HEIGHT: f64 = 102.0;
 pub const APP_SHADE_ALPHA: f32 = 0.09;
+/// σ of the blur of the wallpaper behind the windows, in points. Not measured: the reference
+/// sessions used a solid wallpaper, where blur does not show (`missioncontrol.md`); no
+/// dimming or tint, as measured.
+pub const BACKDROP_BLUR_PT: f64 = 24.0;
 /// Show Desktop (not measured, PA-31): the windows go out towards the nearest edge and a
 /// strip of them stays visible.
 const DESKTOP_PEEK: f64 = 24.0;
