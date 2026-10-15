@@ -166,6 +166,7 @@ impl State {
         let window = window.clone();
         let timer = Timer::from_duration(WINDOW_MENU_PRESS_DELAY);
         let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
+            data.state.wake();
             let state = &mut data.state;
             let same = state.titlebar_press_count == press
                 && state.titlebar_press_inside
@@ -195,6 +196,7 @@ impl State {
         let window = window.clone();
         let timer = Timer::from_duration(WINDOW_MENU_HOVER_DELAY);
         let inserted = self.loop_handle.insert_source(timer, move |_, _, data| {
+            data.state.wake();
             let state = &mut data.state;
             let same = state.zoom_hover.as_ref() == Some(&(window.clone(), id))
                 && state.titlebar_press.is_none();

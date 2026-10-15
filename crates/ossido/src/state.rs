@@ -129,6 +129,9 @@ pub struct State {
     pub power_config: crate::config::PowerConfig,
     pub last_activity: Instant,
     pub display_off: bool,
+    /// Something happened that may change the screen (a client request, input, a command):
+    /// the next frame tick draws even if the output is idle (`State::wake`, drm.rs).
+    pub redraw: bool,
     pub idle_slept: bool,
     /// The mouse and touchpad settings applied (`input.json`).
     pub input_config: crate::config::InputConfig,
@@ -239,6 +242,33 @@ impl State {
     pub fn dark(&self) -> bool {
         self.appearance.unwrap_or_else(|| self.system.dark())
     }
+
+    /// Something may have changed the screen: the next frame tick draws (on DRM an output
+    /// with nothing to draw stops building frames until this, see `drm.rs`).
+    pub fn wake(&mut self) {
+        self.redraw = true;
+    }
+
+    /// Whether Ossido itself is animating (not a client): a window closing or minimizing,
+    /// a space switch, Panorama, an animated pointer. Frames are drawn on every tick then.
+    pub fn compositor_animating(&mut self) -> bool {
+        if !self.closing.is_empty()
+            || !self.genies.is_empty()
+            || self.workspaces.transition.is_some()
+            || self.panorama.is_some()
+            || self.resizing.is_some()
+            || self.resize_settling.is_some()
+        {
+            return true;
+        }
+        let scale = self.output.current_scale().fractional_scale();
+        match self.effective_cursor() {
+            smithay::input::pointer::CursorImageStatus::Named(icon) => {
+                self.cursor_theme.is_animated(icon, scale)
+            }
+            _ => false,
+        }
+    }
 }
 
 impl State {
@@ -315,6 +345,7 @@ impl State {
         loop_handle.insert_source(
             Generic::new(poll_fd, Interest::READ, Mode::Level),
             |_, _, data| {
+                data.state.wake();
                 if let Err(err) = data.display.dispatch_clients(&mut data.state) {
                     warn!("client dispatch failed: {err}");
                 }
@@ -379,6 +410,7 @@ impl State {
             power_config: crate::config::PowerConfig::default(),
             last_activity: Instant::now(),
             display_off: false,
+            redraw: true,
             idle_slept: false,
             color_temperature: crate::displays::NEUTRAL_KELVIN,
             perf: crate::perf::Perf::default(),

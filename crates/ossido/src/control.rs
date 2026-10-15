@@ -134,6 +134,8 @@ where
         .insert_source(
             Generic::new(stream, Interest::READ, Mode::Level),
             move |_, stream, data| {
+                // A command can change what is on screen.
+                data.state.wake();
                 let stream: &S = stream;
                 let mut chunk = [0u8; 4096];
                 loop {
