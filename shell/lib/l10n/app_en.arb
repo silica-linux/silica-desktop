@@ -388,6 +388,112 @@
   "@previousSpace": {
     "description": "Window menu"
   },
+  "services": "Services",
+  "@services": {
+    "description": "App menu: the Services submenu"
+  },
+  "noServices": "No Services Available",
+  "@noServices": {
+    "description": "App menu › Services, disabled"
+  },
+  "hideApp": "Hide {app}",
+  "@hideApp": {
+    "description": "App menu",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hideOthers": "Hide Others",
+  "@hideOthers": {
+    "description": "App menu"
+  },
+  "showAll": "Show All",
+  "@showAll": {
+    "description": "App menu"
+  },
+  "fill": "Fill",
+  "@fill": {
+    "description": "Window menu: the window fills the screen"
+  },
+  "moveAndResize": "Move & Resize",
+  "@moveAndResize": {
+    "description": "Window menu submenu"
+  },
+  "tileLeft": "Left",
+  "@tileLeft": {
+    "description": "Window menu › Move & Resize"
+  },
+  "tileRight": "Right",
+  "@tileRight": {
+    "description": "Window menu › Move & Resize"
+  },
+  "tileTop": "Top",
+  "@tileTop": {
+    "description": "Window menu › Move & Resize"
+  },
+  "tileBottom": "Bottom",
+  "@tileBottom": {
+    "description": "Window menu › Move & Resize"
+  },
+  "arrangeLeftRight": "Left & Right",
+  "@arrangeLeftRight": {
+    "description": "Window menu › Move & Resize: two windows side by side"
+  },
+  "arrangeLeftQuarters": "Left & Quarters",
+  "@arrangeLeftQuarters": {
+    "description": "Window menu › Move & Resize: one window on the left, two on the right"
+  },
+  "arrangeQuarters": "Quarters",
+  "@arrangeQuarters": {
+    "description": "Window menu › Move & Resize: four windows"
+  },
+  "bringAllToFront": "Bring All to Front",
+  "@bringAllToFront": {
+    "description": "Window menu"
+  },
+  "appHelp": "{app} Help",
+  "@appHelp": {
+    "description": "Help menu: the app's help",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "appSettings": "Settings…",
+  "@appSettings": {
+    "description": "App menu: the app's settings"
+  },
+  "editUndo": "Undo",
+  "@editUndo": {
+    "description": "Edit menu"
+  },
+  "editRedo": "Redo",
+  "@editRedo": {
+    "description": "Edit menu"
+  },
+  "editCut": "Cut",
+  "@editCut": {
+    "description": "Edit menu"
+  },
+  "editCopy": "Copy",
+  "@editCopy": {
+    "description": "Edit menu"
+  },
+  "editPaste": "Paste",
+  "@editPaste": {
+    "description": "Edit menu"
+  },
+  "editDelete": "Delete",
+  "@editDelete": {
+    "description": "Edit menu"
+  },
+  "editSelectAll": "Select All",
+  "@editSelectAll": {
+    "description": "Edit menu"
+  },
   "halfScreen": "Half of the screen",
   "@halfScreen": {
     "description": "Window popover section"
