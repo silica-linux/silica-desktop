@@ -461,10 +461,6 @@
   "@capture": {
     "description": "Screenshot bar button"
   },
-  "shotTipClose": "Close",
-  "@shotTipClose": {
-    "description": "Tooltip of a button of the screenshot bar"
-  },
   "shotTipCaptureScreen": "Capture Entire Screen",
   "@shotTipCaptureScreen": {
     "description": "Tooltip of a button of the screenshot bar"
@@ -487,14 +483,6 @@
   },
   "shotTipRecordSelection": "Record Selected Portion",
   "@shotTipRecordSelection": {
-    "description": "Tooltip of a button of the screenshot bar"
-  },
-  "shotTipOptions": "Options",
-  "@shotTipOptions": {
-    "description": "Tooltip of a button of the screenshot bar"
-  },
-  "shotTipCapture": "Capture",
-  "@shotTipCapture": {
     "description": "Tooltip of a button of the screenshot bar"
   },
   "shotDesktop": "Desktop",

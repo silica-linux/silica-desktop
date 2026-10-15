@@ -936,6 +936,13 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         onSelected: () =>
             _changeSettings((s) => s.showPointer = !s.showPointer),
       ),
+      // silica_ui's menu has no width parameter: a row without height as wide as the
+      // measured menu (210 pt) sets the minimum width.
+      MenuCustom(
+        height: 0,
+        width: optionsMenuWidth,
+        builder: (context, close) => const SizedBox.shrink(),
+      ),
     ];
   }
 
@@ -1068,7 +1075,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final cursor = overBar || (toolbar && _choice == ToolbarChoice.selection)
         ? MouseCursor.defer
         : SystemMouseCursors.none;
-    // An overlay of its own for the tooltips of the bar.
+    // An overlay of its own for the widgets of the layer that need one.
     return Overlay.wrap(
       child: Focus(
         focusNode: _focus,
@@ -1193,23 +1200,37 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     ];
   }
 
-  /// Whether the Options menu fits above the bar.
+  /// Whether the Options menu fits above the bar (its bottom is [optionsMenuOverlap] below
+  /// the bar's top edge).
   bool _optionsAbove(Rect bar) =>
-      bar.top - optionsGap - menuSize(_optionsEntries).height >= barHeight;
+      bar.top + optionsMenuOverlap - menuSize(_optionsEntries).height >=
+      barHeight;
 
   List<Widget> _toolbar(Rect bar) {
     final l = l10nOf(context);
-    final overBar = _pointer != null && bar.contains(_pointer!);
+    // In window mode the target is the window under the pointer: none while the pointer is
+    // on the bar. The bar's right 85 pt (the action button's space) do not count, or the
+    // bar would shrink and grow again under a pointer resting there.
+    final narrow = Rect.fromLTRB(
+      bar.left,
+      bar.top,
+      bar.right - toolbarActionSpace,
+      bar.bottom,
+    );
+    final overBar = _pointer != null && narrow.contains(_pointer!);
     return [
-      Positioned.fromRect(
-        rect: bar,
+      Positioned(
+        // Keyed: the bar keeps its state (tooltip, animation) while the children before it
+        // come and go.
+        key: const ValueKey('shot toolbar'),
+        left: bar.left,
+        top: bar.top,
         child: ShotToolbar(
           choice: _choice,
           colors: ShotBarColors.of(context),
           optionsLabel: l.optionsButton,
           actionLabel: l.capture,
           tips: ShotBarTips(
-            close: l.shotTipClose,
             capture: [
               l.shotTipCaptureScreen,
               l.shotTipCaptureWindow,
@@ -1220,10 +1241,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
               l.shotTipRecordWindow,
               l.shotTipRecordSelection,
             ],
-            options: l.shotTipOptions,
-            action: l.shotTipCapture,
           ),
-          // In window mode the target is the window under the pointer: none on the bar.
           showAction: !(_choice == ToolbarChoice.window && overBar),
           onChoose: _choose,
           onClose: _cancel,
@@ -1237,17 +1255,22 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           onMoved: () => _changeSettings((s) => s.barCenter = _barCenter),
         ),
       ),
-      // The Options menu opens clear of the bar (SCREENSHOT-3 asks for the measured gap):
-      // above the button with its left edge on it, `optionsGap` over the bar; below the bar
-      // when there is no room above.
+      // The Options menu (SCREENSHOT-3): above the button, its left edge 1 pt left of it and
+      // its bottom 22 pt below the bar's top edge; below the bar when there is no room above.
       if (_optionsOpen)
         Positioned.fill(
           child: MenuHost(
             key: const ValueKey('options menu'),
             entries: _optionsEntries,
             anchor: _optionsAbove(bar)
-                ? Offset(bar.left + optionsX, bar.top - optionsGap)
-                : Offset(bar.left + optionsX, bar.bottom + optionsGap),
+                ? Offset(
+                    bar.left + optionsX + optionsMenuLeft,
+                    bar.top + optionsMenuOverlap,
+                  )
+                : Offset(
+                    bar.left + optionsX + optionsMenuLeft,
+                    bar.bottom + optionsBelowGap,
+                  ),
             upwards: _optionsAbove(bar),
             top: barHeight,
             onDismissed: () => setState(() => _optionsOpen = false),

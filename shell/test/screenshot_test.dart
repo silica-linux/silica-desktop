@@ -14,7 +14,15 @@ import 'package:silica_shell/screenshot/screenshot.dart';
 import 'package:silica_shell/screenshot/selection.dart';
 import 'package:silica_shell/screenshot/services.dart';
 import 'package:silica_shell/screenshot/toolbar.dart'
-    show ShotToolbar, actionBlue, optionsGap;
+    show
+        ShotToolbar,
+        actionBlue,
+        optionsBelowGap,
+        optionsMenuOverlap,
+        optionsMenuWidth,
+        tipAboveBar,
+        tipHeight,
+        toolbarActionSpace;
 import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_ui/silica_ui.dart' show MenuPanel;
@@ -916,77 +924,171 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(circle.center.dy - bar.top, closeTo(26, 0.5));
   });
 
-  testWidgets('⇧⌘5: every button has a tooltip, in English', (tester) async {
-    await pumpLayer(tester);
-    await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
-    final tips = {
-      'close bar': 'Close',
-      'mode screen': 'Capture Entire Screen',
-      'mode window': 'Capture Selected Window',
-      'mode selection': 'Capture Selected Portion',
-      'record screen': 'Record Entire Screen',
-      'record window': 'Record Selected Window',
-      'record selection': 'Record Selected Portion',
-      'options': 'Options',
-      'capture': 'Capture',
-    };
-    for (final MapEntry(:key, :value) in tips.entries) {
+  testWidgets(
+    '⇧⌘5: only the six mode buttons have a tooltip, with no delay (#96)',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pump();
+      final tip = find.byKey(const ValueKey('bar tooltip'));
+      final bar = tester.getRect(find.byType(ShotToolbar));
+      final modes = {
+        'mode screen': 'Capture Entire Screen',
+        'mode window': 'Capture Selected Window',
+        'mode selection': 'Capture Selected Portion',
+        'record screen': 'Record Entire Screen',
+        'record window': 'Record Selected Window',
+        'record selection': 'Record Selected Portion',
+      };
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(5, 5));
-      await mouse.moveTo(tester.getCenter(find.byKey(ValueKey(key))));
-      await tester.pump();
-      // Not at once: after the delay (the previous one is gone).
-      // (The Capture button's own label has the same text as its tooltip.)
-      final label = key == 'capture' ? 1 : 0;
-      expect(find.text(value), findsNWidgets(label), reason: key);
-      await tester.pump(const Duration(seconds: 2));
-      expect(find.text(value), findsNWidgets(label + 1), reason: key);
+      expect(tip, findsNothing);
+      for (final MapEntry(:key, :value) in modes.entries) {
+        final button = tester.getRect(find.byKey(ValueKey(key)));
+        await mouse.moveTo(button.center);
+        // In the first frame, not after a delay.
+        await tester.pump();
+        expect(
+          find.descendant(of: tip, matching: find.text(value)),
+          findsOneWidget,
+          reason: key,
+        );
+        // No bubble: a box 18 pt high, centred on the button, its bottom 32 pt over the bar.
+        final box = tester.getRect(
+          find.byKey(const ValueKey('bar tooltip box')),
+        );
+        expect(box.height, tipHeight, reason: key);
+        expect(box.center.dx, closeTo(button.center.dx, 0.5), reason: key);
+        expect(box.bottom, closeTo(bar.top - tipAboveBar, 0.5), reason: key);
+        // 10 pt of padding on each side of the text.
+        final text = tester.getRect(
+          find.descendant(of: tip, matching: find.text(value)),
+        );
+        expect(box.width, closeTo(text.width + 20, 0.5), reason: key);
+      }
+      // It stays after the pointer leaves the bar, for good.
       await mouse.moveTo(const Offset(5, 5));
-      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.text('Record Selected Portion'), findsOneWidget);
+      // Close, Options and the action button have none.
+      for (final key in ['close bar', 'options', 'capture']) {
+        await mouse.moveTo(tester.getCenter(find.byKey(ValueKey(key))));
+        await tester.pump(const Duration(seconds: 3));
+        // The last mode's tooltip is still there, nothing was added.
+        expect(tip, findsOneWidget, reason: key);
+        expect(find.text('Close'), findsNothing, reason: key);
+        expect(find.text('Options'), findsNothing, reason: key);
+      }
+      // The next mode replaces it.
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('mode screen'))),
+      );
+      await tester.pump();
+      expect(tip, findsOneWidget);
+      expect(find.text('Capture Entire Screen'), findsOneWidget);
+      expect(find.text('Record Selected Portion'), findsNothing);
       await mouse.removePointer();
-    }
-  });
+    },
+  );
 
   test('⇧⌘5: the tooltips are translated into Italian', () {
     final it = lookupAppLocalizations(const Locale('it'));
-    expect(it.shotTipClose, 'Chiudi');
     expect(it.shotTipCaptureScreen, 'Acquisisci l\'intero schermo');
     expect(it.shotTipCaptureWindow, 'Acquisisci la finestra selezionata');
     expect(it.shotTipCaptureSelection, 'Acquisisci la porzione selezionata');
     expect(it.shotTipRecordScreen, 'Registra l\'intero schermo');
     expect(it.shotTipRecordWindow, 'Registra la finestra selezionata');
     expect(it.shotTipRecordSelection, 'Registra la porzione selezionata');
-    expect(it.shotTipOptions, 'Opzioni');
-    expect(it.shotTipCapture, 'Acquisisci');
   });
 
-  testWidgets('⇧⌘5: Capture is the solid blue 80 × 50 button', (tester) async {
-    await pumpLayer(tester);
-    await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
-    final fill = find.byKey(const ValueKey('capture fill'));
-    expect(tester.getSize(fill), const Size(80, 50));
-    final box = tester.widget<Container>(fill).decoration! as BoxDecoration;
-    expect(box.color, actionBlue);
-    expect(
-      find.descendant(of: fill, matching: find.text('Capture')),
-      findsOneWidget,
-    );
-  });
+  testWidgets(
+    '⇧⌘5: the action button is 80 × 36, radius 8, 8 pt from the bar',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pump();
+      final bar = tester.getRect(find.byType(ShotToolbar));
+      expect(bar.size, const Size(551, 52));
+      final fill = find.byKey(const ValueKey('capture fill'));
+      final rect = tester.getRect(fill);
+      expect(rect.size, const Size(80, 36));
+      expect(rect.top - bar.top, 8);
+      expect(bar.bottom - rect.bottom, 8);
+      expect(bar.right - rect.right, 8);
+      final box = tester.widget<Container>(fill).decoration! as BoxDecoration;
+      expect(box.color, actionBlue);
+      expect(box.borderRadius, BorderRadius.circular(8));
+      expect(
+        find.descendant(of: fill, matching: find.text('Capture')),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('Options: the menu opens clear of the bar, not over it', (
+  testWidgets(
+    'window mode: the action button hides while the pointer is on the bar, the bar shrinks 85 pt',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pump();
+      final full = tester.getRect(find.byType(ShotToolbar));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(5, 5));
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('mode window'))),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mode window')));
+      await tester.pump();
+      // Screen and selection modes keep the button; window mode hides it.
+      var bar = tester.getRect(find.byType(ShotToolbar));
+      expect(bar.width, full.width);
+      // Starts ~60 ms after the pointer reaches the bar; the right edge slides in over 450 ms.
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(tester.getRect(find.byType(ShotToolbar)).width, full.width);
+      await tester.pump(const Duration(milliseconds: 250));
+      bar = tester.getRect(find.byType(ShotToolbar));
+      expect(bar.width, lessThan(full.width));
+      expect(bar.width, greaterThan(full.width - toolbarActionSpace));
+      // The button is already fading.
+      expect(find.byKey(const ValueKey('capture')), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+      bar = tester.getRect(find.byType(ShotToolbar));
+      expect(bar.width, full.width - toolbarActionSpace);
+      expect(bar.left, full.left);
+      expect(find.byKey(const ValueKey('capture')), findsNothing);
+      // The pointer leaves: it comes back with the mirror animation.
+      await mouse.moveTo(const Offset(5, 5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.getRect(find.byType(ShotToolbar)).width,
+        greaterThan(full.width - toolbarActionSpace),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      bar = tester.getRect(find.byType(ShotToolbar));
+      expect(bar, full);
+      expect(find.byKey(const ValueKey('capture')), findsOneWidget);
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets('Options: the menu opens upwards, 210 wide, over the bar (#96)', (
     tester,
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
     await tester.pump();
     final bar = tester.getRect(find.byType(ShotToolbar));
+    final button = tester.getRect(find.byKey(const ValueKey('options')));
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
     final menu = tester.getRect(find.byType(MenuPanel));
-    expect(menu.bottom, lessThanOrEqualTo(bar.top - optionsGap + 1));
-    expect(menu.overlaps(bar), isFalse);
+    // 1 pt left of the button, the bottom 22 pt below the bar's top edge, 210 pt wide.
+    expect(menu.left, button.left - 1);
+    expect(menu.bottom, bar.top + optionsMenuOverlap);
+    expect(menu.width, optionsMenuWidth);
+    expect(menu.overlaps(bar), isTrue);
     // Bar dragged to the top: no room above, the menu opens below it.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 500));
@@ -999,7 +1101,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
     final below = tester.getRect(find.byType(MenuPanel));
-    expect(below.top, greaterThanOrEqualTo(top.bottom));
+    expect(below.top, top.bottom + optionsBelowGap);
     expect(below.overlaps(top), isFalse);
   });
 
