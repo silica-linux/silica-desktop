@@ -13,8 +13,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::{
-    ExclusiveZone, KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
-    WlrLayerShellHandler, WlrLayerShellState,
+    Anchor, ExclusiveZone, KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface,
+    LayerSurfaceData, WlrLayerShellHandler, WlrLayerShellState,
 };
 use tracing::{info, trace, warn};
 
@@ -112,10 +112,43 @@ pub fn drawn_layer(
     state
         .unfit_since
         .is_some_and(|since| since.elapsed() >= fit_grace())
-        .then_some(Drawn {
-            loc: geometry.loc,
+        .then(|| Drawn {
+            loc: unfit_location(layer, geometry.loc),
             glass: None,
         })
+}
+
+/// Where a buffer that does not have the configured size goes: against the edges the layer is
+/// anchored to. A Dock anchored to the bottom that asked for the whole screen height and has
+/// not drawn at it yet keeps its buffer at the bottom of the screen, not at the top of the
+/// new geometry.
+fn unfit_location(layer: &LayerSurface, arranged: Point<i32, Logical>) -> Point<i32, Logical> {
+    let configured = layer.layer_surface().with_pending_state(|state| state.size);
+    let drawn =
+        with_renderer_surface_state(layer.wl_surface(), |state| state.surface_size()).flatten();
+    let anchor = layer.cached_state().anchor;
+    match (configured, drawn) {
+        (Some(configured), Some(drawn)) => anchored_location(arranged, configured, drawn, anchor),
+        _ => arranged,
+    }
+}
+
+/// `arranged` moved so that a `drawn` buffer sits against the anchored edges of a
+/// `configured` area (only one of two opposite edges counts; both or none: as arranged).
+fn anchored_location(
+    arranged: Point<i32, Logical>,
+    configured: Size<i32, Logical>,
+    drawn: Size<i32, Logical>,
+    anchor: Anchor,
+) -> Point<i32, Logical> {
+    let mut loc = arranged;
+    if anchor.contains(Anchor::BOTTOM) && !anchor.contains(Anchor::TOP) {
+        loc.y += configured.h - drawn.h;
+    }
+    if anchor.contains(Anchor::RIGHT) && !anchor.contains(Anchor::LEFT) {
+        loc.x += configured.w - drawn.w;
+    }
+    loc
 }
 
 /// After a layer's commit (and the arrangement): remembers where its buffer fits, or since

@@ -316,3 +316,40 @@ fn the_glass_leaves_with_the_commit_of_the_closing_frame() {
     }
     assert_eq!(glass_list(&ossido), serde_json::json!([]));
 }
+
+#[test]
+fn a_bottom_layer_that_never_draws_at_its_size_stays_at_the_bottom_with_its_glass() {
+    // The Dock at session start: it asks for the whole screen height before it ever drew at
+    // its configured size, then keeps committing its old height. Once the safety net shows it,
+    // its buffer and glass sit against the bottom edge it is anchored to, with Panorama
+    // closed and open.
+    let ossido = Headless::start_with_env(
+        "layer-unfit-bottom",
+        SIZE,
+        &[],
+        &[("OSSIDO_LAYER_FIT_GRACE_MS", "50")],
+    );
+    let mut dock = Layer::open(&ossido, 50);
+    dock.resize(SIZE.1);
+    assert_eq!(dock.configured(), SIZE);
+    dock.draw((SIZE.0, 50), RED, Some(&[(10, 10, 100, 30)]));
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    // A commit after the grace: the layer is placed again.
+    dock.draw((SIZE.0, 50), RED, Some(&[(10, 10, 100, 30)]));
+    for panorama in [false, true] {
+        if panorama {
+            ossido
+                .client()
+                .call(silica_control::commands::PANORAMA_TOGGLE, Value::Null)
+                .unwrap();
+        }
+        let shot = common::screenshot(&ossido);
+        assert_eq!(
+            rows_with(&shot, RED),
+            (150..200).collect::<Vec<u32>>(),
+            "panorama {panorama}"
+        );
+        let list = glass_list(&ossido);
+        assert_eq!(list[0]["y"], 150, "panorama {panorama}: {list}");
+    }
+}
