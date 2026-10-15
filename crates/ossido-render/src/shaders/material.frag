@@ -27,6 +27,9 @@ uniform float tint;
 uniform vec2 tex_size;
 uniform mat4 shapes[2];
 uniform mat4 radii;
+// Each region's rotation about the centre of its rectangle (set_rotation), as (cos, sin), two
+// per column: region 2j in xy, 2j + 1 in zw. The rectangles are the ones before the rotation.
+uniform mat4 rotations;
 // The tips' outlines (TIP-01), one column per region: half base of the sharp flanks, tan of the
 // flank angle, apex radius, fillet radius (pixels).
 uniform mat4 tips[2];
@@ -70,6 +73,24 @@ uniform float line;
 uniform float saturation;
 uniform vec4 tint_color;
 uniform vec3 shadow;
+
+// The rotation of region i, (cos, sin).
+vec2 rotation_of(int i) {
+    vec4 pair = rotations[i / 2];
+    return (i - (i / 2) * 2 == 0) ? pair.xy : pair.zw;
+}
+
+// A screen vector in the frame of a region rotated by cs: turned back by the rotation.
+vec2 to_frame(vec2 v, vec2 cs) {
+    return vec2(cs.x * v.x + cs.y * v.y, -cs.y * v.x + cs.x * v.y);
+}
+
+// A point in the frame of the region `rect` rotated by cs about its centre, where the
+// rectangle is upright again (rotations keep distances, so every shape is measured there).
+vec2 to_region(vec2 p, vec4 rect, vec2 cs) {
+    vec2 c = rect.xy + rect.zw * 0.5;
+    return c + to_frame(p - c, cs);
+}
 
 float rounded_distance(vec2 p, vec4 rect, float r) {
     vec2 half_size = rect.zw * 0.5;
@@ -147,27 +168,31 @@ float smooth_min(float a, float b, float k) {
     return min(a, b) - h * h * k * 0.25;
 }
 
-// The lens band's width of the region nearest to p.
-float lens_width_at(vec2 p) {
+// The lens band's width of the region nearest to p, and that region's rotation (`frame`).
+float lens_width_at(vec2 p, out vec2 frame) {
     float best = 1.0e6;
     float width = 1.0;
+    frame = vec2(1.0, 0.0);
     for (int i = 0; i < 8; i++) {
         if (float(i) >= shape_count) {
             break;
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = max(radii[i / 4][i - (i / 4) * 4], 0.0);
-        float d = rounded_distance(p, rect, r);
+        vec2 cs = rotation_of(i);
+        float d = rounded_distance(to_region(p, rect, cs), rect, r);
         if (d < best) {
             best = d;
             width = lens_widths[i / 4][i - (i / 4) * 4];
+            frame = cs;
         }
     }
     return max(width, 0.05);
 }
 
-// Signed distance from the union of the regions, with corners at least `min_radius`.
-float union_distance(vec2 p, float min_radius) {
+// Signed distance from the union of the regions, with corners at least `min_radius`; each
+// region moved by `shift` in its own frame (the shadow's offset turns with the region).
+float union_distance(vec2 screen, float min_radius, vec2 shift) {
     float d = 1.0e6;
     for (int i = 0; i < 8; i++) {
         if (float(i) >= shape_count) {
@@ -175,6 +200,7 @@ float union_distance(vec2 p, float min_radius) {
         }
         vec4 rect = shapes[i / 4][i - (i / 4) * 4];
         float r = radii[i / 4][i - (i / 4) * 4];
+        vec2 p = to_region(screen, rect, rotation_of(i)) - shift;
         // A tip: −1 points down, −2 up, −3 left, −4 right, turned into the downward frame (a
         // reflection or a transposition, which keep distances). Its outline already holds the
         // fillets into the body: a plain union, not the merge distance of separate shapes.
@@ -250,24 +276,30 @@ float lens_source(mat4 curve, float t) {
 
 void main() {
     vec2 p = v_coords * tex_size;
-    float sd = union_distance(p, 0.0);
+    vec2 none = vec2(0.0);
+    float sd = union_distance(p, 0.0, none);
     float t = -sd;
     // Outward normal from the distance (central differences), on a shape with corners at
     // least as wide as the refraction band: without it, on the diagonal of a right angle the
     // normal jumps and the displacement leaves a seam.
     vec2 e = vec2(0.5, 0.0);
-    vec2 n = vec2(union_distance(p + e.xy, lens_reach) - union_distance(p - e.xy, lens_reach),
-                  union_distance(p + e.yx, lens_reach) - union_distance(p - e.yx, lens_reach));
+    vec2 n = vec2(union_distance(p + e.xy, lens_reach, none) - union_distance(p - e.xy, lens_reach, none),
+                  union_distance(p + e.yx, lens_reach, none) - union_distance(p - e.yx, lens_reach, none));
     n = length(n) > 0.0 ? normalize(n) : vec2(0.0, -1.0);
-    float vertical = n.y * n.y;
+    // The nearest region's frame: its own top, sides and bottom pick the lens curves and the
+    // edge profiles however it is rotated (the displacement itself stays along the screen
+    // normal, the background is sampled in screen space).
+    vec2 frame;
+    float band = lens_width_at(p, frame);
+    vec2 nf = to_frame(n, frame);
+    float vertical = nf.y * nf.y;
 
     // Lens: the pixel at distance t samples the background at distance s along the normal
     // (glass.md, "Refraction"). The profile scales the band's width (the curve keeps its
     // shape: evaluated at t / width, its displacement times width) and the displacement.
-    float band = lens_width_at(p);
     float tb = t / band;
     float measured = mix(lens_source(lens[0], tb),
-                         lens_source(n.y < 0.0 ? lens[1] : lens[2], tb), vertical);
+                         lens_source(nf.y < 0.0 ? lens[1] : lens[2], tb), vertical);
     float source = t + refraction * band * (measured - tb);
     // Clamped to the texture: it repeats by default, and outside it lies the opposite side.
     vec2 half_texel = 0.5 / tex_size;
@@ -284,9 +316,9 @@ void main() {
 
     // Edge: the measured profiles, weighted by the orientation of the true shape's normal
     // (top, sides, bottom), so corners, tips and merged bridges blend continuously.
-    vec2 m = vec2(union_distance(p + e.xy, 0.0) - union_distance(p - e.xy, 0.0),
-                  union_distance(p + e.yx, 0.0) - union_distance(p - e.yx, 0.0));
-    m = length(m) > 0.0 ? normalize(m) : vec2(0.0, -1.0);
+    vec2 m = vec2(union_distance(p + e.xy, 0.0, none) - union_distance(p - e.xy, 0.0, none),
+                  union_distance(p + e.yx, 0.0, none) - union_distance(p - e.yx, 0.0, none));
+    m = length(m) > 0.0 ? to_frame(normalize(m), frame) : vec2(0.0, -1.0);
     float w_top = pow(max(-m.y, 0.0), edge_power);
     float w_bottom = pow(max(m.y, 0.0), edge_power);
     float w_side = pow(abs(m.x), edge_power);
@@ -317,7 +349,7 @@ void main() {
     // The shadow, under the glass and outside it: the falloff of a Gaussian edge (the logistic
     // approximation of its integral) at the distance from the shape moved down by the offset.
     if (shadow.x > 0.0) {
-        float ds = union_distance(p - vec2(0.0, shadow.z), 0.0);
+        float ds = union_distance(p, 0.0, vec2(0.0, shadow.z));
         float a = shadow.x / (1.0 + exp(1.702 * ds / max(shadow.y, 0.5)));
         a *= clamp(sd + 0.5, 0.0, 1.0);
         result += vec4(0.0, 0.0, 0.0, a) * (1.0 - result.a);

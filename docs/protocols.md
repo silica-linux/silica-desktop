@@ -64,6 +64,24 @@ top.
   shape the lens narrows so it never samples past the far edge. `silica_ui` sends the
   `profile` and `shadow` keys on the `silica/glass` channel (`Glass.profile`,
   `Glass.profileShadow`); the embedder ignores them below version 7.
+- Since version 8: `set_rotation(degrees)`: the following regions and tips are turned by this
+  angle (degrees, clockwise on screen, `fixed`) about the centre of their own rectangle, until
+  the next `set_rotation` or `clear` (back to 0). Their `x`, `y`, `width`, `height` are the
+  rectangle before the turn. Ossido draws the whole shape in the region's frame: the corners,
+  the lens, the edge light on the region's own top edge (and its sides and bottom), the outline
+  and the profile's shadow (its offset turns too); only the blurred background is sampled on
+  screen. A label tilted with its object (the Dock stack's fan) is drawn tilted instead of as
+  its upright bounding box. Without `set_rotation` (an earlier client) nothing changes.
+  On the `silica/glass` channel a region turned by its ancestors carries a `frame`:
+  `{"transform": [a, b, c, d, tx, ty], "width", "height", "radius"}`, the affine part of the
+  widget's `getTransformTo(null)` applied to its own rectangle (0, 0)–(width, height)
+  (x' = a·x + c·y + tx, y' = b·x + d·y + ty), its size and radius before it. The embedder
+  takes the centre where the local centre lands, the angle of the x axis (`atan2(b, a)`), the
+  sizes scaled along each turned axis (a shear is dropped) and the radius by the smaller
+  scale, and sends `set_rotation` with the upright rectangle; below version 8, or for an
+  upright frame (under 0.01°), it sends the region's `x`, `y`, `width`, `height`, which stay
+  the bounding box. The shell's `ProfiledGlass` sends `frame` (`shell/lib/system/
+  glass_profile.dart`) until `silica_ui`'s `Glass` does.
 
 The tip is a rounded isosceles triangle: the rectangle's base side is the triangle's base, its
 depth is where the rounded apex (radius ~2.5 pt) ends, and the sides join the body with a

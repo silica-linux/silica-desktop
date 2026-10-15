@@ -506,10 +506,11 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 26] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 27] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
+    ("rotations", UniformType::Matrix4x4),
     ("tips", UniformType::Matrix4x4),
     ("shape_count", UniformType::_1f),
     ("merge", UniformType::_1f),
@@ -560,6 +561,34 @@ pub fn edge_weights(normal: (f32, f32)) -> [f32; 4] {
     let bottom = y.max(0.0).powf(EDGE_POWER);
     let side = x.abs().powf(EDGE_POWER);
     [top, side, bottom, (1.0 - top - side - bottom).max(0.0)]
+}
+
+/// A screen direction or offset in the frame of a region rotated by `rotation` (radians,
+/// clockwise on screen): turned back by the rotation (the shader's `to_frame`).
+pub fn to_frame((x, y): (f32, f32), rotation: f32) -> (f32, f32) {
+    let (sin, cos) = rotation.sin_cos();
+    (cos * x + sin * y, -sin * x + cos * y)
+}
+
+/// The edge weights of a rotated region: the screen normal is read in the region's own frame,
+/// so its top edge keeps the top light however the region turns (the shader's `w_top`, … on
+/// the rotated normal).
+pub fn edge_weights_in_frame(normal: (f32, f32), rotation: f32) -> [f32; 4] {
+    edge_weights(to_frame(normal, rotation))
+}
+
+/// Signed distance (pixels, negative inside) of `p` from a rectangle `[x, y, width, height]`
+/// with circular-arc corners of radius `r`, rotated by `rotation` (radians, clockwise on
+/// screen) about its centre: the shader's `rounded_distance` on `to_region`.
+pub fn rotated_rounded_distance(p: (f32, f32), rect: [f32; 4], r: f32, rotation: f32) -> f32 {
+    let [x, y, w, h] = rect;
+    let (cx, cy) = (x + w * 0.5, y + h * 0.5);
+    let (lx, ly) = to_frame((p.0 - cx, p.1 - cy), rotation);
+    let r = r.min(w * 0.5).min(h * 0.5).max(0.0);
+    let dx = lx.abs() - (w * 0.5 - r);
+    let dy = ly.abs() - (h * 0.5 - r);
+    let outside = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt();
+    outside + dx.max(dy).min(0.0) - r
 }
 
 impl MaterialParams {
@@ -886,9 +915,31 @@ pub struct PhysicalRegion {
     pub group: u32,
     /// The kind of surface: blur, lens, edge, tint and shadow over the material.
     pub profile: GlassProfile,
+    /// Rotation about the centre of `rect`, radians clockwise on screen (`set_rotation`):
+    /// `rect` is the rectangle before it.
+    pub rotation: f64,
 }
 
 impl PhysicalRegion {
+    /// The bounding box of the region as drawn: `rect`, or the box around it once rotated.
+    pub fn bounds(&self) -> Rectangle<i32, Physical> {
+        if self.rotation == 0.0 {
+            return self.rect;
+        }
+        let (sin, cos) = self.rotation.sin_cos();
+        let (w, h) = (f64::from(self.rect.size.w), f64::from(self.rect.size.h));
+        let cx = f64::from(self.rect.loc.x) + w * 0.5;
+        let cy = f64::from(self.rect.loc.y) + h * 0.5;
+        let half_w = 0.5 * (cos.abs() * w + sin.abs() * h);
+        let half_h = 0.5 * (sin.abs() * w + cos.abs() * h);
+        let (left, top) = ((cx - half_w).floor(), (cy - half_h).floor());
+        let (right, bottom) = ((cx + half_w).ceil(), (cy + half_h).ceil());
+        Rectangle::new(
+            (left as i32, top as i32).into(),
+            ((right - left) as i32, (bottom - top) as i32).into(),
+        )
+    }
+
     /// σ of the blur in points: the profile's, or the material's.
     pub fn sigma(&self) -> f64 {
         self.profile.sigma.unwrap_or(self.material.sigma)
@@ -919,6 +970,7 @@ impl PhysicalRegion {
             && self.tip == other.tip
             && self.group == other.group
             && self.profile == other.profile
+            && self.rotation == other.rotation
     }
 }
 
@@ -993,7 +1045,7 @@ impl GlassCache {
             .unwrap_or(0);
         let Some(bbox) = regions
             .iter()
-            .map(|region| region.rect)
+            .map(PhysicalRegion::bounds)
             .reduce(|a, b| a.merge(b))
             .map(|rect| {
                 Rectangle::new(
@@ -1082,7 +1134,7 @@ impl GlassCache {
                 let bulge = shapes.first()?.bleed();
                 let area = shapes
                     .iter()
-                    .map(|shape| shape.rect)
+                    .map(PhysicalRegion::bounds)
                     .reduce(|a, b| a.merge(b))?;
                 let area = Rectangle::new(
                     area.loc - Point::from((bulge, bulge)),
@@ -1332,7 +1384,15 @@ impl RenderElement<GlesRenderer> for GlassElement {
         // The tips' outlines (TIP-01), one column per region: half base, tan(angle), apex and
         // fillet radii in pixels.
         let mut tips = [[0.0_f32; 16]; 2];
+        // Each region's rotation about its centre, (cos, sin) two per column: region 2j in
+        // xy, 2j + 1 in zw.
+        let mut rotations = [0.0_f32; 16];
         for (i, shape) in self.shapes.iter().take(MAX_SHAPES).enumerate() {
+            let (sin, cos) = shape.rotation.sin_cos();
+            let at = (i / 2) * 4 + (i % 2) * 2;
+            if let Some(slot) = rotations.get_mut(at..at + 2) {
+                slot.copy_from_slice(&[cos as f32, sin as f32]);
+            }
             let local = shape.rect.loc - self.bbox.loc;
             let values = [
                 local.x as f32,
@@ -1392,6 +1452,13 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 "radii",
                 UniformValue::Matrix4x4 {
                     matrices: vec![radii],
+                    transpose: false,
+                },
+            ),
+            Uniform::new(
+                "rotations",
+                UniformValue::Matrix4x4 {
+                    matrices: vec![rotations],
                     transpose: false,
                 },
             ),
@@ -1506,6 +1573,103 @@ mod tests {
         }
         // A degenerate normal (the middle of a shape) counts as the top.
         assert_eq!(edge_weights((0.0, 0.0))[0], 1.0);
+    }
+
+    /// A point at `(x, y)` in the upright frame of `rect` (from its centre), on screen once
+    /// the rectangle is rotated by `rotation` about its centre.
+    fn on_screen(rect: [f32; 4], rotation: f32, (x, y): (f32, f32)) -> (f32, f32) {
+        let (sin, cos) = rotation.sin_cos();
+        let (cx, cy) = (rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        (cx + cos * x - sin * y, cy + sin * x + cos * y)
+    }
+
+    #[test]
+    fn a_rotated_mask_follows_the_turned_rectangle() {
+        // A fan label: 120 × 28 capsule-ish rectangle (radius 6), turned 12° clockwise.
+        let rect = [40.0, 60.0, 120.0, 28.0];
+        let angle = 12.0_f32.to_radians();
+        let distance = |p| rotated_rounded_distance(p, rect, 6.0, angle);
+        // Just inside each rotated corner (2 px in along both of its own axes, past the
+        // rounding): inside the mask.
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let near_corner = on_screen(rect, angle, (sx * 57.0, sy * 9.0));
+            assert!(distance(near_corner) < 0.0, "{near_corner:?} is outside");
+            // 3 px outside the rotated side next to it: outside, at the right distance.
+            let out = on_screen(rect, angle, (0.0, sy * 17.0));
+            assert!((distance(out) - 3.0).abs() < 1e-3, "{}", distance(out));
+        }
+        // The upright top-right and bottom-left corners are no longer covered: the turned
+        // rectangle swung away from them.
+        assert!(distance((rect[0] + rect[2] - 1.0, rect[1] + 1.0)) > 0.0);
+        assert!(distance((rect[0] + 1.0, rect[1] + rect[3] - 1.0)) > 0.0);
+        // Without a rotation it is the upright rectangle.
+        let upright = |p| rotated_rounded_distance(p, rect, 6.0, 0.0);
+        assert!(upright((rect[0] + rect[2] - 7.0, rect[1] + 1.0)) < 0.0);
+        assert!((upright((100.0, 57.0)) - 3.0).abs() < 1e-4);
+        // A turn by a half circle is the same rectangle.
+        let half = |p| rotated_rounded_distance(p, rect, 6.0, std::f32::consts::PI);
+        for p in [(41.0, 61.0), (100.0, 74.0), (30.0, 74.0)] {
+            assert!((half(p) - upright(p)).abs() < 1e-3, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
+        for degrees in [-30.0_f32, -8.0, 1.6, 12.58, 45.0, 90.0] {
+            let angle = degrees.to_radians();
+            // The outward normal of the region's own top edge, on screen.
+            let (sin, cos) = angle.sin_cos();
+            let top = (sin, -cos);
+            let w = edge_weights_in_frame(top, angle);
+            assert!((w[0] - 1.0).abs() < 1e-5, "{degrees}°: top light {w:?}");
+            // Its own side and bottom edges keep their profiles too.
+            let side = edge_weights_in_frame((cos, sin), angle);
+            assert!((side[1] - 1.0).abs() < 1e-5, "{degrees}°: side {side:?}");
+            let bottom = edge_weights_in_frame((-sin, cos), angle);
+            assert!(
+                (bottom[2] - 1.0).abs() < 1e-5,
+                "{degrees}°: bottom {bottom:?}"
+            );
+        }
+        // Read upright, the turned top edge would lose most of its light at 12°…
+        let angle = 12.0_f32.to_radians();
+        let turned_top = (angle.sin(), -angle.cos());
+        assert!(edge_weights(turned_top)[0] < 0.9);
+        // …and with no rotation nothing changes.
+        assert_eq!(
+            edge_weights_in_frame((0.3, -0.8), 0.0),
+            edge_weights((0.3, -0.8))
+        );
+    }
+
+    #[test]
+    fn a_rotated_region_is_drawn_over_its_turned_bounds() {
+        let region = |rotation: f64| PhysicalRegion {
+            rect: Rectangle::new((100, 50).into(), (120, 28).into()),
+            radius: 14.0,
+            material: THICK_LIGHT,
+            opacity: 1.0,
+            scale: 1.0,
+            tip: None,
+            group: 0,
+            profile: GlassProfile::NEUTRAL,
+            rotation,
+        };
+        assert_eq!(region(0.0).bounds(), region(0.0).rect);
+        let turned = region(20.0_f64.to_radians()).bounds();
+        // 120 cos 20° + 28 sin 20° = 122.3 wide, 120 sin 20° + 28 cos 20° = 67.4 tall, about
+        // the same centre (160, 64).
+        assert!((123..=125).contains(&turned.size.w), "{turned:?}");
+        assert!((68..=70).contains(&turned.size.h), "{turned:?}");
+        assert!(
+            (turned.loc.x + turned.size.w / 2 - 160).abs() <= 1,
+            "{turned:?}"
+        );
+        assert!(
+            (turned.loc.y + turned.size.h / 2 - 64).abs() <= 1,
+            "{turned:?}"
+        );
+        assert!(!region(0.0).same_shape(&region(0.1)));
     }
 
     #[test]
