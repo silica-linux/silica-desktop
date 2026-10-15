@@ -203,3 +203,29 @@ the presents were batched. Skia also stalls: in the first round
 of measurements three of six Skia runs had stalls of about 1 s, none of the six
 Impeller runs on Vulkan. Without the patch Skia keeps Vulkan and zero copy, but it loses the lens glass
 refraction of silica_ui (shader image filters need Impeller).
+
+## The shell in one engine (#201)
+
+The session starts the shell as one embedder process, kept running by Ossido
+(`--keep-shell`: it is started again if it crashes, as checked in the VM with `kill -9`): every
+layer is a view of the same engine (`--view`), each still its own layer surface with its
+layer, anchor, size, exclusive zone and keyboard mode. Dart builds one view per layer
+(`ShellViews`), and a view is drawn again only when something in it changed: while Faro
+animates, the wallpaper, menu bar, Dock and the other overlays present no frame. Mustache's
+desktop icons stay their own process.
+
+Measured in the dev VM on 2026-10-16, before (seven processes, the commit before #201) and
+after, each three times after a session restart, back to back under one hold of the VM:
+
+| | Shell processes | RSS | PSS |
+| --- | --- | --- | --- |
+| Before | 7 | 524–528 MiB | 173–176 MiB |
+| After | 1 | 83–88 MiB | 53–58 MiB |
+
+Login to first frame (Ossido's `startup_ms` of the layers, from the launch to the first
+buffer): with the VM's window visible, before 0.85–0.97 s for the wallpaper, menu bar and
+Dock (1.37 s until the last overlay drew its first, empty, frame), after 0.85–1.50 s (the
+overlays draw nothing until they open). During the back-to-back runs the VM's window was not
+visible and QEMU served the GPU in one-second steps (see "Launch times"): before 9.0–23.6 s,
+median 17.6 s, after 9.9–17.6 s, median 10.0 s; those numbers say more about the stalls than
+about the shell.
