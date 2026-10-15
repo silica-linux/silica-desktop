@@ -16,7 +16,8 @@ use common::client::TestWindow;
 use common::{Headless, pixel_in};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    UI_ANIMATION_SCALE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE, WindowInfo,
+    UI_ANIMATION_SCALE, WINDOW_FOCUS, WINDOW_FULLSCREEN, WINDOW_LIST, WINDOW_MINIMIZE,
+    WINDOW_TILE_FILL, WindowInfo,
 };
 
 const SIZE: (u32, u32) = (640, 400);
@@ -271,4 +272,38 @@ fn fullscreen_grows_the_window_to_the_screen() {
     set_speed(&ossido, 0.0);
     let (a, b) = red_span(&shot(&ossido, "full-back"), row).expect("window back");
     assert_eq!(b - a + 1, width);
+}
+
+#[test]
+fn tiling_slides_the_frame_instead_of_jumping() {
+    let ossido = start("tile-slide");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "tile", (240, 140));
+    let info = windows(&ossido).remove(0);
+    let row = info.y + 70;
+    // x20: the 380 ms tiling lasts 7.6 s; at ~3 s (150 ms, ~70 % of the way) the frame is
+    // between its old size and the whole usable area.
+    set_speed(&ossido, 20.0);
+    ossido
+        .client()
+        .call(WINDOW_TILE_FILL, json!({ "id": info.id }))
+        .unwrap();
+    let start = shot(&ossido, "tile-start");
+    let (a, b) = red_span(&start, row).expect("window at the start");
+    assert!(
+        (b - a + 1 - 240).abs() <= 6,
+        "at the start it is as it was: {}",
+        b - a + 1
+    );
+    std::thread::sleep(Duration::from_millis(3000));
+    let middle = shot(&ossido, "tile-middle");
+    let widest = (0..SIZE.1 as i32)
+        .filter_map(|y| red_span(&middle, y))
+        .map(|(a, b)| b - a + 1)
+        .max()
+        .expect("window halfway");
+    assert!(
+        widest > 240 + 60 && widest <= SIZE.0 as i32,
+        "halfway the window grows towards the area: {widest}"
+    );
+    set_speed(&ossido, 0.0);
 }

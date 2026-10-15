@@ -148,9 +148,55 @@ pub fn fullscreen_exit(ms: f64) -> f64 {
     (curve(ms) / curve(end)).min(1.0)
 }
 
+/// Tiling from the arrangement popover (Half, Fill; BACKLOG-1 / W-08): the frame reaches its
+/// exact place ~380 ms after the click, through a ~340 ms ease-out that starts ~40 ms in.
+pub const TILE: Duration = Duration::from_millis(380);
+/// When the movement starts, inside [`TILE`].
+pub const TILE_START_MS: f64 = 40.0;
+
+/// Fraction of the way after `ms` of tiling: nothing until [`TILE_START_MS`], then a cubic
+/// ease-out ending at [`TILE`] with no overshoot.
+pub fn tile(ms: f64) -> f64 {
+    let end = TILE.as_secs_f64() * 1000.0;
+    ease_out(((ms - TILE_START_MS) / (end - TILE_START_MS)).clamp(0.0, 1.0))
+}
+
+/// A window dropped back where it was in Panorama (BACKLOG-1 / #74): ~500 ms, ease-out, no
+/// overshoot.
+pub const PANORAMA_RETURN: Duration = Duration::from_millis(500);
+
+/// Cubic ease-out on [0, 1]: 1 − (1 − x)³. Monotonic, ends at exactly 1.
+pub fn ease_out(x: f64) -> f64 {
+    1.0 - (1.0 - x.clamp(0.0, 1.0)).powi(3)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tiling_is_a_late_start_ease_out_without_overshoot() {
+        assert_eq!(tile(0.0), 0.0);
+        assert_eq!(tile(40.0), 0.0);
+        assert_eq!(tile(380.0), 1.0);
+        assert_eq!(tile(900.0), 1.0);
+        // Fast at the start, slow at the end.
+        assert!(tile(40.0 + 85.0) > 0.5);
+        let mut last = 0.0;
+        for ms in 0..=400 {
+            let f = tile(f64::from(ms));
+            assert!((0.0..=1.0).contains(&f) && f >= last, "{ms} ms: {f}");
+            last = f;
+        }
+    }
+
+    #[test]
+    fn ease_out_has_no_overshoot() {
+        assert_eq!(ease_out(0.0), 0.0);
+        assert_eq!(ease_out(1.0), 1.0);
+        assert_eq!(ease_out(2.0), 1.0);
+        assert!(ease_out(0.5) > 0.5);
+    }
 
     #[test]
     fn genie_follows_the_measured_frames() {
