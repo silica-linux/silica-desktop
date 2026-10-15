@@ -13,6 +13,9 @@
 //!   `minimized [id…]` (the minimized ones, from the first minimized); `windowMenu {id, x,
 //!   y}` (long press on the green button: the arrangement popover with its tip at x, y);
 //!   `transientDismissed` (a press outside the open menu or panel ended it, #149);
+//! - `activateMenuItem {serial, id}` from Dart: an item of the frontmost app's menus, which
+//!   arrive as `appMenu {app_id, serial, model}` (`menu.rs`, version 8); `appMenu` from
+//!   Dart → the last ones;
 //! - `thumbnail {id}` from Dart asks for the thumbnail of a minimized window: it arrives as
 //!   `thumbnail {id, width, height, path}`, a premultiplied RGBA file that Dart reads and
 //!   deletes (width 0 if there is none).
@@ -52,6 +55,8 @@ pub struct ShellLink {
     /// The thumbnails asked for and not yet arrived: identifier and file.
     thumbnails: std::cell::RefCell<Vec<(String, std::path::PathBuf)>>,
     serial: std::cell::Cell<u64>,
+    /// The frontmost app's menus, as last sent to Dart (`appMenu`).
+    app_menu: Value,
 }
 
 impl ShellLink {
@@ -68,6 +73,7 @@ impl ShellLink {
             minimized: Vec::new(),
             thumbnails: std::cell::RefCell::new(Vec::new()),
             serial: std::cell::Cell::new(0),
+            app_menu: Value::Null,
         }
     }
 
@@ -81,6 +87,14 @@ impl ShellLink {
         self.focused = identifier;
         serde_json::to_vec(&json!({ "method": "focused", "args": self.focused }))
             .unwrap_or_default()
+    }
+
+    /// The frontmost app's menus changed (`menu::shell_message`): kept for `appMenu`, the
+    /// call Dart makes at startup, after messages it may have missed.
+    pub fn remember_app_menu(&mut self, message: &[u8]) {
+        if let Ok(message) = serde_json::from_slice::<Value>(message) {
+            self.app_menu = message.get("args").cloned().unwrap_or(Value::Null);
+        }
     }
 
     /// A new window: the details arrive with the events of its handle.
@@ -245,6 +259,7 @@ impl ShellLink {
             Some("minimized") => success(json!(self.minimized)),
             Some("thumbnail") => success(json!(self.request_thumbnail(&text("id")))),
             Some("focused") => success(json!(self.focused)),
+            Some("appMenu") => success(self.app_menu.clone()),
             Some("activate") => {
                 let sent = self.manager.as_ref().is_some_and(|manager| {
                     manager.activate(text("id"));
@@ -285,6 +300,23 @@ impl ShellLink {
                         manager.broadcast(topic, value);
                         true
                     });
+                success(json!(sent))
+            }
+            Some("activateMenuItem") => {
+                let number = |name: &str| {
+                    args.get(name)
+                        .and_then(Value::as_u64)
+                        .and_then(|n| u32::try_from(n).ok())
+                };
+                let sent = match (self.manager.as_ref(), number("serial"), number("id")) {
+                    (Some(manager), Some(serial), Some(id))
+                        if manager.version() >= 8 && serial != 0 =>
+                    {
+                        manager.activate_menu_item(serial, id);
+                        true
+                    }
+                    _ => false,
+                };
                 success(json!(sent))
             }
             Some("launch") => {

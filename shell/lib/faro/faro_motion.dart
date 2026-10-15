@@ -38,6 +38,35 @@ final SpringDescription verticalSpring = dampedSpring(zeta: 0.54, omega: 28.1);
 /// 1 pt from +400 ms); the peak comes ~12 ms early, the settling time is kept.
 final SpringDescription widthSpring = dampedSpring(zeta: 0.64, omega: 23.0);
 
+/// The engaged panel (the pointer entered the empty capsule): after [engageDelay] it
+/// becomes the 384 pt field plus the four discs. The field settles ~690 ms after the pointer
+/// entered (630 ms after it starts) and the discs ~800 ms; they then stay while Faro is open.
+/// Same shape as the first-launch morph, slowed to those settling times: ζ = 0.64 with
+/// ω ≈ 14.5 rad/s for the field (23 · 390 / 630 = 14.2, a little faster to be within 1 pt
+/// by then), ζ = 0.636 with ω ≈ 12.4 rad/s for the discs (which start [buttonsDelay] after
+/// the field).
+final SpringDescription engageWidthSpring = dampedSpring(
+  zeta: 0.64,
+  omega: 14.5,
+);
+final SpringDescription engageButtonsSpring = dampedSpring(
+  zeta: 0.636,
+  omega: 12.4,
+);
+
+/// How long the pointer on the empty capsule waits before it starts to change.
+const Duration engageDelay = Duration(milliseconds: 60);
+
+/// A change of scope grows or shrinks the panel with a +5 pt overshoot on its travel
+/// (547 − 56 pt to the files grid: 1 %); the same ω as the opening height.
+final SpringDescription scopeSpring = dampedSpring(
+  zeta: zetaForOvershoot(5 / (547 - 56)),
+  omega: 28.1,
+);
+
+/// Closing takes ~100 ms (the fade played backwards, the height back to 0.966).
+const Duration closeDuration = Duration(milliseconds: 100);
+
 /// Buttons spring: the round buttons spreading out.
 /// Measured: 146 pt of travel, 11 pt overshoot (7.5 %) ~300 ms after they start, settled to
 /// 1 pt ~590 ms after it. So ζ ≈ 0.64, ω ≈ 13.6 rad/s.
@@ -68,8 +97,8 @@ double tableAt(List<(double, double)> table, double ms) {
 }
 
 /// Opacity of every opening (Faro and the Launcher), at 0, 13, 27, 53 and 67 ms from the
-/// first frame: steep, already 0.22 on the first frame. Closing (not measured, PROVISIONAL)
-/// plays the same fade backwards in the same 67 ms, then the panel is gone.
+/// first frame: steep, already 0.22 on the first frame. Closing plays the same fade backwards
+/// in [closeDuration], then the panel is gone.
 const List<(double, double)> openOpacity = [
   (0, 0.22),
   (13.3, 0.66),

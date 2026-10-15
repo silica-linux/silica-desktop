@@ -191,6 +191,10 @@ Groups of buttons sit in glass capsules.
     `SilicaWindow.setFullSizeContent(toolbarHeight)` (`silica-window-v1`); without it Ossido
     draws its own 32 pt bar. Hit areas, hover symbols and the zoom menu use the same
     geometry.
+  - **Appearance override:** an app that is always dark (Clock) tells Ossido with
+    `SilicaAppearance.dark` (`silica-window-v1` `set_appearance`); the buttons, the plain
+    bar and title, the shadow, the window's glass and its arrangement popover then use the
+    dark values whatever the system appearance is, and the other way round.
   - **Disabled button:** a grey disc, even in an active window.
 - **Title in Ossido's 32 pt bar:** left-aligned (not centred), the document icon at x 81 and
   the text from x 100 (Ossido draws no icon), about 13 pt bold, centred on the bar, and

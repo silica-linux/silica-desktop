@@ -620,6 +620,150 @@ abstract class AppLocalizations {
   /// **'Previous space'**
   String get previousSpace;
 
+  /// App menu: the Services submenu
+  ///
+  /// In en, this message translates to:
+  /// **'Services'**
+  String get services;
+
+  /// App menu › Services, disabled
+  ///
+  /// In en, this message translates to:
+  /// **'No Services Available'**
+  String get noServices;
+
+  /// App menu
+  ///
+  /// In en, this message translates to:
+  /// **'Hide {app}'**
+  String hideApp(String app);
+
+  /// App menu
+  ///
+  /// In en, this message translates to:
+  /// **'Hide Others'**
+  String get hideOthers;
+
+  /// App menu
+  ///
+  /// In en, this message translates to:
+  /// **'Show All'**
+  String get showAll;
+
+  /// Window menu: the window fills the screen
+  ///
+  /// In en, this message translates to:
+  /// **'Fill'**
+  String get fill;
+
+  /// Window menu submenu
+  ///
+  /// In en, this message translates to:
+  /// **'Move & Resize'**
+  String get moveAndResize;
+
+  /// Window menu › Move & Resize
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get tileLeft;
+
+  /// Window menu › Move & Resize
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get tileRight;
+
+  /// Window menu › Move & Resize
+  ///
+  /// In en, this message translates to:
+  /// **'Top'**
+  String get tileTop;
+
+  /// Window menu › Move & Resize
+  ///
+  /// In en, this message translates to:
+  /// **'Bottom'**
+  String get tileBottom;
+
+  /// Window menu › Move & Resize: two windows side by side
+  ///
+  /// In en, this message translates to:
+  /// **'Left & Right'**
+  String get arrangeLeftRight;
+
+  /// Window menu › Move & Resize: one window on the left, two on the right
+  ///
+  /// In en, this message translates to:
+  /// **'Left & Quarters'**
+  String get arrangeLeftQuarters;
+
+  /// Window menu › Move & Resize: four windows
+  ///
+  /// In en, this message translates to:
+  /// **'Quarters'**
+  String get arrangeQuarters;
+
+  /// Window menu
+  ///
+  /// In en, this message translates to:
+  /// **'Bring All to Front'**
+  String get bringAllToFront;
+
+  /// Help menu: the app's help
+  ///
+  /// In en, this message translates to:
+  /// **'{app} Help'**
+  String appHelp(String app);
+
+  /// App menu: the app's settings
+  ///
+  /// In en, this message translates to:
+  /// **'Settings…'**
+  String get appSettings;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get editUndo;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Redo'**
+  String get editRedo;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Cut'**
+  String get editCut;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get editCopy;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Paste'**
+  String get editPaste;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get editDelete;
+
+  /// Edit menu
+  ///
+  /// In en, this message translates to:
+  /// **'Select All'**
+  String get editSelectAll;
+
   /// Window popover section
   ///
   /// In en, this message translates to:
@@ -1621,6 +1765,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Clipboard'**
   String get faroScopeClipboard;
+
+  /// Faro actions scope: the section heading of the system's own actions (the apps' sections carry the app name)
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get faroSectionSystem;
 
   /// Faro placeholder in the files scope
   ///

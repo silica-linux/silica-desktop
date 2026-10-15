@@ -46,6 +46,16 @@ pub const WINDOW_ARRANGE_4: &str = "window.arrange_4";
 pub const APP_LAUNCH: &str = "app.launch";
 pub const SESSION_QUIT: &str = "session.quit";
 pub const APP_QUIT: &str = "app.quit";
+/// Hides the frontmost app (or `app_id`): its windows leave the screen until it is activated.
+pub const APP_HIDE: &str = "app.hide";
+/// Hides every app but the frontmost one.
+pub const APP_HIDE_OTHERS: &str = "app.hide_others";
+/// Brings back every hidden app.
+pub const APP_SHOW_ALL: &str = "app.show_all";
+/// The frontmost app's menus, as the menu bar shows them (silica-menu-v1, #25).
+pub const APP_MENU: &str = "app.menu";
+/// Chooses an item of the frontmost app's menus: `{"id": n}`.
+pub const APP_MENU_ACTIVATE: &str = "app.menu_activate";
 pub const INPUT_POINTER_MOVE: &str = "input.pointer_move";
 pub const INPUT_POINTER_BUTTON: &str = "input.pointer_button";
 pub const INPUT_CLICK: &str = "input.click";
@@ -64,6 +74,7 @@ pub const SWITCHER_NEXT: &str = "switcher.next";
 pub const SWITCHER_PREVIOUS: &str = "switcher.previous";
 pub const SWITCHER_COMMIT: &str = "switcher.commit";
 pub const SWITCHER_CANCEL: &str = "switcher.cancel";
+pub const SWITCHER_EXPOSE: &str = "switcher.expose";
 pub const CONTROLCENTER_TOGGLE: &str = "controlcenter.toggle";
 pub const SYSTEM_STATUS: &str = "system.status";
 pub const SPACE_LIST: &str = "space.list";
@@ -441,6 +452,13 @@ pub const CATALOG: &[CommandSpec] = &[
         params: no_params,
     },
     CommandSpec {
+        id: SWITCHER_EXPOSE,
+        label: "App Exposé from the switcher",
+        description: "Closes the app switcher and opens App Exposé of the chosen app (Up or Down while it is open); the Logo key released afterwards changes nothing.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
         id: FARO_TOGGLE,
         label: "Faro",
         description: "Opens or closes Faro, the app search (shell component).",
@@ -732,6 +750,54 @@ pub const CATALOG: &[CommandSpec] = &[
             json!({
                 "type": "object",
                 "properties": {"app_id": {"type": "string"}},
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: APP_HIDE,
+        label: "Hide app",
+        description: "Hides the frontmost app, or the app `app_id`: its windows leave the screen (they stay in the Dock's list) until the app is activated again.",
+        shortcut: Some("Logo+H"),
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"app_id": {"type": "string"}},
+                "additionalProperties": false
+            })
+        },
+    },
+    CommandSpec {
+        id: APP_HIDE_OTHERS,
+        label: "Hide others",
+        description: "Hides every app but the frontmost one.",
+        shortcut: Some("Logo+Alt+H"),
+        params: no_params,
+    },
+    CommandSpec {
+        id: APP_SHOW_ALL,
+        label: "Show all",
+        description: "Brings back every hidden app, below the app in front.",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: APP_MENU,
+        label: "App menus",
+        description: "The menus the frontmost app published for the menu bar: `app_id`, `serial` (0 if it published none) and `model` (silica-menu-v1 JSON, null if none).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: APP_MENU_ACTIVATE,
+        label: "Choose an app menu item",
+        description: "Chooses the item `id` of the frontmost app's menus, as a click in the menu bar does.",
+        shortcut: None,
+        params: || {
+            json!({
+                "type": "object",
+                "properties": {"id": {"type": "integer", "minimum": 0}},
+                "required": ["id"],
                 "additionalProperties": false
             })
         },
@@ -1324,6 +1390,24 @@ impl Shortcut {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nothing_is_bound_to_the_backtick() {
+        // Logo+` does nothing on the Italian layout (measured). Shortcuts are matched on the
+        // layout's own symbol (the raw Latin symbol of the key, see `handle_key`), so a
+        // binding to `grave` would exist only where the layout produces it.
+        for spec in CATALOG {
+            if let Some(shortcut) = spec.shortcut {
+                let parsed = Shortcut::parse(shortcut).unwrap();
+                assert!(
+                    !parsed.matches(true, false, false, false, "grave")
+                        && !parsed.matches(true, false, false, false, "quoteleft"),
+                    "{}",
+                    spec.id
+                );
+            }
+        }
+    }
 
     #[test]
     fn catalog_ids_are_unique_and_documented() {

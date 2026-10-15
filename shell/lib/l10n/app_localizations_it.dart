@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -297,6 +298,82 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get previousSpace => 'Spazio precedente';
+
+  @override
+  String get services => 'Servizi';
+
+  @override
+  String get noServices => 'Nessun servizio';
+
+  @override
+  String hideApp(String app) {
+    return 'Nascondi $app';
+  }
+
+  @override
+  String get hideOthers => 'Nascondi le altre';
+
+  @override
+  String get showAll => 'Mostra tutto';
+
+  @override
+  String get fill => 'Riempi';
+
+  @override
+  String get moveAndResize => 'Sposta e ridimensiona';
+
+  @override
+  String get tileLeft => 'A sinistra';
+
+  @override
+  String get tileRight => 'A destra';
+
+  @override
+  String get tileTop => 'In alto';
+
+  @override
+  String get tileBottom => 'In basso';
+
+  @override
+  String get arrangeLeftRight => 'Sinistra e destra';
+
+  @override
+  String get arrangeLeftQuarters => 'Sinistra e quarti';
+
+  @override
+  String get arrangeQuarters => 'In quarti';
+
+  @override
+  String get bringAllToFront => 'Porta tutto davanti';
+
+  @override
+  String appHelp(String app) {
+    return 'Aiuto di $app';
+  }
+
+  @override
+  String get appSettings => 'Impostazioni…';
+
+  @override
+  String get editUndo => 'Annulla';
+
+  @override
+  String get editRedo => 'Ripeti';
+
+  @override
+  String get editCut => 'Taglia';
+
+  @override
+  String get editCopy => 'Copia';
+
+  @override
+  String get editPaste => 'Incolla';
+
+  @override
+  String get editDelete => 'Elimina';
+
+  @override
+  String get editSelectAll => 'Seleziona tutto';
 
   @override
   String get halfScreen => 'Metà dello schermo';
@@ -839,6 +916,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get faroScopeClipboard => 'Appunti';
+
+  @override
+  String get faroSectionSystem => 'Sistema';
 
   @override
   String get faroSearchFiles => 'Cerca nei file';

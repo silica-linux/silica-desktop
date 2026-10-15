@@ -188,6 +188,34 @@ fn dark_materials_on_the_reference_gray() {
     expect((430, 250), [0x6f, 0x70, 0x75], 3, "thick glass, dark");
 }
 
+/// A window that overrides the appearance with dark in a light session gets the dark glass
+/// tones for the regions it declares (silica-window-v1 `set_appearance`).
+#[test]
+fn glass_of_a_dark_window_in_a_light_session_has_the_dark_tone() {
+    let ossido = Headless::start_with("glass-override-dark", SHOT, &["--background", "7a7b80"]);
+    let size = (200, 100);
+    let mut thick = TestWindow::open_pixels(&ossido.wayland, "thick", size, &transparent(size));
+    thick
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Thick)])
+        .unwrap();
+    thick.set_appearance(silica_protocols::window::client::silica_window_v1::Appearance::Dark);
+    ossido
+        .client()
+        .call(
+            silica_control::commands::WINDOW_MOVE,
+            serde_json::json!({"x": 330, "y": 200}),
+        )
+        .unwrap();
+    let shot = shot(&ossido, "glass-override-dark.png");
+    let got = rgb(&shot, 430, 250);
+    // The dark menu tone of `dark_materials_on_the_reference_gray`, not the light one.
+    let expected = [0x6f, 0x70, 0x75];
+    assert!(
+        got.iter().zip(expected).all(|(g, e)| g.abs_diff(e) <= 3),
+        "thick glass of a dark window: {got:?}, expected {expected:?}"
+    );
+}
+
 /// Profile of a stripe edge (black → white) inside the Dock background, light, row 1366
 /// (glass.md, "Glass · Dock · Blur"), 1 pt per value.
 const DOCK_EDGE: [f64; 20] = [

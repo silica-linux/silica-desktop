@@ -20,6 +20,7 @@ mod glass;
 mod keyboard;
 mod keymap;
 mod locale;
+mod menu;
 mod mouse_cursor;
 mod pty;
 mod shell;
@@ -28,6 +29,7 @@ mod text_input;
 mod trace;
 mod views;
 mod window;
+mod window_appearance;
 
 use std::path::PathBuf;
 

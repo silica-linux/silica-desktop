@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -297,6 +298,82 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get previousSpace => 'Previous space';
+
+  @override
+  String get services => 'Services';
+
+  @override
+  String get noServices => 'No Services Available';
+
+  @override
+  String hideApp(String app) {
+    return 'Hide $app';
+  }
+
+  @override
+  String get hideOthers => 'Hide Others';
+
+  @override
+  String get showAll => 'Show All';
+
+  @override
+  String get fill => 'Fill';
+
+  @override
+  String get moveAndResize => 'Move & Resize';
+
+  @override
+  String get tileLeft => 'Left';
+
+  @override
+  String get tileRight => 'Right';
+
+  @override
+  String get tileTop => 'Top';
+
+  @override
+  String get tileBottom => 'Bottom';
+
+  @override
+  String get arrangeLeftRight => 'Left & Right';
+
+  @override
+  String get arrangeLeftQuarters => 'Left & Quarters';
+
+  @override
+  String get arrangeQuarters => 'Quarters';
+
+  @override
+  String get bringAllToFront => 'Bring All to Front';
+
+  @override
+  String appHelp(String app) {
+    return '$app Help';
+  }
+
+  @override
+  String get appSettings => 'Settings…';
+
+  @override
+  String get editUndo => 'Undo';
+
+  @override
+  String get editRedo => 'Redo';
+
+  @override
+  String get editCut => 'Cut';
+
+  @override
+  String get editCopy => 'Copy';
+
+  @override
+  String get editPaste => 'Paste';
+
+  @override
+  String get editDelete => 'Delete';
+
+  @override
+  String get editSelectAll => 'Select All';
 
   @override
   String get halfScreen => 'Half of the screen';
@@ -839,6 +916,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get faroScopeClipboard => 'Clipboard';
+
+  @override
+  String get faroSectionSystem => 'System';
 
   @override
   String get faroSearchFiles => 'Search Files';

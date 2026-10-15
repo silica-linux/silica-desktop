@@ -45,8 +45,14 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `panorama.spaces_bar` | `enabled` | — ; expands or collapses the spaces bar (like the pointer at the top). With the bar expanded a window dragged onto a thumbnail moves to that space; a click on a thumbnail goes there |
 | `switcher.next`, `switcher.previous` | — | `forwarded`: opens the app switcher or moves the selection (Logo+Tab, Logo+Shift+Tab); while it is open, releasing the Logo key runs `switcher.commit` and Esc `switcher.cancel` |
 | `switcher.commit`, `switcher.cancel` | — | `forwarded`: closes the switcher activating the chosen app, or without changing app |
+| `switcher.expose` | — | `forwarded`: closes the switcher and opens App Exposé of the chosen app (Up or Down while the switcher is open); releasing the Logo key afterwards changes nothing |
 | `launcher.toggle` | — | `forwarded`: opens or closes the app launcher (Faro in grid mode) |
 | `app.quit` | — | `closed`: asks all the windows of the frontmost app to close (Logo+Q) |
+| `app.hide` | `app_id?` | `app_id`, `hidden`: hides the frontmost app (Logo+H): its windows leave the screen and stay in the shell's list; activating one brings the app back |
+| `app.hide_others` | — | `hidden`: hides every app but the frontmost one (Logo+Alt+H) |
+| `app.show_all` | — | `shown`: every hidden app comes back below the one in front |
+| `app.menu` | — | `app_id`, `serial` (0 without menus), `model`: the menus the frontmost app published (silica-menu-v1, `docs/protocols.md`), as the menu bar receives them |
+| `app.menu_activate` | `id` | `app_id`, `id`: chooses an item of the frontmost app's menus, as a click in the bar; error if the app published none |
 | `faro.toggle` | — | `forwarded`: shell components that received it (Logo+Space) |
 | `notifications.toggle` | — | `forwarded`: opens or closes the Notification Center (click on the clock) |
 | `controlcenter.toggle` | — | `forwarded`: opens or closes the Control Center (icon in the bar) |
