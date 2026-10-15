@@ -171,6 +171,8 @@ pub(super) struct Shared {
     pub(super) clock: Arc<FrameClock>,
     run_task: RunTaskFn,
     time: TimeFn,
+    /// Run after every raster task ([`RasterRunner::on_task_end`]).
+    task_end: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 /// The raster thread. Stopped (and joined) when dropped, after the engine is shut down.
@@ -197,6 +199,7 @@ impl RasterRunner {
             clock,
             run_task,
             time,
+            task_end: OnceLock::new(),
         });
         let thread_shared = Arc::clone(&shared);
         let thread = std::thread::Builder::new()
@@ -212,6 +215,12 @@ impl RasterRunner {
     /// The `user_data` of the render task runner description.
     pub(super) fn user_data(&self) -> *mut c_void {
         Arc::as_ptr(&self.shared).cast_mut().cast::<c_void>()
+    }
+
+    /// Runs `task_end` on the raster thread after every raster task (the Vulkan presents of the
+    /// views of a frame, together). Set once, before the engine runs.
+    pub(super) fn on_task_end(&self, task_end: impl Fn() + Send + Sync + 'static) {
+        let _ = self.shared.task_end.set(Box::new(task_end));
     }
 
     /// The tasks can run from now on.
@@ -291,6 +300,9 @@ fn run(shared: &Shared) {
         let result = unsafe { (shared.run_task)(engine.0, &queued.task) };
         if result != FlutterEngineResult::kSuccess {
             tracing::warn!("raster task {} failed: {}", queued.seq, result.0);
+        }
+        if let Some(task_end) = shared.task_end.get() {
+            task_end();
         }
         (shared.clock.after_task)(queued.seq);
     }

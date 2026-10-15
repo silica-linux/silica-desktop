@@ -275,6 +275,8 @@ struct Chain {
     /// Handed out as a backing store and not given back yet: a view has one layer (no
     /// platform views), so a second backing store in the same frame is refused.
     outstanding: bool,
+    /// Drawn and waiting to be presented with the other views of the frame.
+    queued: Option<u32>,
 }
 
 /// What the engine needs to draw a view's frame into a swapchain image (`compositor.rs`).
@@ -394,6 +396,7 @@ impl VulkanSurface {
             surface: vk_surface,
             swap: Swap::EMPTY,
             outstanding: false,
+            queued: None,
         };
         let this = Self {
             entry,
@@ -521,6 +524,7 @@ impl VulkanSurface {
             surface: vk_surface,
             swap: Swap::EMPTY,
             outstanding: false,
+            queued: None,
         };
         let old = self
             .chains
@@ -574,6 +578,7 @@ impl VulkanSurface {
     /// `old_swapchain`).
     fn rebuild(&self, chain: &mut Chain, size: (u32, u32)) -> Result<(), Error> {
         let surface = chain.surface;
+        chain.queued = None;
         let swap = &mut chain.swap;
         // SAFETY: the calls use a valid device and surface of this instance.
         let (caps, formats, modes) = unsafe {
@@ -792,46 +797,100 @@ impl VulkanSurface {
         None
     }
 
-    /// Brings `chain`'s current image to the presentation state and presents it.
-    fn present_chain(&self, chain: &mut Chain) -> bool {
-        let Some(index) = chain.swap.current.take() else {
-            return false;
-        };
-        let Some(&cmd) = chain.swap.transitions.get(index as usize) else {
-            return false;
-        };
-        let commands = [cmd];
+    /// Brings the queued image of every chain to the presentation state and presents them
+    /// together: one submission of their transitions and one `vkQueuePresentKHR` for all the
+    /// swapchains. Venus waits for the GPU inside every present call: with one call per view a
+    /// frame of several views would wait once per view. Returns, per view presented, whether
+    /// it reached the compositor.
+    fn present_queued(&self, chains: &mut BTreeMap<i64, Chain>) -> Vec<(i64, bool)> {
+        let mut ids = Vec::new();
+        let mut commands = Vec::new();
+        let mut swapchains = Vec::new();
+        let mut indices = Vec::new();
+        for (id, chain) in chains.iter_mut() {
+            let Some(index) = chain.queued.take() else {
+                continue;
+            };
+            let Some(&cmd) = chain.swap.transitions.get(index as usize) else {
+                continue;
+            };
+            ids.push(*id);
+            commands.push(cmd);
+            swapchains.push(chain.swap.swapchain);
+            indices.push(index);
+        }
+        if ids.is_empty() {
+            return Vec::new();
+        }
         let signal = [self.transitioned];
         let submit = vk::SubmitInfo::default()
             .command_buffers(&commands)
             .signal_semaphores(&signal);
-        let swapchains = [chain.swap.swapchain];
-        let indices = [index];
-        let present = vk::PresentInfoKHR::default()
-            .wait_semaphores(&signal)
-            .swapchains(&swapchains)
-            .image_indices(&indices);
+        let mut results = vec![vk::Result::SUCCESS; ids.len()];
         let result = {
+            let present = vk::PresentInfoKHR::default()
+                .wait_semaphores(&signal)
+                .swapchains(&swapchains)
+                .image_indices(&indices)
+                .results(&mut results);
             let _queue = queue_lock();
-            // SAFETY: the transition command is recorded for this image; the queue is used under
-            // its lock; the semaphore orders the presentation after the transition, and the
-            // submission comes after the engine's drawing on the same queue.
+            // SAFETY: each transition command is recorded for the image presented with it; the
+            // queue is used under its lock; the semaphore orders the presentation after the
+            // transitions, and the submission comes after the engine's drawing on the same
+            // queue. `results` has one entry per swapchain.
             unsafe {
                 self.device
                     .queue_submit(self.queue, &[submit], vk::Fence::null())
-                    .and_then(|()| self.swapchain_fn.queue_present(self.queue, &present))
+                    .map_err(|err| (err, false))
+                    .and_then(|()| {
+                        self.swapchain_fn
+                            .queue_present(self.queue, &present)
+                            .map_err(|err| (err, true))
+                    })
             }
         };
-        match result {
+        let submitted = match result {
             Ok(_) => true,
-            // Rebuilt at the next frame (the extent no longer matches the surface).
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                chain.swap.extent = vk::Extent2D::default();
-                true
+            Err((err, presented)) => {
+                if err != vk::Result::ERROR_OUT_OF_DATE_KHR {
+                    tracing::warn!("vkQueueSubmit/vkQueuePresentKHR: {err:?}");
+                }
+                presented
             }
-            Err(err) => {
-                tracing::warn!("vkQueuePresentKHR: {err:?}");
-                false
+        };
+        ids.into_iter()
+            .zip(results)
+            .map(|(id, result)| {
+                let presented = submitted
+                    && match result {
+                        vk::Result::SUCCESS | vk::Result::SUBOPTIMAL_KHR => true,
+                        // Rebuilt at the next frame (the extent no longer matches the surface).
+                        vk::Result::ERROR_OUT_OF_DATE_KHR => {
+                            if let Some(chain) = chains.get_mut(&id) {
+                                chain.swap.extent = vk::Extent2D::default();
+                            }
+                            true
+                        }
+                        err => {
+                            tracing::warn!("view {id}: vkQueuePresentKHR: {err:?}");
+                            false
+                        }
+                    };
+                (id, presented)
+            })
+            .collect()
+    }
+
+    /// Records which views have shown a frame.
+    fn note_presented(&self, presented: &[(i64, bool)]) {
+        for &(id, done) in presented {
+            if !done {
+                continue;
+            }
+            if id == MAIN_VIEW {
+                self.main_presented.store(true, Ordering::Release);
+            } else if let Ok(mut views) = self.presented.lock() {
+                views.insert(id);
             }
         }
     }
@@ -853,13 +912,14 @@ impl VulkanSurface {
         let Ok(mut chains) = self.chains.lock() else {
             return false;
         };
-        let presented = chains
-            .get_mut(&MAIN_VIEW)
-            .is_some_and(|chain| self.present_chain(chain));
-        if presented {
-            self.main_presented.store(true, Ordering::Release);
-        }
-        presented
+        let Some(chain) = chains.get_mut(&MAIN_VIEW) else {
+            return false;
+        };
+        chain.queued = chain.swap.current.take();
+        let presented = self.present_queued(&mut chains);
+        drop(chains);
+        self.note_presented(&presented);
+        presented.iter().any(|&(_, done)| done)
     }
 
     /// The backing store of view `view_id` for a frame of `size` pixels: the next image of the
@@ -872,7 +932,9 @@ impl VulkanSurface {
             tracing::warn!("view {view_id}: a second layer in one frame is not supported");
             return None;
         }
+        let start = std::time::Instant::now();
         let (image, format) = self.acquire(chain, size)?;
+        slow("acquire", view_id, start);
         chain.outstanding = true;
         Some(VulkanTarget {
             view_id,
@@ -881,7 +943,8 @@ impl VulkanSurface {
         })
     }
 
-    /// Presents the frame drawn into `target`.
+    /// Queues the frame drawn into `target` for presentation: the views of a frame are
+    /// presented together when the raster task ends ([`Self::flush_presents`]).
     pub(super) fn present_target(&self, target: &VulkanTarget) -> bool {
         let Ok(mut chains) = self.chains.lock() else {
             return false;
@@ -899,16 +962,24 @@ impl VulkanSurface {
             // The swapchain was rebuilt since: the frame is lost, the next one comes.
             return true;
         }
-        let presented = self.present_chain(chain);
-        drop(chains);
-        if presented {
-            if target.view_id == MAIN_VIEW {
-                self.main_presented.store(true, Ordering::Release);
-            } else if let Ok(mut views) = self.presented.lock() {
-                views.insert(target.view_id);
-            }
+        chain.queued = chain.swap.current.take();
+        true
+    }
+
+    /// Presents the frames queued by [`Self::present_target`]: on the raster thread, after
+    /// every raster task.
+    pub(super) fn flush_presents(&self) {
+        let Ok(mut chains) = self.chains.lock() else {
+            return;
+        };
+        if chains.values().all(|chain| chain.queued.is_none()) {
+            return;
         }
-        presented
+        let start = std::time::Instant::now();
+        let presented = self.present_queued(&mut chains);
+        drop(chains);
+        slow("present", presented.len() as i64, start);
+        self.note_presented(&presented);
     }
 
     /// The engine gave `target` back: the view may have its next backing store.
@@ -918,6 +989,18 @@ impl VulkanSurface {
         {
             chain.outstanding = false;
         }
+    }
+}
+
+/// Logs (debug) a swapchain call of view `view_id` that blocked the raster thread for more
+/// than 2 ms.
+fn slow(call: &str, view_id: i64, start: std::time::Instant) {
+    let elapsed = start.elapsed();
+    if elapsed > std::time::Duration::from_millis(2) {
+        tracing::debug!(
+            "{call} ({view_id}) took {:.1} ms",
+            elapsed.as_secs_f64() * 1000.0
+        );
     }
 }
 

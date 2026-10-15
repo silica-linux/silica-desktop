@@ -732,6 +732,19 @@ impl Engine {
         // The raster thread is the embedder's: its tasks are numbered (`FrameClock`).
         callbacks.frames.set_time(api.time);
         let raster = RasterRunner::start(Arc::clone(&callbacks.frames), api.run_task, api.time)?;
+        // Several views on Vulkan: the views of a frame are presented together, when its raster
+        // task ends (`VulkanSurface::flush_presents`).
+        if callbacks.multi_view && callbacks.vulkan.is_some() {
+            let address = user_data as usize;
+            raster.on_task_end(move || {
+                // SAFETY: address is the Callbacks given to the engine, kept by Engine until after
+                // the raster thread is stopped (fields drop in declaration order: `raster` first).
+                let callbacks = unsafe { self::callbacks(address as *mut c_void) };
+                if let Some(vulkan) = &callbacks.vulkan {
+                    vulkan.flush_presents();
+                }
+            });
+        }
         let render_runner = Box::new(FlutterTaskRunnerDescription {
             struct_size: size_of::<FlutterTaskRunnerDescription>(),
             user_data: raster.user_data(),
