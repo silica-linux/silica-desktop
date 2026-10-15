@@ -42,6 +42,17 @@ part 'faro_scopes.dart';
 const double wideWidth = 640;
 const double narrowWidth = 384;
 const double topFraction = 0.30;
+
+/// The top edge of the panel: 30 % of the screen height in logical points (spotlight.md),
+/// snapped to a device pixel so it is the same for any scale and resolution.
+double panelTop(Size screen, double devicePixelRatio) =>
+    (screen.height * topFraction * devicePixelRatio).roundToDouble() /
+    devicePixelRatio;
+
+/// The left edge of a panel of `width` centred on the screen, snapped to a device pixel.
+double panelLeft(Size screen, double width, double devicePixelRatio) =>
+    ((screen.width - width) / 2 * devicePixelRatio).roundToDouble() /
+    devicePixelRatio;
 const double headerHeight = 56;
 const double rowHeight = 57;
 
@@ -178,7 +189,8 @@ const double dragThreshold = 5;
 const double keycapHeight = 18;
 const double keycapRadius = 5.5;
 
-class _FaroState extends State<Faro> with TickerProviderStateMixin {
+class _FaroState extends State<Faro>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode();
   StreamSubscription<String>? _commands;
@@ -417,6 +429,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Dates of the rows ("today, 14:56") in every language of the shell.
     initializeDateFormatting();
     _query.addListener(() {
@@ -450,6 +463,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _commands?.cancel();
     _dismissed?.cancel();
     _spreadDelay?.cancel();
@@ -491,6 +505,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     return !_open &&
         at != null &&
         DateTime.now().difference(at) < const Duration(milliseconds: 400);
+  }
+
+  /// The output's scale or size changed: the panel is placed again and the input region
+  /// is sent again, even when the logical rectangles end up equal.
+  @override
+  void didChangeMetrics() {
+    _regionKey = '';
+    if (mounted) setState(() {});
   }
 
   /// The panel's rectangles are the only place Faro takes the pointer; a press outside
@@ -823,13 +845,14 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
-        final frameLeft = (screen.width - wideWidth) / 2;
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final frameLeft = panelLeft(screen, wideWidth, dpr);
         // Wider than the 640 pt frame (the first frames of an opening) it stays centred;
         // narrower, its left edge stays on the frame and the right edge moves.
         var left = width > wideWidth
             ? frameLeft - (width - wideWidth) / 2
             : frameLeft;
-        final top = screen.height * topFraction;
+        final top = panelTop(screen, dpr);
         // From the launcher: size and position from the big panel to the Faro one.
         final back = _back.isAnimating ? backProgress(_back.value) : 1.0;
         var panelWidth = width;
@@ -837,7 +860,7 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
         var panelRadius = radius;
         if (back < 1) {
           double lerp(double a, double b) => a + (b - a) * back;
-          left = lerp((screen.width - launcherWidth) / 2, left);
+          left = lerp(panelLeft(screen, launcherWidth, dpr), left);
           panelWidth = lerp(launcherWidth, width);
           panelHeight = lerp(launcherHeight, height);
           panelRadius = lerp(launcherRadius, radius);
@@ -1671,10 +1694,11 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
+        final dpr = MediaQuery.devicePixelRatioOf(context);
         _syncRegion([
           Rect.fromLTWH(
-            (screen.width - launcherWidth) / 2,
-            screen.height * topFraction,
+            panelLeft(screen, launcherWidth, dpr),
+            panelTop(screen, dpr),
             launcherWidth,
             launcherHeight,
           ).inflate(2),
@@ -1688,8 +1712,8 @@ class _FaroState extends State<Faro> with TickerProviderStateMixin {
               ),
             ),
             Positioned(
-              left: (screen.width - launcherWidth) / 2,
-              top: screen.height * topFraction,
+              left: panelLeft(screen, launcherWidth, dpr),
+              top: panelTop(screen, dpr),
               width: launcherWidth,
               height: launcherHeight,
               child: Transform.scale(
