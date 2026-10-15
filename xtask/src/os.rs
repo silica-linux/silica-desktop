@@ -732,6 +732,14 @@ fn deploy(args: &[String]) -> Result<()> {
     for file in ["libflutter_engine.so", "icudtl.dat"] {
         replace_file(&engine.join(file), &share.join("engine").join(file))?;
     }
+    // The patches the engine was built with (Impeller's Vulkan backing stores, #203): an
+    // engine built before them has no list, and the share must not keep an old one.
+    let patches = share.join("engine").join(flutter::PATCH_LIST);
+    if engine.join(flutter::PATCH_LIST).exists() {
+        replace_file(&engine.join(flutter::PATCH_LIST), &patches)?;
+    } else {
+        let _ = std::fs::remove_file(&patches);
+    }
     replace_dir(&root.join("shell/build/release"), &share.join("shell"))?;
     // The interface sounds, in $XDG_DATA_DIRS/silica/sounds (the session puts share/ first).
     replace_dir(

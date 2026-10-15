@@ -2,7 +2,9 @@
 //!
 //! - `engine`: downloads `libflutter_engine.so` and `icudtl.dat` for `crates/embedder/ENGINE_VERSION`.
 //! - `engine --release`: builds the release engine from source (`docs/engine-release.md`):
-//!   Google publishes the engine for custom embedders only in debug.
+//!   Google publishes the engine for custom embedders only in debug. The patches of
+//!   `crates/embedder/engine-patches` are applied first and listed in `silica-patches` next to
+//!   the library, where the embedder looks for them.
 //! - `bindings`: regenerates `crates/embedder/src/ffi/bindings.rs` with bindgen.
 //! - `bundle <shell | demo | path> [--release]`: the bundle of the shell, of the test app
 //!   or of an external app (its own repository); in release also `libapp.so`.
@@ -145,6 +147,7 @@ pub fn engine_release() -> Result<()> {
             source.display()
         ));
     }
+    let patches = apply_engine_patches(&source)?;
     let src = source.join("engine/src");
     let ninja = source.join("third_party/ninja/ninja");
     if !ninja.exists() {
@@ -200,8 +203,78 @@ pub fn engine_release() -> Result<()> {
     .map_err(|e| format!("libflutter_engine.so: {e}"))?;
     std::fs::copy(engine_dir()?.join("icudtl.dat"), dir.join("icudtl.dat"))
         .map_err(|e| format!("icudtl.dat (run `cargo xtask engine` first): {e}"))?;
-    eprintln!("xtask: engine release {version} in {}", dir.display());
+    let listing = dir.join(PATCH_LIST);
+    std::fs::write(&listing, patch_list(&patches))
+        .map_err(|e| format!("{}: {e}", listing.display()))?;
+    let applied = if patches.is_empty() {
+        "none".to_owned()
+    } else {
+        patches.join(", ")
+    };
+    eprintln!(
+        "xtask: engine release {version} in {} (patches: {applied})",
+        dir.display()
+    );
     Ok(())
+}
+
+/// The list of the patches a release engine was built with, next to `libflutter_engine.so`
+/// (`silica_embedder::engine_has_patch`).
+pub const PATCH_LIST: &str = "silica-patches";
+
+/// The contents of [`PATCH_LIST`]: one patch name per line.
+fn patch_list(patches: &[String]) -> String {
+    patches.iter().map(|name| format!("{name}\n")).collect()
+}
+
+/// The patches in `dir` (`crates/embedder/engine-patches`), sorted by file name:
+/// (name, path), the name being the file name without `.patch`.
+fn engine_patches(dir: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut patches: Vec<(String, PathBuf)> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "patch"))
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_str()?.to_owned();
+            Some((name, path))
+        })
+        .collect();
+    patches.sort();
+    patches
+}
+
+/// Applies the engine patches to the checkout `source`, each one once (a patch that applies
+/// in reverse is already there). Returns their names.
+fn apply_engine_patches(source: &Path) -> Result<Vec<String>> {
+    let apply = |patch: &Path, extra: &[&str]| {
+        Command::new("git")
+            .arg("apply")
+            .args(extra)
+            .arg(patch)
+            .current_dir(source)
+            .output()
+            .map(|output| output.status.success())
+            .map_err(|e| format!("cannot start git: {e}"))
+    };
+    let mut names = Vec::new();
+    for (name, patch) in engine_patches(&root()?.join("crates/embedder/engine-patches")) {
+        if apply(&patch, &["--reverse", "--check"])? {
+            eprintln!("xtask: engine patch {name} already applied");
+        } else if apply(&patch, &[])? {
+            eprintln!("xtask: engine patch {name} applied");
+        } else {
+            return Err(format!(
+                "engine patch {} does not apply to {}: update or drop it",
+                patch.display(),
+                source.display()
+            ));
+        }
+        names.push(name);
+    }
+    Ok(names)
 }
 
 pub fn bindings() -> Result<()> {
@@ -464,4 +537,35 @@ pub fn keymap() -> Result<()> {
     std::fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))?;
     eprintln!("xtask: {}", path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{engine_patches, patch_list};
+
+    #[test]
+    fn engine_patches_are_listed_by_name_in_order() {
+        let dir = std::env::temp_dir().join(format!("xtask-patches-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for file in ["b-second.patch", "a-first.patch", "notes.txt"] {
+            std::fs::write(dir.join(file), "").unwrap();
+        }
+        let names: Vec<String> = engine_patches(&dir).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, ["a-first", "b-second"]);
+        assert_eq!(patch_list(&names), "a-first\nb-second\n");
+        assert_eq!(patch_list(&[]), "");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(engine_patches(&dir).is_empty());
+    }
+
+    #[test]
+    fn the_embedder_reads_the_list_xtask_writes() {
+        // Both sides name the file the same way, and the patch the embedder looks for exists.
+        assert_eq!(super::PATCH_LIST, "silica-patches");
+        let dir = crate::root()
+            .unwrap()
+            .join("crates/embedder/engine-patches");
+        let names: Vec<String> = engine_patches(&dir).into_iter().map(|(n, _)| n).collect();
+        assert!(names.iter().any(|n| n == "impeller-vulkan-backing-stores"));
+    }
 }

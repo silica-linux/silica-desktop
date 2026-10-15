@@ -71,7 +71,7 @@ use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporter
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::{self, ZxdgImportedV2};
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 
-use crate::{LayerKeyboard, LayerKind, Options, Renderer};
+use crate::{LayerKeyboard, LayerKind, MultiViewRenderer, Options, Renderer};
 
 /// A drag that left this window (`silica/drag` › `start`).
 struct DragOut {
@@ -552,17 +552,28 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     let multi_view = options.multi_window && options.layer.is_none();
     let mut engine_args = options.engine_args.clone();
     // Vulkan with Impeller; if Vulkan is not there (or does not present on this surface) it
-    // falls back to OpenGL ES with Impeller. Several windows need backing stores, which
-    // Impeller has only on OpenGL ES at the pinned engine (`ffi/compositor.rs`).
+    // falls back to OpenGL ES with Impeller. Several views draw into Vulkan backing stores
+    // (`ffi/compositor.rs`): with Impeller where the engine has them, otherwise with Skia
+    // (`crate::multi_view_renderer`, #203).
+    let multi_view_renderer = crate::multi_view_renderer(
+        std::env::var("SILICA_MULTI_VIEW_RENDERER").ok().as_deref(),
+        crate::engine_has_patch(&options.library, crate::IMPELLER_VULKAN_BACKING_STORES),
+    );
     let vulkan = match options.renderer {
-        Renderer::Vulkan if multi_view => {
-            info!("several windows: OpenGL ES with Impeller (no Vulkan backing stores)");
+        Renderer::Vulkan if multi_view && multi_view_renderer == MultiViewRenderer::Gl => {
+            info!("several views: OpenGL ES with Impeller (SILICA_MULTI_VIEW_RENDERER=gl)");
             None
         }
         Renderer::Vulkan => match VulkanSurface::new(&conn, surface.wl_surface(), options.size) {
             Ok(vulkan) => {
                 info!("renderer Vulkan: {}", vulkan.renderer());
-                engine_args.push("--enable-impeller".to_owned());
+                if !multi_view || multi_view_renderer == MultiViewRenderer::Impeller {
+                    engine_args.push("--enable-impeller".to_owned());
+                }
+                if multi_view {
+                    info!("several views: {multi_view_renderer:?} on Vulkan");
+                    vulkan.set_multi_view(multi_view_renderer == MultiViewRenderer::Impeller);
+                }
                 Some(vulkan)
             }
             Err(err) => {
@@ -1221,6 +1232,11 @@ impl App {
         {
             return refuse(self, reply, &err.to_string());
         }
+        if let Some(vulkan) = engine.vulkan()
+            && let Err(err) = vulkan.add_view(id, view.surface.wl_surface())
+        {
+            return refuse(self, reply, &err.to_string());
+        }
         self.glass.insert(
             id,
             self.glass_manager.clone(),
@@ -1425,6 +1441,9 @@ impl App {
         }
         if let Some(gl) = self.engine.as_ref().and_then(Engine::gl) {
             gl.remove_view(id);
+        }
+        if let Some(vulkan) = self.engine.as_ref().and_then(Engine::vulkan) {
+            vulkan.remove_view(id);
         }
         self.glass.remove(id);
         if let Some(mut view) = self.views.remove(&id) {
@@ -2522,8 +2541,18 @@ impl App {
             return true;
         }
         match &self.engine {
-            Some(engine) if self.gl && id == MAIN_VIEW => engine.gl_presented(),
-            Some(engine) if self.gl => engine.gl().is_some_and(|gl| gl.view_presented(id)),
+            Some(engine) if self.gl && id == MAIN_VIEW => {
+                engine.gl_presented()
+                    || engine
+                        .vulkan()
+                        .is_some_and(|vulkan| vulkan.view_presented(id))
+            }
+            Some(engine) if self.gl => {
+                engine.gl().is_some_and(|gl| gl.view_presented(id))
+                    || engine
+                        .vulkan()
+                        .is_some_and(|vulkan| vulkan.view_presented(id))
+            }
             _ => false,
         }
     }

@@ -1,0 +1,1019 @@
+# Impeller render targets from Vulkan backing stores (silica-desktop#203).
+#
+# Upstream: https://github.com/flutter/flutter/pull/193003 (head
+# ee60a9a4dc22feee2599fbef4127f64f27d464e3), together with flutter/flutter#193001, which it
+# builds on and which landed after ENGINE_VERSION. It fixes flutter/flutter#187525:
+# CreateEmbedderRenderTarget answers "Unimplemented" for kFlutterBackingStoreTypeVulkan
+# under Impeller. `cargo xtask engine --release` applies it (docs/engine-release.md); drop it
+# when ENGINE_VERSION includes the upstream change.
+#
+# Copyright 2013 The Flutter Authors. BSD-3-Clause, the engine's license.
+
+diff --git a/engine/src/flutter/impeller/renderer/backend/vulkan/BUILD.gn b/engine/src/flutter/impeller/renderer/backend/vulkan/BUILD.gn
+index 167f602dd9928..5cb2872af1b9e 100644
+--- a/engine/src/flutter/impeller/renderer/backend/vulkan/BUILD.gn
++++ b/engine/src/flutter/impeller/renderer/backend/vulkan/BUILD.gn
+@@ -138,6 +138,8 @@ impeller_component("vulkan") {
+     "texture_source_vk.h",
+     "texture_vk.cc",
+     "texture_vk.h",
++    "texture_wrapper_vk.cc",
++    "texture_wrapper_vk.h",
+     "tracked_objects_vk.cc",
+     "tracked_objects_vk.h",
+     "vertex_descriptor_vk.cc",
+diff --git a/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.cc b/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.cc
+new file mode 100644
+index 0000000000000..f744eceba845d
+--- /dev/null
++++ b/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.cc
+@@ -0,0 +1,81 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "impeller/renderer/backend/vulkan/texture_wrapper_vk.h"
++
++#include <utility>
++
++#include "flutter/fml/logging.h"
++#include "impeller/renderer/backend/vulkan/context_vk.h"
++#include "impeller/renderer/backend/vulkan/formats_vk.h"
++
++namespace impeller {
++
++namespace {
++
++/// A texture source over a `VkImage` owned by someone else. Holds the image by
++/// value and owns only the view it creates for it.
++class WrappedTextureSourceVK final : public TextureSourceVK {
++ public:
++  WrappedTextureSourceVK(vk::Image image,
++                         vk::UniqueImageView image_view,
++                         TextureDescriptor desc)
++      : TextureSourceVK(desc),
++        image_(image),
++        image_view_(std::move(image_view)) {}
++
++  ~WrappedTextureSourceVK() override = default;
++
++ private:
++  vk::Image GetImage() const override { return image_; }
++
++  vk::ImageView GetImageView() const override { return image_view_.get(); }
++
++  vk::ImageView GetRenderTargetView(uint32_t mip_level,
++                                    uint32_t array_layer) const override {
++    return image_view_.get();
++  }
++
++  bool IsSwapchainImage() const override { return true; }
++
++  vk::Image image_;
++  vk::UniqueImageView image_view_;
++
++  WrappedTextureSourceVK(const WrappedTextureSourceVK&) = delete;
++  WrappedTextureSourceVK& operator=(const WrappedTextureSourceVK&) = delete;
++};
++
++}  // namespace
++
++std::shared_ptr<TextureSourceVK> WrapTextureSourceVK(
++    const std::shared_ptr<Context>& context,
++    const TextureDescriptor& desc,
++    vk::Image image) {
++  if (!context || !image) {
++    return nullptr;
++  }
++
++  vk::ImageViewCreateInfo view_info = {};
++  view_info.viewType = vk::ImageViewType::e2D;
++  view_info.format = ToVKImageFormat(desc.format);
++  view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
++  view_info.subresourceRange.baseMipLevel = 0u;
++  view_info.subresourceRange.baseArrayLayer = 0u;
++  view_info.subresourceRange.levelCount = 1;
++  view_info.subresourceRange.layerCount = 1;
++  view_info.image = image;
++
++  auto [result, image_view] =
++      ContextVK::Cast(*context).GetDevice().createImageViewUnique(view_info);
++  if (result != vk::Result::eSuccess) {
++    FML_LOG(ERROR) << "Failed to create image view for wrapped image: "
++                   << vk::to_string(result);
++    return nullptr;
++  }
++
++  return std::make_shared<WrappedTextureSourceVK>(image, std::move(image_view),
++                                                  desc);
++}
++
++}  // namespace impeller
+diff --git a/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.h b/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.h
+new file mode 100644
+index 0000000000000..1695429844d67
+--- /dev/null
++++ b/engine/src/flutter/impeller/renderer/backend/vulkan/texture_wrapper_vk.h
+@@ -0,0 +1,35 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef FLUTTER_IMPELLER_RENDERER_BACKEND_VULKAN_TEXTURE_WRAPPER_VK_H_
++#define FLUTTER_IMPELLER_RENDERER_BACKEND_VULKAN_TEXTURE_WRAPPER_VK_H_
++
++#include <memory>
++
++#include "impeller/core/texture.h"
++#include "impeller/core/texture_descriptor.h"
++#include "impeller/renderer/backend/vulkan/texture_source_vk.h"
++#include "impeller/renderer/backend/vulkan/vk.h"
++#include "impeller/renderer/context.h"
++
++namespace impeller {
++
++/// @brief      Wrap a `VkImage` Impeller does not own as a texture source.
++///
++///             The image is not owned, not transitioned and not destroyed here;
++///             the caller guarantees it outlives the returned source and is in
++///             a layout the intended usage allows. An image view is created for
++///             it and owned by the returned source.
++///
++///             Returns nullptr if the view could not be created.
++///
++/// @see        `WrapTextureMTL`, the Metal equivalent.
++std::shared_ptr<TextureSourceVK> WrapTextureSourceVK(
++    const std::shared_ptr<Context>& context,
++    const TextureDescriptor& desc,
++    vk::Image image);
++
++}  // namespace impeller
++
++#endif  // FLUTTER_IMPELLER_RENDERER_BACKEND_VULKAN_TEXTURE_WRAPPER_VK_H_
+diff --git a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.cc b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.cc
+index c5cd2e9d0074f..0f9129c404c4e 100644
+--- a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.cc
++++ b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.cc
+@@ -16,47 +16,18 @@
+ #include "impeller/renderer/backend/vulkan/context_vk.h"
+ #include "impeller/renderer/backend/vulkan/surface_context_vk.h"
+ #include "impeller/renderer/backend/vulkan/swapchain/surface_vk.h"
++#include "impeller/renderer/backend/vulkan/texture_wrapper_vk.h"
+ #include "impeller/renderer/render_target.h"
+ #include "impeller/renderer/surface.h"
+ #include "impeller/typographer/backends/skia/typographer_context_skia.h"
+ 
+ namespace flutter {
+ 
+-class WrappedTextureSourceVK : public impeller::TextureSourceVK {
+- public:
+-  explicit WrappedTextureSourceVK(impeller::vk::Image image,
+-                                  impeller::vk::UniqueImageView image_view,
+-                                  impeller::TextureDescriptor desc)
+-      : TextureSourceVK(desc),
+-        image_(image),
+-        image_view_(std::move(image_view)) {}
+-
+-  ~WrappedTextureSourceVK() override = default;
+-
+- private:
+-  impeller::vk::Image GetImage() const override { return image_; }
+-
+-  impeller::vk::ImageView GetImageView() const override {
+-    return image_view_.get();
+-  }
+-
+-  impeller::vk::ImageView GetRenderTargetView(
+-      uint32_t mip_level,
+-      uint32_t array_layer) const override {
+-    // Swapchain images are always a single 2D mip and layer.
+-    return image_view_.get();
+-  }
+-
+-  bool IsSwapchainImage() const override { return true; }
+-
+-  impeller::vk::Image image_;
+-  impeller::vk::UniqueImageView image_view_;
+-};
+-
+ GPUSurfaceVulkanImpeller::GPUSurfaceVulkanImpeller(
+     GPUSurfaceVulkanDelegate* delegate,
+-    std::shared_ptr<impeller::Context> context)
+-    : delegate_(delegate) {
++    std::shared_ptr<impeller::Context> context,
++    bool render_to_surface)
++    : delegate_(delegate), render_to_surface_(render_to_surface) {
+   if (!context || !context->IsValid()) {
+     return;
+   }
+@@ -88,6 +59,28 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceVulkanImpeller::AcquireFrame(
+     return nullptr;
+   }
+ 
++  // Per-frame upkeep, not part of presenting: release this thread's cached
++  // command and descriptor pools whether or not a frame is acquired below.
++  // Skipping it when the compositor presents would leave the raster thread
++  // holding those pools for the life of the engine.
++  if (impeller_context_) {
++    impeller::ContextVK::Cast(*impeller_context_)
++        .DisposeThreadLocalCachedResources();
++  }
++
++  // Nothing to acquire or present when an external view embedder owns
++  // presentation: the compositor presents the layers. Without this the engine
++  // presents an unrendered root image after every composited frame, which on a
++  // scanout ring overwrites the frame just shown -- one good frame, then black.
++  if (!render_to_surface_) {
++    return std::make_unique<SurfaceFrame>(
++        nullptr, SurfaceFrame::FramebufferInfo{.supports_readback = true},
++        [](const SurfaceFrame& surface_frame, DlCanvas* canvas) {
++          return true;
++        },
++        [](const SurfaceFrame& surface_frame) { return true; }, size);
++  }
++
+   if (size.IsEmpty()) {
+     FML_LOG(ERROR) << "Vulkan surface was asked for an empty frame.";
+     return nullptr;
+@@ -158,11 +151,6 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceVulkanImpeller::AcquireFrame(
+       return nullptr;
+     }
+ 
+-    impeller::ContextVK& context_vk =
+-        impeller::ContextVK::Cast(*impeller_context_);
+-
+-    context_vk.DisposeThreadLocalCachedResources();
+-
+     impeller::vk::Image vk_image =
+         impeller::vk::Image(reinterpret_cast<VkImage>(flutter_image.image));
+ 
+@@ -174,22 +162,9 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceVulkanImpeller::AcquireFrame(
+     desc.compression_type = impeller::CompressionType::kLossless;
+     desc.usage = impeller::TextureUsage::kRenderTarget;
+ 
+-    impeller::vk::ImageViewCreateInfo view_info = {};
+-    view_info.viewType = impeller::vk::ImageViewType::e2D;
+-    view_info.format = ToVKImageFormat(desc.format);
+-    view_info.subresourceRange.aspectMask =
+-        impeller::vk::ImageAspectFlagBits::eColor;
+-    view_info.subresourceRange.baseMipLevel = 0u;
+-    view_info.subresourceRange.baseArrayLayer = 0u;
+-    view_info.subresourceRange.levelCount = 1;
+-    view_info.subresourceRange.layerCount = 1;
+-    view_info.image = vk_image;
+-
+-    auto [result, image_view] =
+-        context_vk.GetDevice().createImageViewUnique(view_info);
+-    if (result != impeller::vk::Result::eSuccess) {
+-      FML_LOG(ERROR) << "Failed to create image view for provided image: "
+-                     << impeller::vk::to_string(result);
++    auto wrapped_onscreen =
++        impeller::WrapTextureSourceVK(impeller_context_, desc, vk_image);
++    if (!wrapped_onscreen) {
+       return nullptr;
+     }
+ 
+@@ -201,8 +176,6 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceVulkanImpeller::AcquireFrame(
+       transients_size_ = frame_size;
+     }
+ 
+-    auto wrapped_onscreen = std::make_shared<WrappedTextureSourceVK>(
+-        vk_image, std::move(image_view), desc);
+     auto surface = impeller::SurfaceVK::WrapSwapchainImage(
+         transients_, wrapped_onscreen, [&]() -> bool { return true; });
+     impeller::RenderTarget render_target = surface->GetRenderTarget();
+diff --git a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.h b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.h
+index 09322a63b6b68..78d0e9c71e51b 100644
+--- a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.h
++++ b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller.h
+@@ -23,8 +23,14 @@ FML_TEST_CLASS(GPUSurfaceVulkanImpeller,
+ 
+ class GPUSurfaceVulkanImpeller final : public Surface {
+  public:
++  /// @param  render_to_surface  False when an external view embedder owns
++  ///                            presentation, in which case this surface must
++  ///                            neither acquire nor present an image: the
++  ///                            compositor presents the layers instead, and a
++  ///                            root-surface present would overwrite them.
+   explicit GPUSurfaceVulkanImpeller(GPUSurfaceVulkanDelegate* delegate,
+-                                    std::shared_ptr<impeller::Context> context);
++                                    std::shared_ptr<impeller::Context> context,
++                                    bool render_to_surface = true);
+ 
+   // |Surface|
+   ~GPUSurfaceVulkanImpeller() override;
+@@ -37,6 +43,7 @@ class GPUSurfaceVulkanImpeller final : public Surface {
+                   RecreatesTransientsWhenFrameSizeChanges);
+ 
+   GPUSurfaceVulkanDelegate* delegate_;
++  bool render_to_surface_ = true;
+   std::shared_ptr<impeller::Context> impeller_context_;
+   std::shared_ptr<impeller::AiksContext> aiks_context_;
+   std::shared_ptr<impeller::SwapchainTransientsVK> transients_;
+diff --git a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller_unittests.cc b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller_unittests.cc
+index 49f02090413cd..5573f9efc28a2 100644
+--- a/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller_unittests.cc
++++ b/engine/src/flutter/shell/gpu/gpu_surface_vulkan_impeller_unittests.cc
+@@ -39,6 +39,7 @@ class TestGPUSurfaceVulkanDelegate : public GPUSurfaceVulkanDelegate {
+   const vulkan::VulkanProcTable& vk() override { return *vk_; }
+ 
+   FlutterVulkanImage AcquireImage(const DlISize& size) override {
++    ++acquire_count_;
+     if (!test_surface_ || surface_size_ != size) {
+       test_surface_ = TestVulkanSurface::Create(*test_context_, size);
+       surface_size_ = size;
+@@ -53,9 +54,17 @@ class TestGPUSurfaceVulkanDelegate : public GPUSurfaceVulkanDelegate {
+     };
+   }
+ 
+-  bool PresentImage(VkImage image, VkFormat format) override { return true; }
++  bool PresentImage(VkImage image, VkFormat format) override {
++    ++present_count_;
++    return true;
++  }
++
++  int acquire_count() const { return acquire_count_; }
++  int present_count() const { return present_count_; }
+ 
+  private:
++  int acquire_count_ = 0;
++  int present_count_ = 0;
+   fml::RefPtr<vulkan::VulkanProcTable> vk_;
+   fml::RefPtr<TestVulkanContext> test_context_;
+   std::unique_ptr<TestVulkanSurface> test_surface_;
+@@ -83,6 +92,56 @@ TEST(GPUSurfaceVulkanImpeller, DisposesThreadLocalResources) {
+   EXPECT_EQ(impeller::CommandPoolRecyclerVK::GetGlobalPoolCount(*context), 0);
+ }
+ 
++/// An external view embedder presents the frame's layers itself, so the root
++/// surface must neither acquire an image nor present one. It used to do both:
++/// the engine presented an unrendered root image after every composited frame,
++/// which on an embedder that recycles scanout buffers overwrote the frame just
++/// shown -- one good frame, then black.
++TEST(GPUSurfaceVulkanImpeller, DoesNotPresentWhenNotRenderingToSurface) {
++  impeller::ContextVK::Settings context_settings;
++  context_settings.proc_address_callback = vkGetInstanceProcAddr;
++  context_settings.shader_libraries_data = ShaderLibraryMappings();
++  auto context = impeller::ContextVK::Create(std::move(context_settings));
++
++  TestGPUSurfaceVulkanDelegate delegate;
++  std::unique_ptr<Surface> surface = std::make_unique<GPUSurfaceVulkanImpeller>(
++      &delegate, context, /*render_to_surface=*/false);
++
++  // Held before the frame, so the dispose below is observable.
++  auto pool = context->GetCommandPoolRecycler()->Get();
++  EXPECT_EQ(impeller::CommandPoolRecyclerVK::GetGlobalPoolCount(*context), 1);
++
++  auto frame = surface->AcquireFrame(DlISize(100, 100));
++  ASSERT_NE(frame, nullptr);
++  EXPECT_TRUE(frame->Submit());
++
++  EXPECT_EQ(delegate.acquire_count(), 0)
++      << "acquired an embedder image while the compositor owns presentation";
++  EXPECT_EQ(delegate.present_count(), 0)
++      << "presented the root surface over the compositor's layers";
++  // Not presenting is not a reason to stop the per-frame upkeep: the raster
++  // thread would otherwise hold these pools for the life of the engine.
++  EXPECT_EQ(impeller::CommandPoolRecyclerVK::GetGlobalPoolCount(*context), 0)
++      << "thread-local pools survived a frame the compositor presented";
++}
++
++/// The default still renders to the surface, which is what a compositor-less
++/// embedder relies on.
++TEST(GPUSurfaceVulkanImpeller, PresentsWhenRenderingToSurface) {
++  impeller::ContextVK::Settings context_settings;
++  context_settings.proc_address_callback = vkGetInstanceProcAddr;
++  context_settings.shader_libraries_data = ShaderLibraryMappings();
++  auto context = impeller::ContextVK::Create(std::move(context_settings));
++
++  TestGPUSurfaceVulkanDelegate delegate;
++  std::unique_ptr<Surface> surface =
++      std::make_unique<GPUSurfaceVulkanImpeller>(&delegate, context);
++
++  auto frame = surface->AcquireFrame(DlISize(100, 100));
++  ASSERT_NE(frame, nullptr);
++  EXPECT_GT(delegate.acquire_count(), 0);
++}
++
+ TEST(GPUSurfaceVulkanImpeller, RecreatesTransientsWhenFrameSizeChanges) {
+   impeller::ContextVK::Settings context_settings;
+   context_settings.proc_address_callback = vkGetInstanceProcAddr;
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
+index 1788a2f97d69a..a0191470e02bd 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
+@@ -5,9 +5,11 @@
+ #define FML_USED_ON_EMBEDDER
+ #define RAPIDJSON_HAS_STDSTRING 1
+ 
++#include <algorithm>
+ #include <cstring>
+ #include <iostream>
+ #include <memory>
++#include <mutex>
+ #include <set>
+ #include <string>
+ #include <vector>
+@@ -104,6 +106,16 @@ extern const intptr_t kPlatformStrongDillSize;
+ #ifdef SHELL_ENABLE_VULKAN
+ #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
+ #include "third_party/skia/include/gpu/ganesh/vk/GrVkTypes.h"
++#ifdef IMPELLER_SUPPORTS_RENDERING
++#include "flutter/shell/platform/embedder/embedder_render_target_impeller.h"  // nogncheck
++#include "impeller/core/texture.h"                                  // nogncheck
++#include "impeller/renderer/backend/vulkan/formats_vk.h"            // nogncheck
++#include "impeller/renderer/backend/vulkan/swapchain/surface_vk.h"  // nogncheck
++#include "impeller/renderer/backend/vulkan/swapchain/swapchain_transients_vk.h"  // nogncheck
++#include "impeller/renderer/backend/vulkan/texture_wrapper_vk.h"  // nogncheck
++#include "impeller/renderer/context.h"                            // nogncheck
++#include "impeller/renderer/render_target.h"                      // nogncheck
++#endif  // IMPELLER_SUPPORTS_RENDERING
+ #endif  // SHELL_ENABLE_VULKAN
+ 
+ const int32_t kFlutterSemanticsNodeIdBatchEnd = -1;
+@@ -1145,6 +1157,64 @@ static std::optional<impeller::PixelFormat> FlutterFormatToImpellerPixelFormat(
+ 
+ #endif  // defined(SHELL_ENABLE_GL) && defined(IMPELLER_SUPPORTS_RENDERING)
+ 
++/// Declared for every configuration so the render-target plumbing below
++/// compiles without Vulkan; defined only where there is a Vulkan Impeller
++/// backend to cache for.
++class ImpellerVulkanTransientsCache;
++
++#if defined(SHELL_ENABLE_VULKAN) && defined(IMPELLER_SUPPORTS_RENDERING)
++/// The MSAA colour and depth-stencil buffers an Impeller Vulkan render target
++/// draws through, reused across frames and across the views of one frame.
++///
++/// Owned by the engine's render-target callback so that it is destroyed with
++/// the engine, while its Impeller context -- which owns the device the textures
++/// were allocated from -- is still alive.
++class ImpellerVulkanTransientsCache {
++ public:
++  std::shared_ptr<impeller::SwapchainTransientsVK> Get(
++      const std::shared_ptr<impeller::Context>& context,
++      const impeller::TextureDescriptor& desc) {
++    if (!context) {
++      return nullptr;
++    }
++    const std::scoped_lock lock(mutex_);
++    // An engine that rebuilds its context leaves entries behind holding
++    // textures from the old one. Drop them on the way past rather than waiting
++    // for the size bound to evict them. Also keeps the comparison below honest:
++    // a lapsed weak_ptr locks to null and would match a null context.
++    std::erase_if(entries_,
++                  [](const Entry& entry) { return entry.context.expired(); });
++    for (const auto& entry : entries_) {
++      if (entry.context.lock() == context && entry.size == desc.size &&
++          entry.format == desc.format) {
++        return entry.transients;
++      }
++    }
++    auto transients = std::make_shared<impeller::SwapchainTransientsVK>(
++        context, desc, /*enable_msaa=*/true);
++    // One entry per view size; the bound only stops an embedder that cycles
++    // sizes from growing this without limit.
++    constexpr size_t kMaxEntries = 8u;
++    if (entries_.size() >= kMaxEntries) {
++      entries_.erase(entries_.begin());
++    }
++    entries_.push_back({context, desc.size, desc.format, transients});
++    return transients;
++  }
++
++ private:
++  struct Entry {
++    std::weak_ptr<impeller::Context> context;
++    impeller::ISize size;
++    impeller::PixelFormat format;
++    std::shared_ptr<impeller::SwapchainTransientsVK> transients;
++  };
++
++  std::mutex mutex_;
++  std::vector<Entry> entries_;
++};
++#endif  // SHELL_ENABLE_VULKAN && IMPELLER_SUPPORTS_RENDERING
++
+ static std::unique_ptr<flutter::EmbedderRenderTarget>
+ MakeRenderTargetFromBackingStoreImpeller(
+     FlutterBackingStore backing_store,
+@@ -1239,6 +1309,98 @@ MakeRenderTargetFromBackingStoreImpeller(
+ #endif
+ }
+ 
++static std::unique_ptr<flutter::EmbedderRenderTarget>
++MakeRenderTargetFromBackingStoreImpeller(
++    FlutterBackingStore backing_store,
++    const fml::closure& on_release,
++    const std::shared_ptr<impeller::AiksContext>& aiks_context,
++    const FlutterBackingStoreConfig& config,
++    const FlutterVulkanBackingStore* vulkan,
++    ImpellerVulkanTransientsCache* transients_cache) {
++#if defined(SHELL_ENABLE_VULKAN) && defined(IMPELLER_SUPPORTS_RENDERING)
++  if (!aiks_context || !aiks_context->GetContext()) {
++    FML_LOG(ERROR) << "No Impeller context to build a render target with.";
++    return nullptr;
++  }
++
++  if (!vulkan->image || !vulkan->image->image) {
++    FML_LOG(ERROR) << "Embedder supplied null Vulkan image.";
++    return nullptr;
++  }
++
++  // Read directly, as the Skia path does. `FlutterVulkanImage.struct_size` has
++  // never been checked for backing stores, so embedders that leave it unset
++  // work under Skia; gating on it here would fail them only under Impeller.
++  const auto format = impeller::VkFormatToImpellerFormat(
++      static_cast<impeller::vk::Format>(vulkan->image->format));
++  if (!format.has_value()) {
++    FML_LOG(ERROR) << "Embedder supplied Vulkan image with an unsupported "
++                      "pixel format.";
++    return nullptr;
++  }
++
++  const auto size = impeller::ISize(config.size.width, config.size.height);
++
++  impeller::TextureDescriptor desc;
++  desc.format = format.value();
++  desc.size = size;
++  desc.storage_mode = impeller::StorageMode::kDevicePrivate;
++  desc.mip_count = 1u;
++  desc.compression_type = impeller::CompressionType::kLossless;
++  desc.usage = impeller::TextureUsage::kRenderTarget;
++
++  auto texture_source = impeller::WrapTextureSourceVK(
++      aiks_context->GetContext(), desc,
++      impeller::vk::Image(reinterpret_cast<VkImage>(vulkan->image->image)));
++  if (!texture_source) {
++    FML_LOG(ERROR) << "Could not wrap embedder supplied Vulkan image.";
++    return nullptr;
++  }
++
++  // MSAA and the resolve step come from the swapchain transients, the same way
++  // the root surface builds its target -- rather than allocating an MSAA
++  // texture here as the Metal path does -- so both Vulkan paths resolve
++  // identically.
++  //
++  // Cached across frames exactly as GPUSurfaceVulkanImpeller caches its own,
++  // and for the same reason: the transients are an MSAA colour attachment plus
++  // a depth-stencil buffer at frame size, so building a set per render target
++  // means allocating them per frame. An embedder that asks for a fresh backing
++  // store each frame (a scanout ring does) then allocates tens of MB per frame,
++  // which costs frame rate immediately and eventually fails outright.
++  //
++  // The cache belongs to the engine's render-target callback, not to the
++  // process: these textures are allocated from the Impeller context's device,
++  // so outliving that context means freeing them against a dead device. Keyed
++  // by size and format because a multi-view embedder presents several sizes per
++  // frame and a single entry would rebuild them on each one.
++  std::shared_ptr<impeller::SwapchainTransientsVK> transients;
++  if (transients_cache != nullptr) {
++    transients = transients_cache->Get(aiks_context->GetContext(), desc);
++  } else {
++    transients = std::make_shared<impeller::SwapchainTransientsVK>(
++        aiks_context->GetContext(), desc, /*enable_msaa=*/true);
++  }
++
++  auto surface = impeller::SurfaceVK::WrapSwapchainImage(
++      transients, texture_source, []() -> bool { return true; });
++  if (!surface) {
++    FML_LOG(ERROR) << "Could not wrap embedder supplied Vulkan image as a "
++                      "surface.";
++    return nullptr;
++  }
++
++  auto render_target =
++      std::make_unique<impeller::RenderTarget>(surface->GetRenderTarget());
++
++  return std::make_unique<flutter::EmbedderRenderTargetImpeller>(
++      backing_store, aiks_context, std::move(render_target), on_release,
++      fml::closure());
++#else
++  return nullptr;
++#endif
++}
++
+ static std::unique_ptr<flutter::EmbedderRenderTarget>
+ MakeRenderTargetFromBackingStoreImpeller(
+     FlutterBackingStore backing_store,
+@@ -1392,7 +1554,8 @@ CreateEmbedderRenderTarget(
+     const FlutterBackingStoreConfig& config,
+     GrDirectContext* context,
+     const std::shared_ptr<impeller::AiksContext>& aiks_context,
+-    bool enable_impeller) {
++    bool enable_impeller,
++    ImpellerVulkanTransientsCache* transients_cache) {
+   FlutterBackingStore backing_store = {};
+   backing_store.struct_size = sizeof(backing_store);
+ 
+@@ -1523,7 +1686,9 @@ CreateEmbedderRenderTarget(
+     }
+     case kFlutterBackingStoreTypeVulkan: {
+       if (enable_impeller) {
+-        FML_LOG(ERROR) << "Unimplemented";
++        render_target = MakeRenderTargetFromBackingStoreImpeller(
++            backing_store, collect_callback.Release(), aiks_context, config,
++            &backing_store.vulkan, transients_cache);
+         break;
+       } else {
+         auto skia_surface = MakeSkSurfaceFromBackingStore(
+@@ -1578,15 +1743,24 @@ InferExternalViewEmbedderFromArgs(const FlutterCompositor* compositor,
+ 
+   FlutterCompositor captured_compositor = *compositor;
+ 
++  // Lives as long as this engine's render-target callback, so the textures it
++  // holds are freed while the Impeller context that allocated them is alive.
++  // Null where there is no Vulkan Impeller backend; the render target path that
++  // reads it is compiled out in that case too.
++  std::shared_ptr<ImpellerVulkanTransientsCache> transients_cache;
++#if defined(SHELL_ENABLE_VULKAN) && defined(IMPELLER_SUPPORTS_RENDERING)
++  transients_cache = std::make_shared<ImpellerVulkanTransientsCache>();
++#endif  // SHELL_ENABLE_VULKAN && IMPELLER_SUPPORTS_RENDERING
++
+   flutter::EmbedderExternalViewEmbedder::CreateRenderTargetCallback
+       create_render_target_callback =
+-          [captured_compositor, enable_impeller](
++          [captured_compositor, enable_impeller, transients_cache](
+               GrDirectContext* context,
+               const std::shared_ptr<impeller::AiksContext>& aiks_context,
+               const auto& config) {
+-            return CreateEmbedderRenderTarget(&captured_compositor, config,
+-                                              context, aiks_context,
+-                                              enable_impeller);
++            return CreateEmbedderRenderTarget(
++                &captured_compositor, config, context, aiks_context,
++                enable_impeller, transients_cache.get());
+           };
+ 
+   flutter::EmbedderExternalViewEmbedder::PresentCallback present_callback;
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_surface_vulkan_impeller.cc b/engine/src/flutter/shell/platform/embedder/embedder_surface_vulkan_impeller.cc
+index d8e8018ab38a9..83d279b411948 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_surface_vulkan_impeller.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_surface_vulkan_impeller.cc
+@@ -118,7 +118,10 @@ bool EmbedderSurfaceVulkanImpeller::IsValid() const {
+ 
+ // |EmbedderSurface|
+ std::unique_ptr<Surface> EmbedderSurfaceVulkanImpeller::CreateGPUSurface() {
+-  return std::make_unique<GPUSurfaceVulkanImpeller>(this, context_);
++  // The compositor presents when one is supplied; see GPUSurfaceVulkanImpeller.
++  const bool render_to_surface = !external_view_embedder_;
++  return std::make_unique<GPUSurfaceVulkanImpeller>(this, context_,
++                                                    render_to_surface);
+ }
+ 
+ // |EmbedderSurface|
+diff --git a/engine/src/flutter/shell/platform/embedder/tests/embedder_test_backingstore_producer_vulkan.cc b/engine/src/flutter/shell/platform/embedder/tests/embedder_test_backingstore_producer_vulkan.cc
+index 90a8b638b20f5..d82c31059face 100644
+--- a/engine/src/flutter/shell/platform/embedder/tests/embedder_test_backingstore_producer_vulkan.cc
++++ b/engine/src/flutter/shell/platform/embedder/tests/embedder_test_backingstore_producer_vulkan.cc
+@@ -84,6 +84,7 @@ bool EmbedderTestBackingStoreProducerVulkan::Create(
+   backing_store_out->type = kFlutterBackingStoreTypeVulkan;
+ 
+   FlutterVulkanImage* image = new FlutterVulkanImage();
++  image->struct_size = sizeof(FlutterVulkanImage);
+   image->image = reinterpret_cast<uint64_t>(image_info.fImage);
+   image->format = VK_FORMAT_R8G8B8A8_UNORM;
+   backing_store_out->vulkan.image = image;
+diff --git a/engine/src/flutter/shell/platform/embedder/tests/embedder_test_context_vulkan.cc b/engine/src/flutter/shell/platform/embedder/tests/embedder_test_context_vulkan.cc
+index dbb45c0758757..e155a9c22dc19 100644
+--- a/engine/src/flutter/shell/platform/embedder/tests/embedder_test_context_vulkan.cc
++++ b/engine/src/flutter/shell/platform/embedder/tests/embedder_test_context_vulkan.cc
+@@ -29,6 +29,14 @@ EmbedderTestContextVulkan::EmbedderTestContextVulkan(std::string assets_path)
+       .device = vulkan_context_->device_->GetHandle(),
+       .queue_family_index = vulkan_context_->device_->GetGraphicsQueueIndex(),
+       .queue = vulkan_context_->device_->GetQueueHandle(),
++      .enabled_instance_extension_count =
++          vulkan_context_->GetEnabledInstanceExtensions().size(),
++      .enabled_instance_extensions = const_cast<const char**>(
++          vulkan_context_->GetEnabledInstanceExtensions().data()),
++      .enabled_device_extension_count =
++          vulkan_context_->GetEnabledDeviceExtensions().size(),
++      .enabled_device_extensions = const_cast<const char**>(
++          vulkan_context_->GetEnabledDeviceExtensions().data()),
+       .get_instance_proc_address_callback =
+           EmbedderTestContextVulkan::InstanceProcAddr,
+       .get_next_image_callback =
+diff --git a/engine/src/flutter/shell/platform/embedder/tests/embedder_vk_unittests.cc b/engine/src/flutter/shell/platform/embedder/tests/embedder_vk_unittests.cc
+index f8737da4e5765..cb46470788d62 100644
+--- a/engine/src/flutter/shell/platform/embedder/tests/embedder_vk_unittests.cc
++++ b/engine/src/flutter/shell/platform/embedder/tests/embedder_vk_unittests.cc
+@@ -14,6 +14,9 @@
+ #include "flutter/fml/synchronization/count_down_latch.h"
+ #include "flutter/shell/platform/embedder/tests/embedder_config_builder.h"
+ #include "flutter/shell/platform/embedder/tests/embedder_test.h"
++#include "flutter/fml/synchronization/waitable_event.h"
++#include "flutter/shell/platform/embedder/tests/embedder_test_backingstore_producer.h"
++#include "flutter/shell/platform/embedder/tests/embedder_test_compositor.h"
+ #include "flutter/shell/platform/embedder/tests/embedder_test_context_vulkan.h"
+ #include "flutter/shell/platform/embedder/tests/embedder_unittests_util.h"
+ #include "flutter/testing/testing.h"
+@@ -100,6 +103,66 @@ TEST_F(EmbedderTest, CanGetVulkanEmbedderContext) {
+   EmbedderConfigBuilder builder(context);
+ }
+ 
++/// Vulkan backing stores under Impeller.
++///
++/// `CreateEmbedderRenderTarget` had no Impeller path for
++/// `kFlutterBackingStoreTypeVulkan`, so it returned no render target and
++/// rasterization failed on every frame -- the compositor's present callback was
++/// never reached. This is the regression test for that: it asserts the frame
++/// reaches the compositor as a Vulkan backing store, which is exactly what did
++/// not happen before.
++///
++/// Deliberately not a golden-image comparison. The failure being guarded
++/// against is "no frame at all", and asserting arrival keeps the test free of a
++/// per-backend fixture.
++TEST_F(EmbedderTest, CanRenderWithImpellerVulkan) {
++  auto& context = GetEmbedderContext<EmbedderTestContextVulkan>();
++  EmbedderConfigBuilder builder(context);
++
++  builder.AddCommandLineArgument("--enable-impeller");
++  builder.SetDartEntrypoint("render_impeller_test");
++  builder.SetSurface(DlISize(800, 600));
++  builder.SetCompositor();
++  builder.SetRenderTargetType(
++      EmbedderTestBackingStoreProducer::RenderTargetType::kVulkanImage);
++
++  fml::AutoResetWaitableEvent latch;
++  bool layer_was_a_vulkan_backing_store = false;
++  context.GetCompositor().SetNextPresentCallback(
++      [&](FlutterViewId view_id, const FlutterLayer** layers,
++          size_t layers_count) {
++        if (layers_count == 1u &&
++            layers[0]->type == kFlutterLayerContentTypeBackingStore &&
++            layers[0]->backing_store->type == kFlutterBackingStoreTypeVulkan) {
++          layer_was_a_vulkan_backing_store = true;
++        }
++        latch.Signal();
++      });
++
++  auto rendered_scene = context.GetNextSceneImage();
++
++  auto engine = builder.LaunchEngine();
++  ASSERT_TRUE(engine.is_valid());
++
++  FlutterWindowMetricsEvent event = {};
++  event.struct_size = sizeof(event);
++  event.width = 800;
++  event.height = 600;
++  event.pixel_ratio = 1.0;
++  ASSERT_EQ(FlutterEngineSendWindowMetricsEvent(engine.get(), &event),
++            kSuccess);
++
++  // Before the Impeller path existed this never fired: with no render target
++  // the frame was dropped ahead of the compositor. Bounded, so that failure
++  // reads as a failure rather than a hang until the suite timeout.
++  // WaitWithTimeout returns true when it timed out.
++  ASSERT_FALSE(latch.WaitWithTimeout(fml::TimeDelta::FromSeconds(30)))
++      << "no frame reached the compositor";
++  EXPECT_TRUE(layer_was_a_vulkan_backing_store);
++
++  ASSERT_TRUE(ImageMatchesFixture("impeller_test.png", rendered_scene));
++}
++
+ TEST_F(EmbedderTest, CanSwapOutVulkanCalls) {
+   fml::AutoResetWaitableEvent latch;
+ 
+diff --git a/engine/src/flutter/testing/test_vulkan_context.cc b/engine/src/flutter/testing/test_vulkan_context.cc
+index 81a1bf4906bf3..75bc96f729d08 100644
+--- a/engine/src/flutter/testing/test_vulkan_context.cc
++++ b/engine/src/flutter/testing/test_vulkan_context.cc
+@@ -2,9 +2,11 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include <algorithm>
+ #include <cassert>
+ #include <memory>
+ #include <optional>
++#include <string_view>
+ 
+ #include "flutter/flutter_vma/flutter_skia_vma.h"
+ #include "flutter/fml/logging.h"
+@@ -23,6 +25,47 @@
+ 
+ namespace flutter::testing {
+ 
++namespace {
++
++/// The surface extensions Impeller requires of an embedder's instance:
++/// VK_KHR_surface plus at least one window-system extension. Neither is used to
++/// present here -- the tests render into images -- but Impeller refuses a
++/// context without them. Only extensions the ICD offers are returned, so an ICD
++/// without them still yields a context for the Skia tests.
++std::vector<std::string> SurfaceInstanceExtensions(
++    const vulkan::VulkanProcTable& vk) {
++  uint32_t count = 0;
++  if (vk.EnumerateInstanceExtensionProperties(nullptr, &count, nullptr) !=
++          VK_SUCCESS ||
++      count == 0) {
++    return {};
++  }
++  std::vector<VkExtensionProperties> properties(count);
++  if (vk.EnumerateInstanceExtensionProperties(
++          nullptr, &count, properties.data()) != VK_SUCCESS) {
++    return {};
++  }
++  const auto supported = [&](std::string_view name) {
++    return std::any_of(properties.begin(), properties.begin() + count,
++                       [&](const VkExtensionProperties& p) {
++                         return name == p.extensionName;
++                       });
++  };
++
++  if (!supported(VK_KHR_SURFACE_EXTENSION_NAME)) {
++    return {};
++  }
++  for (const char* wsi : {"VK_KHR_xcb_surface", "VK_KHR_xlib_surface",
++                          "VK_KHR_wayland_surface"}) {
++    if (supported(wsi)) {
++      return {VK_KHR_SURFACE_EXTENSION_NAME, wsi};
++    }
++  }
++  return {};
++}
++
++}  // namespace
++
+ TestVulkanContext::TestVulkanContext() {
+   // ---------------------------------------------------------------------------
+   // Initialize basic Vulkan state using the Swiftshader ICD.
+@@ -46,8 +89,9 @@ TestVulkanContext::TestVulkanContext() {
+     return;
+   }
+ 
++  enabled_instance_extensions_ = SurfaceInstanceExtensions(*vk_);
+   application_ = std::make_unique<vulkan::VulkanApplication>(
+-      *vk_, "Flutter Unittests", std::vector<std::string>{},
++      *vk_, "Flutter Unittests", enabled_instance_extensions_,
+       VK_MAKE_VERSION(1, 0, 0), VK_MAKE_VERSION(1, 1, 0), true);
+   if (!application_->IsValid()) {
+     FML_LOG(ERROR) << "Failed to initialize basic Vulkan state.";
+@@ -58,12 +102,19 @@ TestVulkanContext::TestVulkanContext() {
+     return;
+   }
+ 
+-  device_ = application_->AcquireFirstCompatibleLogicalDevice();
++  device_ = CreateLogicalDevice();
+   if (!device_ || !device_->IsValid()) {
+     FML_LOG(ERROR) << "Failed to create compatible logical device.";
+     return;
+   }
+ 
++  for (const auto& name : enabled_instance_extensions_) {
++    enabled_instance_extension_names_.push_back(name.c_str());
++  }
++  for (const auto& name : enabled_device_extensions_) {
++    enabled_device_extension_names_.push_back(name.c_str());
++  }
++
+   // ---------------------------------------------------------------------------
+   // Create a Skia context.
+   // For creating SkSurfaces from VkImages and snapshotting them, etc.
+@@ -107,6 +158,104 @@ TestVulkanContext::TestVulkanContext() {
+   context_ = GrDirectContexts::MakeVulkan(backend_context, options);
+ }
+ 
++std::unique_ptr<vulkan::VulkanDevice> TestVulkanContext::CreateLogicalDevice() {
++  const VkInstance instance = application_->GetInstance();
++  uint32_t device_count = 0;
++  if (vk_->EnumeratePhysicalDevices(instance, &device_count, nullptr) !=
++          VK_SUCCESS ||
++      device_count == 0) {
++    return nullptr;
++  }
++  std::vector<VkPhysicalDevice> physical_devices(device_count);
++  if (vk_->EnumeratePhysicalDevices(instance, &device_count,
++                                    physical_devices.data()) != VK_SUCCESS) {
++    return nullptr;
++  }
++
++  // Impeller's embedder path also requires VK_KHR_swapchain on the device.
++  // The proc table cannot enumerate device extensions, so ask for it and fall
++  // back to a device without it if the ICD refuses.
++  const std::vector<std::vector<std::string>> attempts =
++      enabled_instance_extensions_.empty()
++          ? std::vector<std::vector<std::string>>{{}}
++          : std::vector<std::vector<std::string>>{
++                {VK_KHR_SWAPCHAIN_EXTENSION_NAME}, {}};
++
++  for (VkPhysicalDevice physical_device : physical_devices) {
++    uint32_t family_count = 0;
++    vk_->GetPhysicalDeviceQueueFamilyProperties(physical_device, &family_count,
++                                                nullptr);
++    std::vector<VkQueueFamilyProperties> families(family_count);
++    vk_->GetPhysicalDeviceQueueFamilyProperties(physical_device, &family_count,
++                                                families.data());
++    uint32_t queue_family = family_count;
++    for (uint32_t i = 0; i < family_count; i++) {
++      if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
++        queue_family = i;
++        break;
++      }
++    }
++    if (queue_family == family_count) {
++      continue;
++    }
++
++    const float priority = 1.0f;
++    const VkDeviceQueueCreateInfo queue_info = {
++        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
++        .queueFamilyIndex = queue_family,
++        .queueCount = 1,
++        .pQueuePriorities = &priority,
++    };
++
++    for (const auto& extensions : attempts) {
++      std::vector<const char*> names;
++      names.reserve(extensions.size());
++      for (const auto& name : extensions) {
++        names.push_back(name.c_str());
++      }
++      const VkDeviceCreateInfo create_info = {
++          .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
++          .queueCreateInfoCount = 1,
++          .pQueueCreateInfos = &queue_info,
++          .enabledExtensionCount = static_cast<uint32_t>(names.size()),
++          .ppEnabledExtensionNames = names.data(),
++      };
++      VkDevice device = VK_NULL_HANDLE;
++      if (vk_->CreateDevice(physical_device, &create_info, nullptr, &device) !=
++          VK_SUCCESS) {
++        continue;
++      }
++      if (!vk_->SetupDeviceProcAddresses(
++              vulkan::VulkanHandle<VkDevice>(device))) {
++        vk_->DestroyDevice(device, nullptr);
++        continue;
++      }
++      VkQueue queue = VK_NULL_HANDLE;
++      vk_->GetDeviceQueue(device, queue_family, 0, &queue);
++
++      auto result = std::make_unique<vulkan::VulkanDevice>(
++          *vk_, vulkan::VulkanHandle<VkPhysicalDevice>(physical_device),
++          vulkan::VulkanHandle<VkDevice>(device,
++                                         [vk = vk_](VkDevice d) {
++                                           vk->DeviceWaitIdle(d);
++                                           vk->DestroyDevice(d, nullptr);
++                                         }),
++          queue_family, vulkan::VulkanHandle<VkQueue>(queue));
++      if (!result->IsValid()) {
++        continue;
++      }
++      enabled_device_extensions_ = extensions;
++      if (extensions.empty() && !enabled_instance_extensions_.empty()) {
++        // Without the device extension Impeller cannot use this context, so
++        // the instance list would only mislead it.
++        enabled_instance_extensions_.clear();
++      }
++      return result;
++    }
++  }
++  return nullptr;
++}
++
+ TestVulkanContext::~TestVulkanContext() {
+   if (context_) {
+     context_->releaseResourcesAndAbandonContext();
+diff --git a/engine/src/flutter/testing/test_vulkan_context.h b/engine/src/flutter/testing/test_vulkan_context.h
+index 960b3c0412362..5555eb4fcb2bb 100644
+--- a/engine/src/flutter/testing/test_vulkan_context.h
++++ b/engine/src/flutter/testing/test_vulkan_context.h
+@@ -5,6 +5,9 @@
+ #ifndef FLUTTER_TESTING_TEST_VULKAN_CONTEXT_H_
+ #define FLUTTER_TESTING_TEST_VULKAN_CONTEXT_H_
+ 
++#include <string>
++#include <vector>
++
+ #include "flutter/display_list/geometry/dl_geometry_types.h"
+ #include "flutter/fml/macros.h"
+ #include "flutter/fml/memory/ref_ptr.h"
+@@ -26,11 +29,28 @@ class TestVulkanContext : public fml::RefCountedThreadSafe<TestVulkanContext> {
+ 
+   sk_sp<GrDirectContext> GetGrDirectContext() const;
+ 
++  /// The instance and device extensions this context enabled, in the form
++  /// `FlutterVulkanRendererConfig` takes them. Impeller's embedder path checks
++  /// its requirements against these lists rather than querying the driver.
++  const std::vector<const char*>& GetEnabledInstanceExtensions() const {
++    return enabled_instance_extension_names_;
++  }
++  const std::vector<const char*>& GetEnabledDeviceExtensions() const {
++    return enabled_device_extension_names_;
++  }
++
+  private:
+   fml::RefPtr<vulkan::VulkanProcTable> vk_;
+   std::unique_ptr<vulkan::VulkanApplication> application_;
+   std::unique_ptr<vulkan::VulkanDevice> device_;
+ 
++  std::vector<std::string> enabled_instance_extensions_;
++  std::vector<std::string> enabled_device_extensions_;
++  std::vector<const char*> enabled_instance_extension_names_;
++  std::vector<const char*> enabled_device_extension_names_;
++
++  std::unique_ptr<vulkan::VulkanDevice> CreateLogicalDevice();
++
+   sk_sp<GrDirectContext> context_;
+ 
+   friend class EmbedderTestContextVulkan;
