@@ -27,6 +27,7 @@ mod termgrid;
 mod text_input;
 mod trace;
 mod window;
+mod window_appearance;
 
 use std::path::PathBuf;
 

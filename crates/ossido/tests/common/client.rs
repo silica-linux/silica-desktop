@@ -8,7 +8,7 @@ use std::path::Path;
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
 use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
-use silica_protocols::window::client::silica_window_v1::SilicaWindowV1;
+use silica_protocols::window::client::silica_window_v1::{self, SilicaWindowV1};
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_data_device::{self, WlDataDevice};
@@ -118,7 +118,7 @@ impl Dispatch<WlRegistry, ()> for App {
                     state.data_manager = Some(registry.bind(name, 3.min(version), qh, ()));
                 }
                 "silica_window_manager_v1" => {
-                    state.appearance = Some(registry.bind(name, 1, qh, ()));
+                    state.appearance = Some(registry.bind(name, 3.min(version), qh, ()));
                 }
                 "zxdg_decoration_manager_v1" => {
                     state.decorations = Some(registry.bind(name, 1, qh, ()));
@@ -781,6 +781,24 @@ impl TestWindow {
             .appearance
             .get_or_insert_with(|| manager.get_window(&self.surface, &qh, ()));
         window.set_full_size_content(toolbar);
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Overrides the system appearance for this window (`silica_window_v1.set_appearance`:
+    /// 0 system, 1 light, 2 dark), then the commit.
+    #[allow(dead_code)]
+    pub fn set_appearance(&mut self, appearance: silica_window_v1::Appearance) {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .appearance
+            .clone()
+            .expect("silica_window_manager_v1 missing");
+        let window = self
+            .appearance
+            .get_or_insert_with(|| manager.get_window(&self.surface, &qh, ()));
+        window.set_appearance(appearance);
         self.surface.commit();
         self.queue.roundtrip(&mut self.app).unwrap();
     }

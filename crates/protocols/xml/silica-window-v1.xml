@@ -13,7 +13,7 @@
     the content, at the top left, vertically centered in the toolbar height.
   </description>
 
-  <interface name="silica_window_manager_v1" version="2">
+  <interface name="silica_window_manager_v1" version="3">
     <description summary="creates the window object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -33,7 +33,7 @@
     </request>
   </interface>
 
-  <interface name="silica_window_v1" version="2">
+  <interface name="silica_window_v1" version="3">
     <description summary="appearance of a window">
       The state is double-buffered: it becomes current on the next wl_surface.commit.
     </description>
@@ -50,6 +50,30 @@
       </description>
       <arg name="toolbar_height" type="uint"/>
     </request>
+
+    <enum name="appearance" since="3">
+      <description summary="light or dark presentation of a window"/>
+      <entry name="system" value="0" summary="follow the system appearance"/>
+      <entry name="light" value="1" summary="always light"/>
+      <entry name="dark" value="2" summary="always dark"/>
+    </enum>
+
+    <request name="set_appearance" since="3">
+      <description summary="override the appearance of this window">
+        Everything Ossido draws for the window follows the chosen appearance instead of the
+        system's: the window buttons, the plain title bar and its title, the shadow and inner
+        border, the glass regions declared by the window and the arrangement popover opened
+        from its buttons. An app that is always dark (as on macOS, where NSWindow.appearance
+        overrides the system's) asks for dark. system, the default, follows the system again.
+        An unknown value is a protocol error (invalid_appearance). Double-buffered, applied on
+        the next wl_surface.commit.
+      </description>
+      <arg name="appearance" type="uint" enum="appearance"/>
+    </request>
+
+    <enum name="error">
+      <entry name="invalid_appearance" value="0" summary="the appearance value is unknown"/>
+    </enum>
 
     <request name="set_hidden" since="2">
       <description summary="hide or show the window without closing it">

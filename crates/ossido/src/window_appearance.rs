@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use silica_protocols::window::server::silica_window_manager_v1::{self, SilicaWindowManagerV1};
 use silica_protocols::window::server::silica_window_v1::{self, SilicaWindowV1};
+use smithay::reexports::wayland_server::WEnum;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
@@ -19,10 +20,13 @@ use crate::state::State;
 /// The tallest toolbar accepted (logical pixels).
 pub const MAX_TOOLBAR: u32 = 200;
 
-/// The double-buffered state: the height of the app's toolbar (0: Ossido's bar).
+/// The double-buffered state: the height of the app's toolbar (0: Ossido's bar) and the
+/// appearance the app overrides the system's with.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AppearanceState {
     pub toolbar_height: u32,
+    /// `None` follows the system (`set_appearance(system)`).
+    pub dark: Option<bool>,
 }
 
 impl Cacheable for AppearanceState {
@@ -50,11 +54,31 @@ pub fn full_size_toolbar(surface: &WlSurface) -> Option<u32> {
     (height > 0).then_some(height)
 }
 
+/// The window's own appearance: `Some(true)` dark, `Some(false)` light, `None` the system's.
+pub fn override_of(surface: &WlSurface) -> Option<bool> {
+    with_states(surface, |states| {
+        states.cached_state.get::<AppearanceState>().current().dark
+    })
+}
+
+/// Whether what Ossido draws for the surface's window is dark: its override, otherwise the
+/// system appearance `system_dark`.
+pub fn surface_dark(surface: &WlSurface, system_dark: bool) -> bool {
+    override_of(surface).unwrap_or(system_dark)
+}
+
+/// [`surface_dark`] for a window (the system's if it has no toplevel).
+pub fn window_dark(window: &smithay::desktop::Window, system_dark: bool) -> bool {
+    window.toplevel().map_or(system_dark, |toplevel| {
+        surface_dark(toplevel.wl_surface(), system_dark)
+    })
+}
+
 pub struct WindowManagerState;
 
 impl WindowManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaWindowManagerV1, _>(2, ());
+        dh.create_global::<State, SilicaWindowManagerV1, _>(3, ());
         Self
     }
 }
@@ -112,7 +136,7 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
     fn request(
         state: &mut Self,
         _client: &Client,
-        _window: &SilicaWindowV1,
+        window: &SilicaWindowV1,
         request: silica_window_v1::Request,
         surface: &Weak<WlSurface>,
         _dh: &DisplayHandle,
@@ -134,6 +158,23 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
             silica_window_v1::Request::SetFullSizeContent { toolbar_height } => {
                 set(toolbar_height);
             }
+            silica_window_v1::Request::SetAppearance { appearance } => {
+                let dark = match appearance {
+                    WEnum::Value(silica_window_v1::Appearance::System) => None,
+                    WEnum::Value(silica_window_v1::Appearance::Light) => Some(false),
+                    WEnum::Value(silica_window_v1::Appearance::Dark) => Some(true),
+                    WEnum::Value(_) | WEnum::Unknown(_) => {
+                        window.post_error(
+                            silica_window_v1::Error::InvalidAppearance,
+                            "unknown appearance",
+                        );
+                        return;
+                    }
+                };
+                with_states(&surface, |states| {
+                    states.cached_state.get::<AppearanceState>().pending().dark = dark;
+                });
+            }
             silica_window_v1::Request::SetHidden { hidden } => {
                 if hidden != 0 {
                     state.hide_window(&surface);
@@ -143,6 +184,9 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
             }
             silica_window_v1::Request::Destroy => {
                 set(0);
+                with_states(&surface, |states| {
+                    states.cached_state.get::<AppearanceState>().pending().dark = None;
+                });
                 with_states(&surface, |states| {
                     if let Some(has) = states.data_map.get::<HasWindow>() {
                         has.0.store(false, Ordering::SeqCst);
