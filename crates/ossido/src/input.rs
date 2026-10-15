@@ -129,9 +129,9 @@ impl State {
         // Ossido's own shapes: the resize edges (MU-08) win over the client below, the bar
         // and the desktop have the arrow; elsewhere the client's choice.
         let edges = if let Some(resize) = &self.resizing {
-            Some(resize.edges)
+            Some((resize.window.clone(), resize.edges))
         } else if !over_layer && !in_panorama && !hover_blocked && self.moving.is_none() {
-            self.resize_hit(location).map(|(_, edges)| edges)
+            self.resize_hit(location)
         } else {
             None
         };
@@ -143,7 +143,7 @@ impl State {
             _ => self.surface_under(location),
         };
         self.cursor_override = match edges {
-            Some(edges) => Some(crate::cursor_theme::resize_icon(edges)),
+            Some((window, edges)) => Some(self.resize_cursor(&window, edges)),
             None if on_bar || under.is_none() || self.moving.is_some() || outside_transients => {
                 Some(smithay::input::pointer::CursorIcon::Default)
             }

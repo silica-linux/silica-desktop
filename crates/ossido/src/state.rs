@@ -182,6 +182,9 @@ pub struct State {
     pub moving: Option<(Window, Point<f64, Logical>)>,
     /// Window resized from an edge (MU-08) or at the client's request.
     pub resizing: Option<crate::resize::Resize>,
+    /// A resize just released, until the client answers its last configure (the anchored
+    /// sides stay still until then).
+    pub resize_settling: Option<crate::resize::Resize>,
     /// The serial of the last mouse button press, until it is released:
     /// `xdg_toplevel.move` applies only with this serial.
     pub press_serial: Option<smithay::utils::Serial>,
@@ -390,6 +393,7 @@ impl State {
             buttons_hover: None,
             moving: None,
             resizing: None,
+            resize_settling: None,
             press_serial: None,
             animation_speed: 1.0,
             closing: Vec::new(),

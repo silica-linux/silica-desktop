@@ -123,6 +123,20 @@ fn window_side(value: f64) -> Option<u32> {
 
 const LIFECYCLE_CHANNEL: &str = "flutter/lifecycle";
 
+/// How many software frames of a stale size may be dropped in a row before one is presented
+/// anyway (a client of a compositor that keeps sending sizes must still show something).
+const MAX_STALE_FRAMES: u32 = 2;
+
+/// Whether a software frame of `frame` pixels is dropped instead of presented (#160): it
+/// was drawn for a size the window no longer has (`size` logical pixels at `scale`), and
+/// fewer than [`MAX_STALE_FRAMES`] were dropped in a row. The compositor would show it at
+/// the old size after the configure was acked; the frame at the new size follows.
+fn drop_stale_frame(frame: (u32, u32), size: (u32, u32), scale: i32, dropped: u32) -> bool {
+    let scale = u32::try_from(scale.max(1)).unwrap_or(1);
+    let expected = (size.0.saturating_mul(scale), size.1.saturating_mul(scale));
+    frame != expected && dropped < MAX_STALE_FRAMES
+}
+
 /// The `flutter/lifecycle` message for an active window or not.
 fn lifecycle_message(active: bool) -> &'static str {
     if active {
@@ -280,6 +294,8 @@ struct App {
     configured: bool,
     /// The last engine frame not yet presented.
     pending: Option<Frame>,
+    /// Software frames of a stale size dropped in a row ([`drop_stale_frame`]).
+    stale_drops: u32,
     /// Waiting for the compositor's frame callback before presenting again.
     waiting_frame: bool,
     buffer: Option<Buffer>,
@@ -662,6 +678,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         scale: 1,
         configured: false,
         pending: None,
+        stale_drops: 0,
         waiting_frame: false,
         buffer: None,
         buttons: 0,
@@ -1789,7 +1806,14 @@ impl App {
             self.size.0.saturating_mul(scale),
             self.size.1.saturating_mul(scale),
         );
-        engine.resize_surface(w, h);
+        // Before the first frame the EGL window takes the size at once (with d3d12 in WSL
+        // Mesa applies a size only from the next buffer). Afterwards the raster thread
+        // resizes it at the start of every frame, to that frame's size (`gl_fbo`; Vulkan
+        // rebuilds its swapchain the same way): resizing it from here while a frame is being
+        // drawn could reallocate the back buffer halfway through (a garbage frame, #160).
+        if !engine.gl_presented() {
+            engine.resize_surface(w, h);
+        }
         if let Err(err) = engine.send_window_metrics(w, h, f64::from(scale)) {
             warn!("{err}");
         }
@@ -1864,6 +1888,28 @@ impl App {
         let Some(frame) = self.pending.take() else {
             return;
         };
+        if drop_stale_frame(
+            (frame.width, frame.height),
+            self.size,
+            self.scale,
+            self.stale_drops,
+        ) {
+            self.stale_drops = self.stale_drops.saturating_add(1);
+            tracing::debug!(
+                "frame {}x{} dropped: the window is now {:?} at scale {}",
+                frame.width,
+                frame.height,
+                self.size,
+                self.scale
+            );
+            if let Some(engine) = &self.engine
+                && let Err(err) = engine.schedule_frame()
+            {
+                warn!("{err}");
+            }
+            return;
+        }
+        self.stale_drops = 0;
         let (Ok(width), Ok(height)) = (i32::try_from(frame.width), i32::try_from(frame.height))
         else {
             return;
@@ -1976,11 +2022,17 @@ impl OutputHandler for App {
 
 impl App {
     fn configured(&mut self, qh: &QueueHandle<Self>, size: (u32, u32)) {
-        if size.0 > 0 && size.1 > 0 {
+        let resized = size.0 > 0 && size.1 > 0 && size != self.size;
+        if resized {
             self.size = size;
         }
         self.configured = true;
+        // The new size goes to the engine at once, and the frame for it starts now (#160):
+        // the vsync waiting for the frame callback is answered without waiting for it.
         self.send_metrics();
+        if resized && let Some(baton) = self.vsync.take() {
+            self.answer_vsync(baton);
+        }
         self.present(qh);
     }
 }
@@ -2615,6 +2667,26 @@ mod lifecycle_tests {
         assert_eq!(window_side(-3.0), None);
         assert_eq!(window_side(f64::NAN), None);
         assert_eq!(window_side(1e9), Some(8192));
+    }
+
+    #[test]
+    fn frames_of_a_stale_size_are_dropped_a_few_at_most() {
+        use super::{MAX_STALE_FRAMES, drop_stale_frame};
+        // The frame of the size configured, at scale 1 and 2: presented.
+        assert!(!drop_stale_frame((300, 200), (300, 200), 1, 0));
+        assert!(!drop_stale_frame((600, 400), (300, 200), 2, 0));
+        // A frame drawn before the new size arrived: dropped.
+        assert!(drop_stale_frame((300, 200), (340, 200), 1, 0));
+        assert!(drop_stale_frame((300, 200), (300, 200), 2, 1));
+        // Not forever: after a few in a row one is shown anyway.
+        assert!(!drop_stale_frame(
+            (300, 200),
+            (340, 200),
+            1,
+            MAX_STALE_FRAMES
+        ));
+        // A scale of 0 or less counts as 1.
+        assert!(!drop_stale_frame((300, 200), (300, 200), 0, 0));
     }
 
     #[test]
