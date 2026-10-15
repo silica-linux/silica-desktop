@@ -209,6 +209,11 @@ impl State {
     /// the shell's list and the focus, fading out like a closed window, and waits in `hidden`
     /// with its position. A minimized window is hidden too, from the Dock.
     pub fn hide_window(&mut self, surface: &WlSurface) {
+        let focused = self
+            .seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some_and(|focus| &focus == surface);
         let on_screen = self
             .space
             .elements()
@@ -232,7 +237,17 @@ impl State {
         };
         self.withdraw_toplevel(&entry.0);
         let app = crate::panorama::window_app(&entry.0);
+        // Another window of the app (its Get Info, #146) takes the focus it had.
+        let next = if focused {
+            self.next_focus_after(&entry.0, None)
+        } else {
+            None
+        };
         self.hidden.push(entry);
+        if next.is_some() {
+            self.focus_window(next);
+            return;
+        }
         // As on the reference (APP-LC) the app stays frontmost with no window: no other
         // window takes the focus, and the menu bar keeps showing the app.
         self.set_windowless_front(app);
