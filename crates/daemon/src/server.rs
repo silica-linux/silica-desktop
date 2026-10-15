@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use event_listener::Event;
-use futures_lite::future;
+use futures_lite::{StreamExt, future};
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
@@ -64,6 +64,9 @@ impl Shared {
 pub struct Daemon {
     connection: Connection,
     shared: Shared,
+    /// `NameLost` signals, subscribed before the names are requested so that a loss right
+    /// after the request (a racing instance with `--replace`) is not missed.
+    lost: Mutex<Option<zbus::fdo::NameLostStream>>,
 }
 
 impl Daemon {
@@ -89,6 +92,10 @@ impl Daemon {
                 },
             )
             .await?;
+        let lost = zbus::fdo::DBusProxy::new(&connection)
+            .await?
+            .receive_name_lost()
+            .await?;
         let mut flags = RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement;
         if replace {
             flags |= RequestNameFlags::ReplaceExisting;
@@ -101,7 +108,35 @@ impl Daemon {
                 }
             }
         }
-        Ok(Self { connection, shared })
+        Ok(Self {
+            connection,
+            shared,
+            lost: Mutex::new(Some(lost)),
+        })
+    }
+
+    /// Returns the name this daemon lost (`org.freedesktop.Notifications` or
+    /// `dev.frascella.Silica`, taken by another instance with `--replace`): a daemon that
+    /// does not own its names has nothing to serve and must exit. Fails if called twice or
+    /// if the bus closes.
+    pub async fn name_lost(&self) -> zbus::Result<String> {
+        let taken = self
+            .lost
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(mut lost) = taken else {
+            return Err(zbus::Error::Failure("name_lost already awaited".to_owned()));
+        };
+        while let Some(signal) = lost.next().await {
+            if let Ok(args) = signal.args() {
+                let name = args.name().as_str();
+                if name == FDO_NAME || name == SHELL_NAME {
+                    return Ok(name.to_owned());
+                }
+            }
+        }
+        Err(zbus::Error::Failure("session bus closed".to_owned()))
     }
 
     pub fn connection(&self) -> &Connection {

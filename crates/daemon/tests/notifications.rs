@@ -335,6 +335,22 @@ fn a_second_server_cannot_take_the_names() {
 }
 
 #[test]
+fn a_replaced_daemon_learns_it_lost_a_name() {
+    let bus = Bus::start();
+    zbus::block_on(async {
+        let first = Daemon::serve(bus.connect().await, false).await.unwrap();
+        let _second = Daemon::serve(bus.connect().await, true).await.unwrap();
+        let lost = future::or(first.name_lost(), async {
+            async_io::Timer::after(Duration::from_secs(10)).await;
+            Err(zbus::Error::Failure("timeout".to_owned()))
+        })
+        .await
+        .unwrap();
+        assert!(lost == "org.freedesktop.Notifications" || lost == "dev.frascella.Silica");
+    });
+}
+
+#[test]
 fn inline_replies_are_forwarded_and_close() {
     with_daemon(|conn| async move {
         let fdo = NotificationsProxy::new(&conn).await.unwrap();

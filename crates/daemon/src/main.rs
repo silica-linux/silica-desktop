@@ -100,20 +100,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
         while let Some(Ok(_)) = messages.next().await {}
         Err(zbus::Error::Failure("session bus closed".to_owned()))
     };
-    // Replaced by a newer daemon (`--replace` from a new session on the same bus): this one
-    // goes away instead of polling the system next to it.
+    // Lost one of its names to another daemon (`--replace`, or the D-Bus-activated instance
+    // racing the spawned one): this one goes away instead of running next to it.
     let replaced = async {
-        let bus = zbus::fdo::DBusProxy::new(daemon.connection()).await?;
-        let mut lost = bus.receive_name_lost().await?;
-        while let Some(signal) = lost.next().await {
-            if signal
-                .args()
-                .is_ok_and(|args| args.name().as_str() == silica_daemon::server::SHELL_NAME)
-            {
-                eprintln!("silica-daemon: replaced by another daemon");
-                return Ok(());
-            }
-        }
+        let name = daemon.name_lost().await?;
+        eprintln!("silica-daemon: lost {name} to another daemon, exiting");
         Ok(())
     };
     future::or(
