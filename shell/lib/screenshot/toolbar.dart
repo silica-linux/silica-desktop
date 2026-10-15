@@ -12,6 +12,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
+import '../system/cross_glyph.dart';
 import 'settings.dart';
 
 const Size toolbarSize = Size(545, 52);
@@ -31,6 +32,12 @@ const double actionX = 463;
 const double modeWidth = 44;
 const double optionsWidth = 76;
 const double actionWidth = 80;
+
+/// Provisional (SCREENSHOT-3): the corner radius of the action button.
+const double actionRadius = 12;
+
+/// Provisional (SCREENSHOT-3): the gap between the bar and the Options menu.
+const double optionsGap = 6;
 
 /// The action button's fill: `#0066d8` raw, sRGB `#006fdc` (K-05).
 const Color actionBlue = Color(0xFF006FDC);
@@ -98,6 +105,27 @@ class ShotBarColors {
       : light;
 }
 
+/// The tooltip of each control of the bar (macOS texts, localized). The timing is the
+/// tooltip's own (silica_ui, 1.54 s at rest): PROVISIONAL for this bar (SCREENSHOT-3).
+@immutable
+class ShotBarTips {
+  const ShotBarTips({
+    required this.close,
+    required this.capture,
+    required this.record,
+    required this.options,
+    required this.action,
+  });
+
+  final String close;
+
+  /// Screen, window, selection.
+  final List<String> capture;
+  final List<String> record;
+  final String options;
+  final String action;
+}
+
 /// The bar itself, `toolbarSize`; its place is decided by whoever hosts it.
 class ShotToolbar extends StatelessWidget {
   const ShotToolbar({
@@ -106,6 +134,7 @@ class ShotToolbar extends StatelessWidget {
     required this.colors,
     required this.optionsLabel,
     required this.actionLabel,
+    required this.tips,
     required this.showAction,
     required this.onChoose,
     required this.onClose,
@@ -119,6 +148,7 @@ class ShotToolbar extends StatelessWidget {
   final ShotBarColors colors;
   final String optionsLabel;
   final String actionLabel;
+  final ShotBarTips tips;
 
   /// The action button exists only while there is a target (K-05).
   final bool showAction;
@@ -139,14 +169,17 @@ class ShotToolbar extends StatelessWidget {
     Widget mode(ToolbarChoice which, ShotGlyph glyph, String key) => at(
       captureX[which.index],
       modeWidth,
-      ShotToolButton(
-        key: ValueKey(key),
-        chosen: choice == which,
-        colors: c,
-        onTap: () => onChoose(which),
-        child: (color) => CustomPaint(
-          size: const Size(26, 20),
-          painter: ShotModePainter(glyph, color),
+      SilicaTooltip(
+        message: tips.capture[which.index],
+        child: ShotToolButton(
+          key: ValueKey(key),
+          chosen: choice == which,
+          colors: c,
+          onTap: () => onChoose(which),
+          child: (color) => CustomPaint(
+            size: const Size(26, 20),
+            painter: ShotModePainter(glyph, color),
+          ),
         ),
       ),
     );
@@ -154,13 +187,16 @@ class ShotToolbar extends StatelessWidget {
       recordX[index],
       modeWidth,
       // TODO(#153): screen recording; until then dimmed, no action.
-      Opacity(
-        key: ValueKey('record ${glyph.name}'),
-        opacity: 0.35,
-        child: Center(
-          child: CustomPaint(
-            size: const Size(26, 20),
-            painter: ShotModePainter(glyph, c.glyph, record: true),
+      SilicaTooltip(
+        message: tips.record[index],
+        child: Opacity(
+          key: ValueKey('record ${glyph.name}'),
+          opacity: 0.35,
+          child: Center(
+            child: CustomPaint(
+              size: const Size(26, 20),
+              painter: ShotModePainter(glyph, c.glyph, record: true),
+            ),
           ),
         ),
       ),
@@ -194,21 +230,27 @@ class ShotToolbar extends StatelessWidget {
               at(
                 closeX,
                 18,
-                GestureDetector(
-                  key: const ValueKey('close bar'),
-                  onTap: onClose,
-                  child: Center(
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: c.closeFill,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '×',
-                        style: uiText(size: 13, color: c.closeGlyph),
+                SilicaTooltip(
+                  message: tips.close,
+                  child: GestureDetector(
+                    key: const ValueKey('close bar'),
+                    onTap: onClose,
+                    child: Center(
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: c.closeFill,
+                          shape: BoxShape.circle,
+                        ),
+                        child: CustomPaint(
+                          key: const ValueKey('close glyph'),
+                          painter: CrossGlyph(
+                            c.closeGlyph,
+                            arm: 3.2,
+                            stroke: 1.5,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -241,30 +283,38 @@ class ShotToolbar extends StatelessWidget {
               at(
                 optionsX,
                 optionsWidth,
-                ShotToolButton(
-                  key: const ValueKey('options'),
-                  width: optionsWidth,
-                  colors: c,
-                  onTap: onOptions,
-                  child: (color) =>
-                      Text(optionsLabel, style: uiText(size: 12, color: color)),
+                SilicaTooltip(
+                  message: tips.options,
+                  child: ShotToolButton(
+                    key: const ValueKey('options'),
+                    width: optionsWidth,
+                    colors: c,
+                    onTap: onOptions,
+                    child: (color) => Text(
+                      optionsLabel,
+                      style: uiText(size: 12, color: color),
+                    ),
+                  ),
                 ),
               ),
               if (showAction)
                 at(
                   actionX,
                   actionWidth,
-                  GestureDetector(
-                    key: const ValueKey('capture'),
-                    onTap: onAction,
-                    child: Center(
-                      // The visible pill inside the 80 × 50 button: PROVISIONAL.
+                  SilicaTooltip(
+                    message: tips.action,
+                    // The solid blue button fills its 80 × 50 frame (K-05); the corner radius
+                    // is PROVISIONAL (SCREENSHOT-3).
+                    child: GestureDetector(
+                      key: const ValueKey('capture'),
+                      onTap: onAction,
                       child: Container(
-                        width: 76,
-                        height: 30,
+                        key: const ValueKey('capture fill'),
+                        width: actionWidth,
+                        height: 50,
                         decoration: BoxDecoration(
                           color: actionBlue,
-                          borderRadius: BorderRadius.circular(15),
+                          borderRadius: BorderRadius.circular(actionRadius),
                         ),
                         alignment: Alignment.center,
                         child: Text(

@@ -354,6 +354,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capture => 'Capture';
 
   @override
+  String get shotTipClose => 'Close';
+
+  @override
+  String get shotTipCaptureScreen => 'Capture Entire Screen';
+
+  @override
+  String get shotTipCaptureWindow => 'Capture Selected Window';
+
+  @override
+  String get shotTipCaptureSelection => 'Capture Selected Portion';
+
+  @override
+  String get shotTipRecordScreen => 'Record Entire Screen';
+
+  @override
+  String get shotTipRecordWindow => 'Record Selected Window';
+
+  @override
+  String get shotTipRecordSelection => 'Record Selected Portion';
+
+  @override
+  String get shotTipOptions => 'Options';
+
+  @override
+  String get shotTipCapture => 'Capture';
+
+  @override
   String get shotDesktop => 'Desktop';
 
   @override

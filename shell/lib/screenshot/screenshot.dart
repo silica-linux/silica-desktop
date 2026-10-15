@@ -1068,84 +1068,90 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     final cursor = overBar || (toolbar && _choice == ToolbarChoice.selection)
         ? MouseCursor.defer
         : SystemMouseCursors.none;
-    return Focus(
-      focusNode: _focus,
-      onKeyEvent: _key,
-      child: MouseRegion(
-        cursor: cursor,
-        onHover: (e) => setState(() => _pointer = e.localPosition),
-        child: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (e) {
-            if (!toolbar) _pointerDown(e.localPosition);
-          },
-          onPointerMove: (e) => _pointerMove(e.localPosition),
-          onPointerUp: (e) {
-            if (!toolbar) _pointerUp(e.localPosition);
-          },
-          child: Stack(
-            children: [
-              // ⇧⌘5, screen or window: a click on the screen captures.
-              if (toolbar && _choice != ToolbarChoice.selection)
-                Positioned.fill(
-                  child: GestureDetector(
-                    key: const ValueKey('capture area'),
-                    behavior: HitTestBehavior.opaque,
-                    onTapUp: (d) => _choice == ToolbarChoice.screen
-                        ? _capture('screenshot.screen', {}, timed: true)
-                        : _captureWindow(d.localPosition, timed: true),
+    // An overlay of its own for the tooltips of the bar.
+    return Overlay.wrap(
+      child: Focus(
+        focusNode: _focus,
+        onKeyEvent: _key,
+        child: MouseRegion(
+          cursor: cursor,
+          onHover: (e) => setState(() => _pointer = e.localPosition),
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) {
+              if (!toolbar) _pointerDown(e.localPosition);
+            },
+            onPointerMove: (e) => _pointerMove(e.localPosition),
+            onPointerUp: (e) {
+              if (!toolbar) _pointerUp(e.localPosition);
+            },
+            child: Stack(
+              children: [
+                // ⇧⌘5, screen or window: a click on the screen captures.
+                if (toolbar && _choice != ToolbarChoice.selection)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      key: const ValueKey('capture area'),
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (d) => _choice == ToolbarChoice.screen
+                          ? _capture('screenshot.screen', {}, timed: true)
+                          : _captureWindow(d.localPosition, timed: true),
+                    ),
+                  )
+                else
+                  const Positioned.fill(child: SizedBox.expand()),
+                if (toolbar && _choice == ToolbarChoice.selection)
+                  Positioned.fill(
+                    child: SelectionEditor(
+                      rect: _selection ??= _initialSelection(screen),
+                      onChanged: (r) => setState(() => _selection = r),
+                      onCommitted: (r) {
+                        if (_settings.rememberSelection) {
+                          _changeSettings((s) => s.selection = r);
+                        }
+                      },
+                    ),
                   ),
-                )
-              else
-                const Positioned.fill(child: SizedBox.expand()),
-              if (toolbar && _choice == ToolbarChoice.selection)
-                Positioned.fill(
-                  child: SelectionEditor(
-                    rect: _selection ??= _initialSelection(screen),
-                    onChanged: (r) => setState(() => _selection = r),
-                    onCommitted: (r) {
-                      if (_settings.rememberSelection) {
-                        _changeSettings((s) => s.selection = r);
-                      }
-                    },
-                  ),
-                ),
-              if (_mode == _Mode.selection)
-                if (_live case final live?)
+                if (_mode == _Mode.selection)
+                  if (_live case final live?)
+                    Positioned.fromRect(
+                      rect: live.rect(option: _option),
+                      child: Container(
+                        key: const ValueKey('selection'),
+                        decoration: BoxDecoration(
+                          color: const Color(0x33808080),
+                          border: Border.all(color: const Color(0x99FFFFFF)),
+                        ),
+                      ),
+                    ),
+                if (_pointer case final p? when _mode == _Mode.selection)
+                  ..._crosshair(p),
+                if (_pointer case final p?
+                    when _windowMode && !_compositorVeil && !overBar)
                   Positioned.fromRect(
-                    rect: live.rect(option: _option),
-                    child: Container(
-                      key: const ValueKey('selection'),
-                      decoration: BoxDecoration(
-                        color: const Color(0x33808080),
-                        border: Border.all(color: const Color(0x99FFFFFF)),
+                    rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
+                    child: const IgnorePointer(
+                      child: ColoredBox(
+                        key: ValueKey('veil'),
+                        color: windowVeil,
                       ),
                     ),
                   ),
-              if (_pointer case final p? when _mode == _Mode.selection)
-                ..._crosshair(p),
-              if (_pointer case final p?
-                  when _windowMode && !_compositorVeil && !overBar)
-                Positioned.fromRect(
-                  rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
-                  child: const IgnorePointer(
-                    child: ColoredBox(key: ValueKey('veil'), color: windowVeil),
-                  ),
-                ),
-              if (_pointer case final p? when camera && !overBar)
-                Positioned(
-                  left: p.dx - 14,
-                  top: p.dy - 11,
-                  child: const IgnorePointer(
-                    child: CustomPaint(
-                      key: ValueKey('camera'),
-                      size: Size(28, 22),
-                      painter: CameraPainter(),
+                if (_pointer case final p? when camera && !overBar)
+                  Positioned(
+                    left: p.dx - 14,
+                    top: p.dy - 11,
+                    child: const IgnorePointer(
+                      child: CustomPaint(
+                        key: ValueKey('camera'),
+                        size: Size(28, 22),
+                        painter: CameraPainter(),
+                      ),
                     ),
                   ),
-                ),
-              if (bar != null) ..._toolbar(bar),
-            ],
+                if (bar != null) ..._toolbar(bar),
+              ],
+            ),
           ),
         ),
       ),
@@ -1187,6 +1193,10 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     ];
   }
 
+  /// Whether the Options menu fits above the bar.
+  bool _optionsAbove(Rect bar) =>
+      bar.top - optionsGap - menuSize(_optionsEntries).height >= barHeight;
+
   List<Widget> _toolbar(Rect bar) {
     final l = l10nOf(context);
     final overBar = _pointer != null && bar.contains(_pointer!);
@@ -1198,6 +1208,21 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           colors: ShotBarColors.of(context),
           optionsLabel: l.optionsButton,
           actionLabel: l.capture,
+          tips: ShotBarTips(
+            close: l.shotTipClose,
+            capture: [
+              l.shotTipCaptureScreen,
+              l.shotTipCaptureWindow,
+              l.shotTipCaptureSelection,
+            ],
+            record: [
+              l.shotTipRecordScreen,
+              l.shotTipRecordWindow,
+              l.shotTipRecordSelection,
+            ],
+            options: l.shotTipOptions,
+            action: l.shotTipCapture,
+          ),
           // In window mode the target is the window under the pointer: none on the bar.
           showAction: !(_choice == ToolbarChoice.window && overBar),
           onChoose: _choose,
@@ -1212,15 +1237,18 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           onMoved: () => _changeSettings((s) => s.barCenter = _barCenter),
         ),
       ),
-      // The Options menu opens above the button, with its left edge on the button and its
-      // bottom 16 pt below the top of the bar (K-05).
+      // The Options menu opens clear of the bar (SCREENSHOT-3 asks for the measured gap):
+      // above the button with its left edge on it, `optionsGap` over the bar; below the bar
+      // when there is no room above.
       if (_optionsOpen)
         Positioned.fill(
           child: MenuHost(
             key: const ValueKey('options menu'),
             entries: _optionsEntries,
-            anchor: Offset(bar.left + optionsX, bar.top + 16),
-            upwards: true,
+            anchor: _optionsAbove(bar)
+                ? Offset(bar.left + optionsX, bar.top - optionsGap)
+                : Offset(bar.left + optionsX, bar.bottom + optionsGap),
+            upwards: _optionsAbove(bar),
             top: barHeight,
             onDismissed: () => setState(() => _optionsOpen = false),
           ),
