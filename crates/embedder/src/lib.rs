@@ -23,12 +23,14 @@ mod keymap;
 mod locale;
 mod menu;
 mod mouse_cursor;
+mod prefetch;
 mod pty;
 mod shell;
 mod termgrid;
 mod text_input;
 mod trace;
 mod views;
+mod vulkan_drivers;
 mod window;
 mod window_appearance;
 

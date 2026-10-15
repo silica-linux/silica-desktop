@@ -462,6 +462,19 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         info!("{}: the running process shows its window", options.app_id);
         return Ok(());
     }
+    // The engine reads these after the renderer is ready: from disk while the GPU starts.
+    crate::prefetch::start(
+        [
+            Some(&options.library),
+            options.aot.as_ref(),
+            Some(&options.icu_data),
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect(),
+        options.bundle.clone(),
+    );
 
     let conn = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init(&conn)?;

@@ -163,8 +163,34 @@ What decides the time:
    lookups (a Dart thread in `v9fs_vfs_lookup`). That is why `deploy` copies them to the disk.
 3. **Cold disk.** After `echo 3 > /proc/sys/vm/drop_caches` the same launch takes 1 to 3 s.
 
-Per phase, warm, headless, local copy (Clock, ms from process start): Wayland 2, renderer
-(Vulkan instance and device) 150 to 250 (GL: 45), engine library, AOT data and initialisation
-about 15, engine started +15, Dart `main` to the first frame request 30 to 150, first frame
-to present 40 to 120. Settings logs its own steps with `SETTINGS_STARTUP_LOG=1`: `main` to the
-first frame 63 ms.
+4. **Vulkan drivers (#191).** The Khronos loader opens every installed driver at
+   `vkCreateInstance`: in Silica OS a dozen Mesa drivers of 12 to 26 MB for hardware that is
+   not there, 200 ms warm and 0.5 to 0.8 s from a cold disk. The embedder hands the loader only
+   the drivers of the GPUs it finds under `/sys/class/drm` (`crates/embedder/src/vulkan_drivers.rs`,
+   `VK_LUNARG_direct_driver_loading`); the loader's own variables (`VK_DRIVER_FILES`,
+   `VK_LOADER_DRIVERS_SELECT`, ...) still choose when set.
+5. **Venus on the host.** Every Vulkan instance in the guest is one on the host too, which
+   initialises every host GPU (on a laptop with NVIDIA: the integrated GPU, the NVIDIA one and
+   llvmpipe), 100 to 200 ms per launch. `start` gives QEMU only the drivers of the host's
+   display GPU (`VK_DRIVER_FILES`, printed at start), the one the embedder picks anyway: the
+   instance takes 10 to 15 ms. It applies from the next `start`.
+6. **Fonts.** Before Dart runs, the engine opens every font under `/usr/share/fonts` (Skia's
+   directory font manager, 126 files in Silica OS): 10 ms warm, 0.3 to 0.5 s from a cold disk.
+   The shell components read them at login, so an app's first launch finds them in memory.
+
+How to measure: launch through the control channel with `SILICA_STARTUP_TRACE=1` in the
+command and read Ossido's `startup_ms` (`perf.frames`) for the window; "first" launches evict
+only the app's own files (`posix_fadvise(DONTNEED)` on its bundle), "cold" ones drop every
+cache. Headless private VM, host load below 2, medians (#191):
+
+| | warm | first launch | cold disk |
+| --- | --- | --- | --- |
+| before (single-window apps, Vulkan) | 290-415 ms | 470-700 ms | 950-1395 ms |
+| the embedder's drivers only | 270-335 ms | 210-440 ms | 850-1000 ms |
+| and QEMU with the host's display GPU only | 120-180 ms | 125-170 ms | 500-830 ms |
+| Mustache (several windows, OpenGL ES) | 115-160 ms | 120-160 ms | 570-740 ms |
+
+Per phase after, warm (ms from process start): Wayland 1, Vulkan instance 10 to 15, device and
+swapchain 35, engine library, AOT data and initialisation 5, engine started +10, Dart's first
+frame request +15, first present +30 to 50, window mapped in Ossido +10 to 30. Settings logs its
+own steps with `SETTINGS_STARTUP_LOG=1`.

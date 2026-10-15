@@ -45,6 +45,8 @@ struct Swap {
 /// runs.
 pub struct VulkanSurface {
     _entry: ash::Entry,
+    /// The drivers loaded here for the instance (`create_instance`), kept until the end.
+    _drivers: Vec<libloading::Library>,
     instance: ash::Instance,
     physical: vk::PhysicalDevice,
     device: ash::Device,
@@ -79,17 +81,11 @@ impl VulkanSurface {
         // API checked by ash.
         let entry =
             unsafe { ash::Entry::load() }.map_err(|err| Error::Gl("libvulkan", err.to_string()))?;
-        let app = vk::ApplicationInfo::default()
-            .application_name(c"silica-embedder")
-            .api_version(vk::API_VERSION_1_1);
+        crate::trace::mark("vulkan loader loaded");
         let extensions: Vec<*const c_char> =
             INSTANCE_EXTENSIONS.iter().map(|e| e.as_ptr()).collect();
-        let create = vk::InstanceCreateInfo::default()
-            .application_info(&app)
-            .enabled_extension_names(&extensions);
-        // SAFETY: create is a valid structure with pointers to data alive for the call.
-        let instance = unsafe { entry.create_instance(&create, None) }
-            .map_err(vk_error("vkCreateInstance"))?;
+        let (instance, drivers) = create_instance(&entry, &extensions)?;
+        crate::trace::mark("vulkan instance created");
 
         let wayland_fn = ash::khr::wayland_surface::Instance::new(&entry, &instance);
         let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
@@ -108,6 +104,7 @@ impl VulkanSurface {
                 "vkEnumeratePhysicalDevices",
                 "no Vulkan GPU presents on this surface".to_owned(),
             ))?;
+        crate::trace::mark("vulkan device picked");
         let priorities = [1.0f32];
         let queues = [vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family)
@@ -120,6 +117,7 @@ impl VulkanSurface {
         // SAFETY: physical comes from this instance; device_info is valid for the call.
         let device = unsafe { instance.create_device(physical, &device_info, None) }
             .map_err(vk_error("vkCreateDevice"))?;
+        crate::trace::mark("vulkan device created");
         // SAFETY: the family was created with one queue (index 0).
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let swapchain_fn = ash::khr::swapchain::Device::new(&instance, &device);
@@ -148,6 +146,7 @@ impl VulkanSurface {
         };
         let this = Self {
             _entry: entry,
+            _drivers: drivers,
             instance,
             physical,
             device,
@@ -463,6 +462,84 @@ impl VulkanSurface {
             }
         }
     }
+}
+
+/// `vk_icdGetInstanceProcAddr`, the entry point of the loader-driver interface.
+type DriverEntry = unsafe extern "system" fn(vk::Instance, *const c_char) -> vk::PFN_vkVoidFunction;
+
+/// The instance, with only the drivers of this machine's GPUs when they are known
+/// (`crate::vulkan_drivers`, #191): the loader would otherwise open every installed driver.
+/// The drivers loaded here are returned, to stay loaded as long as the instance.
+fn create_instance(
+    entry: &ash::Entry,
+    extensions: &[*const c_char],
+) -> Result<(ash::Instance, Vec<libloading::Library>), Error> {
+    let app = vk::ApplicationInfo::default()
+        .application_name(c"silica-embedder")
+        .api_version(vk::API_VERSION_1_1);
+    let (drivers, entries) = load_drivers();
+    if !entries.is_empty() {
+        let infos: Vec<vk::DirectDriverLoadingInfoLUNARG<'_>> = entries
+            .iter()
+            .map(|&get| {
+                vk::DirectDriverLoadingInfoLUNARG::default().pfn_get_instance_proc_addr(Some(get))
+            })
+            .collect();
+        let mut list = vk::DirectDriverLoadingListLUNARG::default()
+            .mode(vk::DirectDriverLoadingModeLUNARG::EXCLUSIVE)
+            .drivers(&infos);
+        let mut with_direct = extensions.to_vec();
+        with_direct.push(ash::lunarg::direct_driver_loading::NAME.as_ptr());
+        let create = vk::InstanceCreateInfo::default()
+            .application_info(&app)
+            .enabled_extension_names(&with_direct)
+            .push_next(&mut list);
+        // SAFETY: create is a valid structure with pointers to data alive for the call; the
+        // drivers' entry points come from libraries that stay loaded with the instance.
+        match unsafe { entry.create_instance(&create, None) } {
+            Ok(instance) => return Ok((instance, drivers)),
+            Err(err) => tracing::info!("Vulkan with the GPU's drivers only: {err:?}, loading all"),
+        }
+    }
+    let create = vk::InstanceCreateInfo::default()
+        .application_info(&app)
+        .enabled_extension_names(extensions);
+    // SAFETY: create is a valid structure with pointers to data alive for the call.
+    let instance =
+        unsafe { entry.create_instance(&create, None) }.map_err(vk_error("vkCreateInstance"))?;
+    Ok((instance, Vec::new()))
+}
+
+/// The drivers of this machine's GPUs and their entry points: empty when they are not known
+/// or none loads.
+fn load_drivers() -> (Vec<libloading::Library>, Vec<DriverEntry>) {
+    let Some(drivers) = crate::vulkan_drivers::for_this_machine() else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut libraries = Vec::new();
+    let mut entries = Vec::new();
+    for path in drivers.into_iter().map(|driver| driver.library) {
+        // SAFETY: a Vulkan driver named by its installed manifest, the library the loader
+        // itself would open; its initializers have no preconditions.
+        let library = match unsafe { libloading::Library::new(&path) } {
+            Ok(library) => library,
+            Err(err) => {
+                tracing::info!("Vulkan driver {}: {err}", path.display());
+                continue;
+            }
+        };
+        // SAFETY: the symbol of the loader-driver interface, which has this signature.
+        let get =
+            unsafe { library.get::<DriverEntry>(b"vk_icdGetInstanceProcAddr\0") }.map(|get| *get);
+        match get {
+            Ok(get) => {
+                entries.push(get);
+                libraries.push(library);
+            }
+            Err(err) => tracing::info!("Vulkan driver {}: {err}", path.display()),
+        }
+    }
+    (libraries, entries)
 }
 
 /// The GPU that presents on this surface: integrated, then discrete (or the other way round
