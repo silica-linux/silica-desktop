@@ -38,7 +38,7 @@ pub struct Region {
     /// and up, as `silica_ui` numbers them) in negative groups.
     pub group: i32,
     /// The kind of surface (`profile`: `menu`, `panel`, `module`, `control`, `dock`,
-    /// `tooltip`, `sheet`, `banner`; version 7, `set_profile`). Default: from the material.
+    /// `tooltip`, `sheet`, `banner`, `popover`; version 7, `set_profile`). Default: from the material.
     pub profile: Profile,
     /// Ossido draws the profile's shadow (`shadow`: true; only with a profile).
     pub shadow: bool,
@@ -55,6 +55,7 @@ fn profile_named(name: Option<&str>) -> Profile {
         Some("tooltip") => Profile::Tooltip,
         Some("sheet") => Profile::Sheet,
         Some("banner") => Profile::Banner,
+        Some("popover") => Profile::Popover,
         _ => Profile::Default,
     }
 }

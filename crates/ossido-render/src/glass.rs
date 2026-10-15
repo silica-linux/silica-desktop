@@ -240,6 +240,18 @@ impl Lens {
             .fold(0.0, f32::max)
     }
 
+    /// The largest displacement of the glass, in points (how far inside the edge the sampled
+    /// background is from the pixel's own position), and the distance from the edge where it is.
+    pub fn max_displacement(&self) -> (f32, f32) {
+        [self.side, self.top, self.bottom]
+            .iter()
+            .flat_map(|curve| curve.iter().map(|(t, s)| (s - t, *t)))
+            .fold(
+                (0.0, 0.0),
+                |best, now| if now.0 > best.0 { now } else { best },
+            )
+    }
+
     /// How far inside the edge it can sample, in points (the deepest source of the curves).
     pub fn inward_reach(&self) -> f32 {
         [self.side, self.top, self.bottom]
@@ -303,34 +315,26 @@ pub const CLEAR_DARK: MaterialParams = MaterialParams {
     merge_pt: MERGE_PT,
 };
 
-/// Dock lens: on the sides up to ~5 pt inwards at 6 pt from the edge, nothing beyond
-/// ~22 pt; on top ≤ 1 pt, at the bottom ~3 pt (glass.md, "Glass · Dock · Refraction").
+/// Dock lens (GLASS-PROFILES, silica-reference #97): the glass shows the background 2-3 pt
+/// further inside, at most ~2.5 pt around 12 pt from the edge, and nothing past ~28 pt (the
+/// same on every side: the measurement does not tell the sides apart). Each point is
+/// (distance from the edge, distance the glass samples at).
 const DOCK_LENS: Lens = Lens {
-    side: &[
-        (0.0, 0.0),
-        (6.0, 11.0),
-        (10.0, 14.3),
-        (14.0, 16.5),
-        (18.0, 18.7),
-        (22.0, 22.0),
-    ],
-    top: &[
-        (0.0, 0.0),
-        (6.0, 7.0),
-        (10.0, 10.9),
-        (14.0, 14.5),
-        (18.0, 18.1),
-        (22.0, 22.0),
-    ],
-    bottom: &[
-        (0.0, 0.0),
-        (6.0, 9.0),
-        (10.0, 12.6),
-        (14.0, 15.5),
-        (18.0, 18.4),
-        (22.0, 22.0),
-    ],
+    side: DOCK_LENS_CURVE,
+    top: DOCK_LENS_CURVE,
+    bottom: DOCK_LENS_CURVE,
 };
+
+const DOCK_LENS_CURVE: &[(f32, f32)] = &[
+    (0.0, 0.0),
+    (4.0, 5.5),
+    (8.0, 10.3),
+    (12.0, 14.5),
+    (16.0, 18.2),
+    (20.0, 21.5),
+    (24.0, 24.7),
+    (28.0, 28.0),
+];
 
 /// Control Center modules, light: σ 4.5 pt, w 0.04, free matrix with b = (34.2; 31.6; 32.0),
 /// fitted on the sRGB-converted gray and ramp captures (`xtask/tools/glass_parity.py`;
@@ -354,97 +358,148 @@ pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
 /// edge as in light ("same identical look in light and dark over gray", controlcenter.md).
 pub const REGULAR_DARK: MaterialParams = REGULAR_LIGHT;
 
-/// The lens of the regular glass, measured on the Control Center modules from the displacement maps
-/// with the edge's own light taken out (the gray capture subtracted: a glow of 10 levels
-/// would read as ~20 px; `xtask/tools/glass_parity.py`). Near the edge the glass shows the
-/// background from well inside, folded: at 2 pt from the top or bottom edge the background
-/// ~43 pt inwards, at 6 pt ~23 pt, flattening to ~18 pt around 10 pt, then nothing past
-/// ~24 pt. The sides fold less (~34 pt at 2 pt). The same in pixels on the 64 pt and the
-/// 140 pt modules: on the narrow ones the fold reaches past the middle. The point at 0 is
-/// extrapolated (the rim covers it). glass.md's first measure (the outer band sampling the
-/// background outside) read the glow as displacement.
+/// The lens of the regular glass (GLASS-PROFILES, silica-reference #97): the Control Center
+/// modules show the background up to ~3.5 pt further inside, at the most around 15 pt from the
+/// edge, and nothing past ~30 pt. The same on every side. (The first measurement, which found
+/// a fold of 17-25 pt in the outer 6 pt, read the edge light as displacement.)
 const LIQUID_LENS: Lens = Lens {
-    side: &[
-        (0.0, 42.0),
-        (2.0, 34.0),
-        (4.0, 25.0),
-        (6.0, 18.5),
-        (8.0, 15.3),
-        (11.0, 12.5),
-        (16.0, 16.3),
-        (22.0, 22.0),
-    ],
-    top: &[
-        (0.0, 50.0),
-        (2.0, 43.0),
-        (4.0, 33.0),
-        (6.0, 23.5),
-        (8.0, 20.5),
-        (12.0, 18.0),
-        (18.0, 19.5),
-        (24.0, 24.0),
-    ],
-    bottom: &[
-        (0.0, 50.0),
-        (2.0, 43.0),
-        (4.0, 33.0),
-        (6.0, 23.5),
-        (8.0, 20.5),
-        (12.0, 18.0),
-        (18.0, 19.5),
-        (24.0, 24.0),
-    ],
+    side: LIQUID_LENS_CURVE,
+    top: LIQUID_LENS_CURVE,
+    bottom: LIQUID_LENS_CURVE,
 };
 
-/// Menus, light: σ ≈ 9 pt, negligible sharp component. The transfer flattens towards black
-/// and white: the ramps, which only span the middle levels, want a steeper matrix than the
-/// stripes. Matrix with b = (158.3, 158.3, 158.4) and quadratic and cubic terms, fitted on the
-/// sRGB-converted gray, ramp and stripe captures together (`xtask/tools/glass_parity.py`;
-/// rmse 2.62; 2.95 with a matrix alone, 3.15 with menubar.md's).
+const LIQUID_LENS_CURVE: &[(f32, f32)] = &[
+    (0.0, 0.0),
+    (5.0, 7.0),
+    (10.0, 13.2),
+    (15.0, 18.5),
+    (20.0, 22.6),
+    (25.0, 26.2),
+    (30.0, 30.0),
+];
+
+/// The color matrix of a tone: saturation 1.75 around the Rec. 709 luminance (the glass
+/// measurements: s 1.65-1.8) with `gain` on gray. Each tone below adds a uniform offset (the
+/// output for black) and a quadratic term so the gray axis also hits the mid-grey and white
+/// outputs of GLASS-PROFILES (silica-reference #97).
+const fn tone_matrix(gain: f32) -> [[f32; 3]; 3] {
+    // gain * ((1 - s) * L + s * I), s = 1.75: the luminance weights L = (0.2126, 0.7152, 0.0722)
+    // times 1 - s = -0.75, plus s on the diagonal.
+    const D: f32 = 1.75;
+    const R: f32 = -0.75 * 0.2126;
+    const G: f32 = -0.75 * 0.7152;
+    const B: f32 = -0.75 * 0.0722;
+    [
+        [gain * (R + D), gain * G, gain * B],
+        [gain * R, gain * (G + D), gain * B],
+        [gain * R, gain * G, gain * (B + D)],
+    ]
+}
+
+const fn flat(level: f32) -> [f32; 3] {
+    [level / 255.0; 3]
+}
+
+const NO_LENS: Lens = Lens {
+    side: &[],
+    top: &[],
+    bottom: &[],
+};
+
+/// Menus, light: black 136, `#7a7b80` 201, white 254 (GLASS-PROFILES). The chroma is the
+/// glass family's (saturation 1.75); gain 0.5719 on gray and a −0.1092 quadratic term give the
+/// three points (the earlier parity fit of the captures, 158/203/237, missed black and white
+/// by more than 3 levels). The blur, 13 pt in light, is the profile's. No lens: thick glass
+/// shows none.
 pub const THICK_LIGHT: MaterialParams = MaterialParams {
-    sigma: 9.0,
+    sigma: 13.0,
     sharp: 0.0,
-    matrix: [
-        [0.644, -0.333, -0.186],
-        [-0.223, 0.417, -0.109],
-        [-0.322, -0.423, 0.825],
-    ],
-    offset: [158.3 / 255.0, 158.3 / 255.0, 158.4 / 255.0],
-    curve: [[0.739, 0.866, 0.889], [-0.548, -0.643, -0.663]],
-    // In menus the blur hides the refraction: ≤ 1–2 pt on the sides.
-    lens: Lens {
-        side: &[
-            (0.0, 0.0),
-            (6.0, 7.5),
-            (10.0, 11.3),
-            (14.0, 14.75),
-            (18.0, 18.2),
-            (22.0, 22.0),
-        ],
-        top: &[],
-        bottom: &[],
-    },
+    matrix: tone_matrix(0.5719),
+    offset: flat(136.0),
+    curve: [[-0.1092; 3], [0.0; 3]],
+    lens: NO_LENS,
     edge: MENU_EDGE,
     merge_pt: MERGE_PT,
 };
 
-/// Menus, dark: σ ≈ 9 pt as in light (8.7 from the stripes). The dark transfer bends: black
-/// gives ~56, the gray `#7a7b80` the measured `#6f7075`, white only ~127 (the stripes'
-/// plateaus). The chroma of menubar.md's dark matrix ("Color") with its luminance gain raised
-/// from 110 to 152 levels, b = (55.5, 55.8, 56.4) and a quadratic term of −80 levels, fitted
-/// on the sRGB-converted gray and stripe captures (`xtask/tools/glass_parity.py`; rmse 2.2,
-/// 6.5 with a matrix alone). The ramp captures of the series have windows behind the menu.
-/// Edge as in light (the dark menu's rim is not measured in the model's form).
+/// Menus, dark: black 32, `#7a7b80` 114, white 121 (GLASS-PROFILES); the transfer saturates
+/// early (gain 0.9418, quadratic term −0.5928). Blur 8 pt, the profile's.
 pub const THICK_DARK: MaterialParams = MaterialParams {
-    matrix: [
-        [0.946, -0.292, -0.058],
-        [-0.095, 0.635, 0.055],
-        [-0.122, -0.336, 1.056],
-    ],
-    offset: [55.5 / 255.0, 55.8 / 255.0, 56.4 / 255.0],
-    curve: [[-0.315, -0.315, -0.313], [0.0; 3]],
+    sigma: 8.0,
+    matrix: tone_matrix(0.9418),
+    offset: flat(32.0),
+    curve: [[-0.5928; 3], [0.0; 3]],
     edge: MENU_DARK_EDGE,
     ..THICK_LIGHT
+};
+
+/// Toolbar glass controls, light: black 133, `#7a7b80` 193, white 252 (GLASS-PROFILES); thin
+/// glass, so the lens of the regular glass. Blur ≈ 6 pt.
+pub const CONTROL_LIGHT: MaterialParams = MaterialParams {
+    sigma: 6.0,
+    sharp: 0.04,
+    matrix: tone_matrix(0.4909),
+    offset: flat(133.0),
+    curve: [[-0.0242; 3], [0.0; 3]],
+    lens: LIQUID_LENS,
+    edge: REGULAR_EDGE,
+    merge_pt: MERGE_PT,
+};
+
+/// Toolbar glass controls, dark: black 34, `#7a7b80` 130, white 185.
+pub const CONTROL_DARK: MaterialParams = MaterialParams {
+    matrix: tone_matrix(0.9304),
+    offset: flat(34.0),
+    curve: [[-0.3382; 3], [0.0; 3]],
+    ..CONTROL_LIGHT
+};
+
+/// Popovers, light: the menus' tone (GLASS-PROFILES: "same as menu"), blur 13 pt.
+pub const POPOVER_LIGHT: MaterialParams = THICK_LIGHT;
+
+/// Popovers, dark: black 25, `#7a7b80` 112, white 205; blur 18 pt (wider than the menus').
+pub const POPOVER_DARK: MaterialParams = MaterialParams {
+    sigma: 18.0,
+    matrix: tone_matrix(0.6843),
+    offset: flat(25.0),
+    curve: [[0.0215; 3], [0.0; 3]],
+    ..THICK_DARK
+};
+
+/// Tooltips, light: black 204, `#7a7b80` 223, white 229 (GLASS-PROFILES): almost opaque, the
+/// background only shows through as a few levels. The blur is not measured (hidden by the
+/// opacity): 8 pt.
+pub const TOOLTIP_LIGHT: MaterialParams = MaterialParams {
+    sigma: 8.0,
+    matrix: tone_matrix(0.2021),
+    offset: flat(204.0),
+    curve: [[-0.1041; 3], [0.0; 3]],
+    ..THICK_LIGHT
+};
+
+/// Tooltips, dark: black 40, `#7a7b80` 60, white 85.
+pub const TOOLTIP_DARK: MaterialParams = MaterialParams {
+    matrix: tone_matrix(0.1440),
+    offset: flat(40.0),
+    curve: [[0.0325; 3], [0.0; 3]],
+    edge: MENU_DARK_EDGE,
+    ..TOOLTIP_LIGHT
+};
+
+/// Sheets, light: opaque (GLASS-PROFILES): no background shows through. The fill is the
+/// menus' over the reference gray, 201 (the level itself is not measured).
+pub const SHEET_LIGHT: MaterialParams = MaterialParams {
+    matrix: [[0.0; 3]; 3],
+    offset: flat(201.0),
+    curve: [[0.0; 3]; 2],
+    ..THICK_LIGHT
+};
+
+/// Sheets, dark: opaque, 114 (the menus' over the reference gray).
+pub const SHEET_DARK: MaterialParams = MaterialParams {
+    offset: flat(114.0),
+    edge: MENU_DARK_EDGE,
+    ..SHEET_LIGHT
 };
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
@@ -516,19 +571,35 @@ impl MaterialParams {
 
     /// The same with a profile's saturation and tint over the material.
     pub fn fill_on_gray_with(&self, profile: &GlassProfile) -> f32 {
-        let gray = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.0];
-        let l = (gray[0] + gray[1] + gray[2]) / 3.0;
-        let [q2, q3] = self.curve;
-        let channel = |row: [f32; 3], offset: f32, q2: f32, q3: f32| {
-            row[0] * gray[0] + row[1] * gray[1] + row[2] * gray[2] + offset + (q2 + q3 * l) * l * l
-        };
-        let r = channel(self.matrix[0], self.offset[0], q2[0], q3[0]);
-        let g = channel(self.matrix[1], self.offset[1], q2[1], q3[1]);
-        let b = channel(self.matrix[2], self.offset[2], q2[2], q3[2]);
-        let [r, g, b] = profile_color(profile, [r, g, b]);
+        let [r, g, b] = profile_color(profile, self.transfer(REFERENCE_GRAY));
         ((r + g + b) / 3.0).clamp(0.01, 0.99)
     }
+
+    /// The material's color transfer on an encoded sRGB color (0-1): what a blurred flat
+    /// background of that color shows inside the glass, before the edge, the profile's
+    /// saturation and tint (the shader's `out = M * in + b + q2 * l^2 + q3 * l^3`, clamped).
+    pub fn transfer(&self, input: [f32; 3]) -> [f32; 3] {
+        let [x, y, z] = input;
+        let l = (x + y + z) / 3.0;
+        let [q2, q3] = self.curve;
+        let mut out = [0.0; 3];
+        for ((((value, row), offset), q2), q3) in out
+            .iter_mut()
+            .zip(self.matrix)
+            .zip(self.offset)
+            .zip(q2)
+            .zip(q3)
+        {
+            let [r0, r1, r2] = row;
+            let v = r0 * x + r1 * y + r2 * z + offset + (q2 + q3 * l) * l * l;
+            *value = v.clamp(0.0, 1.0);
+        }
+        out
+    }
 }
+
+/// The reference gray (`#7a7b80`) the edge offsets and the tone checks are measured on.
+pub const REFERENCE_GRAY: [f32; 3] = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.0];
 
 /// A profile's saturation and tint over a material color (the shader's, on the fill).
 pub fn profile_color(profile: &GlassProfile, [r, g, b]: [f32; 3]) -> [f32; 3] {

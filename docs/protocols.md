@@ -54,7 +54,7 @@ top.
 - Since version 7: `set_profile(profile, shadow)`: the following regions belong to a kind of
   surface, until the next `set_profile` or `clear`. Profiles: `menu`, `panel` (Notification
   Center, search, launcher), `module` (Control Center modules, HUDs), `control` (small
-  controls on glass: toolbar buttons, pills), `dock`, `tooltip`, `sheet`, `banner`; `default`
+  controls on glass: toolbar buttons, pills), `dock`, `tooltip`, `sheet`, `banner`, `popover`; `default`
   derives the kind from the material (clear: dock, thick: menu, regular: module,
   notification: banner). The material stays the base color; the profile sets the blur, the
   lens (strength and how far it reaches from the edge), the edge light and dark line,

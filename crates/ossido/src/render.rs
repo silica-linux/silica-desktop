@@ -1220,16 +1220,19 @@ pub fn output_elements(
                             .to_physical_precise_round(scale),
                     ),
                     radius: region.radius * scale,
-                    material: match region.material {
-                        Material::Clear if context.dark => CLEAR_DARK,
-                        Material::Thick if context.dark => THICK_DARK,
-                        Material::Regular if context.dark => REGULAR_DARK,
-                        Material::Notification if context.dark => NOTIFICATION_DARK,
-                        Material::Clear => CLEAR_LIGHT,
-                        Material::Thick => THICK_LIGHT,
-                        Material::Regular => REGULAR_LIGHT,
-                        Material::Notification => NOTIFICATION_LIGHT,
-                    },
+                    // The kind's own tone, edge and lens; the panels take the declared material.
+                    material: region.kind().kind().material(context.dark).unwrap_or(
+                        match region.material {
+                            Material::Clear if context.dark => CLEAR_DARK,
+                            Material::Thick if context.dark => THICK_DARK,
+                            Material::Regular if context.dark => REGULAR_DARK,
+                            Material::Notification if context.dark => NOTIFICATION_DARK,
+                            Material::Clear => CLEAR_LIGHT,
+                            Material::Thick => THICK_LIGHT,
+                            Material::Regular => REGULAR_LIGHT,
+                            Material::Notification => NOTIFICATION_LIGHT,
+                        },
+                    ),
                     opacity: region.opacity as f32 * anchor.opacity,
                     scale,
                     tip: match region.shape {

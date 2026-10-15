@@ -32,6 +32,7 @@ pub enum Material {
 #[serde(rename_all = "lowercase")]
 pub enum Profile {
     Menu,
+    Popover,
     Panel,
     Module,
     Control,
@@ -47,6 +48,7 @@ impl Profile {
         use ossido_render::glass_profile::GlassKind;
         match self {
             Self::Menu => GlassKind::Menu,
+            Self::Popover => GlassKind::Popover,
             Self::Panel => GlassKind::Panel,
             Self::Module => GlassKind::Module,
             Self::Control => GlassKind::Control,
@@ -250,6 +252,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                     WEnum::Value(P::Tooltip) => Ok(Some(Profile::Tooltip)),
                     WEnum::Value(P::Sheet) => Ok(Some(Profile::Sheet)),
                     WEnum::Value(P::Banner) => Ok(Some(Profile::Banner)),
+                    WEnum::Value(P::Popover) => Ok(Some(Profile::Popover)),
                     _ => Err(()),
                 };
                 let shadow = match shadow {
