@@ -61,10 +61,6 @@ const double capsuleOutset = 3.5;
 const Color capsuleFill = Color(0x1AFFFFFF);
 const Duration menuSwitchDelay = Duration(milliseconds: 85);
 
-/// A click on a menu-bar item opens its menu after 82–111 ms (97 ms here); with another
-/// menu already open the click changes it at once.
-const Duration menuOpenDelay = Duration(milliseconds: 97);
-
 /// Room below the menu for its shadow, when the surface grows.
 const double menuShadowRoom = 40;
 
@@ -169,7 +165,6 @@ class _MenuBarState extends State<MenuBar> {
   final GlobalKey _rootKey = GlobalKey();
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _switchTimer;
-  Timer? _openTimer;
 
   static const List<String> _menuNames = ['logo', 'app', ...genericMenus];
 
@@ -380,17 +375,8 @@ class _MenuBarState extends State<MenuBar> {
   void _pointerDown(PointerDownEvent e) {
     final item = _itemAt(e.localPosition);
     if (item != null && _entries(item).isNotEmpty) {
-      // The menu opens ~97 ms after the press; on the item already open it closes.
-      if (item == _open) {
-        _menuKey.currentState?.close();
-      } else if (_open == null) {
-        _openTimer?.cancel();
-        _openTimer = Timer(menuOpenDelay, () {
-          if (mounted && _open == null) _openMenu(item);
-        });
-      } else {
-        _openMenu(item);
-      }
+      // The menu opens on press; on the item already open it closes.
+      item == _open ? _menuKey.currentState?.close() : _openMenu(item);
       return;
     }
     if (_open != null) _menuKey.currentState?.pointerDown(e.localPosition);
@@ -614,7 +600,6 @@ class _MenuBarState extends State<MenuBar> {
     _ownConfig?.dispose();
     _timer?.cancel();
     _switchTimer?.cancel();
-    _openTimer?.cancel();
     ShellChannel.instance.toplevels.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_changed);
     ShellChannel.instance.states.removeListener(_changed);

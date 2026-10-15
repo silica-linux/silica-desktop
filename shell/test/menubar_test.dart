@@ -174,7 +174,7 @@ void main() {
       );
       await tester.pump();
       await tester.tapAt(tester.getRect(find.text('Window')).center);
-      await tester.pump(menuOpenDelay);
+      await tester.pump();
       await tester.pump();
       final transient = layer.lastWhere((c) => c.method == 'setTransient');
       // A menu of the frontmost app (INPUT-01 (b)): modal for that app, a click in
@@ -240,7 +240,7 @@ void main() {
       );
       await tester.pump();
       await tester.tapAt(tester.getRect(find.text('Window')).center);
-      await tester.pump(menuOpenDelay);
+      await tester.pump();
       await tester.pump();
       expect(find.text('Minimize'), findsOneWidget);
 
@@ -267,24 +267,6 @@ void main() {
       expect(layer.last.method, 'setSize');
     },
   );
-
-  testWidgets('a click opens the menu after 82-111 ms, not before', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: MenuBar(now: DateTime(2026, 10, 12, 22, 34)),
-      ),
-    );
-    await tester.pump();
-    await tester.tapAt(tester.getRect(find.text('Window')).center);
-    await tester.pump(const Duration(milliseconds: 80));
-    expect(find.text('Minimize'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 32));
-    expect(find.text('Minimize'), findsOneWidget);
-    expect(menuOpenDelay.inMilliseconds, inInclusiveRange(82, 111));
-  });
 
   testWidgets('pressing Window opens the menu; the choice runs the command', (
     tester,
@@ -317,7 +299,7 @@ void main() {
     await tester.pump();
     final finestra = tester.getRect(find.text('Window'));
     await tester.tapAt(finestra.center);
-    await tester.pump(menuOpenDelay);
+    await tester.pump();
     expect(find.text('Minimize'), findsOneWidget);
     // The surface grows and the keyboard goes to the menu.
     expect(

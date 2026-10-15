@@ -737,12 +737,13 @@ class _LiveDockState extends State<LiveDock> {
 const Color separatorColor = Color(0xFF484950);
 const Color indicatorColor = Color(0xFF03040B);
 
-/// Icon menu (D-04): the label hides at ~530 ms of pressing, the menu opens at 583–613 ms
-/// (598 ms here), and the press becomes a drag beyond 5 pt; the tip touches ~11 pt above
-/// the bottom of the Dock. A click and a short press leave the label as it is; a right click
-/// hides it at once. Once hidden for a menu it stays hidden until the pointer leaves the icon.
-const Duration longPressLabelHide = Duration(milliseconds: 530);
-const Duration longPressMenu = Duration(milliseconds: 598);
+/// Icon menu (D-04): at ~530 ms of pressing the label hides and the menu opens (the measured
+/// 583-613 ms is end to end, including the input pipeline and compositing, so it is not added
+/// on top); the press becomes a drag beyond 5 pt; the tip touches ~11 pt above the bottom of
+/// the Dock. A click and a short press leave the label as it is; a right click hides it at
+/// once. Once hidden for a menu it stays hidden until the pointer leaves the icon.
+const Duration longPressMenu = Duration(milliseconds: 530);
+const Duration longPressLabelHide = longPressMenu;
 const double dragThreshold = 5;
 const double menuTipAboveDock = 11;
 

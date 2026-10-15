@@ -95,7 +95,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Apri Terminal'), findsNothing);
-    // Long press on the second icon: the menu appears after ~598 ms.
+    // Long press on the second icon: the menu appears after ~530 ms.
     final second = Offset(rest.center(1), icon.dy);
     final gesture = await tester.startGesture(second);
     await tester.pump(const Duration(milliseconds: 500));
@@ -160,30 +160,24 @@ void main() {
       await mouse.removePointer();
     });
 
-    testWidgets(
-      'a long press hides the label at ~530 ms and opens the menu at ~598 ms',
-      (tester) async {
-        await open(tester);
-        final press = await tester.startGesture(
-          icon,
-          kind: PointerDeviceKind.mouse,
-        );
-        await tester.pump(const Duration(milliseconds: 500));
-        expect(find.text('Terminal'), findsOneWidget);
-        await tester.pump(const Duration(milliseconds: 40));
-        // 540 ms: the label is gone, the menu not yet there.
-        expect(find.text('Terminal'), findsNothing);
-        expect(find.text('Open Terminal'), findsNothing);
-        await tester.pump(const Duration(milliseconds: 40));
-        expect(find.text('Open Terminal'), findsNothing);
-        await tester.pump(const Duration(milliseconds: 30));
-        // 610 ms: the menu opens within 583-613 ms.
-        expect(find.text('Open Terminal'), findsOneWidget);
-        await press.up();
-        await tester.pump();
-        await mouse.removePointer();
-      },
-    );
+    testWidgets('a long press hides the label and opens the menu at ~530 ms', (
+      tester,
+    ) async {
+      await open(tester);
+      final press = await tester.startGesture(
+        icon,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Terminal'), findsOneWidget);
+      expect(find.text('Open Terminal'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(find.text('Terminal'), findsNothing);
+      expect(find.text('Open Terminal'), findsOneWidget);
+      await press.up();
+      await tester.pump();
+      await mouse.removePointer();
+    });
 
     testWidgets(
       'a right click hides the label at once and it stays hidden until the '
