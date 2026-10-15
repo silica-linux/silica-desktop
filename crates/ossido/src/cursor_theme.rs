@@ -387,6 +387,35 @@ pub fn resize_icon(edges: crate::resize::Edges) -> CursorIcon {
     }
 }
 
+/// Like [`resize_icon`], one-way when an edge has reached a limit of the client: at the
+/// minimum width the left edge shows ← only (it can only grow), at the maximum →, as macOS
+/// does with its one-way resize cursors. WIN-RESIZE measured the two-way shapes (pairs of
+/// separate arrowheads; Adwaita's `ew-resize`, `ns-resize`, `nwse-resize`, `nesw-resize`),
+/// not the shapes at a limit: the one-way ones are provisional. The corners keep their
+/// diagonals.
+pub fn resize_icon_with_room(edges: crate::resize::Edges, room: crate::resize::Room) -> CursorIcon {
+    let horizontal = (edges.left || edges.right) && !(edges.top || edges.bottom);
+    let vertical = (edges.top || edges.bottom) && !(edges.left || edges.right);
+    if horizontal && room.grow_w != room.shrink_w {
+        // Growing moves the left edge leftwards and the right one rightwards.
+        let leftwards = edges.left == room.grow_w;
+        return if leftwards {
+            CursorIcon::WResize
+        } else {
+            CursorIcon::EResize
+        };
+    }
+    if vertical && room.grow_h != room.shrink_h {
+        let upwards = edges.top == room.grow_h;
+        return if upwards {
+            CursorIcon::NResize
+        } else {
+            CursorIcon::SResize
+        };
+    }
+    resize_icon(edges)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,6 +498,84 @@ mod tests {
             resize_icon(e(true, false, false, true)),
             CursorIcon::NeswResize
         );
+    }
+
+    #[test]
+    fn at_a_limit_the_edge_cursor_is_one_way() {
+        use crate::resize::Room;
+        let e = |left, right, top, bottom| Edges {
+            left,
+            right,
+            top,
+            bottom,
+        };
+        let free = Room {
+            grow_w: true,
+            shrink_w: true,
+            grow_h: true,
+            shrink_h: true,
+        };
+        let at_min = Room {
+            shrink_w: false,
+            shrink_h: false,
+            ..free
+        };
+        let at_max = Room {
+            grow_w: false,
+            grow_h: false,
+            ..free
+        };
+        let left = e(true, false, false, false);
+        let right = e(false, true, false, false);
+        let top = e(false, false, true, false);
+        let bottom = e(false, false, false, true);
+        assert_eq!(resize_icon_with_room(left, free), CursorIcon::EwResize);
+        assert_eq!(resize_icon_with_room(left, at_min), CursorIcon::WResize);
+        assert_eq!(resize_icon_with_room(left, at_max), CursorIcon::EResize);
+        assert_eq!(resize_icon_with_room(right, at_min), CursorIcon::EResize);
+        assert_eq!(resize_icon_with_room(right, at_max), CursorIcon::WResize);
+        assert_eq!(resize_icon_with_room(top, at_min), CursorIcon::NResize);
+        assert_eq!(resize_icon_with_room(bottom, at_min), CursorIcon::SResize);
+        assert_eq!(resize_icon_with_room(bottom, at_max), CursorIcon::NResize);
+        // Corners keep the diagonal.
+        let corner = e(true, false, true, false);
+        assert_eq!(
+            resize_icon_with_room(corner, at_min),
+            CursorIcon::NwseResize
+        );
+    }
+
+    /// Every resize shape resolves to a file of the Adwaita theme installed on this machine
+    /// (skipped where it is not installed).
+    #[test]
+    fn the_resize_shapes_exist_in_adwaita() {
+        let dirs = ["/usr/share/icons/Adwaita/cursors"];
+        let Some(dir) = dirs
+            .iter()
+            .map(std::path::Path::new)
+            .find(|dir| dir.is_dir())
+        else {
+            return;
+        };
+        for icon in [
+            CursorIcon::EwResize,
+            CursorIcon::NsResize,
+            CursorIcon::NwseResize,
+            CursorIcon::NeswResize,
+            CursorIcon::EResize,
+            CursorIcon::WResize,
+            CursorIcon::NResize,
+            CursorIcon::SResize,
+        ] {
+            let found = candidate_names(icon)
+                .first()
+                .is_some_and(|name| dir.join(name).exists());
+            assert!(
+                found,
+                "{icon:?}: {:?} not in Adwaita",
+                candidate_names(icon)
+            );
+        }
     }
 
     #[test]

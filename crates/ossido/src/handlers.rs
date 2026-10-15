@@ -99,6 +99,8 @@ impl CompositorHandler for State {
             if let Some(window) = self.window_for(&root) {
                 window.on_commit();
             }
+            // A live resize (#160): the anchored sides stay still, the next size can leave.
+            self.resize_commit(&root, new_buffer && root == *surface);
         }
 
         if let Some(toplevel) = self.window_for(surface).and_then(|w| w.toplevel().cloned())

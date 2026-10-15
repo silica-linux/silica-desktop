@@ -1,14 +1,20 @@
-//! Resizing from the frame edges (mustache-spec 1.1, "Drag zones and edges", MU-08): the left
-//! and top edges take the pointer from 2 pt outside to 3 pt inside the frame, the right and
-//! bottom ones from 4 pt outside to 3 inside; near a corner, for 16 pt along each edge, the
-//! resize is diagonal. It applies to full-size content windows too (the frame includes the
-//! app's bar) and to the clients' `xdg_toplevel.resize` requests.
+//! Resizing from the frame edges (mustache-spec 1.1, "Drag zones and edges", MU-08; windows.md,
+//! WIN-RESIZE): the left and top edges take the pointer from 2 pt outside to 3 pt inside the
+//! frame, the right and bottom ones from 4 pt outside to 3 inside; near a corner, for 16 pt
+//! along each edge, the resize is diagonal. At the rounded corner itself the zone reaches only
+//! 1–2 pt outside, and on the diagonal it goes 8 pt (top left) to 10 pt (bottom right) inside.
+//! It applies to full-size content windows too (the frame includes the app's bar) and to the
+//! clients' `xdg_toplevel.resize` requests.
+
+use std::time::{Duration, Instant};
 
 use smithay::desktop::Window;
+use smithay::input::pointer::CursorIcon;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Logical, Point, Rectangle, Serial, Size};
 use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::SurfaceCachedState;
+use smithay::wayland::shell::xdg::{SurfaceCachedState, XdgToplevelSurfaceData};
 
 use crate::state::State;
 
@@ -18,8 +24,14 @@ pub const OUTSIDE_LEADING: f64 = 2.0;
 pub const OUTSIDE_TRAILING: f64 = 4.0;
 /// Inside the frame, on every side.
 pub const INSIDE: f64 = 3.0;
-/// Along an edge, from the corner: the diagonal zone.
+/// Along an edge, from the corner: the diagonal zone (~15–17 pt measured).
 pub const CORNER: f64 = 16.0;
+/// Outside the frame on both axes (past a corner): the zone stops this close to it.
+pub const CORNER_OUTSIDE: f64 = 2.0;
+/// Inside the frame, the square at the left or top corners that resizes diagonally.
+pub const CORNER_INSIDE_LEADING: f64 = 9.0;
+/// The same at the right or bottom corners.
+pub const CORNER_INSIDE_TRAILING: f64 = 10.0;
 /// The content does not go below this side if the client does not ask otherwise.
 const MIN_CONTENT: i32 = 1;
 
@@ -62,6 +74,36 @@ pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Optio
         || p.y >= bottom + OUTSIDE_TRAILING
     {
         return None;
+    }
+    let out_x = p.x < left || p.x >= right;
+    let out_y = p.y < top || p.y >= bottom;
+    // Past a corner on both axes: only 1–2 pt around the rounded corner.
+    if out_x
+        && out_y
+        && (p.x < left - CORNER_OUTSIDE
+            || p.x >= right + CORNER_OUTSIDE
+            || p.y < top - CORNER_OUTSIDE
+            || p.y >= bottom + CORNER_OUTSIDE)
+    {
+        return None;
+    }
+    // Inside, the square at each corner resizes diagonally (it reaches past the 3 pt bands).
+    if !out_x && !out_y {
+        let near_left = p.x < left + CORNER_INSIDE_LEADING;
+        let near_right = p.x >= right - CORNER_INSIDE_TRAILING;
+        let near_top = p.y < top + CORNER_INSIDE_LEADING;
+        let near_bottom = p.y >= bottom - CORNER_INSIDE_TRAILING;
+        // Not on windows too small for the squares to be apart.
+        let room = right - left > CORNER_INSIDE_LEADING + CORNER_INSIDE_TRAILING
+            && bottom - top > CORNER_INSIDE_LEADING + CORNER_INSIDE_TRAILING;
+        if room && (near_left || near_right) && (near_top || near_bottom) {
+            return Some(Edges {
+                left: near_left,
+                right: near_right,
+                top: near_top,
+                bottom: near_bottom,
+            });
+        }
     }
     let mut edges = Edges {
         left: p.x < left + INSIDE,
@@ -149,18 +191,132 @@ pub fn resized(
     Rectangle::new((x, y).into(), (w, h).into())
 }
 
-/// A resize in progress: the window, the sides, where it started and the frame at that time.
+/// With the top edge the frame does not grow above `top_limit` (the top of the usable area,
+/// below the menu bar), unless that would take it under `min_h`: the bottom side stays still.
+pub fn below_top(
+    frame: Rectangle<i32, Logical>,
+    edges: Edges,
+    top_limit: i32,
+    min_h: i32,
+) -> Rectangle<i32, Logical> {
+    if !edges.top || frame.loc.y >= top_limit {
+        return frame;
+    }
+    let bottom = frame.loc.y.saturating_add(frame.size.h);
+    let h = bottom
+        .saturating_sub(top_limit)
+        .max(min_h)
+        .min(frame.size.h);
+    Rectangle::new(
+        (frame.loc.x, bottom.saturating_sub(h)).into(),
+        (frame.size.w, h).into(),
+    )
+}
+
+/// Which ways the content can still go between the client's limits (`max` 0: no limit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    pub grow_w: bool,
+    pub shrink_w: bool,
+    pub grow_h: bool,
+    pub shrink_h: bool,
+}
+
+impl Room {
+    pub fn of(
+        content: Size<i32, Logical>,
+        min: Size<i32, Logical>,
+        max: Size<i32, Logical>,
+    ) -> Self {
+        Self {
+            grow_w: max.w <= 0 || content.w < max.w,
+            shrink_w: content.w > min.w.max(MIN_CONTENT),
+            grow_h: max.h <= 0 || content.h < max.h,
+            shrink_h: content.h > min.h.max(MIN_CONTENT),
+        }
+    }
+
+    /// A side whose size is fixed (minimum equal to maximum) does not resize.
+    pub fn resizable(edges: Edges, min: Size<i32, Logical>, max: Size<i32, Logical>) -> Edges {
+        let fixed_w = max.w > 0 && max.w <= min.w;
+        let fixed_h = max.h > 0 && max.h <= min.h;
+        Edges {
+            left: edges.left && !fixed_w,
+            right: edges.right && !fixed_w,
+            top: edges.top && !fixed_h,
+            bottom: edges.bottom && !fixed_h,
+        }
+    }
+}
+
+/// A configure the client has not answered for this long is followed by the newest size
+/// anyway (a client that acks without a new buffer, or one hidden meanwhile). A safety net
+/// of Ossido's, not a macOS value.
+const STALE_CONFIGURE: Duration = Duration::from_millis(100);
+/// After the release the client's answer to the last configure is still anchored; past this
+/// time a client that never answers is let go.
+const SETTLE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// A resize in progress (or, after the release, waiting for the client's last answer).
+///
+/// Live resize (#160): every pointer movement asks the client for the new content size, one
+/// configure at a time; the next one leaves when the client commits a buffer for the one
+/// before (so the pace is the client's frame rate, itself paced by the frame callbacks). The
+/// window is drawn only as the client committed it, never stretched; the left and top edges
+/// move the origin when the client commits the new size, from the size it actually
+/// committed, so the opposite side never moves. On macOS (WIN-RESIZE) the edge stays under
+/// the pointer in every frame (0 ± 5 ms slow, at most one frame behind at ~1300 pt/s) and
+/// the content is drawn at the new size in the same frame: here the lag is the client's
+/// frame time, and the embedder starts that frame as soon as the configure arrives. The
+/// minimum size is a hard stop: the size comes from the pointer's distance from where the
+/// drag started, so the edge resumes as soon as the pointer comes back past the stop.
 #[derive(Debug, Clone)]
 pub struct Resize {
     pub window: Window,
     pub edges: Edges,
     pub start: Point<f64, Logical>,
+    /// The frame at the start.
     pub frame: Rectangle<i32, Logical>,
+    /// The content at the start: its right and bottom sides are the anchors.
+    pub content: Rectangle<i32, Logical>,
+    /// The content size the pointer asks for now.
+    pub target: Size<i32, Logical>,
+    /// The content size last sent to the client.
+    sent: Size<i32, Logical>,
+    /// The configure not answered yet, and when it left.
+    in_flight: Option<(Serial, Instant)>,
+    /// When the button was released (the resize is settling).
+    released: Option<Instant>,
+}
+
+/// The serial of the configure the client's current state answers.
+fn committed_serial(surface: &WlSurface) -> Option<Serial> {
+    with_states(surface, |states| {
+        states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .and_then(|data| data.lock().ok().and_then(|data| data.current_serial))
+    })
+}
+
+/// The client's minimum and maximum content size (0: none).
+fn limits(window: &Window) -> (Size<i32, Logical>, Size<i32, Logical>) {
+    window.toplevel().map_or_else(
+        || (Size::default(), Size::default()),
+        |toplevel| {
+            with_states(toplevel.wl_surface(), |states| {
+                let mut cached = states.cached_state.get::<SurfaceCachedState>();
+                let current = cached.current();
+                (current.min_size, current.max_size)
+            })
+        },
+    )
 }
 
 impl State {
     /// The window whose edge is under the point, from the top: a window covering the point
-    /// outside its zones stops the search (the one below is not resized).
+    /// outside its zones stops the search (the one below is not resized). The sides of a
+    /// fixed size do not count.
     pub fn resize_hit(&self, location: Point<f64, Logical>) -> Option<(Window, Edges)> {
         for window in self.space.elements().rev() {
             if crate::windows::is_fullscreen(window) {
@@ -170,7 +326,9 @@ impl State {
                 continue;
             };
             if let Some(edges) = edges_at(frame, location) {
-                return Some((window.clone(), edges));
+                let (min, max) = limits(window);
+                let edges = Room::resizable(edges, min, max);
+                return edges.any().then(|| (window.clone(), edges));
             }
             if frame.to_f64().contains(location) {
                 return None;
@@ -179,39 +337,54 @@ impl State {
         None
     }
 
+    /// The pointer shape for the sides `edges` of `window`: one-way at a limit.
+    pub fn resize_cursor(&self, window: &Window, edges: Edges) -> CursorIcon {
+        let (min, max) = limits(window);
+        let content = window.geometry().size;
+        crate::cursor_theme::resize_icon_with_room(edges, Room::of(content, min, max))
+    }
+
     /// Starts resizing `window` from the sides `edges`, from point `start`.
     pub fn start_resize(&mut self, window: Window, edges: Edges, start: Point<f64, Logical>) {
-        let Some(frame) = self.window_frame(&window) else {
+        let (Some(frame), Some(content)) = (
+            self.window_frame(&window),
+            self.space.element_geometry(&window),
+        ) else {
             return;
         };
+        // A resize still settling on this window ends here.
+        self.resize_settling = None;
+        let mut in_flight = None;
         if let Some(toplevel) = window.toplevel() {
+            // The size too: a client that was never given one must not read 0 × 0 here.
             toplevel.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Resizing);
+                state.size = Some(content.size);
             });
-            toplevel.send_pending_configure();
+            in_flight = toplevel
+                .send_pending_configure()
+                .map(|serial| (serial, Instant::now()));
         }
         self.resizing = Some(Resize {
             window,
             edges,
             start,
             frame,
+            content,
+            target: content.size,
+            sent: content.size,
+            in_flight,
+            released: None,
         });
     }
 
-    /// The pointer moved during a resize: new size to the client and, for the left and top
-    /// sides, a new position.
+    /// The pointer moved during a resize: the new content size goes to the client as soon as
+    /// it answered the configure before; the position follows its commits.
     pub fn resize_to(&mut self, location: Point<f64, Logical>) {
-        let Some(resize) = self.resizing.clone() else {
+        let Some(mut resize) = self.resizing.take() else {
             return;
         };
-        let Some(toplevel) = resize.window.toplevel() else {
-            return;
-        };
-        let (min, max) = with_states(toplevel.wl_surface(), |states| {
-            let mut cached = states.cached_state.get::<SurfaceCachedState>();
-            let current = cached.current();
-            (current.min_size, current.max_size)
-        });
+        let (min, max) = limits(&resize.window);
         let bar = crate::decorations::titlebar_height(&resize.window);
         let frame = resized(
             resize.frame,
@@ -221,32 +394,152 @@ impl State {
             min,
             max,
         );
-        let content = Size::from((frame.size.w, frame.size.h.saturating_sub(bar).max(1)));
+        let min_h = min.h.max(MIN_CONTENT).saturating_add(bar);
+        let frame = below_top(frame, resize.edges, self.usable_area().loc.y, min_h);
+        resize.target = Size::from((frame.size.w, frame.size.h.saturating_sub(bar).max(1)));
+        flush(&mut resize);
+        self.resizing = Some(resize);
+    }
+
+    /// End of the resize (button release): the last size without the resizing state; the
+    /// client's answer is still anchored.
+    pub fn end_resize(&mut self) {
+        let Some(mut resize) = self.resizing.take() else {
+            return;
+        };
+        let Some(toplevel) = resize.window.toplevel() else {
+            return;
+        };
+        let target = resize.target;
         toplevel.with_pending_state(|state| {
-            state.size = Some(content);
+            state.states.unset(xdg_toplevel::State::Resizing);
+            state.size = Some(target);
         });
-        toplevel.send_pending_configure();
-        if resize.edges.left || resize.edges.top {
-            self.space.map_element(
-                resize.window.clone(),
-                frame.loc + Point::from((0, bar)),
-                false,
-            );
+        let now = Instant::now();
+        resize.in_flight = toplevel
+            .send_pending_configure()
+            .map(|serial| (serial, now));
+        resize.sent = target;
+        resize.released = Some(now);
+        if resize.in_flight.is_some() {
+            self.resize_settling = Some(resize);
         }
     }
 
-    /// End of the resize (button release).
-    pub fn end_resize(&mut self) {
-        let Some(resize) = self.resizing.take() else {
-            return;
+    /// A commit of `surface` (with or without a new buffer): if it is the window being
+    /// resized, the anchored sides stay still and the next size can leave.
+    pub fn resize_commit(&mut self, surface: &WlSurface, new_buffer: bool) {
+        let is_window = |resize: &Resize| {
+            resize
+                .window
+                .toplevel()
+                .is_some_and(|t| t.wl_surface() == surface)
         };
-        if let Some(toplevel) = resize.window.toplevel() {
-            toplevel.with_pending_state(|state| {
-                state.states.unset(xdg_toplevel::State::Resizing);
-            });
-            toplevel.send_pending_configure();
+        if let Some(mut resize) = self.resizing.take() {
+            if is_window(&resize) {
+                self.anchor(&resize);
+                answered(&mut resize, surface, new_buffer);
+                flush(&mut resize);
+            }
+            self.resizing = Some(resize);
+        }
+        if let Some(mut resize) = self.resize_settling.take() {
+            let moved = self
+                .moving
+                .as_ref()
+                .is_some_and(|(window, _)| *window == resize.window);
+            let expired = resize
+                .released
+                .is_some_and(|at| at.elapsed() > SETTLE_TIMEOUT);
+            if moved || expired || !resize.window.toplevel().is_some_and(|t| t.alive()) {
+                return;
+            }
+            if is_window(&resize) {
+                self.anchor(&resize);
+                answered(&mut resize, surface, new_buffer);
+                if resize.in_flight.is_none() {
+                    return;
+                }
+            }
+            self.resize_settling = Some(resize);
         }
     }
+
+    /// Places the window from the size it committed: the right side for the left edge and the
+    /// bottom side for the top one stay where they were at the start.
+    fn anchor(&mut self, resize: &Resize) {
+        let Some(location) = self.space.element_location(&resize.window) else {
+            return;
+        };
+        let size = resize.window.geometry().size;
+        let placed = anchored(resize.content, resize.edges, location, size);
+        if placed != location {
+            self.space.map_element(resize.window.clone(), placed, false);
+        }
+    }
+}
+
+/// Where the content of `size` goes so that the sides opposite `edges` stay those of `start`.
+pub fn anchored(
+    start: Rectangle<i32, Logical>,
+    edges: Edges,
+    location: Point<i32, Logical>,
+    size: Size<i32, Logical>,
+) -> Point<i32, Logical> {
+    let x = if edges.left {
+        start
+            .loc
+            .x
+            .saturating_add(start.size.w)
+            .saturating_sub(size.w)
+    } else {
+        location.x
+    };
+    let y = if edges.top {
+        start
+            .loc
+            .y
+            .saturating_add(start.size.h)
+            .saturating_sub(size.h)
+    } else {
+        location.y
+    };
+    Point::from((x, y))
+}
+
+/// The client committed a buffer for the configure in flight (or a later one).
+fn answered(resize: &mut Resize, surface: &WlSurface, new_buffer: bool) {
+    let Some((serial, _)) = resize.in_flight else {
+        return;
+    };
+    if new_buffer && committed_serial(surface).is_some_and(|current| current >= serial) {
+        resize.in_flight = None;
+    }
+}
+
+/// Sends the size the pointer asks for, if it changed and nothing is waiting for an answer
+/// (or the wait went stale).
+fn flush(resize: &mut Resize) {
+    if resize.target == resize.sent {
+        return;
+    }
+    if resize
+        .in_flight
+        .is_some_and(|(_, at)| at.elapsed() < STALE_CONFIGURE)
+    {
+        return;
+    }
+    let Some(toplevel) = resize.window.toplevel() else {
+        return;
+    };
+    let target = resize.target;
+    toplevel.with_pending_state(|state| {
+        state.size = Some(target);
+    });
+    if let Some(serial) = toplevel.send_pending_configure() {
+        resize.in_flight = Some((serial, Instant::now()));
+    }
+    resize.sent = target;
 }
 
 #[cfg(test)]
@@ -325,5 +618,89 @@ mod tests {
         let max = Size::from((1100, 0));
         let r = resized(frame(), right, Point::from((500.0, 0.0)), 0, none, max);
         assert_eq!(r, Rectangle::new((200, 150).into(), (1100, 700).into()));
+    }
+
+    #[test]
+    fn the_anchor_keeps_the_opposite_sides() {
+        let start = Rectangle::new((200, 150).into(), (1000, 700).into());
+        let left_top = Edges {
+            left: true,
+            top: true,
+            ..Edges::default()
+        };
+        // Whatever size the client commits (even not the one asked), right and bottom stay.
+        for (w, h) in [(1000, 700), (1050, 760), (600, 300), (1, 1)] {
+            let p = anchored(start, left_top, start.loc, Size::from((w, h)));
+            assert_eq!((p.x + w, p.y + h), (1200, 850));
+        }
+        // Right and bottom edges: the origin never moves.
+        let right = Edges {
+            right: true,
+            bottom: true,
+            ..Edges::default()
+        };
+        let p = anchored(start, right, Point::from((210, 160)), Size::from((10, 10)));
+        assert_eq!(p, Point::from((210, 160)));
+    }
+
+    #[test]
+    fn the_top_edge_stops_below_the_menu_bar() {
+        let top = Edges {
+            top: true,
+            ..Edges::default()
+        };
+        let frame = Rectangle::new((100, 10).into(), (400, 340).into());
+        let r = below_top(frame, top, 30, 60);
+        assert_eq!(r, Rectangle::new((100, 30).into(), (400, 320).into()));
+        // Already below: unchanged; other edges: unchanged.
+        let low = Rectangle::new((100, 40).into(), (400, 310).into());
+        assert_eq!(below_top(low, top, 30, 60), low);
+        assert_eq!(below_top(frame, L, 30, 60), frame);
+    }
+
+    #[test]
+    fn fixed_sides_do_not_resize_and_room_follows_the_limits() {
+        let all = Edges {
+            left: true,
+            top: true,
+            ..Edges::default()
+        };
+        let fixed_w = Room::resizable(all, Size::from((300, 100)), Size::from((300, 0)));
+        assert!(!fixed_w.left && fixed_w.top);
+        let fixed = Room::resizable(all, Size::from((300, 200)), Size::from((300, 200)));
+        assert!(!fixed.any());
+        let room = Room::of(
+            Size::from((300, 250)),
+            Size::from((300, 100)),
+            Size::from((0, 250)),
+        );
+        assert_eq!(
+            room,
+            Room {
+                grow_w: true,
+                shrink_w: false,
+                grow_h: false,
+                shrink_h: true
+            }
+        );
+    }
+
+    #[test]
+    fn measured_corner_zones() {
+        // Frame 200..1200 × 150..850. Bottom-right diagonal from 10 pt inside to 1 pt past.
+        let br = |x, y| at(x, y).is_some_and(|e| e.right && e.bottom);
+        assert!(br(1190.0, 840.0));
+        assert!(br(1201.0, 851.0));
+        // Past the corner on both axes the zone is only ~2 pt deep.
+        assert_eq!(at(1202.0, 851.0), None);
+        assert_eq!(at(1201.0, 852.0), None);
+        assert_eq!(at(1203.0, 853.0), None);
+        // Top-left from 1 pt outside to 8 pt inside.
+        let tl = |x, y| at(x, y).is_some_and(|e| e.left && e.top);
+        assert!(tl(199.0, 149.0));
+        assert!(tl(208.0, 158.0));
+        assert!(!tl(209.0, 159.0));
+        // Inside, past the corner square and the 3 pt bands: the content.
+        assert_eq!(at(212.0, 400.0), None);
     }
 }

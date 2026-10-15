@@ -64,6 +64,12 @@ struct App {
     configured: bool,
     /// The last size requested by Ossido (`xdg_toplevel.configure`).
     configured_size: Option<(i32, i32)>,
+    /// How many `xdg_toplevel.configure` arrived, and whether the last one had `resizing`.
+    configure_count: u32,
+    configured_resizing: bool,
+    /// Configures are not acked until `TestWindow::ack_held` (a slow client).
+    hold_acks: bool,
+    held: Vec<u32>,
     close_requested: bool,
     /// Decoration mode chosen by Ossido.
     decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
@@ -151,7 +157,11 @@ impl Dispatch<XdgSurface, ()> for App {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
-            surface.ack_configure(serial);
+            if state.hold_acks && state.configured {
+                state.held.push(serial);
+            } else {
+                surface.ack_configure(serial);
+            }
             state.configured = true;
         }
     }
@@ -366,8 +376,19 @@ impl Dispatch<XdgToplevel, ()> for App {
     ) {
         match event {
             xdg_toplevel::Event::Close => state.close_requested = true,
-            xdg_toplevel::Event::Configure { width, height, .. } => {
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                states,
+            } => {
                 state.configured_size = Some((width, height));
+                state.configure_count += 1;
+                let resizing = xdg_toplevel::State::Resizing as u32;
+                state.configured_resizing = states
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|c| u32::from_ne_bytes(*c) == resizing);
             }
             _ => {}
         }
@@ -738,6 +759,14 @@ impl TestWindow {
         self.queue.roundtrip(&mut self.app).unwrap();
     }
 
+    /// The client's minimum content size (`xdg_toplevel.set_min_size`), then the commit.
+    #[allow(dead_code)]
+    pub fn set_min_size(&mut self, (w, h): (i32, i32)) {
+        self._toplevel.as_ref().unwrap().set_min_size(w, h);
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
     /// Asks for full-size content (no title bar from Ossido; the buttons stay over the app
     /// toolbar), then the commit.
     #[allow(dead_code)]
@@ -915,6 +944,66 @@ impl TestWindow {
     pub fn configured_size(&mut self) -> Option<(i32, i32)> {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.configured_size
+    }
+
+    /// How many toplevel configures arrived so far, after reading the events.
+    #[allow(dead_code)]
+    pub fn configure_count(&mut self) -> u32 {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.configure_count
+    }
+
+    /// Whether the last configure carried the `resizing` state.
+    #[allow(dead_code)]
+    pub fn resizing(&mut self) -> bool {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.configured_resizing
+    }
+
+    /// From now on the configures wait for `ack_held` (a client slow to answer).
+    #[allow(dead_code)]
+    pub fn hold_acks(&mut self, hold: bool) {
+        self.app.hold_acks = hold;
+    }
+
+    /// Acks the configures held so far (the last one wins, as a real client does).
+    #[allow(dead_code)]
+    pub fn ack_held(&mut self) {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        if let (Some(serial), Some(xdg)) = (self.app.held.pop(), &self.xdg_surface) {
+            xdg.ack_configure(serial);
+        }
+        self.app.held.clear();
+    }
+
+    /// Commits a new red buffer of `w` × `h` (a frame drawn at that size) and waits for
+    /// Ossido to process it.
+    #[allow(dead_code)]
+    pub fn commit_size(&mut self, (w, h): (i32, i32)) {
+        let qh = self.queue.handle();
+        let shm = self.app.shm.clone().expect("wl_shm missing");
+        let (w, h) = (w.max(1), h.max(1));
+        let stride = w * 4;
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&RED_BGRA.repeat((w * h) as usize)).unwrap();
+        let pool = shm.create_pool(file.as_fd(), stride * h, &qh, ());
+        let buffer = pool.create_buffer(0, w, h, stride, wl_shm::Format::Argb8888, &qh, ());
+        pool.destroy();
+        self.surface.attach(Some(&buffer), 0, 0);
+        self.surface.damage_buffer(0, 0, w, h);
+        self.surface.commit();
+        self.buffer = buffer;
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// Answers the last configure as a client does: acks it (already done unless held) and
+    /// commits a buffer of the size asked. Returns that size.
+    #[allow(dead_code)]
+    pub fn answer(&mut self) -> (i32, i32) {
+        self.ack_held();
+        let size = self.app.configured_size.unwrap_or((1, 1));
+        self.commit_size(size);
+        size
     }
 
     /// Reads the incoming events and tells whether Ossido asked to close.
