@@ -125,6 +125,7 @@ fn open_file_runs_mustache_and_returns_its_uris() {
         args,
         [
             "--bundle",
+            "--helper",
             "--dart-arg",
             "--dialog=open",
             "--dart-arg",

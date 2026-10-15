@@ -94,9 +94,12 @@ pub fn desktop_exec(text: &str) -> Option<String> {
     None
 }
 
-/// Mustache's command line for the dialog: `Exec` plus the arguments for Dart.
+/// Mustache's command line for the dialog: `Exec` plus the arguments for Dart. The dialog is
+/// a helper process of the embedder (`--helper`): not the running Mustache, which a click in
+/// the Dock must reach, and it ends with its window, so that a closed dialog still answers.
 pub fn dialog_command(exec: &str, kind: DialogKind, request: &DialogRequest) -> Vec<String> {
     let mut words = exec_words(exec);
+    words.push("--helper".to_owned());
     let mut arg = |value: String| {
         words.push("--dart-arg".to_owned());
         words.push(value);
@@ -199,6 +202,7 @@ mod tests {
                 "--app-id",
                 "x",
                 "/b",
+                "--helper",
                 "--dart-arg",
                 "--dialog=open",
                 "--dart-arg",

@@ -813,18 +813,23 @@ rm -rf "$T"
 }
 
 /// The D-Bus services of the image that the share replaces: (bus name, binary in the share).
-const DEV_SERVICES: [(&str, &str); 2] = [
+const DEV_SERVICES: [(&str, &str); 3] = [
     ("dev.frascella.Silica", "silica-daemon"),
     ("dev.frascella.Mail", "silica-mail-engine"),
+    // The Open and Save dialogs: the share's portal starts the share's Mustache as it expects.
+    (
+        "org.freedesktop.impl.portal.desktop.silica",
+        "silica-portal",
+    ),
 ];
+
+/// The user unit that brings graphical-session.target up (xdg-desktop-portal needs it).
+const SESSION_TARGET: &str = include_str!("../../data/systemd/silica-session.target");
 
 /// The user-level activation file that points `name` at the share's binary. The image ships
 /// /usr/share/dbus-1/services/<name>.service with the packaged binary: without this override,
 /// activating the name while the dev daemon does not own it (a session restart) starts an old
 /// daemon from /usr/libexec/silica.
-/// The user unit that brings graphical-session.target up (xdg-desktop-portal needs it).
-const SESSION_TARGET: &str = include_str!("../../data/systemd/silica-session.target");
-
 fn dev_service_file(name: &str, binary: &str) -> String {
     format!("[D-BUS Service]\nName={name}\nExec={GUEST_RUN}/bin/{binary}\n")
 }

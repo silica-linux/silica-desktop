@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! silica-embedder [--engine DIR] [--size WxH] [--renderer software|gl|impeller|vulkan] [--aot LIBAPP]
-//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] BUNDLE
+//!     [--engine-arg ARG]... [--dart-arg ARG]... [--title TITLE] [--app-id ID] [--multi-window] [--helper] BUNDLE
 //!     [--layer background|bottom|top|overlay --anchor top,left,right
 //!      --exclusive-zone N --keyboard none|exclusive|on-demand --namespace NAME]
 //! ```
@@ -10,7 +10,8 @@
 //! `BUNDLE` is the `flutter_assets` folder of `flutter build bundle`; `DIR` contains
 //! `libflutter_engine.so` and `icudtl.dat` (`cargo xtask engine`). With a release engine
 //! the AOT code is needed: `--aot`, or `libapp.so` next to `BUNDLE`
-//! (`cargo xtask bundle <app> --release`).
+//! (`cargo xtask bundle <app> --release`). `--helper` starts a helper process of the app (the
+//! portal's Open and Save dialog): not the app's running instance, and it ends with its window.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -61,6 +62,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut title = "Silica".to_owned();
     let mut app_id = "dev.frascella.silica.Flutter".to_owned();
     let mut multi_window = false;
+    let mut helper = false;
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
@@ -115,6 +117,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--title" => title = value()?,
             "--app-id" => app_id = value()?,
             "--multi-window" => multi_window = true,
+            "--helper" => helper = true,
             "--renderer" => {
                 renderer = match value()?.as_str() {
                     "software" => Renderer::Software,
@@ -152,6 +155,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
         title,
         app_id,
         multi_window,
+        helper,
     })
 }
 
@@ -164,6 +168,26 @@ mod tests {
             .map(|s| (*s).to_owned())
             .collect::<Vec<_>>()
             .into_iter()
+    }
+
+    #[test]
+    fn the_portal_dialog_is_a_helper() {
+        // The portal appends `--helper` and the dialog's arguments after Mustache's Exec.
+        let options = parse(args(&[
+            "--app-id",
+            "dev.frascella.Mustache",
+            "--multi-window",
+            "/bundle/flutter_assets",
+            "--helper",
+            "--dart-arg",
+            "--dialog=open",
+        ]))
+        .unwrap();
+        assert!(options.helper);
+        assert!(options.multi_window);
+        assert_eq!(options.dart_args, ["--dialog=open"]);
+        let plain = parse(args(&["/bundle/flutter_assets"])).unwrap();
+        assert!(!plain.helper);
     }
 
     #[test]
