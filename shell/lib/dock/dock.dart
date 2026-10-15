@@ -1784,6 +1784,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     });
   }
 
+  /// The surface is taller than at rest (it grew to show the stack), or as tall as the screen.
+  /// Before the screen size is known nothing waits.
+  bool _surfaceGrown(double height) {
+    final screen = _screen;
+    if (screen == null) return true;
+    final base = _baseHeight;
+    return height >= screen.height - 1 || (base != null && height > base + 1);
+  }
+
   static String _key(Item item) => '${item.label}\u0000${item.command}';
 
   /// A bounce in progress lands when the app has a window, or after the limit.
@@ -1881,10 +1890,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _closeStack() async {
+  /// `byButton`: released on the close button (~300 ms); otherwise Esc or a click elsewhere.
+  Future<void> _closeStack({bool byButton = false}) async {
     if (_stackIndex == null || _stackClosing) return;
     _stackClosing = true;
-    _stackAnim.duration = _stackView == StackView.fan ? fanClose : gridClose;
+    _stackAnim.duration = byButton
+        ? stackCloseByButton
+        : _stackView == StackView.fan
+        ? fanClose
+        : gridClose;
     await _stackAnim.reverse();
     if (mounted) {
       setState(() {
@@ -1903,7 +1917,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void _activate(int index) {
     final item = _items[index];
     if (item.folder != null && widget.onOpenPath != null) {
-      _stackIndex == index ? _closeStack() : _openStack(index);
+      _stackIndex == index ? _closeStack(byButton: true) : _openStack(index);
       return;
     }
     if (!item.running && item.command != null) {
@@ -2253,8 +2267,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                       size.height,
                       _labelAnim.value.clamp(0.0, 1.0),
                     ),
-                  if (stackWidget != null &&
-                      (_screen == null || size.height >= _screen!.height - 1))
+                  // Once the surface has grown for it: Ossido may keep it below the menu bar's
+                  // exclusive zone (770 of 800), so "as tall as the screen" never came and the
+                  // open stack stayed invisible.
+                  if (stackWidget != null && _surfaceGrown(size.height))
                     Positioned.fill(
                       child: Focus(
                         focusNode: _stackFocus,
@@ -2468,6 +2484,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             dark:
                 MediaQuery.maybePlatformBrightnessOf(context) ==
                 Brightness.dark,
+            pressed: _pressed == index,
           )
         : pile != null && pile.isNotEmpty
         ? PileIcon(sources: pile, side: side)
@@ -2491,7 +2508,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       // Pressed: the icon darkens (D-02).
       child: Opacity(
         opacity: live?.opacity ?? 1,
-        child: !sliding && _pressed == index
+        // The close tile darkens on its own (measured amounts).
+        child: !sliding && _pressed == index && !closing
             ? ColorFiltered(
                 colorFilter: const ColorFilter.mode(
                   pressedShade,
@@ -2708,6 +2726,8 @@ class DockLabel extends StatelessWidget {
     required this.style,
     this.tip = true,
     this.group = DockGlass.label,
+    this.height = labelHeight,
+    this.shadow = true,
   });
 
   final String text;
@@ -2720,6 +2740,12 @@ class DockLabel extends StatelessWidget {
   /// panel or the other labels.
   final int group;
 
+  /// The capsule's height (the fan's labels are 28 pt).
+  final double height;
+
+  /// The menus' shadow under the capsule (the fan's labels have none, DOCK-FAN).
+  final bool shadow;
+
   /// The glass the label declares; the menus declare the same material
   /// (`MenuPanel`: `GlassMaterial.thick`).
   static const GlassMaterial material = GlassMaterial.thick;
@@ -2727,21 +2753,14 @@ class DockLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (context, box) => CachedShadow(
-        cacheKey: Object.hash(box.maxWidth, MenuColors.of(context).shadow, tip),
-        bleed: 60,
-        paintShadow: _LabelShadow(
-          box.maxWidth,
-          MenuColors.of(context).shadow,
-          tip: tip,
-        ).paint,
-        child: Align(
+      builder: (context, box) {
+        final capsule = Align(
           alignment: Alignment.topCenter,
           child: SizedBox(
-            height: labelHeight,
+            height: height,
             child: ProfiledGlass(
               profile: ShellGlassProfile.tooltip,
-              radius: labelHeight / 2,
+              radius: height / 2,
               material: material,
               group: group,
               tip: tip
@@ -2754,8 +2773,23 @@ class DockLabel extends StatelessWidget {
               child: Center(child: Text(text, style: style)),
             ),
           ),
-        ),
-      ),
+        );
+        if (!shadow) return capsule;
+        return CachedShadow(
+          cacheKey: Object.hash(
+            box.maxWidth,
+            MenuColors.of(context).shadow,
+            tip,
+          ),
+          bleed: 60,
+          paintShadow: _LabelShadow(
+            box.maxWidth,
+            MenuColors.of(context).shadow,
+            tip: tip,
+          ).paint,
+          child: capsule,
+        );
+      },
     );
   }
 }

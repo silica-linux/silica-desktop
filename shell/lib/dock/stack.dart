@@ -2,14 +2,17 @@
 //
 // Automatic view: fan up to 15 files, grid beyond (the real threshold is between 11 and 40,
 // not measured).
-// - Fan: from the bottom, one item every 64.6 pt, side from 65.8 to 82.3 pt going up, the
-//   arc bending to the right with the measured offsets and the icons rotated accordingly;
-//   labels on the left; the first item has its bottom edge 7 pt above the Dock area; at most
-//   15 files, the sixteenth place opens the folder. Opening ~240 ms (the column comes out of
-//   the icon and stretches, then the labels), closing ~210 ms.
+// - Fan (DOCK-FAN): from the bottom, 64 pt icons with their centres 64 pt apart vertically,
+//   each rotated clockwise ~1.22° more than the one below (~1.6° for the first) and shifted
+//   right by 64 · tan of its angle from the previous centre, so the column bends more and more
+//   to the right; 28 pt label capsules on the left, rotated with their icon, 5.5 pt from its
+//   frame; the first item's frame ends 7 pt above the Dock area; at most 15 files, the
+//   sixteenth place opens the folder (a flat 58 pt circle). Opening ~240 ms (the column comes
+//   out of the icon and stretches, then the labels), closing ~210 ms with Esc, ~300 ms with the
+//   close button.
 // - Grid: a panel with the title and 128 pt cells, ⌈√(n + 1)⌉ columns, margins 17 / 16 at
-//   the sides, 32 at the top (title), 11 at the bottom, radius 25, tip towards the icon 5 pt
-//   above the Dock; it scales up from the tip in ~240 ms, closes in ~150 ms.
+//   the sides, 32 at the top (title), 11 at the bottom, radius 25, a ~24 x 8 pt tip towards the
+//   icon, its apex 5 pt above the Dock; it scales up from the tip in ~240 ms, closes in ~150 ms.
 // A click on a file closes the stack and opens it.
 
 import 'dart:io';
@@ -24,44 +27,42 @@ import '../system/folder_icons.dart';
 import '../system/folder_style.dart';
 import '../system/glass_profile.dart';
 import '../system/silica_symbol.dart';
-import 'dock.dart' show DockLabel, labelFontSize, labelHeight, labelPadding;
+import 'dock.dart' show DockLabel;
 import 'glass_groups.dart';
 import 'stack_settings.dart';
 
 const int fanMax = 15;
-const double fanPitch = 64.6;
-const double fanFirstSide = 65.8;
-const double fanSideStep = 1.1;
+
+/// The fan's icons (their bounding box grows with the rotation: 64 · (cos θ + sin θ)).
+const double fanIcon = 64;
+
+/// Vertical distance between consecutive centres.
+const double fanPitch = 64;
+
+/// The first item's rotation and the growth per item (degrees, clockwise).
+const double fanFirstAngle = 1.6;
+const double fanAngleStep = 1.22;
+
+/// The first item's frame ends this far above the Dock area.
 const double fanAboveZone = 7;
 
-/// How much further apart the items are placed along the arc than measured (both the pitch and
-/// the rightward shift scale; the angle and the sides do not). The measured column (pitch 64.6
-/// for sides of 65.8-82.3) leaves the icons touching; DOCK-FAN has been requested for the real
-/// spacing. `provisional`.
-const double fanSpread = 1.25;
+/// The label capsules: height, side padding around the 13 pt name, distance from the icon's
+/// frame (its bounding box) along the row.
+const double fanLabelHeight = 28;
+const double fanLabelPadding = 13;
+const double fanLabelFontSize = 13;
+const double fanLabelGap = 5.5;
 
-/// Rightward offset of the left edge of each item relative to the first (pt).
-const List<double> fanShift = [
-  0,
-  1.4,
-  4.7,
-  9.1,
-  15.5,
-  22.9,
-  31.3,
-  41.7,
-  54.2,
-  66.6,
-  81.1,
-  97.6,
-  115.1,
-  134.6,
-  155.2,
-  177.8,
-];
-
-/// Center of the first item relative to the center of the stack icon: 1673.1 + 32.9 − 1703.7.
-const double fanFirstOffset = 2.3;
+/// The fan's "open folder" item: a flat circle, its outline and the glyph (a forward curved
+/// arrow, ~28 x 17 pt), light and dark; pressed, only the glyph dims (214 -> 140 in dark).
+const double fanFolderCircle = 58;
+const Color fanFolderFill = Color(0xFFBCBDC0);
+const Color fanFolderFillDark = Color(0xFF595A5D);
+const Color fanFolderOutline = Color(0xFF666666);
+const Color fanFolderOutlineDark = Color(0xFF000000);
+const Color fanFolderGlyph = Color(0xFF3E3E3E);
+const Color fanFolderGlyphDark = Color(0xFFD6D6D6);
+const double fanFolderPressedGlyph = 140 / 214;
 
 const double gridCell = 128;
 
@@ -87,8 +88,12 @@ TextStyle get gridLabelStyle => const TextStyle(
   height: 1,
 );
 
-/// The tip towards the icon is the menus' glass tip (`MenuMetrics.tipBase` x `tipDepth`, the
-/// body edge `gridTipHeight` from the apex), see [GridStack].
+/// The tip towards the icon (DOCK-FAN): ~24 pt at the base, 8 pt deep from the panel's edge to
+/// the apex (5 pt above the Dock), 45° flanks with small fillets and a rounded apex; Ossido fits
+/// its outline to this rectangle.
+const double gridTipBase = 24;
+const double gridTipDepth = 8;
+
 const double gridLeft = 17;
 
 /// 16 pt to the edge plus 1 of rim: 2 columns make 290 pt, 4 make 546.
@@ -96,12 +101,15 @@ const double gridRight = 17;
 const double gridTop = 32;
 const double gridBottom = 11;
 const double gridRadius = 25;
-const double gridTipHeight = MenuMetrics.tipHeight;
+const double gridTipHeight = gridTipDepth;
 const double gridTipAboveDock = 5;
 
 const Duration stackOpen = Duration(milliseconds: 240);
 const Duration fanClose = Duration(milliseconds: 210);
 const Duration gridClose = Duration(milliseconds: 150);
+
+/// Released on the close button, the stack closes in ~300 ms (fan and grid).
+const Duration stackCloseByButton = Duration(milliseconds: 300);
 
 const Color stackText = Color(0xFF1E1E1F);
 const Color stackLabelFill = Color(0xFFBDBEC3);
@@ -216,19 +224,24 @@ IconSource? fileIcon(FileSystemEntity entry) {
   return file == null ? null : FileSource(file);
 }
 
-/// The fan geometry for item `i` (from the bottom): center and side, relative to the center
-/// of the stack icon in x and to the top of the Dock area in y; rotation.
-({Offset center, double side, double angle}) fanSlot(int i) {
-  final side = fanFirstSide + fanSideStep * i;
-  final left = fanShift[i.clamp(0, fanShift.length - 1)];
-  final x = fanFirstOffset - fanFirstSide / 2 + left * fanSpread + side / 2;
-  // The tops go at a constant pitch; the first has its bottom 7 pt above the area.
-  final top = -fanAboveZone - fanFirstSide - fanPitch * fanSpread * i;
-  final step = i == 0 ? fanShift[1] : fanShift[i] - fanShift[i - 1];
+/// The fan geometry for item `i` (from the bottom): the icon's centre, relative to the centre
+/// of the stack icon in x and to the top of the Dock area in y; its side ([fanIcon]); its
+/// rotation (radians, clockwise); its frame, the bounding box of the rotated icon.
+({Offset center, double side, double angle, double frame}) fanSlot(int i) {
+  double angle(int k) => (fanFirstAngle + fanAngleStep * k) * math.pi / 180;
+  double frame(int k) => fanIcon * (math.cos(angle(k)) + math.sin(angle(k)));
+  // Each centre sits on the tangent of the one below, 64 · tan θ further right: the first from
+  // the stack icon's centre (+1.8 pt), the next ones with the angle between the two items
+  // (the measured steps 2, 4, 5, 7, 8, 9, 11, 13, 13, 15 pt lie between their two angles).
+  var x = fanPitch * math.tan(angle(0));
+  for (var k = 1; k <= i; k++) {
+    x += fanPitch * math.tan((angle(k - 1) + angle(k)) / 2);
+  }
   return (
-    center: Offset(x, top + side / 2),
-    side: side,
-    angle: math.atan(step / fanPitch),
+    center: Offset(x, -fanAboveZone - frame(0) / 2 - fanPitch * i),
+    side: fanIcon,
+    angle: angle(i),
+    frame: frame(i),
   );
 }
 
@@ -327,11 +340,7 @@ class _FanStackState extends State<FanStack> {
                   width: side,
                   height: side,
                   child: entry == null
-                      ? OpenFolderButton(
-                          side: side,
-                          dark: dark,
-                          group: DockGlass.fanButton,
-                        )
+                      ? FanFolderButton(side: side, dark: dark)
                       : icon == null
                       ? const SizedBox()
                       : SilicaIcon(icon, side: side, dark: false),
@@ -381,7 +390,8 @@ class _FanStackState extends State<FanStack> {
                   // Each item fades on its own: a single layer over the whole fan would be
                   // as large as the column on every frame.
                   Opacity(opacity: labels, child: label),
-                  const SizedBox(width: 6),
+                  // 5.5 pt from the icon's frame, the bounding box of the rotated icon.
+                  SizedBox(width: fanLabelGap + (slot.frame - side) / 2),
                   Opacity(opacity: fade, child: icon),
                 ],
               ),
@@ -393,10 +403,11 @@ class _FanStackState extends State<FanStack> {
     return Stack(clipBehavior: Clip.none, children: children);
   }
 
-  /// The item name: the glass of the Dock label (`thick`, the menus' shadow), as wide as the
-  /// text (at most 360 pt), without the tip, in a glass group of its own.
+  /// The item name: a capsule of the Dock label's glass (`thick`), [fanLabelHeight] tall, as
+  /// wide as the 13 pt name plus [fanLabelPadding] at each end (at most 360 pt), without the
+  /// tip and without a shadow, in a glass group of its own.
   Widget _label(String text, Color color, int index) {
-    final style = uiText(size: labelFontSize, color: color);
+    final style = uiText(size: fanLabelFontSize, color: color);
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -404,77 +415,115 @@ class _FanStackState extends State<FanStack> {
     )..layout();
     final width = math.min(
       360.0,
-      painter.width.ceilToDouble() + 2 * labelPadding,
+      painter.width.ceilToDouble() + 2 * fanLabelPadding,
     );
     painter.dispose();
     return SizedBox(
       width: width,
-      height: labelHeight,
+      height: fanLabelHeight,
       child: DockLabel(
         text: text,
         style: style.copyWith(overflow: TextOverflow.ellipsis),
         tip: false,
+        height: fanLabelHeight,
+        shadow: false,
         group: DockGlass.fanLabel(index),
       ),
     );
   }
 }
 
-/// The glyph of a glass control: dark in light, white in dark (dock-stacks.md, close button).
-Color glassGlyph(bool dark) =>
-    dark ? const Color(0xFFFFFFFF) : const Color(0xFF19191B);
+/// The fan's "open folder" item (dock-stacks.md, DOCK-FAN): a flat [fanFolderCircle] circle
+/// with a 1 pt outline and the forward curved arrow, centred in the `side` slot. No hover;
+/// while pressed only the glyph dims.
+class FanFolderButton extends StatefulWidget {
+  const FanFolderButton({super.key, required this.side, this.dark = false});
 
-/// A glass control: a `ProfiledGlass` (control) circle of `diameter` with a silica-icons symbol
-/// on top, in its own glass `group` (it never merges with the panel or the labels around it).
-/// The glyph is `glyph` of the diameter (`provisional`, DOCK-FAN has been requested).
-class GlassSymbolButton extends StatelessWidget {
-  const GlassSymbolButton({
-    super.key,
-    required this.symbol,
-    required this.diameter,
-    required this.group,
-    this.dark = false,
-    this.glyph = 0.5,
-    this.material = GlassMaterial.regular,
-  });
-
-  final String symbol;
-  final double diameter;
-  final int group;
+  final double side;
   final bool dark;
-  final double glyph;
-  final GlassMaterial material;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: diameter,
-    height: diameter,
-    child: ProfiledGlass(
-      profile: ShellGlassProfile.control,
-      radius: diameter / 2,
-      material: material,
-      group: group,
+  State<FanFolderButton> createState() => _FanFolderButtonState();
+}
+
+class _FanFolderButtonState extends State<FanFolderButton> {
+  bool _pressed = false;
+
+  void _press(bool pressed) {
+    if (pressed != _pressed) setState(() => _pressed = pressed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = widget.dark;
+    final glyph = dark ? fanFolderGlyphDark : fanFolderGlyph;
+    return Listener(
+      onPointerDown: (_) => _press(true),
+      onPointerUp: (_) => _press(false),
+      onPointerCancel: (_) => _press(false),
       child: Center(
-        child: SilicaSymbol(
-          symbol,
-          size: diameter * glyph,
-          color: glassGlyph(dark),
+        child: Container(
+          width: fanFolderCircle,
+          height: fanFolderCircle,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: dark ? fanFolderFillDark : fanFolderFill,
+            border: Border.all(
+              color: dark ? fanFolderOutlineDark : fanFolderOutline,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: FolderArrow(
+            color: _pressed
+                ? glyph.withValues(alpha: fanFolderPressedGlyph)
+                : glyph,
+          ),
         ),
       ),
-    ),
+    );
+  }
+}
+
+/// The forward curved arrow of the "open folder" items: silica-icons' `reply` mirrored,
+/// its 16.25 x 12 drawing scaled to the measured ~28 pt width.
+class FolderArrow extends StatelessWidget {
+  const FolderArrow({super.key, required this.color, this.width = 28});
+
+  final Color color;
+
+  /// The drawing's width (its box is wider: the symbol fills 16.25 / 24 of it).
+  final double width;
+
+  static const String symbol = 'reply';
+
+  @override
+  Widget build(BuildContext context) => Transform.flip(
+    flipX: true,
+    child: SilicaSymbol(symbol, size: width * 24 / 16.25, color: color),
   );
 }
+
+/// The close button's chevron: dark in light, white in dark (dock-stacks.md, close button).
+Color closeGlyph(bool dark) =>
+    dark ? const Color(0xFFFFFFFF) : const Color(0xFF19191B);
 
 /// The button the stack's Dock icon becomes while it is open (dock-stacks.md, "Close button of
 /// the open stack"): an app tile, the same body as every app icon in the Dock (the `side`
 /// square with the icons' superellipse corners, their drop shadow and bright rim), filled with
 /// the measured gray gradient and its top hairline, with the silica-icons `chevron-down`.
 /// Painted by the shell like the icons, not compositor glass: it cannot merge with anything.
+/// No hover state; `pressed`, the square darkens to ~78 % and the chevron to ~50 %.
 class StackCloseButton extends StatelessWidget {
-  const StackCloseButton({super.key, required this.side, required this.dark});
+  const StackCloseButton({
+    super.key,
+    required this.side,
+    required this.dark,
+    this.pressed = false,
+  });
 
   final double side;
   final bool dark;
+  final bool pressed;
 
   static const String symbol = 'chevron-down';
 
@@ -490,34 +539,52 @@ class StackCloseButton extends StatelessWidget {
   static const Color hairlineLight = Color(0xFFC2C2C5);
   static const Color hairlineDark = Color(0xFF8B8C8E);
 
+  /// Pressed (measured in dark: gradient 92 -> 73 at the top, 48 -> 38 at the bottom, chevron
+  /// 255 -> 121): the fill and the chevron are multiplied by these.
+  static const double pressedFill = 0.78;
+  static const double pressedGlyph = 0.5;
+
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: side,
-    height: side,
-    child: CustomPaint(
-      painter: StackCloseTilePainter(dark: dark),
-      child: Center(
-        child: SilicaSymbol(
-          symbol,
-          size: side * glyph,
-          color: glassGlyph(dark),
+  Widget build(BuildContext context) {
+    final glyphColor = closeGlyph(dark);
+    return SizedBox(
+      width: side,
+      height: side,
+      child: CustomPaint(
+        painter: StackCloseTilePainter(dark: dark, pressed: pressed),
+        child: Center(
+          child: SilicaSymbol(
+            symbol,
+            size: side * glyph,
+            color: pressed ? scaleColor(glyphColor, pressedGlyph) : glyphColor,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
+
+/// `color` with its red, green and blue multiplied by `k` (alpha kept).
+Color scaleColor(Color color, double k) => Color.from(
+  alpha: color.a,
+  red: color.r * k,
+  green: color.g * k,
+  blue: color.b * k,
+);
 
 /// The close tile's body: drop shadow, gradient, hairline and rim of an app tile.
 class StackCloseTilePainter extends CustomPainter {
-  const StackCloseTilePainter({required this.dark});
+  const StackCloseTilePainter({required this.dark, this.pressed = false});
 
   final bool dark;
+  final bool pressed;
 
   @override
   void paint(Canvas canvas, Size size) {
     final side = size.shortestSide;
     final body = Offset.zero & Size.square(side);
     final path = iconBodyPath(body);
+    final k = pressed ? StackCloseButton.pressedFill : 1.0;
     // The app icons' drop shadow (silica_ui: 3 % of the side below, blurred as much).
     canvas.drawPath(
       iconBodyPath(body.shift(Offset(0, side * 0.03))),
@@ -531,7 +598,13 @@ class StackCloseTilePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: dark ? StackCloseButton.fillDark : StackCloseButton.fillLight,
+          colors: [
+            for (final c
+                in dark
+                    ? StackCloseButton.fillDark
+                    : StackCloseButton.fillLight)
+              scaleColor(c, k),
+          ],
         ).createShader(body),
     );
     canvas
@@ -540,9 +613,12 @@ class StackCloseTilePainter extends CustomPainter {
       ..drawRect(
         Rect.fromLTWH(0, 0, side, 1),
         Paint()
-          ..color = dark
-              ? StackCloseButton.hairlineDark
-              : StackCloseButton.hairlineLight,
+          ..color = scaleColor(
+            dark
+                ? StackCloseButton.hairlineDark
+                : StackCloseButton.hairlineLight,
+            k,
+          ),
       )
       ..restore();
     // The app icons' rim: lighter at the top, fading at the bottom.
@@ -563,37 +639,41 @@ class StackCloseTilePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(StackCloseTilePainter old) => old.dark != dark;
+  bool shouldRepaint(StackCloseTilePainter old) =>
+      old.dark != dark || old.pressed != pressed;
 }
 
-/// "Open folder" (in the file manager): a glass circle with the silica-icons `arrow-up-right`,
-/// in the glass `group` of its view (above the grid panel, apart from the fan labels).
+/// The grid's "open folder" cell (dock-stacks.md, DOCK-FAN): a stroked circle, no fill, with the
+/// forward curved arrow. Measured in dark (white); light `estimated` with the fan item's glyph
+/// colour. Not glass: nothing to merge with the panel or the menu.
 class OpenFolderButton extends StatelessWidget {
-  const OpenFolderButton({
-    super.key,
-    required this.side,
-    required this.group,
-    this.dark = false,
-  });
+  const OpenFolderButton({super.key, required this.side, this.dark = false});
 
   /// The box of the item (the circle is [diameterRatio] of it).
   final double side;
-  final int group;
   final bool dark;
 
-  static const String symbol = 'arrow-up-right';
   static const double diameterRatio = 0.7;
 
+  /// The circle's stroke (`provisional`, not measured).
+  static const double stroke = 1.5;
+
   @override
-  Widget build(BuildContext context) => Center(
-    child: GlassSymbolButton(
-      symbol: symbol,
-      diameter: side * diameterRatio,
-      dark: dark,
-      glyph: 0.55,
-      group: group,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final color = dark ? const Color(0xFFFFFFFF) : fanFolderGlyph;
+    return Center(
+      child: Container(
+        width: side * diameterRatio,
+        height: side * diameterRatio,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: stroke),
+        ),
+        alignment: Alignment.center,
+        child: FolderArrow(color: color, width: side * diameterRatio * 0.45),
+      ),
+    );
+  }
 }
 
 /// The grid: a panel with the title, above the icon with the tip pointing at it.
@@ -725,18 +805,18 @@ class _GridStackState extends State<GridStack> {
               radius: gridRadius,
               material: GlassMaterial.thick,
               group: DockGlass.gridPanel,
-              // The same glass tip as the menus (MenuPanel): the measured outline picked by
+              // The measured grid tip (gridTipBase x gridTipDepth): Ossido fits its outline to
               // this rectangle, the body edge 8 pt from the apex.
               tip: GlassTip(
                 x: tipX.clamp(
-                  gridRadius + MenuMetrics.tipBase / 2,
+                  gridRadius + gridTipBase / 2,
                   math.max(
-                    gridRadius + MenuMetrics.tipBase / 2,
-                    rect.width - gridRadius - MenuMetrics.tipBase / 2,
+                    gridRadius + gridTipBase / 2,
+                    rect.width - gridRadius - gridTipBase / 2,
                   ),
                 ),
-                width: MenuMetrics.tipBase,
-                height: MenuMetrics.tipDepth,
+                width: gridTipBase,
+                height: gridTipDepth,
               ),
               child: _contents(context),
             ),
@@ -815,11 +895,7 @@ class _GridStackState extends State<GridStack> {
             top: gridIconTop,
             width: gridIcon,
             height: gridIcon,
-            child: OpenFolderButton(
-              side: gridIcon,
-              dark: dark,
-              group: DockGlass.gridButton,
-            ),
+            child: OpenFolderButton(side: gridIcon, dark: dark),
           ),
           _name(label),
         ],

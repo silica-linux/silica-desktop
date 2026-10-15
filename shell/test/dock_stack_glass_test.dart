@@ -9,6 +9,7 @@ import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
+import 'package:silica_shell/system/layer_control.dart';
 import 'package:silica_shell/system/silica_symbol.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -108,13 +109,10 @@ void main() {
     expect(opened, ['${dir.path}/c.md']);
   });
 
-  testWidgets('fan: items further apart along the arc, labels are glass', (
+  testWidgets('fan: 28 pt glass labels, rotated with their icon, 5.5 pt away', (
     tester,
   ) async {
     await openStack(tester, 4);
-    double top(int i) => fanSlot(i).center.dy - fanSlot(i).side / 2;
-    expect((top(0) - top(1)).abs(), closeTo(fanPitch * fanSpread, 0.01));
-    expect(fanSpread, greaterThan(1));
     final labels = find.byType(DockLabel);
     // Four files and "Open folder".
     expect(labels, findsNWidgets(5));
@@ -132,49 +130,24 @@ void main() {
       expect(glass.material, DockLabel.material);
       expect(glass.tip, isNull);
     }
-    // And the labels sit to the left of their icon.
-    final label = tester.getRect(find.byType(DockLabel).first);
-    expect(tester.getSize(find.byType(DockLabel).first).height, labelHeight);
+    // 28 pt, no shadow, to the left of their icon: 5.5 pt from the icon's frame (the
+    // bounding box of the rotated 64 pt icon) along the row.
+    expect(tester.getSize(find.byType(DockLabel).first).height, fanLabelHeight);
+    for (final label in tester.widgetList<DockLabel>(labels)) {
+      expect(label.shadow, isFalse);
+      expect(label.height, fanLabelHeight);
+    }
+    final icon = find.byKey(const ValueKey('fan icon 0'));
+    expect(tester.getSize(icon), const Size.square(fanIcon));
+    // In the item's row (rotated as a whole): label, gap, icon.
+    final row = tester.widget<Row>(
+      find.ancestor(of: icon, matching: find.byType(Row)).first,
+    );
+    final gap = row.children[1] as SizedBox;
     expect(
-      label.right,
-      lessThan(
-        tester.getRect(find.byKey(const ValueKey('fan icon 0'))).left + 1,
-      ),
+      gap.width,
+      closeTo(fanLabelGap + (fanSlot(0).frame - fanIcon) / 2, 1e-9),
     );
-  });
-
-  testWidgets('grid: the panel has the same glass tip as the menus', (
-    tester,
-  ) async {
-    await openStack(tester, 40);
-    expect(find.byType(GridStack), findsOneWidget);
-    final panel = tester
-        .renderObjectList<RenderGlass>(
-          find.descendant(of: find.byType(GridStack), matching: anyGlass),
-        )
-        .first;
-    final tip = panel.tip!;
-    expect(panel.material, GlassMaterial.thick);
-    expect(tip.edge, TipEdge.bottom);
-    expect(tip.width, MenuMetrics.tipBase);
-    expect(tip.height, MenuMetrics.tipDepth);
-    // The menu declares the same rectangle.
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(
-          width: 200,
-          height: 80,
-          child: MenuPanel(
-            entries: [MenuAction('Open', onSelected: () {})],
-            tipX: 100,
-          ),
-        ),
-      ),
-    );
-    final menu = tester.renderObject<RenderGlass>(anyGlass);
-    expect(menu.tip!.width, tip.width);
-    expect(menu.tip!.height, tip.height);
   });
 
   testWidgets('close button: an app tile with the chevron symbol', (
@@ -208,7 +181,8 @@ void main() {
       findsNothing,
     );
     await tester.tap(button);
-    for (var i = 0; i < 6; i++) {
+    // Closed by its button in ~300 ms.
+    for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(find.byType(FanStack), findsNothing);
@@ -235,26 +209,24 @@ void main() {
       settings: const StackSettings(content: StackContent.grid),
     );
     final groups = regions();
-    // Dock, panel (body and tip), the open-folder button.
+    // Dock and panel (body and tip); the open-folder cell is a stroked circle, not glass.
     expect(groups.where((r) => r.$1 == DockGlass.dock), hasLength(1));
     expect(groups.where((r) => r.$1 == DockGlass.gridPanel), hasLength(2));
-    expect(groups.where((r) => r.$1 == DockGlass.gridButton), hasLength(1));
-    expect(groups.map((r) => r.$1).toSet(), hasLength(3));
-    // From the bottom: the Dock, the panel, its button.
+    expect(groups.map((r) => r.$1).toSet(), hasLength(2));
+    expect(
+      find.descendant(of: find.byType(OpenFolderButton), matching: anyGlass),
+      findsNothing,
+    );
+    // From the bottom: the Dock, the panel.
     expect(DockGlass.dock, lessThan(DockGlass.gridPanel));
-    expect(DockGlass.gridPanel, lessThan(DockGlass.gridButton));
     // Profiles (#168): the panel is a panel, the button a control.
     expect(
       groups.where((r) => r.$1 == DockGlass.gridPanel).map((r) => r.$3),
       everyElement('panel'),
     );
-    expect(
-      groups.singleWhere((r) => r.$1 == DockGlass.gridButton).$3,
-      'control',
-    );
   });
 
-  testWidgets('glass groups: each fan label and the button on their own', (
+  testWidgets('glass groups: each fan label on its own, the button flat', (
     tester,
   ) async {
     await openStack(tester, 4);
@@ -266,12 +238,11 @@ void main() {
         .toList();
     expect(labels, hasLength(5));
     expect(labels.toSet(), hasLength(5));
-    final button = tester.renderObject<RenderGlass>(
-      find.descendant(of: find.byType(OpenFolderButton), matching: anyGlass),
-    );
-    expect(labels, isNot(contains(button.group)));
     expect(labels, everyElement(lessThan(0)));
-    expect(button.group, lessThan(0));
+    expect(
+      find.descendant(of: find.byType(FanFolderButton), matching: anyGlass),
+      findsNothing,
+    );
   });
 
   for (final view in [StackContent.grid, StackContent.fan]) {
@@ -380,21 +351,42 @@ void main() {
   });
 
   testWidgets(
-    'open folder: a glass circle with the arrow, it opens the folder',
+    'open folder (fan): a flat 58 pt circle, pressed only the glyph dims, it opens the folder',
     (tester) async {
       await openStack(tester, 3);
-      final button = find.byType(OpenFolderButton);
+      final button = find.byType(FanFolderButton);
       expect(button, findsOneWidget);
-      expect(find.descendant(of: button, matching: anyGlass), findsOneWidget);
+      final circle = find.descendant(
+        of: button,
+        matching: find.byType(Container),
+      );
+      expect(tester.getSize(circle), const Size.square(fanFolderCircle));
+      final box = tester.widget<Container>(circle).decoration! as BoxDecoration;
+      expect(box.shape, BoxShape.circle);
+      expect(box.color, fanFolderFill);
+      Color glyph() => tester
+          .widget<SilicaSymbol>(
+            find.descendant(of: button, matching: find.byType(SilicaSymbol)),
+          )
+          .color;
       expect(
         tester
             .widget<SilicaSymbol>(
               find.descendant(of: button, matching: find.byType(SilicaSymbol)),
             )
             .name,
-        'arrow-up-right',
+        FolderArrow.symbol,
       );
-      await tester.tap(button);
+      expect(glyph(), fanFolderGlyph);
+      final gesture = await tester.startGesture(tester.getCenter(button));
+      await tester.pump();
+      expect(glyph().a, closeTo(fanFolderPressedGlyph, 0.01));
+      // The circle does not change.
+      expect(
+        (tester.widget<Container>(circle).decoration! as BoxDecoration).color,
+        fanFolderFill,
+      );
+      await gesture.up();
       for (var i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
@@ -402,7 +394,7 @@ void main() {
     },
   );
 
-  testWidgets('grid: the open-folder cell is the glass button too', (
+  testWidgets('grid: the open-folder cell is a stroked circle, not glass', (
     tester,
   ) async {
     await openStack(
@@ -410,13 +402,130 @@ void main() {
       5,
       settings: const StackSettings(content: StackContent.grid),
     );
-    expect(find.byType(OpenFolderButton), findsOneWidget);
-    await tester.tap(find.byType(OpenFolderButton));
+    final button = find.byType(OpenFolderButton);
+    expect(button, findsOneWidget);
+    expect(find.descendant(of: button, matching: anyGlass), findsNothing);
+    final box =
+        tester
+                .widget<Container>(
+                  find.descendant(of: button, matching: find.byType(Container)),
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(box.color, isNull);
+    expect(box.border, isNotNull);
+    await tester.tap(button);
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(opened, [dir.path]);
   });
+
+  testWidgets('grid: thick panel glass, the tip is the measured 24 x 8 pt', (
+    tester,
+  ) async {
+    await openStack(
+      tester,
+      40,
+      settings: const StackSettings(content: StackContent.grid),
+    );
+    final panel = tester
+        .renderObjectList<RenderGlass>(
+          find.descendant(of: find.byType(GridStack), matching: anyGlass),
+        )
+        .first;
+    expect(panel.material, GlassMaterial.thick);
+    expect(panel.tip!.edge, TipEdge.bottom);
+    expect(panel.tip!.width, 24);
+    expect(panel.tip!.height, 8);
+  });
+
+  testWidgets(
+    'close button: pressed it darkens, released the stack closes in ~300 ms',
+    (tester) async {
+      await openStack(tester, 3);
+      final button = find.byType(StackCloseButton);
+      expect(tester.widget<StackCloseButton>(button).pressed, isFalse);
+      final gesture = await tester.startGesture(tester.getCenter(button));
+      await tester.pump();
+      expect(tester.widget<StackCloseButton>(button).pressed, isTrue);
+      final glyph = tester
+          .widget<SilicaSymbol>(
+            find.descendant(of: button, matching: find.byType(SilicaSymbol)),
+          )
+          .color;
+      expect(glyph.r, closeTo(closeGlyph(false).r * 0.5, 0.01));
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      // Still closing at 200 ms (Esc would be done by 210 ms on the fan).
+      expect(find.byType(FanStack), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump();
+      expect(find.byType(FanStack), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the stack shows once the surface grows, even short of the screen (menu bar zone)',
+    (tester) async {
+      // Ossido keeps the Dock below the menu bar's exclusive zone: asked for the screen's
+      // 800 pt, the surface gets 770.
+      final heights = <double>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        LayerControl.channel,
+        (call) async {
+          if (call.method == 'outputSize') {
+            return {'width': 1280, 'height': 800};
+          }
+          if (call.method == 'setSize') {
+            heights.add(((call.arguments as Map)['height'] as num).toDouble());
+          }
+          return call.method == 'setTransient' ? true : null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          LayerControl.channel,
+          null,
+        ),
+      );
+      dir = Directory.systemTemp.createTempSync('Downloads');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      for (var i = 1; i <= 3; i++) {
+        File('${dir.path}/documento-$i.txt').writeAsStringSync('x');
+      }
+      tester.view.physicalSize = const Size(1280, 200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final items = [Item.app('Downloads', command: 'x', folder: dir.path)];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dock(
+            items: items,
+            onOpenPath: (_) {},
+            stackSettingsFor: (_) => const StackSettings(),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      final rest = layout(items, width: 1280, height: 200);
+      await tester.tapAt(
+        Offset(rest.center(0), 200 - bottomGap - backgroundHeight / 2),
+      );
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      // The compositor answers with 770 instead of 800.
+      tester.view.physicalSize = const Size(1280, 770);
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.byType(FanStack), findsOneWidget);
+      expect(find.byType(DockLabel), findsNWidgets(4));
+    },
+  );
 
   test('a silica-icons symbol is read from symbols/<weight>', () {
     final root = Directory.systemTemp.createTempSync('icons');
