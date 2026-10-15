@@ -822,6 +822,9 @@ const DEV_SERVICES: [(&str, &str); 2] = [
 /// /usr/share/dbus-1/services/<name>.service with the packaged binary: without this override,
 /// activating the name while the dev daemon does not own it (a session restart) starts an old
 /// daemon from /usr/libexec/silica.
+/// The user unit that brings graphical-session.target up (xdg-desktop-portal needs it).
+const SESSION_TARGET: &str = include_str!("../../data/systemd/silica-session.target");
+
 fn dev_service_file(name: &str, binary: &str) -> String {
     format!("[D-BUS Service]\nName={name}\nExec={GUEST_RUN}/bin/{binary}\n")
 }
@@ -852,12 +855,21 @@ fn prepare_guest_bus(share: &Path) -> Result<()> {
     script.push_str(&format!(
         "restorecon -R {home}/.local/share/dbus-1 2>/dev/null || true\n"
     ));
+    // The session target: the image may not ship it yet. User units under /etc are found by
+    // every user's systemd.
+    script.push_str(&format!(
+        "install -d /etc/systemd/user\nprintf '%s' '{SESSION_TARGET}' > /etc/systemd/user/silica-session.target\n\
+         restorecon /etc/systemd/user/silica-session.target 2>/dev/null || true\n"
+    ));
     // The user's bus survives the session: tell it to read the new files.
     script.push_str(&format!(
         "uid=$(id -u {GUEST_USER}); \
          runuser -u {GUEST_USER} -- env XDG_RUNTIME_DIR=/run/user/$uid \
          DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
-         busctl --user call org.freedesktop.DBus / org.freedesktop.DBus ReloadConfig || true\n"
+         busctl --user call org.freedesktop.DBus / org.freedesktop.DBus ReloadConfig || true\n\
+         runuser -u {GUEST_USER} -- env XDG_RUNTIME_DIR=/run/user/$uid \
+         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
+         systemctl --user daemon-reload || true\n"
     ));
     // Packaged daemons still running (exact command line, in the guest's process table).
     for path in stale {
@@ -1026,7 +1038,7 @@ set -- \
 {spawn}
 if [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; then
   set -- "$@" \
-    --spawn "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XCURSOR_THEME XCURSOR_SIZE SILICA_ICONS_DIR SILICA_RENDERER PATH" \
+    --spawn "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XCURSOR_THEME XCURSOR_SIZE SILICA_ICONS_DIR SILICA_RENDERER PATH && systemctl --user start silica-session.target" \
     --spawn "silica-daemon --replace"
 else
   set -- --session-bus "$@"
@@ -1036,7 +1048,11 @@ if [ -d "$D/apps/dev.frascella.Mustache/flutter_assets" ]; then
   set -- "$@" {desktop_flag} '{desktop_command}'
 fi
 # shellcheck disable=SC2086
-exec "$D/bin/ossido" $OSSIDO_ARGS "$@"
+"$D/bin/ossido" $OSSIDO_ARGS "$@"
+status=$?
+# graphical-session.target (xdg-desktop-portal requires it) goes down with the session.
+[ -n "$DBUS_SESSION_BUS_ADDRESS" ] && systemctl --user stop silica-session.target
+exit $status
 "#
     )
 }
@@ -1108,7 +1124,9 @@ mod tests {
     #[test]
     fn session_runs_from_the_local_copy() {
         let script = session_script();
-        assert!(script.contains("exec \"$D/bin/ossido\" $OSSIDO_ARGS"));
+        assert!(script.contains("\n\"$D/bin/ossido\" $OSSIDO_ARGS"));
+        assert!(script.contains("systemctl --user start silica-session.target"));
+        assert!(script.contains("systemctl --user stop silica-session.target"));
         assert!(
             script.contains(
                 "--namespace dock --dart-arg dock /var/lib/silica-dev/shell/flutter_assets"
