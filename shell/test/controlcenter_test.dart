@@ -120,53 +120,50 @@ const Map<String, String> noConfig = {
 };
 
 void main() {
-  test(
-    'the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch',
-    () {
-      // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
-      // (Wi-Fi at 2254,42 without the privacy pill).
-      final slots = layoutModules(laptop);
-      expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
-      expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-      expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-      expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
-      expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
-      expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
-      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
-      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
-      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
-      expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
-      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
-      expect(slots['wifi']!.radius, 32);
-      expect(slots['staging']!.radius, 32);
-      expect(slots['media']!.radius, 35);
-      expect(slots['display']!.radius, 28);
-      // The battery is not in the default; Display is there without a backlight too
-      // (its track then shows no fill, controlcenter.md › sliders).
-      expect(slots.containsKey('battery'), isFalse);
-      final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
-      expect(desktop['display']!.rect.top, 304);
+  test('the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch', () {
+    // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
+    // (Wi-Fi at 2254,42 without the privacy pill).
+    final slots = layoutModules(laptop);
+    expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
+    expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+    expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
+    expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
+    expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
+    expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
+    expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
+    expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
+    expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
+    expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+    expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
+    expect(slots['wifi']!.radius, 32);
+    expect(slots['staging']!.radius, 32);
+    expect(slots['media']!.radius, 35);
+    expect(slots['display']!.radius, 28);
+    // The battery is not in the default; Display is there without a backlight too
+    // (its track then shows no fill, controlcenter.md › sliders).
+    expect(slots.containsKey('battery'), isFalse);
+    final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
+    expect(desktop['display']!.rect.top, 304);
 
-      // A user's arrangement: modules pack in order at the first free spot; the battery
-      // only shows on a machine with one.
-      final mine = layoutModules(laptop, const [
-        CcModule('dark', ModuleSize.small),
-        CcModule('wifi', ModuleSize.medium),
-        CcModule('battery', ModuleSize.medium),
-        CcModule('capture', ModuleSize.small),
-        CcModule('sound', ModuleSize.wide),
-      ]);
-      expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
-      expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
-      expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-      expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
-      expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
-      final noBattery = layoutModules(const SystemSnapshot(), const [
-        CcModule('battery', ModuleSize.medium),
-      ]);
-      expect(noBattery, isEmpty);
-    },
-  );
+    // A user's arrangement: modules pack in order at the first free spot; the battery
+    // only shows on a machine with one.
+    final mine = layoutModules(laptop, const [
+      CcModule('dark', ModuleSize.small),
+      CcModule('wifi', ModuleSize.medium),
+      CcModule('battery', ModuleSize.medium),
+      CcModule('capture', ModuleSize.small),
+      CcModule('sound', ModuleSize.wide),
+    ]);
+    expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
+    expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
+    expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+    expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
+    expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
+    final noBattery = layoutModules(const SystemSnapshot(), const [
+      CcModule('battery', ModuleSize.medium),
+    ]);
+    expect(noBattery, isEmpty);
+  });
 
   test('the slider fills up to x0 + 10 + v · (L − 20)', () {
     expect(sliderFill(0), 10);
@@ -722,6 +719,53 @@ void main() {
       await tester.tap(find.text('Wi-Fi Settings…'));
       await tester.pump();
       expect(launched, ['silica-app settings --dart-arg wifi']);
+    },
+  );
+
+  testWidgets(
+    'hover animates the round buttons and the module discs (CC-HOVER)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      final dark = find.bySemanticsLabel('Dark Mode');
+      double scaleOf() => tester
+          .widget<Transform>(
+            find
+                .descendant(
+                  of: dark,
+                  matching: find.byKey(const ValueKey('hover scale')),
+                )
+                .first,
+          )
+          .transform
+          .getMaxScaleOnAxis();
+      expect(scaleOf(), 1);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(dark));
+      // Not instantaneous: part-way through the animation the scale is between the ends.
+      await tester.pump();
+      await tester.pump(hoverDuration ~/ 4);
+      final mid = scaleOf();
+      expect(mid, greaterThan(1));
+      await tester.pumpAndSettle();
+      expect(scaleOf(), closeTo(roundHoverScale, 1e-6));
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await tester.pump(hoverDuration ~/ 4);
+      expect(scaleOf(), lessThan(roundHoverScale));
+      await tester.pumpAndSettle();
+      expect(scaleOf(), closeTo(1, 1e-6));
+      await mouse.removePointer();
     },
   );
 }

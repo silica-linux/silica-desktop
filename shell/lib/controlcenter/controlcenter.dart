@@ -1392,16 +1392,20 @@ class _CapsuleState extends State<_Capsule> {
             height: disc,
             child: GestureDetector(
               onTap: widget.onTap,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.active ? discOn : discOff,
-                ),
-                child: Center(
-                  child: Glyph(
-                    widget.glyph,
-                    color: widget.active ? widget.activeGlyph : glyphOff,
-                    level: widget.glyphLevel,
+              child: _HoverSpring(
+                hover: _hover && widget.enabled,
+                scale: discHoverScale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.active ? discOn : discOff,
+                  ),
+                  child: Center(
+                    child: Glyph(
+                      widget.glyph,
+                      color: widget.active ? widget.activeGlyph : glyphOff,
+                      level: widget.glyphLevel,
+                    ),
                   ),
                 ),
               ),
@@ -1467,6 +1471,61 @@ Duration untilEvening(DateTime now) {
   return end.difference(now);
 }
 
+/// Hover animation of the Control Center buttons (CC-HOVER requested: the values are
+/// provisional). The button grows slightly and its highlight fades in along a spring-like
+/// curve with a small overshoot; leaving it settles back along the same curve.
+const Duration hoverDuration = Duration(milliseconds: 280);
+const Curve hoverSpring = Cubic(0.34, 1.4, 0.64, 1);
+
+/// Provisional: the scale of the round toggles and of the module discs under the pointer.
+const double roundHoverScale = 1.06;
+const double discHoverScale = 1.08;
+
+/// Provisional: the highlight of an off round toggle under the pointer (as before).
+const Color roundHoverFill = Color(0x12FFFFFF);
+
+class _HoverSpring extends StatelessWidget {
+  const _HoverSpring({
+    required this.hover,
+    required this.scale,
+    required this.child,
+    this.highlight,
+  });
+
+  final bool hover;
+  final double scale;
+
+  /// The disc painted behind the child, faded in with the hover; none when null.
+  final Color? highlight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: hover ? 1 : 0),
+      duration: hoverDuration,
+      curve: hoverSpring,
+      child: child,
+      builder: (context, t, child) {
+        final fill = highlight;
+        return Transform.scale(
+          key: const ValueKey('hover scale'),
+          scale: 1 + (scale - 1) * t,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: fill == null
+                  ? null
+                  : fill.withValues(alpha: fill.a * t.clamp(0.0, 1.0)),
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// A 64 pt round toggle (Dark Mode, Screen Capture; SH-CC-09, SH-CC-10): the module itself
 /// is the button. Off: the white glyph on the module glass, lighter under the pointer
 /// (+9 levels, CC-01); on: the whole module white with a black glyph (SH-CC-03 dark).
@@ -1495,20 +1554,21 @@ class _RoundToggleState extends State<_RoundToggle> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final tile = DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: widget.active
-            ? discOn
-            : _hover && enabled
-            ? const Color(0x12FFFFFF)
-            : null,
-      ),
-      child: Center(
-        child: Glyph(
-          widget.glyph,
-          color: widget.active ? const Color(0xFF000000) : glyphOff,
-          size: 24,
+    final tile = _HoverSpring(
+      hover: _hover && enabled,
+      scale: roundHoverScale,
+      highlight: widget.active ? null : roundHoverFill,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.active ? discOn : null,
+        ),
+        child: Center(
+          child: Glyph(
+            widget.glyph,
+            color: widget.active ? const Color(0xFF000000) : glyphOff,
+            size: 24,
+          ),
         ),
       ),
     );
@@ -1722,9 +1782,8 @@ class _MediaState extends State<_Media> {
                             maxLines: 1,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
-                            style: _text(
-                              subtitleSize,
-                            ).copyWith(color: mediaSubtitle),
+                            style: _text(subtitleSize)
+                                .copyWith(color: mediaSubtitle),
                           ),
                       ],
                     )

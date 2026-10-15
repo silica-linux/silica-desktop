@@ -52,7 +52,7 @@ const SEPARATOR_INACTIVE: [f32; 4] = [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.
 const SEPARATOR_INACTIVE_DARK: [f32; 4] = [54.0 / 255.0, 54.0 / 255.0, 54.0 / 255.0, 1.0];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
-pub const UNIFORMS: [(&str, UniformType); 15] = [
+pub const UNIFORMS: [(&str, UniformType); 21] = [
     ("frame_height", UniformType::_1f),
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -68,7 +68,80 @@ pub const UNIFORMS: [(&str, UniformType); 15] = [
     ("button_x", UniformType::_1f),
     ("button_y", UniformType::_1f),
     ("dark", UniformType::_1f),
+    ("spec_c", UniformType::_4f),
+    ("rim_c", UniformType::_4f),
+    ("glow_c", UniformType::_4f),
+    ("spec_g", UniformType::_4f),
+    ("rim_g", UniformType::_4f),
+    ("glow_g", UniformType::_4f),
 ];
+
+/// Glass reflections of one disc (TL-GLASS, #165): white layers over the gradient and
+/// outline. Every value is `provisional`: tuned by eye on the 1x crops
+/// `finder-traffic-*` (the gradient and the bright dark-mode outline already carry part of
+/// the effect), pending the TL-GLASS measurement at 2x.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Reflection {
+    /// Top specular highlight: peak whiteness, center y (up is negative), half width and
+    /// half height of the ellipse, in points from the disc center.
+    pub specular: [f32; 4],
+    /// Subtle inner rim: peak whiteness, radius, half width.
+    pub rim: [f32; 3],
+    /// Soft glow at the bottom: peak whiteness, center y, radius.
+    pub glow: [f32; 3],
+}
+
+impl Reflection {
+    /// Colored discs (active window, hover with glyphs); provisional.
+    pub const fn colored(dark: bool) -> Self {
+        if dark {
+            Self {
+                specular: [0.16, -3.7, 4.0, 1.9],
+                rim: [0.06, 5.9, 0.8],
+                glow: [0.10, 6.0, 5.5],
+            }
+        } else {
+            Self {
+                specular: [0.22, -3.7, 4.0, 1.9],
+                rim: [0.10, 5.9, 0.8],
+                glow: [0.14, 6.0, 5.5],
+            }
+        }
+    }
+
+    /// Gray discs (inactive and disabled); provisional.
+    pub const fn grey(dark: bool) -> Self {
+        if dark {
+            Self {
+                specular: [0.10, -3.7, 4.0, 1.9],
+                rim: [0.05, 5.9, 0.8],
+                glow: [0.08, 6.0, 5.5],
+            }
+        } else {
+            Self {
+                specular: [0.40, -3.7, 4.0, 1.9],
+                rim: [0.30, 5.9, 0.8],
+                glow: [0.20, 6.0, 5.5],
+            }
+        }
+    }
+
+    /// Whiteness added at a point `(dx, dy)` from the disc center (the same math as
+    /// `reflections()` in the shader).
+    pub fn whiteness(&self, dx: f32, dy: f32) -> f32 {
+        let smooth = |x: f32| {
+            let t = x.clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let [sa, sy, sw, sh] = self.specular;
+        let spec = sa * (1.0 - smooth((dx / sw).hypot((dy - sy) / sh)));
+        let [ra, rr, rw] = self.rim;
+        let rim = ra * (1.0 - ((dx.hypot(dy) - rr).abs() / rw)).max(0.0);
+        let [ga, gy, gr] = self.glow;
+        let glow = ga * (1.0 - smooth(dx.hypot(dy - gy) / gr));
+        (spec + rim + glow).clamp(0.0, 1.0)
+    }
+}
 
 /// Bar state that changes the drawing.
 /// Which window buttons are not available (grey discs without a symbol, no action).
@@ -177,6 +250,17 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
     };
     let centers = button_centers(f64::from(state.bar_height));
     let flag = |on: bool| if on { 1.0 } else { 0.0 };
+    let (colored, grey) = (
+        Reflection::colored(state.dark),
+        Reflection::grey(state.dark),
+    );
+    let four = |name: &'static str, a: f32, b: [f32; 3]| {
+        Uniform::new(name, UniformValue::_4f(a, b[0], b[1], b[2]))
+    };
+    let spec = |name: &'static str, r: Reflection| {
+        let [a, y, w, h] = r.specular;
+        Uniform::new(name, UniformValue::_4f(a, y, w, h))
+    };
     vec![
         Uniform::new("frame_height", UniformValue::_1f(frame.h as f32)),
         Uniform::new("radius", UniformValue::_1f(radius)),
@@ -205,6 +289,20 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         Uniform::new("button_x", UniformValue::_1f(centers[0].0 as f32)),
         Uniform::new("button_y", UniformValue::_1f(centers[0].1 as f32)),
         Uniform::new("dark", UniformValue::_1f(flag(state.dark))),
+        spec("spec_c", colored),
+        four(
+            "rim_c",
+            colored.rim[0],
+            [colored.rim[1], colored.rim[2], 0.0],
+        ),
+        four(
+            "glow_c",
+            colored.glow[0],
+            [colored.glow[1], colored.glow[2], 0.0],
+        ),
+        spec("spec_g", grey),
+        four("rim_g", grey.rim[0], [grey.rim[1], grey.rim[2], 0.0]),
+        four("glow_g", grey.glow[0], [grey.glow[1], grey.glow[2], 0.0]),
     ]
 }
 
@@ -323,5 +421,62 @@ mod symbol_tests {
         assert_eq!(symbols_opacity(500.0, Some(120.0)), 0.0);
         assert_eq!(Part::Zoom.button(), Some(2));
         assert_eq!(Part::Bar.button(), None);
+    }
+}
+
+#[cfg(test)]
+mod reflection_tests {
+    use super::*;
+
+    #[test]
+    fn highlight_sits_on_top_and_glow_at_the_bottom() {
+        for dark in [false, true] {
+            for r in [Reflection::colored(dark), Reflection::grey(dark)] {
+                assert!(r.specular[1] < 0.0 && r.glow[1] > 0.0);
+                let (top, bottom, center) = (
+                    r.whiteness(0.0, -3.7),
+                    r.whiteness(0.0, 5.0),
+                    r.whiteness(0.0, 0.0),
+                );
+                // The specular peak is the brightest spot of the upper half; the center stays
+                // mostly clean; everything stays a partial overlay.
+                assert!(top > center, "dark={dark}");
+                assert!(bottom > center, "dark={dark}");
+                assert!(top < 0.8 && bottom < 0.8);
+            }
+        }
+    }
+
+    #[test]
+    fn colored_light_discs_have_the_stronger_highlight_than_dark() {
+        assert!(Reflection::colored(false).specular[0] > Reflection::colored(true).specular[0]);
+    }
+
+    /// Rendered at 2x (CPU model of the shader: the crate has no offscreen GL test path):
+    /// the highlight is symmetric left-right and nothing is added outside the disc rim.
+    #[test]
+    fn rendered_button_pixels_are_symmetric_and_bounded() {
+        let r = Reflection::colored(false);
+        let n = 28; // 14 pt at 2x
+        let sample = |px: i32, py: i32| {
+            r.whiteness((px as f32 + 0.5) / 2.0 - 7.0, (py as f32 + 0.5) / 2.0 - 7.0)
+        };
+        for py in 0..n {
+            for px in 0..n / 2 {
+                assert!((sample(px, py) - sample(n - 1 - px, py)).abs() < 1e-6);
+            }
+        }
+        let top_row: f32 = (0..n).map(|x| sample(x, 5)).sum();
+        let mid_row: f32 = (0..n).map(|x| sample(x, 14)).sum();
+        assert!(top_row > mid_row);
+        assert!(r.whiteness(0.0, -20.0) < 1e-6 && r.whiteness(20.0, 0.0) < 1e-6);
+    }
+
+    #[test]
+    fn uniform_list_covers_the_reflection_uniforms() {
+        let names: Vec<_> = UNIFORMS.iter().map(|(n, _)| *n).collect();
+        for n in ["spec_c", "rim_c", "glow_c", "spec_g", "rim_g", "glow_g"] {
+            assert!(names.contains(&n));
+        }
     }
 }

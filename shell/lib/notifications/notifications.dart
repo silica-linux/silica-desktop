@@ -21,6 +21,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../menubar/menubar.dart' show barHeight;
 import '../l10n/l10n.dart';
+import '../system/cross_glyph.dart';
 import '../system/desktop_entries.dart';
 import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
@@ -779,7 +780,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
 
   Widget _pill({
     required double width,
-    required String label,
+    String? label,
     required VoidCallback onTap,
   }) => GestureDetector(
     onTap: onTap,
@@ -795,16 +796,27 @@ class _GroupHeaderState extends State<_GroupHeader> {
           Radius.circular(groupPillHeight / 2),
         ),
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.clip,
-        style: _style(
-          smallSize,
-          NotificationColors.of(context).pillText,
-          weight: FontWeight.w600,
-        ),
-      ),
+      // No label: the × circle, drawn centred (a typed × is off-centre, #166).
+      child: label == null
+          ? CustomPaint(
+              key: const ValueKey('group clear glyph'),
+              size: const Size.square(groupPillHeight),
+              painter: CrossGlyph(
+                NotificationColors.of(context).pillText,
+                arm: 3.2,
+                stroke: 1.6,
+              ),
+            )
+          : Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              style: _style(
+                smallSize,
+                NotificationColors.of(context).pillText,
+                weight: FontWeight.w600,
+              ),
+            ),
     ),
   );
 
@@ -833,7 +845,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
           onExit: (_) => setState(() => _clearHover = false),
           child: _pill(
             width: _clearHover ? groupClearWidth : groupPillHeight,
-            label: _clearHover ? l10nOf(context).clear : '×',
+            label: _clearHover ? l10nOf(context).clear : null,
             onTap: widget.onClear,
           ),
         ),
@@ -1364,21 +1376,7 @@ class _ClosePainter extends CustomPainter {
     final radius = size.width / 2;
     canvas.drawCircle(center, radius, Paint()..color = colors.closeBorder);
     canvas.drawCircle(center, radius - 1, Paint()..color = colors.closeFill);
-    final arm = radius * 0.32;
-    final stroke = Paint()
-      ..color = colors.closeGlyph
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      center - Offset(arm, arm),
-      center + Offset(arm, arm),
-      stroke,
-    );
-    canvas.drawLine(
-      center + Offset(-arm, arm),
-      center + Offset(arm, -arm),
-      stroke,
-    );
+    CrossGlyph(colors.closeGlyph, arm: radius * 0.32).paint(canvas, size);
   }
 
   @override

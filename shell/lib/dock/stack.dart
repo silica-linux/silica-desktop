@@ -23,6 +23,8 @@ import '../l10n/l10n.dart';
 import '../system/folder_icons.dart';
 import '../system/folder_style.dart';
 import '../system/glass_profile.dart';
+import '../system/silica_symbol.dart';
+import 'dock.dart' show DockLabel, labelFontSize, labelHeight, labelPadding;
 import 'stack_settings.dart';
 
 const int fanMax = 15;
@@ -30,6 +32,12 @@ const double fanPitch = 64.6;
 const double fanFirstSide = 65.8;
 const double fanSideStep = 1.1;
 const double fanAboveZone = 7;
+
+/// How much further apart the items are placed along the arc than measured (both the pitch and
+/// the rightward shift scale; the angle and the sides do not). The measured column (pitch 64.6
+/// for sides of 65.8-82.3) leaves the icons touching; DOCK-FAN has been requested for the real
+/// spacing. `provisional`.
+const double fanSpread = 1.25;
 
 /// Rightward offset of the left edge of each item relative to the first (pt).
 const List<double> fanShift = [
@@ -78,9 +86,8 @@ TextStyle get gridLabelStyle => const TextStyle(
   height: 1,
 );
 
-/// The tip towards the icon: base ~22, ~8 tall (misc.md). As in the menus, the rounded apex
-/// and the smooth union widen the base by ~14 pt.
-const double gridTipBase = 22;
+/// The tip towards the icon is the menus' glass tip (`MenuMetrics.tipBase` x `tipDepth`, the
+/// body edge `gridTipHeight` from the apex), see [GridStack].
 const double gridLeft = 17;
 
 /// 16 pt to the edge plus 1 of rim: 2 columns make 290 pt, 4 make 546.
@@ -88,7 +95,7 @@ const double gridRight = 17;
 const double gridTop = 32;
 const double gridBottom = 11;
 const double gridRadius = 25;
-const double gridTipHeight = 8;
+const double gridTipHeight = MenuMetrics.tipHeight;
 const double gridTipAboveDock = 5;
 
 const Duration stackOpen = Duration(milliseconds: 240);
@@ -213,9 +220,9 @@ IconSource? fileIcon(FileSystemEntity entry) {
 ({Offset center, double side, double angle}) fanSlot(int i) {
   final side = fanFirstSide + fanSideStep * i;
   final left = fanShift[i.clamp(0, fanShift.length - 1)];
-  final x = fanFirstOffset - fanFirstSide / 2 + left + side / 2;
+  final x = fanFirstOffset - fanFirstSide / 2 + left * fanSpread + side / 2;
   // The tops go at a constant pitch; the first has its bottom 7 pt above the area.
-  final top = -fanAboveZone - fanFirstSide - fanPitch * i;
+  final top = -fanAboveZone - fanFirstSide - fanPitch * fanSpread * i;
   final step = i == 0 ? fanShift[1] : fanShift[i] - fanShift[i - 1];
   return (
     center: Offset(x, top + side / 2),
@@ -296,16 +303,14 @@ class FanStack extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Opacity(
-                    opacity: labels,
-                    child: _label(_dark(context), label),
-                  ),
+                  Opacity(opacity: labels, child: _label(context, label)),
                   const SizedBox(width: 6),
                   SizedBox(
+                    key: ValueKey('fan icon $i'),
                     width: side,
                     height: side,
                     child: entry == null
-                        ? CustomPaint(painter: _OpenFolderPainter())
+                        ? OpenFolderButton(side: side, dark: _dark(context))
                         : icon == null
                         ? const SizedBox()
                         : SilicaIcon(icon, side: side, dark: false),
@@ -323,62 +328,119 @@ class FanStack extends StatelessWidget {
     );
   }
 
-  /// Label as wide as the text (at most 360 pt), like the Dock ones.
-  Widget _label(bool dark, String text) => ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: 360),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: dark ? stackLabelFillDark : stackLabelFill,
-        borderRadius: const BorderRadius.all(Radius.circular(11)),
+  /// The item name: the glass of the Dock label (`thick`, the menus' shadow), as wide as the
+  /// text (at most 360 pt), without the tip.
+  Widget _label(BuildContext context, String text) {
+    final style = uiText(
+      size: labelFontSize,
+      color: MenuColors.of(context).text,
+    );
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final width = math.min(
+      360.0,
+      painter.width.ceilToDouble() + 2 * labelPadding,
+    );
+    painter.dispose();
+    return SizedBox(
+      width: width,
+      height: labelHeight,
+      child: DockLabel(
+        text: text,
+        style: style.copyWith(overflow: TextOverflow.ellipsis),
+        tip: false,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: uiText(
-            size: 12,
-            color: dark ? stackLabelTextDark : stackLabelText,
-          ),
+    );
+  }
+}
+
+/// The glyph of a glass control: dark in light, white in dark (dock-stacks.md, close button).
+Color glassGlyph(bool dark) =>
+    dark ? const Color(0xFFFFFFFF) : const Color(0xFF19191B);
+
+/// A glass control: a `ProfiledGlass` (control) circle of `diameter` with a silica-icons symbol on top.
+/// The glyph is `glyph` of the diameter (`provisional`, DOCK-FAN has been requested).
+class GlassSymbolButton extends StatelessWidget {
+  const GlassSymbolButton({
+    super.key,
+    required this.symbol,
+    required this.diameter,
+    this.dark = false,
+    this.glyph = 0.5,
+    this.material = GlassMaterial.regular,
+  });
+
+  final String symbol;
+  final double diameter;
+  final bool dark;
+  final double glyph;
+  final GlassMaterial material;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: diameter,
+    height: diameter,
+    child: ProfiledGlass(
+      profile: ShellGlassProfile.control,
+      radius: diameter / 2,
+      material: material,
+      child: Center(
+        child: SilicaSymbol(
+          symbol,
+          size: diameter * glyph,
+          color: glassGlyph(dark),
         ),
       ),
     ),
   );
 }
 
-/// "Open folder": an arrow in a circle.
-class _OpenFolderPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final r = size.shortestSide * 0.32;
-    canvas.drawCircle(c, r, Paint()..color = const Color(0xFFFFFFFF));
-    final paint = Paint()
-      ..color = const Color(0xFF3A3A3C)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = r * 0.14
-      ..strokeCap = StrokeCap.round;
-    canvas
-      ..drawLine(
-        c + Offset(-r * 0.35, r * 0.35),
-        c + Offset(r * 0.35, -r * 0.35),
-        paint,
-      )
-      ..drawLine(
-        c + Offset(-r * 0.05, -r * 0.35),
-        c + Offset(r * 0.35, -r * 0.35),
-        paint,
-      )
-      ..drawLine(
-        c + Offset(r * 0.35, -r * 0.35),
-        c + Offset(r * 0.35, r * 0.05),
-        paint,
-      );
-  }
+/// The button the stack's Dock icon becomes while it is open: a glass circle with the
+/// silica-icons `chevron-down`, in the `side` box of the icon. The circle is 0.85 of the side
+/// (`provisional`; the measured button is a 51 x 52 rounded square on a 54 pt cell).
+class StackCloseButton extends StatelessWidget {
+  const StackCloseButton({super.key, required this.side, required this.dark});
+
+  final double side;
+  final bool dark;
+
+  static const String symbol = 'chevron-down';
+  static const double diameterRatio = 0.85;
 
   @override
-  bool shouldRepaint(_OpenFolderPainter old) => false;
+  Widget build(BuildContext context) => Center(
+    child: GlassSymbolButton(
+      symbol: symbol,
+      diameter: side * diameterRatio,
+      dark: dark,
+      glyph: 0.55,
+    ),
+  );
+}
+
+/// "Open folder" (in the file manager): a glass circle with the silica-icons `arrow-up-right`.
+class OpenFolderButton extends StatelessWidget {
+  const OpenFolderButton({super.key, required this.side, this.dark = false});
+
+  /// The box of the item (the circle is [diameterRatio] of it).
+  final double side;
+  final bool dark;
+
+  static const String symbol = 'arrow-up-right';
+  static const double diameterRatio = 0.7;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: GlassSymbolButton(
+      symbol: symbol,
+      diameter: side * diameterRatio,
+      dark: dark,
+      glyph: 0.55,
+    ),
+  );
 }
 
 /// The grid: a panel with the title, above the icon with the tip pointing at it.
@@ -409,7 +471,6 @@ class GridStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (columns, _) = gridShape(entries.length);
     final p = progress.clamp(0.0, 1.0);
     return Positioned.fromRect(
       rect: rect,
@@ -433,10 +494,18 @@ class GridStack extends StatelessWidget {
                 profile: ShellGlassProfile.panel,
                 radius: gridRadius,
                 material: GlassMaterial.thick,
+                // The same glass tip as the menus (MenuPanel): the measured outline picked by
+                // this rectangle, the body edge 8 pt from the apex.
                 tip: GlassTip(
-                  x: tipX,
-                  width: gridTipBase - 14,
-                  height: gridTipHeight + 2,
+                  x: tipX.clamp(
+                    gridRadius + MenuMetrics.tipBase / 2,
+                    math.max(
+                      gridRadius + MenuMetrics.tipBase / 2,
+                      rect.width - gridRadius - MenuMetrics.tipBase / 2,
+                    ),
+                  ),
+                  width: MenuMetrics.tipBase,
+                  height: MenuMetrics.tipDepth,
                 ),
                 child: Stack(
                   children: [
@@ -465,7 +534,7 @@ class GridStack extends StatelessWidget {
                         child: Wrap(
                           children: [
                             for (final entry in entries) _cell(entry),
-                            _openCell(context, columns),
+                            _openCell(context),
                           ],
                         ),
                       ),
@@ -531,7 +600,8 @@ class GridStack extends StatelessWidget {
     );
   }
 
-  Widget _openCell(BuildContext context, int columns) => GestureDetector(
+  Widget _openCell(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
     onTap: onOpenFolder,
     child: SizedBox(
       width: gridCell,
@@ -543,7 +613,7 @@ class GridStack extends StatelessWidget {
             top: gridIconTop,
             width: gridIcon,
             height: gridIcon,
-            child: CustomPaint(painter: _OpenFolderPainter()),
+            child: OpenFolderButton(side: gridIcon, dark: _dark(context)),
           ),
           Positioned(
             left: (gridCell - gridLabelWidth) / 2,

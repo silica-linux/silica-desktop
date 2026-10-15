@@ -17,7 +17,7 @@ void main() {
   });
 
   test(
-    'the fan follows the measurements: 64.6 pitch, growing side, arc to the right',
+    'the fan follows the measurements (pitch and shift widened by fanSpread, provisional)',
     () {
       // Icon at x 1703.7, Dock area from y 1351 (dock-stacks.md, 10 files).
       Rect rect(int i) {
@@ -28,9 +28,9 @@ void main() {
 
       expect(rect(0).left, closeTo(1673.1, 0.2));
       expect(rect(0).top, closeTo(1278.1, 0.3));
-      expect(rect(9).left, closeTo(1739.7, 0.3));
-      expect(rect(9).top, closeTo(696.7, 1.5));
-      expect(rect(15).left, closeTo(1850.9, 0.3));
+      expect(rect(9).left, closeTo(1673.1 + 66.6 * fanSpread, 0.3));
+      expect(rect(9).top, closeTo(1351 - 72.8 - 64.6 * 9 * fanSpread, 1.5));
+      expect(rect(15).left, closeTo(1673.1 + 177.8 * fanSpread, 0.3));
       expect(fanSlot(15).side, closeTo(82.3, 0.2));
       expect(fanSlot(5).angle, greaterThan(fanSlot(1).angle));
     },
@@ -130,7 +130,14 @@ void main() {
     expect(find.text('documento-1.txt'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);
     // 7 columns: 7 × 128 + 34 = 930 pt.
-    final panel = tester.getRect(find.byType(ProfiledGlass).last);
+    final panel = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(GridStack),
+            matching: find.byType(ProfiledGlass),
+          )
+          .first,
+    );
     expect(panel.width, closeTo(930, 1));
   });
 
