@@ -1243,6 +1243,7 @@ pub fn output_elements(
                         Shape::RightTip => Some(Tip::Right),
                     },
                     group: region.group,
+                    rotation: region.rotation.to_radians(),
                     // The kind's settings; its shadow only where the client asked Ossido to
                     // draw it (it draws its own otherwise).
                     profile: {

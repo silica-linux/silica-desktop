@@ -109,6 +109,9 @@ pub struct GlassRegion {
     pub profile: Option<Profile>,
     /// Ossido draws the profile's shadow (`set_profile` with `compositor`).
     pub shadow: bool,
+    /// Rotation about the centre of the rectangle, degrees clockwise on screen
+    /// (`set_rotation`, version 8): x, y, width and height are the rectangle before it.
+    pub rotation: f64,
 }
 
 impl GlassRegion {
@@ -128,6 +131,8 @@ pub struct GlassState {
     /// The profile of the next regions, and whether Ossido draws its shadow.
     pub profile: Option<Profile>,
     pub shadow: bool,
+    /// The rotation of the next regions, degrees clockwise.
+    pub rotation: f64,
 }
 
 impl Cacheable for GlassState {
@@ -160,7 +165,7 @@ pub struct GlassManagerState;
 
 impl GlassManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaGlassManagerV1, _>(7, ());
+        dh.create_global::<State, SilicaGlassManagerV1, _>(8, ());
         Self
     }
 }
@@ -239,7 +244,12 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                 state.group = 0;
                 state.profile = None;
                 state.shadow = false;
+                state.rotation = 0.0;
             }),
+            silica_glass_v1::Request::SetRotation { degrees } => {
+                let degrees = normalized_degrees(degrees);
+                pending(&mut |state| state.rotation = degrees);
+            }
             silica_glass_v1::Request::SetProfile { profile, shadow } => {
                 use silica_glass_v1::Profile as P;
                 let profile = match profile {
@@ -398,6 +408,7 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
                             group: state.group,
                             profile: state.profile,
                             shadow: state.shadow && state.profile.is_some(),
+                            rotation: state.rotation,
                         });
                     }
                 });
@@ -418,6 +429,18 @@ impl Dispatch<SilicaGlassV1, Weak<WlSurface>> for State {
             }
             _ => {}
         }
+    }
+}
+
+/// An angle in degrees brought into (−180, 180] (a `fixed` is always finite).
+pub fn normalized_degrees(degrees: f64) -> f64 {
+    let degrees = degrees % 360.0;
+    if degrees > 180.0 {
+        degrees - 360.0
+    } else if degrees <= -180.0 {
+        degrees + 360.0
+    } else {
+        degrees
     }
 }
 

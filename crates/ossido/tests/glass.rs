@@ -1056,3 +1056,119 @@ fn the_compositor_draws_the_profile_shadow_only_when_asked() {
         "a shadow the client did not ask for: {near}"
     );
 }
+
+/// A point at `(x, y)` from the centre `c` of a region, in its own upright frame, on screen
+/// once the region is turned by `degrees` clockwise about that centre (to its pixel).
+fn turned(c: (f64, f64), degrees: f64, (x, y): (f64, f64)) -> (u32, u32) {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let sx = c.0 + cos * x - sin * y;
+    let sy = c.1 + sin * x + cos * y;
+    (sx.floor() as u32, sy.floor() as u32)
+}
+
+#[test]
+fn a_rotated_region_turns_its_whole_shape() {
+    common::client::GLASS_VERSION.with(|v| v.set(8));
+    let ossido = Headless::start_with("glass-rotated", SHOT, &["--background", "7a7b80"]);
+    let size = (320, 320);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "turned", size, &transparent(size));
+    // A 200 × 60 menu glass turned 20° clockwise about its centre (window (160, 160)).
+    glass
+        .set_glass_with(|g| {
+            g.set_rotation(20.0);
+            g.add_region(60, 130, 200, 60, 10.0, Material::Thick);
+        })
+        .unwrap();
+    let list = glass_list(&ossido);
+    assert_eq!(list[0]["regions"][0]["rotation"], 20.0, "{list}");
+    assert_eq!(list[0]["regions"][0]["width"], 200);
+    let image = shot(&ossido, "glass-rotated.png");
+    let background = [0x7a_u8, 0x7b, 0x80];
+    let lift = |(x, y): (u32, u32)| {
+        rgb(&image, 32 + x, 32 + y)
+            .iter()
+            .zip(background)
+            .map(|(a, b)| f64::from(*a) - f64::from(b))
+            .sum::<f64>()
+            / 3.0
+    };
+    let centre = (160.0, 160.0);
+    let fill = lift(turned(centre, 20.0, (0.0, 0.0)));
+    assert!(fill > 40.0, "no glass at the centre: {fill:.1}");
+    // Glass just inside the four turned corners (past the 10 px rounding).
+    for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+        let at = turned(centre, 20.0, (sx * 93.0, sy * 23.0));
+        assert!(
+            lift(at) > 0.6 * fill,
+            "no glass inside the turned corner at {at:?}"
+        );
+        // Past the turned side, the background.
+        let out = turned(centre, 20.0, (sx * 60.0, sy * 36.0));
+        assert!(
+            lift(out).abs() < 0.2 * fill,
+            "glass outside the turned side at {out:?}"
+        );
+    }
+    // The upright rectangle's top-right and bottom-left corners are not glass any more.
+    for at in [(255, 135), (65, 185)] {
+        assert!(
+            lift(at).abs() < 0.2 * fill,
+            "the upright corner {at:?} is still glass"
+        );
+    }
+    // Without a rotation (an earlier client, or after `clear`) the upright rectangle.
+    glass
+        .set_glass(&[(60, 130, 200, 60, 10.0, Material::Thick)])
+        .unwrap();
+    assert_eq!(glass_list(&ossido)[0]["regions"][0]["rotation"], 0.0);
+    let image = shot(&ossido, "glass-rotated-cleared.png");
+    let corner = rgb(&image, 32 + 255, 32 + 135);
+    assert!(
+        corner[0] > 0x7a + 40,
+        "the upright region lost its corner: {corner:?}"
+    );
+}
+
+#[test]
+fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
+    common::client::GLASS_VERSION.with(|v| v.set(8));
+    let ossido = Headless::start_with("glass-rotated-edge", SHOT, &["--background", "7a7b80"]);
+    let size = (320, 320);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "turned", size, &transparent(size));
+    // A Control Center module (a light row on top and at the bottom, none on the sides),
+    // turned 60°: read upright, its top edge would be a side (no light) and its side a bottom.
+    glass
+        .set_glass_with(|g| {
+            g.set_rotation(60.0);
+            g.add_region(60, 120, 200, 80, 12.0, Material::Regular);
+        })
+        .unwrap();
+    let image = shot(&ossido, "glass-rotated-edge.png");
+    let level = |(x, y): (u32, u32)| {
+        let [r, g, b] = rgb(&image, 32 + x, 32 + y);
+        (f64::from(r) + f64::from(g) + f64::from(b)) / 3.0
+    };
+    let centre = (160.0, 160.0);
+    let fill = level(turned(centre, 60.0, (0.0, 0.0)));
+    // The brightest pixel inside an edge's middle, from 0.5 to 4 px in (the background
+    // outside is lighter than the module).
+    let brightest = |along: (f64, f64), half: f64| {
+        (5..=40)
+            .map(|step| {
+                let d = half - f64::from(step) / 10.0;
+                level(turned(centre, 60.0, (along.0 * d, along.1 * d)))
+            })
+            .fold(f64::MIN, f64::max)
+    };
+    let top = brightest((0.0, -1.0), 40.0);
+    let side = brightest((1.0, 0.0), 100.0);
+    eprintln!("fill {fill:.1}, top edge {top:.1}, side edge {side:.1}");
+    assert!(
+        top > fill + 30.0,
+        "no light on the turned top edge: {top:.1} over {fill:.1}"
+    );
+    assert!(
+        side < fill + 12.0,
+        "light on the turned side edge: {side:.1} over {fill:.1}"
+    );
+}

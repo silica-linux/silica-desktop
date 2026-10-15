@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -148,6 +149,51 @@ void main() {
       gap.width,
       closeTo(fanLabelGap + (fanSlot(0).frame - fanIcon) / 2, 1e-9),
     );
+  });
+
+  testWidgets('fan: each label glass declares its tilt, not an upright box', (
+    tester,
+  ) async {
+    await openStack(tester, 4);
+    // Fully open.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final byGroup = {
+      for (final r in GlassRegistry.instance.regions)
+        (r['group'] as int?) ?? 0: r,
+    };
+    // Four files and "Open folder", from the bottom: 1.6° then 1.22° more per item.
+    for (var i = 0; i < 5; i++) {
+      final region = byGroup[DockGlass.fanLabel(i)];
+      expect(region, isNotNull, reason: 'label $i');
+      final frame = region!['frame'] as Map<String, Object>?;
+      expect(frame, isNotNull, reason: 'label $i sends no rotation');
+      final t = (frame!['transform'] as List<Object>).cast<double>();
+      final degrees = math.atan2(t[1], t[0]) * 180 / math.pi;
+      expect(
+        degrees,
+        closeTo(fanFirstAngle + fanAngleStep * i, 1e-6),
+        reason: 'label $i',
+      );
+      // Its own capsule, before the turn: 28 pt tall, the radius half of it, the width the
+      // label's.
+      expect(frame['height'], fanLabelHeight);
+      expect(frame['radius'], fanLabelHeight / 2);
+      final width = frame['width']! as double;
+      expect(width, greaterThan(fanLabelHeight));
+      // Where the transform puts the capsule's centre is the label's centre on screen.
+      final label = find.byType(DockLabel).at(i);
+      final glass = tester.renderObject<RenderGlass>(
+        find.descendant(of: label, matching: anyGlass),
+      );
+      final centre = glass.localToGlobal(glass.size.center(Offset.zero));
+      final (cx, cy) = (width / 2, fanLabelHeight / 2);
+      expect(t[0] * cx + t[2] * cy + t[4], closeTo(centre.dx, 1e-6));
+      expect(t[1] * cx + t[3] * cy + t[5], closeTo(centre.dy, 1e-6));
+    }
+    // The Dock itself is upright: no frame.
+    expect(byGroup[DockGlass.dock]!.containsKey('frame'), isFalse);
   });
 
   testWidgets('close button: an app tile with the chevron symbol', (

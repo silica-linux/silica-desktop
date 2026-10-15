@@ -42,6 +42,76 @@ pub struct Region {
     pub profile: Profile,
     /// Ossido draws the profile's shadow (`shadow`: true; only with a profile).
     pub shadow: bool,
+    /// The region turned with its widget (`frame`, version 8, `set_rotation`); `x`, `y`,
+    /// `width`, `height` and `radius` above stay the bounding box, for an earlier Ossido.
+    pub rotated: Option<Rotated>,
+}
+
+/// A region turned about its centre: the upright rectangle (logical pixels of the surface),
+/// its radius and the angle, degrees clockwise on screen.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rotated {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub radius: f64,
+    pub degrees: f64,
+}
+
+/// Below this angle (degrees) a region counts as upright: it is sent as before.
+const UPRIGHT: f64 = 0.01;
+
+impl Rotated {
+    /// The region from its widget's `frame`: `transform` [a, b, c, d, tx, ty] takes the local
+    /// rectangle (0, 0)–(`width`, `height`) to the surface (x' = a·x + c·y + tx,
+    /// y' = b·x + d·y + ty, Flutter's `getTransformTo(null)` without its z row and column).
+    /// The centre is where the local centre lands, the angle that of the x axis, the sizes
+    /// scaled along each turned axis (a shear is dropped) and the radius by the smaller scale.
+    /// None for an upright, degenerate or non-finite frame.
+    fn from_frame(frame: &Value) -> Option<Self> {
+        let number = |value: &Value| value.as_f64().filter(|v| v.is_finite());
+        let transform: Vec<f64> = frame
+            .get("transform")?
+            .as_array()?
+            .iter()
+            .map(number)
+            .collect::<Option<_>>()?;
+        let [a, b, c, d, tx, ty] = transform.as_slice() else {
+            return None;
+        };
+        let (w, h) = (number(frame.get("width")?)?, number(frame.get("height")?)?);
+        let radius = frame
+            .get("radius")
+            .and_then(number)
+            .filter(|r| *r >= 0.0)
+            .unwrap_or(0.0);
+        let scale_x = a.hypot(*b);
+        if scale_x < 1e-6 || w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+        // The y axis's length across the turned x axis: the area kept, a mirror ignored.
+        let scale_y = ((a * d - b * c) / scale_x).abs();
+        let degrees = b.atan2(*a).to_degrees();
+        if degrees.abs() < UPRIGHT || scale_y < 1e-6 {
+            return None;
+        }
+        let centre = (
+            a * w / 2.0 + c * h / 2.0 + tx,
+            b * w / 2.0 + d * h / 2.0 + ty,
+        );
+        let (width, height) = (w * scale_x, h * scale_y);
+        let int = |v: f64| v.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
+        let rotated = Self {
+            x: int(centre.0 - width / 2.0),
+            y: int(centre.1 - height / 2.0),
+            width: int(width),
+            height: int(height),
+            radius: radius * scale_x.min(scale_y),
+            degrees,
+        };
+        (rotated.width > 0 && rotated.height > 0).then_some(rotated)
+    }
 }
 
 /// The profile named in the channel's JSON (unknown names: from the material).
@@ -127,6 +197,7 @@ impl Region {
             }),
             profile: profile_named(value.get("profile").and_then(Value::as_str)),
             shadow: false,
+            rotated: value.get("frame").and_then(Rotated::from_frame),
         };
         let region = Self {
             shadow: region.profile != Profile::Default
@@ -361,6 +432,9 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
     let translucent = object.version() >= 3;
     let groups = object.version() >= 4;
     let profiles = object.version() >= 7;
+    let rotations = object.version() >= 8;
+    // After `clear` the regions are upright.
+    let mut rotation = 0.0;
     let mut group = regions.first().map_or(0, |r| r.group);
     // After `clear` the regions take the default profile, the client's shadow.
     let mut profile = (Profile::Default, false);
@@ -388,13 +462,25 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
             Material::Notification if !notification => Material::Thick,
             material => material,
         };
-        let (x, y, w, h, opacity) = (
-            region.x,
-            region.y,
-            region.width,
-            region.height,
-            region.opacity,
-        );
+        // Turned with its widget: its upright rectangle and the angle. An earlier Ossido
+        // draws the bounding box.
+        let turned = region.rotated.filter(|_| rotations);
+        let degrees = turned.map_or(0.0, |r| r.degrees);
+        if rotations && degrees != rotation {
+            rotation = degrees;
+            object.set_rotation(degrees);
+        }
+        let (x, y, w, h, radius) = match turned {
+            Some(r) => (r.x, r.y, r.width, r.height, r.radius),
+            None => (
+                region.x,
+                region.y,
+                region.width,
+                region.height,
+                region.radius,
+            ),
+        };
+        let opacity = region.opacity;
         if let Some(tip) = region.tip {
             match tip {
                 Tip::Down => object.add_tip(x, y, w, h, material, opacity),
@@ -402,27 +488,12 @@ fn send_regions(object: &SilicaGlassV1, regions: &[Region]) {
                 Tip::Left => object.add_side_tip(x, y, w, h, Side::Left, material, opacity),
                 Tip::Right => object.add_side_tip(x, y, w, h, Side::Right, material, opacity),
             }
-        } else if translucent && region.opacity < 1.0 {
-            object.add_translucent_region(
-                region.x,
-                region.y,
-                region.width,
-                region.height,
-                region.radius,
-                material,
-                region.opacity,
-            );
-        } else if region.opacity >= 0.5 || translucent {
+        } else if translucent && opacity < 1.0 {
+            object.add_translucent_region(x, y, w, h, radius, material, opacity);
+        } else if opacity >= 0.5 || translucent {
             // An Ossido without version 3 composes the glass at full opacity: better no
             // glass for an almost invisible region.
-            object.add_region(
-                region.x,
-                region.y,
-                region.width,
-                region.height,
-                region.radius,
-                material,
-            );
+            object.add_region(x, y, w, h, radius, material);
         }
     }
 }
@@ -516,6 +587,68 @@ mod tests {
                 (1, None)
             ]
         );
+    }
+
+    #[test]
+    fn a_turned_frame_gives_the_upright_rectangle_and_its_angle() {
+        // A 100 × 28 label turned 12° clockwise about its right end's middle (the fan's
+        // pivot at (300, 214)): the transform of `Transform.rotate` around that point.
+        let angle = 12.0_f64.to_radians();
+        let (sin, cos) = angle.sin_cos();
+        let pivot = (300.0, 214.0);
+        let local_pivot = (100.0, 14.0);
+        let tx = pivot.0 - (cos * local_pivot.0 - sin * local_pivot.1);
+        let ty = pivot.1 - (sin * local_pivot.0 + cos * local_pivot.1);
+        let regions = parse_regions(&json!([
+            {"x": 200, "y": 180, "width": 104, "height": 48, "radius": 15, "material": "thick",
+             "frame": {"transform": [cos, sin, -sin, cos, tx, ty],
+                       "width": 100, "height": 28, "radius": 14}},
+            // Upright, only scaled: nothing to turn, the bounding box is the region.
+            {"x": 10, "y": 10, "width": 20, "height": 20,
+             "frame": {"transform": [2, 0, 0, 2, 10, 10], "width": 10, "height": 10}},
+            // Malformed frames are ignored: the bounding box stays.
+            {"x": 0, "y": 0, "width": 10, "height": 10, "frame": {"transform": [1, 0, 0]}},
+            {"x": 0, "y": 0, "width": 10, "height": 10,
+             "frame": {"transform": [0, 0, 0, 0, 0, 0], "width": 10, "height": 10}},
+            {"x": 0, "y": 0, "width": 10, "height": 10,
+             "frame": {"transform": [0.9, 0.1, -0.1, 0.9, 0, 0], "width": -4, "height": 10}}
+        ]));
+        let Some(turned) = regions[0].rotated else {
+            panic!("the turned label lost its rotation: {:?}", regions[0]);
+        };
+        assert!((turned.degrees - 12.0).abs() < 1e-9, "{turned:?}");
+        assert_eq!((turned.width, turned.height), (100, 28));
+        assert!((turned.radius - 14.0).abs() < 1e-9);
+        // Its centre: 50 pt left of the pivot along the turned axis.
+        let centre = (pivot.0 - 50.0 * cos, pivot.1 - 50.0 * sin);
+        assert_eq!(
+            (turned.x, turned.y),
+            (
+                (centre.0 - 50.0).round() as i32,
+                (centre.1 - 14.0).round() as i32
+            )
+        );
+        // The bounding box is kept for an Ossido without version 8.
+        assert_eq!((regions[0].x, regions[0].width), (200, 104));
+        assert!(
+            regions[1..].iter().all(|r| r.rotated.is_none()),
+            "{regions:?}"
+        );
+
+        // Scaled and turned (a label swelling while it tilts): sizes and radius scale.
+        let regions = parse_regions(&json!([
+            {"x": 0, "y": 0, "width": 1, "height": 1,
+             "frame": {"transform": [0.0, 2.0, -2.0, 0.0, 50, 0], "width": 30, "height": 10,
+                       "radius": 5}}
+        ]));
+        let Some(turned) = regions[0].rotated else {
+            panic!("no rotation: {regions:?}");
+        };
+        assert!((turned.degrees - 90.0).abs() < 1e-9);
+        assert_eq!((turned.width, turned.height), (60, 20));
+        assert!((turned.radius - 10.0).abs() < 1e-9);
+        // The local centre (15, 5) lands on (50 − 10, 30).
+        assert_eq!((turned.x, turned.y), (40 - 30, 30 - 10));
     }
 
     #[test]

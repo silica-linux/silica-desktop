@@ -13,7 +13,7 @@
     (text, icons) on top, with transparent pixels where the glass must show.
   </description>
 
-  <interface name="silica_glass_manager_v1" version="7">
+  <interface name="silica_glass_manager_v1" version="8">
     <description summary="creates the glass object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -35,11 +35,13 @@
     </request>
   </interface>
 
-  <interface name="silica_glass_v1" version="7">
+  <interface name="silica_glass_v1" version="8">
     <description summary="glass regions of a surface">
       The state is double-buffered: clear and add_region change the pending state, which
       becomes current on the next wl_surface.commit. Coordinates are in the surface
-      coordinate system, in logical pixels.
+      coordinate system, in logical pixels. Since version 8 a region can be rotated about its
+      centre (set_rotation): its x, y, width and height are then the rectangle before the
+      rotation.
     </description>
 
     <request name="destroy" type="destructor">
@@ -191,6 +193,19 @@
       </description>
       <arg name="profile" type="uint" enum="profile"/>
       <arg name="shadow" type="uint" enum="shadow"/>
+    </request>
+
+    <request name="set_rotation" since="8">
+      <description summary="the rotation of the following regions">
+        The regions and tips added after this request are rotated by this angle about the
+        centre of their own rectangle, in degrees, clockwise on screen (the y axis points
+        down), until the next set_rotation or clear (which goes back to 0). The whole shape
+        turns with it: the corners, the edge light (on the region's own top edge), the outline,
+        the lens and the compositor's shadow. A label tilted with its object declares its
+        upright rectangle and the angle, not the bounding box of the tilted one. Pending state
+        like the regions.
+      </description>
+      <arg name="degrees" type="fixed"/>
     </request>
   </interface>
 </protocol>
