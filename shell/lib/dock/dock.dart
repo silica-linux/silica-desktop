@@ -44,6 +44,7 @@ import 'icons.dart';
 import 'stack.dart';
 import 'stack_settings.dart';
 import 'trash_alert.dart';
+import 'glass_groups.dart';
 import 'model.dart';
 
 /// The Dock with the real apps: installed (.desktop), pinned and open (from Ossido).
@@ -1016,6 +1017,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// The open submenus (outside the main menu rectangle), for the input region.
   List<Rect> _submenuRects = const [];
+
+  /// The panels of the open menu (the menu, then its submenus), from its host.
+  List<Rect> _menuRects = const [];
   bool _menuByLongPress = false;
   final GlobalKey<MenuHostState> _menuKey = GlobalKey();
   Timer? _longPress;
@@ -1052,10 +1056,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   List<FileSystemEntity> _stackEntries = const [];
   StackView _stackView = StackView.fan;
   bool _stackClosing = false;
+
+  /// Only the stack listens to it (an [AnimatedBuilder] around it): a frame of the opening
+  /// rebuilds and repaints the stack, not the whole Dock.
   late final AnimationController _stackAnim = AnimationController(
     vsync: this,
     duration: stackOpen,
-  )..addListener(() => setState(() {}));
+  );
   final FocusNode _stackFocus = FocusNode();
 
   /// The starting height of the surface and the screen (to center the alert).
@@ -1586,6 +1593,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _menuIndex = null;
       _menuEntries = const [];
       _submenuRects = const [];
+      _menuRects = const [];
       _pressed = null;
     });
   }
@@ -2091,7 +2099,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         if (stackIndex != null && stackIndex < l.cells.length) {
           final iconX = l.center(stackIndex);
           final item = _items[stackIndex];
-          final progress = Curves.easeOut.transform(_stackAnim.value);
+          double progress() => Curves.easeOut.transform(_stackAnim.value);
           if (_stackView == StackView.fan) {
             final count = math.min(_stackEntries.length, fanMax) + 1;
             final top = fanSlot(count - 1);
@@ -2101,13 +2109,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               iconX + top.center.dx + top.side / 2 + 120,
               zoneTop,
             );
-            stackWidget = Positioned.fill(
-              child: FanStack(
-                entries: _stackEntries,
-                anchor: Offset(iconX, zoneTop),
-                progress: progress,
-                onOpen: (e) => _openFromStack(e.path),
-                onOpenFolder: () => _openFromStack(item.folder ?? ''),
+            stackWidget = AnimatedBuilder(
+              animation: _stackAnim,
+              builder: (context, _) => Positioned.fill(
+                child: FanStack(
+                  entries: _stackEntries,
+                  anchor: Offset(iconX, zoneTop),
+                  progress: progress(),
+                  onOpen: (e) => _openFromStack(e.path),
+                  onOpenFolder: () => _openFromStack(item.folder ?? ''),
+                ),
               ),
             );
           } else {
@@ -2122,14 +2133,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               panel.height,
             );
             _stackRect = rect;
-            stackWidget = GridStack(
-              title: item.label,
-              entries: _stackEntries,
-              rect: rect,
-              tipX: iconX - left,
-              progress: progress,
-              onOpen: (e) => _openFromStack(e.path),
-              onOpenFolder: () => _openFromStack(item.folder ?? ''),
+            stackWidget = AnimatedBuilder(
+              animation: _stackAnim,
+              builder: (context, _) => GridStack(
+                title: item.label,
+                entries: _stackEntries,
+                rect: rect,
+                tipX: iconX - left,
+                progress: progress(),
+                onOpen: (e) => _openFromStack(e.path),
+                onOpenFolder: () => _openFromStack(item.folder ?? ''),
+              ),
             );
           }
         } else {
@@ -2175,6 +2189,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                       profile: ShellGlassProfile.dock,
                       radius: backgroundRadius,
                       material: GlassMaterial.clear,
+                      // The lowest: the stack, the labels and the menus sit on it.
+                      group: DockGlass.dock,
                       child: SizedBox.expand(),
                     ),
                   ),
@@ -2239,19 +2255,39 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     ),
                   if (stackWidget != null &&
                       (_screen == null || size.height >= _screen!.height - 1))
-                    Focus(
-                      focusNode: _stackFocus,
-                      onKeyEvent: (node, event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.escape) {
-                          _closeStack();
-                          return KeyEventResult.handled;
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [stackWidget],
+                    Positioned.fill(
+                      child: Focus(
+                        focusNode: _stackFocus,
+                        onKeyEvent: (node, event) {
+                          if (event is KeyDownEvent &&
+                              event.logicalKey == LogicalKeyboardKey.escape) {
+                            // A menu open over the stack closes first, like every menu.
+                            if (_menuIndex != null) {
+                              _menuKey.currentState?.close();
+                            } else {
+                              _closeStack();
+                            }
+                            return KeyEventResult.handled;
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        // The stack repaints on its own layer while it opens and closes.
+                        child: RepaintBoundary(
+                          child: StackUnderMenu(
+                            menu: menuRect == null || tip == null
+                                ? const []
+                                : [
+                                    ..._menuRects.isEmpty
+                                        ? [menuBody(menuRect)]
+                                        : _menuRects,
+                                    menuTipRect(tip),
+                                  ],
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [stackWidget],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   if (alertRect != null && alert != null && alertRect.top >= 0)
@@ -2266,9 +2302,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         top: barHeight,
                         handlesPointer: false,
                         onDismissed: _closeMenu,
-                        onRectsChanged: (rects) => setState(
-                          () => _submenuRects = rects.skip(1).toList(),
-                        ),
+                        onRectsChanged: (rects) => setState(() {
+                          _menuRects = rects;
+                          _submenuRects = rects.skip(1).toList();
+                        }),
                       ),
                     ),
                 ],
@@ -2670,6 +2707,7 @@ class DockLabel extends StatelessWidget {
     required this.text,
     required this.style,
     this.tip = true,
+    this.group = DockGlass.label,
   });
 
   final String text;
@@ -2678,8 +2716,12 @@ class DockLabel extends StatelessWidget {
   /// False for a label beside its object (the fan's item names): the same capsule, no tip.
   final bool tip;
 
+  /// Its own glass group (glass_groups.dart): below the menus, never merged with the stack's
+  /// panel or the other labels.
+  final int group;
+
   /// The glass the label declares; the menus declare the same material
-  /// (`MenuPanel`: `GlassMaterial.thick`, not interactive, no group).
+  /// (`MenuPanel`: `GlassMaterial.thick`).
   static const GlassMaterial material = GlassMaterial.thick;
 
   @override
@@ -2701,6 +2743,7 @@ class DockLabel extends StatelessWidget {
               profile: ShellGlassProfile.tooltip,
               radius: labelHeight / 2,
               material: material,
+              group: group,
               tip: tip
                   ? GlassTip(
                       x: box.maxWidth / 2,

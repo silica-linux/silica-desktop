@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
@@ -22,6 +25,21 @@ void main() {
 
   late Directory dir;
   late List<String> opened;
+  late Offset stackIcon;
+
+  /// The menu of the open stack's own icon (right click on it).
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tapAt(stackIcon, buttons: kSecondaryButton);
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
+  /// The glass regions the Dock sends to Ossido, as (group, material, profile).
+  List<(int, String, Object?)> regions() => [
+    for (final r in GlassRegistry.instance.regions)
+      ((r['group'] as int?) ?? 0, r['material'] as String, r['profile']),
+  ];
 
   Future<void> openStack(
     WidgetTester tester,
@@ -47,13 +65,16 @@ void main() {
           items: items,
           onOpenPath: opened.add,
           stackSettingsFor: (_) => settings,
+          menuFor: (_) => [
+            MenuAction('Options', onSelected: () {}),
+            MenuAction('Open', onSelected: () {}),
+          ],
         ),
       ),
     );
     final rest = layout(items, width: 2560, height: 1440);
-    await tester.tapAt(
-      Offset(rest.center(0), 1440 - bottomGap - backgroundHeight / 2),
-    );
+    stackIcon = Offset(rest.center(0), 1440 - bottomGap - backgroundHeight / 2);
+    await tester.tapAt(stackIcon);
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
@@ -129,10 +150,7 @@ void main() {
     expect(find.byType(GridStack), findsOneWidget);
     final panel = tester
         .renderObjectList<RenderGlass>(
-          find.descendant(
-            of: find.byType(GridStack),
-            matching: anyGlass,
-          ),
+          find.descendant(of: find.byType(GridStack), matching: anyGlass),
         )
         .first;
     final tip = panel.tip!;
@@ -159,24 +177,23 @@ void main() {
     expect(menu.tip!.height, tip.height);
   });
 
-  testWidgets('close button: a glass circle with the chevron symbol', (
+  testWidgets('close button: an app tile with the chevron symbol', (
     tester,
   ) async {
     await openStack(tester, 3);
     final button = find.byType(StackCloseButton);
     expect(button, findsOneWidget);
-    final glass = tester.renderObject<RenderGlass>(
-      find.descendant(of: button, matching: anyGlass),
+    // The same box as an app icon of the Dock at rest: a square of the icon side.
+    final tile = tester.getRect(button);
+    expect(tile.width, tile.height);
+    expect(tile.width, closeTo(iconSize, 0.5));
+    // Painted like the app tiles (their superellipse body, drop shadow and rim), not
+    // compositor glass: no circle, nothing to merge with.
+    expect(find.descendant(of: button, matching: anyGlass), findsNothing);
+    final paint = tester.widget<CustomPaint>(
+      find.descendant(of: button, matching: find.byType(CustomPaint)).first,
     );
-    final circle = tester.getRect(
-      find.descendant(of: button, matching: anyGlass),
-    );
-    expect(circle.width, circle.height);
-    expect(glass.radius, closeTo(circle.width / 2, 1e-6));
-    expect(
-      find.descendant(of: button, matching: find.byType(SilicaSymbol)),
-      findsOneWidget,
-    );
+    expect(paint.painter, isA<StackCloseTilePainter>());
     expect(
       tester
           .widget<SilicaSymbol>(
@@ -198,16 +215,177 @@ void main() {
     expect(find.byType(StackCloseButton), findsNothing);
   });
 
+  test('close tile: the app body outline, the measured gradient', () {
+    // The tile's outline is the app icons' (iconBodyPath): corners rounder than a square,
+    // squarer than a circle.
+    final body = iconBodyPath(const Rect.fromLTWH(0, 0, 48, 48));
+    expect(body.contains(const Offset(24, 0.5)), isTrue);
+    expect(body.contains(const Offset(1, 1)), isFalse);
+    expect(body.contains(const Offset(7, 7)), isTrue);
+    expect(StackCloseButton.fillLight.first, const Color(0xFFADADB0));
+    expect(StackCloseButton.fillDark.last, const Color(0xFF313232));
+  });
+
+  testWidgets('glass groups: every surface of the open grid is its own', (
+    tester,
+  ) async {
+    await openStack(
+      tester,
+      5,
+      settings: const StackSettings(content: StackContent.grid),
+    );
+    final groups = regions();
+    // Dock, panel (body and tip), the open-folder button.
+    expect(groups.where((r) => r.$1 == DockGlass.dock), hasLength(1));
+    expect(groups.where((r) => r.$1 == DockGlass.gridPanel), hasLength(2));
+    expect(groups.where((r) => r.$1 == DockGlass.gridButton), hasLength(1));
+    expect(groups.map((r) => r.$1).toSet(), hasLength(3));
+    // From the bottom: the Dock, the panel, its button.
+    expect(DockGlass.dock, lessThan(DockGlass.gridPanel));
+    expect(DockGlass.gridPanel, lessThan(DockGlass.gridButton));
+    // Profiles (#168): the panel is a panel, the button a control.
+    expect(
+      groups.where((r) => r.$1 == DockGlass.gridPanel).map((r) => r.$3),
+      everyElement('panel'),
+    );
+    expect(
+      groups.singleWhere((r) => r.$1 == DockGlass.gridButton).$3,
+      'control',
+    );
+  });
+
+  testWidgets('glass groups: each fan label and the button on their own', (
+    tester,
+  ) async {
+    await openStack(tester, 4);
+    final labels = tester
+        .renderObjectList<RenderGlass>(
+          find.descendant(of: find.byType(DockLabel), matching: anyGlass),
+        )
+        .map((g) => g.group)
+        .toList();
+    expect(labels, hasLength(5));
+    expect(labels.toSet(), hasLength(5));
+    final button = tester.renderObject<RenderGlass>(
+      find.descendant(of: find.byType(OpenFolderButton), matching: anyGlass),
+    );
+    expect(labels, isNot(contains(button.group)));
+    expect(labels, everyElement(lessThan(0)));
+    expect(button.group, lessThan(0));
+  });
+
+  for (final view in [StackContent.grid, StackContent.fan]) {
+    testWidgets(
+      'a menu over the open ${view.name}: its own glass, on top, the stack cut under it',
+      (tester) async {
+        await openStack(tester, 5, settings: StackSettings(content: view));
+        await openMenu(tester);
+        expect(find.byType(MenuPanel), findsOneWidget);
+        // The stack stays open under the menu.
+        expect(
+          find.byType(view == StackContent.grid ? GridStack : FanStack),
+          findsOneWidget,
+        );
+        final menu = tester.renderObject<RenderGlass>(
+          find.descendant(of: find.byType(MenuPanel), matching: anyGlass),
+        );
+        // The menu's group is above every glass of the stack and of the Dock: no merging,
+        // the menu on top.
+        final others = regions().where((r) => r.$1 != menu.group).toList();
+        expect(others, isNotEmpty);
+        for (final r in others) {
+          expect(r.$1, lessThan(menu.group));
+        }
+        // The menu is painted after the stack, and the stack's content is cut where the menu
+        // lies (its glass alone cannot cover the stack's icons).
+        final cut = tester.widget<StackUnderMenu>(find.byType(StackUnderMenu));
+        final panel = tester.getRect(find.byType(MenuPanel));
+        expect(cut.menu, isNotEmpty);
+        final clip = MenuHoleClipper(cut.menu).getClip(const Size(2560, 1440));
+        expect(clip.contains(panel.center), isFalse);
+        expect(clip.contains(panel.topLeft - const Offset(20, 20)), isTrue);
+        // Escape closes the menu first; the stack stays.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        for (var i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.byType(MenuPanel), findsNothing);
+        expect(
+          find.byType(view == StackContent.grid ? GridStack : FanStack),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget<StackUnderMenu>(find.byType(StackUnderMenu)).menu,
+          isEmpty,
+        );
+        // A second Escape closes the stack.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        for (var i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.byType(GridStack), findsNothing);
+        expect(find.byType(FanStack), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('opening: a frame moves the items, it does not rebuild them', (
+    tester,
+  ) async {
+    dir = Directory.systemTemp.createTempSync('Downloads');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    for (var i = 1; i <= 6; i++) {
+      File('${dir.path}/documento-$i.txt').writeAsStringSync('x');
+    }
+    tester.view.physicalSize = const Size(2560, 1440);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var dockBuilds = 0;
+    final items = [Item.app('Downloads', command: 'x', folder: dir.path)];
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: items,
+          onOpenPath: (_) {},
+          stackSettingsFor: (_) {
+            dockBuilds++;
+            return const StackSettings();
+          },
+        ),
+      ),
+    );
+    final rest = layout(items, width: 2560, height: 1440);
+    await tester.tapAt(
+      Offset(rest.center(0), 1440 - bottomGap - backgroundHeight / 2),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    final icon = tester.widget(find.byKey(const ValueKey('fan icon 2')));
+    final label = tester.widget(find.byType(DockLabel).at(2));
+    final before = dockBuilds;
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    // The same widgets: neither the icons nor the names are resolved again.
+    expect(
+      identical(tester.widget(find.byKey(const ValueKey('fan icon 2'))), icon),
+      isTrue,
+    );
+    expect(
+      identical(tester.widget(find.byType(DockLabel).at(2)), label),
+      isTrue,
+    );
+    // And the Dock itself (it asks the stack settings in its build) is not rebuilt per frame.
+    expect(dockBuilds - before, lessThan(3));
+  });
+
   testWidgets(
     'open folder: a glass circle with the arrow, it opens the folder',
     (tester) async {
       await openStack(tester, 3);
       final button = find.byType(OpenFolderButton);
       expect(button, findsOneWidget);
-      expect(
-        find.descendant(of: button, matching: anyGlass),
-        findsOneWidget,
-      );
+      expect(find.descendant(of: button, matching: anyGlass), findsOneWidget);
       expect(
         tester
             .widget<SilicaSymbol>(
