@@ -1176,7 +1176,7 @@ fn groups(regions: &[PhysicalRegion]) -> Vec<Vec<PhysicalRegion>> {
     groups
 }
 
-fn buffer_size(size: Size<i32, Physical>) -> Size<i32, Buffer> {
+pub(crate) fn buffer_size(size: Size<i32, Physical>) -> Size<i32, Buffer> {
     size.to_logical(1).to_buffer(1, Transform::Normal)
 }
 
@@ -1213,7 +1213,7 @@ pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
 /// One pass: `source` (`from` large) drawn into a new texture `to` large, over `under` if
 /// present.
 #[allow(clippy::too_many_arguments)]
-fn pass(
+pub(crate) fn pass(
     renderer: &mut GlesRenderer,
     source: &GlesTexture,
     from: Size<i32, Physical>,
@@ -1258,23 +1258,6 @@ fn pass(
         let _sync = frame.finish()?;
     }
     Ok(texture)
-}
-
-/// Blurs `sharp` (`size` large) with a Gaussian of σ `sigma_pt` points, nothing of the sharp
-/// image left: the Panorama backdrop.
-pub fn blur_texture(
-    renderer: &mut GlesRenderer,
-    programs: &GlassPrograms,
-    sharp: &GlesTexture,
-    size: Size<i32, Physical>,
-    sigma_pt: f64,
-    scale: f64,
-) -> Result<GlesTexture, GlesError> {
-    let key = BlurKey {
-        sigma: sigma_pt,
-        sharp: 0.0,
-    };
-    blur(renderer, programs, sharp, size, key, scale)
 }
 
 /// Blurs the capture with the σ and mixes in the sharp share.

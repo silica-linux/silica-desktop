@@ -63,7 +63,7 @@ render_elements! {
 
 /// The blur under the spaces bar, between frames.
 #[derive(Default)]
-struct BarMaterial(ossido_render::backdrop::BlurredBackdrop);
+struct BarMaterial(ossido_render::bar_material::BarMaterial);
 
 /// The opacity of a shell layer while Panorama is open: the menu bar and the desktop (its
 /// icons) fade out as Panorama opens and come back as it closes (`missioncontrol.md`: in
@@ -80,13 +80,6 @@ fn layer_alpha_in_panorama(namespace: &str, mode: crate::panorama::Mode, progres
     } else {
         1.0
     }
-}
-
-/// The opacity of the blurred wallpaper over the sharp one: in full Panorama it follows the
-/// opening (and the closing), elsewhere there is none.
-fn backdrop_blur_alpha(mode: crate::panorama::Mode, progress: f64) -> Option<f32> {
-    (mode == crate::panorama::Mode::Panorama && progress > 0.0)
-        .then(|| progress.clamp(0.0, 1.0) as f32)
 }
 
 /// Shrinks an element drawn at output size (origin `origin`) by `factor` around that origin
@@ -1248,37 +1241,6 @@ pub fn output_elements(
     let background_start = elements.len();
     push_layers(&mut elements, &mut anchors, renderer, Layer::Background);
 
-    // Panorama: the desktop wallpaper blurs as it opens (the blurred copy fades in above it).
-    let panorama_blur = context
-        .panorama
-        .as_ref()
-        .and_then(|panorama| backdrop_blur_alpha(panorama.mode, panorama.progress))
-        .and_then(|alpha| {
-            let programs = shaders.glass.as_ref()?;
-            let behind = elements.get(background_start..).unwrap_or_default();
-            let cache = output
-                .user_data()
-                .get_or_insert(ossido_render::backdrop::BlurredBackdrop::default);
-            let full = Rectangle::from_size(output_size);
-            match cache.element(
-                renderer,
-                programs,
-                behind,
-                full,
-                full,
-                scale,
-                crate::panorama::BACKDROP_BLUR_PT,
-                context.clear_color,
-                alpha,
-            ) {
-                Ok(element) => element,
-                Err(err) => {
-                    warn!("Panorama backdrop blur skipped: {err:?}");
-                    None
-                }
-            }
-        });
-
     // App Exposé: at the top the wallpaper darkens (above the wallpaper, below the windows).
     if let Some(panorama) = &context.panorama
         && panorama.mode == crate::panorama::Mode::App
@@ -1364,13 +1326,6 @@ pub fn output_elements(
                 }
             }
             Err(err) => warn!("bar backdrop skipped: {err:?}"),
-        }
-    }
-    // Above the wallpaper and its gradient, below the windows and the Dock.
-    if let Some(blur) = panorama_blur {
-        elements.insert(background_start, OutputElement::Blurred(blur));
-        for anchor in &mut anchors {
-            anchor.index = after_insert(anchor.index, background_start);
         }
     }
     if let Some(bar) = bar_behind {
@@ -1481,41 +1436,55 @@ pub fn output_elements(
             }
         }
     }
-    // The spaces bar is a material: the blur of everything under it, just behind it. Live:
-    // it is redone when what is under it changes (windows passing under it).
+    // The spaces bar is a material: the wallpaper under it (only that), toned and blurred
+    // (missioncontrol.md › MC-BLUR), just behind the bar.
     if let Some(panorama) = &context.panorama
         && let Some(id) = &bar_id
-        && let Some(programs) = &shaders.glass
+        && let Some(programs) = &shaders.bar
         && let Some(at) = elements.iter().position(|element| element.id() == id)
     {
         let width = f64::from(output_size.w) / scale;
-        let output_rect = Rectangle::from_size(output_size);
-        let area = crate::panorama::bar_capture_rect(width)
-            .to_physical_precise_round(scale)
-            .intersection(output_rect);
+        let rest = crate::panorama::bar_material_rect(width, panorama.expansion, 1.0);
+        let area = rest.to_physical_precise_round(scale);
         let dst = crate::panorama::bar_material_rect(width, panorama.expansion, panorama.progress)
             .to_physical_precise_round(scale);
-        let behind = elements.get(at + 1..).unwrap_or_default();
-        let cache = output.user_data().get_or_insert(BarMaterial::default);
-        let material = area.map(|area| {
-            cache.0.element(
+        let mut wallpaper: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+        for layer in layer_map.layers_on(Layer::Background).rev() {
+            let Some(drawn) = crate::layers::drawn_layer(&layer_map, layer, layers_output) else {
+                continue;
+            };
+            wallpaper.extend(AsRenderElements::<GlesRenderer>::render_elements::<
+                WaylandSurfaceRenderElement<GlesRenderer>,
+            >(
+                layer as &LayerSurface,
                 renderer,
-                programs,
-                behind,
-                area,
-                dst,
-                scale,
-                crate::panorama::BAR_BLUR_PT,
-                context.clear_color,
-                crate::panorama::bar_alpha(panorama.progress),
-            )
-        });
-        match material {
-            Some(Ok(Some(material))) => {
+                drawn.loc.to_f64().to_physical_precise_round(scale),
+                scale.into(),
+                1.0,
+            ));
+        }
+        let tone = ossido_render::bar_material::BarTone {
+            light: !context.dark,
+            expansion: panorama.expansion,
+            sigma_pt: crate::panorama::bar_blur_sigma(panorama.expansion),
+        };
+        let cache = output.user_data().get_or_insert(BarMaterial::default);
+        match cache.0.element(
+            renderer,
+            programs,
+            &wallpaper,
+            area,
+            dst,
+            scale,
+            tone,
+            context.clear_color,
+            crate::panorama::bar_alpha(panorama.progress),
+        ) {
+            Ok(Some(material)) => {
                 elements.insert(at + 1, OutputElement::Blurred(material));
             }
-            Some(Err(err)) => warn!("spaces bar material skipped: {err:?}"),
-            _ => {}
+            Ok(None) => {}
+            Err(err) => warn!("spaces bar material skipped: {err:?}"),
         }
     }
     if let Some((icon, at)) = &context.drag_icon {
@@ -1620,7 +1589,7 @@ mod tests {
     }
 
     #[test]
-    fn full_panorama_hides_the_menu_bar_and_the_desktop_and_blurs_the_wallpaper() {
+    fn full_panorama_hides_the_menu_bar_and_the_desktop() {
         use crate::panorama::Mode;
         let alpha = super::layer_alpha_in_panorama;
         for namespace in ["menubar", "desktop-icons:dev.frascella.Mustache"] {
@@ -1635,13 +1604,6 @@ mod tests {
         assert_eq!(alpha("menubar", Mode::App, 1.0), 0.0);
         assert_eq!(alpha("desktop-icons:x", Mode::App, 1.0), 1.0);
         assert_eq!(alpha("menubar", Mode::Desktop, 1.0), 1.0);
-
-        let blur = super::backdrop_blur_alpha;
-        assert_eq!(blur(Mode::Panorama, 0.0), None);
-        assert_eq!(blur(Mode::Panorama, 0.5), Some(0.5));
-        assert_eq!(blur(Mode::Panorama, 1.0), Some(1.0));
-        assert_eq!(blur(Mode::App, 1.0), None);
-        assert_eq!(blur(Mode::Desktop, 1.0), None);
     }
 
     #[test]
