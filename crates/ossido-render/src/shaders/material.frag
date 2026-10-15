@@ -54,6 +54,11 @@ uniform float lens_reach;
 // shadows (< 0) multiply. `fill_gray`: the fill over the reference gray.
 uniform mat4 edges[3];
 uniform float fill_gray;
+// How fast an orientation's edge fades around a curve: its weight is the matching component of
+// the normal to this power. On a capsule's end the measured dark side line is gone by ~45°
+// from the side and the light rows by ~45° from the top (fit on the Control Center modules):
+// the square of the component spread the side line over the whole end, a black crescent.
+uniform float edge_power;
 
 float rounded_distance(vec2 p, vec4 rect, float r) {
     vec2 half_size = rect.zw * 0.5;
@@ -181,6 +186,18 @@ float outline_at(mat4 m, float u) {
     return u < 1.0 ? mix(m[3][0], m[3][1], u) : mix(m[3][1], 0.0, clamp(u - 1.0, 0.0, 1.0));
 }
 
+// What the three orientations share, for the part of a curve none of them owns (a corner's
+// diagonal): the weakest value if they agree in sign, nothing if they do not.
+float shared_value(float a, float b, float c) {
+    if (a >= 0.0 && b >= 0.0 && c >= 0.0) {
+        return min(a, min(b, c));
+    }
+    if (a <= 0.0 && b <= 0.0 && c <= 0.0) {
+        return max(a, max(b, c));
+    }
+    return 0.0;
+}
+
 // The source distance for a pixel at distance t, interpolating the curve.
 float lens_source(mat4 curve, float t) {
     vec2 previous = vec2(-1.0, 0.0);
@@ -218,7 +235,9 @@ void main() {
     // (glass.md, "Refraction").
     float source = mix(lens_source(lens[0], t),
                        lens_source(n.y < 0.0 ? lens[1] : lens[2], t), vertical);
-    vec2 sample_at = (p + n * (t - source)) / tex_size;
+    // Clamped to the texture: it repeats by default, and outside it lies the opposite side.
+    vec2 half_texel = 0.5 / tex_size;
+    vec2 sample_at = clamp((p + n * (t - source)) / tex_size, half_texel, vec2(1.0) - half_texel);
 
     vec3 background = texture2D(tex, sample_at).rgb;
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
@@ -230,20 +249,27 @@ void main() {
     vec2 m = vec2(union_distance(p + e.xy, 0.0) - union_distance(p - e.xy, 0.0),
                   union_distance(p + e.yx, 0.0) - union_distance(p - e.yx, 0.0));
     m = length(m) > 0.0 ? normalize(m) : vec2(0.0, -1.0);
-    float w_top = max(-m.y, 0.0) * max(-m.y, 0.0);
-    float w_bottom = max(m.y, 0.0) * max(m.y, 0.0);
-    float w_side = m.x * m.x;
+    float w_top = pow(max(-m.y, 0.0), edge_power);
+    float w_bottom = pow(max(m.y, 0.0), edge_power);
+    float w_side = pow(abs(m.x), edge_power);
+    float w_shared = max(1.0 - w_top - w_bottom - w_side, 0.0);
     float s_in = t / scale_px - 0.5;
-    float offset_in = w_top * profile_at(edges[0], s_in) + w_side * profile_at(edges[1], s_in)
-                    + w_bottom * profile_at(edges[2], s_in);
+    float in_top = profile_at(edges[0], s_in);
+    float in_side = profile_at(edges[1], s_in);
+    float in_bottom = profile_at(edges[2], s_in);
+    float offset_in = w_top * in_top + w_side * in_side + w_bottom * in_bottom
+                    + w_shared * shared_value(in_top, in_side, in_bottom);
     if (offset_in > 0.0) {
         color += offset_in * min(vec3(1.0), (vec3(1.0) - color) / max(1.0 - fill_gray, 0.05));
     } else {
         color *= 1.0 + offset_in / max(fill_gray, 0.05);
     }
     float u_out = sd / scale_px - 0.5;
-    float outline = w_top * outline_at(edges[0], u_out) + w_side * outline_at(edges[1], u_out)
-                  + w_bottom * outline_at(edges[2], u_out);
+    float out_top = outline_at(edges[0], u_out);
+    float out_side = outline_at(edges[1], u_out);
+    float out_bottom = outline_at(edges[2], u_out);
+    float outline = w_top * out_top + w_side * out_side + w_bottom * out_bottom
+                  + w_shared * min(out_top, min(out_side, out_bottom));
 
     color = clamp(color, 0.0, 1.0);
     float coverage = clamp(0.5 - sd, 0.0, 1.0);

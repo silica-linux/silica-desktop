@@ -29,11 +29,15 @@ void main() {
     vec4 sum = vec4(0.0);
     float total = 0.0;
     float reach = min(3.0 * sigma, 48.0);
+    // Clamp to edge: the offscreen textures repeat by default, and a capture cut by the
+    // output's edge would bring in the opposite side of the capture.
+    vec2 low = 0.5 * abs(step);
+    vec2 high = vec2(1.0) - low;
     for (int i = 0; i <= 96; i++) {
         float x = float(i) - 48.0;
         if (abs(x) <= reach) {
             float weight = exp(-(x * x) / (2.0 * sigma * sigma));
-            sum += texture2D(tex, v_coords + step * x) * weight;
+            sum += texture2D(tex, clamp(v_coords + step * x, low, high)) * weight;
             total += weight;
         }
     }

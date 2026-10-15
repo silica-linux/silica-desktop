@@ -623,8 +623,12 @@ fn tips_point_every_way_with_the_same_shape() {
         let widths = tip_widths(&format!("glass-tip-{side}"), side);
         eprintln!("{side}: {widths:?} (down {down:?})");
         for (k, (a, b)) in widths.iter().zip(&down).enumerate() {
+            // At the base the fillets' antialiased pixels also carry the edge light, which
+            // differs by orientation (the menus' top and bottom rows are lighter than the
+            // sides): a pixel more or less per fillet there.
+            let tolerance = if k == 0 { 2 } else { 1 };
             assert!(
-                a.abs_diff(*b) <= 1,
+                a.abs_diff(*b) <= tolerance,
                 "{side}, step {k}: {a} px against {b} down"
             );
         }
@@ -832,4 +836,103 @@ fn translucent_glass_fades_with_its_panel() {
             .is_err()
     );
     let _alive = TestWindow::open(&ossido.wayland, "after");
+}
+
+/// A wallpaper window and a glass window both covering the screen (and 40 px beyond, so their
+/// corners and shadows stay off screen): screen pixel (x, y) is window pixel (x + 40, y + 40).
+fn full_screen_glass(
+    ossido: &Headless,
+    level: impl Fn(u32, u32) -> [u8; 3],
+) -> (TestWindow, TestWindow) {
+    const BLEED: u32 = 40;
+    let size = (SHOT.0 + 2 * BLEED, SHOT.1 + 2 * BLEED);
+    let mut pixels = Vec::with_capacity((size.0 * size.1 * 4) as usize);
+    for y in 0..size.1 {
+        for x in 0..size.0 {
+            let [r, g, b] = level(x.saturating_sub(BLEED), y.saturating_sub(BLEED));
+            pixels.extend_from_slice(&[b, g, r, 255]);
+        }
+    }
+    let place = || {
+        ossido
+            .client()
+            .call(
+                silica_control::commands::WINDOW_MOVE,
+                serde_json::json!({"x": -(BLEED as i32), "y": -(BLEED as i32)}),
+            )
+            .unwrap();
+    };
+    let back = TestWindow::open_pixels(&ossido.wayland, "back", size, &pixels);
+    place();
+    let glass = TestWindow::open_pixels(&ossido.wayland, "glass", size, &transparent(size));
+    place();
+    (back, glass)
+}
+
+#[test]
+fn glass_cut_by_the_screen_edge_does_not_blur_in_the_far_side() {
+    // A menu 2 px from the left edge of the screen: its capture is cut there. White behind it,
+    // black from x 175 on (inside the capture's right margin). The offscreen textures repeat
+    // by default: without clamping, the blur at the left edge read the black from the far
+    // right of the capture (#168).
+    let ossido = Headless::start_with("glass-edge-clamp", SHOT, &[]);
+    let (_back, mut glass) =
+        full_screen_glass(&ossido, |x, _| if x < 175 { [255; 3] } else { [0; 3] });
+    glass
+        .set_glass(&[(40 + 2, 40 + 100, 150, 120, 12.0, Material::Thick)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-edge-clamp.png");
+    let middle = rgb(&shot, 60, 160);
+    for x in [4, 6, 10, 20] {
+        let edge = rgb(&shot, x, 160);
+        // Inside the edge rows: the side profile darkens by a few levels only.
+        let worst = edge
+            .iter()
+            .zip(middle)
+            .map(|(e, m)| i32::from(*e) - i32::from(m))
+            .min()
+            .unwrap_or(0);
+        assert!(
+            worst >= -8,
+            "x {x}: {edge:?} darker than the middle {middle:?}"
+        );
+    }
+}
+
+#[test]
+fn the_dark_side_line_stays_on_the_side_of_a_capsule() {
+    // A Control Center module (a capsule, 142 × 64, radius 32) over the reference gray. The
+    // dark line just outside the edge is on the side and fades within ~45° around the end,
+    // as measured on the modules; it used to wrap the whole end (a black crescent, #168).
+    let ossido = Headless::start_with("glass-capsule-end", SHOT, &[]);
+    let (_back, mut glass) = full_screen_glass(&ossido, |_, _| [0x7a, 0x7b, 0x80]);
+    glass
+        .set_glass(&[(40 + 100, 40 + 100, 142, 64, 32.0, Material::Regular)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-capsule-end.png");
+    let background = f64::from(rgb(&shot, 40, 40)[1]);
+    // The darkest pixel just outside the edge at an angle from the left side (0°) towards the
+    // top, relative to the background.
+    let (cx, cy, r) = (100.0 + 32.0, 100.0 + 32.0, 32.0);
+    let darkness = |deg: f64| {
+        let a = deg.to_radians();
+        (0..3)
+            .map(|step| {
+                let d = r + 0.25 + f64::from(step) * 0.5;
+                let x = cx - a.cos() * d;
+                let y = cy - a.sin() * d;
+                1.0 - f64::from(rgb(&shot, x.floor() as u32, y.floor() as u32)[1]) / background
+            })
+            .fold(0.0, f64::max)
+    };
+    let side = darkness(0.0);
+    eprintln!(
+        "dark line: 0° {side:.2}, 30° {:.2}, 45° {:.2}, 60° {:.2}",
+        darkness(30.0),
+        darkness(45.0),
+        darkness(60.0)
+    );
+    assert!(side > 0.45, "no dark line on the side: {side:.2}");
+    assert!(darkness(45.0) < 0.3 * side, "45°: {:.2}", darkness(45.0));
+    assert!(darkness(60.0) < 0.15 * side, "60°: {:.2}", darkness(60.0));
 }

@@ -441,7 +441,7 @@ pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
     [("step", UniformType::_2f), ("sigma", UniformType::_1f)];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 18] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 19] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -460,7 +460,35 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 18] = [
     ("lens_reach", UniformType::_1f),
     ("edges", UniformType::Matrix4x4),
     ("fill_gray", UniformType::_1f),
+    ("edge_power", UniformType::_1f),
 ];
+
+/// How fast each orientation's edge (top, sides, bottom) fades around a curve: its weight is
+/// the matching component of the outward normal to this power. Fitted on the ends of the
+/// Control Center modules over gray (glass.md, `gray-dark` capture): the dark side line is
+/// ~0.7 of its strength 15° from the side, ~0.5 at 30° and gone by 45°; the light top row ~0.4
+/// at 30° from the top. With the square of the component (the earlier weighting) the side
+/// line covered the whole end of a capsule: the black crescents at the left and right ends
+/// of modules, pills and menus (#168).
+pub const EDGE_POWER: f32 = 5.0;
+
+/// The weights of the top, side and bottom edges, and the shared part, for an outward normal
+/// (the shader's `w_top`, `w_side`, `w_bottom`, `w_shared`). Where no orientation owns the
+/// curve (a corner's diagonal) the shared part takes what the three agree on, so an outline
+/// measured the same on every side (the menus') runs without a gap.
+pub fn edge_weights(normal: (f32, f32)) -> [f32; 4] {
+    let (x, y) = normal;
+    let length = (x * x + y * y).sqrt();
+    let (x, y) = if length > 0.0 {
+        (x / length, y / length)
+    } else {
+        (0.0, -1.0)
+    };
+    let top = (-y).max(0.0).powf(EDGE_POWER);
+    let bottom = y.max(0.0).powf(EDGE_POWER);
+    let side = x.abs().powf(EDGE_POWER);
+    [top, side, bottom, (1.0 - top - side - bottom).max(0.0)]
+}
 
 impl MaterialParams {
     /// The fill over the reference gray (`#7a7b80`), 0–1 luminance: the level the edge
@@ -1262,6 +1290,7 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 "fill_gray",
                 UniformValue::_1f(first.material.fill_on_gray()),
             ),
+            Uniform::new("edge_power", UniformValue::_1f(EDGE_POWER)),
         ];
         frame.render_texture_from_to(
             &self.texture,
@@ -1283,6 +1312,37 @@ mod tests {
 
     fn close(a: f64, b: f64, tolerance: f64) -> bool {
         (a - b).abs() <= tolerance
+    }
+
+    #[test]
+    fn the_side_edge_fades_around_a_capsule_end_like_the_modules() {
+        // Angle from the side (0°) towards the top (90°), outward normal (−cos, −sin) on a
+        // left end: the measured dark line ~0.7 at 15°, ~0.5 at 30°, ≤ 0.2 at 45°.
+        let side_at = |deg: f32| {
+            let a = deg.to_radians();
+            edge_weights((-a.cos(), -a.sin()))[1]
+        };
+        assert!((side_at(0.0) - 1.0).abs() < 1e-6);
+        assert!((0.75..0.9).contains(&side_at(15.0)), "{}", side_at(15.0));
+        assert!((0.4..0.6).contains(&side_at(30.0)), "{}", side_at(30.0));
+        assert!(side_at(45.0) < 0.2, "{}", side_at(45.0));
+        assert!(side_at(60.0) < 0.05, "{}", side_at(60.0));
+        // The top row has the same falloff towards the side.
+        let top_at = |deg: f32| {
+            let a = deg.to_radians();
+            edge_weights((-a.cos(), -a.sin()))[0]
+        };
+        assert!((top_at(60.0) - side_at(30.0)).abs() < 1e-6);
+        // The weights and the shared part make one, on every direction.
+        for deg in (0..360).step_by(5) {
+            let a = (deg as f32).to_radians();
+            let w = edge_weights((a.cos(), a.sin()));
+            let total: f32 = w.iter().sum();
+            assert!((total - 1.0).abs() < 1e-5, "{deg}°: {w:?}");
+            assert!(w.iter().all(|v| (0.0..=1.0).contains(v)), "{deg}°: {w:?}");
+        }
+        // A degenerate normal (the middle of a shape) counts as the top.
+        assert_eq!(edge_weights((0.0, 0.0))[0], 1.0);
     }
 
     #[test]
