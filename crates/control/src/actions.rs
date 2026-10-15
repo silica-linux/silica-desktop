@@ -3,8 +3,8 @@
 //! `$XDG_RUNTIME_DIR/silica/actions-<wayland display>.sock` (mode 0600, the user only; one per
 //! compositor, so nested and headless sessions don't collide) and accepts only the
 //! commands in [`ACTIONS`], with the control channel's JSON lines. `silica-action` is its
-//! client: the Apps and Screenshot applications are `silica-action launcher.toggle` and
-//! `silica-action screenshot.toolbar`.
+//! client: the Apps, Mission Control and Screenshot applications are
+//! `silica-action launcher.toggle`, `panorama.toggle` and `screenshot.toolbar`.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
