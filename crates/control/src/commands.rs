@@ -64,6 +64,7 @@ pub const SWITCHER_NEXT: &str = "switcher.next";
 pub const SWITCHER_PREVIOUS: &str = "switcher.previous";
 pub const SWITCHER_COMMIT: &str = "switcher.commit";
 pub const SWITCHER_CANCEL: &str = "switcher.cancel";
+pub const SWITCHER_EXPOSE: &str = "switcher.expose";
 pub const CONTROLCENTER_TOGGLE: &str = "controlcenter.toggle";
 pub const SYSTEM_STATUS: &str = "system.status";
 pub const SPACE_LIST: &str = "space.list";
@@ -437,6 +438,13 @@ pub const CATALOG: &[CommandSpec] = &[
         id: SWITCHER_CANCEL,
         label: "Cancel the switcher",
         description: "Closes the app switcher without changing app (Esc).",
+        shortcut: None,
+        params: no_params,
+    },
+    CommandSpec {
+        id: SWITCHER_EXPOSE,
+        label: "App Exposé from the switcher",
+        description: "Closes the app switcher and opens App Exposé of the chosen app (Up or Down while it is open); the Logo key released afterwards changes nothing.",
         shortcut: None,
         params: no_params,
     },
@@ -1324,6 +1332,24 @@ impl Shortcut {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nothing_is_bound_to_the_backtick() {
+        // Logo+` does nothing on the Italian layout (measured). Shortcuts are matched on the
+        // layout's own symbol (the raw Latin symbol of the key, see `handle_key`), so a
+        // binding to `grave` would exist only where the layout produces it.
+        for spec in CATALOG {
+            if let Some(shortcut) = spec.shortcut {
+                let parsed = Shortcut::parse(shortcut).unwrap();
+                assert!(
+                    !parsed.matches(true, false, false, false, "grave")
+                        && !parsed.matches(true, false, false, false, "quoteleft"),
+                    "{}",
+                    spec.id
+                );
+            }
+        }
+    }
 
     #[test]
     fn catalog_ids_are_unique_and_documented() {
