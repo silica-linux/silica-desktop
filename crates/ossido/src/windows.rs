@@ -461,9 +461,17 @@ fn parent_of(window: &Window) -> Option<WlSurface> {
 /// the relationship ended first (an xdg-foreign import destroyed before the toplevel).
 struct LastParent(RefCell<Option<WlSurface>>);
 
+/// The size and place a dialog was centered at.
+type Placed = (Size<i32, Logical>, Point<i32, Logical>);
+
 /// A dialog of another app (xdg-foreign parent) waiting for its first buffer to be centered
-/// over its parent.
-struct CenterOnParent(Cell<bool>);
+/// over its parent. `placed` is the size and place it was given: if the app then changes the
+/// size (a first small frame, then the real one) before the user moves the window, it is
+/// centered again.
+struct CenterOnParent {
+    waiting: Cell<bool>,
+    placed: Cell<Option<Placed>>,
+}
 
 /// Remembers `parent` as the parent of `window` ([`last_parent`]).
 pub fn remember_parent(window: &Window, parent: &WlSurface) {
@@ -486,9 +494,12 @@ pub fn last_parent(window: &Window) -> Option<WlSurface> {
 /// ([`State::center_on_parent`]).
 pub fn center_at_first_buffer(window: &Window) {
     let data = window.user_data();
-    data.insert_if_missing(|| CenterOnParent(Cell::new(true)));
+    data.insert_if_missing(|| CenterOnParent {
+        waiting: Cell::new(true),
+        placed: Cell::new(None),
+    });
     if let Some(pending) = data.get::<CenterOnParent>() {
-        pending.0.set(true);
+        pending.waiting.set(true);
     }
 }
 
@@ -499,10 +510,19 @@ impl State {
         let Some(pending) = window.user_data().get::<CenterOnParent>() else {
             return;
         };
-        if !pending.0.get() || window.geometry().size.is_empty() {
+        let size = window.geometry().size;
+        if size.is_empty() {
             return;
         }
-        pending.0.set(false);
+        let at = self.space.element_location(window);
+        let resized = pending
+            .placed
+            .get()
+            .is_some_and(|(placed_size, placed_at)| placed_size != size && Some(placed_at) == at);
+        if !pending.waiting.get() && !resized {
+            return;
+        }
+        pending.waiting.set(false);
         let Some(parent) = parent_of(window).and_then(|parent| self.window_for(&parent)) else {
             return;
         };
@@ -515,6 +535,7 @@ impl State {
         };
         let to = centered_over(parent_frame, frame.size, self.usable_area());
         let at = location + (to - frame.loc);
+        pending.placed.set(Some((size, at)));
         self.space.map_element(window.clone(), at, false);
     }
 

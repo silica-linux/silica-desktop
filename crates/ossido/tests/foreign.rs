@@ -86,6 +86,52 @@ fn a_dialog_attached_with_a_foreign_handle_opens_centered_over_its_parent() {
     );
 }
 
+/// The scene of #180 on the real output: Preview (708 × 500 at 213,267 under a 30 pt bar), the
+/// dialog's app with its own window. Returns the viewer, its handle and the files window.
+fn big_scene(ossido: &Headless) -> (TestWindow, String, TestWindow) {
+    let files = open_as(ossido, FILES, "files", (300, 200));
+    let mut viewer = open_as(ossido, VIEWER, "viewer", (708, 500));
+    let handle = viewer.export();
+    ossido
+        .client()
+        .call(
+            silica_control::commands::WINDOW_MOVE,
+            json!({"id": titled(&windows(ossido), "viewer").id, "x": 213, "y": 267}),
+        )
+        .unwrap();
+    (viewer, handle, files)
+}
+
+fn assert_centered(ossido: &Headless) {
+    let list = windows(ossido);
+    let viewer = titled(&list, "viewer");
+    let dialog = titled(&list, "open");
+    assert_eq!((dialog.width, dialog.height), (1000, 700), "{list:?}");
+    assert_eq!(
+        (dialog.x + dialog.width / 2, dialog.y + dialog.height / 2),
+        (viewer.x + viewer.width / 2, viewer.y + viewer.height / 2),
+        "{list:?}"
+    );
+}
+
+#[test]
+fn a_dialog_that_grows_after_its_first_buffer_is_centered_at_its_final_size() {
+    let ossido = Headless::start_with("foreign-grow", (1920, 1200), &[]);
+    let (_viewer, handle, _files) = big_scene(&ossido);
+    let mut dialog = open_dialog(&ossido, FILES, "open", &handle);
+    dialog.commit_size((1000, 700));
+    assert_centered(&ossido);
+}
+
+#[test]
+fn a_parent_set_after_the_first_buffer_still_centers_the_dialog() {
+    let ossido = Headless::start_with("foreign-late", (1920, 1200), &[]);
+    let (_viewer, handle, _files) = big_scene(&ossido);
+    let mut dialog = open_as(&ossido, FILES, "open", (1000, 700));
+    dialog.set_foreign_parent(&handle);
+    assert_centered(&ossido);
+}
+
 #[test]
 fn the_dialog_stays_above_its_parent() {
     let ossido = Headless::start_with("foreign-above", (1000, 700), &[]);

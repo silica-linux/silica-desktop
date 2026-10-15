@@ -277,9 +277,6 @@ impl XdgShellHandler for State {
         else {
             return;
         };
-        if !fresh && !unshown {
-            return;
-        }
         let other_app = parent_surface
             .as_ref()
             .and_then(|parent| parent.client())
@@ -287,6 +284,14 @@ impl XdgShellHandler for State {
             != surface.wl_surface().client().map(|client| client.id());
         if other_app {
             crate::windows::center_at_first_buffer(&window);
+            // The parent arrived after the window was shown: it moves over it now.
+            if !unshown {
+                self.center_on_parent(&window);
+                return;
+            }
+        }
+        if !fresh && !unshown {
+            return;
         }
         let Some(parent_at) = self.space.element_location(&parent) else {
             return;

@@ -1032,6 +1032,18 @@ impl TestWindow {
         self.app.exported_handle.clone().unwrap()
     }
 
+    /// Imports `handle` and makes it the parent of this window, after it is already on
+    /// screen (a parent that arrives late).
+    #[allow(dead_code)]
+    pub fn set_foreign_parent(&mut self, handle: &str) {
+        let importer = self.app.importer.clone().expect("zxdg_importer_v2 missing");
+        let qh = self.queue.handle();
+        let imported = importer.import_toplevel(handle.to_owned(), &qh, ());
+        imported.set_parent_of(&self.surface);
+        self.imported = Some(imported);
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
     /// Destroys the imported parent handle: the xdg-foreign relationship ends.
     #[allow(dead_code)]
     pub fn drop_imported(&mut self) {
