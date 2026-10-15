@@ -72,6 +72,14 @@ pub struct LayerOptions {
     pub namespace: String,
 }
 
+/// One more shell layer drawn by the same engine (`--view`, #201): a view of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayerView {
+    pub layer: LayerOptions,
+    /// Initial size in logical pixels (the sides anchored on both edges are the compositor's).
+    pub size: (u32, u32),
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Renderer {
     #[default]
@@ -155,6 +163,8 @@ pub struct Options {
     /// For a layer, the sides anchored on both edges are decided by the compositor.
     pub size: (u32, u32),
     pub layer: Option<LayerOptions>,
+    /// More shell layers in this engine, after the main one (`--view`, #201).
+    pub layer_views: Vec<LayerView>,
     pub renderer: Renderer,
     /// AOT-compiled `libapp.so`, for a release engine; ignored with a debug engine.
     pub aot: Option<PathBuf>,
