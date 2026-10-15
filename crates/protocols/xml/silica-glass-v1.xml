@@ -68,8 +68,8 @@
     <enum name="profile" since="7">
       <description summary="the kind of surface a glass belongs to">
         The compositor picks the blur, the refraction (strength and how far it reaches from the
-        edge), the edge light, the tint and saturation and the shadow of each kind. The
-        material stays the base color of the glass. default: the kind follows from the
+        edge), the edge light, the tint and saturation and the shadow of each kind, and its
+        tone (what the background becomes behind it). default: the kind follows from the
         material (clear: dock, thick: menu, regular: module, notification: banner).
       </description>
       <entry name="default" value="0" summary="from the material"/>
@@ -81,6 +81,7 @@
       <entry name="tooltip" value="6" summary="tooltips and labels"/>
       <entry name="sheet" value="7" summary="sheets and alerts"/>
       <entry name="banner" value="8" summary="notification banners"/>
+      <entry name="popover" value="9" summary="popovers (a bubble with a tip)"/>
     </enum>
 
     <enum name="shadow" since="7">

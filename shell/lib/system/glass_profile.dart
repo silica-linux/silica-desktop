@@ -16,6 +16,7 @@ enum ShellGlassProfile {
   tooltip,
   sheet,
   banner,
+  popover,
 }
 
 /// A [Glass] of a kind of surface. Same layout and regions as [Glass] (and as a
