@@ -1003,9 +1003,9 @@ pub fn output_elements(
         let to_u8 = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
         let look = crate::panorama::BarLook {
             width: output_logical.w,
-            output: output_logical,
-            count: context.spaces.0,
+            thumbnails: panorama.thumbnail_rects.clone(),
             active: context.spaces.1,
+            plus: panorama.plus,
             expansion: panorama.expansion,
             backdrop: context.clear_color.map(to_u8),
             labels: panorama.labels.clone(),
@@ -1488,7 +1488,7 @@ mod tests {
         use smithay::backend::renderer::utils::CommitCounter;
         use smithay::utils::{Point, Scale, Size};
         let output = Size::<f64, Logical>::from(output);
-        let rects = crate::panorama::thumbnail_rects(count, output);
+        let rects = crate::thumbnail_row::centered(count, output);
         let thumb = rects[index];
         let s = thumb.size.w / output.w;
         let cell = thumb.to_physical_precise_round(scale);

@@ -144,12 +144,10 @@ fn a_window_dragged_onto_a_thumbnail_changes_space() {
     let s = state(&ossido);
     assert_eq!(s.expansion, 1.0);
     assert_eq!(s.thumbnails.len(), 2);
-    // Below the expanded bar it collapses again; the command reopens it.
+    // Once expanded it stays so, also with the pointer down (missioncontrol.md › PA-14).
     c.call(INPUT_POINTER_MOVE, json!({"x": 100, "y": 799}))
         .unwrap();
-    assert_eq!(state(&ossido).expansion, 0.0);
-    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
-        .unwrap();
+    assert_eq!(state(&ossido).expansion, 1.0);
     let s = state(&ossido);
     assert_eq!(s.expansion, 1.0);
     let shot = screenshot(&ossido);
@@ -490,4 +488,72 @@ fn the_spaces_bar_blurs_what_is_under_it() {
     // Still stripes, softened: what is under it shows through.
     let (low, high) = (row.iter().min().unwrap(), row.iter().max().unwrap());
     assert!(high - low > 20, "nothing shows through the bar: {row:?}");
+}
+
+#[test]
+fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_below() {
+    let ossido = Headless::start_with("panorama-row", (1280, 800), &[]);
+    let _wallpaper = reference_gray(&ossido);
+    let mut c = ossido.client();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
+        .unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    // Compact bar: 1 pt border (#58595c over the gray) and the shadow below it.
+    let shot = screenshot(&ossido);
+    assert!(
+        near(rgb_at(&shot, 100.0, 40.0), [0x58, 0x59, 0x5c], 3),
+        "{:?}",
+        rgb_at(&shot, 100.0, 40.0)
+    );
+    assert!(
+        near(rgb_at(&shot, 100.0, 41.0), [0x62, 0x63, 0x67], 3),
+        "{:?}",
+        rgb_at(&shot, 100.0, 41.0)
+    );
+    assert!(near(rgb_at(&shot, 100.0, 110.0), [0x7a, 0x7b, 0x80], 2));
+
+    // One space: its thumbnail in the middle, 90 pt tall from y 52 (16:10 → 144 wide).
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let t = state(&ossido).thumbnails;
+    assert_eq!(t.len(), 1);
+    assert_eq!(
+        (t[0].x + t[0].width / 2.0, t[0].y, t[0].height),
+        (640.0, 52.0, 90.0)
+    );
+    let shot = screenshot(&ossido);
+    // Expanded: border #5f6063 at y 170, shadow from #6a6b6f.
+    assert!(
+        near(rgb_at(&shot, 100.0, 170.0), [0x5f, 0x60, 0x63], 3),
+        "{:?}",
+        rgb_at(&shot, 100.0, 170.0)
+    );
+    assert!(
+        near(rgb_at(&shot, 100.0, 171.0), [0x6a, 0x6b, 0x6f], 3),
+        "{:?}",
+        rgb_at(&shot, 100.0, 171.0)
+    );
+    // The label: dark ink under the thumbnail inside the bar (caps ~150–159), none below it.
+    let ink = |shot: &[u8], rows: std::ops::Range<u32>| {
+        rows.flat_map(|y| (560..720).map(move |x| (x, y)))
+            .filter(|&(x, y)| rgb_at(shot, f64::from(x), f64::from(y))[0] < 60)
+            .count()
+    };
+    assert!(ink(&shot, 146..166) > 20, "no label under the thumbnail");
+    assert_eq!(ink(&shot, 166..190), 0, "the label spills out of the bar");
+
+    // A space added: the first stays, the new one goes to its right (no recentering)...
+    c.call(SPACE_ADD, Value::Null).unwrap();
+    let t = state(&ossido).thumbnails;
+    assert_eq!(t.len(), 2);
+    assert_eq!(t[0].x, 568.0);
+    assert_eq!(t[1].x, 568.0 + 144.0 + 32.0);
+    // ...until the bar expands again: then the row is centered.
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": false}))
+        .unwrap();
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let t = state(&ossido).thumbnails;
+    assert_eq!((t[0].x, t[1].x), (480.0, 656.0));
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
 }

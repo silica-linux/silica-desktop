@@ -35,6 +35,7 @@ mod session_bus;
 mod shell;
 pub mod state;
 mod system;
+mod thumbnail_row;
 mod transient;
 mod window_appearance;
 mod windows;

@@ -40,9 +40,15 @@ const BAR_TINT_ALPHA_DARK: f64 = 0.31;
 const REFERENCE_WALLPAPER: [u8; 3] = [0x7a, 0x7b, 0x80];
 /// σ of the blur under the bar, in points. Not measured (solid wallpaper in the reference).
 pub const BAR_BLUR_PT: f64 = 20.0;
-const BAR_BORDER: [u8; 4] = [0x58, 0x59, 0x5c, 0xff];
-/// The shadow below the bar darkens the wallpaper by ~24 levels out of 122 at the edge.
-const BAR_SHADOW_ALPHA: f32 = 0.2;
+/// The 1 pt border row below the bar: `#58595c` (compact) and `#5f6063` (expanded) over the
+/// `#7a7b80` wallpaper, i.e. black at 28 % and 22 % over what is under it. Dark: not
+/// measured, the same darkening (estimate).
+const BAR_BORDER_ALPHA: f64 = 0.28;
+const EXPANDED_BORDER_ALPHA: f64 = 0.22;
+/// The shadow below the bar darkens the wallpaper at its top edge: from `#626367` (compact,
+/// ~20 %) and from `#6a6b6f` (expanded, ~13 %) back to `#7a7b80`. Dark: not measured.
+const BAR_SHADOW_ALPHA: f64 = 0.2;
+const EXPANDED_SHADOW_ALPHA: f64 = 0.13;
 const CAPSULE_FILL: [u8; 4] = [0x87, 0x88, 0x8e, 0xff];
 const CAPSULE_BORDER: [u8; 4] = [0x8d, 0x8e, 0x94, 0xff];
 const CAPSULE_FILL_DARK: [u8; 4] = [0x78, 0x79, 0x7e, 0xff];
@@ -77,13 +83,6 @@ const EXPANDED_SHADOW: f64 = 40.0;
 const EXPANDED_FILL_BOTTOM: [u8; 4] = [0xa4, 0xa5, 0xab, 0xff];
 const EXPANDED_FILL_BOTTOM_DARK: [u8; 4] = [0x5b, 0x5c, 0x61, 0xff];
 const EXPANDED_FILL_FROM: f64 = 114.0;
-const EXPANDED_BORDER: [u8; 4] = [0x5f, 0x60, 0x63, 0xff];
-/// Thumbnails: 160 pt wide (16:9 on the reference screen), 52 pt from the edge, 32 pt
-/// between them; the group leaves an empty slot on the right (with two spaces the second
-/// thumbnail is at the center of the screen).
-const THUMB_WIDTH: f64 = 160.0;
-const THUMB_TOP: f64 = 52.0;
-const THUMB_GAP: f64 = 32.0;
 /// Ring of the current space: 3 pt, 1 pt of bar between ring and thumbnail, sRGB `#3b99fd`.
 const RING_WIDTH: f64 = 3.0;
 const RING_GAP: f64 = 1.0;
@@ -539,6 +538,10 @@ pub struct Panorama {
     pub drag: Option<Drag>,
     /// The window going back to its place after a drop that changed nothing.
     pub returning: Option<Returning>,
+    /// The space thumbnails, laid out when the bar expands.
+    pub row: Option<crate::thumbnail_row::Row>,
+    /// The time of the last frame.
+    pub clock: Instant,
 }
 
 /// A space thumbnail in the frame: where it is and the windows of the space (from bottom to
@@ -558,6 +561,10 @@ pub struct PanoramaView {
     pub expansion: f64,
     /// The thumbnails, only when visible.
     pub thumbnails: Vec<Thumbnail>,
+    /// Where the thumbnails are in the bar (bar coordinates, also when not visible).
+    pub thumbnail_rects: Vec<Rectangle<f64, Logical>>,
+    /// Whether the "+" shows (not at the maximum of spaces).
+    pub plus: bool,
     /// The dragged window and its frame at this moment.
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
     /// The label of each space.
@@ -604,6 +611,18 @@ pub fn window_label(window: &Window) -> String {
         .filter(|t| !t.is_empty())
         .or_else(|| app_id.and_then(|id| id.rsplit('.').next().map(str::to_owned)))
         .unwrap_or_default()
+}
+
+/// The label of the only desktop: without a number.
+pub fn lone_desktop_label() -> String {
+    lone_label_in(&system_language(|key| std::env::var(key).ok()))
+}
+
+fn lone_label_in(language: &str) -> String {
+    match language {
+        "it" => "Spazio".to_owned(),
+        _ => "Space".to_owned(),
+    }
 }
 
 fn space_label_in(index: usize, language: &str) -> String {
@@ -655,31 +674,6 @@ fn bar_items(labels: &[String], width: f64) -> Vec<BarItem> {
         x += item.rect.size.w + LABEL_GAP;
     }
     items
-}
-
-/// The space thumbnails in the expanded bar: `count` thumbnails plus an empty slot,
-/// centered; if they do not fit they all shrink together.
-pub fn thumbnail_rects(count: usize, output: Size<f64, Logical>) -> Vec<Rectangle<f64, Logical>> {
-    if output.w <= 0.0 || output.h <= 0.0 {
-        return Vec::new();
-    }
-    let slots = count.saturating_add(1) as f64;
-    let natural = slots * THUMB_WIDTH + (slots - 1.0) * THUMB_GAP;
-    // Margin for the "+" on the right and symmetric on the left.
-    let room = output.w - 4.0 * PLUS_RIGHT;
-    let shrink = (room / natural).clamp(0.05, 1.0);
-    let width = THUMB_WIDTH * shrink;
-    let gap = THUMB_GAP * shrink;
-    let height = width * output.h / output.w;
-    let x0 = (output.w - natural * shrink) / 2.0;
-    (0..count)
-        .map(|i| {
-            Rectangle::new(
-                (x0 + i as f64 * (width + gap), THUMB_TOP).into(),
-                (width, height).into(),
-            )
-        })
-        .collect()
 }
 
 fn plus_rect(width: f64, expansion: f64) -> Rectangle<f64, Logical> {
@@ -844,6 +838,8 @@ impl State {
             expansion: 0.0,
             drag: None,
             returning: None,
+            row: None,
+            clock: now,
         });
         if self.animation_speed <= 0.0 {
             self.advance_panorama(now);
@@ -872,6 +868,7 @@ impl State {
 
     /// Expands or collapses the spaces bar.
     pub fn expand_spaces_bar(&mut self, expanded: bool, now: Instant) {
+        let output = self.output_size();
         let Some(panorama) = self.panorama.as_mut() else {
             return;
         };
@@ -881,6 +878,14 @@ impl State {
         panorama.expanded = expanded;
         panorama.expand_from = panorama.expansion;
         panorama.expand_start = now;
+        // The row is recentered when the bar expands (spaces.md › Thumbnail layout).
+        if expanded && panorama.expansion < THUMBS_FROM {
+            panorama.row = Some(crate::thumbnail_row::Row::centered(
+                self.workspaces.count(),
+                output,
+                now,
+            ));
+        }
         if self.animation_speed <= 0.0 {
             self.advance_panorama(now);
         }
@@ -889,9 +894,22 @@ impl State {
     /// Advances the animations (on every frame); once fully closed, Panorama disappears.
     pub fn advance_panorama(&mut self, now: Instant) {
         let speed = self.animation_speed;
+        let count = self.workspaces.count();
+        let output = self.output_size();
         let Some(panorama) = self.panorama.as_mut() else {
             return;
         };
+        panorama.clock = now;
+        // Spaces added or removed elsewhere (commands, full screen): added ones slide in,
+        // removed ones (index unknown) leave from the end.
+        if let Some(row) = panorama.row.as_mut() {
+            while row.len() < count {
+                row.add(output, now, speed);
+            }
+            while row.len() > count {
+                row.remove(row.len() - 1, output, now, speed);
+            }
+        }
         let elapsed = |start: Instant| {
             let ms = now.saturating_duration_since(start).as_secs_f64() * 1000.0;
             if speed <= 0.0 { f64::MAX } else { ms / speed }
@@ -965,11 +983,16 @@ impl State {
 
     pub fn panorama_view(&self) -> Option<PanoramaView> {
         let panorama = self.panorama.as_ref()?;
+        // The thumbnails go up with the bar when Panorama closes.
+        let lift = bar_top(panorama.expansion, panorama.progress);
         let thumbnails = if panorama.expansion >= THUMBS_FROM {
-            thumbnail_rects(self.workspaces.count(), self.output_size())
+            self.thumbnail_rects_now()
                 .into_iter()
                 .zip(self.space_contents())
-                .map(|(rect, windows)| Thumbnail { rect, windows })
+                .map(|(rect, windows)| Thumbnail {
+                    rect: Rectangle::new(rect.loc + Point::from((0.0, lift)), rect.size),
+                    windows,
+                })
                 .collect()
         } else {
             Vec::new()
@@ -1001,9 +1024,51 @@ impl State {
             placements: panorama.placements.clone(),
             expansion: panorama.expansion,
             thumbnails,
+            thumbnail_rects: self.thumbnail_rects_now(),
             drag,
             labels: self.space_labels(),
+            plus: self.workspaces.count() < crate::workspaces::MAX_SPACES,
         })
+    }
+
+    /// A space was added at the end: with the bar expanded its thumbnail slides in.
+    pub fn panorama_space_added(&mut self, now: Instant) {
+        let (output, speed) = (self.output_size(), self.animation_speed);
+        if let Some(row) = self.panorama.as_mut().and_then(|p| p.row.as_mut()) {
+            row.add(output, now, speed);
+        }
+    }
+
+    /// The space at `index` was removed: its thumbnail goes, the others close the gap.
+    pub fn panorama_space_removed(&mut self, index: usize, now: Instant) {
+        let (output, speed) = (self.output_size(), self.animation_speed);
+        if let Some(row) = self.panorama.as_mut().and_then(|p| p.row.as_mut()) {
+            row.remove(index, output, now, speed);
+        }
+        // The windows of the active space may have changed.
+        if self
+            .panorama
+            .as_ref()
+            .is_some_and(|p| p.mode == Mode::Panorama && p.opening)
+        {
+            let placements = self.panorama_placements(Mode::Panorama);
+            if let Some(panorama) = self.panorama.as_mut() {
+                panorama.placements = placements;
+            }
+        }
+    }
+
+    /// Where the space thumbnails are now (at rest, without the bar's own movement).
+    fn thumbnail_rects_now(&self) -> Vec<Rectangle<f64, Logical>> {
+        let output = self.output_size();
+        match self
+            .panorama
+            .as_ref()
+            .and_then(|p| Some((p.row.as_ref()?, p.clock)))
+        {
+            Some((row, now)) => row.rects(now, self.animation_speed),
+            None => crate::thumbnail_row::centered(self.workspaces.count(), output),
+        }
     }
 
     /// The pointer moves with Panorama open: at the top the bar expands, below the expanded
@@ -1025,11 +1090,9 @@ impl State {
                 drag.moved = true;
             }
         }
-        let expanded = panorama.expanded;
-        if !expanded && location.y < BAR_HEIGHT {
+        // Once expanded the bar stays so while Panorama is open (missioncontrol.md › PA-14).
+        if !panorama.expanded && location.y < BAR_HEIGHT {
             self.expand_spaces_bar(true, now);
-        } else if expanded && location.y > EXPANDED_HEIGHT {
-            self.expand_spaces_bar(false, now);
         }
     }
 
@@ -1039,7 +1102,7 @@ impl State {
         if panorama.expansion < THUMBS_FROM {
             return None;
         }
-        thumbnail_rects(self.workspaces.count(), self.output_size())
+        self.thumbnail_rects_now()
             .iter()
             .position(|rect| rect.contains(location))
     }
@@ -1062,7 +1125,9 @@ impl State {
             return;
         }
         if panorama.mode == Mode::Panorama && location.y < bar_height(expansion) {
-            if plus_rect(width, expansion).contains(location) {
+            if self.workspaces.count() < crate::workspaces::MAX_SPACES
+                && plus_rect(width, expansion).contains(location)
+            {
                 // The bar redraws by itself: its key is the number of spaces.
                 if let Err(err) = self.add_space() {
                     tracing::info!("panorama: {err}");
@@ -1182,24 +1247,12 @@ impl State {
                 .collect(),
             expansion: panorama.expansion,
             thumbnails: if panorama.expansion >= THUMBS_FROM {
-                thumbnail_rects(self.workspaces.count(), self.output_size())
-                    .into_iter()
-                    .map(rect)
-                    .collect()
+                self.thumbnail_rects_now().into_iter().map(rect).collect()
             } else {
                 Vec::new()
             },
         }
     }
-}
-
-fn mix(a: [u8; 4], b: [u8; 4], t: f64) -> [u8; 4] {
-    let t = t.clamp(0.0, 1.0);
-    let mut out = [0; 4];
-    for (o, (x, y)) in out.iter_mut().zip(a.iter().zip(b)) {
-        *o = (f64::from(*x) + (f64::from(y) - f64::from(*x)) * t).round() as u8;
-    }
-    out
 }
 
 /// The tint (premultiplied, 0–255) that over the reference gray gives `target` with this
@@ -1254,9 +1307,11 @@ fn faded(color: [u8; 4], alpha: f64) -> [u8; 4] {
 /// What is needed to draw the bar.
 pub struct BarLook {
     pub width: f64,
-    pub output: Size<f64, Logical>,
-    pub count: usize,
+    /// The thumbnails (bar coordinates).
+    pub thumbnails: Vec<Rectangle<f64, Logical>>,
     pub active: usize,
+    /// Whether the "+" shows.
+    pub plus: bool,
     pub expansion: f64,
     /// Color of the thumbnails behind the wallpaper (the desktop's).
     pub backdrop: [u8; 4],
@@ -1275,10 +1330,16 @@ impl BarLook {
 
     /// Cache key: it changes with what is visible (height at the whole point).
     fn key(&self) -> String {
+        let thumbs: Vec<String> = self
+            .thumbnails
+            .iter()
+            .map(|r| format!("{:.1},{:.1},{:.1}", r.loc.x, r.loc.y, r.size.w))
+            .collect();
         format!(
-            "{}:{}:{}:{}:{:?}:{}",
+            "{}:{}:{}:{}:{}:{:?}:{}",
             self.dark,
-            self.count,
+            self.plus,
+            thumbs.join(";"),
             self.active,
             (self.expansion * 1000.0).round(),
             self.backdrop,
@@ -1302,13 +1363,18 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
         canvas.fill_rect([0.0, row as f32, w, h], color);
     }
     let bar = height as f32;
-    canvas.fill_rect([0.0, bar, w, 1.0], mix(BAR_BORDER, EXPANDED_BORDER, e));
+    let border = BAR_BORDER_ALPHA + (EXPANDED_BORDER_ALPHA - BAR_BORDER_ALPHA) * e;
+    canvas.fill_rect(
+        [0.0, bar, w, 1.0],
+        [0, 0, 0, (border * 255.0).round() as u8],
+    );
     // Shadow: black fading to zero.
     let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * e;
+    let strength = BAR_SHADOW_ALPHA + (EXPANDED_SHADOW_ALPHA - BAR_SHADOW_ALPHA) * e;
     let rows = shadow as usize;
     for row in 0..rows {
-        let t = 1.0 - row as f32 / rows as f32;
-        let alpha = (BAR_SHADOW_ALPHA * t * t * 255.0).round() as u8;
+        let t = 1.0 - row as f64 / rows as f64;
+        let alpha = (strength * t * t * 255.0).round() as u8;
         canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
     let (capsule_fill, capsule_border, label_color, plus_color) = if look.dark {
@@ -1351,10 +1417,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     // the label.
     let shown = (e - THUMBS_FROM) / (THUMBS_FULL - THUMBS_FROM);
     if shown > 0.0 {
-        for (index, r) in thumbnail_rects(look.count, look.output)
-            .into_iter()
-            .enumerate()
-        {
+        for (index, r) in look.thumbnails.iter().copied().enumerate() {
             let rect = [
                 r.loc.x as f32,
                 r.loc.y as f32,
@@ -1376,6 +1439,10 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                     faded(RING_COLOR, shown),
                 );
             }
+            // Shrunk thumbnails (16 spaces) have no label.
+            if !crate::thumbnail_row::full_size(r) {
+                continue;
+            }
             let label = look.labels.get(index).cloned().unwrap_or_default();
             let text = f64::from(text_width(&label, THUMB_LABEL_SIZE, Weight::Regular));
             canvas.text(
@@ -1389,6 +1456,9 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                 faded(label_color, shown),
             );
         }
+    }
+    if !look.plus {
+        return;
     }
     let plus = plus_rect(look.width, e);
     let cx = (plus.loc.x + plus.size.w / 2.0) as f32;
@@ -1512,6 +1582,8 @@ mod tests {
         assert_eq!(super::space_label_in(0, "it"), "Spazio 1");
         assert_eq!(super::space_label_in(1, "en"), "Space 2");
         assert_eq!(super::space_label_in(2, "de"), "Space 3");
+        assert_eq!(super::lone_label_in("it"), "Spazio");
+        assert_eq!(super::lone_label_in("en"), "Space");
     }
 
     use super::*;

@@ -265,6 +265,7 @@ impl State {
         }
         self.workspaces.stored.push(Vec::new());
         self.workspaces.owners.push(None);
+        self.panorama_space_added(Instant::now());
         Ok(self.workspaces.count() - 1)
     }
 
@@ -294,6 +295,14 @@ impl State {
     /// The labels of the spaces bar: "Desktop n" counting only desktops, the window title for a
     /// full-screen space (title or app name: not determined in the reference; provisional).
     pub fn space_labels(&self) -> Vec<String> {
+        // A single desktop has no number (missioncontrol.md › PA-14).
+        let alone = self
+            .workspaces
+            .owners
+            .iter()
+            .filter(|owner| owner.is_none())
+            .count()
+            == 1;
         let mut desktops = 0;
         (0..self.workspaces.count())
             .map(
@@ -301,7 +310,11 @@ impl State {
                     Some(window) => crate::panorama::window_label(&window),
                     None => {
                         desktops += 1;
-                        crate::panorama::desktop_label(desktops - 1)
+                        if alone {
+                            crate::panorama::lone_desktop_label()
+                        } else {
+                            crate::panorama::desktop_label(desktops - 1)
+                        }
                     }
                 },
             )
@@ -370,6 +383,7 @@ impl State {
         self.workspaces.active = new_active;
         let top = self.space.elements().last().cloned();
         self.focus_window(top);
+        self.panorama_space_removed(index, Instant::now());
         Ok(())
     }
 
