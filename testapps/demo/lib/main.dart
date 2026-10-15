@@ -14,6 +14,14 @@
 //   itself).
 // - F3 exports the main window for another app (`exportHandle`, xdg-foreign) and shows the
 //   identifier it got ("wayland:<handle>") as the window title, for the tests to read.
+// - `--close=MODE` (a Dart argument, silica-desktop#192) sets how the main window's close
+//   request is answered: `none` listens on no `silica/window` at all (an app on an older
+//   silica_ui), `silent` listens but never answers it (a hung handler), `ask` says it is
+//   asking (`closeAsking`) and closes the window at the next tap, as a confirmation would;
+//   `draw` does the same without `closeAsking`, drawing [typed] meanwhile (a confirmation
+//   from silica_ui before 0.38).
+//   Without it the app closes the main window itself at once.
+import 'dart:async';
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/services.dart';
@@ -38,7 +46,16 @@ const MethodChannel windowChannel = MethodChannel(
   JSONMethodCodec(),
 );
 
-void main() => runApp(const DemoApp());
+/// How the main window's close request is answered (`--close=MODE`).
+String closeMode = '';
+
+void main(List<String> args) {
+  for (final arg in args) {
+    if (arg.startsWith('--close='))
+      closeMode = arg.substring('--close='.length);
+  }
+  runApp(const DemoApp());
+}
 
 class DemoApp extends StatefulWidget {
   const DemoApp({super.key});
@@ -55,12 +72,15 @@ class _DemoAppState extends State<DemoApp> {
   /// The second window's view, while it is open.
   FlutterView? secondView;
 
+  /// The answer to a main window close request being asked (`--close=ask`).
+  Completer<void>? asking;
+
   @override
   void initState() {
     super.initState();
     text.addListener(() => setState(() {}));
     HardwareKeyboard.instance.addHandler(_onKey);
-    windowChannel.setMethodCallHandler(_onWindowCall);
+    if (closeMode != 'none') windowChannel.setMethodCallHandler(_onWindowCall);
   }
 
   Future<Object?> _onWindowCall(MethodCall call) async {
@@ -68,9 +88,27 @@ class _DemoAppState extends State<DemoApp> {
     final id = args is Map ? args['viewId'] : null;
     switch (call.method) {
       case 'closeRequested':
+        if (id == 0 && closeMode == 'silent') {
+          // Never answered.
+          await Completer<void>().future;
+        }
+        if (id == 0 && (closeMode == 'ask' || closeMode == 'draw')) {
+          if (closeMode == 'ask') {
+            await windowChannel.invokeMethod<Object?>('closeAsking', {
+              'viewId': id,
+              'request': args is Map ? args['request'] : null,
+            });
+          }
+          final answer = Completer<void>();
+          setState(() => asking = answer);
+          await answer.future;
+        }
         // The app closes the window itself (it could ask to save first).
         await _closeSecond(id);
         return true;
+      case 'closeProbe':
+        // True: this app says closeAsking when it asks (not `draw`, an older silica_ui).
+        return closeMode == 'silent' || closeMode == 'ask';
       case 'windowClosed':
         if (id == secondView?.viewId) setState(() => secondView = null);
     }
@@ -134,7 +172,9 @@ class _DemoAppState extends State<DemoApp> {
   }
 
   Color get background {
-    if (text.text == magicWord) return typed;
+    if (text.text == magicWord || (asking != null && closeMode == 'draw')) {
+      return typed;
+    }
     return taps.isEven ? idle : tapped;
   }
 
@@ -158,7 +198,15 @@ class _DemoAppState extends State<DemoApp> {
       textDirection: TextDirection.ltr,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => taps++),
+        onTap: () {
+          final answer = asking;
+          if (answer != null) {
+            setState(() => asking = null);
+            answer.complete();
+            return;
+          }
+          setState(() => taps++);
+        },
         child: ColoredBox(
           color: background,
           child: Stack(
