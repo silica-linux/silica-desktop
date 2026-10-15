@@ -97,20 +97,14 @@ impl State {
         }
     }
 
-    /// A thread waits for the process and reports its exit on the loop.
-    fn watch(&self, index: usize, mut child: Child) {
+    /// The process is reaped on its own thread (`reap.rs`), which reports its exit on the loop.
+    fn watch(&self, index: usize, child: Child) {
         let Some(sender) = self.keeper.exits.clone() else {
             return;
         };
-        let spawned = std::thread::Builder::new()
-            .name(format!("keep-shell-{index}"))
-            .spawn(move || {
-                let _ = child.wait();
-                let _ = sender.send(index);
-            });
-        if let Err(err) = spawned {
-            warn!("keep-shell: no watcher thread: {err}");
-        }
+        crate::reap::reap(child, move || {
+            let _ = sender.send(index);
+        });
     }
 
     fn kept_exited(&mut self, index: usize) {
