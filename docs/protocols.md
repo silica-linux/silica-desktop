@@ -40,7 +40,10 @@ top.
   rounded apex at the center of the bottom side, which merges with the body of its group into
   a single shape: the edge runs continuously from the body to the tip (the tip of the Dock's
   menus, `misc.md`). `silica_ui` sends them with `Glass.group` and `Glass.tip`; an embedder
-  bound to an earlier version ignores groups and tips.
+  bound to an earlier version ignores groups and tips. The embedder sorts the regions by
+  `Glass.group`, a signed integer, and separates them where it changes: the menus of
+  `silica_ui` take 0 and up, so the shell puts what must stay below them in negative groups
+  (the Dock's are in `shell/lib/dock/glass_groups.dart`).
 - Since version 5: `add_upward_tip(...)`, the same tip upside down (base on the bottom side,
   apex at the top): the arrangement popover below the green button. `GlassTip.up` in
   `silica_ui`.
