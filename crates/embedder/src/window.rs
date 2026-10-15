@@ -56,7 +56,7 @@ use smithay_client_toolkit::{
     delegate_pointer, delegate_registry, delegate_seat, delegate_shm, delegate_xdg_shell,
     delegate_xdg_window, registry_handlers,
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
@@ -296,8 +296,15 @@ enum ViewEvent {
     Added(i64, bool),
     /// `FlutterEngineRemoveView` done.
     Removed(i64),
-    /// The app's answer to `closeRequested`: true if it closes the window itself.
-    CloseAnswered(i64, bool),
+    /// The app's answer to `closeRequested` number `request`: true if it closes the window
+    /// itself.
+    CloseAnswered {
+        id: i64,
+        request: u64,
+        handled: bool,
+    },
+    /// The app's answer to `closeProbe`: true if it says `closeAsking` when it asks.
+    CloseProbeAnswered(bool),
 }
 
 struct App {
@@ -400,8 +407,14 @@ struct App {
     /// A helper process (`--helper`): it ends with its window, whatever the app asks.
     helper: bool,
     hidden_since: Option<std::time::Instant>,
-    /// Windows whose `closeRequested` the app has not answered yet.
-    close_asked: std::collections::BTreeSet<i64>,
+    /// The `closeRequested` the app has not answered yet (silica-desktop#192).
+    close_requests: views::CloseRequests,
+    /// When the engine last asked for a frame: an app drawing after a close request is
+    /// likely showing a confirmation (silica_ui before `closeAsking`).
+    frame_requested_at: Option<std::time::Instant>,
+    /// The app says `closeAsking` when it asks before a close (silica_ui 0.38): a frame
+    /// does not count as asking.
+    says_close_asking: bool,
     /// The app answers `reopen` itself (silica_ui `SilicaApp`): it builds its new window and
     /// calls `openWindow`, and only then the window comes back (APP-LC). Without it the
     /// hidden window comes back at once.
@@ -826,7 +839,9 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         quit_with_last_window: false,
         helper: options.helper,
         hidden_since: None,
-        close_asked: std::collections::BTreeSet::new(),
+        close_requests: views::CloseRequests::default(),
+        frame_requested_at: None,
+        says_close_asking: false,
         handles_reopen: false,
         free_run_until: None,
         show_pending: false,
@@ -981,6 +996,19 @@ impl App {
         let method = call.get("method").and_then(serde_json::Value::as_str);
         if method == Some("closeWindow") {
             self.close_view(id);
+            return crate::text_input::success(serde_json::Value::Null);
+        }
+        if method == Some("closeAsking") {
+            // The app asks the user before closing window `id`: its answer is waited for.
+            let request = call
+                .pointer("/args/request")
+                .and_then(serde_json::Value::as_u64);
+            if let Some(pending) = self.close_requests.asking(id, request) {
+                info!(
+                    "window {id}: the app is asking before closing ({} ms)",
+                    pending.since.elapsed().as_millis()
+                );
+            }
             return crate::text_input::success(serde_json::Value::Null);
         }
         let Some(View {
@@ -1282,9 +1310,21 @@ impl App {
                 }
             }
             ViewEvent::Removed(id) => self.forget_view(id),
-            ViewEvent::CloseAnswered(id, handled) => {
-                self.close_asked.remove(&id);
-                if !handled {
+            ViewEvent::CloseProbeAnswered(says) => self.says_close_asking |= says,
+            ViewEvent::CloseAnswered {
+                id,
+                request,
+                handled,
+            } => {
+                let Some(pending) = self.close_requests.answered(id, request) else {
+                    debug!("window {id}: stale answer to close request {request}");
+                    return;
+                };
+                let took = pending.since.elapsed().as_millis();
+                if handled {
+                    info!("window {id}: the app answers its close itself ({took} ms)");
+                } else {
+                    info!("window {id}: close answered in {took} ms");
                     self.close_view(id);
                 }
             }
@@ -1308,6 +1348,12 @@ impl App {
     /// the main one), or the app's `closeWindow`. The app lifecycle covers every window
     /// (APP-LC): only the last one on screen makes the app windowless, or ends it.
     fn close_view(&mut self, id: i64) {
+        if let Some(pending) = self.close_requests.forget(id) {
+            info!(
+                "window {id}: closed {} ms after its close request",
+                pending.since.elapsed().as_millis()
+            );
+        }
         let Some(view) = self.views.get(&id) else {
             return;
         };
@@ -1413,29 +1459,90 @@ impl App {
     }
 
     /// The close button of window `id` (the main one too): the app decides (`closeRequested`
-    /// answered true: it closes the window itself, after asking to save a draft); otherwise,
-    /// or with no answer, the window closes now.
+    /// answered true: it closes the window itself, after asking to save a draft); otherwise
+    /// the window closes now. With no answer and no `closeAsking` within `CLOSE_WAIT` it
+    /// closes anyway (silica-desktop#192): a hung app. An app with no listener on
+    /// `silica/window` never answers either (the engine buffers the request): `closeProbe`
+    /// right after it makes the engine answer it at once.
     fn request_close(&mut self, id: i64) {
         let (Some(engine), Some(events)) = (&self.engine, &self.view_events) else {
             self.close_view(id);
             return;
         };
-        if !self.close_asked.insert(id) {
+        let Some(request) = self.close_requests.ask(id, std::time::Instant::now()) else {
             // The app is still answering the previous request (a confirmation is up).
+            debug!("window {id}: close request already being answered");
             return;
-        }
+        };
+        let probe_events = events.clone();
         let events = events.clone();
         let sent = engine.send_message_with_reply(
             WINDOW_CHANNEL,
-            &crate::drag::call("closeRequested", serde_json::json!({ "viewId": id })),
+            &crate::drag::call(
+                "closeRequested",
+                serde_json::json!({ "viewId": id, "request": request }),
+            ),
             move |reply| {
                 let handled = close_answer(&reply);
-                let _ = events.send(ViewEvent::CloseAnswered(id, handled));
+                let _ = events.send(ViewEvent::CloseAnswered {
+                    id,
+                    request,
+                    handled,
+                });
             },
         );
         if let Err(err) = sent {
             warn!("closeRequested: {err}");
-            self.close_asked.remove(&id);
+            self.close_view(id);
+            return;
+        }
+        // With no listener on the channel the engine holds a message (one at most) instead
+        // of answering it: this one pushes the request out, and the engine answers it empty
+        // at once (the window closes now). With a listener it is answered: true when the app
+        // says `closeAsking` when it asks.
+        if let Err(err) = engine.send_message_with_reply(
+            WINDOW_CHANNEL,
+            &crate::drag::call("closeProbe", serde_json::json!({ "viewId": id })),
+            move |reply| {
+                let _ = probe_events.send(ViewEvent::CloseProbeAnswered(close_answer(&reply)));
+            },
+        ) {
+            warn!("closeProbe: {err}");
+        }
+        let timer = Timer::from_duration(views::CLOSE_WAIT);
+        let inserted = self
+            .loop_handle
+            .insert_source(timer, move |_, _, app: &mut App| {
+                app.close_wait_over(id, request);
+                TimeoutAction::Drop
+            });
+        if let Err(err) = inserted {
+            warn!("close timer: {err}");
+        }
+    }
+
+    /// `CLOSE_WAIT` after close request `request` of window `id`: unanswered, it closes the
+    /// window, unless the app said it is asking (`closeAsking`). An app that does not say it
+    /// (silica_ui before 0.38, Terminal's confirmation) is waited for when it has asked for a
+    /// frame since: it may be drawing its question.
+    fn close_wait_over(&mut self, id: i64, request: u64) {
+        let drawing = !self.says_close_asking
+            && self
+                .close_requests
+                .since(id, request)
+                .zip(self.frame_requested_at)
+                .is_some_and(|(since, frame)| frame > since);
+        if drawing {
+            if self.close_requests.asking(id, Some(request)).is_some() {
+                info!("window {id}: the app draws since its close request, waiting for it");
+            }
+            return;
+        }
+        if self.close_requests.expired(id, request).is_some() {
+            warn!(
+                "window {id}: no answer to its close request in {} ms, closing it",
+                views::CLOSE_WAIT.as_millis()
+            );
             self.close_view(id);
         }
     }
@@ -2480,6 +2587,7 @@ impl App {
     /// a window on screen (the first that comes). Before a window's first frame the
     /// compositor sends none, so it answers right away.
     fn request_vsync(&mut self, baton: VsyncBaton, qh: &QueueHandle<Self>) {
+        self.frame_requested_at = Some(std::time::Instant::now());
         let pacing = self.pacing_views();
         // No window on screen draws nothing (the engine waits until one comes back), except
         // while the app tears down its closed window or builds the next one (#142).

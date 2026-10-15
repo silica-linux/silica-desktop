@@ -13,13 +13,19 @@
 //!   optional `viewId`, 0 when missing.
 //!
 //! And sends to Dart, on the same channel:
-//! - `closeRequested {viewId}`: the close button of a window other than the main one; the
+//! - `closeRequested {viewId, request}`: the close button of a window (the main one too); the
 //!   app answers `true` and closes it itself with `closeWindow` (after asking to save a
-//!   draft), anything else closes it right away;
+//!   draft), anything else closes it right away. An app that asks the user first says so at
+//!   once with `closeAsking {viewId, request}`; without an answer, `closeAsking` or a frame
+//!   within [`CLOSE_WAIT`] the window closes anyway (silica-desktop#192: a hung handler);
+//! - `closeProbe {viewId}`, right after `closeRequested`, answered by nobody: with no
+//!   listener on the channel the engine buffers one message and answers the one it drops
+//!   empty, so the request is answered at once (the window closes);
 //! - `windowClosed {viewId}`: a window is gone (from either side).
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
@@ -151,6 +157,91 @@ pub fn closing(view: i64, others: usize, quit_with_last: bool, hideable: bool) -
     Closing::HideMain { last }
 }
 
+/// How long the app has to answer a close request, or to say it is asking the user
+/// (`closeAsking`), before the window closes anyway (silica-desktop#192).
+pub const CLOSE_WAIT: Duration = Duration::from_millis(250);
+
+/// A close request the app has not answered yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CloseRequest {
+    /// Its number, sent with `closeRequested` and echoed by `closeAsking`.
+    pub request: u64,
+    pub since: Instant,
+    /// The app is asking the user (`closeAsking`): it is waited for with no limit.
+    pub asking: bool,
+}
+
+/// The close requests being answered, one per window at most (silica-desktop#192).
+#[derive(Debug, Default)]
+pub struct CloseRequests {
+    last: u64,
+    pending: BTreeMap<i64, CloseRequest>,
+}
+
+impl CloseRequests {
+    /// A new request for window `id`; None while the previous one is being answered.
+    pub fn ask(&mut self, id: i64, now: Instant) -> Option<u64> {
+        if self.pending.contains_key(&id) {
+            return None;
+        }
+        self.last += 1;
+        let request = self.last;
+        self.pending.insert(
+            id,
+            CloseRequest {
+                request,
+                since: now,
+                asking: false,
+            },
+        );
+        Some(request)
+    }
+
+    /// The app is asking the user about `request` (the current one when None): the request
+    /// when it is the pending one.
+    pub fn asking(&mut self, id: i64, request: Option<u64>) -> Option<CloseRequest> {
+        let pending = self.pending.get_mut(&id)?;
+        if request.is_some_and(|request| request != pending.request) {
+            return None;
+        }
+        pending.asking = true;
+        Some(*pending)
+    }
+
+    /// When `request` of window `id` was sent, while it is pending and not being asked.
+    pub fn since(&self, id: i64, request: u64) -> Option<Instant> {
+        self.pending
+            .get(&id)
+            .filter(|pending| pending.request == request && !pending.asking)
+            .map(|pending| pending.since)
+    }
+
+    /// The app answered `request`: the request, None for a stale answer (the window already
+    /// closed by the wait, or an answer the engine had buffered).
+    pub fn answered(&mut self, id: i64, request: u64) -> Option<CloseRequest> {
+        self.take_if(id, |pending| pending.request == request)
+    }
+
+    /// [`CLOSE_WAIT`] ran out for `request`: the request when it is still pending and the app
+    /// is not asking the user (the window closes now).
+    pub fn expired(&mut self, id: i64, request: u64) -> Option<CloseRequest> {
+        self.take_if(id, |pending| pending.request == request && !pending.asking)
+    }
+
+    /// Window `id` closed: its request, if one was pending, is over.
+    pub fn forget(&mut self, id: i64) -> Option<CloseRequest> {
+        self.pending.remove(&id)
+    }
+
+    fn take_if(&mut self, id: i64, test: impl Fn(&CloseRequest) -> bool) -> Option<CloseRequest> {
+        if self.pending.get(&id).is_some_and(test) {
+            self.pending.remove(&id)
+        } else {
+            None
+        }
+    }
+}
+
 /// The glass of every window, shared with the raster thread (the regions travel with the
 /// frames, `GlassSync`).
 #[derive(Default)]
@@ -280,6 +371,54 @@ impl GlassViews {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_close_request_is_answered_once_and_late_answers_are_stale() {
+        let now = Instant::now();
+        let mut requests = CloseRequests::default();
+        let first = requests.ask(0, now).unwrap();
+        // Asked again while the app answers: not asked twice.
+        assert_eq!(requests.ask(0, now), None);
+        // Another window has its own request.
+        let other = requests.ask(1, now).unwrap();
+        assert_ne!(first, other);
+        assert_eq!(requests.answered(0, first).unwrap().request, first);
+        // Answered once only.
+        assert_eq!(requests.answered(0, first), None);
+        // The wait of an answered request finds nothing.
+        assert_eq!(requests.expired(0, first), None);
+        // An answer to an older request (buffered by the engine) is stale.
+        let second = requests.ask(0, now).unwrap();
+        assert_eq!(requests.answered(0, first), None);
+        assert!(requests.answered(0, second).is_some());
+        assert!(requests.answered(1, other).is_some());
+    }
+
+    #[test]
+    fn a_close_request_expires_unless_the_app_is_asking() {
+        let now = Instant::now();
+        let mut requests = CloseRequests::default();
+        let request = requests.ask(0, now).unwrap();
+        assert_eq!(requests.expired(0, request).unwrap().since, now);
+        // The late answer of an expired request is stale.
+        assert_eq!(requests.answered(0, request), None);
+
+        let request = requests.ask(0, now).unwrap();
+        // closeAsking for another request does not count.
+        assert_eq!(requests.asking(0, Some(request + 1)), None);
+        assert_eq!(requests.since(0, request), Some(now));
+        assert!(requests.asking(0, Some(request)).unwrap().asking);
+        assert_eq!(requests.since(0, request), None);
+        assert_eq!(requests.expired(0, request), None);
+        // Still pending: the app's answer closes it.
+        assert!(requests.answered(0, request).unwrap().asking);
+
+        // closeAsking without a request number is the current one; none pending, nothing.
+        let request = requests.ask(0, now).unwrap();
+        assert!(requests.asking(0, None).is_some());
+        assert_eq!(requests.forget(0).unwrap().request, request);
+        assert_eq!(requests.asking(0, None), None);
+    }
 
     #[test]
     fn an_open_window_call_becomes_a_bounded_window() {

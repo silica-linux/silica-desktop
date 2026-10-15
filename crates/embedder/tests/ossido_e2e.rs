@@ -337,6 +337,89 @@ fn demo_renders_reacts_to_clicks_and_closes() {
     assert!(status.unwrap().success(), "exit with {status:?}");
 }
 
+/// The demo answering the main window's close request as `mode` (`--close=MODE`).
+fn close_session(name: &str, mode: &str) -> (Session, WindowInfo) {
+    let mut args = size_args((300, 200));
+    args.extend(["--dart-arg".to_owned(), format!("--close={mode}")]);
+    let session = Session::start_with(name, (640, 480), 1, &args);
+    let window = session.window();
+    // The app is up (its first frame), so a close is not answered by a starting engine.
+    session.expect_pixel(window.x as u32 + 150, window.y as u32 + 190, IDLE);
+    (session, window)
+}
+
+fn listed(session: &Session) -> bool {
+    let list = session.client().call(WINDOW_LIST, Value::Null).unwrap();
+    let windows: Vec<WindowInfo> = serde_json::from_value(list).unwrap();
+    windows.iter().any(|w| w.app_id.as_deref() == Some(APP_ID))
+}
+
+/// Closes the main window and returns how long it took to leave the list.
+fn close_main(session: &Session) -> Duration {
+    let start = Instant::now();
+    session.client().call(WINDOW_CLOSE, Value::Null).unwrap();
+    assert!(
+        wait_until(|| !listed(session)),
+        "the closed window is still listed"
+    );
+    start.elapsed()
+}
+
+/// An app that does not answer `closeRequested` (silica-desktop#192): with no listener on
+/// `silica/window` (silica_ui before 0.35, an app that never opens a window) the engine
+/// buffers the request and no answer ever comes; a listener may hang. The window still
+/// closes, within the embedder's wait.
+#[test]
+fn the_main_window_closes_when_the_app_does_not_answer() {
+    for mode in ["none", "silent"] {
+        let (session, _) = close_session(&format!("close-{mode}"), mode);
+        let took = close_main(&session);
+        assert!(
+            took < Duration::from_secs(2),
+            "--close={mode}: the window closed after {took:?}"
+        );
+    }
+}
+
+/// An app asking the user before its window closes (Terminal with a running process) keeps
+/// it open as long as it asks; its answer closes it (silica-desktop#192). It says so with
+/// `closeAsking`, or (silica_ui before 0.38) draws its question.
+#[test]
+fn a_close_being_asked_waits_for_the_answer() {
+    a_close_being_asked_waits("ask");
+}
+
+#[test]
+fn a_close_being_asked_by_drawing_waits_for_the_answer() {
+    a_close_being_asked_waits("draw");
+}
+
+fn a_close_being_asked_waits(mode: &str) {
+    let (session, window) = close_session(&format!("close-{mode}"), mode);
+    session.client().call(WINDOW_CLOSE, Value::Null).unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(
+        listed(&session),
+        "the window closed while the app was asking"
+    );
+    // A second close while asking is not asked twice: the window stays.
+    session.client().call(WINDOW_CLOSE, Value::Null).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(listed(&session), "a second close request closed the window");
+    // The answer (a tap in the demo): the app closes it.
+    session
+        .client()
+        .call(
+            INPUT_CLICK,
+            json!({"x": window.x + 150, "y": window.y + 100}),
+        )
+        .unwrap();
+    assert!(
+        wait_until(|| !listed(&session)),
+        "the window did not close after the answer"
+    );
+}
+
 #[test]
 fn keyboard_reaches_text_field_and_hardware_keyboard() {
     let session = Session::start("keys", (640, 480), 1, (300, 200));
