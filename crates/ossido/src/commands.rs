@@ -656,10 +656,14 @@ impl State {
     /// Like `launch`; with `shell` the process is a shell component and sees its
     /// protocols (`shell.rs`).
     pub fn launch_with(&mut self, command: &str, shell: bool) -> Result<u32, String> {
-        self.spawn_child(command, shell).map(|child| child.id())
+        self.spawn_child(command, shell).map(|child| {
+            let pid = child.id();
+            crate::reap::reap(child, || {});
+            pid
+        })
     }
 
-    /// Starts the process of `launch_with` and hands it over (`keep.rs` waits for it).
+    /// Starts the process of `launch_with` and hands it over: the caller reaps it (`reap.rs`).
     pub fn spawn_child(
         &mut self,
         command: &str,

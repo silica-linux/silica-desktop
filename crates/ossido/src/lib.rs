@@ -28,6 +28,7 @@ pub mod keys;
 mod layers;
 pub(crate) mod panorama;
 mod perf;
+mod reap;
 mod render;
 mod resize;
 mod session_bus;
