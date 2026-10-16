@@ -36,6 +36,11 @@ const double launcherHeight = 580;
 const double launcherListWidth = 640;
 const double launcherListHeight = 560;
 const double launcherRadius = AmalfiRadii.faroAndLauncher;
+
+/// The glass group of Faro's menus: the panel is group 0, and Ossido merges only glass of one
+/// group (a Thick menu in group 0 melts into the Thick panel and shows no glass of its own). A
+/// menu's submenus take the next groups.
+const int faroMenuGroup = 1;
 const double launcherHeader = 56;
 
 /// The panel's size in grid or list mode.
@@ -461,6 +466,9 @@ class LauncherState extends State<Launcher>
               child: AmalfiMenu(
                 key: const ValueKey('launcher view menu'),
                 autofocus: true,
+                // Above the panel: Ossido merges only glass of one group, and a menu in the
+                // panel's group melts into it (transparent, silica-desktop#209).
+                group: faroMenuGroup,
                 onDismiss: _closeMenu,
                 entries: [
                   AmalfiMenuAction(

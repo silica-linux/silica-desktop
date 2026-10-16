@@ -170,4 +170,33 @@ void main() {
     expect(scope.backend, AmalfiGlassBackend.compositor);
     expect(GlassRegistry.instance.regions.length, greaterThan(before));
   });
+
+  testWidgets('the "…" menu is its own glass group above the panel (#209)', (
+    tester,
+  ) async {
+    await open(tester);
+    await cmd1(tester);
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('launcher more')));
+    await tester.pump(const Duration(milliseconds: 300));
+    final menu = tester.getRect(
+      find.byKey(const ValueKey('launcher view menu')),
+    );
+    final regions = GlassRegistry.instance.regions;
+    Rect rectOf(Map<String, Object> r) => Rect.fromLTWH(
+      (r['x'] as num).toDouble(),
+      (r['y'] as num).toDouble(),
+      (r['width'] as num).toDouble(),
+      (r['height'] as num).toDouble(),
+    );
+    final panel = regions.firstWhere((r) => r['profile'] == 'panel');
+    final mine = regions.where((r) => r['profile'] == 'menu').toList();
+    expect(mine, hasLength(1));
+    expect(rectOf(mine.single).center, menu.center);
+    expect(mine.single['material'], 'thick');
+    expect(
+      (mine.single['group'] as num?) ?? 0,
+      greaterThan((panel['group'] as num?) ?? 0),
+    );
+  });
 }
