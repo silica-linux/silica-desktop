@@ -107,7 +107,7 @@ fn windows_spread_out_and_a_click_picks_one() {
     assert!(list.iter().find(|w| w.id == red_id).unwrap().focused);
 
     // Esc closes; the "+" adds a space. Going there expands the bar and the "+" comes down
-    // with it (center at y 101.5).
+    // with it (center at y 98).
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     c.call(INPUT_POINTER_MOVE, json!({"x": 320 - 26, "y": 20}))
         .unwrap();
@@ -689,4 +689,69 @@ fn a_click_on_a_thumbnail_magnifies_that_space() {
     let shot = screenshot(&ossido);
     let (x0, _, x1, _) = red_box(&shot).unwrap();
     assert!(x1 - x0 >= 398, "not back to full size: {:?}", (x0, x1));
+}
+
+/// The window under the pointer gets the 4 pt `Ring` (inside its edge) and, in Panorama, the
+/// title capsule at its centre; the other window gets neither (kit `Hover ring`, `Hover title`).
+#[test]
+fn the_window_under_the_pointer_gets_the_ring_and_the_title_capsule() {
+    let ossido = Headless::start_with(
+        "panorama-hover-window",
+        (common::WIDTH, common::HEIGHT),
+        &["--background", "7a7b80"],
+    );
+    let _red = TestWindow::open_pixels(&ossido.wayland, "red", (160, 100), &solid((160, 100), RED));
+    let _blue = TestWindow::open_pixels(
+        &ossido.wayland,
+        "blue",
+        (160, 100),
+        &solid((160, 100), BLUE),
+    );
+    let mut c = ossido.client();
+    c.call(INPUT_POINTER_MOVE, json!({"x": 20, "y": 300}))
+        .unwrap();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    let s = state(&ossido);
+    let (a, b) = (s.windows[0], s.windows[1]);
+    let (left, right) = if a.x < b.x { (a, b) } else { (b, a) };
+    // `Ring` is #3B99FD (green 0x99, between the red (0) and blue (0) windows); RGBA, and the
+    // edge may be half a pixel off.
+    let ring_at = |shot: &[u8], w: &silica_control::commands::PanoramaWindow| {
+        let p = pixel(shot, (w.x + 2.0) as u32, (w.y + w.height / 2.0) as u32);
+        p[1] > 110 && p[1] < 190 && p[2] > 200 && p[0] < 140
+    };
+    // The pointer on the left window.
+    c.call(
+        INPUT_POINTER_MOVE,
+        json!({"x": left.x + 30.0, "y": left.y + 20.0}),
+    )
+    .unwrap();
+    let shot = screenshot(&ossido);
+    if let Some(dir) = std::env::var_os("OSSIDO_SHOTS") {
+        std::fs::copy(
+            ossido.dir.join("shot.png"),
+            std::path::Path::new(&dir).join("panorama-hover-window.png"),
+        )
+        .unwrap();
+    }
+    assert!(ring_at(&shot, &left), "no ring on the hovered window");
+    assert!(!ring_at(&shot, &right), "ring on the other window");
+    // The capsule (translucent white, 32 tall) sits at the centre: lighter than the window.
+    let centre = pixel(
+        &shot,
+        (left.x + left.width / 2.0) as u32 - 40,
+        (left.y + left.height / 2.0) as u32,
+    );
+    assert!(
+        centre[1] > 100 && centre[2] > 100,
+        "no title capsule: {centre:?}"
+    );
+    // On the other window the ring follows.
+    c.call(
+        INPUT_POINTER_MOVE,
+        json!({"x": right.x + 30.0, "y": right.y + 20.0}),
+    )
+    .unwrap();
+    let shot = screenshot(&ossido);
+    assert!(ring_at(&shot, &right) && !ring_at(&shot, &left));
 }
