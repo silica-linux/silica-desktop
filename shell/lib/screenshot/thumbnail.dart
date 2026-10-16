@@ -1,7 +1,7 @@
-// The floating thumbnail after a capture (screenshot-ui.md, K-05, SCREENSHOT-2): the image
-// fitted in 256 × 144 inside a 4 pt frame (white in light appearance; black with a 1 pt light
-// line on its inner edge in dark) with corners of ~4 and a soft black shadow, 12 pt from the
-// bottom right corner. What the pointer does on it:
+// The floating thumbnail after a capture (kit `Apps/Screenshot/Thumbnail`; screenshot-ui.md,
+// K-05, SCREENSHOT-2): the image fitted in 256 × 144 inside a 4 pt white frame (`Text/On Accent`
+// in both appearances) with corners of 8 and the level 2 shadow, 12 pt from the bottom right
+// corner of the screen. What the pointer does on it:
 // - a click opens the image;
 // - a secondary click opens its menu;
 // - a press that moves drags the image out (a Wayland drag and drop of a file that only
@@ -16,11 +16,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 const Size thumbnailImage = Size(256, 144);
 const double thumbnailBorder = 4;
 const double thumbnailMargin = 12;
-const double thumbnailRadius = 4;
+const double thumbnailRadius = 8;
 
 /// The fade-in when it appears (SCREENSHOT-2: ~380 ms, slowing down).
 const Duration thumbnailSettle = Duration(milliseconds: 380);
@@ -35,11 +36,6 @@ const Duration thumbnailLeave = Duration(milliseconds: 250);
 /// frameless, the pointer ~12 pt above and to the left of its center).
 const double thumbnailDragSide = 128;
 const double thumbnailDragPointer = 12;
-
-/// The dark frame: black with a 1 pt line of this colour on its inner edge.
-const Color thumbnailDarkFrame = Color(0xFF000000);
-const Color thumbnailDarkLine = Color(0xFF949494);
-const double thumbnailDarkLineWidth = 1;
 
 /// The size of the drag image for a capture of `image` size: 128 pt on the long side.
 Size thumbnailDragSize(Size image) {
@@ -158,7 +154,9 @@ class _ThumbnailViewState extends State<ThumbnailView> {
         child: _frame(
           context,
           ClipRRect(
-            borderRadius: BorderRadius.circular(1),
+            borderRadius: BorderRadius.circular(
+              thumbnailRadius - thumbnailBorder,
+            ),
             child: Image.file(
               File(widget.file),
               fit: BoxFit.fill,
@@ -171,38 +169,21 @@ class _ThumbnailViewState extends State<ThumbnailView> {
     ),
   );
 
-  /// The frame around the image: white in light appearance; in dark black, with a 1 pt light
-  /// line on its inner edge and black behind the transparent parts of the image.
+  /// The frame around the image: 4 pt of `Text/On Accent` (white in light and dark, kit
+  /// `Thumbnail shadow`), radius 8, with the shadow of level 2 (y 4, blur 12).
   Widget _frame(BuildContext context, Widget image) {
-    final dark =
-        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
-    // −10 levels at the edge, −5 at ~12 pt, −2 at ~25: black, the same on three sides.
-    const shadow = [BoxShadow(color: Color(0x2E000000), blurRadius: 26)];
-    final radius = BorderRadius.circular(thumbnailRadius);
-    return Container(
+    final theme = AmalfiTheme.of(context);
+    return DecoratedBox(
       key: const ValueKey('thumbnail frame'),
-      padding: EdgeInsets.all(
-        dark ? thumbnailBorder - thumbnailDarkLineWidth : thumbnailBorder,
+      decoration: AmalfiShapeDecoration(
+        color: theme.colors.textOnAccent,
+        shape: const AmalfiSmoothBorder(radius: thumbnailRadius),
+        shadows: theme.shadows.level2,
       ),
-      decoration: BoxDecoration(
-        color: dark ? thumbnailDarkFrame : const Color(0xFFFFFFFF),
-        borderRadius: radius,
-        boxShadow: shadow,
+      child: Padding(
+        padding: const EdgeInsets.all(thumbnailBorder),
+        child: image,
       ),
-      child: dark
-          ? DecoratedBox(
-              key: const ValueKey('thumbnail line'),
-              decoration: const BoxDecoration(
-                border: Border.fromBorderSide(
-                  BorderSide(
-                    color: thumbnailDarkLine,
-                    width: thumbnailDarkLineWidth,
-                  ),
-                ),
-              ),
-              child: ColoredBox(color: thumbnailDarkFrame, child: image),
-            )
-          : image,
     );
   }
 }

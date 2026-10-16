@@ -36,6 +36,7 @@ import '../system/layer_arbiter.dart';
 import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import 'files.dart';
+import 'menu.dart';
 import 'selection.dart';
 import 'services.dart';
 import 'settings.dart';
@@ -56,15 +57,12 @@ export 'thumbnail.dart'
         thumbnailDragSide,
         thumbnailDragSize,
         thumbnailDragHotspot;
-export 'toolbar.dart' show toolbarSize, toolbarAboveDock, ShotBarColors;
+export 'toolbar.dart' show toolbarSize, toolbarAboveDock;
 
 /// The apps the thumbnail menu and the Options menu offer when they are installed (the image
 /// viewer is the default handler of PNG files, shown as the equivalent of Preview).
 const String shotMailId = 'dev.frascella.Mail';
 const String shotPhotosId = 'dev.frascella.Photos';
-
-/// The veil of window mode: `#88bae7` (sRGB) at opacity ~0.51 (K-05).
-const Color windowVeil = Color(0x8288BAE7);
 
 /// The countdown of the timer (PROVISIONAL: not measured): a dark rounded square with the
 /// seconds left, at the center of what will be captured.
@@ -168,9 +166,12 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Offset? _barCenter;
   bool _optionsOpen = false;
 
+  /// The bar is fading out after × or Esc.
+  bool _barClosing = false;
+
   /// The menus' items, made when they open (a new list would reset an open menu).
-  List<MenuEntry> _optionsEntries = const [];
-  List<MenuEntry> _menuEntries = const [];
+  List<AmalfiMenuEntry> _optionsEntries = const [];
+  List<AmalfiMenuEntry> _menuEntries = const [];
 
   /// The timer: seconds left and its ticker.
   int _countdown = 0;
@@ -305,10 +306,24 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       _mode = mode;
       _live = null;
       _optionsOpen = false;
+      _barClosing = false;
     });
     _syncLayer();
     _syncVeil();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  /// The bar goes away (× or Esc): it fades and sinks first (`fade.quick`, `spring.panel`);
+  /// a capture never waits for it ([_cancel]).
+  void _closeBar() {
+    if (_mode != _Mode.toolbar || _barClosing) {
+      _cancel();
+      return;
+    }
+    setState(() {
+      _barClosing = true;
+      _optionsOpen = false;
+    });
   }
 
   void _cancel() {
@@ -317,6 +332,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       _mode = _Mode.none;
       _live = null;
       _optionsOpen = false;
+      _barClosing = false;
     });
     _syncLayer();
     _syncVeil();
@@ -421,7 +437,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       if (_optionsOpen) {
         setState(() => _optionsOpen = false);
       } else {
-        _cancel();
+        _closeBar();
       }
       return KeyEventResult.handled;
     }
@@ -823,38 +839,41 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   /// The thumbnail's menu (SCREENSHOT-2): save to Desktop, Documents, Clipboard | open in
   /// Mail, the image viewer, Photos | show in the file manager, Delete | Close. Markup is
   /// left out until the editor exists (#154).
-  List<MenuEntry> _thumbnailMenu() {
+  List<AmalfiMenuEntry> _thumbnailMenu() {
     final l = l10nOf(context);
     final files = widget.entries[fileManagerId];
     final apps = _imageApps();
     return [
-      MenuAction(
+      AmalfiMenuAction(
         l.shotSaveToDesktop,
         onSelected: () => _menuFinish(to: const ToDesktop()),
       ),
-      MenuAction(
+      AmalfiMenuAction(
         l.shotSaveToDocuments,
         onSelected: () => _menuFinish(to: const ToDocuments()),
       ),
-      MenuAction(
+      AmalfiMenuAction(
         l.shotSaveToClipboard,
         onSelected: () => _menuFinish(to: const ToClipboard()),
       ),
-      if (apps.isNotEmpty) const MenuDivider(),
+      if (apps.isNotEmpty) const AmalfiMenuDivider(),
       for (final app in apps)
-        MenuAction(
+        AmalfiMenuAction(
           l.shotOpenWith(app.name),
           onSelected: () => _menuFinish(to: ToApp(app.id)),
         ),
-      const MenuDivider(),
+      const AmalfiMenuDivider(),
       if (files != null)
-        MenuAction(
+        AmalfiMenuAction(
           l.shotShowIn(files.name),
           onSelected: () => _menuFinish(reveal: true),
         ),
-      MenuAction(l.shotDelete, onSelected: () => _menuFinish(delete: true)),
-      const MenuDivider(),
-      MenuAction(l.shotClose, onSelected: () => _menuFinish()),
+      AmalfiMenuAction(
+        l.shotDelete,
+        onSelected: () => _menuFinish(delete: true),
+      ),
+      const AmalfiMenuDivider(),
+      AmalfiMenuAction(l.shotClose, onSelected: () => _menuFinish()),
     ];
   }
 
@@ -874,79 +893,72 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     _openToolbar();
   }
 
-  List<MenuEntry> _optionsMenu() {
+  List<AmalfiMenuEntry> _optionsMenu() {
     final l = l10nOf(context);
     final to = _settings.destination;
     String base(String path) => path.split('/').where((p) => p.isNotEmpty).last;
     void destination(ShotDestination d) =>
         _changeSettings((s) => s.destination = d);
     return [
-      MenuSection(l.saveTo),
-      MenuAction(
+      AmalfiMenuSection(l.saveTo),
+      AmalfiMenuAction(
         l.shotDesktop,
         checked: to is ToDesktop,
         onSelected: () => destination(const ToDesktop()),
       ),
-      MenuAction(
+      AmalfiMenuAction(
         l.shotDocuments,
         checked: to is ToDocuments,
         onSelected: () => destination(const ToDocuments()),
       ),
-      MenuAction(
+      AmalfiMenuAction(
         l.shotClipboard,
         checked: to is ToClipboard,
         onSelected: () => destination(const ToClipboard()),
       ),
       for (final app in _imageApps())
-        MenuAction(
+        AmalfiMenuAction(
           app.name,
           checked: to == ToApp(app.id),
           onSelected: () => destination(ToApp(app.id)),
         ),
       for (final folder in _settings.recentFolders)
-        MenuAction(
+        AmalfiMenuAction(
           base(folder),
           checked: to == ToFolder(folder),
           onSelected: () => _changeSettings((s) => s.chooseFolder(folder)),
         ),
       if (widget.entries.containsKey(fileManagerId))
-        MenuAction(l.shotOtherFolder, onSelected: _chooseOtherFolder),
-      const MenuDivider(),
-      MenuSection(l.delay),
+        AmalfiMenuAction(l.shotOtherFolder, onSelected: _chooseOtherFolder),
+      const AmalfiMenuDivider(),
+      AmalfiMenuSection(l.delay),
       for (final seconds in timerChoices)
-        MenuAction(
+        AmalfiMenuAction(
           seconds == 0 ? l.delayNone : l.delaySeconds(seconds),
           checked: _settings.timer == seconds,
           onSelected: () => _changeSettings((s) => s.timer = seconds),
         ),
-      const MenuDivider(),
-      MenuSection(l.options),
-      MenuAction(
+      const AmalfiMenuDivider(),
+      AmalfiMenuSection(l.options),
+      AmalfiMenuAction(
         l.thumbnailAfterCapture,
         checked: _settings.showThumbnail,
         onSelected: () =>
             _changeSettings((s) => s.showThumbnail = !s.showThumbnail),
       ),
-      MenuAction(
+      AmalfiMenuAction(
         l.shotKeepSelection,
         checked: _settings.rememberSelection,
         onSelected: () =>
             _changeSettings((s) => s.rememberSelection = !s.rememberSelection),
       ),
-      const MenuDivider(),
-      MenuSection(l.shotCaptureSection),
-      MenuAction(
+      const AmalfiMenuDivider(),
+      AmalfiMenuSection(l.shotCaptureSection),
+      AmalfiMenuAction(
         l.shotIncludePointer,
         checked: _settings.showPointer,
         onSelected: () =>
             _changeSettings((s) => s.showPointer = !s.showPointer),
-      ),
-      // silica_ui's menu has no width parameter: a row without height as wide as the
-      // measured menu (210 pt) sets the minimum width.
-      MenuCustom(
-        height: 0,
-        width: optionsMenuWidth,
-        builder: (context, close) => const SizedBox.shrink(),
       ),
     ];
   }
@@ -998,17 +1010,15 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       if (_menuAt case final at?) {
         children.add(
           Positioned.fill(
-            child: MenuHost(
+            child: ShotMenu(
               key: const ValueKey('thumbnail menu'),
               entries: _menuEntries,
-              // At the pointer: the host moves it left when the thumbnail is at the right
-              // edge.
+              // At the pointer: the menu moves left when the thumbnail is at the right edge.
               anchor: at,
               upwards: true,
               top: barHeight,
               // Drawn by Flutter: it covers the thumbnail (Ossido's glass would sit behind
               // the whole layer, thumbnail included).
-              opaque: true,
               onDismissed: _menuClosed,
             ),
           ),
@@ -1073,6 +1083,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   }
 
   Widget _overlay(Size screen) {
+    final theme = AmalfiTheme.of(context);
     final toolbar = _mode == _Mode.toolbar;
     final bar = toolbar ? _barRect(screen) : null;
     final overBar = bar != null && _pointer != null && bar.contains(_pointer!);
@@ -1126,39 +1137,39 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
                   ),
                 if (_mode == _Mode.selection)
                   if (_live case final live?)
-                    Positioned.fromRect(
-                      rect: live.rect(option: _option),
-                      child: Container(
-                        key: const ValueKey('selection'),
-                        decoration: BoxDecoration(
-                          color: const Color(0x33808080),
-                          border: Border.all(color: const Color(0x99FFFFFF)),
-                        ),
-                      ),
+                    Positioned.fill(
+                      child: SelectionFrame(rect: live.rect(option: _option)),
                     ),
                 if (_pointer case final p? when _mode == _Mode.selection)
                   ..._crosshair(p),
+                // The target is tinted `Accent/Amalfi` at 50 % (kit `Window tint`, `Screen tint`):
+                // the window under the pointer, or the whole screen when the desktop is the target.
+                if (toolbar && _choice == ToolbarChoice.screen)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ColoredBox(
+                        key: const ValueKey('screen tint'),
+                        color: targetTint(theme),
+                      ),
+                    ),
+                  ),
                 if (_pointer case final p?
                     when _windowMode && !_compositorVeil && !overBar)
                   Positioned.fromRect(
                     rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
-                    child: const IgnorePointer(
+                    child: IgnorePointer(
                       child: ColoredBox(
-                        key: ValueKey('veil'),
-                        color: windowVeil,
+                        key: const ValueKey('veil'),
+                        color: targetTint(theme),
                       ),
                     ),
                   ),
                 if (_pointer case final p? when camera && !overBar)
                   Positioned(
-                    left: p.dx - 14,
-                    top: p.dy - 11,
+                    left: p.dx - 16,
+                    top: p.dy - 16,
                     child: const IgnorePointer(
-                      child: CustomPaint(
-                        key: ValueKey('camera'),
-                        size: Size(28, 22),
-                        painter: CameraPainter(),
-                      ),
+                      child: ShotCamera(key: ValueKey('camera')),
                     ),
                   ),
                 if (bar != null) ..._toolbar(bar),
@@ -1178,38 +1189,32 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     return defaultSelection(screen);
   }
 
-  /// The crosshair and, at its bottom right, the point (or the size of the selection).
+  /// The crosshair (kit `Pointers/Crosshair`, 24 × 24) and, 20 pt to its right, the chip with
+  /// the point on two lines (kit `Coordinates capsule`, 8 pt above its center).
   List<Widget> _crosshair(Offset p) {
-    final live = _live;
-    final rect = live?.rect(option: _option);
-    final text = rect != null && live!.start != live.end
-        ? '${rect.width.round()}\n${rect.height.round()}'
-        : '${p.dx.round()}\n${p.dy.round()}';
+    // The kit draws the crosshair in the same ink in both appearances, on its white outline.
+    final ink = AmalfiColors.light.textPrimary;
     return [
       Positioned(
-        left: p.dx - 10,
-        top: p.dy - 10,
-        child: const IgnorePointer(
+        left: p.dx - 12,
+        top: p.dy - 12,
+        child: IgnorePointer(
           child: CustomPaint(
-            key: ValueKey('crosshair'),
-            size: Size(20, 20),
-            painter: CrosshairPainter(),
+            key: const ValueKey('crosshair'),
+            size: const Size(24, 24),
+            painter: CrosshairPainter(ink),
           ),
         ),
       ),
       Positioned(
-        left: p.dx + 12,
-        top: p.dy + 8,
-        child: IgnorePointer(child: CrosshairLabel(text: text)),
+        left: p.dx + 20,
+        top: p.dy - 8,
+        child: IgnorePointer(
+          child: CrosshairLabel(text: '${p.dx.round()}\n${p.dy.round()}'),
+        ),
       ),
     ];
   }
-
-  /// Whether the Options menu fits above the bar (its bottom is [optionsMenuOverlap] below
-  /// the bar's top edge).
-  bool _optionsAbove(Rect bar) =>
-      bar.top + optionsMenuOverlap - menuSize(_optionsEntries).height >=
-      barHeight;
 
   List<Widget> _toolbar(Rect bar) {
     final l = l10nOf(context);
@@ -1232,9 +1237,12 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         top: bar.top,
         child: ShotToolbar(
           choice: _choice,
-          colors: ShotBarColors.of(context),
-          optionsLabel: l.optionsButton,
+          optionsLabel: l.options,
+          optionsOpen: _optionsOpen,
           actionLabel: l.capture,
+          closeLabel: l.shotClose,
+          closing: _barClosing,
+          onClosed: _cancel,
           tips: ShotBarTips(
             capture: [
               l.shotTipCaptureScreen,
@@ -1249,7 +1257,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           ),
           showAction: !(_choice == ToolbarChoice.window && overBar),
           onChoose: _choose,
-          onClose: _cancel,
+          onClose: _closeBar,
           onOptions: () => setState(() {
             _optionsOpen = !_optionsOpen;
             if (_optionsOpen) _optionsEntries = _optionsMenu();
@@ -1260,23 +1268,21 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           onMoved: () => _changeSettings((s) => s.barCenter = _barCenter),
         ),
       ),
-      // The Options menu (SCREENSHOT-3): above the button, its left edge 1 pt left of it and
-      // its bottom 22 pt below the bar's top edge; below the bar when there is no room above.
+      // The Options menu (kit `Options Menu`): above the button, its left edge on the button's
+      // and its bottom 8 pt above the bar; below the bar when there is no room above.
       if (_optionsOpen)
         Positioned.fill(
-          child: MenuHost(
+          child: ShotMenu(
             key: const ValueKey('options menu'),
             entries: _optionsEntries,
-            anchor: _optionsAbove(bar)
-                ? Offset(
-                    bar.left + optionsX + optionsMenuLeft,
-                    bar.top + optionsMenuOverlap,
-                  )
-                : Offset(
-                    bar.left + optionsX + optionsMenuLeft,
-                    bar.bottom + optionsBelowGap,
-                  ),
-            upwards: _optionsAbove(bar),
+            glass: true,
+            width: optionsMenuWidth,
+            anchor: Offset(bar.left + optionsX, bar.top - optionsMenuGap),
+            alternative: Offset(
+              bar.left + optionsX,
+              bar.bottom + optionsMenuGap,
+            ),
+            upwards: true,
             top: barHeight,
             onDismissed: () => setState(() => _optionsOpen = false),
           ),

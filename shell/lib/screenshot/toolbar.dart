@@ -1,160 +1,89 @@
-// The ⇧⌘5 bar (screenshot-ui.md, K-05/K-06, SCREENSHOT-3): glass 551 × 52 (466 without the
-// action button), 4 pt above the Dock area, where it was last left. Left to right: Close (a
-// disc with ×), capture the screen, a window, a selection (44 × 50 at a 48 pt pitch), a
-// separator, record the screen, a window, a selection (at a 57 pt pitch), a separator,
-// Options with an arrow (76 × 50) and the blue 80 × 36 action button, 8 pt from the bar's
-// edges. The chosen mode sits on a rounded pill; the pointer over a mode that is not chosen
-// changes nothing. The six mode buttons have a tooltip without delay that stays after the
-// pointer leaves; close, Options and the action button have none. In window mode the action
-// button hides while the pointer is on the bar and the bar shrinks 85 pt on the right. The
-// bar is moved by dragging its background.
+// The ⇧⌘5 capture bar (kit "App · Screenshot": `Apps/Screenshot/Capture Bar`, `Bar Capture
+// Screen|Window`, `Bar Record Selection`): a capsule of 496 × 48 on Glass/Regular (the kit draws
+// Thick; `materials.md` says Regular for the Screenshot bar and the docs win), 8 pt above the Dock
+// (README, "known differences"). Left to right, 8 pt from the edges: Close (a 32 pt toolbar
+// icon button), two Large icon segmented controls (capture the screen, a window, a selection;
+// record the screen, a window, a selection: 104 × 32 each, the chosen mode on the pill) with
+// 1 pt separators in 8 pt slots, the Large pull-down for Options (96 × 32) and the Large primary
+// push button (104 × 32), which reads Capture and is there only while there is a target.
 //
-// Recording is not available yet (#153, PipeWire screencast): its three
-// buttons are drawn dimmed and do nothing.
+// Behaviour kept from the measurements (`docs/spec/screenshot-ui.md`, SCREENSHOT-3): the six
+// mode buttons have a tooltip without delay that stays after the pointer leaves; close, Options
+// and the action button have none. In window mode the action button hides while the pointer is
+// on the bar and the bar shrinks on the right. The bar is moved by dragging its background.
+// The bar appears with `fade.quick` and an 8 pt rise on `spring.panel` and goes with the same
+// (motion.md, Screenshot bar); the animation of the width is the measured one (60 ms, 450 ms).
+//
+// Recording is not available yet (#153, PipeWire screencast): its segmented control is drawn
+// disabled (35 %) and does nothing.
 
-import '../system/glass_profile.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-import '../system/cross_glyph.dart';
+import '../system/glass_profile.dart';
+import '../system/shadowed_glass.dart';
 import 'settings.dart';
 
 /// The bar with the action button; without it the bar is [toolbarActionSpace] narrower on
-/// the right (SCREENSHOT-3: 551 and 466 pt).
-const Size toolbarSize = Size(551, 52);
-const double toolbarActionSpace = 85;
+/// the right (the 104 pt button and the 4 pt before it).
+const Size toolbarSize = Size(496, 48);
+const double toolbarActionSpace = 108;
 
-/// From the Dock area (84 pt exclusive zone) to the bar: 4 pt.
-const double toolbarAboveDock = 84 + 4;
+/// From the bottom of the screen to the bar's bottom edge: the Dock's shelf (60) and its
+/// 16 pt margin, then 8 pt (kit: `Dock/Shelf` at 16 pt from the bottom of the screen, the
+/// bar 8 pt above it).
+const double toolbarAboveDock = 60 + 16 + 8;
 
-/// Where the controls sit, from the bar's left edge (AX frames, K-05, SCREENSHOT-3). The
-/// separators are placed from the measured widths.
-const double closeX = 13;
-const List<double> captureX = [41, 89, 137];
-const List<double> recordX = [203, 260, 317];
-const double separator1X = 192;
-const double separator2X = 372;
-const double optionsX = 383;
-const double actionX = 463;
-const double modeWidth = 44;
-const double optionsWidth = 76;
-const double actionWidth = 80;
+/// The bar's capsule.
+const double toolbarRadius = 24;
 
-/// The action button (SCREENSHOT-3): 80 × 36, radius ~8, 8 pt from the bar's top, bottom and
-/// right edges.
-const double actionHeight = 36;
-const double actionInset = 8;
-const double actionRadius = 8;
+/// Where the controls sit, from the bar's left edge and top (kit `Bar Capture Screen`).
+const double barInset = 8;
+const double closeX = 8;
+const double captureModesX = 44;
+const double separator1X = 152;
+const double recordModesX = 164;
+const double separator2X = 272;
+const double optionsX = 284;
+const double actionX = 384;
+
+/// A segmented control of three icons (Large, `Segments/Control/One 3 Icon/Large`): 104 × 32,
+/// 4 pt inside the track, 32 pt per item.
+const double modesWidth = 104;
+const double controlHeight = 32;
+const double modeItem = 32;
+const double modeTrackInset = 4;
+const double optionsWidth = 96;
+const double actionWidth = 104;
+
+/// The separator slot: 8 × 24 with a 1 × 16 line in it.
+const double separatorSlot = 8;
 
 /// Hiding or showing the action button: it starts ~60 ms after the pointer reaches or
-/// leaves the bar, fades in 250 ms and the bar's right edge slides in 450 ms.
+/// leaves the bar, fades in 250 ms and the bar's right edge slides in 450 ms (measured).
 const Duration actionDelay = Duration(milliseconds: 60);
 const Duration actionFadeDuration = Duration(milliseconds: 250);
 const Duration actionBarDuration = Duration(milliseconds: 450);
 
-/// The mode tooltips (SCREENSHOT-3): a box 18 pt high, ~10 pt of padding each side of the
-/// text, four 1 pt corner ticks ~3 pt long, its bottom 32 pt above the bar's top edge.
-const double tipHeight = 18;
-const double tipPadding = 10;
-const double tipTickLength = 3;
-const double tipAboveBar = 32;
+/// A mode tooltip is the Amalfi tooltip (Thick, radius 8) placed 8 pt above the bar
+/// (`Tooltips/Placement`), centred on its button.
+const double tipAboveBar = AmalfiTooltipMetrics.distance;
+const double tipHeight = 24;
 
-/// The Options menu (SCREENSHOT-3): 210 pt wide, opening upwards with its left edge 1 pt left
-/// of the Options button and its bottom 22 pt below the bar's top edge, so it overlaps the
-/// bar and leaves the "Options" label visible.
-const double optionsMenuWidth = 210;
-const double optionsMenuLeft = -1;
-const double optionsMenuOverlap = 22;
+/// The Options menu: 208 wide (kit `Options Menu Panel`), opening upwards with its left edge
+/// on the Options button's and its bottom 8 pt above the bar, or below the bar when there is
+/// no room above.
+const double optionsMenuWidth = 208;
+const double optionsMenuGap = 8;
 
-/// When there is no room above the bar the menu opens below it with this gap (ours, not
-/// measured).
-const double optionsBelowGap = 6;
+/// The icons of the modes (Icon Kit `symbols/regular`).
+const List<String> captureSymbols = ['display', 'window', 'selection'];
+const List<String> recordSymbols = ['video', 'screen-share', 'record-circle'];
 
-/// The action button's fill: `#0066d8` raw, sRGB `#006fdc` (K-05).
-const Color actionBlue = Color(0xFF006FDC);
-
-/// The bar colors (over the glass). Dark measured over grey `#7a7b80` (K-06): glyphs and
-/// "Options" `#c7c8cd`, separators and the pill of the chosen mode `#8f9095` (white ~15 %),
-/// chosen glyph `#dbdde2`, pressed pill −5 levels and glyph `#c3c4c9`, a 1 pt dark rim at the
-/// top `#595a5e` (black ~28 %). Light: measured only under the desktop veil (K-05); pill and
-/// separators derived by removing the veil (out = 0.514 · C + 0.486 · background:
-/// background ~`#ddd8dd`, pill ~`#b4afb4`, black ~19 %), glyphs almost black; the pressed
-/// pill in light is *estimated*.
-@immutable
-class ShotBarColors {
-  const ShotBarColors({
-    required this.glyph,
-    required this.closeFill,
-    required this.closeGlyph,
-    required this.line,
-    required this.chosen,
-    required this.chosenGlyph,
-    required this.chosenPressed,
-    required this.chosenPressedGlyph,
-    required this.topLine,
-    required this.tipText,
-    required this.tipTick,
-    required this.tipFill,
-  });
-
-  final Color glyph;
-  final Color closeFill;
-  final Color closeGlyph;
-  final Color line;
-  final Color chosen;
-  final Color chosenGlyph;
-  final Color chosenPressed;
-  final Color chosenPressedGlyph;
-
-  /// The rim at the top of the bar (null: none).
-  final Color? topLine;
-
-  /// The tooltip of a mode button: light-gray text (lum ~164 over `#7b7b7b`), corner ticks
-  /// (lum 99 over 123, black ~20 %) and a fill +1 level over the background (dark,
-  /// SCREENSHOT-3). Light is estimated.
-  final Color tipText;
-  final Color tipTick;
-  final Color tipFill;
-
-  static const ShotBarColors light = ShotBarColors(
-    glyph: Color(0xFF1D1D1F),
-    closeFill: Color(0x33000000),
-    closeGlyph: Color(0xFF3C3C3E),
-    line: Color(0x30000000),
-    chosen: Color(0x30000000),
-    chosenGlyph: Color(0xFF1D1D1F),
-    chosenPressed: Color(0x3A000000),
-    chosenPressedGlyph: Color(0xFF3C3C3E),
-    topLine: null,
-    tipText: Color(0xFF3C3C3E),
-    tipTick: Color(0x33FFFFFF),
-    tipFill: Color(0x05000000),
-  );
-
-  static const ShotBarColors dark = ShotBarColors(
-    glyph: Color(0xFFC7C8CD),
-    closeFill: Color(0x33FFFFFF),
-    closeGlyph: Color(0xFFC7C8CD),
-    line: Color(0x26FFFFFF),
-    chosen: Color(0x26FFFFFF),
-    chosenGlyph: Color(0xFFDBDDE2),
-    chosenPressed: Color(0x1EFFFFFF),
-    chosenPressedGlyph: Color(0xFFC3C4C9),
-    topLine: Color(0x47000000),
-    tipText: Color(0xB3FFFFFF),
-    tipTick: Color(0x33000000),
-    tipFill: Color(0x05FFFFFF),
-  );
-
-  static ShotBarColors of(BuildContext context) =>
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
-      ? dark
-      : light;
-}
-
-/// The tooltip of the six mode buttons of the bar (macOS texts, localized): close, Options
-/// and the action button have none (SCREENSHOT-3).
+/// The tooltip of the six mode buttons of the bar (localized): close, Options and the action
+/// button have none (SCREENSHOT-3).
 @immutable
 class ShotBarTips {
   const ShotBarTips({required this.capture, required this.record});
@@ -164,84 +93,43 @@ class ShotBarTips {
   final List<String> record;
 }
 
-/// The tooltip of a mode button (SCREENSHOT-3): no bubble, a transparent box [tipHeight]
-/// high marked by four corner ticks, width = the text + [tipPadding] each side.
+/// The tooltip of a mode button: Callout on Glass/Thick (the compositor's `tooltip` kind).
 class ShotTip extends StatelessWidget {
-  const ShotTip({super.key, required this.text, required this.colors});
+  const ShotTip({super.key, required this.text});
 
   final String text;
-  final ShotBarColors colors;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
+    final colors = AmalfiTheme.of(context).colors;
+    return ShadowedGlass(
       key: const ValueKey('bar tooltip box'),
-      painter: _TipBoxPainter(colors.tipFill, colors.tipTick),
-      child: SizedBox(
-        height: tipHeight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(width: tipPadding),
-            Text(
-              text,
-              maxLines: 1,
-              softWrap: false,
-              style: uiText(size: 11, color: colors.tipText),
-            ),
-            const SizedBox(width: tipPadding),
-          ],
+      profile: ShellGlassProfile.tooltip,
+      radius: AmalfiTooltipMetrics.radius,
+      thick: true,
+      child: Padding(
+        padding: AmalfiTooltipMetrics.padding,
+        child: Text(
+          text,
+          maxLines: 1,
+          softWrap: false,
+          style: AmalfiType.callout(color: colors.textPrimary),
         ),
       ),
     );
   }
 }
 
-class _TipBoxPainter extends CustomPainter {
-  const _TipBoxPainter(this.fill, this.tick);
-  final Color fill;
-  final Color tick;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = fill);
-    final paint = Paint()
-      ..color = tick
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    const t = tipTickLength;
-    final r = (Offset.zero & size).deflate(0.5);
-    final path = Path()
-      ..moveTo(r.left, r.top + t)
-      ..lineTo(r.left, r.top)
-      ..lineTo(r.left + t, r.top)
-      ..moveTo(r.right - t, r.top)
-      ..lineTo(r.right, r.top)
-      ..lineTo(r.right, r.top + t)
-      ..moveTo(r.right, r.bottom - t)
-      ..lineTo(r.right, r.bottom)
-      ..lineTo(r.right - t, r.bottom)
-      ..moveTo(r.left + t, r.bottom)
-      ..lineTo(r.left, r.bottom)
-      ..lineTo(r.left, r.bottom - t);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_TipBoxPainter old) =>
-      old.fill != fill || old.tick != tick;
-}
-
 /// The bar itself; its place is decided by whoever hosts it. Its width follows
-/// [showAction]: `toolbarSize` with the action button, 85 pt less on the right without it.
+/// [showAction]: [toolbarSize] with the action button, [toolbarActionSpace] less without it.
 class ShotToolbar extends StatefulWidget {
   const ShotToolbar({
     super.key,
     required this.choice,
-    required this.colors,
     required this.optionsLabel,
+    required this.optionsOpen,
     required this.actionLabel,
+    required this.closeLabel,
     required this.tips,
     required this.showAction,
     required this.onChoose,
@@ -250,12 +138,17 @@ class ShotToolbar extends StatefulWidget {
     required this.onAction,
     required this.onMove,
     required this.onMoved,
+    this.closing = false,
+    this.onClosed,
   });
 
   final ToolbarChoice choice;
-  final ShotBarColors colors;
   final String optionsLabel;
+
+  /// The Options menu is open: its button keeps the pressed look.
+  final bool optionsOpen;
   final String actionLabel;
+  final String closeLabel;
   final ShotBarTips tips;
 
   /// The action button exists only while there is a target (K-05): in window mode it hides
@@ -270,61 +163,106 @@ class ShotToolbar extends StatefulWidget {
   final ValueChanged<Offset> onMove;
   final VoidCallback onMoved;
 
+  /// The bar is going (× or Esc): it fades and sinks, then [onClosed] is called.
+  final bool closing;
+  final VoidCallback? onClosed;
+
   @override
   State<ShotToolbar> createState() => _ShotToolbarState();
 }
 
-class _ShotToolbarState extends State<ShotToolbar> {
+class _ShotToolbarState extends State<ShotToolbar>
+    with TickerProviderStateMixin {
   /// The mode button whose tooltip is shown: 0..2 capture, 3..5 record. It stays after the
   /// pointer leaves, until another mode button is hovered or the bar goes.
   int? _tip;
 
+  /// 0 → 1: the fade (`fade.quick`) and the rise on `spring.panel`.
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: AmalfiFades.quick.duration,
+  );
+  late final AnimationController _rise = AnimationController.unbounded(
+    vsync: this,
+    value: 0,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _fade.forward();
+    _rise.animateWith(SpringSimulation(AmalfiSprings.panel, 0, 1, 0));
+  }
+
+  @override
+  void didUpdateWidget(ShotToolbar old) {
+    super.didUpdateWidget(old);
+    if (widget.closing && !old.closing) {
+      _fade.reverse().whenComplete(() => widget.onClosed?.call());
+      _rise.animateWith(
+        SpringSimulation(AmalfiSprings.panel, _rise.value, 0, 0),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _rise.dispose();
+    super.dispose();
+  }
+
+  /// The mode button under `dx` (from the segmented control's left edge), or null on the
+  /// track's padding.
+  int? _itemAt(double dx) {
+    final i = ((dx - modeTrackInset) / modeItem).floor();
+    return i < 0 || i > 2 ? null : i;
+  }
+
+  Widget _modes({
+    required double x,
+    required List<String> symbols,
+    required List<String> labels,
+    required int tipBase,
+    required Set<int> selected,
+    ValueChanged<Set<int>>? onChanged,
+  }) => Positioned(
+    left: x,
+    top: barInset,
+    width: modesWidth,
+    height: controlHeight,
+    // The pointer on one of the three shows its tooltip at once, and it stays.
+    child: MouseRegion(
+      onEnter: (e) => _hover(e.localPosition, tipBase),
+      onHover: (e) => _hover(e.localPosition, tipBase),
+      child: AmalfiSegmentedControl(
+        segments: [
+          for (var i = 0; i < 3; i++)
+            AmalfiSegment.icon(
+              AmalfiSymbol(symbols[i]),
+              semanticLabel: labels[i],
+            ),
+        ],
+        selected: selected,
+        onChanged: onChanged,
+        size: AmalfiControlSize.large,
+        // Glass is never stacked on glass: the bar is the compositor's, the track an
+        // opaque fill over it.
+        opaque: true,
+      ),
+    ),
+  );
+
+  void _hover(Offset at, int base) {
+    final i = _itemAt(at.dx);
+    if (i != null && _tip != base + i) setState(() => _tip = base + i);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = widget.colors;
+    final colors = AmalfiTheme.of(context).colors;
     final tips = widget.tips;
-    final choice = widget.choice;
-    Widget at(double x, double width, Widget child) =>
-        Positioned(left: x, top: 1, width: width, height: 50, child: child);
-    // The six mode buttons: the pointer on one shows its tooltip at once.
-    Widget tipped(int index, Widget child) =>
-        MouseRegion(onEnter: (_) => setState(() => _tip = index), child: child);
-    Widget mode(ToolbarChoice which, ShotGlyph glyph, String key) => at(
-      captureX[which.index],
-      modeWidth,
-      tipped(
-        which.index,
-        ShotToolButton(
-          key: ValueKey(key),
-          chosen: choice == which,
-          colors: c,
-          onTap: () => widget.onChoose(which),
-          child: (color) => CustomPaint(
-            size: const Size(26, 20),
-            painter: ShotModePainter(glyph, color),
-          ),
-        ),
-      ),
-    );
-    Widget record(int index, ShotGlyph glyph) => at(
-      recordX[index],
-      modeWidth,
-      // TODO(#153): screen recording; until then dimmed, no action.
-      tipped(
-        3 + index,
-        Opacity(
-          key: ValueKey('record ${glyph.name}'),
-          opacity: 0.35,
-          child: Center(
-            child: CustomPaint(
-              size: const Size(26, 20),
-              painter: ShotModePainter(glyph, c.glyph, record: true),
-            ),
-          ),
-        ),
-      ),
-    );
-    final tip = _tip;
+    final tip = widget.optionsOpen ? null : _tip;
     final tipText = tip == null
         ? null
         : tip < 3
@@ -332,157 +270,144 @@ class _ShotToolbarState extends State<ShotToolbar> {
         : tips.record[tip - 3];
     final tipX = tip == null
         ? 0.0
-        : (tip < 3 ? captureX[tip] : recordX[tip - 3]) + modeWidth / 2;
+        : (tip < 3 ? captureModesX : recordModesX) +
+              modeTrackInset +
+              ((tip % 3) + 0.5) * modeItem;
     // The width: with the action button (shown) or without it, 450 ms after a 60 ms start.
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: widget.showAction ? 1 : 0),
-      duration: actionBarDuration + actionDelay,
-      curve: Interval(
-        actionDelay.inMilliseconds /
-            (actionBarDuration + actionDelay).inMilliseconds,
-        1,
-        curve: Curves.easeInOut,
+    return AnimatedBuilder(
+      animation: Listenable.merge([_fade, _rise]),
+      builder: (context, child) => Opacity(
+        opacity: AmalfiFades.quick.curve.transform(_fade.value.clamp(0, 1)),
+        child: Transform.translate(
+          offset: Offset(0, 8 * (1 - _rise.value)),
+          child: child,
+        ),
       ),
-      builder: (context, open, _) => SizedBox(
-        width: toolbarSize.width - toolbarActionSpace * (1 - open),
-        height: toolbarSize.height,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: ProfiledGlass(
-                profile: ShellGlassProfile.control,
-                radius: 18,
-                material: GlassMaterial.regular,
-                child: Container(
-                  key: const ValueKey('screenshot bar'),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    border: c.topLine == null
-                        ? null
-                        : Border(top: BorderSide(color: c.topLine!)),
-                  ),
-                  child: Stack(
-                    children: [
-                      // The background: dragging it moves the bar.
-                      Positioned.fill(
-                        child: GestureDetector(
-                          key: const ValueKey('bar background'),
-                          behavior: HitTestBehavior.opaque,
-                          dragStartBehavior: DragStartBehavior.down,
-                          onPanUpdate: (d) => widget.onMove(d.delta),
-                          onPanEnd: (_) => widget.onMoved(),
-                        ),
-                      ),
-                      at(
-                        closeX,
-                        18,
-                        GestureDetector(
-                          key: const ValueKey('close bar'),
-                          onTap: widget.onClose,
-                          child: Center(
-                            child: Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: c.closeFill,
-                                shape: BoxShape.circle,
-                              ),
-                              child: CustomPaint(
-                                key: const ValueKey('close glyph'),
-                                painter: CrossGlyph(
-                                  c.closeGlyph,
-                                  arm: 3.2,
-                                  stroke: 1.5,
-                                ),
-                              ),
-                            ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: widget.showAction ? 1 : 0),
+        duration: actionBarDuration + actionDelay,
+        curve: Interval(
+          actionDelay.inMilliseconds /
+              (actionBarDuration + actionDelay).inMilliseconds,
+          1,
+          curve: Curves.easeInOut,
+        ),
+        builder: (context, open, _) => SizedBox(
+          width: toolbarSize.width - toolbarActionSpace * (1 - open),
+          height: toolbarSize.height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: ShadowedGlass(
+                  profile: ShellGlassProfile.control,
+                  radius: toolbarRadius,
+                  child: SizedBox.expand(
+                    key: const ValueKey('screenshot bar'),
+                    child: Stack(
+                      children: [
+                        // The background: dragging it moves the bar.
+                        Positioned.fill(
+                          child: GestureDetector(
+                            key: const ValueKey('bar background'),
+                            behavior: HitTestBehavior.opaque,
+                            dragStartBehavior: DragStartBehavior.down,
+                            onPanUpdate: (d) => widget.onMove(d.delta),
+                            onPanEnd: (_) => widget.onMoved(),
                           ),
                         ),
-                      ),
-                      mode(
-                        ToolbarChoice.screen,
-                        ShotGlyph.screen,
-                        'mode screen',
-                      ),
-                      mode(
-                        ToolbarChoice.window,
-                        ShotGlyph.window,
-                        'mode window',
-                      ),
-                      mode(
-                        ToolbarChoice.selection,
-                        ShotGlyph.selection,
-                        'mode selection',
-                      ),
-                      Positioned(
-                        left: separator1X,
-                        top: 12,
-                        width: 1,
-                        height: 28,
-                        child: ColoredBox(color: c.line),
-                      ),
-                      record(0, ShotGlyph.screen),
-                      record(1, ShotGlyph.window),
-                      record(2, ShotGlyph.selection),
-                      Positioned(
-                        left: separator2X,
-                        top: 12,
-                        width: 1,
-                        height: 28,
-                        child: ColoredBox(color: c.line),
-                      ),
-                      at(
-                        optionsX,
-                        optionsWidth,
-                        ShotToolButton(
-                          key: const ValueKey('options'),
-                          width: optionsWidth,
-                          colors: c,
-                          onTap: widget.onOptions,
-                          child: (color) => Text(
-                            widget.optionsLabel,
-                            style: uiText(size: 12, color: color),
+                        Positioned(
+                          left: closeX,
+                          top: barInset,
+                          child: AmalfiToolbarButton(
+                            key: const ValueKey('close bar'),
+                            icon: const AmalfiGlyph(AmalfiGlyphs.xmark),
+                            semanticLabel: widget.closeLabel,
+                            onPressed: widget.onClose,
                           ),
                         ),
-                      ),
-                      _action(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (tipText != null)
-              // Centred on the button, its bottom `tipAboveBar` over the bar's top edge.
-              Positioned(
-                left: tipX - 200,
-                width: 400,
-                top: -tipAboveBar - tipHeight,
-                height: tipHeight,
-                child: IgnorePointer(
-                  child: Center(
-                    child: ShotTip(
-                      key: const ValueKey('bar tooltip'),
-                      text: tipText,
-                      colors: c,
+                        _modes(
+                          x: captureModesX,
+                          symbols: captureSymbols,
+                          labels: tips.capture,
+                          tipBase: 0,
+                          selected: {widget.choice.index},
+                          onChanged: (s) {
+                            if (s.isEmpty) return;
+                            widget.onChoose(ToolbarChoice.values[s.first]);
+                          },
+                        ),
+                        _separator(separator1X, colors),
+                        // TODO(#153): screen recording; until then disabled, no action.
+                        _modes(
+                          x: recordModesX,
+                          symbols: recordSymbols,
+                          labels: tips.record,
+                          tipBase: 3,
+                          selected: const {},
+                        ),
+                        _separator(separator2X, colors),
+                        Positioned(
+                          left: optionsX,
+                          top: barInset,
+                          child: ShotOptionsButton(
+                            key: const ValueKey('options'),
+                            label: widget.optionsLabel,
+                            open: widget.optionsOpen,
+                            onTap: widget.onOptions,
+                          ),
+                        ),
+                        _action(),
+                      ],
                     ),
                   ),
                 ),
               ),
-          ],
+              if (tipText != null)
+                // Centred on the button, its bottom 8 pt over the bar's top edge.
+                Positioned(
+                  left: tipX - 200,
+                  width: 400,
+                  top: -tipAboveBar - tipHeight,
+                  height: tipHeight,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: ShotTip(
+                        key: const ValueKey('bar tooltip'),
+                        text: tipText,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// The action button: 80 x 36, `actionInset` from the bar's top, bottom and right edges;
-  /// it fades in 250 ms (after the same 60 ms start) as the bar's width changes.
+  Widget _separator(double x, AmalfiColors colors) => Positioned(
+    left: x,
+    top: 12,
+    width: separatorSlot,
+    height: 24,
+    child: Center(
+      child: SizedBox(
+        width: 1,
+        height: 16,
+        child: ColoredBox(color: colors.lineSeparator),
+      ),
+    ),
+  );
+
+  /// The action button: 104 × 32, [barInset] from the bar's top, bottom and right edges; it
+  /// fades in 250 ms (after the same 60 ms start) as the bar's width changes.
   Widget _action() {
     return Positioned(
       left: actionX,
-      top: actionInset,
+      top: barInset,
       width: actionWidth,
-      height: actionHeight,
+      height: controlHeight,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: widget.showAction ? 1 : 0),
         duration: actionFadeDuration + actionDelay,
@@ -497,25 +422,16 @@ class _ShotToolbarState extends State<ShotToolbar> {
             ignoring: !widget.showAction,
             child: Opacity(
               opacity: opacity,
-              child: GestureDetector(
-                key: const ValueKey('capture'),
-                onTap: widget.onAction,
-                child: Container(
-                  key: const ValueKey('capture fill'),
-                  width: actionWidth,
-                  height: actionHeight,
-                  decoration: BoxDecoration(
-                    color: actionBlue,
-                    borderRadius: BorderRadius.circular(actionRadius),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    widget.actionLabel,
-                    style: uiText(
-                      size: 13,
-                      color: const Color(0xFFFFFFFF),
-                    ).copyWith(fontWeight: FontWeight.w600),
-                  ),
+              child: SizedBox(
+                key: const ValueKey('capture fill'),
+                width: actionWidth,
+                height: controlHeight,
+                child: AmalfiPushButton(
+                  key: const ValueKey('capture'),
+                  label: widget.actionLabel,
+                  variant: AmalfiPushButtonVariant.primary,
+                  size: AmalfiControlSize.large,
+                  onPressed: widget.onAction,
                 ),
               ),
             ),
@@ -526,118 +442,96 @@ class _ShotToolbarState extends State<ShotToolbar> {
   }
 }
 
-/// A bar button: the pill of the chosen mode (darker when pressed, K-06) and the glyph in
-/// the color of its state. The pointer over a mode that is not chosen changes nothing.
-class ShotToolButton extends StatefulWidget {
-  const ShotToolButton({
+/// The Options pull-down (`Buttons/Pull-down/Large`): 96 × 32, `Surface/Control` capsule with
+/// its border and soft shadow, the label in Body and a chevron; pressed (or with its menu open)
+/// `Surface/Control Pressed`. The menu itself is [ShotMenu]: silica_ui's pull-down opens a plain
+/// list, and this one has sections, checkmarks and a place of its own.
+class ShotOptionsButton extends StatefulWidget {
+  const ShotOptionsButton({
     super.key,
-    required this.child,
+    required this.label,
     required this.onTap,
-    required this.colors,
-    this.chosen = false,
-    this.width = modeWidth,
+    this.open = false,
   });
 
-  final Widget Function(Color color) child;
+  final String label;
   final VoidCallback onTap;
-  final ShotBarColors colors;
-  final bool chosen;
-  final double width;
+  final bool open;
 
   @override
-  State<ShotToolButton> createState() => _ShotToolButtonState();
+  State<ShotOptionsButton> createState() => _ShotOptionsButtonState();
 }
 
-class _ShotToolButtonState extends State<ShotToolButton> {
+class _ShotOptionsButtonState extends State<ShotOptionsButton> {
   bool _pressed = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.colors;
-    final pressedChosen = widget.chosen && _pressed;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: Center(
-        child: Container(
-          width: widget.width,
-          height: 40,
-          decoration: BoxDecoration(
-            color: !widget.chosen
-                ? null
-                : pressedChosen
-                ? c.chosenPressed
-                : c.chosen,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          alignment: Alignment.center,
-          child: widget.child(
-            !widget.chosen
-                ? c.glyph
-                : pressedChosen
-                ? c.chosenPressedGlyph
-                : c.chosenGlyph,
+    final colors = AmalfiTheme.of(context).colors;
+    final pressed = _pressed || widget.open;
+    final shape = AmalfiSmoothBorder(
+      radius: AmalfiRadii.capsule(controlHeight),
+      side: BorderSide(
+        color: colors.lineBorder,
+        strokeAlign: BorderSide.strokeAlignInside,
+      ),
+    );
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTap: widget.onTap,
+          child: DecoratedBox(
+            decoration: AmalfiShapeDecoration(
+              color: pressed
+                  ? colors.surfaceControlPressed
+                  : colors.surfaceControl,
+              shape: shape,
+              shadows: amalfiControlShadows(colors),
+            ),
+            child: DecoratedBox(
+              decoration: AmalfiShapeDecoration(
+                color: _hovered && !pressed ? colors.accentAmalfiSoft : null,
+                shape: shape,
+              ),
+              child: SizedBox(
+                width: optionsWidth,
+                height: controlHeight,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: AmalfiType.body(color: colors.textPrimary),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      AmalfiGlyph(
+                        AmalfiGlyphs.chevronDown,
+                        size: 16,
+                        color: colors.textSecondary,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-enum ShotGlyph { screen, window, selection }
-
-/// The mode icons: the full screen, a window in a screen, a dashed selection; the record
-/// ones with a dot.
-class ShotModePainter extends CustomPainter {
-  const ShotModePainter(this.glyph, this.color, {this.record = false});
-  final ShotGlyph glyph;
-  final Color color;
-  final bool record;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    final outer = RRect.fromRectAndRadius(
-      (Offset.zero & size).deflate(1),
-      const Radius.circular(3),
-    );
-    switch (glyph) {
-      case ShotGlyph.screen:
-        canvas.drawRRect(outer, stroke);
-        if (!record) canvas.drawRRect(outer.deflate(3), Paint()..color = color);
-      case ShotGlyph.window:
-        canvas.drawRRect(outer, stroke);
-        final inner = RRect.fromRectAndRadius(
-          Rect.fromLTWH(6, 5, size.width - 12, size.height - 10),
-          const Radius.circular(2),
-        );
-        canvas.drawRRect(inner, record ? stroke : (Paint()..color = color));
-      case ShotGlyph.selection:
-        const dash = 3.0;
-        final rect = (Offset.zero & size).deflate(2);
-        final path = Path()..addRect(rect);
-        for (final metric in path.computeMetrics()) {
-          for (var d = 0.0; d < metric.length; d += 2 * dash) {
-            canvas.drawPath(metric.extractPath(d, d + dash), stroke);
-          }
-        }
-    }
-    if (record) {
-      canvas.drawCircle(
-        size.center(Offset.zero),
-        size.height * 0.2,
-        Paint()..color = color,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(ShotModePainter old) =>
-      old.glyph != glyph || old.color != color || old.record != record;
 }
