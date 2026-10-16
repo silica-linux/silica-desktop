@@ -104,15 +104,15 @@ fn rgb(shot: &[u8], x: u32, y: u32) -> [u8; 3] {
     [r, g, b]
 }
 
-/// What an Amalfi material shows over a flat color (levels): the color saturated by 1.5 around
-/// its Rec. 709 luminance, then the tint `tint` at `amount` over it
-/// (`docs/design/amalfi/materials.md`).
-fn amalfi_fill(color: [f64; 3], tint: [f64; 3], amount: f64) -> [u8; 3] {
+/// What an Amalfi material shows over a flat color (levels), away from its edge: the color
+/// saturated by 1.1 around its Rec. 709 luminance, its brightness, then the tint `tint` at
+/// `fill.amount` over it (`docs/design/amalfi/materials.md`).
+fn amalfi_fill(color: [f64; 3], tint: [f64; 3], fill: Fill) -> [u8; 3] {
     let l = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
     let mut out = [0u8; 3];
     for c in 0..3 {
-        let saturated = l + (color[c] - l) * 1.5;
-        out[c] = (saturated + (tint[c] - saturated) * amount)
+        let saturated = ((l + (color[c] - l) * 1.1) * fill.brightness).clamp(0.0, 255.0);
+        out[c] = (saturated + (tint[c] - saturated) * fill.amount)
             .round()
             .clamp(0.0, 255.0) as u8;
     }
@@ -121,12 +121,32 @@ fn amalfi_fill(color: [f64; 3], tint: [f64; 3], amount: f64) -> [u8; 3] {
 
 /// The reference gray of the glass tests, `#7a7b80`.
 const GRAY: [f64; 3] = [122.0, 123.0, 128.0];
-/// The tints of `tokens.json`: white in light, `#2A2B30` in dark; 60 % on Glass/Regular, 76 %
-/// (`C2`) on Glass/Thick.
+/// The tints of `tokens.json`: white in light, `#2A2B30` in dark; 60 % on Glass/Regular, 58 %
+/// (`94`) on Glass/Thick.
 const TINT_LIGHT: [f64; 3] = [255.0; 3];
 const TINT_DARK: [f64; 3] = [42.0, 43.0, 48.0];
-const REGULAR: f64 = 0.6;
-const THICK: f64 = 194.0 / 255.0;
+/// The tint amount and the backdrop brightness of a material in an appearance.
+#[derive(Clone, Copy)]
+struct Fill {
+    amount: f64,
+    brightness: f64,
+}
+const REGULAR_LIGHT: Fill = Fill {
+    amount: 0.6,
+    brightness: 1.25,
+};
+const REGULAR_DARK: Fill = Fill {
+    amount: 0.6,
+    brightness: 1.10,
+};
+const THICK_LIGHT: Fill = Fill {
+    amount: 148.0 / 255.0,
+    brightness: 1.12,
+};
+const THICK_DARK: Fill = Fill {
+    amount: 148.0 / 255.0,
+    brightness: 1.05,
+};
 
 /// The largest channel difference between two colors.
 fn worst(a: [u8; 3], b: [u8; 3]) -> u8 {
@@ -169,31 +189,33 @@ fn fills_on_gray(name: &str, dark: bool) -> ([u8; 3], [u8; 3]) {
 #[test]
 fn materials_on_the_reference_gray_are_the_amalfi_fill() {
     let (regular, thick) = fills_on_gray("glass-gray", false);
-    let want_regular = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
-    let want_thick = amalfi_fill(GRAY, TINT_LIGHT, THICK);
+    let want_regular = amalfi_fill(GRAY, TINT_LIGHT, REGULAR_LIGHT);
+    let want_thick = amalfi_fill(GRAY, TINT_LIGHT, THICK_LIGHT);
     eprintln!("regular {regular:?} (Amalfi {want_regular:?}), thick {thick:?} ({want_thick:?})");
     assert!(
         worst(regular, want_regular) <= 2,
         "Glass/Regular {regular:?}"
     );
     assert!(worst(thick, want_thick) <= 2, "Glass/Thick {thick:?}");
-    // Thick glass is the more opaque one.
-    assert!(thick[1] > regular[1]);
+    // Regular glass is the brighter one in light (×1.25 against ×1.12, tint 60 % against 58 %
+    // of white).
+    assert!(thick[1] < regular[1]);
 }
 
 /// In dark (`--appearance dark`) the tint is `#2A2B30`.
 #[test]
 fn dark_materials_on_the_reference_gray() {
     let (regular, thick) = fills_on_gray("glass-gray-dark", true);
-    let want_regular = amalfi_fill(GRAY, TINT_DARK, REGULAR);
-    let want_thick = amalfi_fill(GRAY, TINT_DARK, THICK);
+    let want_regular = amalfi_fill(GRAY, TINT_DARK, REGULAR_DARK);
+    let want_thick = amalfi_fill(GRAY, TINT_DARK, THICK_DARK);
     eprintln!("regular {regular:?} (Amalfi {want_regular:?}), thick {thick:?} ({want_thick:?})");
     assert!(
         worst(regular, want_regular) <= 2,
         "Glass/Regular {regular:?}"
     );
     assert!(worst(thick, want_thick) <= 2, "Glass/Thick {thick:?}");
-    assert!(thick[1] < regular[1]);
+    // In dark the two are within a level or two of each other.
+    assert!(thick[1].abs_diff(regular[1]) <= 3);
 }
 
 /// A window that overrides the appearance with dark in a light session gets the dark glass
@@ -216,7 +238,7 @@ fn glass_of_a_dark_window_in_a_light_session_has_the_dark_tone() {
         .unwrap();
     let shot = shot(&ossido, "glass-override-dark.png");
     let got = rgb(&shot, 430, 250);
-    let expected = amalfi_fill(GRAY, TINT_DARK, THICK);
+    let expected = amalfi_fill(GRAY, TINT_DARK, THICK_DARK);
     assert!(
         worst(got, expected) <= 2,
         "thick glass of a dark window: {got:?}, expected {expected:?}"
@@ -257,12 +279,14 @@ fn regular_glass_blurs_a_stripe_edge_with_sigma_6() {
         .map(|x| f64::from(rgb(&shot, x, 114)[1]))
         .collect();
     // Glass/Regular over a gray step: the sharp share (0.28 on the Dock) plus a Gaussian of σ
-    // `sigma` px, then 60 % white (gray does not change with the saturation).
+    // `sigma` px, the brightness (×1.25 in light, clamped) and 60 % white (gray does not change
+    // with the saturation).
     let model = |sigma: f64, edge: f64, x: f64| {
         let sharp = if x >= edge { 255.0 } else { 0.0 };
         let blurred = 255.0 * normal_cdf((x - edge) / sigma);
         let backdrop = 0.28 * sharp + 0.72 * blurred;
-        backdrop + (255.0 - backdrop) * REGULAR
+        let lit = (backdrop * REGULAR_LIGHT.brightness).min(255.0);
+        lit + (255.0 - lit) * REGULAR_LIGHT.amount
     };
     let fit = |sigma: f64| {
         (0..200)
@@ -302,7 +326,7 @@ fn the_rims_are_a_dark_inside_line_and_a_light_top_edge() {
     let (x, top, bottom, mid) = (202, 52, 131, 92);
     let level = |at: (u32, u32)| f64::from(rgb(&shot, at.0, at.1)[1]);
     let fill = level((x, mid));
-    let want_fill = f64::from(amalfi_fill(GRAY, TINT_LIGHT, REGULAR)[1]);
+    let want_fill = f64::from(amalfi_fill(GRAY, TINT_LIGHT, REGULAR_LIGHT)[1]);
     assert!((fill - want_fill).abs() <= 2.0, "fill {fill}");
     // The first row's pixel centre is 0.5 px inside: the inside rim covers it (fill × 0.88),
     // the rim light reaches it on top at 1 / (1 + e^-1.702) of 70 %, at the bottom not at all.
@@ -341,17 +365,21 @@ fn the_rims_are_a_dark_inside_line_and_a_light_top_edge() {
 }
 
 #[test]
-fn regular_and_thick_glass_do_not_refract() {
-    // 12 px stripes behind (black for (x + 6) mod 24 < 12), window at (32, 32): stripe edges at
-    // x 26 + 12k, under the glass from x 64. Glass/Regular and Glass/Thick have no lens: the
-    // edges inside the glass stay where they are behind it.
-    for material in [Material::Clear, Material::Thick] {
+fn regular_and_thick_glass_refract_at_the_edge_only() {
+    // 30 px stripes behind (black for (x - 8) mod 60 < 30), the window at (32, 32): stripe edges
+    // at screen x 40 + 30k. The glass is 300 × 100 at (64, 64): the edge at x 70 lies 6 px inside
+    // its left edge, the ones at x 130 and 190 in the middle. Glass/Regular and Glass/Thick pull the
+    // backdrop in towards the rim over a band of depth × 50 px (17.5 and 14): the edge near the
+    // rim is shown further inside (a pixel at distance t shows the backdrop at
+    // t - distortion × band × (1 - t / band)², so by about 2.0 px on Regular and 1.1 px on
+    // Thick here); the one in the middle stays where it is.
+    for (material, low, high) in [(Material::Clear, 1.0, 4.0), (Material::Thick, 0.4, 2.5)] {
         let ossido = Headless::start_with("glass-refraction", SHOT, &[]);
         let back = (500, 200);
         let mut pixels = Vec::new();
         for _ in 0..back.1 {
             for x in 0..back.0 {
-                let level = if (x + 6) % 24 < 12 { 0 } else { 255 };
+                let level = if (x + 52) % 60 < 30 { 0 } else { 255 };
                 pixels.extend_from_slice(&[level, level, level, 255]);
             }
         }
@@ -360,31 +388,37 @@ fn regular_and_thick_glass_do_not_refract() {
         let mut glass = TestWindow::open_pixels(&ossido.wayland, "glass", size, &transparent(size));
         glass.set_glass(&[(0, 0, 300, 100, 0.0, material)]).unwrap();
         let shot = shot(&ossido, "glass-refraction.png");
-        let row: Vec<f64> = (64..364)
-            .map(|x| f64::from(rgb(&shot, x, 114)[1]))
-            .collect();
-        let low = row.iter().cloned().fold(f64::MAX, f64::min);
-        let high = row.iter().cloned().fold(0.0, f64::max);
-        if high - low < 6.0 {
-            // Thick glass (σ 16) blurs 12 px stripes flat: nothing to displace.
-            continue;
-        }
-        let mid = (low + high) / 2.0;
-        let mut worst_shift = 0.0_f64;
-        for i in 3..row.len() - 3 {
-            let (a, b) = (row[i - 1], row[i]);
-            if (a - mid) * (b - mid) > 0.0 || a == b {
-                continue;
-            }
-            // Where the mid level is crossed, against the nearest stripe edge behind.
-            let crossing = 64.0 + (i - 1) as f64 + 0.5 + (mid - a) / (b - a);
-            let edge = 26.0 + 12.0 * ((crossing - 26.0) / 12.0).round();
-            worst_shift = worst_shift.max((crossing - edge).abs());
-        }
-        eprintln!("{material:?}: largest shift {worst_shift:.2} px");
+        let level = |x: i32| f64::from(rgb(&shot, x as u32, 114)[1]);
+        // The edges at x 70 and 190 go the same way. The level at the middle of the one at x
+        // 190 (far from the rim) is where the blurred edge is: look for it near x 70.
+        let mid = (level(189) + level(190)) / 2.0;
+        let rising = level(197) > level(183);
+        let crossing = |edge: i32| {
+            (edge - 5..edge + 10)
+                .find(|x| {
+                    let (a, b) = (level(*x), level(*x + 1));
+                    if rising {
+                        a < mid && b >= mid
+                    } else {
+                        a > mid && b <= mid
+                    }
+                })
+                .map(|x| {
+                    let (a, b) = (level(x), level(x + 1));
+                    f64::from(x) + 0.5 + (mid - a) / (b - a)
+                })
+                .unwrap_or_else(|| panic!("{material:?}: no crossing near {edge}"))
+        };
+        let near = crossing(70) - 70.0;
+        let centre = crossing(130) - 130.0;
+        eprintln!("{material:?}: shift at the rim {near:.2} px, in the middle {centre:.2} px");
         assert!(
-            worst_shift <= 1.0,
-            "{material:?} refracts: {worst_shift:.2} px"
+            (low..high).contains(&near),
+            "{material:?}: the rim shifts the edge by {near:.2} px"
+        );
+        assert!(
+            centre.abs() <= 0.5,
+            "{material:?} refracts in the middle: {centre:.2} px"
         );
     }
 }
@@ -436,7 +470,7 @@ fn glass_quality_levels_choose_what_the_glass_sees() {
 
 #[test]
 fn without_blur_dark_glass_is_its_tint_over_the_window_surface() {
-    // Reduced transparency in dark: thick glass is 76 % `#2A2B30` over `#1B1C1F`, whatever is
+    // Reduced transparency in dark: thick glass is 58 % `#2A2B30` over `#1B1C1F`, whatever is
     // behind (here white).
     let ossido = Headless::start_with(
         "glass-opaque-dark",
@@ -456,7 +490,8 @@ fn without_blur_dark_glass_is_its_tint_over_the_window_surface() {
         )
         .unwrap();
     let got = rgb(&shot(&ossido, "glass-opaque-dark.png"), 132, 82);
-    let mix = |surface: f64, tint: f64| (surface + (tint - surface) * THICK).round() as u8;
+    let mix =
+        |surface: f64, tint: f64| (surface + (tint - surface) * THICK_DARK.amount).round() as u8;
     let want = [mix(27.0, 42.0), mix(28.0, 43.0), mix(31.0, 48.0)];
     assert!(
         worst(got, want) <= 1,
@@ -475,7 +510,7 @@ fn the_regular_protocol_material_is_the_thick_glass_of_the_modules() {
         .set_glass(&[(0, 0, 200, 100, 0.0, Material::Regular)])
         .unwrap();
     let fill = rgb(&shot(&ossido, "glass-module-fill.png"), 132, 82);
-    let want = amalfi_fill(GRAY, TINT_LIGHT, THICK);
+    let want = amalfi_fill(GRAY, TINT_LIGHT, THICK_LIGHT);
     eprintln!("fill: {fill:?} (Amalfi {want:?})");
     assert!(worst(fill, want) <= 2, "module fill {fill:?}");
 }
@@ -740,7 +775,7 @@ fn notification_glass_is_regular_glass_whose_cards_stay_apart() {
         .set_glass(&[(0, 0, 344, 91, 20.0, Material::Notification)])
         .unwrap();
     let fill = rgb(&shot(&ossido, "glass-notification.png"), 32 + 172, 32 + 45);
-    let want = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
+    let want = amalfi_fill(GRAY, TINT_LIGHT, REGULAR_LIGHT);
     eprintln!("fill: {fill:?} (Amalfi {want:?})");
     assert!(worst(fill, want) <= 2, "banner fill {fill:?}");
 
@@ -844,7 +879,7 @@ fn translucent_glass_fades_with_its_panel() {
         .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 0.5)])
         .unwrap();
     let fill = rgb(&shot(&ossido, "glass-translucent.png"), 32 + 172, 32 + 45);
-    let full = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
+    let full = amalfi_fill(GRAY, TINT_LIGHT, REGULAR_LIGHT);
     let mut half = [0u8; 3];
     for c in 0..3 {
         half[c] = ((GRAY[c] + f64::from(full[c])) / 2.0).round() as u8;
@@ -1147,7 +1182,7 @@ fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
     let top = brightest((0.0, -1.0), 40.0);
     let side = brightest((1.0, 0.0), 100.0);
     eprintln!("fill {fill:.1}, top edge {top:.1}, side edge {side:.1}");
-    // Thick glass over black: the fill 76 % white (194), the top row ~27 levels lighter, the
+    // Thick glass over black: the fill 58 % white (148), the top row some levels lighter, the
     // sides no lighter than the fill.
     assert!(
         top > fill + 15.0,

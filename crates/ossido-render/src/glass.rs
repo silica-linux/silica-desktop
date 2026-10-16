@@ -20,7 +20,7 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::glass_profile::{GlassProfile, lens_width};
+use crate::glass_profile::{GlassProfile, lens_width, refraction_band};
 
 /// Parameters of a material: blur, sharp share and color (`out = M · in + b + q₂ · l² + q₃ · l³`
 /// on the encoded sRGB values, 0–1, l the mean of the input channels).
@@ -114,7 +114,7 @@ pub struct Lens {
 }
 
 impl Lens {
-    /// No lens: Glass/Regular and Glass/Thick do not refract.
+    /// No lens: the material does not refract.
     pub const NONE: Self = Self {
         side: &[],
         top: &[],
@@ -169,16 +169,16 @@ impl Lens {
 
 impl MaterialParams {
     /// An Amalfi material in the glass pass: a blur of σ `sigma` points with the `sharp` share,
-    /// a neutral color transfer (the profile's saturation and tint make the color), no lens and
-    /// no edge of its own (the profile draws the rims), merging within `merge_pt`.
-    pub const fn amalfi(sigma: f64, sharp: f32, merge_pt: f32) -> Self {
+    /// a neutral color transfer (the profile's saturation, brightness and tint make the color),
+    /// the `lens` of its refraction (`Lens::NONE`: none) and no edge of its own (the profile draws the rims), merging within `merge_pt`.
+    pub const fn amalfi(sigma: f64, sharp: f32, merge_pt: f32, lens: Lens) -> Self {
         Self {
             sigma,
             sharp,
             matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             offset: [0.0; 3],
             curve: [[0.0; 3]; 2],
-            lens: Lens::NONE,
+            lens,
             edge: Edge::NONE,
             merge_pt,
         }
@@ -201,7 +201,7 @@ pub const DOWNSAMPLE_UNIFORMS: [(&str, UniformType); 5] = [
     ("mirror", UniformType::_1f),
 ];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 33] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 35] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -224,6 +224,8 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 33] = [
     ("edge_power", UniformType::_1f),
     ("lens_widths", UniformType::Matrix4x4),
     ("refraction", UniformType::_1f),
+    ("chromatic", UniformType::_1f),
+    ("brightness", UniformType::_1f),
     ("rim", UniformType::_1f),
     ("line", UniformType::_1f),
     ("saturation", UniformType::_1f),
@@ -334,7 +336,7 @@ pub const REFERENCE_GRAY: [f32; 3] = [122.0 / 255.0, 123.0 / 255.0, 128.0 / 255.
 /// A profile's saturation and tint over a material color (the shader's, on the fill).
 pub fn profile_color(profile: &GlassProfile, [r, g, b]: [f32; 3]) -> [f32; 3] {
     let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    let saturate = |c: f32| l + (c - l) * profile.saturation;
+    let saturate = |c: f32| (l + (c - l) * profile.saturation) * profile.brightness;
     let [tr, tg, tb, amount] = profile.tint;
     let tint = |c: f32, t: f32| c + (t - c) * amount;
     [
@@ -778,6 +780,7 @@ impl GlassCache {
                 let reach = f64::from(
                     region.material.lens.outward_reach()
                         + region.material.merge_pt
+                        + region.profile.chromatic * region.material.lens.inward_reach()
                         + region.profile.shadow.reach(),
                 );
                 ((region.sigma() * 3.0 + reach) * scale).ceil() as i32 + 2
@@ -1408,7 +1411,11 @@ impl RenderElement<GlesRenderer> for GlassElement {
             }
             let thickness = shape.rect.size.w.min(shape.rect.size.h) as f32;
             if let Some(slot) = lens_widths.get_mut(i) {
-                *slot = lens_width(thickness, lens_reach_px, profile.falloff);
+                *slot = if profile.depth > 0.0 {
+                    refraction_band(thickness / px.max(0.01), profile.depth)
+                } else {
+                    lens_width(thickness, lens_reach_px, profile.falloff)
+                };
             }
             if let Some(slot) = radii.get_mut(i) {
                 *slot = match shape.tip {
@@ -1485,6 +1492,8 @@ impl RenderElement<GlesRenderer> for GlassElement {
                 },
             ),
             Uniform::new("refraction", UniformValue::_1f(profile.refraction)),
+            Uniform::new("chromatic", UniformValue::_1f(profile.chromatic)),
+            Uniform::new("brightness", UniformValue::_1f(profile.brightness)),
             Uniform::new("rim", UniformValue::_1f(profile.rim)),
             Uniform::new("line", UniformValue::_1f(profile.line)),
             Uniform::new("saturation", UniformValue::_1f(profile.saturation)),
@@ -1649,7 +1658,7 @@ mod tests {
         let region = |rotation: f64| PhysicalRegion {
             rect: Rectangle::new((100, 50).into(), (120, 28).into()),
             radius: 14.0,
-            material: MaterialParams::amalfi(16.0, 0.0, MERGE_PT),
+            material: MaterialParams::amalfi(16.0, 0.0, MERGE_PT, Lens::NONE),
             opacity: 1.0,
             scale: 1.0,
             tip: None,
