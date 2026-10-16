@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'dart:async';
 
 import 'dart:ui' show PointerDeviceKind;
@@ -11,7 +13,6 @@ import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
 import 'package:silica_shell/notifications/settings.dart';
 import 'package:silica_shell/system/system_status.dart';
-import 'package:silica_ui/silica_ui.dart';
 
 class FakeSource extends ChangeNotifier implements NotificationsSource {
   final Map<int, ShellNotification> items = {};
@@ -131,19 +132,26 @@ void main() {
     },
   );
 
-  test('the banner entrance is spring.panel from the trailing edge', () {
+  test('the banner entrance is the measured exponential, tau 71 ms', () {
     expect(bannerEnterOffset(0), bannerEnterDistance);
-    // The distance to go shrinks, with a small overshoot (a few points) at most.
-    var overshoot = 0.0;
-    var last = bannerEnterDistance;
-    for (var ms = 10.0; ms < 450; ms += 10) {
-      final x = bannerEnterOffset(ms);
-      if (ms < 120) expect(x, lessThan(last));
-      last = x;
-      if (x < overshoot) overshoot = x;
+    // The remaining fraction is the reference's at any distance: exp(-t / 71).
+    for (final ms in [13.0, 40.0, 71.0, 142.0, 213.0, 300.0]) {
+      expect(
+        bannerEnterOffset(ms) / bannerEnterDistance,
+        closeTo(math.exp(-ms / 71), 1e-9),
+        reason: '$ms ms',
+      );
     }
-    expect(overshoot, greaterThan(-0.03 * bannerEnterDistance));
+    // No overshoot: monotone to 0, and within 1 pt in about 400 ms.
+    var last = bannerEnterDistance;
+    for (var ms = 10.0; ms < 500; ms += 10) {
+      final x = bannerEnterOffset(ms);
+      expect(x, lessThanOrEqualTo(last));
+      expect(x, greaterThanOrEqualTo(0));
+      last = x;
+    }
     expect(bannerEnterOffset(bannerEnterDuration.inMilliseconds.toDouble()), 0);
+    expect(bannerEnterDuration.inMilliseconds, inInclusiveRange(440, 480));
   });
 
   testWidgets('a banner enters at the top right and leaves by itself', (
@@ -446,24 +454,42 @@ void main() {
     },
   );
 
-  test('motion tokens: banner in spring.panel + fade, out fade.standard', () {
-    // Out: fade.standard, 250 ms, nothing moves.
-    expect(bannerExitDuration, const Duration(milliseconds: 250));
-    expect(bannerExitOpacity(0), 1);
-    expect(
-      bannerExitOpacity(125),
-      closeTo(1 - AmalfiFades.standard.curve.transform(0.5), 1e-6),
-    );
-    expect(bannerExitOpacity(250), 0);
-    // In: the opacity (fade.quick) is done long before the geometry settles.
+  test('banner and Centre motion are the measured curves', () {
+    // Banner in: opacity over ~210 ms, blur sharp in ~215 ms.
     expect(bannerEnterOpacity(0), 0);
-    expect(bannerEnterOpacity(150), 1);
-    // The Centre slides in like a banner and closes with fade.instant.
+    expect(bannerEnterOpacity(105), closeTo(0.5, 1e-9));
+    expect(bannerEnterOpacity(210), 1);
+    expect(bannerEnterBlur(0), bannerBlurSigma);
+    expect(bannerEnterBlur(215), 0);
+    // Banner out: ~190 ms, offset at 13.3 ms steps (scaled to the Amalfi distance), opacity
+    // down to half, growing blur.
+    expect(bannerExitDuration, const Duration(milliseconds: 190));
+    const k = bannerEnterDistance / 360;
+    for (final (i, pt) in bannerExitSteps.indexed) {
+      expect(
+        bannerExitOffset(i * 1000 / 75),
+        closeTo(k * pt, 1e-6),
+        reason: 'step $i',
+      );
+    }
+    expect(bannerExitOpacity(0), 1);
+    expect(bannerExitOpacity(190), closeTo(0.5, 1e-9));
+    expect(bannerExitBlur(190), bannerBlurSigma);
+    // Centre in: almost all of it in ~35 ms, a long tail up to ~235 ms.
     expect(centerOpenOffset(0), centerDistance);
-    expect(centerOpenOffset(centerOpenDuration.inMilliseconds.toDouble()), 0);
-    expect(centerCloseDuration, const Duration(milliseconds: 100));
-    expect(centerCloseOpacity(0), 1);
-    expect(centerCloseOpacity(100), 0);
+    expect(
+      centerOpenOffset(35) / centerDistance,
+      closeTo((347 * math.exp(-35 / 12) + 40 * math.exp(-35 / 70)) / 387, 1e-9),
+    );
+    expect(centerOpenOffset(35), lessThan(0.15 * centerDistance));
+    expect(centerOpenDuration, const Duration(milliseconds: 235));
+    expect(centerOpenOffset(235), 0);
+    // Centre out: ~300 ms, slight slow shift then a fast exit and a tail.
+    expect(centerCloseDuration, const Duration(milliseconds: 300));
+    expect(centerCloseOffset(0), 0);
+    expect(centerCloseOffset(60) / centerDistance, closeTo(10 / 387, 1e-9));
+    expect(centerCloseOffset(150) / centerDistance, closeTo(357 / 387, 1e-9));
+    expect(centerCloseOffset(300), closeTo(centerDistance, 1e-9));
   });
 
   testWidgets(
