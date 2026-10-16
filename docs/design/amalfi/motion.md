@@ -97,16 +97,16 @@ The source of every curve is the spec section named; distances scale to Amalfi.
 | Faro | enter/leave scope | height with `spring.panel`, +4 / −4 pt, ~450 ms; width fixed 640 | FARO-02 |
 | Faro | close | `fade.instant` with a slight brighten and scale to 0.97 toward the centre, gone ~100 ms | FARO-02 |
 | Launcher | open / Esc to bar | open: from ~1.06 scale to 1 with a small bounce; Esc: content fades, then the 844 × 580 panel shrinks into Faro's 640 × 56 bar (keep the measured curve) | `docs/spec/launcher.md` |
-| Menus | open | fade 0 → 1 `fade.instant`, no scale; close `fade.instant` | `docs/spec/menubar.md` |
+| Menus | open / close | open in one frame, no animation; after a choice (blink, +114 ms) or Esc a linear ~190 ms fade out (measured; the window popover is an assumption) | `docs/spec/menubar.md` |
 | Popovers | open/close | fade + scale 0.96 → 1 from the arrow, `spring.panel` | `docs/spec/misc.md` |
 | Tooltips | show/hide | `fade.quick` after `delay.tooltip` | `docs/spec/tip.md` |
-| Notifications | banner in/out | slide from the trailing edge + fade, `spring.panel`; out `fade.standard` | `docs/spec/notifications.md` |
-| Control Center | panel open | `fade.instant` + height `spring.panel`; module → detail `spring.morph` | `docs/spec/controlcenter.md` |
-| Dock | magnification, launch bounce, minimise | magnification follows the pointer 1:1 (no spring); bounce `spring.bouncy`; minimise `spring.window` | `docs/spec/dock.md` |
-| Windows | open / close / zoom | `spring.window` scale 0.96 → 1 + `fade.quick` | `docs/spec/windows.md` |
-| Mission Control / Panorama | enter / exit | `spring.window` | `docs/spec/panorama.md`, `spaces.md` |
-| App switcher | show | `fade.instant` | `docs/spec/app-switcher.md` |
-| Screenshot bar | show/hide | `fade.quick` + 8 pt rise, `spring.panel` | `docs/spec/screenshot-ui.md` |
+| Notifications | banner in/out, Centre | banner in: exponential slide, tau 71 ms, fade 210 ms, blur sharp in 215 ms; out: measured steps in ~190 ms with blur; Centre in: two exponentials (12 and 70 ms) over 235 ms, out: ~300 ms steps; distances scale to Amalfi | `docs/spec/notifications.md` |
+| Control Center | open / close, detail, hover | measured opacity tables (open 310 ms, close 293 ms) and scale 1.0075 to 1; module to detail on the measured slow-fast-slow table (333 ms, shorter for nearer modules; back x1.35); hover 10 % at 50 ms, half at 150 ms, done at 300 ms | `docs/spec/controlcenter.md` |
+| Dock | magnification, launch bounce, attention, minimise | magnification timing measured (the fall-off shape is an assumption); launch bounce is the measured parabolic curve (17 pt scaled to Amalfi, 693 ms); attention hops 56/23/8 pt scaled; minimise genie and scale effect measured | `docs/spec/dock.md`, `misc.md` |
+| Windows | open / close / zoom | measured: open 0.98 to 1 in ~100 ms, close fade ~125 ms with scale 0.995; zoom is unmeasured (assumption) | `docs/spec/windows.md` |
+| Mission Control / Panorama | enter / exit, space switch | measured curves (space switch critically damped omega 13.2/s, Panorama open/close tables, spaces bar springs) | `docs/spec/panorama.md`, `spaces.md` |
+| App switcher | show / release / Esc | appears in one frame; release fades linearly in ~190 ms; Esc closes in the next frame | `docs/spec/app-switcher.md` |
+| Screenshot bar | show/hide | at once (nothing measured, no motion invented); the action button width keeps its measured 60 ms + 450 ms; the thumbnail keeps its measured 380 / 5400 / 250 ms | `docs/spec/screenshot-ui.md` |
 | Segmented control | select | lens grows (`spring.snappy`), slides to the new segment (`spring.morph`), fades | — |
 | Switch | toggle | thumb `spring.snappy`; while dragged the thumb is a Clear lens | — |
 | Push / icon buttons | hover / press | overlay `fade.quick` in, 60 ms out | — |
