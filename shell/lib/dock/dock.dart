@@ -26,7 +26,6 @@ import 'package:silica_ui/silica_ui.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 
 import '../l10n/l10n.dart';
-import '../menubar/menubar.dart' show barHeight;
 import '../system/desktop_entries.dart';
 import '../system/folder_style.dart';
 import '../system/glass_profile.dart';
@@ -37,6 +36,7 @@ import '../system/shell_channel.dart';
 import '../system/sounds.dart';
 import 'apps.dart';
 import 'autostart.dart';
+import 'dock_menu.dart';
 import 'launcher_entry.dart';
 import 'options.dart';
 import 'recent_documents.dart';
@@ -738,8 +738,8 @@ class _LiveDockState extends State<LiveDock> {
 }
 
 /// Colors of the light appearance (dock.md).
-const Color separatorColor = Color(0xFF484950);
-const Color indicatorColor = Color(0xFF03040B);
+const Color separatorColor = Color(0x241D1E21);
+const Color indicatorColor = Color(0xFF5F636B);
 
 /// Icon menu (D-04): at ~530 ms of pressing the label hides and the menu opens (the measured
 /// 583-613 ms is end to end, including the input pipeline and compositing, so it is not added
@@ -908,14 +908,16 @@ class DockColors {
   final Color separator;
   final Color indicator;
 
+  // Kit `Dock/Separator/Line` (#1d1e2124 / #f4f5f729) and `Dock/Indicator/Dot`
+  // (#5f636b / #b0b4bc).
   static const DockColors light = DockColors(
-    separator: Color(0xFF484950),
-    indicator: Color(0xFF03040B),
+    separator: Color(0x241D1E21),
+    indicator: Color(0xFF5F636B),
   );
 
   static const DockColors dark = DockColors(
-    separator: Color(0xFFA9AAAF),
-    indicator: Color(0xFFE5E6EB),
+    separator: Color(0x29F4F5F7),
+    indicator: Color(0xFFB0B4BC),
   );
 
   static DockColors of(BuildContext context) =>
@@ -924,15 +926,29 @@ class DockColors {
       : light;
 }
 
-/// Label: body 27 pt tall (y 1325–1351), tip drawn from TIP-01 (`labelTipOutline`; the
-/// layout keeps the earlier 3 pt for the box), with its top
-/// ~13 pt above the icon (icon from 1367, tip at 1354), horizontal margin ~15.5 pt, text
-/// of ~14 pt (from the 10 pt capitals in Inter).
-const double labelHeight = 27;
-const double labelTip = 3;
-const double labelGap = 13;
-const double labelPadding = 15.5;
-const double labelFontSize = 14;
+/// Label (Amalfi tooltip, kit `Dock/Shelf/With Label`): 24 pt tall, 8 pt of padding at each
+/// side around the Callout text (width rounded up to the 4 pt grid like the kit's tooltips),
+/// no tip, its bottom 16 pt above the icon's top (12 above the shelf).
+const double labelHeight = 24;
+const double labelTip = 0;
+const double labelGap = 16;
+const double labelPadding = 8;
+
+/// The Dock label text: Callout, `Text/Primary` of the appearance.
+TextStyle dockLabelStyle(BuildContext context) =>
+    AmalfiType.callout(color: AmalfiTheme.of(context).colors.textPrimary);
+
+/// The width of a label for `text`: the text rounded up to the 4 pt grid plus the padding.
+double dockLabelWidth(String text, TextStyle style, {double max = 224}) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+  )..layout();
+  final width = (painter.width / 4).ceil() * 4.0 + 2 * labelPadding;
+  painter.dispose();
+  return math.min(max, width);
+}
 
 class Dock extends StatefulWidget {
   const Dock({
@@ -1026,13 +1042,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   int? _menuIndex;
   List<MenuEntry> _menuEntries = const [];
 
-  /// The open submenus (outside the main menu rectangle), for the input region.
-  List<Rect> _submenuRects = const [];
-
   /// The panels of the open menu (the menu, then its submenus), from its host.
   List<Rect> _menuRects = const [];
   bool _menuByLongPress = false;
-  final GlobalKey<MenuHostState> _menuKey = GlobalKey();
+  final GlobalKey<DockMenuHostState> _menuKey = GlobalKey();
   Timer? _longPress;
 
   /// Hides the label shortly before a long press opens the menu.
@@ -1619,7 +1632,6 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     setState(() {
       _menuIndex = null;
       _menuEntries = const [];
-      _submenuRects = const [];
       _menuRects = const [];
       _pressed = null;
     });
@@ -1637,11 +1649,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       return;
     }
     if (_menuIndex != null) {
-      if (_menuContains(p)) {
-        _menuKey.currentState?.pointerDown(p);
-      } else {
-        _menuKey.currentState?.close();
-      }
+      // The menu takes its own clicks; a press outside closes it.
+      if (!_menuContains(p)) _menuKey.currentState?.close();
       return;
     }
     final rest = layout(
@@ -1694,7 +1703,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _labelOff?.cancel();
       _longPress = null;
     }
-    if (_menuIndex != null) _menuKey.currentState?.pointerMoved(p);
+    if (_menuIndex != null && _menuByLongPress) {
+      _menuKey.currentState?.pointerMoved(p);
+    }
   }
 
   void _pointerUp(PointerUpEvent e, Layout l, Size size) {
@@ -1759,7 +1770,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         : menu != null
         ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
         : base;
-    final submenus = menu == null ? const <Rect>[] : _submenuRects;
+    final submenus = menu == null || !hasSubmenu(_menuEntries)
+        ? const <Rect>[]
+        : [submenuBand(menu, bottom: size.height)];
     // Auto-hide: hidden, only the last row of the screen (the reveal edge); shown, that row too
     // (it stays up while the pointer runs along it).
     final bottomRow = Rect.fromLTWH(0, height - 1, size.width, 1);
@@ -2101,20 +2114,23 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             if (mounted) setState(() {});
           });
         }
-        // The menu tip: above the icon, ~11 pt above the bottom of the Dock (D-04).
+        // The menu: above the item, its bottom [menuAboveShelf] over the shelf. Until the
+        // menu has been laid out its rectangle is estimated from the rows.
         final menuIndex = _menuIndex;
-        final tip = menuIndex == null || menuIndex >= l.cells.length
+        final menuAnchor = menuIndex == null || menuIndex >= l.cells.length
             ? null
-            : Offset(l.center(menuIndex), by - menuTipAboveDock);
-        final menuRect = tip == null
+            : Offset(l.center(menuIndex), by - menuAboveShelf);
+        final menuRect = menuAnchor == null
             ? null
+            : _menuRects.isNotEmpty
+            ? _menuRects.first
             : () {
-                final m = menuSize(_menuEntries);
+                final height = 8.0 + 24.0 * _menuEntries.length;
                 return Rect.fromLTWH(
-                  tip.dx - MenuMetrics.tipBodyLeft,
-                  tip.dy - MenuMetrics.tipHeight - m.height,
-                  m.width,
-                  m.height + MenuMetrics.tipHeight,
+                  menuAnchor.dx - AmalfiMenuMetrics.minWidth / 2,
+                  menuAnchor.dy - height,
+                  AmalfiMenuMetrics.minWidth,
+                  height,
                 );
               }();
         // Outside the Dock (and the menu) the pointer goes to the windows below.
@@ -2210,10 +2226,6 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           behavior: HitTestBehavior.translucent,
           onPointerDown: (e) => _pointerDown(e, l, size),
           onPointerMove: (e) => _pointerMove(e.localPosition, size),
-          onPointerHover: (e) {
-            if (_menuIndex != null)
-              _menuKey.currentState?.pointerMoved(e.localPosition);
-          },
           onPointerUp: (e) => _pointerUp(e, l, size),
           onPointerCancel: (_) {
             if (_drag != null) setState(() => _drag = null);
@@ -2245,7 +2257,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     child: const ProfiledGlass(
                       profile: ShellGlassProfile.dock,
                       radius: backgroundRadius,
-                      material: GlassMaterial.clear,
+                      material: GlassMaterial.regular,
                       // The lowest: the stack, the labels and the menus sit on it.
                       group: DockGlass.dock,
                       child: SizedBox.expand(),
@@ -2333,14 +2345,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         // The stack repaints on its own layer while it opens and closes.
                         child: RepaintBoundary(
                           child: StackUnderMenu(
-                            menu: menuRect == null || tip == null
-                                ? const []
-                                : [
-                                    ..._menuRects.isEmpty
-                                        ? [menuBody(menuRect)]
-                                        : _menuRects,
-                                    menuTipRect(tip),
-                                  ],
+                            menu: menuRect == null ? const [] : [menuRect],
                             child: Stack(
                               clipBehavior: Clip.none,
                               children: [stackWidget],
@@ -2351,19 +2356,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     ),
                   if (alertRect != null && alert != null && alertRect.top >= 0)
                     Positioned.fromRect(rect: alertRect, child: alert),
-                  if (tip != null)
+                  if (menuAnchor != null)
                     Positioned.fill(
-                      child: MenuHost(
+                      child: DockMenuHost(
                         key: _menuKey,
                         entries: _menuEntries,
-                        anchor: Offset.zero,
-                        tip: tip,
-                        top: barHeight,
-                        handlesPointer: false,
+                        anchorX: menuAnchor.dx,
+                        bottom: menuAnchor.dy,
+                        group: 0,
                         onDismissed: _closeMenu,
-                        onRectsChanged: (rects) => setState(() {
-                          _menuRects = rects;
-                          _submenuRects = rects.skip(1).toList();
+                        onRectChanged: (rect) => setState(() {
+                          _menuRects = [rect];
                         }),
                       ),
                     ),
@@ -2434,15 +2437,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// A capsule like the label, with its tip at (`centerX`, `tipY`).
   Widget _capsule(String text, double centerX, double tipY, double opacity) {
-    final style = uiText(
-      size: labelFontSize,
-      color: MenuColors.of(context).text,
-    );
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final width = painter.width + 2 * labelPadding;
+    final style = dockLabelStyle(context);
+    final width = dockLabelWidth(text, style);
     return Positioned(
       left: centerX - width / 2,
       top: tipY - labelTip - labelHeight,
@@ -2570,15 +2566,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     // During the bounce the label rises with the icon.
     final iconTopY = iconTop - _bounce(index);
     final tipY = iconTopY - labelGap;
-    final style = uiText(
-      size: labelFontSize,
-      color: MenuColors.of(context).text,
-    );
-    final text = TextPainter(
-      text: TextSpan(text: _items[index].label, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final width = text.width + 2 * labelPadding;
+    final style = dockLabelStyle(context);
+    final width = dockLabelWidth(_items[index].label, style);
     return Positioned(
       left: l.center(index) - width / 2,
       top: tipY - labelTip - labelHeight,
@@ -2623,7 +2612,7 @@ class _DockPainter extends CustomPainter {
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
       if (item.kind == ItemKind.separator) {
-        final x = l.center(i).roundToDouble() - 0.5;
+        final x = l.center(i).roundToDouble();
         canvas.drawRect(
           Rect.fromLTWH(x, by + (bh - separatorHeight) / 2, 1, separatorHeight),
           Paint()
@@ -2745,29 +2734,14 @@ class _BadgePainter extends CustomPainter {
   bool shouldRepaint(_BadgePainter old) => true;
 }
 
-/// The Dock label's tip (TIP-01), origin on the apex, pointing down, in pt.
-Path labelTipOutline() => Path()
-  ..moveTo(-9.361, -6.516)
-  ..arcToPoint(const Offset(-7.461, -5.838), radius: const Radius.circular(3))
-  ..lineTo(-0.583, -0.208)
-  ..arcToPoint(
-    const Offset(0.583, -0.208),
-    radius: const Radius.circular(0.92),
-    clockwise: false,
-  )
-  ..lineTo(7.461, -5.838)
-  ..arcToPoint(const Offset(9.361, -6.516), radius: const Radius.circular(3))
-  ..close();
-
-/// The Dock label (TIP-01): the same glass as the menus (`thick`, drawn by Ossido with its
-/// rim) and the same shadow, with the label's own measured shape: a capsule of
-/// [labelHeight] and the small tip below it ([labelTipWidth] x [labelTipDepth]).
+/// The Dock label (Amalfi: a tooltip, kit `Tooltips/Tooltip/One Line`): Glass/Thick drawn by
+/// Ossido (`tooltip` kind) with radius 8, 24 pt tall, no tip, and the Thick drop shadow
+/// (0, 12, blur 32) outside the shape.
 class DockLabel extends StatelessWidget {
   const DockLabel({
     super.key,
     required this.text,
     required this.style,
-    this.tip = true,
     this.group = DockGlass.label,
     this.height = labelHeight,
     this.shadow = true,
@@ -2776,25 +2750,22 @@ class DockLabel extends StatelessWidget {
   final String text;
   final TextStyle style;
 
-  /// False for a label beside its object (the fan's item names): the same capsule, no tip.
-  final bool tip;
-
   /// Its own glass group (glass_groups.dart): below the menus, never merged with the stack's
   /// panel or the other labels.
   final int group;
 
-  /// The capsule's height (the fan's labels are 28 pt).
+  /// The label's height (the kit's tooltip: 24).
   final double height;
 
-  /// The menus' shadow under the capsule (the fan's labels have none, DOCK-FAN).
+  /// The Thick shadow under the label (the fan's labels have none, DOCK-FAN).
   final bool shadow;
 
-  /// The glass the label declares; the menus declare the same material
-  /// (`MenuPanel`: `GlassMaterial.thick`).
+  /// The glass the label declares (`materials.md`: tooltips are Thick).
   static const GlassMaterial material = GlassMaterial.thick;
 
   @override
   Widget build(BuildContext context) {
+    final brightness = AmalfiTheme.of(context).brightness;
     return LayoutBuilder(
       builder: (context, box) {
         final capsule = Align(
@@ -2803,33 +2774,29 @@ class DockLabel extends StatelessWidget {
             height: height,
             child: ProfiledGlass(
               profile: ShellGlassProfile.tooltip,
-              radius: height / 2,
+              radius: AmalfiTooltipMetrics.radius,
               material: material,
               group: group,
-              tip: tip
-                  ? GlassTip(
-                      x: box.maxWidth / 2,
-                      width: labelTipWidth,
-                      height: labelTipDepth,
-                    )
-                  : null,
-              child: Center(child: Text(text, style: style)),
+              child: Center(
+                child: Text(
+                  text,
+                  style: style,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ),
         );
         if (!shadow) return capsule;
+        final shadows = AmalfiGlass.shadowsOf(
+          AmalfiMaterials.thick,
+          brightness,
+        );
         return CachedShadow(
-          cacheKey: Object.hash(
-            box.maxWidth,
-            MenuColors.of(context).shadow,
-            tip,
-          ),
-          bleed: 60,
-          paintShadow: _LabelShadow(
-            box.maxWidth,
-            MenuColors.of(context).shadow,
-            tip: tip,
-          ).paint,
+          cacheKey: Object.hash(box.maxWidth, height, brightness),
+          bleed: 80,
+          paintShadow: _LabelShadow(box.maxWidth, height, shadows).paint,
           child: capsule,
         );
       },
@@ -2837,52 +2804,40 @@ class DockLabel extends StatelessWidget {
   }
 }
 
-/// The tip rectangle of the label: base and depth of the measured outline (TIP-01).
-const double labelTipWidth = 18.722;
-const double labelTipDepth = 6.5;
-
-/// The menus' shadow (`MenuPanel`: blur 16 pt, 4 pt lower, not on the glass, tip included).
+/// The label's shadow: the token's drop shadows of the shape, outside it only.
 class _LabelShadow extends CustomPainter {
-  const _LabelShadow(this.width, this.color, {this.tip = true});
+  const _LabelShadow(this.width, this.height, this.shadows);
   final double width;
-  final Color color;
-  final bool tip;
+  final double height;
+  final List<BoxShadow> shadows;
 
   @override
   void paint(Canvas canvas, Size size) {
     final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, width, labelHeight),
-      const Radius.circular(labelHeight / 2),
+      Rect.fromLTWH(0, 0, width, height),
+      const Radius.circular(AmalfiTooltipMetrics.radius),
     );
-    final glass = tip
-        ? Path.combine(
-            PathOperation.union,
-            Path()..addRRect(body),
-            labelTipOutline().shift(Offset(width / 2, labelHeight + 6.516)),
-          )
-        : (Path()..addRRect(body));
     canvas
       ..save()
       ..clipPath(
         Path.combine(
           PathOperation.difference,
-          Path()..addRect(Rect.fromLTWH(0, 0, width, labelHeight).inflate(60)),
-          glass,
+          Path()..addRect(Rect.fromLTWH(0, 0, width, height).inflate(80)),
+          Path()..addRRect(body),
         ),
-      )
-      ..drawRRect(
-        body.shift(const Offset(0, 4)),
+      );
+    for (final shadow in shadows) {
+      canvas.drawRRect(
+        body.shift(shadow.offset).inflate(shadow.spreadRadius),
         Paint()
-          ..color = color
-          ..maskFilter = MaskFilter.blur(
-            BlurStyle.normal,
-            Shadow.convertRadiusToSigma(16),
-          ),
-      )
-      ..restore();
+          ..color = shadow.color
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadow.blurSigma),
+      );
+    }
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(_LabelShadow old) =>
-      old.width != width || old.color != color || old.tip != tip;
+      old.width != width || old.height != height || old.shadows != shadows;
 }

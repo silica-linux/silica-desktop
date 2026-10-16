@@ -64,11 +64,11 @@ void main() {
   );
 
   test('attention: three decaying hops every 2 s; badge widths', () {
-    expect(attentionHeight(233), closeTo(56, 0.01));
-    expect(attentionHeight(466 + 160), closeTo(23, 0.01));
-    expect(attentionHeight(466 + 320 + 107), closeTo(8, 0.01));
+    expect(attentionHeight(233), closeTo(56 * amalfiScale, 0.01));
+    expect(attentionHeight(466 + 160), closeTo(23 * amalfiScale, 0.01));
+    expect(attentionHeight(466 + 320 + 107), closeTo(8 * amalfiScale, 0.01));
     expect(attentionHeight(1500), 0);
-    expect(attentionHeight(2000 + 233), closeTo(56, 0.01));
+    expect(attentionHeight(2000 + 233), closeTo(56 * amalfiScale, 0.01));
     expect(badgeWidth('1'), 23);
     expect(badgeWidth('12'), 23);
     expect(badgeWidth('123'), 26);

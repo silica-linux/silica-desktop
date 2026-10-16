@@ -1,8 +1,10 @@
+import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/dock_menu.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/main.dart';
@@ -45,10 +47,15 @@ void main() {
     },
   );
 
-  test('the bounce rises to 17 pt and lands every ~0.7 s', () {
+  test('the bounce is spring.bouncy: 17 pt scaled to the Amalfi size, every ~0.7 s', () {
     expect(bounceHeight(0), 0);
-    expect(bounceHeight(293), 17);
-    expect(bounceHeight(693 + 293), closeTo(17, 0.01));
+    // Peak of the under-damped response at ~115 ms (response 0.6 s, zeta 0.5).
+    expect(bounceHeight(115), closeTo(bouncePeak, 0.05));
+    expect(bouncePeak, closeTo(17 * 56 / 63, 1e-9));
+    expect(bounceHeight(115 + 693), closeTo(bouncePeak, 0.05));
+    // It lands before the next jump and stays down (never below rest).
+    expect(bounceHeight(400), 0);
+    expect(bounceHeight(692), 0);
     expect(bounceHeight(693), 0);
   });
 
@@ -84,12 +91,15 @@ void main() {
     await tester.tapAt(icon);
     await tester.pump(const Duration(milliseconds: 50));
     expect(log, ['attiva Terminal']);
-    // Right click: the menu, with its tip above the icon.
+    // Right click: the menu above the icon (no tip), 8 pt over the shelf.
     await tester.tapAt(icon, buttons: kSecondaryButton);
     await tester.pump();
     expect(find.text('Apri Terminal'), findsOneWidget);
-    final body = tester.getRect(find.byType(MenuPanel));
-    expect(body.left, closeTo(rest.center(0) - 27, 0.5));
+    final body = tester.getRect(find.byKey(dockMenuSurface));
+    final shelfTop = 300 - bottomGap - backgroundHeight;
+    expect(body.bottom, closeTo(shelfTop - menuAboveShelf, 0.5));
+    // Centred on the item unless the screen's edge is in the way (8 pt margin).
+    expect(body.left, closeTo(math.max(8, rest.center(0) - body.width / 2), 0.5));
     // Click outside: it closes without choosing.
     await tester.tapAt(const Offset(10, 10));
     await tester.pump(const Duration(milliseconds: 100));
@@ -545,7 +555,7 @@ void main() {
       await tester.tapAt(separator);
       await tester.pump(const Duration(milliseconds: 50));
       expect(log, isEmpty);
-      expect(find.byType(MenuPanel), findsNothing);
+      expect(find.byKey(dockMenuSurface), findsNothing);
       await tester.tapAt(separator, buttons: kSecondaryButton);
       await tester.pump();
       expect(find.text('Show recent apps'), findsOneWidget);

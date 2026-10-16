@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/dock_menu.dart';
 import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
@@ -114,16 +115,13 @@ void main() {
     expect(opened, ['${dir.path}/c.md']);
   });
 
-  testWidgets('fan: 28 pt glass labels, rotated with their icon, 5.5 pt away', (
+  testWidgets('fan: 24 pt glass labels, rotated with their icon, 5.5 pt away', (
     tester,
   ) async {
     await openStack(tester, 4);
     final labels = find.byType(DockLabel);
     // Four files and "Open folder".
     expect(labels, findsNWidgets(5));
-    for (final label in tester.widgetList<DockLabel>(labels)) {
-      expect(label.tip, isFalse);
-    }
     // Their glass is the Dock label's and the menus': thick, no tip.
     final glasses = tester
         .renderObjectList<RenderGlass>(
@@ -180,10 +178,10 @@ void main() {
         closeTo(fanFirstAngle + fanAngleStep * i, 1e-6),
         reason: 'label $i',
       );
-      // Its own capsule, before the turn: 28 pt tall, the radius half of it, the width the
+      // Its own capsule, before the turn: 24 pt tall, radius 8 (the tooltip's), the width the
       // label's.
       expect(frame['height'], fanLabelHeight);
-      expect(frame['radius'], fanLabelHeight / 2);
+      expect(frame['radius'], 8);
       final width = frame['width']! as double;
       expect(width, greaterThan(fanLabelHeight));
       // Where the transform puts the capsule's centre is the label's centre on screen.
@@ -301,14 +299,14 @@ void main() {
       (tester) async {
         await openStack(tester, 5, settings: StackSettings(content: view));
         await openMenu(tester);
-        expect(find.byType(MenuPanel), findsOneWidget);
+        expect(find.byKey(dockMenuSurface), findsOneWidget);
         // The stack stays open under the menu.
         expect(
           find.byType(view == StackContent.grid ? GridStack : FanStack),
           findsOneWidget,
         );
         final menu = tester.renderObject<RenderGlass>(
-          find.descendant(of: find.byType(MenuPanel), matching: anyGlass),
+          find.descendant(of: find.byKey(dockMenuSurface), matching: anyGlass),
         );
         // The menu's group is above every glass of the stack and of the Dock: no merging,
         // the menu on top.
@@ -320,7 +318,7 @@ void main() {
         // The menu is painted after the stack, and the stack's content is cut where the menu
         // lies (its glass alone cannot cover the stack's icons).
         final cut = tester.widget<StackUnderMenu>(find.byType(StackUnderMenu));
-        final panel = tester.getRect(find.byType(MenuPanel));
+        final panel = tester.getRect(find.byKey(dockMenuSurface));
         expect(cut.menu, isNotEmpty);
         final clip = MenuHoleClipper(cut.menu).getClip(const Size(2560, 1440));
         expect(clip.contains(panel.center), isFalse);
@@ -330,7 +328,7 @@ void main() {
         for (var i = 0; i < 6; i++) {
           await tester.pump(const Duration(milliseconds: 50));
         }
-        expect(find.byType(MenuPanel), findsNothing);
+        expect(find.byKey(dockMenuSurface), findsNothing);
         expect(
           find.byType(view == StackContent.grid ? GridStack : FanStack),
           findsOneWidget,
@@ -471,7 +469,7 @@ void main() {
     expect(opened, [dir.path]);
   });
 
-  testWidgets('grid: thick panel glass, the tip is the measured 24 x 8 pt', (
+  testWidgets('grid: thick panel glass, the tip is the popover arrow, 20 x 8 pt', (
     tester,
   ) async {
     await openStack(
@@ -486,7 +484,7 @@ void main() {
         .first;
     expect(panel.material, GlassMaterial.thick);
     expect(panel.tip!.edge, TipEdge.bottom);
-    expect(panel.tip!.width, 24);
+    expect(panel.tip!.width, 20);
     expect(panel.tip!.height, 8);
   });
 
