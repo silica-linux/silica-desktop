@@ -7,17 +7,16 @@
 # category of the generic file, e.g. "data", is not kept here); a key ending in `/*` is a wildcard
 # the reader tries after the exact type. [ext] is its `icons.extensions` map.
 
+# The app icons in silica.assets are the shell's own: the Launcher, Mission Control, Screenshot
+# and the Silica mark. The icons of the other Silica apps live in each app's repository
+# (`icon/`, docs/assets-format.md "App icons"). Sources without this key compile every app icon
+# (the test fixtures do that).
+shell_apps = ["apps", "mission-control", "screenshot", "silica"]
+
 [app]
 "dev.frascella.Apps" = "apps"
-"dev.frascella.Calculator" = "calculator"
-"dev.frascella.Clock" = "clock"
-"dev.frascella.Mail" = "mail"
 "dev.frascella.MissionControl" = "mission-control"
-"dev.frascella.Mustache" = "mustache"
-"dev.frascella.Preview" = "photo-viewer"
 "dev.frascella.Screenshot" = "screenshot"
-"dev.frascella.Settings" = "settings"
-"dev.frascella.Terminal" = "terminal"
 
 [mime]
 "application/epub+zip" = "file-generic"

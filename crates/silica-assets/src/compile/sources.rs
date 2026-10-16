@@ -187,7 +187,13 @@ pub(super) fn compile(options: &Options) -> Result<(Vec<u8>, Report), CompileErr
 
     let mut type_ids: BTreeMap<String, u32> = BTreeMap::new();
     let mut app_ids: BTreeMap<String, u32> = BTreeMap::new();
-    apps(&mut ctx, &options.icons.join("apps"), &mut app_ids)?;
+    let shell_apps = shell_apps(&types)?;
+    apps(
+        &mut ctx,
+        &options.icons.join("apps"),
+        shell_apps.as_deref(),
+        &mut app_ids,
+    )?;
     files(&mut ctx, &options.icons.join("files"), &mut type_ids)?;
     badges(&mut ctx, &options.icons.join("badges"))?;
     symbols(&mut ctx, &options.icons.join("symbols"))?;
@@ -222,14 +228,34 @@ pub(super) fn compile(options: &Options) -> Result<(Vec<u8>, Report), CompileErr
 
 // ----------------------------------------------------------------------------------- apps
 
+/// `shell_apps` of types.toml: the only app icons compiled. `None` (no key): every app icon.
+fn shell_apps(types: &toml::Table) -> Result<Option<Vec<String>>, CompileError> {
+    let Some(value) = types.get("shell_apps") else {
+        return Ok(None);
+    };
+    let bad = || CompileError::new("types.toml shell_apps: not an array of strings");
+    value
+        .as_array()
+        .ok_or_else(bad)?
+        .iter()
+        .map(|v| v.as_str().map(str::to_owned).ok_or_else(bad))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
 fn apps(
     ctx: &mut Ctx<'_>,
     dir: &Path,
+    only: Option<&[String]>,
     ids: &mut BTreeMap<String, u32>,
 ) -> Result<(), CompileError> {
     for name in list(dir)? {
         let app_dir = dir.join(&name);
         if !app_dir.join("icon.json").is_file() {
+            continue;
+        }
+        // The other Silica apps carry their own icon (docs/assets-format.md "App icons").
+        if only.is_some_and(|only| !only.contains(&name)) {
             continue;
         }
         let manifest = parse_json(

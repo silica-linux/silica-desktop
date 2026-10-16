@@ -46,14 +46,23 @@ pub fn install_app(app: &str) -> Result<()> {
         embedder.display(),
         engine.display()
     );
+    // The app's own icon (`icon/` in its repository), copied next to the bundle.
+    let icon = crate::app_icon::copy_to_bundle(&dir, &dir.join("build/release"))?.map(|folder| {
+        let png = crate::app_icon::png_name(&folder);
+        (folder.display().to_string(), png)
+    });
     let target = applications_dir()?;
     std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
     for template in templates {
         let text = std::fs::read_to_string(&template)
             .map_err(|e| format!("{}: {e}", template.display()))?;
-        let entry = text
-            .replace("@EMBEDDER@", &command)
-            .replace("@BUNDLE@", &bundle.display().to_string());
+        let entry = render_entry(
+            &text,
+            &command,
+            &bundle.display().to_string(),
+            icon.as_ref()
+                .map(|(folder, png)| (folder.as_str(), png.as_str())),
+        );
         let name = template
             .file_name()
             .and_then(|n| n.to_str())
@@ -64,6 +73,25 @@ pub fn install_app(app: &str) -> Result<()> {
         eprintln!("xtask: installed {}", out.display());
     }
     Ok(())
+}
+
+/// A `.desktop.in` template with its placeholders filled. With `icon` (the installed icon
+/// folder of the app and the PNG in it), the entry gets `X-Silica-Icon=<folder>` and
+/// `Icon=<folder>/<png>`; without it the template keeps the icon names it has (the shell looks
+/// them up in the icons folder).
+pub(crate) fn render_entry(
+    template: &str,
+    embedder: &str,
+    bundle: &str,
+    icon: Option<(&str, &str)>,
+) -> String {
+    let entry = template
+        .replace("@EMBEDDER@", embedder)
+        .replace("@BUNDLE@", bundle);
+    match icon {
+        Some((folder, png)) => crate::app_icon::with_icon(&entry, folder, png),
+        None => entry,
+    }
 }
 
 /// The shell's own applications (`shell/linux/*.desktop.in`: Apps, Mission Control, Screenshot), their
@@ -174,6 +202,28 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::*;
+
+    #[test]
+    fn an_app_with_an_icon_folder_gets_its_path_in_the_entry() {
+        let template = "[Desktop Entry]\nName=Clock\nIcon=clock\nX-Silica-Icon=clock\nExec=@EMBEDDER@ @BUNDLE@\n";
+        let entry = render_entry(
+            template,
+            "/bin/emb --engine e",
+            "/b/flutter_assets",
+            Some(("/b/icon", "icon.png")),
+        );
+        assert!(
+            entry.contains("Exec=/bin/emb --engine e /b/flutter_assets\n"),
+            "{entry}"
+        );
+        assert!(entry.contains("X-Silica-Icon=/b/icon\n"), "{entry}");
+        assert!(entry.contains("Icon=/b/icon/icon.png\n"), "{entry}");
+        assert!(!entry.contains("=clock"), "{entry}");
+        // Without an icon folder the template is untouched: the name is looked up as before.
+        let plain = render_entry(template, "/bin/emb", "/b", None);
+        assert!(plain.contains("X-Silica-Icon=clock\n"), "{plain}");
+        assert!(plain.contains("Icon=clock\n"), "{plain}");
+    }
 
     #[test]
     fn shell_entries_run_their_action() {

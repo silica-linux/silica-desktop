@@ -16,6 +16,7 @@
 //! - `unsafe`: `unsafe` allowed only in the embedder FFI, Ossido's EGL and silica-assets' ffi.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter for the embedder (see `flutter.rs`).
 
+mod app_icon;
 mod bench;
 mod bench_glass;
 mod flutter;
