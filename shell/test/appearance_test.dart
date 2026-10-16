@@ -1,11 +1,12 @@
-// The dark appearance of Control Center, HUD and notifications. Control Center and HUD are
-// identical in both appearances over grey (controlcenter.md, hud.md); notifications change
+// The appearance of Control Center, HUD and notifications. Control Center and HUD follow it
+// (dark text on the near-white light glass, Amalfi); notifications change
 // (notifications.md, dark over grey).
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
 import 'package:silica_shell/controlcenter/hud.dart';
+import 'package:silica_shell/controlcenter/palette.dart';
 import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 
@@ -18,6 +19,13 @@ Widget themed(Brightness brightness, Widget child) => MediaQuery(
 
 Color? colorOf(WidgetTester tester, String text) =>
     tester.widget<Text>(find.text(text).first).style?.color;
+
+/// The text color as drawn: the style's own, else the inherited one.
+Color? drawnColorOf(WidgetTester tester, String text) {
+  final finder = find.text(text).first;
+  return tester.widget<Text>(finder).style?.color ??
+      DefaultTextStyle.of(tester.element(finder)).style.color;
+}
 
 void main() {
   testWidgets('dark notification: text, time, actions and buttons', (
@@ -58,7 +66,7 @@ void main() {
     expect(section, isNotEmpty);
   });
 
-  testWidgets('Control Center the same in light and dark', (tester) async {
+  testWidgets('Control Center text follows the appearance', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -69,15 +77,16 @@ void main() {
       );
       await sendCommand(tester, 'controlcenter.toggle');
       await tester.pumpAndSettle();
-      colors.add(colorOf(tester, 'Wi-Fi'));
+      colors.add(drawnColorOf(tester, 'Wi-Fi'));
       await sendCommand(tester, 'controlcenter.toggle');
       await tester.pumpAndSettle();
     }
-    expect(colors.first, isNotNull);
-    expect(colors.last, colors.first);
+    // Light: Amalfi Text/Primary on the near-white glass; dark: white.
+    expect(colors.first, CcPalette.lightMode.text);
+    expect(colors.last, CcPalette.dark.text);
   });
 
-  testWidgets('HUD the same in light and dark', (tester) async {
+  testWidgets('HUD text follows the appearance', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -95,11 +104,12 @@ void main() {
       );
       await tester.pump();
       await tester.pump(hudAppear);
-      colors.add(colorOf(tester, 'Audio output'));
+      colors.add(drawnColorOf(tester, 'Audio output'));
       await tester.pump(hudHold);
       await tester.pumpAndSettle();
     }
-    expect(colors.first, isNotNull);
-    expect(colors.last, colors.first);
+    // Light: Amalfi Text/Primary on the near-white glass; dark: white.
+    expect(colors.first, CcPalette.lightMode.text);
+    expect(colors.last, CcPalette.dark.text);
   });
 }

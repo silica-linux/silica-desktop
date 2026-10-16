@@ -17,6 +17,7 @@ import 'package:silica_ui/silica_ui.dart';
 import '../l10n/l10n.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
+import 'palette.dart';
 
 const double detailWidth = 308;
 
@@ -30,9 +31,6 @@ const double detailRow = 32;
 const double detailCircle = 26;
 const double detailTextLeft = 52;
 
-/// `#7e7f84` over `#6a6b70`: white at ~10 %.
-const Color detailSeparator = Color(0x1AFFFFFF);
-const Color detailSection = Color(0xFFB7B8BE);
 const Color detailCircleOff = Color(0xFF8F9095);
 const Color detailBlue = Color(0xFF007AFF);
 
@@ -41,7 +39,6 @@ const Color detailBlue = Color(0xFF007AFF);
 const Size switchSize = Size(54, 24);
 const double switchTop = 9;
 const Color switchOn = Color(0xFF0074F8);
-const Color switchOff = Color(0x40FFFFFF);
 
 /// Progress of the transformation (top edge of the panel, Display: 338 pt in ~333 ms);
 /// for closer modules the duration gets shorter (Wi-Fi, 34 pt: ~215 ms).
@@ -115,9 +112,27 @@ TextStyle detailText(double size, {FontWeight? weight, Color? color}) =>
       package: 'silica_ui',
       fontSize: size,
       fontWeight: weight,
-      color: color ?? const Color(0xFFFFFFFF),
+      color: color,
       height: 1.2,
     );
+
+/// A secondary label (section titles, subtitles): [CcPalette.secondary].
+Widget detailSecondary(
+  String text,
+  double size, {
+  FontWeight? weight,
+  int? maxLines,
+}) => Builder(
+  builder: (context) => Text(
+    text,
+    maxLines: maxLines,
+    style: detailText(
+      size,
+      weight: weight,
+      color: CcPalette.of(context).secondary,
+    ),
+  ),
+);
 
 /// The data of a panel, loaded when it opens.
 class DetailData {
@@ -146,11 +161,13 @@ class DetailContent {
   );
 }
 
-Widget _separator({double inset = detailInset}) => Center(
-  child: Container(
-    height: 1,
-    margin: EdgeInsets.symmetric(horizontal: inset),
-    color: detailSeparator,
+Widget _separator({double inset = detailInset}) => Builder(
+  builder: (context) => Center(
+    child: Container(
+      height: 1,
+      margin: EdgeInsets.symmetric(horizontal: inset),
+      color: CcPalette.of(context).separator,
+    ),
   ),
 );
 
@@ -228,10 +245,7 @@ class _FooterItemState extends State<_FooterItem> {
 
 Widget _section(String title) => Padding(
   padding: const EdgeInsets.only(left: detailInset, top: 9),
-  child: Text(
-    title,
-    style: detailText(12.4, weight: FontWeight.w600, color: detailSection),
-  ),
+  child: detailSecondary(title, 12.4, weight: FontWeight.w600),
 );
 
 class DetailSwitch extends StatelessWidget {
@@ -244,7 +258,7 @@ class DetailSwitch extends StatelessWidget {
     onTap: () => onChanged(!on),
     child: Container(
       decoration: BoxDecoration(
-        color: on ? switchOn : switchOff,
+        color: on ? switchOn : CcPalette.of(context).switchOff,
         borderRadius: BorderRadius.circular(switchSize.height / 2),
       ),
       alignment: on ? Alignment.centerRight : Alignment.centerLeft,
@@ -294,12 +308,19 @@ class DetailRow extends StatelessWidget {
           height: detailCircle,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: active ? const Color(0xFFFFFFFF) : detailCircleOff,
+            // Light: the active disc is the accent with a white glyph.
+            color: active
+                ? (CcPalette.of(context).light
+                      ? activeGlyph
+                      : const Color(0xFFFFFFFF))
+                : detailCircleOff,
           ),
           child: Center(
             child: Glyph(
               glyph,
-              color: active ? activeGlyph : const Color(0xFFFFFFFF),
+              color: active && !CcPalette.of(context).light
+                  ? activeGlyph
+                  : const Color(0xFFFFFFFF),
               size: 14,
             ),
           ),
@@ -325,19 +346,20 @@ class _Lock extends StatelessWidget {
   const _Lock();
 
   @override
-  Widget build(BuildContext context) => const SizedBox(
+  Widget build(BuildContext context) => SizedBox(
     width: 16,
     height: 14,
-    child: CustomPaint(painter: _LockPainter()),
+    child: CustomPaint(painter: _LockPainter(CcPalette.of(context).secondary)),
   );
 }
 
 class _LockPainter extends CustomPainter {
-  const _LockPainter();
+  const _LockPainter(this.color);
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = detailSection;
+    final paint = Paint()..color = color;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(4, 6, 8, 7),
@@ -357,20 +379,24 @@ class _LockPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LockPainter old) => false;
+  bool shouldRepaint(_LockPainter old) => old.color != color;
 }
 
 /// ">" arrow (Other networks, hovering over the modules).
 class Chevron extends StatelessWidget {
-  const Chevron({super.key, this.color = detailSection, this.down = false});
-  final Color color;
+  const Chevron({super.key, this.color, this.down = false});
+
+  /// Null: the secondary color of the appearance.
+  final Color? color;
   final bool down;
 
   @override
   Widget build(BuildContext context) => SizedBox(
     width: 8,
     height: 12,
-    child: CustomPaint(painter: _ChevronPainter(color, down)),
+    child: CustomPaint(
+      painter: _ChevronPainter(color ?? CcPalette.of(context).secondary, down),
+    ),
   );
 }
 
@@ -443,13 +469,8 @@ DetailContent wifiDetail({
           padding: const EdgeInsets.symmetric(horizontal: detailInset),
           child: Row(
             children: [
-              Expanded(
-                child: Text(
-                  l.ccPrivacyWarning,
-                  style: detailText(13, color: detailSection),
-                ),
-              ),
-              Text('⚠', style: detailText(13, color: detailSection)),
+              Expanded(child: detailSecondary(l.ccPrivacyWarning, 13)),
+              detailSecondary('⚠', 13),
             ],
           ),
         ),
@@ -490,13 +511,10 @@ DetailContent wifiDetail({
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
+              child: detailSecondary(
                 l.otherNetworks,
-                style: detailText(
-                  12.4,
-                  weight: FontWeight.w600,
-                  color: detailSection,
-                ),
+                12.4,
+                weight: FontWeight.w600,
               ),
             ),
             Chevron(down: othersOpen),
@@ -615,42 +633,45 @@ DetailContent displayDetail({
     width: displayTileWidth,
     top: 0,
     bottom: 0,
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: displayTileCircle,
-            height: displayTileCircle,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: active ? const Color(0xFFFFFFFF) : detailCircleOff,
-            ),
-            child: Center(
-              child: Glyph(
-                glyph,
-                color: active ? detailBlue : const Color(0xFFFFFFFF),
-                size: 20,
+    child: Builder(
+      builder: (context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          children: [
+            Container(
+              width: displayTileCircle,
+              height: displayTileCircle,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: active
+                    ? (CcPalette.of(context).light
+                          ? detailBlue
+                          : const Color(0xFFFFFFFF))
+                    : detailCircleOff,
+              ),
+              child: Center(
+                child: Glyph(
+                  glyph,
+                  color: active && !CcPalette.of(context).light
+                      ? detailBlue
+                      : const Color(0xFFFFFFFF),
+                  size: 20,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            maxLines: 1,
-            style: detailText(
-              11,
-              weight: FontWeight.w600,
-              color: onTap == null ? detailSection : null,
-            ),
-          ),
-          Text(
-            subtitle,
-            maxLines: 1,
-            style: detailText(10, color: detailSection),
-          ),
-        ],
+            const SizedBox(height: 3),
+            if (onTap == null)
+              detailSecondary(label, 11, weight: FontWeight.w600, maxLines: 1)
+            else
+              Text(
+                label,
+                maxLines: 1,
+                style: detailText(11, weight: FontWeight.w600),
+              ),
+            detailSecondary(subtitle, 10, maxLines: 1),
+          ],
+        ),
       ),
     ),
   );
@@ -774,8 +795,7 @@ DetailContent focusDetail({
               l.ccFocus,
               style: detailText(detailTitleSize, weight: FontWeight.w600),
             ),
-            if (on)
-              Text(l.ccFocusOn, style: detailText(11, color: detailSection)),
+            if (on) detailSecondary(l.ccFocusOn, 11),
           ],
         ),
       ),
@@ -809,17 +829,21 @@ DetailContent focusDetail({
       ..add((4, const SizedBox()))
       ..add((
         56,
-        ColoredBox(
-          color: focusBand,
-          child: Column(
-            children: [
-              const SizedBox(height: 6),
-              SizedBox(
-                height: 22,
-                child: option(l.focusForAnHour, const Duration(hours: 1)),
-              ),
-              SizedBox(height: 22, child: option(l.focusUntilEvening, null)),
-            ],
+        Builder(
+          builder: (context) => ColoredBox(
+            color: CcPalette.of(context).light
+                ? const Color(0x14000000)
+                : focusBand,
+            child: Column(
+              children: [
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 22,
+                  child: option(l.focusForAnHour, const Duration(hours: 1)),
+                ),
+                SizedBox(height: 22, child: option(l.focusUntilEvening, null)),
+              ],
+            ),
           ),
         ),
       ));
