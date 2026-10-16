@@ -8,7 +8,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
-import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
 import 'package:silica_shell/faro/launcher.dart';
 import 'package:silica_shell/forcequit/force_quit.dart';
@@ -105,8 +104,8 @@ void main() {
 
   testWidgets('Dock: dark separator, indicator and label', (tester) async {
     final context = await _context(tester);
-    expect(DockColors.of(context).separator, const Color(0xFFA9AAAF));
-    expect(DockColors.of(context).indicator, const Color(0xFFE5E6EB));
+    expect(DockColors.of(context).separator, const Color(0x29F4F5F7));
+    expect(DockColors.of(context).indicator, const Color(0xFFB0B4BC));
     expect(MenuColors.of(context).text, const Color(0xD9FFFFFF));
   });
 
@@ -141,10 +140,13 @@ void main() {
     expect(name, findsOneWidget);
     expect(
       DefaultTextStyle.of(tester.element(name)).style.color,
-      gridLabelTextDark,
+      AmalfiColors.of(Brightness.dark).textPrimary,
     );
     final title = find.text('Download').last;
-    expect(tester.widget<Text>(title).style?.color, stackTextDark);
+    expect(
+      tester.widget<Text>(title).style?.color,
+      AmalfiColors.of(Brightness.dark).textPrimary,
+    );
   });
 
   testWidgets('window popover: Text/Primary glyphs of the dark appearance', (

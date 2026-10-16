@@ -48,9 +48,8 @@ const double fanAboveZone = 7;
 
 /// The label capsules: height, side padding around the 13 pt name, distance from the icon's
 /// frame (its bounding box) along the row.
-const double fanLabelHeight = 28;
-const double fanLabelPadding = 13;
-const double fanLabelFontSize = 13;
+const double fanLabelHeight = 24;
+const double fanLabelPadding = 8;
 const double fanLabelGap = 5.5;
 
 /// The fan's "open folder" item: a flat circle, its outline and the glyph (a forward curved
@@ -78,21 +77,16 @@ const double gridCanvasTop = 6;
 /// The label: one line, capitals from y 109 (baseline at ~118), at most ~104 wide.
 const double gridLabelBaseline = 118;
 const double gridLabelWidth = 104;
-const Color gridLabelText = Color(0xFF212122);
 
-/// The color comes from the grid's [DefaultTextStyle] (light or dark).
-TextStyle get gridLabelStyle => const TextStyle(
-  fontFamily: uiFontFamily,
-  package: 'silica_ui',
-  fontSize: 12,
-  height: 1,
-);
+/// The file names under the icons: Caption; the colour comes from the grid's
+/// [DefaultTextStyle] (`Text/Primary` of the appearance).
+TextStyle get gridLabelStyle => AmalfiType.caption();
 
 /// The tip towards the icon (DOCK-FAN): ~24 pt at the base, 8 pt deep from the panel's edge to
 /// the apex (5 pt above the Dock), 45° flanks with small fillets and a rounded apex; Ossido fits
 /// its outline to this rectangle.
-const double gridTipBase = 24;
-const double gridTipDepth = 8;
+const double gridTipBase = AmalfiPopoverMetrics.arrowHalfBase * 2;
+const double gridTipDepth = AmalfiPopoverMetrics.arrowDepth;
 
 const double gridLeft = 17;
 
@@ -100,9 +94,12 @@ const double gridLeft = 17;
 const double gridRight = 17;
 const double gridTop = 32;
 const double gridBottom = 11;
-const double gridRadius = 25;
+
+/// The panel is a popover on Glass/Thick: radius 16, arrow 20 wide and 8 deep (kit `Popovers`,
+/// `AmalfiPopoverMetrics`); the cell geometry below is the Dock's own (derived, not in the kit).
+const double gridRadius = AmalfiPopoverMetrics.radius;
 const double gridTipHeight = gridTipDepth;
-const double gridTipAboveDock = 5;
+const double gridTipAboveDock = 8;
 
 const Duration stackOpen = Duration(milliseconds: 240);
 const Duration fanClose = Duration(milliseconds: 210);
@@ -110,18 +107,6 @@ const Duration gridClose = Duration(milliseconds: 150);
 
 /// Released on the close button, the stack closes in ~300 ms (fan and grid).
 const Duration stackCloseByButton = Duration(milliseconds: 300);
-
-const Color stackText = Color(0xFF1E1E1F);
-const Color stackLabelFill = Color(0xFFBDBEC3);
-const Color stackLabelText = Color(0xFF1C1C1D);
-
-/// In dark the stacks are not measured (dock-stacks.md, "Not observed"): *estimated* like the
-/// Dock labels in dark (dock.md: body `#7f8086`, text `#f9f9f9`) and white texts on the
-/// dark glass.
-const Color gridLabelTextDark = Color(0xFFF9F9F9);
-const Color stackTextDark = Color(0xFFFFFFFF);
-const Color stackLabelFillDark = Color(0xFF7F8086);
-const Color stackLabelTextDark = Color(0xFFF9F9F9);
 
 bool _dark(BuildContext context) =>
     MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
@@ -310,7 +295,7 @@ class _FanStackState extends State<FanStack> {
   List<(Widget, Widget)> _contents(BuildContext context) {
     final dark = _dark(context);
     final l10n = l10nOf(context);
-    final text = MenuColors.of(context).text;
+    final text = AmalfiTheme.of(context).colors.textPrimary;
     final key = Object.hash(identityHashCode(widget.entries), dark, l10n, text);
     if (key == _itemsKey) return _items;
     _itemsKey = key;
@@ -407,7 +392,7 @@ class _FanStackState extends State<FanStack> {
   /// wide as the 13 pt name plus [fanLabelPadding] at each end (at most 360 pt), without the
   /// tip and without a shadow, in a glass group of its own.
   Widget _label(String text, Color color, int index) {
-    final style = uiText(size: fanLabelFontSize, color: color);
+    final style = AmalfiType.callout(color: color);
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -424,7 +409,6 @@ class _FanStackState extends State<FanStack> {
       child: DockLabel(
         text: text,
         style: style.copyWith(overflow: TextOverflow.ellipsis),
-        tip: false,
         height: fanLabelHeight,
         shadow: false,
         group: DockGlass.fanLabel(index),
@@ -740,7 +724,7 @@ class _GridStackState extends State<GridStack> {
       child: SnapshotWidget(
         controller: _snapshot,
         child: DefaultTextStyle.merge(
-          style: TextStyle(color: dark ? gridLabelTextDark : gridLabelText),
+          style: TextStyle(color: AmalfiTheme.of(context).colors.textPrimary),
           child: Stack(
             children: [
               Positioned(
@@ -750,13 +734,9 @@ class _GridStackState extends State<GridStack> {
                 child: Text(
                   widget.title,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily,
-                    package: 'silica_ui',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: dark ? stackTextDark : stackText,
-                  ),
+                  style: AmalfiType.callout(
+                    color: AmalfiTheme.of(context).colors.textPrimary,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               Positioned(
@@ -941,7 +921,7 @@ class MenuHoleClipper extends CustomClipper<Path> {
       cut.addRRect(
         RRect.fromRectAndRadius(
           hole,
-          const Radius.circular(MenuMetrics.radius),
+          const Radius.circular(AmalfiMenuMetrics.radius),
         ),
       );
     }
@@ -959,22 +939,6 @@ class MenuHoleClipper extends CustomClipper<Path> {
     return true;
   }
 }
-
-/// The body of a Dock menu laid out as `rect` (body and tip, as the Dock places it).
-Rect menuBody(Rect rect) => Rect.fromLTRB(
-  rect.left,
-  rect.top,
-  rect.right,
-  rect.bottom - MenuMetrics.tipHeight,
-);
-
-/// The box of a Dock menu's tip whose apex is `apex`.
-Rect menuTipRect(Offset apex) => Rect.fromLTRB(
-  apex.dx - MenuMetrics.tipBase / 2,
-  apex.dy - MenuMetrics.tipDepth,
-  apex.dx + MenuMetrics.tipBase / 2,
-  apex.dy,
-);
 
 /// The "stack" icon of a folder in the Dock (dock-stacks.md › Icon in the Dock): the first file in front,
 /// the next two behind, smaller (0.89 and 0.73) and with their tops 4 pt higher each, no

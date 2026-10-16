@@ -1,11 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/dock_menu.dart';
 import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-// The Dock label (TIP-01) is glass drawn by Ossido like the menus: same material, same
-// shadow colour, no background of its own, light and dark.
+// The Dock label is an Amalfi tooltip (Glass/Thick, radius 8, 24 pt, no tip) drawn by Ossido,
+// and the Dock menu a Thick menu surface (radius 12) over it in the glass order, light and
+// dark.
 void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -13,7 +15,7 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    testWidgets('label declares the menu glass (${brightness.name})', (
+    testWidgets('label and menu declare Thick glass (${brightness.name})', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -21,19 +23,21 @@ void main() {
           data: MediaQueryData(platformBrightness: brightness),
           child: Directionality(
             textDirection: TextDirection.ltr,
-            child: Column(
+            child: Stack(
               children: [
-                const SizedBox(
+                const Positioned(
+                  left: 0,
+                  top: 0,
                   width: 120,
                   height: 40,
                   child: DockLabel(text: 'Files', style: TextStyle()),
                 ),
-                SizedBox(
-                  width: 200,
-                  height: 80,
-                  child: MenuPanel(
+                Positioned.fill(
+                  child: DockMenuHost(
                     entries: [MenuAction('Open', onSelected: () {})],
-                    tipX: 100,
+                    anchorX: 200,
+                    bottom: 300,
+                    group: 0,
                   ),
                 ),
               ],
@@ -41,6 +45,7 @@ void main() {
           ),
         ),
       );
+      await tester.pump(const Duration(milliseconds: 200));
       final glasses = tester
           .renderObjectList<RenderGlass>(
             find.byWidgetPredicate((w) => w is Glass),
@@ -50,21 +55,21 @@ void main() {
       final label = glasses[0];
       final menu = glasses[1];
       expect(label.material, GlassMaterial.thick);
-      expect(label.material, menu.material);
+      expect(menu.material, GlassMaterial.thick);
       // Its own glass group, below the menu's: the two never merge (glass_groups.dart).
       expect(label.group, DockGlass.label);
       expect(label.group, lessThan(menu.group));
-      expect(label.regions().first['opacity'], menu.regions().first['opacity']);
-      expect(label.tip, isNotNull);
-      expect(label.regions(), hasLength(2));
-      expect(label.regions().last['material'], menu.regions().last['material']);
-      expect(label.regions().first['radius'], labelHeight / 2);
-      // A label's glass profile (#168); the menu declares its own (silica_ui >= 0.29).
+      expect(label.tip, isNull);
+      expect(label.regions(), hasLength(1));
+      expect(label.regions().first['radius'], 8);
+      expect(label.size.height, labelHeight);
+      expect(labelHeight, 24);
+      expect(menu.regions().first['radius'], 12);
+      // A label's glass profile (#168), the menu's own.
       expect(label.regions().map((r) => r['profile']), everyElement('tooltip'));
       expect(menu.regions().first['profile'], 'menu');
 
-      // No background of its own: neither the gradient nor the border painter (the shadow is an
-      // image, see CachedShadow).
+      // No background of its own: only the shadow image (see CachedShadow).
       final painters = tester
           .widgetList<CustomPaint>(
             find.descendant(
@@ -80,4 +85,8 @@ void main() {
       );
     });
   }
+
+  test('the label width follows the kit: text on the 4 pt grid + 16', () {
+    expect(dockLabelWidth('', const TextStyle()), 16);
+  });
 }

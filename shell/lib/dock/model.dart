@@ -3,46 +3,55 @@
 // with the origin at the top left of the Dock surface (as wide as the screen, with its
 // bottom edge on the screen edge).
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/animation.dart' show Cubic;
 
 import 'package:silica_ui/silica_ui.dart';
 
-/// Pitch between app cells: 63 pt (AX).
-const double cellPitch = 63;
+/// Pitch between app cells: 56 pt (Amalfi, kit `Dock/Shelf/Default`: tiles 52 wide every 56
+/// pt, 8 pt from the shelf edge to the first tile).
+const double cellPitch = 56;
 
-/// Width of the separator cell: 28.35 pt (AX).
-const double separatorCell = 28.35;
+/// The Amalfi pitch over the 63 pt pitch the reference was measured at: the measured
+/// distances and amplitudes (magnification profile, lift, hops) are rescaled by it
+/// (`motion.md` rule 3); the timings are not.
+const double amalfiScale = cellPitch / 63;
 
-/// Background height: 79 pt solid (y 1356–1434).
-const double backgroundHeight = 79;
+/// Width of the separator cell: 12 pt, so that the 8 x 44 separator master (1 pt line at x 4)
+/// sits between the tiles as in the kit (tile, 4 pt, separator, 4 pt, tile; tiles 52 wide in
+/// 56 pt cells).
+const double separatorCell = 12;
+
+/// Shelf height: 60 pt (kit `Dock/Shelf/Default`, 528 x 60 at the default size).
+const double backgroundHeight = 60;
 
 /// Distance between the background and the bottom edge of the screen: 5 pt.
 const double bottomGap = 5;
 
-/// Corner radius of the background: a 22 pt circular arc.
-const double backgroundRadius = 22;
+/// Corner radius of the shelf: 20 (Glass/Regular, `materials.md`).
+const double backgroundRadius = 20;
 
-/// Margin between the cells and the background edge, at the sides: the resting background
-/// is 927 pt wide against 910.35 pt of cells (12 apps, separator, 2 items): ~8 pt per side.
-const double sidePadding = 8;
+/// Margin between the cells and the shelf edge, at the sides: 6 pt (the kit's first tile is
+/// at x 8 in a 56 pt cell; 9 cells + separator cell + 2 x 6 = the kit's 528).
+const double sidePadding = 6;
 
-/// Icon side at rest and distance from the top of the background: 48 pt, 16 pt.
+/// Icon side at rest and distance from the top of the shelf: 48 pt, 4 pt (kit tile).
 const double iconSize = 48;
-const double iconTop = 16;
+const double iconTop = 4;
 
 /// How much the bottom edge of the magnified icon rises, per unit of scale above 1:
 /// +7 pt at ×2.095, +1 pt at ×1.079 (measured to 1 pt).
-const double iconLiftPerScale = 6.4;
+const double iconLiftPerScale = 6.4 * amalfiScale;
 
-/// Separator: a 1 pt line 59 pt tall, 10 pt margin in the background.
-const double separatorHeight = 59;
+/// Separator: a 1 pt line 44 pt tall, 8 pt from the shelf's top (kit `Dock/Separator`).
+const double separatorHeight = 44;
 
-/// Indicator of open apps: a 4 pt disc, center 6 pt above the bottom edge of the
-/// background.
+/// Indicator of open apps: a 4 pt disc at y 56-60 of the tile (kit `Dock/Indicator/Dot`),
+/// its centre 2 pt above the shelf's bottom edge.
 const double indicatorSize = 4;
-const double indicatorAbove = 6;
+const double indicatorAbove = 2;
 
 /// Magnification at the recordings' setting: the cell under the pointer goes from 63 to
 /// 68 pt (×1.0794). At the maximum of the slider: 132 pt (×2.0952).
@@ -74,7 +83,8 @@ const List<(double, double)> magnificationProfile = [
 
 /// f(d) by linear interpolation of the table.
 double profile(double distance) {
-  final d = distance.abs();
+  // The table is measured at the reference's 63 pt pitch: rescale the distance.
+  final d = distance.abs() / amalfiScale;
   for (var i = 1; i < magnificationProfile.length; i++) {
     final (d1, f1) = magnificationProfile[i];
     if (d <= d1) {
@@ -262,7 +272,7 @@ const Cubic launchCurve = Cubic(0.38, 0, 0.64, 1);
 /// The 17 pt rise of the hop is the same animation (same curve); the fall takes ~350 ms,
 /// quadratic ease-in, with no settle and no squash; one hop is ~705 ms. With magnification the
 /// peak is ~18 pt.
-const double launchHopPeak = 17;
+const double launchHopPeak = 17 * amalfiScale;
 const Duration launchFallDuration = Duration(milliseconds: 350);
 const Duration launchHopDuration = Duration(milliseconds: 705);
 
@@ -423,46 +433,38 @@ const Duration labelAppear = Duration(milliseconds: 40);
 const Duration labelHold = Duration(milliseconds: 40);
 const Duration labelVanish = Duration(milliseconds: 250);
 
-/// Launch bounce (misc.md): height in pt above rest, a jump every ~0.7 s, until the app
-/// opens a window (at most `bounceLimit`).
-const List<(double, double)> bounceCurve = [
-  (0, 0),
-  (27, 3),
-  (40, 5),
-  (53, 6),
-  (80, 8),
-  (93, 9),
-  (133, 11),
-  (160, 13),
-  (213, 14),
-  (293, 17),
-  (440, 14),
-  (533, 11),
-  (587, 7),
-  (613, 6),
-  (653, 3),
-  (693, 0),
-];
+/// Launch bounce: a jump every ~0.7 s (the measured period, misc.md) until the app opens a
+/// window (at most `bounceLimit`). Its shape is `spring.bouncy` (`motion.md`): the icon
+/// leaves the rest position with an initial velocity and the under-damped spring brings it
+/// back (the positive half of the response is the jump; below rest it stays put until the next
+/// jump). The peak is the measured 17 pt rescaled to the Amalfi size.
 const double bouncePeriod = 693;
+const double bouncePeak = 17 * amalfiScale;
 const Duration bounceLimit = Duration(seconds: 10);
 
 /// Bounce height `ms` after the start (repeated).
 double bounceHeight(double ms) {
   if (ms <= 0) return 0;
-  final t = ms % bouncePeriod;
-  for (var i = 1; i < bounceCurve.length; i++) {
-    final (t1, h1) = bounceCurve[i];
-    if (t <= t1) {
-      final (t0, h0) = bounceCurve[i - 1];
-      return h0 + (h1 - h0) * (t - t0) / (t1 - t0);
-    }
-  }
-  return 0;
+  final t = (ms % bouncePeriod) / 1000;
+  const spring = AmalfiSprings.bouncy;
+  final omega = math.sqrt(spring.stiffness);
+  final zeta = spring.damping / (2 * omega);
+  final decay = zeta * omega;
+  final damped = omega * math.sqrt(1 - zeta * zeta);
+  // x(t) = e^(-zeta w t) sin(wd t), normalised to its first peak.
+  final tPeak = math.atan(damped / decay) / damped;
+  final peak = math.exp(-decay * tPeak) * math.sin(damped * tPeak);
+  final x = math.exp(-decay * t) * math.sin(damped * t) / peak;
+  return x <= 0 ? 0 : bouncePeak * x;
 }
 
 /// Attention request (dock.md › SH-DK-30): three decaying hops (56, 23, 8 pt lasting ~466,
 /// 320, 214 ms), then ~1 s still, repeated every 2 s until the app is activated.
-const List<(double, double)> attentionHops = [(466, 56), (320, 23), (214, 8)];
+const List<(double, double)> attentionHops = [
+  (466, 56 * amalfiScale),
+  (320, 23 * amalfiScale),
+  (214, 8 * amalfiScale),
+];
 const double attentionPeriod = 2000;
 
 /// Attention height `ms` after the request.

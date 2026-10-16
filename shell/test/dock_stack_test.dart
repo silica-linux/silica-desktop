@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/apps.dart' show downloadDir;
 import 'package:silica_shell/dock/dock.dart';
+import 'package:silica_shell/dock/dock_menu.dart';
 import 'package:silica_shell/dock/model.dart';
 import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
@@ -188,7 +189,7 @@ void main() {
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
-    final label = find.textContaining('document…');
+    final label = find.textContaining('documento');
     expect(label, findsWidgets);
     final text = tester.widget<Text>(label.first);
     // One line, truncated in the middle: the end of the name stays.
@@ -237,7 +238,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(MenuPanel), findsOneWidget);
+    expect(find.byKey(dockMenuSurface), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('a.txt')).dy,
       lessThan(tester.getTopLeft(find.text('b.txt')).dy),
