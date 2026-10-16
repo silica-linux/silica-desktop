@@ -18,6 +18,11 @@ struct BeforeFullscreen(
     Cell<Option<Rectangle<f64, Logical>>>,
 );
 
+/// The frame (bar included) a window had before the app zoomed it (`xdg_toplevel.set_maximized`),
+/// to go back on `unset_maximized`.
+#[derive(Default)]
+struct BeforeZoom(Cell<Option<Rectangle<i32, Logical>>>);
+
 pub fn is_fullscreen(window: &Window) -> bool {
     window.toplevel().is_some_and(|toplevel| {
         toplevel
@@ -80,6 +85,48 @@ impl State {
         self.place_frame(window, frame)
     }
 
+    /// The app asks to be maximized (`xdg_toplevel.set_maximized`: the zoom of a double click
+    /// on its title bar, silica-desktop#169): the window fills the usable area and remembers its
+    /// frame; `on` false (`unset_maximized`) puts it back. Full-screen windows leave full screen
+    /// first, as with the tiles.
+    pub fn zoom_window(&mut self, window: &Window, on: bool) -> Result<(), String> {
+        window.user_data().insert_if_missing(BeforeZoom::default);
+        let before = window
+            .user_data()
+            .get::<BeforeZoom>()
+            .ok_or("window state missing")?;
+        if on {
+            let frame = self
+                .space
+                .element_geometry(window)
+                .map(|geometry| crate::decorations::frame_of(window, geometry));
+            // A window zoomed twice keeps the frame it had before the first zoom.
+            if !window.toplevel().is_some_and(|t| {
+                t.current_state()
+                    .states
+                    .contains(xdg_toplevel::State::Maximized)
+            }) && !is_fullscreen(window)
+            {
+                before.0.set(frame);
+            }
+            let area = self.usable_area();
+            self.place_frame_as(window, area, true)
+        } else {
+            match before.0.take() {
+                Some(frame) => self.place_frame_as(window, frame, false),
+                None => {
+                    // Nothing to go back to: the client only learns it is not maximized.
+                    let toplevel = window.toplevel().ok_or("window without a toplevel")?;
+                    toplevel.with_pending_state(|state| {
+                        state.states.unset(xdg_toplevel::State::Maximized);
+                    });
+                    toplevel.send_pending_configure();
+                    Ok(())
+                }
+            }
+        }
+    }
+
     /// Arranges the window and the `count − 1` most recently used ones of the space (from the
     /// top of the stack) according to [`arrangement`].
     pub fn arrange_windows(&mut self, first: &Window, count: usize) -> Result<(), String> {
@@ -107,6 +154,16 @@ impl State {
         window: &Window,
         frame: Rectangle<i32, Logical>,
     ) -> Result<(), String> {
+        self.place_frame_as(window, frame, false)
+    }
+
+    /// [`Self::place_frame`] with the `maximized` state the client is told it has.
+    fn place_frame_as(
+        &mut self,
+        window: &Window,
+        frame: Rectangle<i32, Logical>,
+        maximized: bool,
+    ) -> Result<(), String> {
         let was_fullscreen = is_fullscreen(window);
         if was_fullscreen {
             self.toggle_fullscreen(window)?;
@@ -120,6 +177,11 @@ impl State {
         let size = (frame.size.w, frame.size.h.saturating_sub(bar).max(1));
         toplevel.with_pending_state(|state| {
             state.size = Some(size.into());
+            if maximized {
+                state.states.set(xdg_toplevel::State::Maximized);
+            } else {
+                state.states.unset(xdg_toplevel::State::Maximized);
+            }
         });
         toplevel.send_pending_configure();
         self.space

@@ -245,6 +245,8 @@ struct View {
     appearance: Option<SilicaWindowV1>,
     /// The window active for Ossido (xdg_toplevel's `activated`).
     activated: Option<bool>,
+    /// The compositor says the window is maximized (zoomed), from the last configure.
+    maximized: bool,
     /// The engine has added the view (the main one always): frames and metrics may flow.
     added: bool,
     /// `FlutterEngineAddView` is under way.
@@ -274,6 +276,7 @@ impl View {
             presented: false,
             appearance: None,
             activated: None,
+            maximized: false,
             added,
             adding: false,
             open_reply: None,
@@ -1029,6 +1032,10 @@ impl App {
     ///   system appearance for everything Ossido draws for this window; answers whether
     ///   Ossido offers it (version 3);
     /// - `startMove`: moves the window with the pointer (from the app's toolbar);
+    /// - `zoom`: zooms the window (xdg_toplevel `set_maximized`), or puts it back when it is
+    ///   zoomed (`unset_maximized`); `minimize`: minimizes it (`set_minimized`). The title
+    ///   bar double click of an app that draws its own bar (silica-desktop#169); both answer
+    ///   whether the window exists;
     /// - `setSize {width, height}`: the app chooses its window size (logical pixels);
     /// - `setSizeLimits {minWidth?, minHeight?, maxWidth?, maxHeight?}`: limits for resizing;
     ///   min = max makes the window fixed-size (Ossido then disables the zoom button).
@@ -1118,6 +1125,27 @@ impl App {
                     window.move_(seat, self.press_serial);
                 }
                 crate::text_input::success(serde_json::Value::Null)
+            }
+            Some("zoom") => {
+                let maximized = self.views.get(&id).is_some_and(|view| view.maximized);
+                if let Some(View {
+                    surface: Shell::Window(window),
+                    ..
+                }) = self.views.get(&id)
+                {
+                    if maximized {
+                        window.unset_maximized();
+                    } else {
+                        window.set_maximized();
+                    }
+                    window.commit();
+                }
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("minimize") => {
+                window.set_minimized();
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
             }
             Some("setSizeLimits") => {
                 let limit = |key: &str| {
@@ -2988,6 +3016,7 @@ impl WindowHandler for App {
         };
         if let Some(view) = self.views.get_mut(&id) {
             view.activated = Some(configure.is_activated());
+            view.maximized = configure.is_maximized();
         }
         self.update_app_active();
         self.configured(id, qh, size);
