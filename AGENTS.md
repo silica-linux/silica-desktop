@@ -123,6 +123,7 @@ This repository is `silica-desktop` (until 2026-10-14 `silica`). The other repos
 | --- | --- | --- |
 | `silica-ui` (public) | Dart package `silica_ui`: Inter, glass, lens glass. Stable API, versions tagged `vX.Y.Z`; the shell and the apps take it from the tag | MIT OR Apache-2.0 |
 | `silica-icons` | app and file icons (layered), 313 system symbols in three weights | CC BY-SA 4.0 |
+| `silica-wallpapers` | desktop wallpapers, one folder per design version (Amalfi for Silica 1.0), light and dark | CC BY-SA 4.0 |
 | `silica-cursors` | archived, unused: the cursors are the Adwaita XCursor theme | CC BY-SA 4.0 |
 | `silica-reference` | macOS 27 observations, cloned into `plan/reference/` (private) | — |
 | `silica-packages` | the RPM packages (desktop, apps, Inter, silica-icons) and the Wayland session installable on Fedora | MIT OR Apache-2.0 |
