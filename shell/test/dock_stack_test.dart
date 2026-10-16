@@ -163,8 +163,9 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('griglia');
     addTearDown(() => dir.deleteSync(recursive: true));
     for (var i = 1; i <= 20; i++) {
-      File('${dir.path}/documento con un nome molto lungo $i.txt')
-          .writeAsStringSync('x');
+      File(
+        '${dir.path}/documento con un nome molto lungo $i.txt',
+      ).writeAsStringSync('x');
     }
     tester.view.physicalSize = const Size(2560, 1440);
     tester.view.devicePixelRatio = 1;
@@ -370,7 +371,8 @@ void main() {
         );
         final icons = find.byType(SilicaIcon);
         expect(icons, findsNWidgets(3));
-        // The canvas box is at (iconLeft, iconTop) of the tile.
+        // The pile's frames are in the coordinates of its own canvas origin, (2k, 10k) rounded
+        // (the pile does not use the tile's centred left).
         final origin = tester.getTopLeft(find.byType(PileIcon));
         final frames = PileIcon.frames(canvas, 3);
         final sources = tester
@@ -386,7 +388,11 @@ void main() {
         for (var i = 0; i < 3; i++) {
           final rect = tester.getRect(icons.at(2 - i));
           final tile = rect.shift(
-            Offset(metrics.iconLeft, metrics.iconTop) - origin,
+            Offset(
+                  (2 * canvas / defaultCanvas).roundToDouble(),
+                  metrics.iconTop,
+                ) -
+                origin,
           );
           expect(tile, frames[i], reason: 'item $i');
         }

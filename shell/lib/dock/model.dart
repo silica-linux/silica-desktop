@@ -107,7 +107,9 @@ class DockMetrics {
   double get radius => (24 * k).roundToDouble();
 
   /// The canvas in its tile: its distance from the tile's left edge and from the shelf's top.
-  double get iconLeft => (2 * k).roundToDouble();
+  /// Centred in the tile (c + 4 wide for a canvas of c: always 2), not 2k rounded: the icon
+  /// and the dot, which is centred in the tile too, stay on one axis at every size.
+  double get iconLeft => (tileWidth - canvas) / 2;
   double get iconTop => (10 * k).roundToDouble();
   double get separatorWidth => (28 * k).roundToDouble();
 
