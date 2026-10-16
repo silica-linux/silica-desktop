@@ -69,7 +69,8 @@ double clampCanvas(num value) => value.isFinite
 const double activeZoneAbove = 5;
 
 /// Fall-off of the magnification: 1 under the pointer, a cosine down to 0 at 3 tiles
-/// (`pitch` each) from it.
+/// (`pitch` each) from it. The timing of entering and leaving ([enterCurve]) is measured.
+// Assumption: not measured (motion.md): the shape of the fall-off.
 double profile(double distance, [double pitch = cellPitch]) {
   final d = distance.abs() / (3 * pitch);
   return d >= 1 ? 0 : (1 + math.cos(math.pi * d)) / 2;
@@ -528,11 +529,28 @@ const Duration labelAppear = Duration(milliseconds: 40);
 const Duration labelHold = Duration(milliseconds: 40);
 const Duration labelVanish = Duration(milliseconds: 250);
 
-/// Launch bounce: a jump every ~0.7 s (the measured period, misc.md) until the app opens a
-/// window (at most `bounceLimit`). Its shape is `spring.bouncy` (`motion.md`): the icon
-/// leaves the rest position with an initial velocity and the under-damped spring brings it
-/// back (the positive half of the response is the jump; below rest it stays put until the next
-/// jump). The peak is the measured 17 pt rescaled to the Amalfi size.
+/// Launch bounce (misc.md): height in pt above rest on the reference's 63 pt Dock, a jump every
+/// ~0.7 s, until the app opens a window (at most `bounceLimit`). The shape is the measured
+/// parabolic one (samples every ~13-80 ms; rise ~0.3 s, fall ~0.35-0.4 s, no squash, no
+/// rebound), not a spring; only the heights are rescaled to the Amalfi size ([amalfiScale]).
+const List<(double, double)> bounceCurve = [
+  (0, 0),
+  (27, 3),
+  (40, 5),
+  (53, 6),
+  (80, 8),
+  (93, 9),
+  (133, 11),
+  (160, 13),
+  (213, 14),
+  (293, 17),
+  (440, 14),
+  (533, 11),
+  (587, 7),
+  (613, 6),
+  (653, 3),
+  (693, 0),
+];
 const double bouncePeriod = 693;
 const double bouncePeak = 17 * amalfiScale;
 const Duration bounceLimit = Duration(seconds: 10);
@@ -540,17 +558,15 @@ const Duration bounceLimit = Duration(seconds: 10);
 /// Bounce height `ms` after the start (repeated).
 double bounceHeight(double ms) {
   if (ms <= 0) return 0;
-  final t = (ms % bouncePeriod) / 1000;
-  const spring = AmalfiSprings.bouncy;
-  final omega = math.sqrt(spring.stiffness);
-  final zeta = spring.damping / (2 * omega);
-  final decay = zeta * omega;
-  final damped = omega * math.sqrt(1 - zeta * zeta);
-  // x(t) = e^(-zeta w t) sin(wd t), normalised to its first peak.
-  final tPeak = math.atan(damped / decay) / damped;
-  final peak = math.exp(-decay * tPeak) * math.sin(damped * tPeak);
-  final x = math.exp(-decay * t) * math.sin(damped * t) / peak;
-  return x <= 0 ? 0 : bouncePeak * x;
+  final t = ms % bouncePeriod;
+  for (var i = 1; i < bounceCurve.length; i++) {
+    final (t1, h1) = bounceCurve[i];
+    if (t <= t1) {
+      final (t0, h0) = bounceCurve[i - 1];
+      return amalfiScale * (h0 + (h1 - h0) * (t - t0) / (t1 - t0));
+    }
+  }
+  return 0;
 }
 
 /// Attention request (dock.md › SH-DK-30): three decaying hops (56, 23, 8 pt lasting ~466,

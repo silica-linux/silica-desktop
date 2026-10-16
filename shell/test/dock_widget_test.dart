@@ -48,17 +48,39 @@ void main() {
   );
 
   test(
-    'the bounce is spring.bouncy: 17 pt scaled to the Amalfi size, every ~0.7 s',
+    'the launch bounce is the measured curve (misc.md), scaled to the Amalfi size',
     () {
-      expect(bounceHeight(0), 0);
-      // Peak of the under-damped response at ~115 ms (response 0.6 s, zeta 0.5).
-      expect(bounceHeight(115), closeTo(bouncePeak, 0.05));
+      // Reference samples (pt above rest, ms from the start of a jump), heights x 56 / 63.
+      const samples = {
+        0: 0.0,
+        40: 5.0,
+        80: 8.0,
+        133: 11.0,
+        160: 13.0,
+        213: 14.0,
+        293: 17.0,
+        440: 14.0,
+        533: 11.0,
+        587: 7.0,
+        653: 3.0,
+        693: 0.0,
+      };
+      for (final MapEntry(:key, :value) in samples.entries) {
+        expect(
+          bounceHeight(key.toDouble()),
+          closeTo(value * amalfiScale, 1e-9),
+          reason: '$key ms',
+        );
+      }
       expect(bouncePeak, closeTo(17 * 56 / 63, 1e-9));
-      expect(bounceHeight(115 + 693), closeTo(bouncePeak, 0.05));
-      // It lands before the next jump and stays down (never below rest).
-      expect(bounceHeight(400), 0);
-      expect(bounceHeight(692), 0);
+      expect(bounceHeight(293), bouncePeak);
+      // A jump every 0.7 s: the same height one period later.
+      expect(bounceHeight(293 + 693), closeTo(bouncePeak, 1e-9));
       expect(bounceHeight(693), 0);
+      // Never below rest, no rebound.
+      for (var ms = 0.0; ms < 2000; ms += 5) {
+        expect(bounceHeight(ms), greaterThanOrEqualTo(0));
+      }
     },
   );
 
