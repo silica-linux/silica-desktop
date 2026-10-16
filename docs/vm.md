@@ -255,6 +255,3 @@ overlays draw nothing until they open). During the back-to-back runs the VM's wi
 visible and QEMU served the GPU in one-second steps (see "Launch times"): before 9.0–23.6 s,
 median 17.6 s, after 9.9–17.6 s, median 10.0 s; those numbers say more about the stalls than
 about the shell.
-
-To try a HiDPI scaled mode in the VM, send `output.configure` with a `logical` size to the
-control channel; see `docs/displays.md` (switching, filter, cost).

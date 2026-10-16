@@ -186,19 +186,8 @@ pub fn init_winit(
 }
 
 impl State {
-    /// Draws the current output offscreen and returns it as RGBA (at the display's own size,
-    /// also in a scaled mode).
+    /// Draws the current output offscreen and returns it as RGBA.
     pub fn screenshot(&mut self) -> Result<Capture, String> {
-        let begun = Instant::now();
-        let capture = self.screenshot_inner();
-        tracing::debug!(
-            "screenshot drawn in {:.2} ms",
-            begun.elapsed().as_secs_f64() * 1e3
-        );
-        capture
-    }
-
-    fn screenshot_inner(&mut self) -> Result<Capture, String> {
         let speed = self.animation_speed;
         let now = Instant::now();
         self.genies.retain(|genie| !genie.finished(now, speed));
@@ -231,16 +220,6 @@ impl State {
                 window_veil,
             };
             let elements = output_elements(renderer, &self.space, &self.output, &context);
-            // Scaled mode: what the display shows, reduced like the screen's frames.
-            if let Some(hidpi) = self.hidpi {
-                return crate::capture::capture_elements_native(
-                    renderer,
-                    &self.output,
-                    &elements,
-                    self.clear_color,
-                    hidpi.native,
-                );
-            }
             return capture_elements::<_, GlesTexture, _>(
                 renderer,
                 &self.output,

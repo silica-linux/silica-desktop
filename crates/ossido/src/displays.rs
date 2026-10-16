@@ -14,7 +14,6 @@ use smithay::output::{Mode, Scale};
 use smithay::utils::Transform;
 use tracing::{info, warn};
 
-use crate::backend::Backend;
 use crate::config::{read_json, text_of};
 use crate::state::State;
 
@@ -45,74 +44,6 @@ impl ModeInfo {
     }
 }
 
-/// The render scale of the scaled modes: clients and the shell draw at 2x.
-pub const HIDPI_SCALE: i32 = 2;
-
-/// A scaled mode, as macOS has them: the screen "looks like" `logical` (the size apps and the
-/// shell lay out in), Ossido draws everything at 2x that into an offscreen framebuffer and
-/// reduces it to the display's `native` mode (`ossido_render::scaler`). The output's own mode
-/// is the 2x size and its scale 2, so everything that works in logical or physical pixels of
-/// the output (layout, input, cursor, captures) follows without special cases; the backends
-/// are the ones that know the native size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HiDpi {
-    pub logical: (i32, i32),
-    pub native: (i32, i32),
-}
-
-impl HiDpi {
-    /// The size drawn: 2x the logical size.
-    pub fn render_size(&self) -> (i32, i32) {
-        (self.logical.0 * HIDPI_SCALE, self.logical.1 * HIDPI_SCALE)
-    }
-
-    /// Native pixels per logical pixel, per axis (what a capture at native size multiplies
-    /// the logical coordinates by).
-    pub fn native_per_logical(&self) -> (f64, f64) {
-        (
-            f64::from(self.native.0) / f64::from(self.logical.0.max(1)),
-            f64::from(self.native.1) / f64::from(self.logical.1.max(1)),
-        )
-    }
-}
-
-/// The "looks like" sizes offered for a display of `native` pixels, native first (that one is
-/// not scaled): 7/8, 4/5, 3/4 and 2/3 of it, and on a panel of 2560 or more across also 3/5
-/// and 1/2 (the HiDPI size proper). On 1920x1200: 1920x1200, 1680x1050, 1536x960, 1440x900,
-/// 1280x800.
-pub fn looks_like(native: (i32, i32)) -> Vec<(i32, i32)> {
-    let mut out = vec![native];
-    let mut factors = vec![(7, 8), (4, 5), (3, 4), (2, 3)];
-    if native.0 >= 2560 {
-        factors.extend([(3, 5), (1, 2)]);
-    }
-    for (num, den) in factors {
-        let size = (
-            (f64::from(native.0) * f64::from(num) / f64::from(den)).round() as i32,
-            (f64::from(native.1) * f64::from(num) / f64::from(den)).round() as i32,
-        );
-        if valid_logical(native, size) && !out.contains(&size) {
-            out.push(size);
-        }
-    }
-    out
-}
-
-/// Whether a display of `native` pixels can look like `logical`: not larger than itself
-/// (below that the 2x image is reduced, never enlarged), at least half (the 2x image is not
-/// smaller than the display), at least 640 across, and the same shape within 1%.
-pub fn valid_logical(native: (i32, i32), logical: (i32, i32)) -> bool {
-    let (nw, nh) = (i64::from(native.0), i64::from(native.1));
-    let (lw, lh) = (i64::from(logical.0), i64::from(logical.1));
-    lw >= 640
-        && lh >= 400
-        && lw <= nw
-        && lh <= nh
-        && lw * HIDPI_SCALE as i64 >= nw
-        && lh * HIDPI_SCALE as i64 >= nh
-        && (lw * nh - lh * nw).abs() * 100 <= lw * nh
-}
-
 /// A display, connected, driven or not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputInfo {
@@ -122,18 +53,12 @@ pub struct OutputInfo {
     pub serial: String,
     pub modes: Vec<ModeInfo>,
     pub current: Option<ModeInfo>,
-    /// The fractional scale chosen (1 in a scaled mode: the scale of the output is then the
-    /// render scale of the mode, see [`HiDpi`]).
     pub scale: f64,
     pub transform: Transform,
     pub enabled: bool,
     pub primary: bool,
     /// Physical size in millimetres.
     pub size_mm: (i32, i32),
-    /// The size the screen "looks like" to apps and the shell, in logical pixels.
-    pub logical: (i32, i32),
-    /// The display is in a scaled mode: drawn at 2x `logical` and reduced to `current`.
-    pub hidpi: bool,
 }
 
 impl OutputInfo {
@@ -157,17 +82,6 @@ impl OutputInfo {
             "primary": self.primary,
             "widthMm": self.size_mm.0,
             "heightMm": self.size_mm.1,
-            "logical": {"width": self.logical.0, "height": self.logical.1},
-            "hidpi": self.hidpi,
-            "looksLike": self.current.map(|m| looks_like((m.width, m.height)))
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(width, height)| json!({
-                    "width": width,
-                    "height": height,
-                    "scaled": (width, height) != self.current.map_or((0, 0), |m| (m.width, m.height)),
-                }))
-                .collect::<Vec<_>>(),
         })
     }
 }
@@ -272,8 +186,6 @@ pub struct OutputPrefs {
     pub mode: Option<(i32, i32, Option<f64>)>,
     pub scale: Option<f64>,
     pub transform: Option<Transform>,
-    /// A scaled mode: the size the screen looks like (see [`HiDpi`]); it replaces `scale`.
-    pub logical: Option<(i32, i32)>,
 }
 
 impl OutputPrefs {
@@ -298,16 +210,10 @@ impl OutputPrefs {
             .and_then(Value::as_f64)
             .filter(|s| valid_scale(*s));
         let transform = text_of(map, "transform").and_then(|t| parse_transform(&t));
-        let logical = map.get("logical").and_then(Value::as_object).and_then(|m| {
-            let width = i32::try_from(m.get("width")?.as_i64()?).ok()?;
-            let height = i32::try_from(m.get("height")?.as_i64()?).ok()?;
-            (width > 0 && height > 0).then_some((width, height))
-        });
         Self {
             mode,
             scale,
             transform,
-            logical,
         }
     }
 
@@ -324,9 +230,6 @@ impl OutputPrefs {
         }
         if let Some(transform) = self.transform {
             map.insert("transform".into(), json!(transform_name(transform)));
-        }
-        if let Some((width, height)) = self.logical {
-            map.insert("logical".into(), json!({"width": width, "height": height}));
         }
         Value::Object(map)
     }
@@ -412,17 +315,15 @@ pub fn gamma_ramp(kelvin: u32, size: usize) -> (Vec<u16>, Vec<u16>, Vec<u16>) {
 pub struct Configure {
     pub connector: Option<String>,
     pub prefs: OutputPrefs,
-    /// `"logical": null`: back to the plain mode, without a scaled one.
-    pub clear_logical: bool,
 }
 
 impl Configure {
     pub fn parse(params: &Value) -> Result<Self, String> {
         let map = params
             .as_object()
-            .ok_or("parameters: an object with connector, mode, scale, logical, transform")?;
+            .ok_or("parameters: an object with connector, mode, scale, transform")?;
         for key in map.keys() {
-            if !["connector", "mode", "scale", "logical", "transform"].contains(&key.as_str()) {
+            if !["connector", "mode", "scale", "transform"].contains(&key.as_str()) {
                 return Err(format!("parameters: unknown field {key}"));
             }
         }
@@ -433,20 +334,12 @@ impl Configure {
         if map.contains_key("scale") && prefs.scale.is_none() {
             return Err("scale: 1–4 in steps of 0.25".into());
         }
-        let clear_logical = map.get("logical").is_some_and(Value::is_null);
-        if map.contains_key("logical") && !clear_logical && prefs.logical.is_none() {
-            return Err("logical: {width, height} (what the screen looks like), or null".into());
-        }
-        if prefs.logical.is_some() && prefs.scale.is_some() {
-            return Err("logical and scale exclude each other".into());
-        }
         if map.contains_key("transform") && prefs.transform.is_none() {
             return Err("transform: normal, 90, 180, 270, flipped, flipped-90…".into());
         }
         Ok(Self {
             connector: text_of(map, "connector"),
             prefs,
-            clear_logical,
         })
     }
 }
@@ -459,10 +352,9 @@ impl State {
             return list;
         }
         let mode = self.output.current_mode();
-        let native = self.native_size();
         let current = mode.map(|m| ModeInfo {
-            width: native.0,
-            height: native.1,
+            width: m.size.w,
+            height: m.size.h,
             refresh: f64::from(m.refresh) / 1000.0,
             preferred: true,
         });
@@ -474,13 +366,11 @@ impl State {
             serial: String::new(),
             modes: current.into_iter().collect(),
             current,
-            scale: self.user_scale(),
+            scale: self.output.current_scale().fractional_scale(),
             transform: self.output.current_transform(),
             enabled: true,
             primary: true,
             size_mm: (physical.size.w, physical.size.h),
-            logical: self.logical_size(),
-            hidpi: self.hidpi.is_some(),
         }]
     }
 
@@ -509,24 +399,6 @@ impl State {
                 target.connector, wish.0, wish.1
             ));
         }
-        // The mode the display will have: a scaled mode has to fit it.
-        let native = configure
-            .prefs
-            .mode
-            .and_then(|wish| pick_mode(&target.modes, wish))
-            .and_then(|index| target.modes.get(index))
-            .or(target.current.as_ref())
-            .map(|m| (m.width, m.height))
-            .unwrap_or_default();
-        if let Some(logical) = configure.prefs.logical
-            && logical != native
-            && !valid_logical(native, logical)
-        {
-            return Err(format!(
-                "{}: {}x{} cannot look like {}x{} (between half and all of it, same shape)",
-                target.connector, native.0, native.1, logical.0, logical.1
-            ));
-        }
         // Merge with what is saved for the display, then apply the whole choice.
         let identity = target.identity();
         let mut saved = self.saved_displays();
@@ -534,17 +406,8 @@ impl State {
         if configure.prefs.mode.is_some() {
             prefs.mode = configure.prefs.mode;
         }
-        if configure.clear_logical {
-            prefs.logical = None;
-        }
-        if let Some(logical) = configure.prefs.logical {
-            // Looking like the native size is the plain mode.
-            prefs.logical = (logical != native).then_some(logical);
-            prefs.scale = None;
-        }
         if configure.prefs.scale.is_some() {
             prefs.scale = configure.prefs.scale;
-            prefs.logical = None;
         }
         if configure.prefs.transform.is_some() {
             prefs.transform = configure.prefs.transform;
@@ -598,41 +461,16 @@ impl State {
         target: &OutputInfo,
         prefs: &OutputPrefs,
     ) -> Result<(), String> {
-        let mut native = target
-            .current
-            .as_ref()
-            .map(|m| (m.width, m.height))
-            .unwrap_or_default();
         if let Some(wish) = prefs.mode
             && let Some(index) = pick_mode(&target.modes, wish)
+            && target.current.as_ref() != target.modes.get(index)
         {
-            if let Some(mode) = target.modes.get(index) {
-                native = (mode.width, mode.height);
-            }
-            if target.current.as_ref() != target.modes.get(index) {
-                #[cfg(feature = "drm")]
-                self.drm_set_mode(index)?;
-                #[cfg(not(feature = "drm"))]
-                let _ = index;
-            }
+            #[cfg(feature = "drm")]
+            self.drm_set_mode(index)?;
+            #[cfg(not(feature = "drm"))]
+            let _ = index;
         }
-        // A scaled mode (it replaces the scale) if it still fits the display's mode.
-        let logical = prefs
-            .logical
-            .filter(|l| valid_logical(native, *l) && *l != native);
-        if let Some(wanted) = prefs.logical
-            && logical.is_none()
-            && wanted != native
-        {
-            warn!(
-                "{DISPLAYS_FILE}: {}: {}x{} cannot look like {}x{}",
-                target.connector, native.0, native.1, wanted.0, wanted.1
-            );
-        }
-        if logical != self.hidpi.map(|h| h.logical) {
-            self.set_hidpi(logical)?;
-        }
-        let scale = prefs.scale.filter(|_| logical.is_none()).map(|s| {
+        let scale = prefs.scale.map(|s| {
             if s.fract() == 0.0 {
                 Scale::Integer(s as i32)
             } else {
@@ -650,99 +488,6 @@ impl State {
                 target.connector, prefs.scale, prefs.transform
             );
         }
-        Ok(())
-    }
-
-    /// The display's mode in pixels: what is scanned out, which is not the size of the output
-    /// in a scaled mode (the output is then the 2x size that is drawn).
-    pub fn native_size(&self) -> (i32, i32) {
-        match self.hidpi {
-            Some(hidpi) => hidpi.native,
-            None => self
-                .output
-                .current_mode()
-                .map_or((0, 0), |m| (m.size.w, m.size.h)),
-        }
-    }
-
-    /// The scale the user chose: 1 in a scaled mode.
-    pub fn user_scale(&self) -> f64 {
-        if self.hidpi.is_some() {
-            1.0
-        } else {
-            self.output.current_scale().fractional_scale()
-        }
-    }
-
-    /// Pixels of a screen capture per logical pixel: the scale of the output, or in a scaled
-    /// mode the display's pixels over the logical ones (the capture is at native size).
-    pub fn capture_scale(&self) -> f64 {
-        match self.hidpi {
-            Some(hidpi) => hidpi.native_per_logical().0,
-            None => self.output.current_scale().fractional_scale(),
-        }
-    }
-
-    /// What the display looks like, in logical pixels.
-    pub fn logical_size(&self) -> (i32, i32) {
-        self.space
-            .output_geometry(&self.output)
-            .map_or((0, 0), |g| (g.size.w, g.size.h))
-    }
-
-    /// Enters (`Some(looks like)`) or leaves the scaled mode: the output takes the 2x size and
-    /// scale 2 (or its native mode and scale 1 again), the backend learns of it, and the layers
-    /// are arranged again.
-    pub fn set_hidpi(&mut self, logical: Option<(i32, i32)>) -> Result<(), String> {
-        let native = self.native_size();
-        let refresh = self.output.current_mode().map_or(60_000, |m| m.refresh);
-        match logical {
-            Some(logical) => {
-                if !valid_logical(native, logical) {
-                    return Err(format!(
-                        "{}x{} cannot look like {}x{}",
-                        native.0, native.1, logical.0, logical.1
-                    ));
-                }
-                if matches!(self.backend, Backend::Winit(_)) {
-                    return Err("scaled modes need the real session or headless".into());
-                }
-                let hidpi = HiDpi { logical, native };
-                let size = hidpi.render_size();
-                self.hidpi = Some(hidpi);
-                let mode = Mode {
-                    size: size.into(),
-                    refresh,
-                };
-                self.output.change_current_state(
-                    Some(mode),
-                    None,
-                    Some(Scale::Integer(HIDPI_SCALE)),
-                    None,
-                );
-                self.output.set_preferred(mode);
-                info!(
-                    "scaled mode: looks like {}x{}, drawn at {}x{}, shown at {}x{}",
-                    logical.0, logical.1, size.0, size.1, native.0, native.1
-                );
-            }
-            None => {
-                if self.hidpi.take().is_none() {
-                    return Ok(());
-                }
-                let mode = Mode {
-                    size: native.into(),
-                    refresh,
-                };
-                self.output
-                    .change_current_state(Some(mode), None, Some(Scale::Integer(1)), None);
-                self.output.set_preferred(mode);
-            }
-        }
-        #[cfg(feature = "drm")]
-        self.drm_output_changed();
-        self.output_resized();
-        self.wake();
         Ok(())
     }
 
@@ -880,81 +625,6 @@ mod tests {
         ));
         assert_eq!(saved.len(), 1);
         assert_eq!(saved["DEL U"], c.prefs);
-    }
-
-    #[test]
-    fn scaled_modes_look_like_fractions_of_the_display() {
-        assert_eq!(
-            looks_like((1920, 1200)),
-            [
-                (1920, 1200),
-                (1680, 1050),
-                (1536, 960),
-                (1440, 900),
-                (1280, 800)
-            ]
-        );
-        // A 4K panel also offers its 2x size, and sizes that are not whole are not offered.
-        assert_eq!(
-            looks_like((3840, 2160)),
-            [
-                (3840, 2160),
-                (3360, 1890),
-                (3072, 1728),
-                (2880, 1620),
-                (2560, 1440),
-                (2304, 1296),
-                (1920, 1080)
-            ]
-        );
-        assert!(looks_like((1366, 768)).contains(&(1366, 768)));
-        for native in [(1920, 1200), (1366, 768), (2560, 1600), (800, 600)] {
-            assert!(looks_like(native).iter().all(|l| valid_logical(native, *l)));
-        }
-        // Not larger, not smaller than half, not another shape, not tiny.
-        assert!(valid_logical((1920, 1200), (1536, 960)));
-        assert!(!valid_logical((1920, 1200), (2560, 1600)));
-        assert!(!valid_logical((1920, 1200), (900, 562)));
-        assert!(!valid_logical((1920, 1200), (1536, 1000)));
-        assert!(!valid_logical((1024, 768), (512, 384)));
-    }
-
-    #[test]
-    fn a_scaled_mode_is_drawn_at_twice_its_size() {
-        let hidpi = HiDpi {
-            logical: (1536, 960),
-            native: (1920, 1200),
-        };
-        assert_eq!(hidpi.render_size(), (3072, 1920));
-        assert_eq!(hidpi.native_per_logical(), (1.25, 1.25));
-    }
-
-    #[test]
-    fn logical_sizes_are_configured_saved_and_exclusive_with_scale() {
-        let c = Configure::parse(&json!({"logical": {"width": 1536, "height": 960}})).unwrap();
-        assert_eq!(c.prefs.logical, Some((1536, 960)));
-        assert!(!c.clear_logical);
-        let cleared = Configure::parse(&json!({"logical": null})).unwrap();
-        assert!(cleared.clear_logical && cleared.prefs.logical.is_none());
-        for bad in [
-            json!({"logical": {"width": 0, "height": 5}}),
-            json!({"logical": {"width": 1536}}),
-            json!({"logical": 3}),
-            json!({"logical": {"width": 1536, "height": 960}, "scale": 2}),
-        ] {
-            assert!(Configure::parse(&bad).is_err(), "{bad}");
-        }
-        // The saved choice round-trips with its logical size.
-        let prefs = OutputPrefs {
-            logical: Some((1536, 960)),
-            ..OutputPrefs::default()
-        };
-        let saved = parse_displays(Some(
-            json!({"outputs": {"DEL U": prefs.json()}})
-                .as_object()
-                .unwrap(),
-        ));
-        assert_eq!(saved["DEL U"], prefs);
     }
 
     #[test]

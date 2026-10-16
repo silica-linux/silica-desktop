@@ -24,8 +24,6 @@ mod glass;
 #[cfg(test)]
 mod glass_equivalence;
 mod handlers;
-#[cfg(test)]
-mod hidpi_tests;
 mod idle;
 mod input;
 mod keep;
