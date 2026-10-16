@@ -2114,6 +2114,12 @@ abstract class AppLocalizations {
   /// **'Built-in display'**
   String get ccBuiltInDisplay;
 
+  /// Control Center: title of the Nearby Sharing module (short, it has to fit the 140 pt module)
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby'**
+  String get ccNearby;
+
   /// Control Center, Bluetooth panel: section label above the device rows
   ///
   /// In en, this message translates to:

@@ -643,9 +643,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Nearby sharing has no backend yet: dimmed, says so, a click does nothing.
-    expect(find.text('Nearby Sharing'), findsOneWidget);
+    expect(find.text('Nearby'), findsOneWidget);
     expect(find.text('Not available yet'), findsOneWidget);
-    await tester.tap(find.text('Nearby Sharing'), warnIfMissed: false);
+    await tester.tap(find.text('Nearby'), warnIfMissed: false);
     await tester.pump();
     expect(system.calls, isEmpty);
 

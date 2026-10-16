@@ -1183,7 +1183,7 @@ class _ControlCenterState extends State<ControlCenter>
       // and a second display).
       'nearby' => _Capsule(
         glyph: GlyphKind.nearby,
-        title: l.ccNearbySharing,
+        title: l.ccNearby,
         subtitle: l.ccNotAvailableYet,
         active: false,
         enabled: false,
@@ -1719,6 +1719,7 @@ class _MediaState extends State<_Media> {
                 : Text(
                     l10nOf(context).mediaNothingPlaying,
                     maxLines: 1,
+                    softWrap: false,
                     overflow: TextOverflow.ellipsis,
                     style: AmalfiType.headline(color: p.text),
                   ),

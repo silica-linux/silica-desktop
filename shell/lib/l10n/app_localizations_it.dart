@@ -1107,6 +1107,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get ccBuiltInDisplay => 'Schermo integrato';
 
   @override
+  String get ccNearby => 'Vicino';
+
+  @override
   String get ccDevices => 'Dispositivi';
 
   @override
