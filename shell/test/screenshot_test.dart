@@ -19,14 +19,14 @@ import 'package:silica_shell/screenshot/toolbar.dart'
         actionWidth,
         captureModesX,
         controlHeight,
-        optionsMenuGap,
-        optionsMenuWidth,
         recordModesX,
         tipAboveBar,
         toolbarActionSpace;
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_ui/silica_ui.dart';
+
+import 'glass_backend_probe.dart';
 
 /// The system, recorded.
 class FakeServices implements ScreenshotServices {
@@ -166,16 +166,18 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: ScreenshotLayer(
-          folder: desk.path,
-          documents: docs.path,
-          cache: '${dir.path}/cache',
-          now: () => DateTime(2026, 10, 14, 4, 12, 33),
-          windowAt: windowAt,
-          services: services,
-          settingsFile: File('${dir.path}/screenshot.json'),
-          entries: entries,
-          env: env ?? {'HOME': dir.path},
+        child: compositorScope(
+          ScreenshotLayer(
+            folder: desk.path,
+            documents: docs.path,
+            cache: '${dir.path}/cache',
+            now: () => DateTime(2026, 10, 14, 4, 12, 33),
+            windowAt: windowAt,
+            services: services,
+            settingsFile: File('${dir.path}/screenshot.json'),
+            entries: entries,
+            env: env ?? {'HOME': dir.path},
+          ),
         ),
       ),
     );
@@ -1145,47 +1147,50 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     },
   );
 
-  /// The Options menu's surface.
-  Finder optionsSurface() => find.descendant(
-    of: find.byKey(const ValueKey('options menu')),
-    matching: find.byType(ProfiledGlass),
-  );
+  /// The Options menu (the pull-down's own `AmalfiMenu`) and the glass region it declares.
+  Finder optionsMenu() => find.byType(AmalfiMenu);
 
-  testWidgets('Options: the menu opens upwards, 208 wide, 8 pt over the bar', (
+  testWidgets('Options: the pull-down menu is on Ossido glass, above or below', (
     tester,
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
     await tester.pumpAndSettle();
-    final bar = tester.getRect(find.byType(ShotToolbar));
-    final button = tester.getRect(find.byKey(const ValueKey('options')));
+    expect(find.byType(AmalfiPullDownButton), findsOneWidget);
+    var button = tester.getRect(find.byKey(const ValueKey('options')));
     await tester.tap(find.byKey(const ValueKey('options')));
-    await tester.pump();
-    final menu = tester.getRect(optionsSurface());
-    // Kit `Options Menu`: its left edge on the button's, 208 wide, its bottom 8 pt above the bar.
+    await tester.pump(const Duration(milliseconds: 300));
+    var menu = tester.getRect(optionsMenu());
+    // No room below the bar (it sits at the bottom): 4 pt above the button, its left edge on
+    // the button's, at least 200 wide (silica_ui's pull-down).
     expect(menu.left, button.left);
-    expect(menu.bottom, bar.top - optionsMenuGap);
-    expect(menu.width, optionsMenuWidth);
-    expect(menu.overlaps(bar), isFalse);
-    // Thick glass of the `menu` kind with radius 12.
-    final glass = tester.widget<ProfiledGlass>(optionsSurface());
-    expect(glass.surface, ShellGlassProfile.menu);
+    expect(menu.bottom, button.top - AmalfiPopUpButtonMetrics.menuDistance);
+    expect(menu.width, greaterThanOrEqualTo(200));
+    // Thick glass of the `menu` kind with radius 12, declared by the menu itself; Flutter
+    // paints no tint of its own.
+    final glass = tester.widget<Glass>(
+      find.descendant(of: optionsMenu(), matching: find.byType(Glass)).first,
+    );
+    expect(glass.profile, GlassProfile.menu);
     expect(glass.radius, 12);
     expect(glass.material, GlassMaterial.thick);
-    // Bar dragged to the top: no room above, the menu opens below it.
+    expectGlassRegion(tester, 'menu');
+    expectNoFlutterTint(tester);
+    // Bar dragged to the top: there is room below, the menu opens below the button.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 500));
+    expect(optionsMenu(), findsNothing);
+    final bar = tester.getRect(find.byType(ShotToolbar));
     await tester.dragFrom(
       bar.topLeft + const Offset(282, 24),
       const Offset(0, -700),
     );
     await tester.pump();
-    final top = tester.getRect(find.byType(ShotToolbar));
+    button = tester.getRect(find.byKey(const ValueKey('options')));
     await tester.tap(find.byKey(const ValueKey('options')));
-    await tester.pump();
-    final below = tester.getRect(optionsSurface());
-    expect(below.top, top.bottom + optionsMenuGap);
-    expect(below.overlaps(top), isFalse);
+    await tester.pump(const Duration(milliseconds: 300));
+    menu = tester.getRect(optionsMenu());
+    expect(menu.top, button.bottom + AmalfiPopUpButtonMetrics.menuDistance);
   });
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {
@@ -1272,7 +1277,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
 
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
-    final menu = tester.getRect(optionsSurface());
+    final menu = tester.getRect(optionsMenu());
     // Above the button, with its left edge on the button.
     expect(menu.bottom, lessThan(button.top));
     expect(menu.left, closeTo(button.left, 1));

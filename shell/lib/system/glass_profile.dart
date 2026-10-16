@@ -1,12 +1,15 @@
-// The glass profile of the shell's surfaces (silica-glass-v1 version 7, silica-desktop#168):
-// Ossido picks the blur, lens, edge, tint and shadow of each kind of surface. [ProfiledGlass]
-// adds the `profile` key to the regions its glass sends on the `silica/glass` channel. silica_ui
-// has had `Glass.profile` since 0.29.0, but without `popover` and the turned frame below, so the
-// shell keeps its own (`surface`, left null in silica_ui's field).
+// The glass profile of the shell's own surfaces (silica-glass-v1 version 7, silica-desktop#168):
+// Ossido picks the blur, lens, edge, tint and shadow of each kind of surface. The Amalfi
+// widgets of silica_ui (menus, popovers, alerts, tooltips) declare their regions themselves
+// under `AmalfiGlassBackendScope(compositor)`, with `AmalfiGlassKind` as profile. [ProfiledGlass]
+// is for what the shell draws itself (the Dock, its labels and stack panel, the Control Center's
+// modules, the notification banners, the screenshot bar): the same layout and regions as
+// [Glass], with the shell's profile names, and the turned frame below, which silica_ui does not
+// have.
 //
 // Turned glass (silica-glass-v1 version 8): a glass under a rotation (the fan's labels, turned
 // with their icon) also sends its `frame`, the transform of its own rectangle, so Ossido draws
-// the turned shape instead of the upright bounding box. Also not in silica_ui yet.
+// the turned shape instead of the upright bounding box.
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -21,7 +24,6 @@ enum ShellGlassProfile {
   tooltip,
   sheet,
   banner,
-  popover,
 }
 
 /// A [Glass] of a kind of surface. Same layout and regions as [Glass] (and as a

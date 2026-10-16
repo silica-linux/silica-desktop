@@ -1,11 +1,11 @@
 // The Screenshot UI's menus (kit `Apps/Screenshot/Options Menu Panel`): an Amalfi menu (Glass/Thick,
 // radius 12, 4 pt padding, rows of 24, headers, separators of 8) placed by the layer.
 //
-// Two ways to draw it. The Options menu sits over the wallpaper and the windows, so its glass is the
-// compositor's (`menu` kind: [ShadowedGlass]) with silica_ui's rows on it. The thumbnail's
-// menu opens over the thumbnail, which is part of this layer: Ossido's glass would sit behind the
-// whole layer, thumbnail included, so it is silica_ui's own menu without blur ([AmalfiMenu] with
-// `opaque`).
+// This is the thumbnail's menu. It opens over the thumbnail, which is part of this layer:
+// Ossido's glass would sit behind the whole layer, thumbnail included, so it keeps silica_ui's
+// own Flutter-drawn menu without blur ([AmalfiMenu] with `opaque`), whatever backend the rest of
+// the layer uses. (The Options menu is the pull-down's own, [AmalfiPullDownButton.entries], on
+// Ossido's glass.)
 //
 // A menu appears with `fade.instant`; a click outside, Esc or a choice closes it (the choice
 // blinks, then [onDismissed] is called at +114 ms, as in every Amalfi menu).
@@ -14,9 +14,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
-
-import '../system/glass_profile.dart';
-import '../system/shadowed_glass.dart';
 
 /// The height of [entries] as [AmalfiMenu] lays them out: 24 pt rows, 8 pt separators, 4 pt
 /// of padding above and below.
@@ -44,7 +41,6 @@ class ShotMenu extends StatelessWidget {
     this.upwards = true,
     this.alternative,
     this.top = 0,
-    this.glass = false,
     this.width = optionsMenuWidthDefault,
   });
 
@@ -60,8 +56,6 @@ class ShotMenu extends StatelessWidget {
   /// The least y a menu may reach (the menu bar).
   final double top;
 
-  /// The compositor's glass instead of silica_ui's.
-  final bool glass;
   final double width;
   final VoidCallback onDismissed;
 
@@ -93,10 +87,7 @@ class ShotMenu extends StatelessWidget {
               curve: AmalfiFades.instant.curve,
               builder: (context, opacity, child) =>
                   Opacity(opacity: opacity, child: child),
-              child: SizedBox(
-                width: width,
-                child: glass ? _glass() : _opaque(),
-              ),
+              child: SizedBox(width: width, child: _opaque()),
             ),
           ),
         ),
@@ -104,26 +95,15 @@ class ShotMenu extends StatelessWidget {
     );
   }
 
-  Widget _opaque() => AmalfiMenu(
-    entries: entries,
-    width: width,
-    opaque: true,
-    autofocus: true,
-    onDismiss: onDismissed,
-  );
-
-  Widget _glass() => ShadowedGlass(
-    profile: ShellGlassProfile.menu,
-    radius: AmalfiMenuMetrics.radius,
-    thick: true,
-    child: Padding(
-      padding: const EdgeInsets.all(AmalfiMenuMetrics.padding),
-      child: AmalfiMenuList(
-        entries: entries,
-        autofocus: true,
-        opaque: true,
-        onDismiss: onDismissed,
-      ),
+  // Flutter draws this one: the thumbnail is under it, in the same layer.
+  Widget _opaque() => AmalfiGlassBackendScope(
+    backend: AmalfiGlassBackend.flutter,
+    child: AmalfiMenu(
+      entries: entries,
+      width: width,
+      opaque: true,
+      autofocus: true,
+      onDismiss: onDismissed,
     ),
   );
 }

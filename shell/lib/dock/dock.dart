@@ -1081,6 +1081,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   /// The panels of the open menu (the menu, then its submenus), from its host.
   List<Rect> _menuRects = const [];
+
+  /// The open submenus of the menu (nested ones included), as its list reports them.
+  List<Rect> _submenuRects = const [];
   bool _menuByLongPress = false;
   final GlobalKey<DockMenuHostState> _menuKey = GlobalKey();
   Timer? _longPress;
@@ -1677,6 +1680,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _menuIndex = null;
       _menuEntries = const [];
       _menuRects = const [];
+      _submenuRects = const [];
       _pressed = null;
     });
   }
@@ -1837,9 +1841,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         : menu != null
         ? (size.height - menu.top + menuShadowRoom).clamp(size.height, 4096.0)
         : base;
-    final submenus = menu == null || !hasSubmenu(_menuEntries)
-        ? const <Rect>[]
-        : [submenuBand(menu, bottom: size.height)];
+    final submenus = menu == null ? const <Rect>[] : _submenuRects;
     // Auto-hide: hidden, only the last row of the screen (the reveal edge); shown, that row too
     // (it stays up while the pointer runs along it).
     final bottomRow = Rect.fromLTWH(0, height - 1, size.width, 1);
@@ -2461,6 +2463,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                         onDismissed: _closeMenu,
                         onRectChanged: (rect) => setState(() {
                           _menuRects = [rect];
+                        }),
+                        onSubmenusChanged: (rects) => setState(() {
+                          _submenuRects = rects;
                         }),
                       ),
                     ),

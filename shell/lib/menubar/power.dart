@@ -171,17 +171,9 @@ class _PowerConfirmationState extends State<PowerConfirmation>
             child: Opacity(opacity: powerCardOpacity(ms), child: child),
           );
         },
+        // The alert's glass is Ossido's (kind `sheet`, declared by AmalfiAlert).
         child: Stack(
           children: [
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: Glass(
-                  radius: AmalfiAlertMetrics.radius,
-                  material: GlassMaterial.thick,
-                  profile: GlassProfile.sheet,
-                ),
-              ),
-            ),
             AmalfiAlert(
               key: const ValueKey('power confirmation'),
               material: AmalfiAlertMaterial.glass,

@@ -9,6 +9,8 @@ import 'dart:io';
 
 import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:flutter/widgets.dart';
+import 'package:silica_ui/silica_ui.dart'
+    show AmalfiGlassBackend, AmalfiGlassBackendScope;
 
 import 'auth/auth_dialog.dart';
 import 'controlcenter/controlcenter.dart';
@@ -114,8 +116,17 @@ class ShellComponent extends StatelessWidget {
       ),
       _ => const LiveDock(),
     };
+    // Every layer is a surface of its own with nothing behind its glass in Flutter: Ossido
+    // draws the Amalfi glass (menus, popovers, alerts, tooltips). Faro keeps its own backend
+    // choice (its subtree is not wrapped here).
+    final Widget glass = component == 'faro'
+        ? child
+        : AmalfiGlassBackendScope(
+            backend: AmalfiGlassBackend.compositor,
+            child: child,
+          );
     return ShellLocalizations(
-      child: Directionality(textDirection: TextDirection.ltr, child: child),
+      child: Directionality(textDirection: TextDirection.ltr, child: glass),
     );
   }
 }

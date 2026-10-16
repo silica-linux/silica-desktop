@@ -164,13 +164,15 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   ToolbarChoice _choice = ToolbarChoice.selection;
   Rect? _selection;
   Offset? _barCenter;
-  bool _optionsOpen = false;
 
   /// The bar is fading out after × or Esc.
   bool _barClosing = false;
 
-  /// The menus' items, made when they open (a new list would reset an open menu).
-  List<AmalfiMenuEntry> _optionsEntries = const [];
+  /// The Options menu's items, made again only when a setting changes (a new list at every
+  /// rebuild would reset an open menu).
+  List<AmalfiMenuEntry>? _optionsEntries;
+
+  /// The thumbnail menu's items, made when it opens.
   List<AmalfiMenuEntry> _menuEntries = const [];
 
   /// The timer: seconds left and its ticker.
@@ -261,7 +263,10 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   }
 
   void _changeSettings(void Function(ScreenshotSettings s) change) {
-    setState(() => change(_settings));
+    setState(() {
+      change(_settings);
+      _optionsEntries = null;
+    });
     _settings.save(_settingsFile);
     _pushSettings();
   }
@@ -305,7 +310,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     setState(() {
       _mode = mode;
       _live = null;
-      _optionsOpen = false;
       _barClosing = false;
     });
     _syncLayer();
@@ -322,7 +326,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     }
     setState(() {
       _barClosing = true;
-      _optionsOpen = false;
     });
   }
 
@@ -331,7 +334,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     setState(() {
       _mode = _Mode.none;
       _live = null;
-      _optionsOpen = false;
       _barClosing = false;
     });
     _syncLayer();
@@ -391,7 +393,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
       _ticker?.cancel();
       setState(() {
         _mode = _Mode.countdown;
-        _optionsOpen = false;
         _live = null;
         _countdown = seconds;
         _countdownTarget = target;
@@ -434,11 +435,8 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.escape) {
-      if (_optionsOpen) {
-        setState(() => _optionsOpen = false);
-      } else {
-        _closeBar();
-      }
+      // The Options menu, when open, takes Esc itself (it has the focus).
+      _closeBar();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space &&
@@ -528,7 +526,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   void _choose(ToolbarChoice choice) {
     setState(() {
       _choice = choice;
-      _optionsOpen = false;
     });
     _changeSettings((s) => s.mode = choice);
     _syncVeil();
@@ -1238,7 +1235,7 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
         child: ShotToolbar(
           choice: _choice,
           optionsLabel: l.options,
-          optionsOpen: _optionsOpen,
+          optionsEntries: _optionsEntries ??= _optionsMenu(),
           actionLabel: l.capture,
           closeLabel: l.shotClose,
           closing: _barClosing,
@@ -1258,35 +1255,12 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           showAction: !(_choice == ToolbarChoice.window && overBar),
           onChoose: _choose,
           onClose: _closeBar,
-          onOptions: () => setState(() {
-            _optionsOpen = !_optionsOpen;
-            if (_optionsOpen) _optionsEntries = _optionsMenu();
-          }),
           onAction: _action,
           onMove: (d) =>
               setState(() => _barCenter = _barRect(_lastSize).center + d),
           onMoved: () => _changeSettings((s) => s.barCenter = _barCenter),
         ),
       ),
-      // The Options menu (kit `Options Menu`): above the button, its left edge on the button's
-      // and its bottom 8 pt above the bar; below the bar when there is no room above.
-      if (_optionsOpen)
-        Positioned.fill(
-          child: ShotMenu(
-            key: const ValueKey('options menu'),
-            entries: _optionsEntries,
-            glass: true,
-            width: optionsMenuWidth,
-            anchor: Offset(bar.left + optionsX, bar.top - optionsMenuGap),
-            alternative: Offset(
-              bar.left + optionsX,
-              bar.bottom + optionsMenuGap,
-            ),
-            upwards: true,
-            top: barHeight,
-            onDismissed: () => setState(() => _optionsOpen = false),
-          ),
-        ),
     ];
   }
 }

@@ -230,12 +230,17 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       top: hudGlyphTop,
                       child: CcGlyph(small, color: palette.text, size: 16),
                     ),
+                    // The read-only slider, no thumb, centred on the 4 pt track's line.
                     Positioned(
                       left: hudTrackLeft,
-                      top: hudTrackTop,
+                      top: hudTrackTop + hudTrackHeight / 2 - 10,
                       width: hudTrackLength,
-                      height: hudTrackHeight,
-                      child: CustomPaint(painter: _HudTrack(value, palette)),
+                      height: 20,
+                      child: AmalfiSlider.indicator(
+                        key: const ValueKey('hud level'),
+                        // Muted: the track stays empty.
+                        value: (value ?? 0).clamp(0.0, 1.0),
+                      ),
                     ),
                     Positioned(
                       left: hudTrackLeft + hudTrackLength + 8,
@@ -251,35 +256,4 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
       ),
     );
   }
-}
-
-/// The HUD's track: `Surface/Sunken` with the `Accent/Amalfi` fill up to the value.
-class _HudTrack extends CustomPainter {
-  const _HudTrack(this.value, this.palette);
-  final CcPalette palette;
-
-  /// Null: muted, the track stays empty.
-  final double? value;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(size.height / 2);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = palette.track,
-    );
-    final v = value;
-    if (v == null || v <= 0) return;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.width * v.clamp(0.0, 1.0), size.height),
-        radius,
-      ),
-      Paint()..color = palette.accent,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_HudTrack old) =>
-      old.value != value || old.palette != palette;
 }
