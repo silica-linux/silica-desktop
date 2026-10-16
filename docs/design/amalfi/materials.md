@@ -19,19 +19,28 @@ UI kit and this file disagree, this file wins and the kit is fixed later.
 
 ## The three materials
 
+All three are **real glass**: blur plus refraction at the edge (the shape bends what is behind it), a slight
+chromatic split and a specular highlight on the rim. They differ in how much they blur, bend and tint
+(user decision 2026-10-16: Regular and Thick were plain background blur; now they are glass in two forms).
+
 | | Glass/Regular | Glass/Thick | Glass/Clear (lens) |
 |---|---|---|---|
 | Purpose | light objects close to content | panels you read from | transient lens over a control |
-| Background blur (Gaussian radius, pt) | 6 | 16 | 2 + refraction |
-| Saturation boost | 1.5 | 1.5 | 1.0 |
-| Tint light / dark | `#FFFFFF` 60 % / `#2A2B30` 60 % | `#FFFFFF` 76 % / `#2A2B30` 76 % | none |
+| Blur (σ, pt) | 6 | 10 | 2 |
+| Refraction: distortion / depth / chromatic aberration | 0.30 / 0.35 / 0.03 | 0.22 / 0.28 / 0.015 | 0.30 / 0.50 / 0.08 + magnification ≈ 1.1× |
+| Specular highlight on the rim | yes | yes | yes |
+| Saturation | 1.1 | 1.1 | 1.0 |
+| Brightness of the backdrop light / dark | ×1.25 / ×1.10 | ×1.12 / ×1.05 | ×1.04 / ×0.98 |
+| Tint light / dark | `#FFFFFF` 60 % / `#2A2B30` 60 % | `#FFFFFF` 58 % / `#2A2B30` 58 % | none |
 | Inside rim (1 pt) light / dark | `#000000` 12 % / `#000000` 40 % | same | same |
 | Rim light (inner shadow 0, 1, blur 1) | `#FFFFFF` 70 % / `#FFFFFF` 22 % | same | same |
 | Drop shadow | `shadows.2` (y 4, blur 12) | `shadows.3` (y 12, blur 32) | none |
-| Refraction | — | — | distortion 0.3, depth 0.5, chromatic aberration 0.08, magnification ≈ 1.1×, specular highlight on the top edge; brightness ×1.04 light / ×0.98 dark |
 | Shape | capsule or smooth-cornered rectangle (smoothing 0.6) | same | capsule only |
 
-Render order for Regular and Thick: backdrop → blur → saturation → tint fill → inside rim → rim light
+Regular bends more (small objects: the edge effect must read); Thick bends less and blurs more (large
+panels with text on them must stay calm and readable).
+
+Render order for Regular and Thick: backdrop → blur → refraction at the edge (distortion over a band of about `depth` × the shorter side / 2, chromatic split) → saturation and brightness → tint fill → inside rim → rim light
 (top inner edge) → content → drop shadow outside the shape. Blur and tint are clipped to the shape's smooth
 corners. In the compositor (Ossido) the blur is the existing glass pass ([`docs/m2-glass.md`](../../m2-glass.md),
 [`docs/spec/glass.md`](../../spec/glass.md)): reuse its kernel and only change the parameters to these.
