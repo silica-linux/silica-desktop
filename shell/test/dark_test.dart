@@ -87,22 +87,19 @@ void main() {
         ),
       ),
     );
+    // Amalfi tokens: Text/Tertiary placeholder, Text/Primary names, in the dark palette.
+    final amalfi = AmalfiThemeData.dark().colors;
     expect(
       tester.widget<Text>(find.text('Applications')).style?.color,
-      const Color(0xFFEDEEF2),
+      amalfi.textTertiary,
     );
     expect(
       tester.widget<Text>(find.text('Utilities')).style?.color,
-      FaroColors.dark.categoryText,
+      amalfi.textPrimary,
     );
     expect(
       tester.widget<Text>(find.text('Calcolatrice')).style?.color,
-      FaroColors.dark.text,
-    );
-    // The panel shadow is denser in dark.
-    expect(
-      FaroColors.dark.shadow(const Color(0x40000000)).a,
-      closeTo(0.25 * 1.7, 0.01),
+      amalfi.textPrimary,
     );
   });
 

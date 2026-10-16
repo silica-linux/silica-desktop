@@ -992,6 +992,30 @@ abstract class AppLocalizations {
   /// **'Search in {name}'**
   String faroSearchIn(String name);
 
+  /// Faro actions scope footer when every action is visible
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 action} other{{count} actions}}'**
+  String faroActionsFooter(int count);
+
+  /// Faro actions scope footer when the list scrolls
+  ///
+  /// In en, this message translates to:
+  /// **'{shown} of {total} actions · scroll for more'**
+  String faroActionsFooterMore(int shown, int total);
+
+  /// Launcher view menu: the grid of icons (menu item)
+  ///
+  /// In en, this message translates to:
+  /// **'as Grid'**
+  String get launcherViewGrid;
+
+  /// Launcher view menu: the list of rows (menu item)
+  ///
+  /// In en, this message translates to:
+  /// **'as List'**
+  String get launcherViewList;
+
   /// Faro fallback row that searches the web
   ///
   /// In en, this message translates to:

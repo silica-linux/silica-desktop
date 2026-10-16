@@ -679,6 +679,35 @@
       }
     }
   },
+  "faroActionsFooter": "{count, plural, =1{1 action} other{{count} actions}}",
+  "@faroActionsFooter": {
+    "description": "Faro actions scope footer when every action is visible",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "faroActionsFooterMore": "{shown} of {total} actions · scroll for more",
+  "@faroActionsFooterMore": {
+    "description": "Faro actions scope footer when the list scrolls",
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "launcherViewGrid": "as Grid",
+  "@launcherViewGrid": {
+    "description": "Launcher view menu: the grid of icons (menu item)"
+  },
+  "launcherViewList": "as List",
+  "@launcherViewList": {
+    "description": "Launcher view menu: the list of rows (menu item)"
+  },
   "faroSearchWeb": "Search the Web",
   "@faroSearchWeb": {
     "description": "Faro fallback row that searches the web"

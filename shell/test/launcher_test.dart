@@ -77,31 +77,35 @@ void main() {
     expect(launcherApps([manager], query: 'must'), [manager]);
   });
 
-  test('grid: recents, line and list at the measured distances', () {
+  test('grid: recents, line and list at the kit distances', () {
     const layout = GridLayout(recents: 7, apps: 30);
-    // Area from y 536: recents at 547, line at 652, list at 664, 766 (102 pitch).
-    expect(layout.recentCell(2), const Offset(20 + 2 * 112.5, 11));
-    expect(layout.separatorY, 652 - 536);
-    expect(layout.cell(0).dy, 664 - 536);
-    expect(layout.cell(7).dy, 766 - 536);
-    expect(layout.cell(8).dx, 20 + 112.5);
-    // Without recents the first cell is 11 pt from the start (category: y 500 with the area from 489).
-    expect(const GridLayout(recents: 0, apps: 3).cell(0).dy, 11);
+    // Browsing: the area starts under the capsules (y 96). Recents' icons at y 124, the
+    // line at 216, the list's icons at 236, 104 between rows (kit `Launcher`).
+    expect(layout.areaTop, 96);
+    expect(layout.recentCell(2), const Offset(28 + 2 * 112, 124 - 96));
+    expect(layout.separatorY, 216 - 96);
+    expect(layout.cell(0).dy, 236 - 96);
+    expect(layout.cell(7).dy, 340 - 96);
+    expect(layout.cell(8).dx, 28 + 112);
+    // Without recents the first cell is at y 124; with a category or a query at y 88
+    // (`Launcher Category`), the area from y 57.
+    expect(const GridLayout(recents: 0, apps: 3).cell(0).dy, 124 - 96);
+    const category = GridLayout(recents: 0, apps: 3, browsing: false);
+    expect(category.areaTop, 57);
+    expect(category.cell(0).dy, 88 - 57);
   });
 
-  test('scroll bar: proportional thumb, none if the content fits', () {
-    const bar = LauncherScrollbar(visible: 473, content: 1255, offset: 0);
-    expect(bar.thumb(385)!.height, closeTo(145, 1));
-    const scrolled = LauncherScrollbar(
-      visible: 473,
-      content: 1255,
-      offset: 100,
-    );
-    expect(scrolled.thumb(385)!.top, closeTo(31, 1.5));
-    expect(
-      const LauncherScrollbar(visible: 520, content: 300, offset: 0).thumb(431),
-      isNull,
-    );
+  test('list: recents in cells of 116, line at 208, rows of 56 from 220', () {
+    const layout = GridLayout(recents: 5, apps: 6, list: true);
+    expect(layout.recentCell(1), const Offset(20 + 116, 108 - 96));
+    expect(layout.separatorY, 208 - 96);
+    expect(layout.rowY(0), 220 - 96);
+    expect(layout.rowY(1) - layout.rowY(0), 56);
+  });
+
+  test('the panel is 844 x 580 in grid mode and 640 x 560 in list mode', () {
+    expect(launcherSize(list: false), const Size(844, 580));
+    expect(launcherSize(list: true), const Size(640, 560));
   });
 
   test('recent apps are remembered from the most recent, at most seven', () {
@@ -117,7 +121,7 @@ void main() {
   });
 
   testWidgets(
-    'capsules at least 85.5 pt wide 8 pt apart; the category becomes a token',
+    'capsules 28 tall at y 68, 8 pt apart; the category becomes a token',
     (tester) async {
       final key = GlobalKey<LauncherState>();
       await tester.pumpWidget(
@@ -135,7 +139,6 @@ void main() {
           ),
         ),
       );
-      // In the tests the font is Ahem: margins and gaps are checked, not text widths.
       Rect capsule(String name) => tester.getRect(
         find
             .ancestor(of: find.text(name), matching: find.byType(Container))
@@ -143,12 +146,10 @@ void main() {
       );
       final first = capsule('Productivity and finance');
       final utility = capsule('Utilities');
-      // With Ahem the row is wider than the panel and shrinks by k.
-      final k = first.height / 26;
       expect(first.left, 20);
-      expect(first.center.dy, closeTo(56 + 1 + 10 + 13, 0.01));
-      expect(utility.left - first.right, closeTo(8 * k, 0.01));
-      expect(utility.width, greaterThanOrEqualTo(85.5 * k));
+      expect(first.top, 68);
+      expect(first.height, 28);
+      expect(utility.left - first.right, 8);
       expect(find.text('Applications'), findsOneWidget);
       await tester.tap(find.text('Utilities'));
       await tester.pump(const Duration(milliseconds: 300));
@@ -157,8 +158,53 @@ void main() {
       // The capsules disappear, the token stays.
       expect(find.text('Social'), findsNothing);
       expect(find.text('Utilities'), findsOneWidget);
+      final token = tester.getRect(
+        find.byKey(const ValueKey('launcher category token')),
+      );
+      expect(token.left, 56);
+      expect(token.height, 32);
     },
   );
+
+  testWidgets('the "…" menu switches between the grid and the list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var list = false;
+    late StateSetter set;
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            set = setState;
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Launcher(
+                entries: entries,
+                recents: const [],
+                list: list,
+                onListChanged: (value) => set(() => list = value),
+                onLaunch: (_) {},
+                onBack: () {},
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    expect(tester.getSize(find.byType(Launcher)), const Size(844, 580));
+    await tester.tap(find.byKey(const ValueKey('launcher more')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('launcher view menu')), findsOneWidget);
+    await tester.tap(find.text('as List'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(list, isTrue);
+    expect(tester.getSize(find.byType(Launcher)), const Size(640, 560));
+    expect(find.byKey(const ValueKey('launcher view menu')), findsNothing);
+  });
 
   test('inline completion: only if the first result starts with the text', () {
     final results = launcherApps(entries.values, query: 'cal');
@@ -173,7 +219,7 @@ void main() {
 
   test('the return to Faro follows the measured height', () {
     expect(backProgress(0), 0);
-    // 577 → 234 pt at 106.7 ms: 343 / 520.
+    // 577 → 234 pt at 106.7 ms: 343 / 520 (the measured curve, kept).
     expect(backProgress(106.7), closeTo(343 / 520, 0.001));
     expect(backProgress(300), 1);
   });
@@ -201,7 +247,7 @@ void main() {
       await tester.enterText(find.byType(EditableText), 'cal');
       await tester.pump();
       expect(find.text('colatrice — Open'), findsOneWidget);
-      // The ring: a 4 pt border around the icon of the first result.
+      // The ring: a 4 pt border around the 60 pt icon of the first result.
       final ring = find.byWidgetPredicate(
         (w) =>
             w is DecoratedBox &&
@@ -209,7 +255,7 @@ void main() {
             (w.decoration as BoxDecoration).border != null,
       );
       expect(ring, findsOneWidget);
-      expect(tester.getSize(ring), const Size(69, 69));
+      expect(tester.getSize(ring), const Size(68, 68));
     },
   );
 }

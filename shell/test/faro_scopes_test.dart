@@ -118,8 +118,9 @@ void main() {
     await open(tester);
     await hoverAndTap(tester, 1);
     expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
+    // In a scope the placeholder is the scope's name.
     expect(find.text('Files'), findsOneWidget);
-    expect(find.text('Search Files'), findsOneWidget);
+    expect(find.text('Search Files'), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('faro scope token')), findsNothing);
@@ -223,28 +224,28 @@ void main() {
   ) async {
     await open(tester);
     await command(tester, LogicalKeyboardKey.digit2);
-    expect(find.text('Search Files'), findsOneWidget);
+    expect(find.text('Files'), findsOneWidget);
     await command(tester, LogicalKeyboardKey.digit3);
-    expect(find.text('Search Actions'), findsOneWidget);
+    expect(find.text('Actions'), findsOneWidget);
     await command(tester, LogicalKeyboardKey.digit4);
-    expect(find.text('Search Clipboard'), findsOneWidget);
+    expect(find.text('Clipboard'), findsOneWidget);
     await command(tester, LogicalKeyboardKey.digit2);
-    expect(find.text('Search Files'), findsOneWidget);
+    expect(find.text('Files'), findsOneWidget);
     expect(find.byKey(const ValueKey('faro scope token')), findsOneWidget);
     // Cmd+1 is the Applications disc: the Launcher; from there Cmd+3 goes to Actions.
     await command(tester, LogicalKeyboardKey.digit1);
     expect(find.byKey(const ValueKey('faro scope token')), findsNothing);
-    expect(find.text('Search Files'), findsNothing);
+    expect(find.text('Files'), findsNothing);
     await command(tester, LogicalKeyboardKey.digit3);
-    expect(find.text('Search Actions'), findsOneWidget);
+    expect(find.text('Actions'), findsOneWidget);
   });
 
-  testWidgets('files: 640 x 547 with a grid of 5 columns', (tester) async {
+  testWidgets('files: 640 x 544 with a grid of 5 columns', (tester) async {
     await open(tester);
     await command(tester, LogicalKeyboardKey.digit2);
     final rect = panelRect(tester);
     expect(rect.width, closeTo(640, 0.5));
-    expect(rect.height, closeTo(547, 0.5));
+    expect(rect.height, closeTo(544, 0.5));
     final grid = tester.widget<GridView>(
       find.byKey(const ValueKey('faro files grid')),
     );

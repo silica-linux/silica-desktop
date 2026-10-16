@@ -507,6 +507,28 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String faroActionsFooter(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count actions',
+      one: '1 action',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String faroActionsFooterMore(int shown, int total) {
+    return '$shown of $total actions · scroll for more';
+  }
+
+  @override
+  String get launcherViewGrid => 'as Grid';
+
+  @override
+  String get launcherViewList => 'as List';
+
+  @override
   String get faroSearchWeb => 'Search the Web';
 
   @override

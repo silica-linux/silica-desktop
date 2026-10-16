@@ -12,6 +12,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 /// A spring of mass 1 from its damping ratio `zeta` and natural frequency `omega` (rad/s).
 SpringDescription dampedSpring({required double zeta, required double omega}) =>
@@ -27,58 +28,40 @@ double zetaForOvershoot(double overshoot) {
   return -l / math.sqrt(math.pi * math.pi + l * l);
 }
 
-/// Vertical spring: the opening height and the panel growing with results.
-/// Measured: 432 → 447 pt, +2 pt overshoot (13 % of the travel) peaking at ~+133 ms,
-/// settled within ~190 ms. So ζ ≈ 0.54, ω_d = π / 0.133 s ≈ 23.6 rad/s, ω ≈ 28.1 rad/s.
-final SpringDescription verticalSpring = dampedSpring(zeta: 0.54, omega: 28.1);
+// Amalfi motion tokens (docs/design/amalfi/motion.md, "Surfaces"). The measured Faro
+// overshoots are the tokens' own: spring.panel for heights, spring.morph for shapes.
 
-/// Width spring: the morph between the wide 640 pt layout and the narrow 384 pt one.
-/// Measured: 661 → 384 pt, 22 pt undershoot (7.9 % of the travel) at ~+190 ms, settled to
-/// 1 pt from ~+390 ms. Fitted: ζ = 0.64, ω = 23 rad/s (undershoot 20 pt at +178 ms, within
-/// 1 pt from +400 ms); the peak comes ~12 ms early, the settling time is kept.
-final SpringDescription widthSpring = dampedSpring(zeta: 0.64, omega: 23.0);
+/// Vertical spring: the opening height, the panel growing with results and the scopes
+/// (`spring.panel`).
+const SpringDescription verticalSpring = AmalfiSprings.panel;
 
-/// The engaged panel (the pointer entered the empty capsule): after [engageDelay] it
-/// becomes the 384 pt field plus the four discs. The field settles ~690 ms after the pointer
-/// entered (630 ms after it starts) and the discs ~800 ms; they then stay while Faro is open.
-/// Same shape as the first-launch morph, slowed to those settling times: ζ = 0.64 with
-/// ω ≈ 14.5 rad/s for the field (23 · 390 / 630 = 14.2, a little faster to be within 1 pt
-/// by then), ζ = 0.636 with ω ≈ 12.4 rad/s for the discs (which start [buttonsDelay] after
-/// the field).
-final SpringDescription engageWidthSpring = dampedSpring(
-  zeta: 0.64,
-  omega: 14.5,
-);
-final SpringDescription engageButtonsSpring = dampedSpring(
-  zeta: 0.636,
-  omega: 12.4,
-);
+/// Width spring of the bar when the buttons come out or go away (`spring.morph`).
+const SpringDescription widthSpring = AmalfiSprings.morph;
+const SpringDescription engageWidthSpring = AmalfiSprings.morph;
 
-/// How long the pointer on the empty capsule waits before it starts to change.
-const Duration engageDelay = Duration(milliseconds: 60);
+/// The round buttons sliding out from behind the bar and back (`spring.morph`).
+const SpringDescription engageButtonsSpring = AmalfiSprings.morph;
+const SpringDescription buttonsSpring = AmalfiSprings.morph;
 
-/// A change of scope grows or shrinks the panel with a +5 pt overshoot on its travel
-/// (547 − 56 pt to the files grid: 1 %); the same ω as the opening height.
-final SpringDescription scopeSpring = dampedSpring(
-  zeta: zetaForOvershoot(5 / (547 - 56)),
-  omega: 28.1,
-);
+/// How long the pointer on the empty capsule waits before it starts to change
+/// (`delay.hoverIntent`).
+const Duration engageDelay = AmalfiDelays.hoverIntent;
 
-/// Closing takes ~100 ms (the fade played backwards, the height back to 0.966).
-const Duration closeDuration = Duration(milliseconds: 100);
+/// A change of scope grows or shrinks the panel (`spring.panel`).
+const SpringDescription scopeSpring = AmalfiSprings.panel;
 
-/// Buttons spring: the round buttons spreading out.
-/// Measured: 146 pt of travel, 11 pt overshoot (7.5 %) ~300 ms after they start, settled to
-/// 1 pt ~590 ms after it. So ζ ≈ 0.64, ω ≈ 13.6 rad/s.
-final SpringDescription buttonsSpring = dampedSpring(zeta: 0.636, omega: 13.6);
+/// Closing takes `fade.instant` (the fade played backwards, the height back to 0.97).
+final Duration closeDuration = AmalfiFades.instant.duration;
 
-/// The buttons start ~80 ms after the panel begins to narrow.
+/// The buttons start with the bar's narrowing but are still merged into it (the split is
+/// ~175 ms in: 60 ms hover intent plus this).
 const Duration buttonsDelay = Duration(milliseconds: 80);
 
-/// First frame of an opening: the panel is 0.966 of its height and 1.033 of its width,
-/// centred, then both settle with the springs above.
-const double openScaleY = 0.966;
-const double openScaleX = 1.033;
+/// First frame of an opening: the panel is 0.97 of its height, centred, then it settles with the springs above.
+const double openScaleY = 0.97;
+
+/// Faro never exceeds 640 pt: the opening only scales vertically.
+const double openScaleX = 1;
 
 /// Length of the opening fade (the table below), in ms.
 const double fadeMs = 66.7;
@@ -110,9 +93,9 @@ const List<(double, double)> openOpacity = [
 /// Opacity at `ms` from the first frame of an opening.
 double opacityAt(double ms) => tableAt(openOpacity, ms);
 
-/// Launcher opening: it starts ~8 % larger and shrinks (residual overshoot measured at 0,
+/// Launcher opening: it starts ~6 % larger and shrinks (residual overshoot measured at 0,
 /// 13, 40, 53, 67, 93, 107, 120 and 147 ms), with the same fade as Faro.
-const double launcherOpenScale = 0.08;
+const double launcherOpenScale = 0.06;
 const List<(double, double)> launcherExcess = [
   (0, 1),
   (13.3, 0.79),
