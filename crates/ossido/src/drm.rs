@@ -178,6 +178,36 @@ fn render_scaled(
             Downscaler::new(renderer, DOWNSCALE_LOBES).map_err(|e| format!("downscaler: {e:?}"))?,
         );
     }
+    let drawn = scaled_frame(
+        renderer,
+        downscaler,
+        tracker,
+        gbm,
+        path,
+        dmabuf,
+        age,
+        elements,
+        clear_color,
+    );
+    if drawn.is_err() {
+        // The scene may be ahead of the screen: draw everything next time.
+        path.reset();
+    }
+    drawn
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scaled_frame(
+    renderer: &mut GlesRenderer,
+    downscaler: &mut Option<Downscaler>,
+    tracker: &mut OutputDamageTracker,
+    gbm: &mut GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
+    path: &mut ScaledPath,
+    dmabuf: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    age: usize,
+    elements: &[crate::render::OutputElement],
+    clear_color: [f32; 4],
+) -> Result<bool, String> {
     let (Some(texture), Some(downscaler)) = (path.texture.as_mut(), downscaler.as_mut()) else {
         return Ok(false);
     };
@@ -665,6 +695,7 @@ impl State {
     /// Follows the connectors: the output moves to the first connected one.
     fn drm_changed_inner(&mut self) {
         let output = self.output.clone();
+        let was_scaled = self.hidpi.is_some();
         let Some(backend) = self.drm_backend() else {
             return;
         };
@@ -687,7 +718,13 @@ impl State {
             choice.mode.size().1
         );
         let mode = Mode::from(choice.mode);
-        output.change_current_state(Some(mode), None, None, None);
+        // Another display: not in a scaled mode until its saved choice says so.
+        output.change_current_state(
+            Some(mode),
+            None,
+            was_scaled.then_some(smithay::output::Scale::Integer(1)),
+            None,
+        );
         output.set_preferred(mode);
         // The layers are arranged for the new size now (see `State::output_resized`).
         smithay::desktop::layer_map_for_output(&output).arrange();
@@ -701,6 +738,7 @@ impl State {
             Ok(surface) => backend.surface = Some(surface),
             Err(err) => warn!("{err}"),
         }
+        self.hidpi = None;
         // A display plugged in: its saved mode, scale and rotation, and the night light.
         self.apply_displays_config();
         let _ = self.drm_apply_gamma();
@@ -850,7 +888,6 @@ impl State {
         {
             surface.damage_tracker = OutputDamageTracker::from_output(&output);
             surface.scaled = hidpi.map(ScaledPath::new);
-            backend.pending = false;
             surface.gbm.reset_buffers();
         }
     }
