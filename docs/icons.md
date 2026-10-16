@@ -17,7 +17,10 @@ Code: `shell/lib/system/silica_icons.dart`.
 
 ## Which icon an app gets
 
-1. The `X-Silica-Icon=<id>` key in the app's `.desktop` entry. The app icons of
+1. The `X-Silica-Icon=<id>` key in the app's `.desktop` entry: a plain name looked up as below,
+   or an absolute path, the `icon/` folder the app carries (`silica-icons` app icon as it is;
+   `docs/assets-format.md`, "App icons"), read from there by `appIconFromFolder`
+   (`shell/lib/system/silica_icons.dart`). The app icons of
    silica-icons are **reserved for Silica's apps** (Mustache and the next ones): third-party
    apps, GNOME's included, never get them, not even if they do the same thing.
 2. The Dock's places use the file icons (Downloads → `folder`, Trash → `trash-empty` or

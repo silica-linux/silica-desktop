@@ -10,7 +10,7 @@ Status: design accepted by the user on 2026-10-16. Format version 1.
 
 | Asset | Source | Notes |
 | --- | --- | --- |
-| App icons | silica-icons `apps/` | by app id; the Dock, Launcher, Faro, the app switcher, Mustache, Settings |
+| Shell app icons | silica-icons `apps/` | only the shell's own, by app id: `apps` (Launcher), `mission-control`, `screenshot` and the `silica` mark. The other Silica apps carry their own icon ("App icons" below) |
 | File-type icons | silica-icons `files/` | by type; MIME and UTI map to a type |
 | Folders, volumes, Trash | silica-icons `files/` | by role (Documents, Downloads…, external, network, optical, disk image, Trash empty/full) |
 | Badges | silica-icons `badges/` | alias, cloud, locked, unreadable, Dock stack close… |
@@ -19,8 +19,11 @@ Status: design accepted by the user on 2026-10-16. Format version 1.
 | Sounds | silica-brand (`sounds/`), meanwhile `data/sounds` of silica-desktop | alert sounds, screenshot, Trash; WAV, OGG or FLAC as they are |
 | Wallpapers | silica-brand `exports/wallpapers` | the wallpaper layer and Settings; the PNG files as they are (1x and 2x, light and dark) |
 
-Not in it: cursors (the system Adwaita theme, user decision), third-party app icons (their
-desktop entry `Icon=`, through the XDG icon theme, is the fallback).
+Not in it: the icons of Silica's other apps (Mustache, Calculator, Clock, Mail, Terminal,
+Settings, Preview, Notes, Text Editor, Calendar, Reminders, Photos, Disks, Fonts, Passwords...:
+each app repository and bundle carries its own, see "App icons"); cursors (the system Adwaita
+theme, user decision); third-party app icons (their desktop entry `Icon=`, through the XDG icon
+theme, is the fallback).
 
 ## Sources and compilation
 
@@ -105,7 +108,10 @@ MIME, UTI, extension and desktop-id keys, and the role names that differ from th
 `alias` entries (`alias_of` is the entry that holds the images; an alias never points to an
 alias). `lookup` resolves them: the caller gets the real entry. The alias tables come from
 `crates/silica-assets/data/types.toml` (sections `[app]`, `[mime]`, `[uti]`, `[ext]`); the
-compiler fails if a target is not an icon of the sources.
+compiler fails if a target is not an icon of the sources. The top-level key `shell_apps` of the
+same file lists the app icons that are compiled (`apps`, `mission-control`, `screenshot`,
+`silica`): the other `apps/` folders of silica-icons are skipped and `[app]` aliases only those
+four. A table without `shell_apps` compiles every app icon (the test fixtures do).
 
 ### Entry (64 bytes)
 
@@ -185,6 +191,46 @@ of the icon side from `min_size` up, its fraction below that), `size` the priori
 its position in the badge order of `badges.json`. Not stored yet: the extension-to-category
 `overrides` of `file-generic`, and the shared-mime-info resolution order (aliases, parents),
 which stay with the reader that has the system MIME database.
+
+## App icons
+
+The icon of every Silica app other than the shell's own is not in `silica.assets`: the app
+carries it, so an app can be installed, updated or removed without touching the system file.
+
+Layout, in the app repository:
+
+```
+icon/                    the silica-icons apps/<id>/ folder, as it is
+  icon.json              manifest (docs/icon-format.md of silica-icons)
+  background.svg, foreground.svg, *-dark.svg, layers of dynamic content (hands, cap...)
+  icon.png               rendered, default (1024 px); icon-dark.png, icon-clear.png,
+  icon-clear-dark.png, icon-tinted.png, icon-tinted-dark.png: the six themes
+```
+
+- `cargo xtask bundle <app> [--release]` copies `icon/` to `<bundle>/icon/`, next to
+  `flutter_assets` (`build/icon/` for the debug bundle, `build/release/icon/` for the release
+  one), replacing an older copy. An app without `icon/` (no `icon.json` in it) is bundled as
+  before.
+- `cargo xtask install-app <app>` and `cargo xtask os deploy --apps` write the desktop entry
+  with `X-Silica-Icon=<absolute path of the installed icon folder>` and `Icon=<that folder>/icon.png`
+  (the file `rendered.default` of `icon.json`; 1024 px, launchers scale it), replacing the keys the
+  template has in `[Desktop Entry]`. The `@ICON@` and `@ICON_PNG@` placeholders of a template are
+  filled with the same values. Templates need neither.
+- `X-Silica-Icon` takes two kinds of value. An absolute path is an app icon folder: the shell
+  reads `icon.json` there, draws the rendered PNG of the current theme (default, dark, clear,
+  tinted, ...) and the dynamic layers (clock hands, calendar text) from the same folder. A plain
+  name (`apps`, `mission-control`, ...) is looked up as before in `silica.assets` and then in the
+  icons folder (`SILICA_ICONS_DIR`, `silica/icons` in the XDG data folders). A path whose folder
+  has no valid icon gives no Silica icon: the entry's `Icon=` is used.
+- Fallback: an app whose repository has no `icon/` keeps the entry it has, a plain name looked
+  up in the icons folder, so nothing breaks until each app gets its folder.
+- Packaging (silica-packages): the app package installs the same folder with its bundle,
+  `/usr/lib64/silica/apps/<id>/icon/` next to `/usr/lib64/silica/apps/<id>/flutter_assets/`
+  (`<id>` is the desktop application id, e.g. `dev.frascella.Clock`), and its desktop entry in
+  `/usr/share/applications/<id>.desktop` has `X-Silica-Icon=/usr/lib64/silica/apps/<id>/icon` and
+  `Icon=/usr/lib64/silica/apps/<id>/icon/icon.png`. Optionally the package also installs
+  `icon.png` as `/usr/share/icons/hicolor/512x512/apps/<id>.png`, for tools that only read the
+  XDG icon theme.
 
 ## Readers
 

@@ -956,12 +956,25 @@ fn deploy_app(app: &Path, share: &Path) -> Result<()> {
             .and_then(|n| n.strip_suffix(".in"))
             .ok_or_else(|| format!("{}: invalid name", template.display()))?;
         let id = name.strip_suffix(".desktop").unwrap_or(name);
+        // The app's icon folder travels with the bundle; the entry points at the guest copy.
+        let guest_icon =
+            crate::app_icon::copy_to_bundle(app, &app.join("build/release"))?.map(|folder| {
+                (
+                    format!("{GUEST_RUN}/apps/{id}/icon"),
+                    crate::app_icon::png_name(&folder),
+                )
+            });
         replace_dir(&app.join("build/release"), &share.join("apps").join(id))?;
         let text = std::fs::read_to_string(&template)
             .map_err(|e| format!("{}: {e}", template.display()))?;
-        let entry = text
-            .replace("@EMBEDDER@", &format!("{GUEST_RUN}/bin/silica-app"))
-            .replace("@BUNDLE@", &format!("{GUEST_RUN}/apps/{id}/flutter_assets"));
+        let entry = crate::install::render_entry(
+            &text,
+            &format!("{GUEST_RUN}/bin/silica-app"),
+            &format!("{GUEST_RUN}/apps/{id}/flutter_assets"),
+            guest_icon
+                .as_ref()
+                .map(|(folder, png)| (folder.as_str(), png.as_str())),
+        );
         write(&share.join("share/applications").join(name), &entry)?;
         eprintln!("xtask: {id}");
     }
