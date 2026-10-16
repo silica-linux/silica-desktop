@@ -381,6 +381,24 @@ where
     T::try_from(state[key].try_clone().unwrap()).unwrap()
 }
 
+/// Runs `test` next to the service, failing (never hanging) if the service
+/// ends or the whole test takes longer than 60 s, e.g. a D-Bus call that
+/// never returns on a loaded host.
+async fn run_test<E: std::fmt::Debug>(
+    test: impl std::future::Future<Output = ()>,
+    service: impl std::future::Future<Output = Result<(), E>>,
+) {
+    let service = async {
+        let result = service.await;
+        panic!("the service ended: {result:?}");
+    };
+    let deadline = async {
+        async_io::Timer::after(Duration::from_secs(60)).await;
+        panic!("the test did not finish within 60 s (a call is blocked?)");
+    };
+    future::or(test, future::or(service, deadline)).await;
+}
+
 /// Waits until the state satisfies `ready` (the sources start in parallel).
 async fn wait_for(
     proxy: &SystemProxy<'_>,
@@ -558,11 +576,7 @@ fn reads_and_changes_the_system() {
             assert_eq!(chosen.trim(), "62");
             assert!(proxy.set_audio_output(999).await.is_err());
         };
-        future::or(test, async {
-            let result = service.run().await;
-            panic!("the service ended: {result:?}");
-        })
-        .await;
+        run_test(test, service.run()).await;
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -627,11 +641,7 @@ fn missing_sources_are_absent_not_errors() {
             assert!(!state.contains_key("evil"));
             assert!(proxy.report_compositor("[1]").await.is_err());
         };
-        future::or(test, async {
-            let result = service.run().await;
-            panic!("the service ended: {result:?}");
-        })
-        .await;
+        run_test(test, service.run()).await;
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -760,11 +770,7 @@ fn displays_and_night_light_go_through_ossido() {
             }
             assert!(sent(6500));
         };
-        future::or(test, async {
-            let result = service.run().await;
-            panic!("the service ended: {result:?}");
-        })
-        .await;
+        run_test(test, service.run()).await;
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -842,11 +848,7 @@ fn automatic_appearance_follows_the_sun() {
             })
             .await;
         };
-        future::or(test, async {
-            let result = service.run().await;
-            panic!("the service ended: {result:?}");
-        })
-        .await;
+        run_test(test, service.run()).await;
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -932,11 +934,7 @@ fn energy_inhibits_idle_sleep_and_suspends_through_logind() {
             proxy.suspend().await.unwrap();
             assert_eq!(calls.lock().unwrap().last().unwrap(), "suspend false");
         };
-        future::or(test, async {
-            let result = service.run().await;
-            panic!("the service ended: {result:?}");
-        })
-        .await;
+        run_test(test, service.run()).await;
     });
     let _ = std::fs::remove_dir_all(&dir);
 }

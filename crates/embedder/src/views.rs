@@ -159,7 +159,8 @@ pub fn closing(view: i64, others: usize, quit_with_last: bool, hideable: bool) -
 
 /// How long the app has to answer a close request, or to say it is asking the user
 /// (`closeAsking`), before the window closes anyway (silica-desktop#192).
-pub const CLOSE_WAIT: Duration = Duration::from_millis(250);
+/// (750 ms: a loaded host can take longer than 250 ms to draw the question, silica-desktop#207.)
+pub const CLOSE_WAIT: Duration = Duration::from_millis(750);
 
 /// A close request the app has not answered yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

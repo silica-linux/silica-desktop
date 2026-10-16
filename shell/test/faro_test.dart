@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/faro/answers.dart';
 import 'package:silica_shell/faro/faro.dart';
 import 'package:silica_shell/faro/folders.dart';
+import 'package:silica_shell/faro/launcher.dart';
 import 'package:silica_shell/faro/search.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/shell_channel.dart';
@@ -21,6 +22,26 @@ const entries = {
 };
 
 void main() {
+  test(
+    'the Apps entry is not listed by search or in the Applications view',
+    () {
+      final all = {
+        ...entries,
+        'dev.frascella.Apps': const DesktopEntry(
+          id: 'dev.frascella.Apps',
+          name: 'Apps',
+          exec: 'silica-action launcher.toggle',
+        ),
+      };
+      expect(searchApps(all.values, 'apps'), isEmpty);
+      expect(
+        launcherApps(all.values).map((e) => e.id),
+        isNot(contains('dev.frascella.Apps')),
+      );
+      expect(launcherApps(all.values, query: 'app'), isEmpty);
+    },
+  );
+
   test('search puts first the names starting with the text', () {
     expect(
       [for (final e in searchApps(entries.values, 'te')) e.name],

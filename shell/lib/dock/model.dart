@@ -555,6 +555,20 @@ const double bouncePeriod = 693;
 const double bouncePeak = 17 * amalfiScale;
 const Duration bounceLimit = Duration(seconds: 10);
 
+/// The item that bounces when [item] is clicked (dock.md D-02/D-03, silica-desktop#210): an
+/// app that is not running bounces itself until its first window; a running app, and the
+/// Apps action, never. A place (the Trash, a folder) is opened by the file manager: if that
+/// is running nothing bounces, otherwise the bounce is the file manager's own tile's.
+Item? launchBounceTarget(Item item, List<Item> items) {
+  if (item.action != null) return null;
+  if (item.isPlace || item.trash || item.folder != null) {
+    final manager = items.where((i) => i.fixed).firstOrNull;
+    if (item.command == null || manager == null || manager.running) return null;
+    return manager.command == null ? null : manager;
+  }
+  return !item.running && item.command != null ? item : null;
+}
+
 /// Bounce height `ms` after the start (repeated).
 double bounceHeight(double ms) {
   if (ms <= 0) return 0;

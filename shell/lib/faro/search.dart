@@ -1,5 +1,6 @@
 // Faro's search over the installed apps.
 
+import '../dock/apps.dart' show appsItemId;
 import '../system/desktop_entries.dart';
 
 /// The apps matching `query`, most relevant first: name starting with the query, then a
@@ -19,7 +20,9 @@ List<DesktopEntry> searchApps(Iterable<DesktopEntry> entries, String query) {
   final scored =
       [
         for (final e in entries)
-          if (rank(e) case final r?) (r, e),
+          // The Apps entry is the launcher itself: not listed (silica-desktop#186).
+          if (e.id != appsItemId)
+            if (rank(e) case final r?) (r, e),
       ]..sort((a, b) {
         final byRank = a.$1.compareTo(b.$1);
         return byRank != 0

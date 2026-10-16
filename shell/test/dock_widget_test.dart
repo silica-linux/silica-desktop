@@ -13,6 +13,41 @@ import 'package:silica_shell/system/layer_control.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 
 void main() {
+  test(
+    'only an app that is launching bounces; places use the file manager (#210)',
+    () {
+      Item manager({bool running = false}) =>
+          Item.app('Files', command: 'files', running: running, fixed: true);
+      const trash = Item.app('Trash', command: 'files trash:///', trash: true);
+      const folder = Item.app('Downloads', command: 'files /d', folder: '/d');
+      const app = Item.app('Editor', command: 'editor');
+      final closed = [manager(), app, trash, folder];
+      final open = [manager(running: true), app, trash, folder];
+      // A place never bounces itself; the closed file manager does it for it.
+      expect(launchBounceTarget(trash, closed)?.label, 'Files');
+      expect(launchBounceTarget(folder, closed)?.label, 'Files');
+      // With the file manager running: no bounce at all.
+      expect(launchBounceTarget(trash, open), isNull);
+      expect(launchBounceTarget(folder, open), isNull);
+      // Apps: only while launching; the Apps action and running apps never.
+      expect(launchBounceTarget(app, closed), same(app));
+      expect(
+        launchBounceTarget(
+          const Item.app('Editor', command: 'editor', running: true),
+          closed,
+        ),
+        isNull,
+      );
+      expect(
+        launchBounceTarget(
+          const Item.app('Apps', command: 'x', action: 'launcher.toggle'),
+          closed,
+        ),
+        isNull,
+      );
+    },
+  );
+
   testWidgets(
     'the pointer magnifies, shows the label and on exit the Dock goes back to rest',
     (tester) async {

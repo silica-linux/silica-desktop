@@ -2055,8 +2055,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       _stackIndex == index ? _closeStack(byButton: true) : _openStack(index);
       return;
     }
-    if (!item.running && item.command != null) {
-      _bounces.putIfAbsent(_key(item), DateTime.now);
+    if (launchBounceTarget(item, _items) case final target?) {
+      _bounces.putIfAbsent(_key(target), DateTime.now);
       if (!_bounceTicker.isActive) _bounceTicker.start();
     }
     widget.onActivate?.call(item);
