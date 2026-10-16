@@ -75,7 +75,8 @@ List<BarMenu> composeAppMenus(
           : build.entries(appMenu.items),
     ),
   ];
-  final window = build.windowPart(windows, focusedWindow);
+  final (systemPart, windowList) = build.windowPart(windows, focusedWindow);
+  final window = _tidy([...systemPart, const MenuDivider(), ...windowList]);
   var hasWindow = false;
   for (final menu in menus) {
     if (menu.role == 'app') continue;
@@ -84,10 +85,13 @@ List<BarMenu> composeAppMenus(
       hasWindow = true;
     }
     final entries = switch (menu.role) {
+      // The system items first, then the app's own, then the window list.
       'window' => _tidy([
+        ...systemPart,
+        const MenuDivider(),
         ...build.entries(menu.items),
         const MenuDivider(),
-        ...window,
+        ...windowList,
       ]),
       'help' => build.help(menu.items),
       _ => build.entries(menu.items),
@@ -244,8 +248,13 @@ class _Builder {
     };
   }
 
-  /// The part of the Window menu the system provides.
-  List<MenuEntry> windowPart(List<Toplevel> windows, String focused) {
+  /// The parts of the Window menu the system provides: the items that come first (Minimize,
+  /// Fill, Move & Resize, Full Screen) and the list that comes last (Bring All to Front and
+  /// the windows).
+  (List<MenuEntry>, List<MenuEntry>) windowPart(
+    List<Toplevel> windows,
+    String focused,
+  ) {
     MenuAction run(String label, String command, [String? shortcut]) =>
         MenuAction(
           label,
@@ -254,7 +263,7 @@ class _Builder {
         );
     final activate = actions.activateWindow;
     final front = windows.where((w) => w.id == focused).firstOrNull;
-    return _tidy([
+    final system = <MenuEntry>[
       run(l.minimize, 'window.minimize', '⌘M'),
       run(l.fill, 'window.tile_fill'),
       const MenuDivider(),
@@ -272,8 +281,9 @@ class _Builder {
         ],
       ),
       run(l.fullScreen, 'window.fullscreen', '⌃⌘F'),
+    ];
+    final list = <MenuEntry>[
       if (activate != null && windows.isNotEmpty) ...[
-        const MenuDivider(),
         // Activating one window brings every window of the app forward, that one on top.
         MenuAction(
           l.bringAllToFront,
@@ -287,7 +297,8 @@ class _Builder {
             onSelected: () => activate(w.id),
           ),
       ],
-    ]);
+    ];
+    return (_tidy(system), _tidy(list));
   }
 
   /// The Help menu: the app's help, or Silica Help when it has none.

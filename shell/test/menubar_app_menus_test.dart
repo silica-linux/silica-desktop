@@ -225,7 +225,7 @@ void main() {
     });
 
     test(
-      'the Window menu: the app items, then the system part and the windows',
+      'the Window menu: the system part, then the app items, then the windows',
       () {
         final window = compose(
           open: const [
@@ -234,13 +234,13 @@ void main() {
           ],
         )[3].entries;
         expect(labels(window), [
-          englishTexts.closeWindow,
-          '—',
           englishTexts.minimize,
           englishTexts.fill,
           '—',
           englishTexts.moveAndResize,
           englishTexts.fullScreen,
+          '—',
+          englishTexts.closeWindow,
           '—',
           englishTexts.bringAllToFront,
           '—',
