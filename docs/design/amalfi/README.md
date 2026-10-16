@@ -24,7 +24,7 @@ which the shell (`shell/`), the compositor's glass (`crates/ossido`), `silica_ui
 Icons: system symbols come from the **Silica 1.0 Amalfi Icon Kit** (`…/Silica/Silica 1.0 Amalfi Icon
 Kit.sketch`, id `A14E5E90-0F0B-4291-8A35-897B3221F260`; repo copy `silica-icons/design/symbols.sketch`):
 972 symbols `<Light|Regular|Semibold> / <name>` at 24 pt, with stroke styles per size
-`<Weight>/<12–32>/<Role>` (stroke does not scale linearly: 24 → 1.5, 16 → 1.0, 12 → 0.75). App, file
+`<Weight>/<12–32>/<Role>`: the stroke scales linearly with the glyph size (Regular 24 → 1.5, 16 → 1.0, 12 → 0.75; Semibold 12 → 1.076), i.e. plain vector scaling of the 24 pt SVG. App, file
 and folder icons come from `silica-icons` as before; **the user is redrawing all app icons by hand now:
 do not integrate icon changes (the stop on silica-icons v0.7–v0.8 still holds)**.
 
