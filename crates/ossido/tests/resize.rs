@@ -16,6 +16,7 @@ use common::Headless;
 use common::client::TestWindow;
 use serde_json::{Value, json};
 use silica_control::commands::{INPUT_POINTER_BUTTON, INPUT_POINTER_MOVE, WINDOW_LIST, WindowInfo};
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
 
 const SIZE: (u32, u32) = (1280, 800);
 const BAR: i32 = 32;
@@ -300,4 +301,35 @@ fn the_minimum_size_stops_the_edge() {
     move_to(&ossido, (grab.0, grab.1 - 300.0));
     assert_eq!(win.answer(), (W - 60, 150));
     release(&ossido);
+}
+
+#[test]
+fn a_resize_grab_is_not_seen_by_the_desktop_below() {
+    // The desktop layer (Mustache's icons) under the window's edge: the press, the motion and
+    // the release of a resize belong to Ossido (#214).
+    let ossido = Headless::start_with("resize-desktop", SIZE, &["--background", "7a7b80"]);
+    let mut desktop = TestWindow::open_layer(
+        &ossido.wayland,
+        Layer::Background,
+        "desktop",
+        None,
+        |_, _, _, _| [0, 0, 0, 0],
+    );
+    let mut win = TestWindow::open_decorated(&ossido.wayland, "edges", (W as u32, H as u32));
+    win.configured_size();
+    let info = window(&ossido);
+    let (x, y) = (f64::from(info.x), f64::from(info.y - BAR));
+    let before = desktop.pointer_log();
+    // The right edge takes 4 pt outside the window: there the pointer is over the desktop.
+    drag(&ossido, (x + f64::from(W) + 2.0, y + 120.0), (40.0, 30.0));
+    assert!(win.configured_size().is_some());
+    let after = desktop.pointer_log();
+    assert_eq!(
+        after.presses, before.presses,
+        "no press reached the desktop"
+    );
+    assert_eq!(
+        after.motions, before.motions,
+        "no motion reached the desktop"
+    );
 }
