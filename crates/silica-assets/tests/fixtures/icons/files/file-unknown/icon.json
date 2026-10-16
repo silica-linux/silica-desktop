@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "file-unknown",
+  "name": "file-unknown",
+  "kind": "file",
+  "layers": [
+    {
+      "role": "artwork",
+      "file": "icon.svg"
+    }
+  ],
+  "variants": {},
+  "dynamic": null
+}

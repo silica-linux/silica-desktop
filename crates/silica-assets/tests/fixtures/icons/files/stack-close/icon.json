@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "stack-close",
+  "name": "stack-close",
+  "kind": "file",
+  "layers": [
+    {
+      "role": "artwork",
+      "file": "icon.svg"
+    }
+  ],
+  "variants": {
+    "dark": {
+      "artwork": "icon-dark.svg"
+    }
+  },
+  "dynamic": null
+}

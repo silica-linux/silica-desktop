@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "id": "clock",
+  "name": "Clock",
+  "kind": "app",
+  "keyline": "full",
+  "layers": [
+    {
+      "role": "background",
+      "file": "background.svg"
+    },
+    {
+      "role": "foreground",
+      "file": "foreground.svg"
+    }
+  ],
+  "variants": {
+    "dark": {
+      "background": "background-dark.svg",
+      "foreground": "foreground-dark.svg"
+    }
+  },
+  "dynamic": {
+    "type": "clock",
+    "hands": [
+      {
+        "unit": "hour",
+        "file": "hand-hour.svg"
+      },
+      {
+        "unit": "minute",
+        "file": "hand-minute.svg"
+      },
+      {
+        "unit": "second",
+        "file": "hand-second.svg",
+        "min_size": 64
+      }
+    ],
+    "cap": "cap.svg",
+    "pivot": [
+      512,
+      512
+    ]
+  }
+}

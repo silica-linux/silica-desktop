@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "id": "calendar",
+  "name": "Calendar",
+  "kind": "app",
+  "keyline": "full",
+  "layers": [
+    {
+      "role": "background",
+      "file": "background.svg"
+    }
+  ],
+  "variants": {},
+  "dynamic": {
+    "type": "calendar",
+    "month": {
+      "font": "Inter",
+      "size": 92,
+      "weight": 900,
+      "tracking": 4,
+      "color": "#f2382e",
+      "dark_color": "#ff5248",
+      "box": [
+        100,
+        206,
+        824,
+        120
+      ],
+      "case": "upper",
+      "max_width": 560
+    },
+    "day": {
+      "font": "Inter",
+      "size": 280,
+      "weight": 700,
+      "tracking": -10,
+      "color": "#ffffff",
+      "box": [
+        100,
+        410,
+        824,
+        460
+      ]
+    }
+  }
+}

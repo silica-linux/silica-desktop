@@ -1,0 +1,32 @@
+{
+  "format": 1,
+  "id": "mail",
+  "name": "Mail",
+  "kind": "app",
+  "keyline": "landscape",
+  "layers": [
+    {
+      "role": "background",
+      "file": "background.svg"
+    },
+    {
+      "role": "foreground",
+      "file": "foreground.svg"
+    }
+  ],
+  "variants": {
+    "dark": {
+      "background": "background-dark.svg",
+      "foreground": "foreground-dark.svg"
+    }
+  },
+  "dynamic": null,
+  "rendered": {
+    "default": "icon.png",
+    "dark": "icon-dark.png",
+    "clear": "icon-clear.png",
+    "clear-dark": "icon-clear-dark.png",
+    "tinted": "icon-tinted.png",
+    "tinted-dark": "icon-tinted-dark.png"
+  }
+}

@@ -14,10 +14,10 @@ Status: design accepted by the user on 2026-10-16. Format version 1.
 | File-type icons | silica-icons `files/` | by type; MIME and UTI map to a type |
 | Folders, volumes, Trash | silica-icons `files/` | by role (Documents, Downloads…, external, network, optical, disk image, Trash empty/full) |
 | Badges | silica-icons `badges/` | alias, cloud, locked, unreadable, Dock stack close… |
-| System symbols | silica-icons `symbols/` | Icon Kit, light/regular/semibold |
+| System symbols | silica-icons `symbols/` | Icon Kit, light/regular/semibold; the SVG as it is (tintable template), not rasterized |
 | Fonts | Inter, JetBrains Mono | loaded with `FontLoader` from the mapped bytes |
-| Sounds | silica-brand | alert sounds, screenshot, Trash |
-| Wallpapers | silica-brand | the wallpaper layer and Settings |
+| Sounds | silica-brand (`sounds/`), meanwhile `data/sounds` of silica-desktop | alert sounds, screenshot, Trash; WAV, OGG or FLAC as they are |
+| Wallpapers | silica-brand `exports/wallpapers` | the wallpaper layer and Settings; the PNG files as they are (1x and 2x, light and dark) |
 
 Not in it: cursors (the system Adwaita theme, user decision), third-party app icons (their
 desktop entry `Icon=`, through the XDG icon theme, is the fallback).
@@ -28,60 +28,96 @@ The sources stay readable in their repositories: SVG layers, rendered PNGs and `
 ([silica-icons `docs/icon-format.md`](https://github.com/silica-os/silica-icons/blob/main/docs/icon-format.md)).
 A compiler turns them into `silica.assets`:
 
-- `cargo xtask assets [--icons DIR] [--brand DIR] [--out FILE]` (crate `silica-assets`, binary
-  `silica-assets-compile`). It is deterministic: the same sources give the same bytes.
+- `cargo xtask assets [--icons DIR] [--brand DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`
+  (crate `silica-assets`, binary `silica-assets-compile`). It is deterministic: the same sources
+  give the same bytes (sources are read in sorted order, the pixel math is integer, the header
+  has no timestamp). Defaults: icons = branch `amalfi-icons` of the silica-icons checkout next
+  to the repository, read with `git archive` into a temporary directory (the checkout is not
+  touched; without that branch the checked-out files are used), brand = the silica-brand
+  checkout, fonts = `silica-ui/fonts`, sounds = `data/sounds`, out = `target/silica.assets`.
+  The old `cargo xtask assets` (the ASSETS.md license check) is now `cargo xtask assets check`.
 - System install: `/usr/share/silica/silica.assets` (package `silica-assets`, noarch).
-- Development: `target/silica.assets`, rebuilt by `cargo xtask` when a source changes and copied
-  by `cargo xtask os deploy`. `SILICA_ASSETS=<file>` overrides the path. `SILICA_ICONS_DIR`
+- Development: `target/silica.assets`, built by `cargo xtask assets` and copied by
+  `cargo xtask os deploy` (which builds it unless `--no-build`) into the share, where the dev
+  session script exports `SILICA_ASSETS`. `SILICA_ASSETS=<file>` overrides the path. `SILICA_ICONS_DIR`
   stays as a fallback for the old loader until the migration ends.
 
 ## File layout
 
-Little-endian. Every offset is from the start of the file; every section starts on a 64-byte
-boundary so pixel data can be handed to the GPU without copying.
+Little-endian. Every offset is from the start of the file; every section and every data blob
+starts on a 64-byte boundary so pixel data can be handed to the GPU without copying. The file
+is written to a temporary name and renamed over the old one, so a process that has the old file
+mapped keeps reading the old bytes.
 
 ```
 Header (128 bytes)
   magic          [u8; 8]  "SILASSET"
   format         u32      1
   flags          u32      0
-  content_version [u8; 32] UTF-8, NUL-padded (e.g. "silica-assets 0.1.0")
-  source_hash    [u8; 32] hash of the sources, for rebuild checks
-  section_count  u32
+  content_version [u8; 32] UTF-8, NUL-padded, at least one NUL (e.g. "silica-assets 0.1.0")
+  source_hash    [u8; 32] two xxh3-128 digests (different seeds) of the source files read
+                          and their names, for rebuild checks (not a security hash)
+  section_count  u32      at most 64
+  reserved       u32
   sections       offset u64 of the section table
-Section table: { kind u32, reserved u32, offset u64, length u64 } × section_count
-Sections (any order, by kind):
-  STRINGS   UTF-8 strings, NUL-terminated; referenced by offset
-  ENTRIES   fixed-size Entry records
-  VARIANTS  fixed-size Variant records
-  SLOTS     fixed-size dynamic-content records
-  LOOKUP_*  one minimal perfect hash table per key space (below)
-  DATA      pixel data, font files, sound files (each blob 64-byte aligned)
+  file_length    u64      total length; a mismatch means a truncated or padded file
+  reserved       to 128
+Section table: { kind u32, reserved u32, offset u64, length u64 } x section_count
+Sections (any order, by kind; unknown kinds are skipped):
+  1 STRINGS   UTF-8 strings, NUL-terminated; referenced by offset (offset 0 is "")
+  2 ENTRIES   fixed-size Entry records
+  3 VARIANTS  fixed-size Variant records
+  4 SLOTS     fixed-size dynamic-content records
+  5 DATA      pixel data, font files, sound files (each blob 64-byte aligned, identical
+              blobs stored once)
+  16 + n      LOOKUP, one minimal perfect hash table per key space n (below)
 ```
+
+The reader checks the whole structure when it opens the file (section bounds and alignment,
+record sizes, enum values, string offsets, variant and slot ranges, data ranges, alias targets,
+lookup values) and returns an error for anything inconsistent; after that no accessor can be
+led out of range.
 
 ### Lookup tables
 
-One table per key space: `APP` (app id, e.g. `dev.frascella.Mail`), `TYPE` (type id, e.g.
-`public.pdf`), `MIME` (`application/pdf` → type id), `UTI` (alias → type id), `ROLE`
-(`folder.downloads`, `volume.external`, `badge.alias`, `dock.stack-close`…), `SYMBOL`
-(`<weight>/<name>`), `FONT`, `SOUND`, `WALLPAPER`.
+One table per key space, numbered as in the C header: 0 `APP` (icon id such as `mail`, and
+desktop application id such as `dev.frascella.Mail` as an alias), 1 `TYPE` (the file type
+icons of silica-icons `files/`: `file-pdf`, `file-generic`, `file-unknown`...), 2 `MIME`
+(`application/pdf`; wildcard keys such as `image/*` are stored literally and the reader tries
+the exact type first), 3 `UTI` (`com.adobe.pdf`), 4 `ROLE` (`folder`, `folder.generic`,
+`volume.internal|external|network|optical|disk-image`, `trash.empty`, `trash.full`,
+`dock.stack-close`, `badge.alias|cloud|locked|unreadable`), 5 `SYMBOL` (`<weight>/<name>`,
+e.g. `regular/key`), 6 `FONT` (file stem, `Inter-Regular`), 7 `SOUND` (file stem), 8
+`WALLPAPER` (`silica`), 9 `EXT` (extension without the dot, lowercase: `pdf`). `EXT` is an
+addition to the first draft: `icons.extensions` of `file-generic/icon.json` is the map of the
+repository from extension to icon, and the readers must not keep a map of their own.
 
-Each table is a minimal perfect hash (CHD or PTHash): `{ seed u64, bucket_count u32,
-key_count u32, displacements [u32; bucket_count], slots [u32; key_count] }`. A lookup hashes
-the key (xxh3-64 with the seed), reads one displacement and one slot, and compares the key
-string stored in the entry to reject misses. No parsing, no allocation.
+Each table is a minimal perfect hash (compress, hash and displace; PTHash was not needed at
+this size): `{ seed u64, bucket_count u32, key_count u32, displacements [u32; bucket_count],
+slots [u32; key_count] }`. A lookup hashes the key with xxh3-64 and the table seed to `h`; the
+bucket is `(h >> 32) % bucket_count`; the slot is `mix(h ^ displacement * 0x9E3779B97F4A7C15) %
+key_count` (`mix` is the splitmix64 finalizer); the slot holds an entry index. The key string
+stored in that entry is compared with the requested key to reject misses. No parsing, no
+allocation. The compiler uses the first seed (0, 1, ...) that gives a perfect hash, so the
+tables are deterministic. A table with no keys has `bucket_count = key_count = 0`.
+
+MIME, UTI, extension and desktop-id keys, and the role names that differ from the icon id, are
+`alias` entries (`alias_of` is the entry that holds the images; an alias never points to an
+alias). `lookup` resolves them: the caller gets the real entry. The alias tables come from
+`crates/silica-assets/data/types.toml` (sections `[app]`, `[mime]`, `[uti]`, `[ext]`); the
+compiler fails if a target is not an icon of the sources.
 
 ### Entry (64 bytes)
 
 ```
 name        u32  string offset (the key)
-kind        u16  app | file | folder | volume | badge | symbol | font | sound | wallpaper
-flags       u16  has_dynamic, tintable, has_dark, …
+kind        u16  app | file | folder | volume | badge | symbol | font | sound | wallpaper | alias
+flags       u16  has_dynamic (1), tintable (2), has_dark (4)
 variants    u32  first Variant index
 variant_count u16
 slot_count  u16
 slots       u32  first Slot index
-alias_of    u32  entry index this one points to (MIME/UTI aliases), or u32::MAX
+alias_of    u32  entry index this one points to (aliases), or u32::MAX
 reserved    [u8; 40]
 ```
 
@@ -90,43 +126,75 @@ reserved    [u8; 40]
 ```
 theme       u8   default | dark | clear | clear-dark | tinted | tinted-dark
 layer       u8   composite | hand-hour | hand-minute | hand-second | cap | background | foreground
-encoding    u8   rgba8-premul | qoi | ttf | otf | ogg | flac | svg
-reserved    u8
-size_px     u16  pixel side (square images), 0 for non-images
+encoding    u8   rgba8-premul | qoi | ttf | otf | ogg | flac | svg | png | wav
+state       u8   normal | full (a folder with something inside)
+size_px     u16  pixel side (square images), 0 for non-images; the width for wallpapers
 scale       u16  reserved
 data        u64  offset into DATA
 length      u32  bytes
-reserved    u32
+width       u16  pixels, 0 for non-images
+height      u16  pixels, 0 for non-images
+reserved    [u8; 8]
 ```
 
 Images are stored for pixel sides 16, 32, 64, 128 (raw `rgba8-premul`, ready for
-`ImageDescriptor.raw` / GPU upload) and 256, 512, 1024 (`qoi`). A reader picks the smallest
-stored side ≥ requested logical size × device pixel ratio and scales down.
+`ImageDescriptor.raw` / GPU upload) and 256, 512, 1024 (`qoi`, of the same premultiplied
+pixels). Smaller sides are made from the 1024 image by repeated 2x2 box filtering in integer
+arithmetic. A reader picks the smallest stored side >= requested logical size x device pixel
+ratio, or the largest if none is, and scales down. `pick` looks for the wanted layer and state
+in the requested theme and, if it has none, in the next theme of the fallback chain:
+clear-dark -> clear -> dark -> default, tinted-dark -> tinted -> dark -> default, and
+dark, clear, tinted -> default.
 
-### Dynamic slots (32 bytes)
+Where the images come from: an app icon uses its `rendered` PNGs (six themes, 1024 px); an app
+without them is composed from its SVG layers for default and dark; file, folder, volume, Trash
+and badge icons are rasterized from their SVG with resvg (`icon.svg`, `icon-dark.svg`, and for
+folders `icon-full.svg` / `icon-full-dark.svg` as state `full`). The `background` and
+`foreground` layers are not stored (the layer values are reserved): the rendered composites
+cover the themes, and custom tints can be made from the SVG sources until a consumer needs them
+here.
+
+### Dynamic slots (48 bytes)
 
 ```
-kind        u8   clock-hand | clock-cap | calendar-month | calendar-day | folder-emblem | type-label
-unit        u8   hour | minute | second (clock)
+kind        u8   clock-hand | clock-cap | calendar-month | calendar-day | folder-emblem |
+                 type-label | badge | type-category
+unit        u8   clock-hand: hour 0 | minute 1 | second 2; type-label: max characters;
+                 badge: corner (top-left 0, top-right 1, bottom-left 2, bottom-right 3)
 min_size    u16  smallest icon side (pt) at which the slot is drawn
-pivot / box f32 × 4  pivot (x, y) for hands, or box (x, y, w, h) on the 1024 canvas
-font        u32  string offset (font entry name) for text slots
-size_weight u16 × 2  font size and weight on the 1024 canvas
-color       u32 × 2  light and dark RGBA
-format      u32  string offset: "short" (localized 3-letter month, capitals), "day", …
+pivot / box f32 x 4  pivot (x, y, 0, 0) for hands and caps, or box (x, y, w, h) on the 1024 canvas
+font        u32  string offset (font entry name) for text slots, u32::MAX if none
+size, weight u16 x 2  font size and weight on the 1024 canvas
+color       u32 x 2  light and dark 0xRRGGBBAA
+format      u32  string offset, u32::MAX if none: "month:upper", "day" (calendar), the case
+                 of the label ("upper"), the category name (type-category)
+tracking    f32  letter spacing on the 1024 canvas
+max_width   f32  widest text on the 1024 canvas (shrinks proportionally beyond it)
 ```
 
-Clock hands and caps are stored as their own image variants (layer field) and rotated about
-the pivot at draw time. Calendar text, file-type labels and folder emblems are drawn at draw
-time with the font and symbol entries of the same file.
+The first draft said 32 bytes, but its fields add up to 40 and the manifests also need
+`tracking` and `max_width`, hence 48.
+
+Clock hands and caps are stored as their own image variants (layer field, themes default and,
+when the source has a `-dark` file, dark) and rotated about the pivot at draw time. Calendar
+text, file-type labels and folder emblems are drawn at draw time with the font and symbol
+entries of the same file. The generic file (`file-generic`) carries one `type-label` slot and
+one `type-category` slot per category (document, data, code...) with its colors. A badge
+carries one `badge` slot: `unit` the corner, `rect` = (corner x, corner y, the badge's fraction
+of the icon side from `min_size` up, its fraction below that), `size` the priority, `weight`
+its position in the badge order of `badges.json`. Not stored yet: the extension-to-category
+`overrides` of `file-generic`, and the shared-mime-info resolution order (aliases, parents),
+which stay with the reader that has the system MIME database.
 
 ## Readers
 
 - **Rust**: crate `silica-assets` (in silica-desktop `crates/`): `Assets::open(path)` maps the
   file read-only; lookups return borrowed slices. It never panics on a malformed file: a bad
   magic, an unknown format or an out-of-range offset returns an error, and the caller falls
-  back. A C ABI (`libsilica_assets.so`: open, lookup by key space, variant pick, blob pointer
-  and length, close) serves `dart:ffi`.
+  back. A C ABI (`libsilica_assets.so`, header
+  `crates/silica-assets/include/silica_assets.h`: open, close, lookup by key space, entry and
+  slot info, variant by index, variant pick, blob pointer and length) serves `dart:ffi`; the
+  only `unsafe` in the crate is the memory mapping and that ABI (`src/ffi/`).
 - **silica_ui**: `SilicaAssets` resolves app, type (MIME / UTI / path), folder role, volume,
   badge, symbol, font, sound and wallpaper requests through the C ABI; widgets get pixels as
   `ui.ImageDescriptor.raw` (no decode) or decode QOI; a size-bounded cache keyed by
