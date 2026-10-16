@@ -45,6 +45,7 @@ do not integrate icon changes (the stop on silica-icons v0.7–v0.8 still holds)
   `colors.<light|dark>["App/<App>/<Token>"]` in `tokens.json`.
 - Faro is never wider than 640 pt; the Launcher keeps its own 844 × 580 panel. The four Faro buttons appear only after the pointer
   enters the empty bar and disappear while typing, with results and inside a scope (`components.md`).
+- Pointers: the classic Adwaita cursor theme, no Amalfi cursors.
 - Inter for UI, JetBrains Mono for monospaced text. No reference-vendor fonts or names in code, assets or
   strings.
 
@@ -71,11 +72,11 @@ Use the Sketch MCP tools on the document id above. **Never write to the kit, nev
 3. **Every component.** One widget per kit family (Buttons, Fields, Toggles, Segmented, Menus, Popovers,
    Sliders, Steppers, Progress, Scrollbars, Sidebars, Titlebars/Pieces/Toolbars, Windows, Alerts,
    Dialogs, Forms, Group Boxes, Image/Color Wells, Tooltips, Disclosure, Notifications, Control Center,
-   Menu Bar, Dock, Pointers) with **every variant, size and state** in the inventory, light and dark.
+   Menu Bar, Dock) with **every variant, size and state** in the inventory, light and dark.
    For each one: read the master, implement, add a golden test against the kit screenshot, and a
    gallery page. Keep a checklist (one line per symbol family × variant) in the repo and tick it.
 4. **Shell.** Menu bar, Dock, Faro + Launcher, Control Center, notifications, app switcher, Mission
-   Control/Panorama, Screenshot UI, window decorations (pieces and window controls), pointers, rebuilt
+   Control/Panorama, Screenshot UI, window decorations (pieces and window controls), rebuilt
    on the components.
 5. **Motion.** Re-derive every animation with `motion.md`; keep measured timings, re-scale amplitudes.
 6. **Apps.** Mustache, Mail, Terminal, Calculator, Clock, Settings, Preview, Notes, Text Editor,

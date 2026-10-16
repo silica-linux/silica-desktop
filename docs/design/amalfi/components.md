@@ -29,6 +29,8 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 - Terminal: content padding 12, line height 16 (Mono 12/16).
 - Text baselines: put text frames on whole points, with the line height from the text style.
 
+Pointers are not part of Amalfi: Silica uses the classic Adwaita cursor theme (user decision 2026-10-16).
+
 ## Component inventory (3015 symbols, every one in Light and Dark)
 
 Names follow `Category/Component/Variant/Size/State/Appearance`. States are always
@@ -52,7 +54,6 @@ Read each one from the kit for exact geometry (see README, "How to read the kit"
 | Menu Bar | Bar: Closed, Menu Open; Item: Status, Menu, Name, Clock × Rest/Active | 28 tall, items 24 |
 | Menus | Menu: Simple, Full, Context, Submenu, Cascade; Item: Plain, Shortcut, Submenu, Icon, Destructive, Checkmark × Rest/Highlighted/Checked/Disabled; Header; Separator | items 24 tall; separator 8 |
 | Notifications | Banner: Basic, With Actions, Panel, Panel With Actions; Stack Grouped; Centre Panel; App Icon | 360×76, 360×108; centre 380×416 |
-| Pointers | Arrow, I-beam, Link Hand, Resize ↔ ↕ ⤡ ⤢, Crosshair, Busy, Not Allowed, Copy, Context Menu, Drag | 32×32 |
 | Popovers | Popover: Form, List, Text × Top/Bottom/Leading/Trailing × Start/Center/End + Detached; Content | ~204–268 wide |
 | Progress | Bar: Determinate (25/60/100/Disabled), Indeterminate (3 phases) × Small/Regular/Large; Circular; Spinner | bar 4/8 tall; spinner 16/24/32 |
 | Scrollbars | Overlay: Thin, Expanded, Dragging × V/H; Legacy: Rest, Hover, Disabled × V/H; Corner; Area | overlay 12; legacy 16 |
