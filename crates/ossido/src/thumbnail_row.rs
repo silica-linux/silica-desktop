@@ -2,7 +2,8 @@
 //! Thumbnail layout, add animation, removal; `missioncontrol.md` › Expanded bar: interactions).
 //!
 //! - 90 pt tall thumbnails (160 × 90 on the 16:9 reference screen: the width follows the
-//!   screen's aspect), 32 pt apart, centered around y 97 (52–141).
+//!   screen's aspect, as the wallpaper must fill it; the kit draws 160 × 92, which is no screen's
+//!   aspect), 32 pt apart, centered around y 98 (the middle of the kit's 52–144, ring 48–148).
 //! - The row is centered when the bar expands, not at each addition: a new space enters the
 //!   free position to the right of the last one, born at the right edge of the screen (right
 //!   edge 16 pt from it) and sliding there on a critically damped spring (ω 0.0160 rad/ms).
@@ -19,8 +20,8 @@ use smithay::utils::{Logical, Rectangle, Size};
 pub const THUMB_HEIGHT: f64 = 90.0;
 /// Gap between two thumbnails at full size.
 pub const THUMB_GAP: f64 = 32.0;
-/// Vertical center of the thumbnails (52–141).
-pub const THUMB_CENTER_Y: f64 = 97.0;
+/// Vertical center of the thumbnails (53–143).
+pub const THUMB_CENTER_Y: f64 = 98.0;
 /// Room left on each side when the thumbnails have to shrink (16 spaces on 2560 pt:
 /// thumbnails ~126 pt, pitch ~152).
 pub const ROW_MARGIN: f64 = 76.0;
@@ -244,11 +245,11 @@ mod tests {
     #[test]
     fn the_row_is_centered_as_measured() {
         let output = Size::from(REFERENCE);
-        // 2 spaces with the bar just expanded: 1103/1296 (±1), 160 × 90 at y 52.
+        // 2 spaces with the bar just expanded: 1103/1296 (±1), 160 × 90, centred on y 98.
         let two = centered(2, output);
         assert_eq!(xs(&two), [1104.0, 1296.0]);
         assert_eq!(two[0].size, Size::from((160.0, 90.0)));
-        assert_eq!(two[0].loc.y, 52.0);
+        assert_eq!(two[0].loc.y, 53.0);
         // 3 spaces: 1008, 1200, 1392; 12 spaces from x 144.
         assert_eq!(xs(&centered(3, output)), [1008.0, 1200.0, 1392.0]);
         assert_eq!(centered(12, output)[0].loc.x, 144.0);

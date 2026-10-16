@@ -516,26 +516,26 @@ fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_
     );
     assert!(near(rgb_at(&shot, 100.0, 110.0), [0x7a, 0x7b, 0x80], 2));
 
-    // One space: its thumbnail in the middle, 90 pt tall from y 52 (16:10 → 144 wide).
+    // One space: its thumbnail in the middle, 90 pt tall centred on y 98 (16:10 → 144 wide).
     c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
         .unwrap();
     let t = state(&ossido).thumbnails;
     assert_eq!(t.len(), 1);
     assert_eq!(
         (t[0].x + t[0].width / 2.0, t[0].y, t[0].height),
-        (640.0, 52.0, 90.0)
+        (640.0, 53.0, 90.0)
     );
     let shot = screenshot(&ossido);
-    // Expanded: border #5f6063 at y 170, shadow from #6a6b6f.
+    // Expanded (168 pt, kit): border #5f6063 at y 168, shadow from #6a6b6f.
     assert!(
-        near(rgb_at(&shot, 100.0, 170.0), [0x5f, 0x60, 0x63], 3),
+        near(rgb_at(&shot, 100.0, 168.0), [0x5f, 0x60, 0x63], 3),
         "{:?}",
-        rgb_at(&shot, 100.0, 170.0)
+        rgb_at(&shot, 100.0, 168.0)
     );
     assert!(
-        near(rgb_at(&shot, 100.0, 171.0), [0x6a, 0x6b, 0x6f], 3),
+        near(rgb_at(&shot, 100.0, 169.0), [0x6a, 0x6b, 0x6f], 3),
         "{:?}",
-        rgb_at(&shot, 100.0, 171.0)
+        rgb_at(&shot, 100.0, 169.0)
     );
     // The label: dark ink under the thumbnail inside the bar (caps ~150–159), none below it.
     let ink = |shot: &[u8], rows: std::ops::Range<u32>| {

@@ -952,6 +952,24 @@ pub fn output_elements(
                 1.0,
             )));
         }
+        // The ring and the title of the window under the pointer, in front of the windows.
+        if let Some(hover) = &panorama.hover_window {
+            let sprite = output
+                .user_data()
+                .get_or_insert(crate::panorama::HoverSprite::default);
+            if let Some(element) =
+                crate::panorama::hover_window_element(renderer, sprite, hover, scale)
+            {
+                elements.insert(
+                    0,
+                    OutputElement::Texture(RescaleRenderElement::from_element(
+                        element,
+                        Point::default(),
+                        1.0,
+                    )),
+                );
+            }
+        }
         for thumbnail in &panorama.thumbnails {
             let s = thumbnail.rect.size.w / output_logical.w.max(1.0);
             for (window, location) in thumbnail.windows.iter().rev() {
