@@ -1410,7 +1410,7 @@ class _FaroState extends State<Faro>
               child: AmalfiSymbol(
                 _scopeSymbol(_scope),
                 size: 24,
-                color: scoped ? _c.text : _c.placeholder,
+                color: _c.subtitle,
               ),
             ),
           ),

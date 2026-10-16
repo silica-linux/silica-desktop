@@ -513,7 +513,7 @@ class LauncherState extends State<Launcher>
               child: AmalfiSymbol(
                 token == null ? 'square-grid-2x2' : 'chevron-left',
                 size: 24,
-                color: _c.placeholder,
+                color: _c.subtitle,
               ),
             ),
           ),
@@ -615,7 +615,7 @@ class LauncherState extends State<Launcher>
               key: const ValueKey('launcher more'),
               behavior: HitTestBehavior.opaque,
               onTap: () => setState(() => _menu = !_menu),
-              child: AmalfiSymbol('ellipsis', size: 20, color: _c.placeholder),
+              child: AmalfiSymbol('ellipsis', size: 20, color: _c.subtitle),
             ),
           ),
         ],
