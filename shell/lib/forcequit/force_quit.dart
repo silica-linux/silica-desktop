@@ -1,9 +1,11 @@
-// Force quit (⌘⌥⎋, plan/reference/screenshot-ui.md): a 370 × 310 panel in the center,
-// with the bar and the window buttons (minimize disabled), two lines of explanation, the
-// list of open apps (313 pt usable width, 22 pt rows, 18 pt icon at +8, name at +28; the
-// frontmost app already chosen), a small help text at the bottom left and the blue button
-// at the bottom right (115 × 30). The button kills the app with `app.force_quit`.
-// The texts are our own; the reference position was remembered, here it is centered.
+// Force quit (⌘⌥⎋): an Amalfi window in the centre of the screen: the title bar with its
+// window controls (minimise and zoom disabled), the explanation, the list of open apps (the
+// frontmost app already chosen), the shortcut hint at the bottom left and the primary
+// "Force Quit" push button at the bottom right. The button kills the app with
+// `app.force_quit`. The texts are our own. The list has no kit master ("Lists: no kit
+// masters"): its surface is the `Dialogs/Browser/Files` file list (Surface/Raised, radius 12,
+// 8 pt of padding) with 28 pt rows as `Sidebars/Row/Plain` (selected: Accent/Amalfi Soft, radius
+// 8). Sizes are on the 4 pt grid.
 
 import 'dart:async';
 
@@ -19,100 +21,15 @@ import '../system/layer_control.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 
-const Size forceQuitSize = Size(370, 310);
-const Rect forceQuitList = Rect.fromLTWH(20, 92, 330, 158);
-const double forceQuitRow = 22;
-const Rect forceQuitButton = Rect.fromLTWH(240, 265, 115, 30);
-const Color forceQuitBlue = Color(0xFF0A62E0);
+const Size forceQuitSize = Size(400, 368);
 
-/// The panel colors. Dark measured (screenshot-ui.md › K-06): background `#272727` with the
-/// bar `#2f2f2f`, 1 pt rim `#060606` outside and `#3d3d3d` inside, title `#9e9e9e` (non-key
-/// window), texts and names `#dedede`, list on the panel background with a `#353535` rim,
-/// chosen row sRGB `#0059d1`, button sRGB `#007aff`, a dark shadow of ~50 pt. Still *estimated*
-/// in dark: the disabled button (never seen: a row is always chosen) and the disabled
-/// minimize button (windows.md `#4d4d4d`).
-@immutable
-class ForceQuitColors {
-  const ForceQuitColors({
-    required this.fill,
-    required this.bar,
-    required this.borderOuter,
-    required this.borderInner,
-    required this.button,
-    required this.title,
-    required this.text,
-    required this.help,
-    required this.list,
-    required this.listBorder,
-    required this.chosen,
-    required this.disabledButton,
-    required this.disabledButtonText,
-    required this.minimize,
-    required this.shadow,
-  });
-
-  final Color fill;
-
-  /// The title bar band (in light the same as the background).
-  final Color bar;
-
-  /// The rim around the panel, outside and inside (null: none).
-  final Color? borderOuter;
-  final Color? borderInner;
-  final Color button;
-  final Color title;
-  final Color text;
-  final Color help;
-  final Color list;
-  final Color listBorder;
-  final Color chosen;
-  final Color disabledButton;
-  final Color disabledButtonText;
-  final Color minimize;
-  final Color shadow;
-
-  static const ForceQuitColors light = ForceQuitColors(
-    fill: Color(0xFFF6F6F6),
-    bar: Color(0xFFF6F6F6),
-    borderOuter: null,
-    borderInner: null,
-    button: forceQuitBlue,
-    title: Color(0xFF595959),
-    text: Color(0xFF1D1D1F),
-    help: Color(0xFF3C3C43),
-    list: Color(0xFFFFFFFF),
-    listBorder: Color(0xFFD9D9D9),
-    chosen: forceQuitBlue,
-    disabledButton: Color(0xFFB8C9E8),
-    disabledButtonText: Color(0xFFFFFFFF),
-    minimize: Color(0xFFDDDDDF),
-    shadow: Color(0x55000000),
-  );
-
-  static const ForceQuitColors dark = ForceQuitColors(
-    fill: Color(0xFF272727),
-    bar: Color(0xFF2F2F2F),
-    borderOuter: Color(0xFF060606),
-    borderInner: Color(0xFF3D3D3D),
-    button: Color(0xFF007AFF),
-    title: Color(0xFF9E9E9E),
-    text: Color(0xFFDEDEDE),
-    help: Color(0xFFDEDEDE),
-    list: Color(0xFF272727),
-    listBorder: Color(0xFF353535),
-    chosen: Color(0xFF0059D1),
-    disabledButton: Color(0xFF2F2F30),
-    disabledButtonText: Color(0xFF626263),
-    minimize: Color(0xFF4D4D4D),
-    // Below: −69 levels at 1 pt, −50 at 13, −30 at 25, −14 at 37, −5 at 49 (over `#7a7b80`).
-    shadow: Color(0xE6000000),
-  );
-
-  static ForceQuitColors of(BuildContext context) =>
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
-      ? dark
-      : light;
-}
+/// Under the title bar (48): 20 pt of padding, the explanation (2 lines of 16), 12 pt, the list
+/// (192 pt), 16 pt, the footer (28 pt), 20 pt.
+const double forceQuitPadding = 20;
+const Rect forceQuitList = Rect.fromLTWH(20, 128, 360, 192);
+const double forceQuitRow = 28;
+const double forceQuitListPadding = 8;
+const double forceQuitFooterTop = 336 - 8;
 
 /// An open app in the list.
 class ForceQuitApp {
@@ -217,202 +134,218 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
     _hide();
   }
 
+  /// ↑ ↓ move the choice, Return forces the chosen app to quit, Esc closes.
+  KeyEventResult _key(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      _hide();
+      return KeyEventResult.handled;
+    }
+    final apps = _apps();
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
+      if (apps.isEmpty) return KeyEventResult.handled;
+      final at = apps.indexWhere((a) => a.appId == _chosen);
+      final next = key == LogicalKeyboardKey.arrowDown
+          ? (at + 1).clamp(0, apps.length - 1)
+          : (at < 0 ? apps.length - 1 : at - 1).clamp(0, apps.length - 1);
+      setState(() => _chosen = apps[next].appId);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _quit();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_open) return const SizedBox.shrink();
     final apps = _apps();
-    final c = ForceQuitColors.of(context);
+    final l10n = l10nOf(context);
+    final colors = AmalfiTheme.of(context).colors;
+    final list = DecoratedBox(
+      decoration: AmalfiShapeDecoration(
+        color: colors.surfaceRaised,
+        shape: AmalfiSmoothBorder(
+          radius: AmalfiDialogMetrics.filesRadius,
+          side: BorderSide(
+            color: colors.lineBorder,
+            strokeAlign: BorderSide.strokeAlignInside,
+          ),
+        ),
+      ),
+      child: ListView(
+        key: const ValueKey('force quit list'),
+        padding: const EdgeInsets.all(forceQuitListPadding),
+        itemExtent: forceQuitRow,
+        children: [for (final app in apps) _row(colors, app)],
+      ),
+    );
     return Focus(
       focusNode: _focus,
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          _hide();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
+      onKeyEvent: _key,
       child: Center(
-        child: Container(
+        child: SizedBox(
           key: const ValueKey('force quit'),
           width: forceQuitSize.width,
           height: forceQuitSize.height,
-          decoration: BoxDecoration(
-            color: c.fill,
-            borderRadius: BorderRadius.circular(16),
-            border: c.borderOuter == null
-                ? null
-                : Border.all(color: c.borderOuter!),
-            boxShadow: [
-              c.borderOuter == null
-                  ? BoxShadow(
-                      color: c.shadow,
-                      blurRadius: 40,
-                      offset: const Offset(0, 18),
-                    )
-                  : BoxShadow(
-                      color: c.shadow,
-                      blurRadius: 37,
-                      offset: const Offset(0, 10),
-                    ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // The title bar (in dark lighter than the background) and the inner rim.
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: 52,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(15),
-                  ),
-                  child: ColoredBox(color: c.bar),
-                ),
-              ),
-              if (c.borderInner case final inner?)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: inner),
-                      ),
-                    ),
+          child: AmalfiWindow(
+            // The compositor does not draw this window: the layer does, shadow included.
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: AmalfiToolbarMetrics.titleBarHeight,
+                  child: AmalfiTitleBar(
+                    title: l10n.forceQuitTitle,
+                    onClose: _hide,
                   ),
                 ),
-              // The window buttons: close, minimize disabled, full screen.
-              for (final (x, color) in [
-                (26.0, const Color(0xFFFF5F57)),
-                (49.0, c.minimize),
-                (72.0, const Color(0xFF28C840)),
-              ])
-                Positioned(
-                  left: x - 7,
-                  top: 26 - 7,
-                  width: 14,
-                  height: 14,
-                  child: GestureDetector(
-                    onTap: x == 26 ? _hide : null,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      forceQuitPadding,
+                      forceQuitPadding,
+                      forceQuitPadding,
+                      forceQuitPadding,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          height: 32,
+                          child: Text(
+                            l10n.forceQuitHelp,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AmalfiType.callout(
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(child: list),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                l10n.forceQuitShortcut,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AmalfiType.caption(
+                                  color: colors.textTertiary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            AmalfiPushButton(
+                              key: const ValueKey('force quit button'),
+                              label: l10n.forceQuitButton,
+                              variant: AmalfiPushButtonVariant.primary,
+                              onPressed: _chosen == null ? null : _quit,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              // The title: semibold ~13 (9 pt capitals), `#595959`, from x 85.
-              Positioned(
-                left: 85,
-                right: 20,
-                top: 8,
-                child: Text(
-                  l10nOf(context).forceQuitTitle,
-                  style: uiText(
-                    size: 13,
-                    color: c.title,
-                  ).copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              Positioned(
-                left: 19,
-                width: 332,
-                top: 51,
-                child: Text(
-                  l10nOf(context).forceQuitHelp,
-                  style: uiText(size: 13, color: c.text),
-                ),
-              ),
-              Positioned.fromRect(
-                rect: forceQuitList,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: c.list,
-                    border: Border.all(color: c.listBorder),
-                  ),
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    itemExtent: forceQuitRow,
-                    children: [for (final app in apps) _row(c, app)],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 19,
-                width: 215,
-                top: 265,
-                child: Text(
-                  l10nOf(context).forceQuitShortcut,
-                  style: uiText(size: 10, color: c.help),
-                ),
-              ),
-              Positioned.fromRect(
-                rect: forceQuitButton,
-                child: GestureDetector(
-                  key: const ValueKey('force quit button'),
-                  onTap: _chosen == null ? null : _quit,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _chosen == null ? c.disabledButton : c.button,
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      l10nOf(context).forceQuitButton,
-                      style: uiText(
-                        size: 13,
-                        color: _chosen == null
-                            ? c.disabledButtonText
-                            : const Color(0xFFFFFFFF),
-                      ).copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _row(ForceQuitColors c, ForceQuitApp app) {
+  Widget _row(AmalfiColors colors, ForceQuitApp app) {
     final chosen = app.appId == _chosen;
-    final text = chosen ? const Color(0xFFFFFFFF) : c.text;
-    return GestureDetector(
+    return _ForceQuitRow(
       key: ValueKey('app ${app.appId}'),
-      behavior: HitTestBehavior.opaque,
+      app: app,
+      chosen: chosen,
       onTap: () => setState(() => _chosen = app.appId),
       onDoubleTap: () {
         setState(() => _chosen = app.appId);
         _quit();
       },
-      child: Container(
-        color: chosen ? c.chosen : null,
-        child: Row(
-          children: [
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: switch (app.icon) {
-                final icon? => SilicaIcon(icon, side: 18, dark: false),
-                null => null,
-              },
-            ),
-            const SizedBox(width: 2),
-            Expanded(
-              child: Text(
-                app.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiText(size: 13, color: text),
+    );
+  }
+}
+
+/// A row of the list: a 20 pt icon and the name; chosen, an `Accent/Amalfi Soft` capsule;
+/// under the pointer, a `Line/Separator` one (`Sidebars/Row/Plain`).
+class _ForceQuitRow extends StatefulWidget {
+  const _ForceQuitRow({
+    super.key,
+    required this.app,
+    required this.chosen,
+    required this.onTap,
+    required this.onDoubleTap,
+  });
+
+  final ForceQuitApp app;
+  final bool chosen;
+  final VoidCallback onTap;
+  final VoidCallback onDoubleTap;
+
+  @override
+  State<_ForceQuitRow> createState() => _ForceQuitRowState();
+}
+
+class _ForceQuitRowState extends State<_ForceQuitRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AmalfiTheme.of(context).colors;
+    final app = widget.app;
+    final fill = widget.chosen
+        ? colors.accentAmalfiSoft
+        : _hovered
+        ? colors.lineSeparator
+        : null;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onDoubleTap: widget.onDoubleTap,
+        child: DecoratedBox(
+          decoration: AmalfiShapeDecoration(
+            color: fill,
+            shape: const AmalfiSmoothBorder(radius: 8),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 12),
+              SizedBox.square(
+                dimension: 20,
+                child: switch (app.icon) {
+                  final icon? => SilicaIcon(icon, side: 20, dark: false),
+                  null => null,
+                },
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  app.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: widget.chosen
+                      ? AmalfiType.bodyEmphasis(color: colors.textPrimary)
+                      : AmalfiType.body(color: colors.textPrimary),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+          ),
         ),
       ),
     );
