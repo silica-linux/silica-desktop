@@ -41,7 +41,7 @@ const BLUE: [u8; 4] = [255, 0, 0, 255];
 
 #[test]
 fn windows_spread_out_and_a_click_picks_one() {
-    // On the reference gray: the bar material gives the measured fill over it.
+    // On the reference gray: the bar is Glass/Thick over it.
     let ossido = Headless::start_with(
         "panorama",
         (common::WIDTH, common::HEIGHT),
@@ -68,9 +68,9 @@ fn windows_spread_out_and_a_click_picks_one() {
     assert!(left.y >= 40.0 && right.y >= 40.0);
 
     let shot = screenshot(&ossido);
-    // The spaces bar: light gray at the top left, no window.
+    // The spaces bar: Glass/Thick (light tint over the gray) at the top left, no window.
     assert!(
-        close(pixel(&shot, 4, 4), [0x9e, 0x9f, 0xa5, 255]),
+        close(pixel(&shot, 4, 4), [0xdf, 0xdf, 0xe1, 255]),
         "{:?}",
         pixel(&shot, 4, 4)
     );
@@ -121,7 +121,7 @@ fn windows_spread_out_and_a_click_picks_one() {
     assert!(!state(&ossido).open);
     // Once closed, the menu bar and the windows go back to their place.
     let shot = screenshot(&ossido);
-    assert!(!close(pixel(&shot, 4, 4), [0x9e, 0x9f, 0xa5, 255]));
+    assert!(!close(pixel(&shot, 4, 4), [0xdf, 0xdf, 0xe1, 255]));
 }
 
 fn spaces(ossido: &Headless) -> Vec<SpaceInfo> {
@@ -424,12 +424,21 @@ fn near(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
         .all(|(a, b)| a.abs_diff(b) <= tolerance)
 }
 
+/// What Glass/Thick shows over a flat `gray` (0-255, encoded): the tint over the saturated
+/// gray, the way the glass pass composes it.
+fn thick_over(dark: bool, gray: [f32; 3]) -> [u8; 3] {
+    let profile = ossido_render::glass_profile::GlassKind::Panel.profile(dark);
+    let [r, g, b] = ossido_render::glass::profile_color(&profile, gray.map(|c| c / 255.0));
+    [r, g, b].map(|c| (c * 255.0).round() as u8)
+}
+
 #[test]
-fn the_spaces_bar_material_gives_the_measured_colors_on_the_reference_gray() {
-    for (dark, compact, bottom) in [
-        (false, [0x9e, 0x9f, 0xa5], [0xa4, 0xa5, 0xab]),
-        (true, [0x55, 0x56, 0x5b], [0x5b, 0x5c, 0x61]),
-    ] {
+fn the_spaces_bar_is_glass_thick_over_the_wallpaper() {
+    let gray = ossido_render::glass::REFERENCE_GRAY.map(|c| c * 255.0);
+    for dark in [false, true] {
+        let want = thick_over(dark, gray);
+        // Light: ~#e0e1e2 over the reference gray; dark: ~#3d3e43.
+        assert!(if dark { want[0] < 80 } else { want[0] > 200 }, "{want:?}");
         let name = if dark {
             "panorama-bar-dark"
         } else {
@@ -443,26 +452,28 @@ fn the_spaces_bar_material_gives_the_measured_colors_on_the_reference_gray() {
             .unwrap();
         c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
         let shot = screenshot(&ossido);
-        let got = rgb_at(&shot, 100.0, 10.0);
-        assert!(near(got, compact, 2), "dark {dark}, compact bar: {got:?}");
+        let got = rgb_at(&shot, 100.0, 20.0);
+        assert!(
+            near(got, want, 3),
+            "dark {dark}, compact bar: {got:?} vs {want:?}"
+        );
+        // The wallpaper below is not dimmed (only the bar's shadow darkens its top edge).
+        assert_eq!(rgb_at(&shot, 100.0, 300.0), [0x7a, 0x7b, 0x80]);
         c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
             .unwrap();
         assert_eq!(state(&ossido).expansion, 1.0);
         let shot = screenshot(&ossido);
-        let top = rgb_at(&shot, 100.0, 5.0);
-        let low = rgb_at(&shot, 100.0, 150.0);
-        assert!(near(top, compact, 2), "dark {dark}, expanded top: {top:?}");
+        let low = rgb_at(&shot, 100.0, 100.0);
         assert!(
-            near(low, bottom, 2),
-            "dark {dark}, expanded bottom: {low:?}"
+            near(low, want, 3),
+            "dark {dark}, expanded: {low:?} vs {want:?}"
         );
         c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     }
 }
 
 #[test]
-fn the_spaces_bar_tones_then_blurs_the_wallpaper_under_it() {
-    // Dark, as measured (missioncontrol.md › MC-BLUR).
+fn the_spaces_bar_blurs_the_wallpaper_under_it_with_sigma_16() {
     let ossido = Headless::start_with("panorama-bar-blur", (1280, 800), &["--appearance", "dark"]);
     // Left half: black and white stripes 16 px wide; right half: black above y 20, white below.
     let _wallpaper = wallpaper(&ossido, |x, y, w, _| {
@@ -478,18 +489,21 @@ fn the_spaces_bar_tones_then_blurs_the_wallpaper_under_it() {
         .unwrap();
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     let shot = screenshot(&ossido);
-    // The stripes are wiped out at (T(0) + T(255)) / 2 = 72, not at the toned mean gray (~85):
-    // the tone comes before the blur.
+    // The stripes (period 32 px) are wiped out by σ 16: the mean gray under the tint.
+    let mean = thick_over(true, [127.5; 3]);
     for x in (100..500).step_by(7) {
         let v = rgb_at(&shot, f64::from(x), 20.0);
-        assert!(near(v, [72, 72, 72], 3), "stripes at {x}: {v:?}");
+        assert!(near(v, mean, 4), "stripes at {x}: {v:?} vs {mean:?}");
     }
-    // The step at y 20 under the 40 pt bar: only what is under the bar counts (mirrored at
-    // its edges): a mild ramp from ~64 at the top to ~84 at the bottom, neutral gray.
-    let top = rgb_at(&shot, 960.0, 1.0);
-    let bottom = rgb_at(&shot, 960.0, 38.0);
-    assert!(near(top, [64, 64, 64], 6), "top: {top:?}");
-    assert!(near(bottom, [84, 84, 84], 6), "bottom: {bottom:?}");
+    // The step at y 20: the blur of a wide step is a ramp from mostly black at the top of the
+    // bar to mostly white at its bottom (the glass reads past the bar's edges).
+    let top = rgb_at(&shot, 960.0, 3.0);
+    let bottom = rgb_at(&shot, 960.0, 36.0);
+    assert!(
+        top[0] < mean[0] && bottom[0] > mean[0],
+        "{top:?} {bottom:?}"
+    );
+    assert!(bottom[0] - top[0] > 25, "{top:?} {bottom:?}");
     // Below the bar the wallpaper is as at rest (after the shadow).
     assert_eq!(rgb_at(&shot, 960.0, 300.0), [255, 255, 255]);
 }
@@ -502,17 +516,12 @@ fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_
     c.call(INPUT_POINTER_MOVE, json!({"x": 640, "y": 700}))
         .unwrap();
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
-    // Compact bar: 1 pt border (#58595c over the gray) and the shadow below it.
+    // Compact bar: the shadow starts right below it (no border row).
     let shot = screenshot(&ossido);
     assert!(
-        near(rgb_at(&shot, 100.0, 40.0), [0x58, 0x59, 0x5c], 3),
+        near(rgb_at(&shot, 100.0, 40.0), [0x62, 0x63, 0x67], 3),
         "{:?}",
         rgb_at(&shot, 100.0, 40.0)
-    );
-    assert!(
-        near(rgb_at(&shot, 100.0, 41.0), [0x62, 0x63, 0x67], 3),
-        "{:?}",
-        rgb_at(&shot, 100.0, 41.0)
     );
     assert!(near(rgb_at(&shot, 100.0, 110.0), [0x7a, 0x7b, 0x80], 2));
 
@@ -526,16 +535,11 @@ fn the_row_recenters_on_expansion_with_its_labels_inside_the_bar_and_the_border_
         (640.0, 53.0, 90.0)
     );
     let shot = screenshot(&ossido);
-    // Expanded (168 pt, kit): border #5f6063 at y 168, shadow from #6a6b6f.
+    // Expanded (168 pt, kit): shadow from #6a6b6f at y 168.
     assert!(
-        near(rgb_at(&shot, 100.0, 168.0), [0x5f, 0x60, 0x63], 3),
+        near(rgb_at(&shot, 100.0, 168.0), [0x6a, 0x6b, 0x6f], 3),
         "{:?}",
         rgb_at(&shot, 100.0, 168.0)
-    );
-    assert!(
-        near(rgb_at(&shot, 100.0, 169.0), [0x6a, 0x6b, 0x6f], 3),
-        "{:?}",
-        rgb_at(&shot, 100.0, 169.0)
     );
     // The label: dark ink under the thumbnail inside the bar (caps ~150–159), none below it.
     let ink = |shot: &[u8], rows: std::ops::Range<u32>| {

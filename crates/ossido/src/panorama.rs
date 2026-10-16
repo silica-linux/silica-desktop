@@ -8,8 +8,8 @@
 //!   scaled rows, centered group.
 //! - The wallpaper behind the windows stays exactly as at rest (no blur, dim or tint); the
 //!   menu bar and the desktop icons fade out, the spaces bar comes down in the menu bar's
-//!   place, 40 pt tall: a material (the wallpaper under it, toned and blurred, no tint),
-//!   border `#58595c`, ~60 pt shadow; the Dock stays.
+//!   place, 40 pt tall: Glass/Thick over the wallpaper under it (and only that; design decision,
+//!   not the measured grey tone), ~60 pt shadow; the Dock stays.
 //! - Opening and closing: progressive slowdown with a long tail, 50 % in ~40–54 ms, 90 % in
 //!   ~130–140 ms, done in ~300 ms (tables measured frame by frame).
 //! - A click on a window brings it to the front and closes Panorama; Esc or a click on the
@@ -28,16 +28,7 @@ use crate::state::State;
 pub const BAR_HEIGHT: f64 = 40.0;
 /// Shadow under the bar: ~60 pt compact, ~45 pt (and lighter) expanded (MC-BLUR).
 pub const BAR_SHADOW: f64 = 60.0;
-/// The bar is a material: the wallpaper under it goes through a compressive tone curve and
-/// a Gaussian blur (`ossido_render::bar_material`; missioncontrol.md › MC-BLUR): σ ≈ 26 pt
-/// compact, 27 expanded.
-const BAR_BLUR_PT: f64 = 26.0;
-const EXPANDED_BLUR_PT: f64 = 27.0;
-/// The 1 pt border row below the bar: `#58595c` (compact) and `#5f6063` (expanded) over the
-/// `#7a7b80` wallpaper, i.e. black at 28 % and 22 % over what is under it. Dark: not
-/// measured, the same darkening (estimate).
-const BAR_BORDER_ALPHA: f64 = 0.28;
-const EXPANDED_BORDER_ALPHA: f64 = 0.22;
+/// The bar is Glass/Thick over the wallpaper under it (`bar_region`).
 /// The shadow below the bar darkens the wallpaper at its top edge: from `#626367` (compact,
 /// ~20 %) and from `#6a6b6f` (expanded, ~13 %) back to `#7a7b80`. Dark: not measured.
 const BAR_SHADOW_ALPHA: f64 = 0.2;
@@ -1544,10 +1535,10 @@ pub struct BarLook {
 }
 
 impl BarLook {
-    /// Height of the sprite: bar, border and shadow.
+    /// Height of the sprite: bar and shadow.
     fn sprite_height(&self) -> f64 {
         let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * self.expansion;
-        bar_height(self.expansion) + 1.0 + shadow
+        bar_height(self.expansion) + shadow
     }
 
     /// Cache key: it changes with what is visible (height at the whole point).
@@ -1576,13 +1567,8 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     let e = look.expansion.clamp(0.0, 1.0);
     let w = look.width as f32;
     let height = bar_height(e);
-    // The fill is the material drawn behind this sprite (toned, blurred wallpaper).
+    // The fill is the material drawn behind this sprite (Glass/Thick, with its own rims).
     let bar = height as f32;
-    let border = BAR_BORDER_ALPHA + (EXPANDED_BORDER_ALPHA - BAR_BORDER_ALPHA) * e;
-    canvas.fill_rect(
-        [0.0, bar, w, 1.0],
-        [0, 0, 0, (border * 255.0).round() as u8],
-    );
     // Shadow: black fading to zero.
     let shadow = BAR_SHADOW + (EXPANDED_SHADOW - BAR_SHADOW) * e;
     let strength = BAR_SHADOW_ALPHA + (EXPANDED_SHADOW_ALPHA - BAR_SHADOW_ALPHA) * e;
@@ -1590,7 +1576,7 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     for row in 0..rows {
         let t = 1.0 - row as f64 / rows as f64;
         let alpha = (strength * t * t * 255.0).round() as u8;
-        canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
+        canvas.fill_rect([0.0, bar + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
     let (capsule_fill, label_color, plus_color) = if look.dark {
         (CAPSULE_FILL_DARK, LABEL_COLOR_DARK, PLUS_COLOR_DARK)
@@ -1871,7 +1857,7 @@ pub fn bar_element(
 
 /// The top edge of the bar: its bottom edge comes down from 0 to 40 pt on the window curve.
 fn bar_top(expansion: f64, progress: f64) -> f64 {
-    -(1.0 - progress) * (bar_height(expansion) + 1.0)
+    -(1.0 - progress) * bar_height(expansion)
 }
 
 /// The opacity of the bar while it comes down: the shadow, which at rest is below, appears
@@ -1880,8 +1866,8 @@ pub fn bar_alpha(progress: f64) -> f32 {
     (progress * 4.0).clamp(0.0, 1.0) as f32
 }
 
-/// Where the bar material (blur of what is under the bar) shows: the bar fill, without
-/// the border and the shadow.
+/// Where the bar material (Glass/Thick over what is under the bar) shows: the bar fill,
+/// without the shadow.
 pub fn bar_material_rect(width: f64, expansion: f64, progress: f64) -> Rectangle<f64, Logical> {
     Rectangle::new(
         (0.0, bar_top(expansion, progress)).into(),
@@ -1889,9 +1875,30 @@ pub fn bar_material_rect(width: f64, expansion: f64, progress: f64) -> Rectangle
     )
 }
 
-/// σ of the bar material's blur for this expansion.
-pub fn bar_blur_sigma(expansion: f64) -> f64 {
-    BAR_BLUR_PT + (EXPANDED_BLUR_PT - BAR_BLUR_PT) * expansion.clamp(0.0, 1.0)
+/// The glass region of the spaces bar (physical pixels): Glass/Thick exactly like the Amalfi
+/// kinds that are thick (σ 16, saturation 1.5, tint 76 %, inside rim, rim light, and their blur
+/// scale, which the equivalence test covers), without the kind's drop shadow (the bar's sprite
+/// draws its own).
+pub fn bar_region(
+    rect: Rectangle<i32, smithay::utils::Physical>,
+    dark: bool,
+    opacity: f32,
+    scale: f64,
+) -> ossido_render::glass::PhysicalRegion {
+    use ossido_render::glass_profile::GlassKind;
+    // Panel is a thick kind with no sharp share.
+    let kind = GlassKind::Panel;
+    ossido_render::glass::PhysicalRegion {
+        rect,
+        radius: 0.0,
+        material: kind.material(dark),
+        opacity,
+        scale,
+        tip: None,
+        group: 0,
+        profile: kind.profile(dark).without_shadow(),
+        rotation: 0.0,
+    }
 }
 
 #[cfg(test)]
@@ -2032,8 +2039,44 @@ mod tests {
         assert_eq!(bar_material_rect(1920.0, 0.0, 1.0).loc.y, 0.0);
         assert_eq!(bar_alpha(0.0), 0.0);
         assert_eq!(bar_alpha(1.0), 1.0);
-        assert_eq!(bar_blur_sigma(0.0), 26.0);
-        assert_eq!(bar_blur_sigma(1.0), 27.0);
+    }
+
+    #[test]
+    fn the_bar_is_glass_thick_in_light_and_dark() {
+        use ossido_render::glass_profile::Amalfi;
+        let rect = Rectangle::new((0, 0).into(), (1920, 40).into());
+        for dark in [false, true] {
+            let region = bar_region(rect, dark, 1.0, 1.0);
+            let thick = Amalfi::Thick.material(dark);
+            // Exactly the Amalfi Thick material: σ 16, saturation 1.5, tint 76 %, rims.
+            assert_eq!(region.sigma(), 16.0);
+            assert_eq!(region.profile.saturation, 1.5);
+            assert_eq!(region.profile.tint, thick.tint);
+            assert_eq!(region.profile.inside_rim, thick.inside_rim);
+            assert_eq!(region.profile.rim_light, thick.rim_light);
+            let tint: [u8; 3] = if dark { [42, 43, 48] } else { [255, 255, 255] };
+            for (got, want) in region.profile.tint.iter().zip(tint) {
+                assert!((got * 255.0 - f32::from(want)).abs() < 0.5);
+            }
+            assert!((region.profile.tint[3] - 0.76).abs() < 0.005);
+            assert_eq!(region.profile.inside_rim.width, 1.0);
+            let rim = if dark { 0.40 } else { 0.12 };
+            assert!((region.profile.inside_rim.color[3] - rim).abs() < 0.005);
+            assert_eq!(region.profile.inside_rim.color[..3], [0.0; 3]);
+            // The bar draws its own shadow; a square rectangle, no lens, no tip.
+            assert_eq!(
+                region.profile.shadow,
+                ossido_render::glass_profile::GlassShadow::NONE
+            );
+            assert_eq!((region.radius, region.tip, region.rect), (0.0, None, rect));
+            // The reduced-resolution blur scale is the thick kinds' (the equivalence test's).
+            assert_eq!(
+                region.profile.blur_scale,
+                ossido_render::glass_profile::GlassKind::Panel
+                    .profile(dark)
+                    .blur_scale
+            );
+        }
     }
 
     #[test]

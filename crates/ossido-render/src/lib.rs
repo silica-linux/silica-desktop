@@ -6,7 +6,6 @@
 
 pub mod animation;
 pub mod backdrop;
-pub mod bar_material;
 pub mod border;
 pub mod cache;
 pub mod corners;
@@ -36,8 +35,6 @@ pub struct Shaders {
     pub tone: Option<GlesTexProgram>,
     /// The funnel deformation of minimizing into the Dock.
     pub genie: Option<GlesTexProgram>,
-    /// The spaces bar material (tone, mirrored blur).
-    pub bar: Option<bar_material::BarPrograms>,
 }
 
 /// The renderer programs, compiled on the first request and kept in the EGL context.
@@ -86,26 +83,6 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         &backdrop::UNIFORMS,
     );
     let genie = compile_texture(renderer, "genie", genie::SHADER, &genie::UNIFORMS);
-    let bar_tone = compile_texture(
-        renderer,
-        "spaces bar tone",
-        bar_material::TONE_SHADER,
-        &bar_material::TONE_UNIFORMS,
-    );
-    let bar_blur = compile_texture(
-        renderer,
-        "spaces bar blur",
-        bar_material::BLUR_SHADER,
-        &bar_material::BLUR_UNIFORMS,
-    );
-    let bar = bar_tone.zip(bar_blur).zip(downsample.zip(upsample)).map(
-        |((tone, blur), (downsample, upsample))| bar_material::BarPrograms {
-            tone,
-            blur,
-            downsample,
-            upsample,
-        },
-    );
     let shaders = Shaders {
         corners,
         shadow,
@@ -114,7 +91,6 @@ pub fn shaders(renderer: &mut GlesRenderer) -> Shaders {
         glass,
         tone,
         genie,
-        bar,
     };
     renderer
         .egl_context()
