@@ -1104,14 +1104,14 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: OUTPUT_LIST,
         label: "List displays",
-        description: "The connected displays: connector, identity, make, model, serial, modes, current mode, scale, rotation, enabled.",
+        description: "The connected displays: connector, identity, make, model, serial, modes, current mode, scale, rotation, enabled, and for scaled modes the size it looks like (logical, hidpi) and the sizes it can look like (looksLike).",
         shortcut: None,
         params: no_params,
     },
     CommandSpec {
         id: OUTPUT_CONFIGURE,
         label: "Configure a display",
-        description: "Changes the mode, scale or rotation of a display at once and saves it in displays.json for that display.",
+        description: "Changes the mode, scale, scaled mode (logical: the size the display looks like, drawn at 2x and reduced to the mode; null leaves it) or rotation of a display at once and saves it in displays.json for that display.",
         shortcut: None,
         params: || {
             json!({
@@ -1128,6 +1128,14 @@ pub const CATALOG: &[CommandSpec] = &[
                         "required": ["width", "height"]
                     },
                     "scale": {"type": "number", "minimum": 1, "maximum": 4},
+                    "logical": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"}
+                        },
+                        "required": ["width", "height"]
+                    },
                     "transform": {"type": "string", "enum": ["normal", "90", "180", "270", "flipped", "flipped-90", "flipped-180", "flipped-270"]}
                 },
                 "additionalProperties": false

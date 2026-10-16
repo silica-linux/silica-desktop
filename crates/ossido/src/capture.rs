@@ -233,6 +233,92 @@ where
     })
 }
 
+/// The scaled mode's capture (#216): the elements drawn at the output's size (2x what the
+/// display looks like) and reduced to the display's own mode `native` with the same filter the
+/// screen uses, so a screenshot is what the display shows, pixel for pixel.
+pub fn capture_elements_native<E>(
+    renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
+    output: &Output,
+    elements: &[E],
+    clear_color: [f32; 4],
+    native: (i32, i32),
+) -> Result<Capture, String>
+where
+    E: RenderElement<smithay::backend::renderer::gles::GlesRenderer>,
+{
+    use smithay::backend::renderer::Bind;
+    use smithay::backend::renderer::gles::GlesTexture;
+    let mode = output.current_mode().ok_or("output without a mode")?;
+    let render_size = mode.size;
+    let native_size: smithay::utils::Size<i32, smithay::utils::Physical> = native.into();
+    let buffer = |size: smithay::utils::Size<i32, smithay::utils::Physical>| {
+        size.to_logical(1).to_buffer(1, Transform::Normal)
+    };
+    let mut scene: GlesTexture =
+        Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, buffer(render_size))
+            .map_err(|e| format!("offscreen buffer: {e:?}"))?;
+    {
+        let mut target = renderer
+            .bind(&mut scene)
+            .map_err(|e| format!("bind: {e:?}"))?;
+        let scale = output.current_scale().fractional_scale();
+        let mut damage_tracker = OutputDamageTracker::new(render_size, scale, Transform::Normal);
+        damage_tracker
+            .render_output(renderer, &mut target, 0, elements, clear_color)
+            .map_err(|e| format!("render: {e:?}"))?;
+    }
+    let mut reduced: GlesTexture =
+        Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, buffer(native_size))
+            .map_err(|e| format!("offscreen buffer: {e:?}"))?;
+    let mut target = renderer
+        .bind(&mut reduced)
+        .map_err(|e| format!("bind: {e:?}"))?;
+    let mut downscaler = ossido_render::scaler::Downscaler::new(renderer, 2)
+        .map_err(|e| format!("downscaler: {e:?}"))?;
+    let everything = [Rectangle::from_size(render_size)];
+    let (_, sync) = downscaler
+        .run(
+            renderer,
+            &scene,
+            render_size,
+            &mut target,
+            native_size,
+            &everything,
+        )
+        .map_err(|e| format!("downscale: {e:?}"))?;
+    let _ = sync.wait();
+    let width = u32::try_from(native.0).map_err(|_| "invalid width")?;
+    let height = u32::try_from(native.1).map_err(|_| "invalid height")?;
+    let mapping = renderer
+        .copy_framebuffer(
+            &target,
+            Rectangle::from_size(buffer(native_size)),
+            Fourcc::Abgr8888,
+        )
+        .map_err(|e| format!("copy: {e:?}"))?;
+    let bytes = renderer
+        .map_texture(&mapping)
+        .map_err(|e| format!("readback: {e:?}"))?;
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or("frame too large")?;
+    let rgba = bytes
+        .get(..expected)
+        .ok_or_else(|| {
+            format!(
+                "the renderer returned {} bytes, {expected} are needed",
+                bytes.len()
+            )
+        })?
+        .to_vec();
+    Ok(Capture {
+        width,
+        height,
+        rgba,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -12,6 +12,7 @@ pub mod corners;
 pub mod genie;
 pub mod glass;
 pub mod glass_profile;
+pub mod scaler;
 pub mod shadow;
 pub mod sprite;
 pub mod title;

@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use ossido_render::scaler::{self, DamageHistory, Downscaler};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, GbmBufferedSurface};
@@ -18,7 +19,7 @@ use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, ImportMem};
+use smithay::backend::renderer::{Bind, ImportMem, Offscreen};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{UdevBackend, UdevEvent, all_gpus, primary_gpu};
@@ -29,7 +30,7 @@ use smithay::reexports::drm::control::{Device as ControlDevice, ModeTypeFlags, c
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_server::Display;
-use smithay::utils::{DeviceFd, Transform};
+use smithay::utils::{DeviceFd, Physical, Rectangle, Size, Transform};
 use tracing::{info, warn};
 
 use crate::backend::Backend;
@@ -91,6 +92,8 @@ pub struct DrmBackend {
     last_dark: bool,
     /// The default cursor, drawn when no client sets one and there is no theme.
     cursor: Option<GlesTexture>,
+    /// The reduction of the scaled mode, compiled when first needed.
+    downscaler: Option<Downscaler>,
     /// The frames of the theme already uploaded, by name, scale (×100) and frame, with their
     /// hotspot and the element id the damage tracker follows.
     cursors: std::collections::HashMap<
@@ -110,7 +113,149 @@ struct OutputSurface {
     mode: smithay::reexports::drm::control::Mode,
     gbm: GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
     damage_tracker: OutputDamageTracker,
+    /// The scaled mode (#216): the scene goes to an offscreen texture of the output's size
+    /// (2x what the display looks like) and from there, reduced, to the swapchain.
+    scaled: Option<ScaledPath>,
 }
+
+/// What the scaled mode keeps between frames.
+struct ScaledPath {
+    /// The size drawn (the output's mode) and the display's mode.
+    render: Size<i32, Physical>,
+    native: Size<i32, Physical>,
+    /// The scene, at `render` size; its content is kept from frame to frame, so the damage
+    /// tracker draws into it with an age of 1.
+    texture: Option<GlesTexture>,
+    /// Nothing drawn into `texture` yet.
+    fresh: bool,
+    /// What changed on the display in the last frames, for the swapchain's older buffers.
+    history: DamageHistory,
+}
+
+impl ScaledPath {
+    fn new(hidpi: crate::displays::HiDpi) -> Self {
+        let (rw, rh) = hidpi.render_size();
+        Self {
+            render: (rw, rh).into(),
+            native: hidpi.native.into(),
+            texture: None,
+            fresh: true,
+            history: DamageHistory::default(),
+        }
+    }
+
+    /// The next frame draws everything again.
+    fn reset(&mut self) {
+        self.fresh = true;
+        self.history.reset();
+    }
+}
+
+/// One frame of the scaled mode: the elements into the offscreen texture (only what changed),
+/// then the damaged part of it, reduced, into the swapchain buffer. Whether a frame was queued.
+#[allow(clippy::too_many_arguments)]
+fn render_scaled(
+    renderer: &mut GlesRenderer,
+    downscaler: &mut Option<Downscaler>,
+    tracker: &mut OutputDamageTracker,
+    gbm: &mut GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
+    path: &mut ScaledPath,
+    dmabuf: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    age: usize,
+    elements: &[crate::render::OutputElement],
+    clear_color: [f32; 4],
+) -> Result<bool, String> {
+    if path.texture.is_none() {
+        let size = path.render.to_logical(1).to_buffer(1, Transform::Normal);
+        path.texture = Some(
+            Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, size)
+                .map_err(|e| format!("offscreen buffer: {e:?}"))?,
+        );
+        path.fresh = true;
+    }
+    if downscaler.is_none() {
+        *downscaler = Some(
+            Downscaler::new(renderer, DOWNSCALE_LOBES).map_err(|e| format!("downscaler: {e:?}"))?,
+        );
+    }
+    let drawn = scaled_frame(
+        renderer,
+        downscaler,
+        tracker,
+        gbm,
+        path,
+        dmabuf,
+        age,
+        elements,
+        clear_color,
+    );
+    if drawn.is_err() {
+        // The scene may be ahead of the screen: draw everything next time.
+        path.reset();
+    }
+    drawn
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scaled_frame(
+    renderer: &mut GlesRenderer,
+    downscaler: &mut Option<Downscaler>,
+    tracker: &mut OutputDamageTracker,
+    gbm: &mut GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
+    path: &mut ScaledPath,
+    dmabuf: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    age: usize,
+    elements: &[crate::render::OutputElement],
+    clear_color: [f32; 4],
+) -> Result<bool, String> {
+    let (Some(texture), Some(downscaler)) = (path.texture.as_mut(), downscaler.as_mut()) else {
+        return Ok(false);
+    };
+    let damage = {
+        let mut target = renderer
+            .bind(texture)
+            .map_err(|e| format!("bind offscreen: {e:?}"))?;
+        let result = tracker
+            .render_output(
+                renderer,
+                &mut target,
+                usize::from(!path.fresh),
+                elements,
+                clear_color,
+            )
+            .map_err(|e| format!("render: {e:?}"))?;
+        result.damage.cloned()
+    };
+    path.fresh = false;
+    let Some(damage) = damage else {
+        return Ok(false);
+    };
+    let lobes = downscaler.lobes();
+    let current = scaler::plan(&damage, path.render, path.native, lobes).dst;
+    let redraw = path
+        .history
+        .for_age(age, &current)
+        .unwrap_or_else(|| vec![Rectangle::from_size(path.native)]);
+    let plan = scaler::plan_from_dst(redraw, path.render, path.native, lobes);
+    let mut target = renderer.bind(dmabuf).map_err(|e| format!("bind: {e:?}"))?;
+    let (_, sync) = downscaler
+        .draw(
+            renderer,
+            texture,
+            path.render,
+            &mut target,
+            path.native,
+            &plan,
+        )
+        .map_err(|e| format!("downscale: {e:?}"))?;
+    gbm.queue_buffer(Some(sync), Some(current.clone()), ())
+        .map_err(|e| format!("queue: {e}"))?;
+    path.history.push(current);
+    Ok(true)
+}
+
+/// The Lanczos filter of the reduction (`docs/displays.md`).
+const DOWNSCALE_LOBES: u32 = 2;
 
 /// A connected connector with the crtc that can drive it and the mode to use.
 #[derive(Debug, Clone, PartialEq)]
@@ -211,6 +356,7 @@ fn create_surface(
         mode: choice.mode,
         gbm,
         damage_tracker: OutputDamageTracker::from_output(output),
+        scaled: None,
     })
 }
 
@@ -295,6 +441,7 @@ pub fn init_drm(
         last_frame: Instant::now(),
         last_dark: false,
         cursor: None,
+        downscaler: None,
         cursors: std::collections::HashMap::new(),
     };
     let mut state = State::new(
@@ -548,6 +695,7 @@ impl State {
     /// Follows the connectors: the output moves to the first connected one.
     fn drm_changed_inner(&mut self) {
         let output = self.output.clone();
+        let was_scaled = self.hidpi.is_some();
         let Some(backend) = self.drm_backend() else {
             return;
         };
@@ -570,7 +718,13 @@ impl State {
             choice.mode.size().1
         );
         let mode = Mode::from(choice.mode);
-        output.change_current_state(Some(mode), None, None, None);
+        // Another display: not in a scaled mode until its saved choice says so.
+        output.change_current_state(
+            Some(mode),
+            None,
+            was_scaled.then_some(smithay::output::Scale::Integer(1)),
+            None,
+        );
         output.set_preferred(mode);
         // The layers are arranged for the new size now (see `State::output_resized`).
         smithay::desktop::layer_map_for_output(&output).arrange();
@@ -584,6 +738,7 @@ impl State {
             Ok(surface) => backend.surface = Some(surface),
             Err(err) => warn!("{err}"),
         }
+        self.hidpi = None;
         // A display plugged in: its saved mode, scale and rotation, and the night light.
         self.apply_displays_config();
         let _ = self.drm_apply_gamma();
@@ -591,8 +746,9 @@ impl State {
 
     /// Every connected connector, the driven one enabled.
     pub fn drm_outputs(&mut self) -> Option<Vec<crate::displays::OutputInfo>> {
-        let scale = self.output.current_scale().fractional_scale();
+        let scale = self.user_scale();
         let transform = self.output.current_transform();
+        let (logical, hidpi) = (self.logical_size(), self.hidpi.is_some());
         let backend = self.drm_backend()?;
         let device = backend.drm.device_fd();
         let resources = device.resource_handles().ok()?;
@@ -636,6 +792,14 @@ impl State {
                     i32::try_from(w).unwrap_or_default(),
                     i32::try_from(h).unwrap_or_default(),
                 ),
+                logical: if enabled {
+                    logical
+                } else {
+                    info.modes()
+                        .first()
+                        .map_or((0, 0), |m| (i32::from(m.size().0), i32::from(m.size().1)))
+                },
+                hidpi: enabled && hidpi,
             });
         }
         Some(list)
@@ -644,6 +808,8 @@ impl State {
     /// The display in use switches to its mode number `index` (in the connector's list).
     pub fn drm_set_mode(&mut self, index: usize) -> Result<(), String> {
         let output = self.output.clone();
+        // The new mode is the native one: the scaled mode, if any, is applied again after it.
+        let was_scaled = self.hidpi.take().is_some();
         let Some(backend) = self.drm_backend() else {
             return Err("no display".into());
         };
@@ -667,7 +833,12 @@ impl State {
         backend.surface = None;
         backend.pending = false;
         let smithay_mode = Mode::from(mode);
-        output.change_current_state(Some(smithay_mode), None, None, None);
+        output.change_current_state(
+            Some(smithay_mode),
+            None,
+            was_scaled.then_some(smithay::output::Scale::Integer(1)),
+            None,
+        );
         let created = create_surface(
             &mut backend.drm,
             &backend.gbm,
@@ -698,6 +869,9 @@ impl State {
         if on {
             surface.gbm.reset_buffers();
             surface.damage_tracker = OutputDamageTracker::from_output(&output);
+            if let Some(path) = &mut surface.scaled {
+                path.reset();
+            }
             backend.pending = false;
             self.render_drm();
         } else if let Err(err) = surface.gbm.surface().clear() {
@@ -708,10 +882,13 @@ impl State {
     /// The output's scale or rotation changed: the damage tracker follows it.
     pub fn drm_output_changed(&mut self) {
         let output = self.output.clone();
+        let hidpi = self.hidpi;
         if let Some(backend) = self.drm_backend()
             && let Some(surface) = &mut backend.surface
         {
             surface.damage_tracker = OutputDamageTracker::from_output(&output);
+            surface.scaled = hidpi.map(ScaledPath::new);
+            surface.gbm.reset_buffers();
         }
     }
 
@@ -886,11 +1063,25 @@ impl State {
         let Some(surface) = &mut backend.surface else {
             return;
         };
+        let downscaler = &mut backend.downscaler;
         let queued = (|| -> Result<bool, String> {
             let (mut dmabuf, age) = surface
                 .gbm
                 .next_buffer()
                 .map_err(|e| format!("next buffer: {e}"))?;
+            if let Some(path) = surface.scaled.as_mut() {
+                return render_scaled(
+                    &mut backend.renderer,
+                    downscaler,
+                    &mut surface.damage_tracker,
+                    &mut surface.gbm,
+                    path,
+                    &mut dmabuf,
+                    usize::from(age),
+                    &elements,
+                    clear_color,
+                );
+            }
             let mut framebuffer = backend
                 .renderer
                 .bind(&mut dmabuf)
