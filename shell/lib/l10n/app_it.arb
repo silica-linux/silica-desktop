@@ -334,5 +334,11 @@
   "menubarTagGreen": "Verde",
   "menubarTagBlue": "Blu",
   "menubarTagPurple": "Viola",
-  "menubarTagGray": "Grigio"
+  "menubarTagGray": "Grigio",
+  "ccBuiltInDisplay": "Schermo integrato",
+  "ccDevices": "Dispositivi",
+  "notificationsToday": "Oggi",
+  "notificationsEarlier": "Prima",
+  "notificationsClearAll": "Cancella tutto",
+  "notificationsNow": "ora"
 }

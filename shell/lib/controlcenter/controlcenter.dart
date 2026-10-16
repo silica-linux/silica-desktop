@@ -1,23 +1,24 @@
-// The Control Center, from plan/reference/controlcenter.md. In the dark appearance over grey
-// it is pixel-identical to light (white texts, same fills): only the glass changes, and
-// Ossido draws it.
+// The Control Center on the Amalfi kit (`Control Center/*`, docs/design/amalfi), with the
+// behaviour measured in docs/spec/controlcenter.md.
 //
-// A stack of separate `regular` glass modules, anchored at the top right: two 140 pt
-// columns 12 pt apart, 14 pt from the right edge, the first module at y 42; 64 pt rows at
-// a 76 pitch. 140 × 64 capsules (radius 32) with a 36 pt disc 14 pt from the edge and the
-// text at 56 pt; the media module 140 × 140 (radius 35); Display and Sound 292 × 64
-// (radius ~28) with a slider whose knob shows only on hover. A wide soft shadow around the stack; opening and
-// closing with the opacities and the scale measured frame by frame.
+// The panel is a transparent 292 × 484 container anchored at the top right; each module is a
+// Glass/Thick tile (toggle modules are capsules, radius = height / 2): two 140 pt columns
+// 12 pt apart, 64 pt rows at a 76 pitch, the media module 140 × 140 (radius 36), Display and
+// Sound 292 × 64 (radius 28) with an Amalfi slider (and its lens) inside. A module opens into a
+// 312 pt wide Thick detail panel (radius 16, `detail.dart`). The glass is drawn by Ossido
+// (profile `module`); the content uses the Amalfi tokens through `CcPalette`.
 //
-// Which modules, in which order and size: `modules.dart` (the reference's default, or the
-// user's arrangement from Edit Controls). Modules with a real effect: Wi-Fi, Bluetooth,
-// Focus, Dark Mode, Screen Capture, Display, Sound (from silica-daemon and Ossido), Now
-// playing (MPRIS), the battery if there is one. Nearby sharing, window staging and screen
-// mirroring are in the reference's grid but Silica has no backend for them yet: they show
-// disabled, saying so (#140 and the stage view and display issues). Click on the icon disc:
-// on or off; click on the text (or on the slider title): the detail panel (`detail.dart`),
-// where there is one; with the pointer over a module with a detail the ">" arrow appears.
-// Esc from the detail goes back to the Center.
+// Which modules, in which order and size: `modules.dart` (the default arrangement, or the
+// user's from Edit Controls). Modules with a real effect: Wi-Fi, Bluetooth, Focus, Dark Mode,
+// Screen Capture, Display, Sound (from silica-daemon and Ossido), Now playing (MPRIS), the
+// battery if there is one. Nearby sharing, window staging and screen mirroring are in the
+// grid but Silica has no backend for them yet: they show disabled, saying so (#140 and the
+// stage view and display issues). Click on the icon disc: on or off; click on the text (or on
+// the slider title): the detail panel, where there is one; with the pointer over a module with
+// a detail the ">" arrow appears. Esc from the detail goes back to the Center.
+//
+// Motion (motion.md): the panel opens with `fade.instant` and its height grows with
+// `spring.panel` from the top edge; a module turns into its detail with `spring.morph`.
 //
 // The component keeps running on a full-screen overlay layer: when closed it draws nothing
 // and takes neither pointer nor keyboard (silica/layer).
@@ -25,6 +26,7 @@
 import 'dart:async';
 import 'dart:io' show File;
 
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -56,119 +58,64 @@ const double stackTop = 42;
 const double pillTop = 40;
 const double pillHeight = 24;
 const double pillShift = 28;
-const Color pillIcon = Color(0xFF6E7CFF);
 const double rowHeight = 64;
 const double rowStep = rowHeight + gap;
+
+/// Radii of the kit's modules: capsules are height / 2, the media module 36, Display and Sound 28.
 const double capsuleRadius = 32;
-const double mediaRadius = 35;
+const double mediaRadius = 36;
 const double sliderRadius = 28;
 
-/// Capsule disc: 36 pt, 14 pt from the edge; text at 56 pt.
+/// Toggle module: a 36 pt disc at (16, 14) with a 20 pt glyph, the text from x 60.
 const double disc = 36;
-const double discInset = 14;
-const double textLeft = 56;
-
-/// Active disc white with a blue glyph, inactive cool grey with a white glyph.
-const Color discOn = Color(0xFFFFFFFF);
-const Color discOff = Color(0xFF8F9094);
-const Color glyphOn = Color(0xFF007AFF);
-const Color glyphOff = Color(0xFFFFFFFF);
-
-/// Titles (9 pt capitals → ~12.4 pt) and subtitles (8 pt → ~11 pt), white.
-const double titleSize = 12.4;
+const double discInset = 16;
+const double discTop = 14;
+const double discGlyph = 20;
+const double textLeft = 60;
 
 /// The Wi-Fi status menu: 1 pt below the bar, right edge 9 pt beyond the icon.
 const double statusMenuTop = 31;
 const double statusMenuRight = 9;
-const double subtitleSize = 11;
 
-/// Sliders: 4 pt track, white fill up to `x0 + 10 + v · (L − 20)`, the rest `#7e7f84`;
-/// track from 36 to 255 pt from the module edge, icons at 15 and 260.
-const double trackLeft = 36;
-const double trackLength = 219;
-const double trackHeight = 4;
-const double trackCenter = 42;
+/// Sliders (`Module/Slider/*`): the track starts at x 40, 220 pt long (172 with the outputs
+/// disc), centred at y 44; the outputs disc is 28 pt at (252, 20).
+const double trackLeft = 40;
+const double trackLength = 220;
+const double trackCenter = 44;
+const double outputsShift = 48;
+const double outputsLeft = 252;
+const double outputsTop = 20;
+const double outputsSide = 28;
 
-/// Stack shadow: −10 levels on the left edge, nothing at ~130 pt, ~−12 between the stack
-/// and the right edge of the screen and above: a gaussian of σ ~65 pt of a rectangle going
-/// from the stack to the right edge and from the top of the screen to the bottom of the stack.
-const Color shadowColor = Color(0x2A000000);
-const double shadowSigma = 65;
+/// The stack's shadow is `shadows.3` of Glass/Thick: y 12, blur 32 (a Gaussian of σ 16).
+const double shadowOffsetY = 12;
+const double shadowSigma = 16;
 
-/// Opacity while opening and closing (ms from the first changed frame; the first point is
-/// one frame earlier). controlcenter.md, "Animations".
-const List<(double, double)> openOpacity = [
-  (0, 0),
-  (13, 0.09),
-  (27, 0.16),
-  (40, 0.25),
-  (67, 0.44),
-  (80, 0.53),
-  (93, 0.64),
-  (120, 0.74),
-  (133, 0.80),
-  (147, 0.84),
-  (173, 0.91),
-  (187, 0.92),
-  (200, 0.94),
-  (227, 0.97),
-  (240, 0.98),
-  (280, 0.99),
-  (310, 1),
-];
+/// Opening: `fade.instant` on the opacity, the height grows from 0.97 with `spring.panel`
+/// (anchored at the top edge). Closing: `fade.instant` out, nothing else moves.
+const double panelHeightFrom = 0.97;
+const Duration openDuration = Duration(milliseconds: 450);
+final Duration closeDuration = AmalfiFades.instant.duration;
 
-const List<(double, double)> closeOpacity = [
-  (0, 1),
-  (13, 0.92),
-  (27, 0.86),
-  (53, 0.61),
-  (67, 0.49),
-  (80, 0.38),
-  (107, 0.24),
-  (120, 0.19),
-  (133, 0.14),
-  (160, 0.08),
-  (173, 0.07),
-  (187, 0.05),
-  (213, 0.02),
-  (253, 0.01),
-  (293, 0),
-];
+final SpringSimulation _panelSpring = SpringSimulation(
+  AmalfiSprings.panel,
+  0,
+  1,
+  0,
+);
 
-/// Content scale: 1.0075 → 1 in ~107 ms when opening, 1 → 1.0075 in ~120 ms when closing,
-/// around the center of the stack.
-const double scaleAway = 1.0075;
-const double openScaleMs = 107;
-const double closeScaleMs = 120;
-const Duration openDuration = Duration(milliseconds: 310);
-const Duration closeDuration = Duration(milliseconds: 293);
+/// Opacity of the panel [ms] after it started opening.
+double openOpacityAt(double ms) => AmalfiFades.instant.curve.transform(
+  (ms / AmalfiFades.instant.duration.inMilliseconds).clamp(0.0, 1.0),
+);
 
-double tableAt(List<(double, double)> table, double ms) {
-  if (ms <= table.first.$1) return table.first.$2;
-  for (var i = 1; i < table.length; i++) {
-    final (t1, a1) = table[i];
-    if (ms <= t1) {
-      final (t0, a0) = table[i - 1];
-      return a0 + (a1 - a0) * (ms - t0) / (t1 - t0);
-    }
-  }
-  return table.last.$2;
-}
+/// Opacity of the panel [ms] after it started closing.
+double closeOpacityAt(double ms) => 1 - openOpacityAt(ms);
 
-/// Slider value for a point `dx` from the left edge of the track.
-double sliderValue(double dx, {double length = trackLength}) =>
-    ((dx - 10) / (length - 20)).clamp(0.0, 1.0);
-
-/// End of a slider's fill, from the left edge of the track.
-double sliderFill(double value, {double length = trackLength}) =>
-    10 + value.clamp(0, 1) * (length - 20);
-
-/// The audio outputs circle in the Sound module (controlcenter.md, light over grey): 26 × 26 with its center at
-/// +265.5 from the module edge; the track gets 44 pt shorter and the high volume glyph moves
-/// with it. White background at 24 % (`#8f9094` over the module grey).
-const double outputsShift = 44;
-const double outputsCenter = 265.5;
-const double outputsSide = 26;
+/// Height factor of the panel [ms] after it started opening (0.97 → 1 with `spring.panel`).
+double openHeightAt(double ms) => ms >= openDuration.inMilliseconds
+    ? 1
+    : panelHeightFrom + (1 - panelHeightFrom) * _panelSpring.x(ms / 1000);
 
 /// A module: rectangle relative to the stack and radius.
 @immutable
@@ -204,14 +151,6 @@ Map<String, ModuleSlot> layoutModules(
         }),
   };
 }
-
-TextStyle _text(double size, {FontWeight? weight}) => TextStyle(
-  fontFamily: uiFontFamily,
-  package: 'silica_ui',
-  fontSize: size,
-  fontWeight: weight,
-  height: 14 / size,
-);
 
 class ControlCenter extends StatefulWidget {
   const ControlCenter({
@@ -255,16 +194,13 @@ class _ControlCenterState extends State<ControlCenter>
 
   late final AnimationController _anim;
 
-  /// The open detail (or opening or closing) and its transformation (value = ms).
+  /// The open detail (or opening or closing) and its transformation (value = time, 0-1 of
+  /// [detailDuration]: `spring.morph`).
   String? _detail;
   bool _detailClosing = false;
   late final AnimationController _detailAnim = AnimationController(
     vsync: this,
-    upperBound: detailCurveEnd * detailBackStretch,
-    value: 0,
-    duration: Duration(
-      milliseconds: (detailCurveEnd * detailBackStretch).round(),
-    ),
+    duration: detailDuration,
   )..addListener(_detailTick);
   DetailData _detailData = const DetailData();
   bool _othersOpen = false;
@@ -471,18 +407,18 @@ class _ControlCenterState extends State<ControlCenter>
               key: ValueKey('${_statusMenuKey ?? ''} status menu'),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(detailRadius),
-                boxShadow: const [
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x40000000),
-                    blurRadius: 30,
-                    offset: Offset(0, 8),
+                    color: AmalfiTheme.of(context).colors.shadow3,
+                    blurRadius: 28,
+                    offset: const Offset(0, shadowOffsetY),
                   ),
                 ],
               ),
               child: ProfiledGlass(
                 profile: ShellGlassProfile.panel,
                 radius: detailRadius,
-                material: GlassMaterial.regular,
+                material: GlassMaterial.thick,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(detailRadius),
                   child: content.build(),
@@ -509,7 +445,7 @@ class _ControlCenterState extends State<ControlCenter>
 
   void _detailTick() {
     // Once the return is over, the detail disappears.
-    if (_detailClosing && _detailProgress() <= 0) {
+    if (_detailClosing && _detailAnim.isCompleted) {
       _detail = null;
       _detailClosing = false;
     }
@@ -542,14 +478,10 @@ class _ControlCenterState extends State<ControlCenter>
 
   /// How much of module `_detail` has become a panel (0–1).
   double _detailProgress() {
-    final key = _detail;
-    if (key == null) return 0;
-    final slot = layoutModules(widget.system.value, _modules)[key];
-    final scale = detailTimeScale(slot == null ? 0 : slot.rect.top - detailTop);
-    if (_detailClosing) {
-      return 1 - detailProgress(_detailAnim.value / detailBackStretch, scale);
-    }
-    return detailProgress(_detailAnim.value, scale);
+    if (_detail == null) return 0;
+    final p = detailProgress(_detailAnim.value);
+    // The spring overshoots by ~5 %: on the way back it must not go below the module.
+    return _detailClosing ? (1 - p).clamp(0.0, double.infinity) : p;
   }
 
   void _hide() {
@@ -597,15 +529,11 @@ class _ControlCenterState extends State<ControlCenter>
   Widget _center(BuildContext context) {
     final ms =
         _anim.value * (_open ? openDuration : closeDuration).inMilliseconds;
-    final opacity = _open
-        ? tableAt(openOpacity, ms)
-        : tableAt(closeOpacity, ms);
+    final opacity = _open ? openOpacityAt(ms) : closeOpacityAt(ms);
     if (!_open && (opacity <= 0 || !_anim.isAnimating)) {
       return const SizedBox.expand();
     }
-    final scale = _open
-        ? 1 + (scaleAway - 1) * (1 - (ms / openScaleMs).clamp(0, 1))
-        : 1 + (scaleAway - 1) * (ms / closeScaleMs).clamp(0, 1);
+    final panelHeight = _open ? openHeightAt(ms) : 1.0;
     final snapshot = widget.system.value;
     final slots = layoutModules(snapshot, _modules);
     final height = slots.values
@@ -649,6 +577,7 @@ class _ControlCenterState extends State<ControlCenter>
           origin: origin,
           height: totalHeight,
           slots: shadowSlots,
+          color: AmalfiTheme.of(context).colors.shadow3,
         );
         if (_open) {
           _setRegion(
@@ -727,15 +656,14 @@ class _ControlCenterState extends State<ControlCenter>
                 top: top - detailPad.dy,
                 width: detailWidth,
                 height: totalHeight + detailPad.dy + _belowStack,
-                child: Transform.scale(
-                  scale: scale,
+                child: Transform(
+                  alignment: Alignment.topCenter,
+                  transform: Matrix4.diagonal3Values(1, panelHeight, 1),
                   child: Opacity(
                     opacity: opacity,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        // The glass sticks out 1 pt left and right of the module box (the
-                        // dark side line falls outside), not above and below.
                         for (final MapEntry(:key, :value) in slots.entries)
                           if (key != _detail)
                             Positioned.fromRect(
@@ -745,7 +673,7 @@ class _ControlCenterState extends State<ControlCenter>
                                 child: ProfiledGlass(
                                   profile: ShellGlassProfile.module,
                                   radius: value.radius,
-                                  material: GlassMaterial.regular,
+                                  material: GlassMaterial.thick,
                                   child: const SizedBox.expand(),
                                 ),
                               ),
@@ -756,7 +684,7 @@ class _ControlCenterState extends State<ControlCenter>
                             child: ProfiledGlass(
                               profile: ShellGlassProfile.module,
                               radius: radius,
-                              material: GlassMaterial.regular,
+                              material: GlassMaterial.thick,
                               child: const SizedBox.expand(),
                             ),
                           ),
@@ -948,9 +876,8 @@ class _ControlCenterState extends State<ControlCenter>
     );
   }
 
-  /// The glass of a module: 1 pt more on the left and right.
-  Rect _glassRect(Rect r) =>
-      Rect.fromLTRB(r.left - 1, r.top, r.right + 1, r.bottom);
+  /// The glass of a module: exactly its box (the kit's masters have no overhang).
+  Rect _glassRect(Rect r) => r;
 
   /// The Settings app, if installed (its first argument names the pane).
   late final DesktopEntry? _settingsApp =
@@ -974,8 +901,6 @@ class _ControlCenterState extends State<ControlCenter>
   /// The content of the open detail.
   DetailContent? _detailContent(SystemSnapshot s) {
     final system = widget.system;
-    Widget track(double? v) =>
-        CustomPaint(painter: _Track(v, CcPalette.of(context)));
     final l = l10nOf(context);
     return switch (_detail) {
       'wifi' => wifiDetail(
@@ -1002,14 +927,12 @@ class _ControlCenterState extends State<ControlCenter>
           if (mounted)
             setState(() => _detailData = DetailData(outputs: outputs));
         },
-        track: track,
         onSettings: _settingsAt('sound'),
       ),
       'display' => displayDetail(
         l: l,
         s: s,
         onBrightness: system.setBrightness,
-        track: track,
         dark: MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
         onDark: () => ShellChannel.instance.execute('system.dark_toggle'),
         onSettings: _settingsAt('displays'),
@@ -1234,7 +1157,6 @@ class _ControlCenterState extends State<ControlCenter>
         title: s.doNotDisturb ? l.ccDoNotDisturb : l.ccFocus,
         subtitle: s.doNotDisturb ? l.ccDoNotDisturbOn : '',
         active: s.doNotDisturb,
-        activeGlyph: focusPurpleGlyph,
         onTap: () => system.setDoNotDisturb(!s.doNotDisturb),
         onOpen: () => _openDetail('dnd'),
       ),
@@ -1328,6 +1250,8 @@ class _ControlCenterState extends State<ControlCenter>
   }
 }
 
+/// A toggle module (`Module/Toggle/*`): 140 × 64 capsule, a 36 pt disc at (16, 14) with a
+/// 20 pt glyph, title (Headline) and subtitle (Caption) from x 60, vertically centred.
 class _Capsule extends StatelessWidget {
   const _Capsule({
     required this.glyph,
@@ -1337,7 +1261,6 @@ class _Capsule extends StatelessWidget {
     this.onTap,
     this.onOpen,
     this.glyphLevel = 1,
-    this.activeGlyph = glyphOn,
     this.enabled = true,
   });
 
@@ -1345,9 +1268,6 @@ class _Capsule extends StatelessWidget {
 
   /// False when Silica can't do it yet: the module is dimmed and does not respond.
   final bool enabled;
-
-  /// The glyph color on the white disc when on (blue, purple for Focus).
-  final Color activeGlyph;
   final double glyphLevel;
   final String title;
   final String subtitle;
@@ -1376,7 +1296,7 @@ class _Capsule extends StatelessWidget {
         ),
         Positioned(
           left: discInset,
-          top: discInset,
+          top: discTop,
           width: disc,
           height: disc,
           child: GestureDetector(
@@ -1384,18 +1304,15 @@ class _Capsule extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                // Light: the glass is near-white, so the active disc is the accent
-                // with a white glyph; dark: a white disc with the accent glyph.
-                color: widget.active
-                    ? (palette.light ? widget.activeGlyph : discOn)
-                    : discOff,
+                // `Accent/Amalfi` when on, `Text/Tertiary` when off; the glyph is
+                // `Text/On Accent` on both.
+                color: widget.active ? palette.accent : palette.discOff,
               ),
               child: Center(
-                child: Glyph(
+                child: CcGlyph(
                   widget.glyph,
-                  color: widget.active
-                      ? (palette.light ? glyphOff : widget.activeGlyph)
-                      : glyphOff,
+                  color: palette.onAccent,
+                  size: discGlyph,
                   level: widget.glyphLevel,
                 ),
               ),
@@ -1404,8 +1321,7 @@ class _Capsule extends StatelessWidget {
         ),
         Positioned(
           left: textLeft,
-          right:
-              10 + (arrowable ? hover.progress * (hoverChevronRight + 2) : 0),
+          right: 8 + (arrowable ? hover.progress * (hoverChevronRight + 2) : 0),
           top: 0,
           bottom: 0,
           child: IgnorePointer(
@@ -1413,20 +1329,18 @@ class _Capsule extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // As in the reference long texts wrap ("Full immersion", the name of a
-                // network), at most two lines each.
                 Text(
                   widget.title,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _text(titleSize, weight: FontWeight.w600),
+                  style: AmalfiType.headline(color: palette.text),
                 ),
                 if (widget.subtitle.isNotEmpty)
                   Text(
                     widget.subtitle,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _text(subtitleSize),
+                    style: AmalfiType.caption(color: palette.secondary),
                   ),
               ],
             ),
@@ -1440,7 +1354,7 @@ class _Capsule extends StatelessWidget {
               child: Opacity(
                 key: const ValueKey('detail chevron'),
                 opacity: hover.progress,
-                child: Chevron(color: palette.text),
+                child: Chevron(color: palette.text, right: true),
               ),
             ),
           ),
@@ -1456,8 +1370,8 @@ class _Capsule extends StatelessWidget {
   }
 }
 
-/// A module Silica can't drive yet: dimmed (provisional, the reference shows none).
-const double disabledOpacity = 0.45;
+/// A module Silica can't drive yet: the whole module at the disabled opacity of Amalfi.
+const double disabledOpacity = AmalfiStates.disabledOpacity;
 
 /// "Until this evening": 19:00 today, or the end of the day once past it (provisional).
 Duration untilEvening(DateTime now) {
@@ -1472,41 +1386,10 @@ Duration untilEvening(DateTime now) {
 /// with the module's hover and the text shortens to make room (CC-HOVER).
 const double hoverChevronRight = 16;
 
-/// Hover of a Control Center module (controlcenter.md, CC-HOVER): the whole module lifts by
-/// about 7 levels (white at 4.7 %), with no scale; inner buttons have no hover of their own.
-/// The change starts after ~50 ms (10 %), is half done at ~150 ms and done at ~300 ms, the
-/// same in and out and for every module.
-const Duration hoverDuration = Duration(milliseconds: 300);
-
-/// The volume knob (~18 x 14 pt) shows ~330 ms after the pointer enters the module and goes
-/// ~60 ms after it leaves.
-const Duration knobDelay = Duration(milliseconds: 330);
-const Duration knobLeaveDelay = Duration(milliseconds: 60);
-const Size knobSize = Size(18, 14);
-
-/// 10 % at 50 ms, 50 % at 150 ms, 100 % at 300 ms: a mild ease-out.
-class HoverCurve extends Curve {
-  const HoverCurve();
-
-  static const List<(double, double)> _points = [
-    (0, 0),
-    (50 / 300, 0.1),
-    (150 / 300, 0.5),
-    (1, 1),
-  ];
-
-  @override
-  double transformInternal(double t) {
-    for (var i = 1; i < _points.length; i++) {
-      final (x1, y1) = _points[i];
-      if (t <= x1) {
-        final (x0, y0) = _points[i - 1];
-        return y0 + (y1 - y0) * (t - x0) / (x1 - x0);
-      }
-    }
-    return 1;
-  }
-}
+/// Hover of a Control Center module (controlcenter.md, CC-HOVER): the whole module lifts with
+/// `State/Hover Overlay`, with no scale; inner buttons have no hover of their own. The change
+/// is `fade.quick` (Amalfi) instead of the reference's 300 ms.
+const Duration hoverDuration = Duration(milliseconds: 150);
 
 /// What a module's content reads from its wrapper: whether the pointer is on the module and
 /// how far the hover has gone (0..1).
@@ -1538,9 +1421,6 @@ class ModuleHoverScope extends InheritedWidget {
 
 /// Wraps a module of the stack: the hover lift over the whole module (its [radius]) and the
 /// scope its content reads.
-/// The hover lift in dark (the light one is in [CcPalette]).
-const Color moduleHoverLift = Color(0x0CFFFFFF);
-
 class _ModuleHover extends StatefulWidget {
   const _ModuleHover({required this.radius, required this.child});
 
@@ -1557,12 +1437,7 @@ class _ModuleHoverState extends State<_ModuleHover>
     vsync: this,
     duration: hoverDuration,
   );
-  // Entering follows the curve; leaving is its mirror in time (10 % at 55 ms, half at 150 ms).
-  double get _progress {
-    const curve = HoverCurve();
-    final v = _controller.value;
-    return _hover ? curve.transform(v) : curve.flipped.transform(v);
-  }
+  double get _progress => AmalfiFades.quick.curve.transform(_controller.value);
 
   bool _hover = false;
 
@@ -1592,12 +1467,7 @@ class _ModuleHoverState extends State<_ModuleHover>
             fit: StackFit.passthrough,
             clipBehavior: Clip.none,
             children: [
-              // Same extent as the module's glass (1 pt more left and right).
-              Positioned(
-                left: -1,
-                right: -1,
-                top: 0,
-                bottom: 0,
+              Positioned.fill(
                 child: IgnorePointer(
                   child: DecoratedBox(
                     key: const ValueKey('module hover'),
@@ -1619,63 +1489,10 @@ class _ModuleHoverState extends State<_ModuleHover>
   }
 }
 
-/// The volume knob: a light capsule, shown only while the pointer is on the module (after
-/// [knobDelay], gone [knobLeaveDelay] after leaving).
-class _Knob extends StatefulWidget {
-  const _Knob();
-
-  @override
-  State<_Knob> createState() => _KnobState();
-}
-
-class _KnobState extends State<_Knob> {
-  bool _shown = false;
-  bool? _target;
-  Timer? _timer;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final hovered = ModuleHoverScope.of(context).hovered;
-    if (hovered == _target) return;
-    _target = hovered;
-    _timer?.cancel();
-    if (hovered == _shown) return;
-    _timer = Timer(hovered ? knobDelay : knobLeaveDelay, () {
-      if (mounted) setState(() => _shown = hovered);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_shown) return const SizedBox.shrink();
-    return const DecoratedBox(
-      key: ValueKey('volume knob'),
-      decoration: BoxDecoration(
-        color: Color(0xFFF0F0F1),
-        borderRadius: BorderRadius.all(Radius.circular(7)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x40000000),
-            blurRadius: 3,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A 64 pt round toggle (Dark Mode, Screen Capture; SH-CC-09, SH-CC-10): the module itself
-/// is the button. Off: the white glyph on the module glass, lighter under the pointer
-/// (+9 levels, CC-01); on: the whole module white with a black glyph (SH-CC-03 dark).
-class _RoundToggle extends StatefulWidget {
+/// A 64 pt round toggle (`Module/Tile/*`: Dark Mode, Screen Capture, Stage View, Screen
+/// Mirroring): the module itself is the button. Off: a 20 pt glyph in `Text/Primary` on the
+/// module glass; on: the whole tile `Accent/Amalfi` with a `Text/On Accent` glyph.
+class _RoundToggle extends StatelessWidget {
   const _RoundToggle({
     required this.glyph,
     required this.label,
@@ -1691,38 +1508,29 @@ class _RoundToggle extends StatefulWidget {
   final VoidCallback? onTap;
 
   @override
-  State<_RoundToggle> createState() => _RoundToggleState();
-}
-
-class _RoundToggleState extends State<_RoundToggle> {
-  @override
   Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
+    final enabled = onTap != null;
     final palette = CcPalette.of(context);
-    // Active: the whole module white with a black glyph in dark; the accent with a white
-    // glyph in light (the glass is near-white there).
     final tile = DecoratedBox(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: widget.active ? (palette.light ? glyphOn : discOn) : null,
+        color: active ? palette.accent : null,
       ),
       child: Center(
-        child: Glyph(
-          widget.glyph,
-          color: widget.active
-              ? (palette.light ? glyphOff : const Color(0xFF000000))
-              : palette.text,
-          size: 24,
+        child: CcGlyph(
+          glyph,
+          color: active ? palette.onAccent : palette.text,
+          size: discGlyph,
         ),
       ),
     );
     return Semantics(
       button: true,
       enabled: enabled,
-      toggled: widget.active,
-      label: widget.label,
+      toggled: active,
+      label: label,
       child: enabled
-          ? GestureDetector(onTap: widget.onTap, child: tile)
+          ? GestureDetector(onTap: onTap, child: tile)
           : AbsorbPointer(
               child: Opacity(opacity: disabledOpacity, child: tile),
             ),
@@ -1730,11 +1538,78 @@ class _RoundToggleState extends State<_RoundToggle> {
   }
 }
 
-/// The media module (controlcenter.md, light over grey): the 40 × 40 cover 14 pt from the edge, the text from
-/// x 15 (capitals of the first line at y 68), the transport buttons centered at x
-/// 28.5 / 71 / 110.5 and y 111 (⏮ and ⏭ 22 × 12, ▶ 17 × 20). With nothing playing the buttons
-/// are dimmed (white at 33 and 51 %); with an MPRIS player it shows title and artist and
-/// controls them.
+/// The transport button of a media control: a 20 pt Icon Kit glyph in a 30 pt hit area.
+class _TransportButton extends StatelessWidget {
+  const _TransportButton({
+    super.key,
+    required this.symbol,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String symbol;
+  final bool enabled;
+  final VoidCallback? onTap;
+  static const double size = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final glyph = AmalfiSymbol(
+      symbol,
+      size: size,
+      color: CcPalette.of(context).text,
+      fallback: SizedBox.square(dimension: size),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Center(
+        child: enabled
+            ? glyph
+            : Opacity(opacity: AmalfiStates.disabledOpacity, child: glyph),
+      ),
+    );
+  }
+}
+
+/// The artwork square of the media module and of its detail: the cover, or a
+/// `Palette/Terracotta` tile with a music note (`Module/Now Playing/*`).
+class _Artwork extends StatelessWidget {
+  const _Artwork({required this.url, required this.radius, required this.note});
+
+  final String url;
+  final double radius;
+  final double note;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = url.startsWith('file://')
+        ? File(Uri.parse(url).toFilePath())
+        : null;
+    final colors = AmalfiTheme.of(context).colors;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: file != null && file.existsSync()
+          ? Image.file(file, fit: BoxFit.cover)
+          : ColoredBox(
+              color: colors.paletteTerracotta,
+              child: Center(
+                child: AmalfiSymbol(
+                  'music-note',
+                  size: note,
+                  color: colors.textOnAccent,
+                  fallback: SizedBox.square(dimension: note),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// The media module (`Module/Now Playing/*`): the 40 pt cover at (12, 12), title (Headline)
+/// at (12, 64) and artist (Caption) at (12, 84), the three 20 pt transport glyphs at x 20 / 60
+/// / 100 and y 104. With nothing playing the buttons are dimmed; with an MPRIS player it shows
+/// title and artist and controls them.
 class _Media extends StatefulWidget {
   const _Media({this.onOpen});
 
@@ -1745,23 +1620,13 @@ class _Media extends StatefulWidget {
   State<_Media> createState() => _MediaState();
 }
 
-/// The media module (controlcenter.md › "Media module while playing", CC-04): 40 × 40 cover
-/// at (14, 14) with radius ~8 and a light shadow; `#f0f0f1` semibold title and below it the
-/// `#b7b8bd` artist (one line each) from (14, 64); three 30 × 30 buttons centered at y 111
-/// and x 30 / 70 / 110. Glyphs: active `#b7b8bd` (white ~52 % over the `#696a6f` background),
-/// disabled `#9d9ea3` (~35 %); with the pointer on the module everything brightens by ~7
-/// levels (the module hover, `ModuleHoverScope`: the buttons have no hover of their own); pressed a glyph turns
-/// white `#f7f7f8`, without a pill.
 const double mediaButtonSide = 30;
 const List<double> mediaButtonCenters = [30, 70, 110];
+const double mediaButtonCenterY = 114;
 const double mediaArtRadius = 8;
-const double mediaGlyphActive = 0.52;
-const double mediaGlyphDisabled = 0.35;
-const double mediaGlyphPressed = 0.96;
 
 class _MediaState extends State<_Media> {
   final MediaPlayers _players = MediaPlayers.instance;
-  String? _pressed;
 
   @override
   void initState() {
@@ -1778,76 +1643,30 @@ class _MediaState extends State<_Media> {
 
   void _changed() => setState(() {});
 
-  Widget _art(NowPlaying? now) {
-    final url = now?.artUrl ?? '';
-    final file = url.startsWith('file://')
-        ? File(Uri.parse(url).toFilePath())
-        : null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(mediaArtRadius),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 3,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(mediaArtRadius),
-        child: file != null && file.existsSync()
-            ? Image.file(file, fit: BoxFit.cover)
-            : const ColoredBox(color: Color(0xFF7E7F84)),
-      ),
-    );
-  }
-
   Widget _button({
     required String key,
-    required _Transport transport,
+    required String symbol,
     required double centerX,
     required bool enabled,
     VoidCallback? onTap,
-  }) {
-    final alpha = !enabled
-        ? mediaGlyphDisabled
-        : _pressed == key
-        ? mediaGlyphPressed
-        : mediaGlyphActive;
-    return Positioned(
-      left: centerX - mediaButtonSide / 2,
-      top: 111 - mediaButtonSide / 2,
-      width: mediaButtonSide,
-      height: mediaButtonSide,
-      child: GestureDetector(
-        key: ValueKey(key),
-        behavior: HitTestBehavior.opaque,
-        onTapDown: enabled ? (_) => setState(() => _pressed = key) : null,
-        onTapCancel: () => setState(() => _pressed = null),
-        onTapUp: (_) => setState(() => _pressed = null),
-        onTap: enabled ? onTap : null,
-        child: Center(
-          child: CustomPaint(
-            size: switch (transport) {
-              _Transport.play => const Size(17, 20),
-              _Transport.pause => const Size(15, 20),
-              _ => const Size(22, 13),
-            },
-            painter: _TransportPainter(
-              transport,
-              CcPalette.of(context).text.withValues(alpha: alpha),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  }) => Positioned(
+    left: centerX - mediaButtonSide / 2,
+    top: mediaButtonCenterY - mediaButtonSide / 2,
+    width: mediaButtonSide,
+    height: mediaButtonSide,
+    child: _TransportButton(
+      key: ValueKey(key),
+      symbol: symbol,
+      enabled: enabled,
+      onTap: onTap,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final now = _players.now;
     final active = now != null;
+    final p = CcPalette.of(context);
     return Stack(
       children: [
         Positioned.fill(
@@ -1857,14 +1676,20 @@ class _MediaState extends State<_Media> {
           ),
         ),
         Positioned(
-          left: 14,
-          top: 14,
+          left: 12,
+          top: 12,
           width: 40,
           height: 40,
-          child: IgnorePointer(child: _art(now)),
+          child: IgnorePointer(
+            child: _Artwork(
+              url: now?.artUrl ?? '',
+              radius: mediaArtRadius,
+              note: 20,
+            ),
+          ),
         ),
         Positioned(
-          left: 14,
+          left: 12,
           right: 12,
           top: 64,
           child: IgnorePointer(
@@ -1879,10 +1704,7 @@ class _MediaState extends State<_Media> {
                         maxLines: 1,
                         softWrap: false,
                         overflow: TextOverflow.ellipsis,
-                        style: _text(
-                          titleSize,
-                          weight: FontWeight.w600,
-                        ).copyWith(color: CcPalette.of(context).text),
+                        style: AmalfiType.headline(color: p.text),
                       ),
                       if (now.byline.isNotEmpty)
                         Text(
@@ -1890,38 +1712,35 @@ class _MediaState extends State<_Media> {
                           maxLines: 1,
                           softWrap: false,
                           overflow: TextOverflow.ellipsis,
-                          style: _text(
-                            subtitleSize,
-                          ).copyWith(color: CcPalette.of(context).secondary),
+                          style: AmalfiType.caption(color: p.secondary),
                         ),
                     ],
                   )
                 : Text(
                     l10nOf(context).mediaNothingPlaying,
-                    style: _text(
-                      titleSize,
-                      weight: FontWeight.w600,
-                    ).copyWith(height: 15 / titleSize),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AmalfiType.headline(color: p.text),
                   ),
           ),
         ),
         _button(
           key: 'precedente',
-          transport: _Transport.previous,
+          symbol: 'skip-backward',
           centerX: mediaButtonCenters[0],
           enabled: active && now.canPrevious,
           onTap: active ? _players.previous : null,
         ),
         _button(
           key: 'riproduci',
-          transport: active && now.playing ? _Transport.pause : _Transport.play,
+          symbol: active && now.playing ? 'pause' : 'play',
           centerX: mediaButtonCenters[1],
           enabled: active,
           onTap: active ? _players.playPause : null,
         ),
         _button(
           key: 'successivo',
-          transport: _Transport.next,
+          symbol: 'skip-forward',
           centerX: mediaButtonCenters[2],
           enabled: active && now.canNext,
           onTap: active ? _players.next : null,
@@ -1931,20 +1750,17 @@ class _MediaState extends State<_Media> {
   }
 }
 
-/// The Now Playing detail (SH-CC-20; controlcenter.md › Now Playing media module): a
-/// 308 × 140 panel, the 112 pt cover at (14, 14), title and artist from (140, 15), three
-/// 26 pt buttons at y 64 and x 148 / 204 / 260 (pitch 56), the 154 × 12 progress bar at
-/// (140, 102) (4 pt track `#232323`, elapsed sRGB `#1482ff`) and the times under it
-/// (`#b7b8be`). Cover radius provisional.
+/// The Now Playing detail (`Detail/Now Playing`): a 312 × 140 panel, the 112 pt cover at
+/// (16, 14), title and artist from (140, 16), three 20 pt transport glyphs at y 64 and x 146 /
+/// 204 / 260, the 156 × 4 progress track at (140, 104) and the times under it.
 const double nowPlayingHeight = 140;
 const double nowPlayingArt = 112;
-const double nowPlayingArtRadius = 10;
+const double nowPlayingArtRadius = 12;
 const double nowPlayingTextLeft = 140;
-const double nowPlayingButton = 26;
-const List<double> nowPlayingButtonLefts = [148, 204, 260];
-const double nowPlayingButtonTop = 64;
-const Rect nowPlayingProgress = Rect.fromLTWH(140, 102, 154, 12);
-const Color nowPlayingElapsed = Color(0xFF1482FF);
+const double nowPlayingButton = 28;
+const List<double> nowPlayingButtonCentres = [156, 214, 270];
+const double nowPlayingButtonCentreY = 74;
+const Rect nowPlayingProgress = Rect.fromLTWH(140, 104, 156, 4);
 
 /// "01:03", "1:02:03".
 String mediaTime(Duration d) {
@@ -1983,66 +1799,42 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
     if (mounted) setState(() {});
   }
 
-  Widget _button(_Transport kind, int index, bool enabled, VoidCallback tap) =>
+  Widget _button(String symbol, int index, bool enabled, VoidCallback tap) =>
       Positioned(
-        left: nowPlayingButtonLefts[index],
-        top: nowPlayingButtonTop,
+        left: nowPlayingButtonCentres[index] - nowPlayingButton / 2,
+        top: nowPlayingButtonCentreY - nowPlayingButton / 2,
         width: nowPlayingButton,
         height: nowPlayingButton,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? tap : null,
-          child: Center(
-            child: CustomPaint(
-              size: switch (kind) {
-                _Transport.play => const Size(15, 18),
-                _Transport.pause => const Size(13, 18),
-                _ => const Size(20, 12),
-              },
-              painter: _TransportPainter(
-                kind,
-                CcPalette.of(context).text.withValues(
-                  alpha: enabled ? mediaGlyphActive : mediaGlyphDisabled,
-                ),
-              ),
-            ),
-          ),
-        ),
+        child: _TransportButton(symbol: symbol, enabled: enabled, onTap: tap),
       );
 
   @override
   Widget build(BuildContext context) {
     final now = _players.now;
-    final url = now?.artUrl ?? '';
-    final file = url.startsWith('file://')
-        ? File(Uri.parse(url).toFilePath())
-        : null;
+    final p = CcPalette.of(context);
     final length = now?.length ?? Duration.zero;
     final position = now?.positionAt(DateTime.now()) ?? Duration.zero;
     final fraction = length > Duration.zero
         ? (position.inMilliseconds / length.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
-    final timeStyle = _text(
-      10,
-    ).copyWith(color: CcPalette.of(context).secondary, height: 1.3);
+    final timeStyle = AmalfiType.caption(color: p.tertiary);
     return Stack(
       children: [
         Positioned(
-          left: 14,
+          left: 16,
           top: 14,
           width: nowPlayingArt,
           height: nowPlayingArt,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(nowPlayingArtRadius),
-            child: file != null && file.existsSync()
-                ? Image.file(file, fit: BoxFit.cover)
-                : const ColoredBox(color: Color(0xFF7C7D82)),
+          child: _Artwork(
+            url: now?.artUrl ?? '',
+            radius: nowPlayingArtRadius,
+            note: 24,
           ),
         ),
         Positioned(
           left: nowPlayingTextLeft,
-          right: 14,
-          top: 15,
+          right: 20,
+          top: 16,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2053,10 +1845,7 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
                 maxLines: 1,
                 softWrap: false,
                 overflow: TextOverflow.ellipsis,
-                style: _text(
-                  titleSize,
-                  weight: FontWeight.w600,
-                ).copyWith(color: CcPalette.of(context).text),
+                style: AmalfiType.headline(color: p.text),
               ),
               if (now != null && now.byline.isNotEmpty)
                 Text(
@@ -2064,40 +1853,35 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.ellipsis,
-                  style: _text(
-                    subtitleSize,
-                  ).copyWith(color: CcPalette.of(context).secondary),
+                  style: AmalfiType.caption(color: p.secondary),
                 ),
             ],
           ),
         ),
         _button(
-          _Transport.previous,
+          'skip-backward',
           0,
           now?.canPrevious ?? false,
           _players.previous,
         ),
         _button(
-          now?.playing ?? false ? _Transport.pause : _Transport.play,
+          now?.playing ?? false ? 'pause' : 'play',
           1,
           now != null,
           _players.playPause,
         ),
-        _button(_Transport.next, 2, now?.canNext ?? false, _players.next),
+        _button('skip-forward', 2, now?.canNext ?? false, _players.next),
         Positioned.fromRect(
           rect: nowPlayingProgress,
           child: CustomPaint(
-            painter: _ProgressPainter(
-              fraction,
-              CcPalette.of(context).nowPlayingTrack,
-            ),
+            painter: _ProgressPainter(fraction, p.track, p.accent),
           ),
         ),
         if (length > Duration.zero)
           Positioned(
             left: nowPlayingProgress.left,
             width: nowPlayingProgress.width,
-            top: nowPlayingProgress.bottom + 1,
+            top: nowPlayingProgress.bottom + 4,
             child: Row(
               children: [
                 Text(mediaTime(position), style: timeStyle),
@@ -2112,89 +1896,33 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
 }
 
 class _ProgressPainter extends CustomPainter {
-  const _ProgressPainter(this.fraction, this.rest);
+  const _ProgressPainter(this.fraction, this.rest, this.fill);
   final double fraction;
   final Color rest;
+  final Color fill;
 
   @override
   void paint(Canvas canvas, Size size) {
     final track = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: size.center(Offset.zero),
-        width: size.width,
-        height: 4,
-      ),
-      const Radius.circular(2),
+      Offset.zero & size,
+      Radius.circular(size.height / 2),
     );
     canvas
       ..drawRRect(track, Paint()..color = rest)
       ..save()
       ..clipRect(Rect.fromLTWH(0, 0, size.width * fraction, size.height))
-      ..drawRRect(track, Paint()..color = nowPlayingElapsed)
+      ..drawRRect(track, Paint()..color = fill)
       ..restore();
   }
 
   @override
   bool shouldRepaint(_ProgressPainter old) =>
-      old.fraction != fraction || old.rest != rest;
+      old.fraction != fraction || old.rest != rest || old.fill != fill;
 }
 
-enum _Transport { previous, play, pause, next }
-
-/// The transport glyphs: two side by side triangles (⏮ to the left, ⏭ to the right), a
-/// triangle (▶) or two bars (pause).
-class _TransportPainter extends CustomPainter {
-  const _TransportPainter(this.kind, this.color);
-  final _Transport kind;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final w = size.width;
-    final h = size.height;
-    switch (kind) {
-      case _Transport.play:
-        canvas.drawPath(
-          Path()
-            ..moveTo(0, 0)
-            ..lineTo(w, h / 2)
-            ..lineTo(0, h)
-            ..close(),
-          paint,
-        );
-      case _Transport.pause:
-        canvas
-          ..drawRRect(
-            RRect.fromLTRBR(1, 0, w * 0.38, h, const Radius.circular(1.5)),
-            paint,
-          )
-          ..drawRRect(
-            RRect.fromLTRBR(w * 0.62, 0, w - 1, h, const Radius.circular(1.5)),
-            paint,
-          );
-      case _Transport.previous || _Transport.next:
-        final half = w / 2;
-        for (final start in [0.0, half]) {
-          final path = kind == _Transport.next
-              ? (Path()
-                  ..moveTo(start, 0)
-                  ..lineTo(start + half, h / 2)
-                  ..lineTo(start, h))
-              : (Path()
-                  ..moveTo(start + half, 0)
-                  ..lineTo(start, h / 2)
-                  ..lineTo(start + half, h));
-          canvas.drawPath(path..close(), paint);
-        }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_TransportPainter old) =>
-      old.kind != kind || old.color != color;
-}
-
+/// A slider module (`Module/Slider/*`): the title (Headline) at (16, 8), a 16 pt glyph at each
+/// end of an [AmalfiSlider] (with its lens) whose track runs from x 40 at y 44, and, for
+/// Sound, the 28 pt outputs disc at (252, 20) that shortens the track by 48 pt.
 class _SliderModule extends StatelessWidget {
   const _SliderModule({
     this.onOpen,
@@ -2217,170 +1945,91 @@ class _SliderModule extends StatelessWidget {
   /// The title opens the detail.
   final VoidCallback? onOpen;
 
-  /// The audio outputs circle (Sound only): opens the detail with the outputs.
+  /// The audio outputs disc (Sound only): opens the detail with the outputs.
   final VoidCallback? onOutputs;
 
-  /// With the outputs circle the track is shorter.
+  /// With the outputs disc the track is shorter.
   double get _length =>
       onOutputs == null ? trackLength : trackLength - outputsShift;
 
-  void _set(Offset local) {
-    if (enabled) onChanged(sliderValue(local.dx - trackLeft, length: _length));
-  }
-
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTapDown: (d) {
-      // Above the track (the title): the detail; on the track: the value.
-      if (onOpen != null && d.localPosition.dy < trackCenter - 10) {
-        onOpen!();
-      } else if (onOutputs != null &&
-          (d.localPosition.dx - outputsCenter).abs() <= outputsSide / 2 + 4) {
-        onOutputs!();
-      } else {
-        _set(d.localPosition);
-      }
-    },
-    onHorizontalDragUpdate: (d) => _set(d.localPosition),
-    child: Stack(
+  Widget build(BuildContext context) {
+    final p = CcPalette.of(context);
+    return Stack(
       children: [
         Positioned(
           left: 16,
-          top: 10,
-          child: Text(title, style: _text(titleSize, weight: FontWeight.w600)),
+          top: 8,
+          right: 16,
+          height: 24,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onOpen,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Text(
+                title,
+                maxLines: 1,
+                style: AmalfiType.headline(color: p.text),
+              ),
+            ),
+          ),
         ),
         Positioned(
-          left: 15 - 8,
-          top: trackCenter - 8,
-          width: 16 + 8,
-          height: 16,
-          child: Glyph(low, color: CcPalette.of(context).text, size: 16),
+          left: 16,
+          top: 36,
+          child: CcGlyph(low, color: p.text, size: 16),
         ),
         Positioned(
           left: trackLeft,
-          top: trackCenter - trackHeight / 2,
+          top: trackCenter - 10,
           width: _length,
-          height: trackHeight,
-          child: CustomPaint(
-            painter: _Track(
-              enabled ? value : null,
-              CcPalette.of(context),
-              length: _length,
-            ),
+          height: 20,
+          child: AmalfiSlider(
+            value: value.clamp(0.0, 1.0),
+            onChanged: enabled ? onChanged : null,
+            semanticLabel: title,
           ),
+        ),
+        Positioned(
+          left: trackLeft + _length + 8,
+          top: 36,
+          child: CcGlyph(high, color: p.text, size: 16),
         ),
         if (onOutputs != null)
           Positioned(
             key: const ValueKey('audio outputs'),
-            left: outputsCenter - outputsSide / 2,
-            top: trackCenter - outputsSide / 2,
+            left: outputsLeft,
+            top: outputsTop,
             width: outputsSide,
             height: outputsSide,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: CcPalette.of(context).outputsFill,
-                shape: BoxShape.circle,
-              ),
-              child: CustomPaint(
-                painter: _OutputsGlyph(CcPalette.of(context).text),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOutputs,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: p.discOff,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: CcGlyph(
+                    GlyphKind.headphones,
+                    color: p.onAccent,
+                    size: 16,
+                  ),
+                ),
               ),
             ),
           ),
-        if (enabled)
-          Positioned(
-            left:
-                trackLeft +
-                sliderFill(value, length: _length) -
-                knobSize.width / 2,
-            top: trackCenter - knobSize.height / 2,
-            width: knobSize.width,
-            height: knobSize.height,
-            child: const IgnorePointer(child: _Knob()),
-          ),
-        Positioned(
-          left: 260 - (onOutputs == null ? 0 : outputsShift),
-          top: trackCenter - 8.5,
-          width: 17,
-          height: 17,
-          child: Glyph(high, color: CcPalette.of(context).text, size: 17),
-        ),
       ],
-    ),
-  );
-}
-
-class _Track extends CustomPainter {
-  const _Track(this.value, this.palette, {this.length = trackLength});
-  final CcPalette palette;
-
-  /// Null: slider not adjustable (only the track, as in the reference).
-  final double? value;
-  final double length;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(size.height / 2);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = palette.trackRest,
-    );
-    final v = value;
-    if (v == null) return;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, sliderFill(v, length: length), size.height),
-        radius,
-      ),
-      Paint()..color = palette.trackFill,
     );
   }
-
-  @override
-  bool shouldRepaint(_Track old) =>
-      old.value != value || old.length != length || old.palette != palette;
 }
 
-/// The glyph of the audio outputs circle: a pair of headphones, white, ~13 pt.
-class _OutputsGlyph extends CustomPainter {
-  const _OutputsGlyph(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..strokeCap = StrokeCap.round;
-    canvas.drawArc(
-      Rect.fromCircle(center: c + const Offset(0, 0.5), radius: 5.5),
-      3.3,
-      2.82,
-      false,
-      paint,
-    );
-    final fill = Paint()..color = color;
-    for (final dx in [-5.5, 5.5]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: c + Offset(dx, 3.5), width: 3, height: 6),
-          const Radius.circular(1.2),
-        ),
-        fill,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_OutputsGlyph old) => old.color != color;
-}
-
-/// The privacy pill (SH-CC-25): a 24 pt capsule of the modules' glass, centred over the stack;
-/// a 15 pt `#6e7cff` rounded square with the microphone or camera, 11 pt from the left; the
-/// app, bold `#f0f0f1`, 6 pt after it ("<app> recently" once it stopped). A click opens the
-/// privacy settings (provisional: the reference's click was not observed).
+/// The privacy pill (`Module/Privacy Pill`): a 24 pt Glass/Thick capsule centred over the
+/// stack; a 16 pt `Palette/Lavanda` rounded square with the microphone or camera at (8, 4),
+/// the app in Label from x 32 ("<app> recently" once it stopped). A click opens the privacy
+/// settings (provisional: the reference's click was not observed).
 class _PrivacyPill extends StatelessWidget {
   const _PrivacyPill({required this.use, required this.onTap});
 
@@ -2390,6 +2039,7 @@ class _PrivacyPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = l10nOf(context);
+    final p = CcPalette.of(context);
     final text = use.inUse
         ? l.ccPrivacyNow(use.app)
         : l.ccPrivacyRecent(use.app);
@@ -2399,42 +2049,39 @@ class _PrivacyPill extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: ProfiledGlass(
-          profile: ShellGlassProfile.control,
+          profile: ShellGlassProfile.module,
           radius: pillHeight / 2,
-          material: GlassMaterial.regular,
+          material: GlassMaterial.thick,
           child: Padding(
-            padding: const EdgeInsets.only(left: 11, right: 14),
+            padding: const EdgeInsets.only(left: 8, right: 8),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 15,
-                  height: 15,
+                  width: 16,
+                  height: 16,
                   decoration: BoxDecoration(
-                    color: pillIcon,
+                    color: p.colors.paletteLavanda,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Center(
-                    child: Glyph(
+                    child: CcGlyph(
                       use.kind == 'camera'
                           ? GlyphKind.camera
                           : GlyphKind.microphone,
-                      color: const Color(0xFFFFFFFF),
-                      size: 11,
+                      color: p.onAccent,
+                      size: 12,
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 220),
                   child: Text(
                     text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _text(
-                      titleSize,
-                      weight: FontWeight.w700,
-                    ).copyWith(color: CcPalette.of(context).text),
+                    style: AmalfiType.label(color: p.text),
                   ),
                 ),
               ],
@@ -2446,9 +2093,9 @@ class _PrivacyPill extends StatelessWidget {
   }
 }
 
-/// The Edit Controls button: a 118 × 24 capsule of the modules' glass, centred, 16 pt under
-/// the last module; white text, ~11–12 pt from each side.
-const Size editButton = Size(118, 24);
+/// The Edit Controls button (`Module/Edit Button`): a 116 × 24 Glass/Thick capsule (radius
+/// 12), centred, 16 pt under the last module, the label in Label.
+const Size editButton = Size(116, 24);
 const double editButtonGap = 16;
 
 class _EditButton extends StatelessWidget {
@@ -2465,15 +2112,15 @@ class _EditButton extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: ProfiledGlass(
-        profile: ShellGlassProfile.control,
+        profile: ShellGlassProfile.module,
         radius: editButton.height / 2,
-        material: GlassMaterial.regular,
+        material: GlassMaterial.thick,
         child: Center(
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: _text(titleSize, weight: FontWeight.w600),
+            style: AmalfiType.label(color: CcPalette.of(context).text),
           ),
         ),
       ),
@@ -2481,41 +2128,39 @@ class _EditButton extends StatelessWidget {
   );
 }
 
-/// The shadow of the module stack: drawn outside the modules only.
+/// The shadow of the module stack: `shadows.3` of Glass/Thick (y 12, blur 32), drawn outside
+/// the modules only.
 class _StackShadow {
   const _StackShadow({
     required this.origin,
     required this.height,
     required this.slots,
+    required this.color,
   });
 
   final Offset origin;
   final double height;
   final List<ModuleSlot> slots;
+  final Color color;
 
-  Object get cacheKey => Object.hash(origin, height, Object.hashAll(slots));
+  Object get cacheKey =>
+      Object.hash(origin, height, color, Object.hashAll(slots));
 
   void paintShadow(Canvas canvas, Size size) {
     var modules = Path();
+    final shifted = Path();
     for (final slot in slots) {
+      final rrect = RRect.fromRectAndRadius(
+        slot.rect.shift(origin),
+        Radius.circular(slot.radius),
+      );
       modules = Path.combine(
         PathOperation.union,
         modules,
-        Path()..addRRect(
-          // Like the glass: 1 pt more on the left and right.
-          RRect.fromRectAndRadius(
-            Rect.fromLTRB(
-              slot.rect.left - 1,
-              slot.rect.top,
-              slot.rect.right + 1,
-              slot.rect.bottom,
-            ).shift(origin),
-            Radius.circular(slot.radius),
-          ),
-        ),
+        Path()..addRRect(rrect),
       );
+      shifted.addRRect(rrect.shift(const Offset(0, shadowOffsetY)));
     }
-    final area = Rect.fromLTRB(origin.dx, 0, size.width, origin.dy + height);
     canvas
       ..save()
       ..clipPath(
@@ -2525,10 +2170,10 @@ class _StackShadow {
           modules,
         ),
       )
-      ..drawRect(
-        area,
+      ..drawPath(
+        shifted,
         Paint()
-          ..color = shadowColor
+          ..color = color
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, shadowSigma),
       )
       ..restore();

@@ -1102,4 +1102,22 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get menubarTagGray => 'Grigio';
+
+  @override
+  String get ccBuiltInDisplay => 'Schermo integrato';
+
+  @override
+  String get ccDevices => 'Dispositivi';
+
+  @override
+  String get notificationsToday => 'Oggi';
+
+  @override
+  String get notificationsEarlier => 'Prima';
+
+  @override
+  String get notificationsClearAll => 'Cancella tutto';
+
+  @override
+  String get notificationsNow => 'ora';
 }

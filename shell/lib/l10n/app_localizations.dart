@@ -2107,6 +2107,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Gray'**
   String get menubarTagGray;
+
+  /// Control Center, Display panel: section label above the brightness slider
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in display'**
+  String get ccBuiltInDisplay;
+
+  /// Control Center, Bluetooth panel: section label above the device rows
+  ///
+  /// In en, this message translates to:
+  /// **'Devices'**
+  String get ccDevices;
+
+  /// Notification Centre: section label of the notifications that arrived today
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get notificationsToday;
+
+  /// Notification Centre: section label of the older notifications
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier'**
+  String get notificationsEarlier;
+
+  /// Notification Centre: header link that clears every notification
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get notificationsClearAll;
+
+  /// Notification time label for a notification that arrived less than a minute ago
+  ///
+  /// In en, this message translates to:
+  /// **'now'**
+  String get notificationsNow;
 }
 
 class _AppLocalizationsDelegate

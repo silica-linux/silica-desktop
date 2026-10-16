@@ -5,13 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
-import 'package:silica_shell/controlcenter/detail.dart' show detailWidth;
+import 'package:silica_shell/controlcenter/detail.dart'
+    show detailProgress, detailWidth, othersOpacity;
 import 'package:silica_shell/controlcenter/edit.dart';
 import 'package:silica_shell/controlcenter/modules.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   FakeSystem(super.value);
@@ -139,7 +141,7 @@ void main() {
       expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
       expect(slots['wifi']!.radius, 32);
       expect(slots['staging']!.radius, 32);
-      expect(slots['media']!.radius, 35);
+      expect(slots['media']!.radius, 36);
       expect(slots['display']!.radius, 28);
       // The battery is not in the default; Display is there without a backlight too
       // (its track then shows no fill, controlcenter.md › sliders).
@@ -168,19 +170,38 @@ void main() {
     },
   );
 
-  test('the slider fills up to x0 + 10 + v · (L − 20)', () {
-    expect(sliderFill(0), 10);
-    expect(sliderFill(1), trackLength - 10);
-    expect(sliderValue(sliderFill(0.8886)), closeTo(0.8886, 1e-9));
-    expect(sliderValue(-5), 0);
-    expect(sliderValue(1000), 1);
+  test('the panel opens with fade.instant and a spring.panel height', () {
+    // fade.instant: 100 ms, ease-out (0.2, 0, 0, 1).
+    expect(openOpacityAt(0), 0);
+    expect(openOpacityAt(100), 1);
+    expect(openOpacityAt(1000), 1);
+    expect(openOpacityAt(50), greaterThan(0.5));
+    expect(closeOpacityAt(0), 1);
+    expect(closeOpacityAt(100), 0);
+    // The height starts at 0.97 and settles on 1 (a ~1-2 % overshoot is spring.panel's).
+    expect(openHeightAt(0), closeTo(panelHeightFrom, 1e-9));
+    expect(
+      openHeightAt(openDuration.inMilliseconds.toDouble()),
+      closeTo(1, 2e-3),
+    );
+    var peak = 0.0;
+    for (var ms = 0.0; ms < 450; ms += 5) {
+      peak = peak > openHeightAt(ms) ? peak : openHeightAt(ms);
+    }
+    expect(peak, inInclusiveRange(1.0, 1.01));
   });
 
-  test('the opacity follows the measured frames', () {
-    expect(tableAt(openOpacity, 80), closeTo(0.53, 1e-9));
-    expect(tableAt(openOpacity, 1000), 1);
-    expect(tableAt(closeOpacity, 67), closeTo(0.49, 1e-9));
-    expect(tableAt(closeOpacity, 1000), 0);
+  test('the detail morph is spring.morph: it overshoots ~5 % and settles', () {
+    expect(detailProgress(0), 0);
+    expect(detailProgress(1), closeTo(1, 3e-3));
+    var peak = 0.0;
+    for (var t = 0.0; t <= 1; t += 0.01) {
+      peak = peak > detailProgress(t) ? peak : detailProgress(t);
+    }
+    expect(peak, inInclusiveRange(1.03, 1.06));
+    // The other modules are gone within fade.quick (150 ms of the 950).
+    expect(othersOpacity(0), 1);
+    expect(othersOpacity(150 / 950), closeTo(0, 1e-6));
   });
 
   testWidgets('opens from the command, the modules act, Esc closes', (
@@ -208,28 +229,32 @@ void main() {
           .first,
     );
     expect(wifi.right, lessThanOrEqualTo(1280 - 14 - 152));
-    expect(tester.getTopLeft(find.text('Wi-Fi')).dx, 1280 - 14 - 292 + 56);
+    expect(tester.getTopLeft(find.text('Wi-Fi')).dx, 1280 - 14 - 292 + 60);
 
     // The icon disc turns off; the text opens the detail.
     final wifiText = tester.getTopLeft(find.text('Wi-Fi'));
-    await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
+    await tester.tapAt(wifiText + const Offset(-60 + 16 + 18, 14));
     await tester.pump();
     expect(system.calls, ['wifi false']);
     expect(find.text('Off'), findsWidgets);
-    await tester.tapAt(wifiText + const Offset(-56 + 14 + 18, 10));
+    await tester.tapAt(wifiText + const Offset(-60 + 16 + 18, 14));
     await tester.pump();
     expect(system.calls.last, 'wifi true');
 
-    // A tap halfway along the Sound track.
+    // A tap a quarter along the Sound slider (thumb centres run from 10 to length - 10).
     final sound = tester.getTopLeft(find.text('Sound'));
-    // The Sound track is 44 pt shorter: the outputs circle is on the right.
+    // The Sound track is 48 pt shorter: the outputs disc is on the right.
     await tester.tapAt(
       Offset(
-        sound.dx - 16 + trackLeft + (trackLength - outputsShift) / 2,
-        sound.dy - 10 + 42,
+        sound.dx -
+            16 +
+            trackLeft +
+            10 +
+            0.25 * (trackLength - outputsShift - 20),
+        sound.dy - 8 + trackCenter,
       ),
     );
-    expect(system.calls.last, 'volume 0.50');
+    expect(system.calls.last, 'volume 0.25');
     expect(find.byKey(const ValueKey('audio outputs')), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -254,16 +279,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(tester.getCenter(find.text('Wi-Fi')));
       await tester.pumpAndSettle();
-      // The panel: 308 pt, 10 left of the stack, 6 above; the known networks.
+      // The panel: 312 pt, 14 left of the stack, 6 above; the known networks.
       expect(find.text('Known networks'), findsOneWidget); // Home and Office
       expect(find.text('Ufficio'), findsOneWidget);
       expect(find.text('Bar'), findsNothing);
       final title = tester.getTopLeft(
         find.byWidgetPredicate(
-          (w) => w is Text && w.data == 'Wi-Fi' && w.style?.fontSize == 14,
+          (w) => w is Text && w.data == 'Wi-Fi' && w.style?.fontSize == 16,
         ),
       );
-      expect(title.dx, 1280 - 14 - 292 - 10 + 14);
+      expect(title.dx, 1280 - 14 - 292 - 14 + 16);
       // A known network connects; "Other networks" shows the others.
       await tester.tap(find.text('Ufficio'));
       expect(system.calls.last, 'connect Ufficio');
@@ -505,26 +530,22 @@ void main() {
       expect(previous.size, const Size(30, 30));
       expect(play.center.dx - previous.center.dx, 40);
       expect(next.center.dx - play.center.dx, 40);
-      // With no players everything is disabled: white ~35 % (`#9d9ea3` over the background).
-      final painter =
-          tester
-                  .widget<CustomPaint>(
-                    find
-                        .descendant(
-                          of: find.byKey(const ValueKey('riproduci')),
-                          matching: find.byType(CustomPaint),
-                        )
-                        .first,
-                  )
-                  .painter!
-              as dynamic;
-      expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
+      // With no players everything is disabled: the glyph at the 35 % of Amalfi.
+      double glyphOpacity() => tester
+          .widget<Opacity>(
+            find.descendant(
+              of: find.byKey(const ValueKey('riproduci')),
+              matching: find.byType(Opacity),
+            ),
+          )
+          .opacity;
+      expect(glyphOpacity(), AmalfiStates.disabledOpacity);
       // The buttons have no hover of their own: the pointer on one gives the module's.
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
       await mouse.moveTo(play.center);
       await tester.pumpAndSettle();
-      expect((painter.color as Color).a, closeTo(mediaGlyphDisabled, 0.01));
+      expect(glyphOpacity(), AmalfiStates.disabledOpacity);
       expect(hoverLift(tester), closeTo(1, 1e-6));
       await mouse.removePointer();
     },
@@ -549,7 +570,7 @@ void main() {
       await sendCommand(tester, 'controlcenter.toggle');
       await tester.pumpAndSettle();
 
-      // The button: 118 × 24, centred under the stack, 16 pt below Sound.
+      // The button: 116 × 24, centred under the stack, 16 pt below Sound.
       final button = tester.getRect(
         find
             .ancestor(
@@ -558,7 +579,7 @@ void main() {
             )
             .first,
       );
-      expect(button.size, const Size(118, 24));
+      expect(button.size, const Size(116, 24));
       // Sound ends at 42 + 380 + 64.
       expect(button.top, 42 + 380 + 64 + 16);
       expect(button.center.dx, closeTo(1600 - 14 - 146, 0.5));
@@ -744,15 +765,19 @@ void main() {
     expect(hoverLift(tester), 0);
     await mouse.moveTo(tester.getCenter(wifi));
     await tester.pump();
-    // Timing: 10 % at ~50 ms, half at ~150 ms, done at ~300 ms.
+    // Timing: fade.quick (150 ms, ease-out).
     await tester.pump(const Duration(milliseconds: 50));
-    expect(hoverLift(tester), closeTo(0.1, 0.02));
+    expect(
+      hoverLift(tester),
+      closeTo(AmalfiFades.quick.curve.transform(50 / 150), 0.02),
+    );
     await tester.pump(const Duration(milliseconds: 100));
-    expect(hoverLift(tester), closeTo(0.5, 0.02));
-    await tester.pump(const Duration(milliseconds: 150));
     expect(hoverLift(tester), closeTo(1, 1e-6));
-    // About 7 levels: white at 4.7 %, and the module does not move or grow.
-    expect(moduleHoverLift.a * 255, closeTo(12, 0.5));
+    // The lift is Amalfi's `State/Hover Overlay`, and the module does not move or grow.
+    expect(
+      AmalfiColors.light.stateHoverOverlay,
+      isNot(const Color(0x00000000)),
+    );
     expect(tester.getRect(wifi), before);
     expect(find.byKey(const ValueKey('hover scale')), findsNothing);
     // The ">" of a module with a detail fades in with it.
@@ -761,13 +786,11 @@ void main() {
         .first
         .opacity;
     expect(chevron(), closeTo(1, 1e-6));
-    // The same curve leaving.
+    // Leaving fades out the same way.
     await mouse.moveTo(Offset.zero);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(hoverLift(tester), closeTo(0.9, 0.02));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(hoverLift(tester), closeTo(0.5, 0.02));
+    expect(hoverLift(tester), lessThan(1));
     await tester.pumpAndSettle();
     expect(hoverLift(tester), 0);
     expect(chevron(), 0);
@@ -779,40 +802,6 @@ void main() {
     expect(hoverLift(tester), closeTo(1, 1e-6));
     await mouse.removePointer();
   });
-
-  testWidgets('the volume knob shows only on hover, after ~330 ms', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: ControlCenter(env: noConfig, system: FakeSystem(laptop)),
-      ),
-    );
-    await sendCommand(tester, 'controlcenter.toggle');
-    await tester.pumpAndSettle();
-    final knob = find.byKey(const ValueKey('volume knob'));
-    expect(knob, findsNothing);
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.text('Sound')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 320));
-    expect(knob, findsNothing);
-    await tester.pump(const Duration(milliseconds: 20));
-    expect(knob, findsOneWidget);
-    expect(tester.getSize(knob), knobSize);
-    await mouse.moveTo(Offset.zero);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(knob, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 30));
-    expect(knob, findsNothing);
-    await mouse.removePointer();
-  });
 }
 
 /// The strongest hover lift among the modules, as a fraction of the full one (0..1).
@@ -822,9 +811,8 @@ double hoverLift(WidgetTester tester) {
     find.byKey(const ValueKey('module hover')),
   )) {
     final color = (box.decoration as BoxDecoration).color!;
-    best = best > color.a / moduleHoverLift.a
-        ? best
-        : color.a / moduleHoverLift.a;
+    final full = AmalfiColors.light.stateHoverOverlay.a;
+    best = best > color.a / full ? best : color.a / full;
   }
   return best;
 }

@@ -1101,4 +1101,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get menubarTagGray => 'Gray';
+
+  @override
+  String get ccBuiltInDisplay => 'Built-in display';
+
+  @override
+  String get ccDevices => 'Devices';
+
+  @override
+  String get notificationsToday => 'Today';
+
+  @override
+  String get notificationsEarlier => 'Earlier';
+
+  @override
+  String get notificationsClearAll => 'Clear all';
+
+  @override
+  String get notificationsNow => 'now';
 }

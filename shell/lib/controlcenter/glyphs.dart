@@ -4,6 +4,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 enum GlyphKind {
   wifi,
@@ -364,4 +365,59 @@ class _GlyphPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GlyphPainter old) =>
       old.kind != kind || old.color != color || old.level != level;
+}
+
+/// The Icon Kit symbol of a glyph (`symbols/regular/<name>.svg` of silica-icons): the kit's
+/// Control Center masters use these. Null: no symbol, the drawn [Glyph] stays.
+String? symbolOf(GlyphKind kind, {double level = 1}) => switch (kind) {
+  GlyphKind.wifi => 'wifi',
+  GlyphKind.bluetooth => 'bluetooth',
+  GlyphKind.moon || GlyphKind.contrast => 'moon',
+  GlyphKind.battery =>
+    level <= 0.1
+        ? 'battery-10'
+        : level <= 0.6
+        ? 'battery-50'
+        : 'battery',
+  GlyphKind.sunSmall => 'sun-min',
+  GlyphKind.sunLarge => 'sun',
+  GlyphKind.speakerSmall => 'volume-0',
+  GlyphKind.speakerLarge => 'volume-2',
+  GlyphKind.screenCapture || GlyphKind.camera => 'camera',
+  GlyphKind.mouse => 'mouse',
+  GlyphKind.headphones => 'headphones',
+  GlyphKind.keyboard => 'keyboard-brightness',
+  GlyphKind.nearby => 'person-2',
+  GlyphKind.staging => 'window-stack',
+  GlyphKind.mirroring => 'screen-cast',
+  GlyphKind.microphone => 'mic',
+  GlyphKind.minus => null,
+};
+
+/// A [GlyphKind] drawn as its Icon Kit symbol at [size], or as the drawn [Glyph] when
+/// silica-icons is not installed.
+class CcGlyph extends StatelessWidget {
+  const CcGlyph(
+    this.kind, {
+    super.key,
+    required this.color,
+    this.size = 20,
+    this.level = 1,
+  });
+
+  final GlyphKind kind;
+  final Color color;
+  final double size;
+  final double level;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Glyph(kind, color: color, size: size, level: level);
+    final name = symbolOf(kind, level: level);
+    if (name == null) return fallback;
+    return SizedBox.square(
+      dimension: size,
+      child: AmalfiSymbol(name, size: size, color: color, fallback: fallback),
+    );
+  }
 }

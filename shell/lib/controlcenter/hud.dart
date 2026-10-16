@@ -1,16 +1,18 @@
-// The volume and brightness HUD, from plan/reference/hud.md (the same in light and dark).
+// The volume and brightness HUD on the Amalfi materials (materials.md: HUDs are Glass/Regular).
 //
-// A 292 × 64 `regular` glass panel at the top right, 10 pt below the menu bar and 10 pt from
-// the screen edge, like a Control Center module: title (the name of the audio output, or
-// the display label), a 4 pt track with 17 ticks below (one per step), icon on the right. It appears
-// at every volume or mute change and at every brightness requested by Silica (keys,
-// commands; not adaptive brightness, which changes the value by itself), except with the
-// Control Center open (there the slider changes). Appearance ~380 ms scaling from 0.91 with
-// an accelerating fade; it stays 1.09 s from the last change (a new change restarts it
-// without reappearing); disappearance ~550 ms with a fast drop in the first ~80 ms and a long tail.
+// A 292 x 64 Glass/Regular panel (radius 20) at the top right, 10 pt below the menu bar and
+// 10 pt from the screen edge, laid out like a Control Center slider module: title (Headline: the
+// name of the audio output, or the display label), a 4 pt `Surface/Sunken` track filled with
+// `Accent/Amalfi` (no thumb: the HUD is not interactive), a 16 pt glyph at each end. It appears
+// at every volume or mute change and at every brightness requested by Silica (keys, commands;
+// not adaptive brightness, which changes the value by itself), except with the Control Center
+// open (there the slider changes). It stays 1.09 s from the last change (a new change restarts
+// it without reappearing). Motion (motion.md): in with `fade.quick` and an 8 pt rise with
+// `spring.panel`, out with `fade.quick`.
 
 import 'dart:async';
 
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -23,53 +25,47 @@ import 'palette.dart';
 
 const Size hudSize = Size(292, 64);
 const double hudMargin = 10;
-const double hudRadius = 28;
+const double hudRadius = 20;
 const double hudTitleLeft = 16;
-const double hudTitleSize = 14;
 
-/// Reference measurements (panel at x 2258): small speaker at 16–22 pt, track from 31.5 to
-/// 251.5, ticks at 35.5 + i · 13.25, the fill ends on the tick of the level
-/// (35.5 + v · 212), big speaker at 258–273, icons centered 41.5 pt from the top.
-const double hudTrackLeft = 31.5;
-const double hudTrackLength = 220;
-const double hudFillStart = 4;
-const double hudFillSpan = 212;
-const double hudIconCenterY = 41.5;
-const double hudTrackTop = 39;
+/// Same layout as the Display module: glyphs 16 pt at x 16 and 260, the track from x 40 to 252
+/// at y 44.
+const double hudTrackLeft = 40;
+const double hudTrackLength = 212;
 const double hudTrackHeight = 4;
-const double hudDotsTop = 46;
-const double hudDotsLeft = 35.5;
-const double hudDotsPitch = 13.25;
-const int hudDots = 17;
-const Color hudTrackRest = Color(0xFF84858B);
+const double hudTrackTop = 42;
+const double hudGlyphTop = 36;
 
-/// The ticks: just lighter than the background (`#86878e` over the `#6f7076` fill).
-const Color hudDot = Color(0x33FFFFFF);
+/// The rise of the panel while it appears.
+const double hudRise = 8;
 
-const Duration hudAppear = Duration(milliseconds: 380);
+/// In: the opacity follows `fade.quick`, the panel rises with `spring.panel` (settled in 450 ms).
+const Duration hudAppear = Duration(milliseconds: 450);
 const Duration hudHold = Duration(milliseconds: 1090);
-const Duration hudVanish = Duration(milliseconds: 550);
-const double hudScaleFrom = 0.91;
 
-/// Opacity and scale during the appearance (`t` 0–1): the fade accelerates towards the end,
-/// the width grows almost linearly.
-double hudAppearOpacity(double t) => (t * t).clamp(0.0, 1.0);
-double hudAppearScale(double t) =>
-    hudScaleFrom + (1 - hudScaleFrom) * t.clamp(0.0, 1.0);
+/// Out: `fade.quick`.
+final Duration hudVanish = AmalfiFades.quick.duration;
 
-/// Opacity and scale during the disappearance, `ms` from its start.
-double hudVanishOpacity(double ms) {
-  if (ms <= 0) return 1;
-  if (ms < 80) return 1 - 0.78 * ms / 80;
-  final rest = (1 - (ms - 80) / (hudVanish.inMilliseconds - 80)).clamp(
-    0.0,
-    1.0,
-  );
-  return 0.22 * rest * rest;
-}
+final SpringSimulation _rise = SpringSimulation(AmalfiSprings.panel, 0, 1, 0);
 
-double hudVanishScale(double ms) =>
-    1 - (1 - hudScaleFrom) * (ms / 410).clamp(0.0, 1.0);
+/// Opacity during the appearance (`t` 0-1 of [hudAppear]).
+double hudAppearOpacity(double t) => AmalfiFades.quick.curve.transform(
+  (t * hudAppear.inMilliseconds / AmalfiFades.quick.duration.inMilliseconds)
+      .clamp(0.0, 1.0),
+);
+
+/// Distance left to rise during the appearance (8 pt at the start, 0 when settled).
+double hudAppearOffset(double t) => t >= 1
+    ? 0
+    : hudRise *
+          (1 - _rise.x(t.clamp(0.0, 1.0) * hudAppear.inMilliseconds / 1000));
+
+/// Opacity during the disappearance, `ms` from its start.
+double hudVanishOpacity(double ms) =>
+    1 -
+    AmalfiFades.quick.curve.transform(
+      (ms / AmalfiFades.quick.duration.inMilliseconds).clamp(0.0, 1.0),
+    );
 
 enum HudKind { volume, brightness, keyboard }
 
@@ -169,9 +165,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
     final opacity = vanishing
         ? hudVanishOpacity(vanishMs)
         : hudAppearOpacity(_appear.value);
-    final scale = vanishing
-        ? hudVanishScale(vanishMs)
-        : hudAppearScale(_appear.value);
+    final rise = vanishing ? 0.0 : hudAppearOffset(_appear.value);
     final s = widget.system.value;
     final palette = CcPalette.of(context);
     final volume = _kind == HudKind.volume;
@@ -208,17 +202,12 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
             height: hudSize.height,
             child: Opacity(
               opacity: opacity,
-              child: Transform.scale(
-                scale: scale,
+              child: Transform.translate(
+                offset: Offset(0, rise),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Like the modules: the dark side edge 1 pt outside the panel.
-                    const Positioned(
-                      left: -1,
-                      right: -1,
-                      top: 0,
-                      bottom: 0,
+                    const Positioned.fill(
                       child: ProfiledGlass(
                         profile: ShellGlassProfile.control,
                         radius: hudRadius,
@@ -227,20 +216,19 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                     ),
                     Positioned(
                       left: hudTitleLeft,
-                      right: 40,
-                      top: 10,
+                      right: 16,
+                      top: 8,
                       child: Text(
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily,
-                          package: 'silica_ui',
-                          fontSize: hudTitleSize,
-                          fontWeight: FontWeight.w600,
-                          color: palette.text,
-                        ),
+                        style: AmalfiType.headline(color: palette.text),
                       ),
+                    ),
+                    Positioned(
+                      left: hudTitleLeft,
+                      top: hudGlyphTop,
+                      child: CcGlyph(small, color: palette.text, size: 16),
                     ),
                     Positioned(
                       left: hudTrackLeft,
@@ -249,29 +237,10 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       height: hudTrackHeight,
                       child: CustomPaint(painter: _HudTrack(value, palette)),
                     ),
-                    for (var i = 0; i < hudDots; i++)
-                      Positioned(
-                        left: hudDotsLeft + i * hudDotsPitch - 1,
-                        top: hudDotsTop,
-                        width: 2,
-                        height: 2,
-                        child: ColoredBox(
-                          color: palette.light ? palette.hudDot : hudDot,
-                        ),
-                      ),
                     Positioned(
-                      left: 13,
-                      top: hudIconCenterY - 6.5,
-                      width: 13,
-                      height: 13,
-                      child: Glyph(small, color: palette.text, size: 13),
-                    ),
-                    Positioned(
-                      left: 258,
-                      top: hudIconCenterY - 8,
-                      width: 16,
-                      height: 16,
-                      child: Glyph(large, color: palette.text, size: 16),
+                      left: hudTrackLeft + hudTrackLength + 8,
+                      top: hudGlyphTop,
+                      child: CcGlyph(large, color: palette.text, size: 16),
                     ),
                   ],
                 ),
@@ -284,6 +253,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
   }
 }
 
+/// The HUD's track: `Surface/Sunken` with the `Accent/Amalfi` fill up to the value.
 class _HudTrack extends CustomPainter {
   const _HudTrack(this.value, this.palette);
   final CcPalette palette;
@@ -296,21 +266,16 @@ class _HudTrack extends CustomPainter {
     final radius = Radius.circular(size.height / 2);
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = palette.light ? palette.trackRest : hudTrackRest,
+      Paint()..color = palette.track,
     );
     final v = value;
     if (v == null || v <= 0) return;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          0,
-          0,
-          hudFillStart + hudFillSpan * v.clamp(0, 1),
-          size.height,
-        ),
+        Rect.fromLTWH(0, 0, size.width * v.clamp(0.0, 1.0), size.height),
         radius,
       ),
-      Paint()..color = palette.trackFill,
+      Paint()..color = palette.accent,
     );
   }
 
