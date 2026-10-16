@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/switcher/switcher.dart';
+import 'package:silica_shell/system/glass_profile.dart';
+import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/layer_control.dart';
 import 'package:silica_shell/system/shell_channel.dart';
@@ -63,7 +65,7 @@ void main() {
   });
 
   testWidgets(
-    'four apps: 580 × 176 panel centered, 120 box around the choice',
+    'four apps: 496 × 160 panel centered, 112 box around the choice',
     (tester) async {
       tester.view.physicalSize = const Size(2560, 1440);
       tester.view.devicePixelRatio = 1;
@@ -78,20 +80,14 @@ void main() {
           child: SwitcherPanel(apps: apps, selected: 1),
         ),
       );
-      expect(panelWidth(4), 580);
+      expect(panelWidth(4), 496);
       final panel = tester.getRect(find.byType(Positioned).first);
-      expect(panel, const Rect.fromLTWH(990, 632, 580, 176));
+      expect(panel, const Rect.fromLTWH(1032, 640, 496, 160));
       final selection = tester.getRect(
-        find.byWidgetPredicate(
-          (w) =>
-              w is DecoratedBox &&
-              (w.decoration as BoxDecoration).color == selectionColor,
-        ),
+        find.byKey(const ValueKey('switcher selection')),
       );
-      // In the reference x 1153–1272, y 660–779 (measured to ±1 pt).
-      expect(selection.left, closeTo(1153, 1.5));
-      expect(selection.top, closeTo(660, 1.5));
-      expect(selection.size, const Size(120, 120));
+      // Panel left + 12 padding + one 120 pitch; 12 below the panel's top.
+      expect(selection, const Rect.fromLTWH(1164, 652, 112, 112));
       expect(find.text('App 1'), findsOneWidget);
     },
   );
@@ -190,10 +186,10 @@ Exec=files %U
       await tester.pump();
     }
 
-    // With 3 apps the panel is 3 * 134 + 44 = 446 wide, centered on 2560 x 1440.
+    // With 3 apps the panel is 3 * 120 + 16 = 376 wide, centered on 2560 x 1440.
     Offset iconCenter(int i) => Offset(
-      (2560 - 446) / 2 + 37 + i * 134 + 52,
-      (1440 - 176) / 2 + 35 + 52,
+      (2560 - 376) / 2 + 20 + i * 120 + 48,
+      (1440 - 160) / 2 + 20 + 48,
     );
 
     testWidgets('Shift+Cmd+Tab goes back: it opens on the last app', (
@@ -238,17 +234,13 @@ Exec=files %U
       await command(tester, 'switcher.next');
       await tester.pump();
       final panel = regions.last.single;
-      expect(panel, const Rect.fromLTWH(1057, 632, 446, 176));
+      expect(panel, const Rect.fromLTWH(1092, 640, 376, 160));
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(5, 5));
       await mouse.moveTo(iconCenter(2));
       await tester.pump();
       final selection = tester.getRect(
-        find.byWidgetPredicate(
-          (w) =>
-              w is DecoratedBox &&
-              (w.decoration as BoxDecoration).color == selectionColor,
-        ),
+        find.byKey(const ValueKey('switcher selection')),
       );
       expect(selection.center.dx, closeTo(iconCenter(2).dx, 1));
       await mouse.removePointer();
@@ -267,11 +259,7 @@ Exec=files %U
         await drag(tester, 'enter', iconCenter(0), ['file:///tmp/a%20b.txt']);
         await drag(tester, 'motion', iconCenter(1));
         final selection = tester.getRect(
-          find.byWidgetPredicate(
-            (w) =>
-                w is DecoratedBox &&
-                (w.decoration as BoxDecoration).color == selectionColor,
-          ),
+          find.byKey(const ValueKey('switcher selection')),
         );
         expect(selection.center.dx, closeTo(iconCenter(1).dx, 1));
         await drag(tester, 'drop', iconCenter(1), ['file:///tmp/a%20b.txt']);
@@ -281,5 +269,28 @@ Exec=files %U
         expect(find.byType(SwitcherPanel), findsNothing);
       },
     );
+
+    testWidgets('the panel appears with fade.instant and is Glass/Regular', (
+      tester,
+    ) async {
+      await open(tester);
+      await command(tester, 'switcher.next');
+      double opacity() => tester
+          .widget<Opacity>(
+            find.descendant(
+              of: find.byType(AppSwitcher),
+              matching: find.byType(Opacity),
+            ),
+          )
+          .opacity;
+      expect(opacity(), lessThan(1));
+      await tester.pump(AmalfiFades.instant.duration);
+      expect(opacity(), 1);
+      // The Dock's kind of glass: Regular, with the level 2 shadow.
+      final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
+      expect(glass.surface, ShellGlassProfile.dock);
+      expect(glass.radius, 28);
+      await command(tester, 'switcher.cancel');
+    });
   });
 }
