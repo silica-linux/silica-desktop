@@ -12,7 +12,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -36,36 +35,33 @@ const double hudTrackHeight = 4;
 const double hudTrackTop = 42;
 const double hudGlyphTop = 36;
 
-/// The rise of the panel while it appears.
-const double hudRise = 8;
-
-/// In: the opacity follows `fade.quick`, the panel rises with `spring.panel` (settled in 450 ms).
-const Duration hudAppear = Duration(milliseconds: 450);
+/// Measured (hud.md "Animation"): appears over ~380 ms scaling from 0.91 to 1 around its
+/// centre, the opacity accelerating towards the end, no overshoot; stays ~1.09 s after the last
+/// key; hides over ~550 ms, a quick drop in the first 80 ms and then a long slow tail.
+const Duration hudAppear = Duration(milliseconds: 380);
 const Duration hudHold = Duration(milliseconds: 1090);
+const Duration hudVanish = Duration(milliseconds: 550);
+const double hudScaleFrom = 0.91;
 
-/// Out: `fade.quick`.
-final Duration hudVanish = AmalfiFades.quick.duration;
+/// Opacity and scale during the appearance (`t` 0-1): the fade accelerates towards the end,
+/// the width grows almost linearly.
+double hudAppearOpacity(double t) => (t * t).clamp(0.0, 1.0);
+double hudAppearScale(double t) =>
+    hudScaleFrom + (1 - hudScaleFrom) * t.clamp(0.0, 1.0);
 
-final SpringSimulation _rise = SpringSimulation(AmalfiSprings.panel, 0, 1, 0);
+/// Opacity and scale during the disappearance, `ms` from its start.
+double hudVanishOpacity(double ms) {
+  if (ms <= 0) return 1;
+  if (ms < 80) return 1 - 0.78 * ms / 80;
+  final rest = (1 - (ms - 80) / (hudVanish.inMilliseconds - 80)).clamp(
+    0.0,
+    1.0,
+  );
+  return 0.22 * rest * rest;
+}
 
-/// Opacity during the appearance (`t` 0-1 of [hudAppear]).
-double hudAppearOpacity(double t) => AmalfiFades.quick.curve.transform(
-  (t * hudAppear.inMilliseconds / AmalfiFades.quick.duration.inMilliseconds)
-      .clamp(0.0, 1.0),
-);
-
-/// Distance left to rise during the appearance (8 pt at the start, 0 when settled).
-double hudAppearOffset(double t) => t >= 1
-    ? 0
-    : hudRise *
-          (1 - _rise.x(t.clamp(0.0, 1.0) * hudAppear.inMilliseconds / 1000));
-
-/// Opacity during the disappearance, `ms` from its start.
-double hudVanishOpacity(double ms) =>
-    1 -
-    AmalfiFades.quick.curve.transform(
-      (ms / AmalfiFades.quick.duration.inMilliseconds).clamp(0.0, 1.0),
-    );
+double hudVanishScale(double ms) =>
+    1 - (1 - hudScaleFrom) * (ms / 410).clamp(0.0, 1.0);
 
 enum HudKind { volume, brightness, keyboard }
 
@@ -165,7 +161,9 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
     final opacity = vanishing
         ? hudVanishOpacity(vanishMs)
         : hudAppearOpacity(_appear.value);
-    final rise = vanishing ? 0.0 : hudAppearOffset(_appear.value);
+    final scale = vanishing
+        ? hudVanishScale(vanishMs)
+        : hudAppearScale(_appear.value);
     final s = widget.system.value;
     final palette = CcPalette.of(context);
     final volume = _kind == HudKind.volume;
@@ -202,8 +200,8 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
             height: hudSize.height,
             child: Opacity(
               opacity: opacity,
-              child: Transform.translate(
-                offset: Offset(0, rise),
+              child: Transform.scale(
+                scale: scale,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [

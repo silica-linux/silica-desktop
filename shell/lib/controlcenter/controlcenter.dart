@@ -26,7 +26,6 @@
 import 'dart:async';
 import 'dart:io' show File;
 
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
@@ -91,31 +90,78 @@ const double outputsSide = 28;
 const double shadowOffsetY = 12;
 const double shadowSigma = 16;
 
-/// Opening: `fade.instant` on the opacity, the height grows from 0.97 with `spring.panel`
-/// (anchored at the top edge). Closing: `fade.instant` out, nothing else moves.
-const double panelHeightFrom = 0.97;
-const Duration openDuration = Duration(milliseconds: 450);
-final Duration closeDuration = AmalfiFades.instant.duration;
+/// Opacity while opening and closing (ms from the first changed frame; the first point is
+/// one frame earlier). controlcenter.md, "Animations".
+const List<(double, double)> openOpacity = [
+  (0, 0),
+  (13, 0.09),
+  (27, 0.16),
+  (40, 0.25),
+  (67, 0.44),
+  (80, 0.53),
+  (93, 0.64),
+  (120, 0.74),
+  (133, 0.80),
+  (147, 0.84),
+  (173, 0.91),
+  (187, 0.92),
+  (200, 0.94),
+  (227, 0.97),
+  (240, 0.98),
+  (280, 0.99),
+  (310, 1),
+];
 
-final SpringSimulation _panelSpring = SpringSimulation(
-  AmalfiSprings.panel,
-  0,
-  1,
-  0,
-);
+const List<(double, double)> closeOpacity = [
+  (0, 1),
+  (13, 0.92),
+  (27, 0.86),
+  (53, 0.61),
+  (67, 0.49),
+  (80, 0.38),
+  (107, 0.24),
+  (120, 0.19),
+  (133, 0.14),
+  (160, 0.08),
+  (173, 0.07),
+  (187, 0.05),
+  (213, 0.02),
+  (253, 0.01),
+  (293, 0),
+];
 
-/// Opacity of the panel [ms] after it started opening.
-double openOpacityAt(double ms) => AmalfiFades.instant.curve.transform(
-  (ms / AmalfiFades.instant.duration.inMilliseconds).clamp(0.0, 1.0),
-);
+/// Content scale: 1.0075 → 1 in ~107 ms when opening, 1 → 1.0075 in ~120 ms when closing,
+/// around the center of the stack.
+const double scaleAway = 1.0075;
+const double openScaleMs = 107;
+const double closeScaleMs = 120;
+const Duration openDuration = Duration(milliseconds: 310);
+const Duration closeDuration = Duration(milliseconds: 293);
+
+double tableAt(List<(double, double)> table, double ms) {
+  if (ms <= table.first.$1) return table.first.$2;
+  for (var i = 1; i < table.length; i++) {
+    final (t1, a1) = table[i];
+    if (ms <= t1) {
+      final (t0, a0) = table[i - 1];
+      return a0 + (a1 - a0) * (ms - t0) / (t1 - t0);
+    }
+  }
+  return table.last.$2;
+}
+
+/// Opacity of the panel [ms] after it started opening (measured table, controlcenter.md).
+double openOpacityAt(double ms) => tableAt(openOpacity, ms);
 
 /// Opacity of the panel [ms] after it started closing.
-double closeOpacityAt(double ms) => 1 - openOpacityAt(ms);
+double closeOpacityAt(double ms) => tableAt(closeOpacity, ms);
 
-/// Height factor of the panel [ms] after it started opening (0.97 → 1 with `spring.panel`).
-double openHeightAt(double ms) => ms >= openDuration.inMilliseconds
-    ? 1
-    : panelHeightFrom + (1 - panelHeightFrom) * _panelSpring.x(ms / 1000);
+/// Content scale [ms] after the panel started opening (1.0075 -> 1 in ~107 ms) or closing
+/// (1 -> 1.0075 in ~120 ms), around the centre of the stack. Measured; Amalfi changes only the
+/// geometry, and a scale factor is the same at any size.
+double panelScaleAt(double ms, {required bool opening}) => opening
+    ? 1 + (scaleAway - 1) * (1 - (ms / openScaleMs).clamp(0.0, 1.0))
+    : 1 + (scaleAway - 1) * (ms / closeScaleMs).clamp(0.0, 1.0);
 
 /// A module: rectangle relative to the stack and radius.
 @immutable
@@ -194,13 +240,13 @@ class _ControlCenterState extends State<ControlCenter>
 
   late final AnimationController _anim;
 
-  /// The open detail (or opening or closing) and its transformation (value = time, 0-1 of
-  /// [detailDuration]: `spring.morph`).
+  /// The open detail (or opening or closing) and its transformation (value = ms).
   String? _detail;
   bool _detailClosing = false;
   late final AnimationController _detailAnim = AnimationController(
     vsync: this,
-    duration: detailDuration,
+    upperBound: detailTotalMs,
+    duration: Duration(milliseconds: detailTotalMs.round()),
   )..addListener(_detailTick);
   DetailData _detailData = const DetailData();
   bool _othersOpen = false;
@@ -476,12 +522,21 @@ class _ControlCenterState extends State<ControlCenter>
     _detailAnim.forward(from: 0);
   }
 
+  /// How far the Display module's top is from the panel's: the reference of the morph's time.
+  static final double _displayDistance =
+      layoutModules(const SystemSnapshot())['display']!.rect.top - detailTop;
+
   /// How much of module `_detail` has become a panel (0–1).
   double _detailProgress() {
     if (_detail == null) return 0;
-    final p = detailProgress(_detailAnim.value);
-    // The spring overshoots by ~5 %: on the way back it must not go below the module.
-    return _detailClosing ? (1 - p).clamp(0.0, double.infinity) : p;
+    final slot = layoutModules(widget.system.value, _modules)[_detail];
+    final scale = detailTimeScale(
+      slot == null ? 0 : slot.rect.top - detailTop,
+      _displayDistance,
+    );
+    return _detailClosing
+        ? 1 - detailProgress(_detailAnim.value / detailBackStretch, scale)
+        : detailProgress(_detailAnim.value, scale);
   }
 
   void _hide() {
@@ -533,7 +588,7 @@ class _ControlCenterState extends State<ControlCenter>
     if (!_open && (opacity <= 0 || !_anim.isAnimating)) {
       return const SizedBox.expand();
     }
-    final panelHeight = _open ? openHeightAt(ms) : 1.0;
+    final scale = panelScaleAt(ms, opening: _open);
     final snapshot = widget.system.value;
     final slots = layoutModules(snapshot, _modules);
     final height = slots.values
@@ -656,9 +711,8 @@ class _ControlCenterState extends State<ControlCenter>
                 top: top - detailPad.dy,
                 width: detailWidth,
                 height: totalHeight + detailPad.dy + _belowStack,
-                child: Transform(
-                  alignment: Alignment.topCenter,
-                  transform: Matrix4.diagonal3Values(1, panelHeight, 1),
+                child: Transform.scale(
+                  scale: scale,
                   child: Opacity(
                     opacity: opacity,
                     child: Stack(
@@ -1388,8 +1442,33 @@ const double hoverChevronRight = 16;
 
 /// Hover of a Control Center module (controlcenter.md, CC-HOVER): the whole module lifts with
 /// `State/Hover Overlay`, with no scale; inner buttons have no hover of their own. The change
-/// is `fade.quick` (Amalfi) instead of the reference's 300 ms.
-const Duration hoverDuration = Duration(milliseconds: 150);
+/// starts after ~50 ms (10 %), is half done at ~150 ms and done at ~300 ms, the same in and
+/// out and for every module (measured, [HoverCurve]).
+const Duration hoverDuration = Duration(milliseconds: 300);
+
+/// 10 % at 50 ms, 50 % at 150 ms, 100 % at 300 ms: a mild ease-out.
+class HoverCurve extends Curve {
+  const HoverCurve();
+
+  static const List<(double, double)> _points = [
+    (0, 0),
+    (50 / 300, 0.1),
+    (150 / 300, 0.5),
+    (1, 1),
+  ];
+
+  @override
+  double transformInternal(double t) {
+    for (var i = 1; i < _points.length; i++) {
+      final (x1, y1) = _points[i];
+      if (t <= x1) {
+        final (x0, y0) = _points[i - 1];
+        return y0 + (y1 - y0) * (t - x0) / (x1 - x0);
+      }
+    }
+    return 1;
+  }
+}
 
 /// What a module's content reads from its wrapper: whether the pointer is on the module and
 /// how far the hover has gone (0..1).
@@ -1437,7 +1516,12 @@ class _ModuleHoverState extends State<_ModuleHover>
     vsync: this,
     duration: hoverDuration,
   );
-  double get _progress => AmalfiFades.quick.curve.transform(_controller.value);
+  // Entering follows the curve; leaving is its mirror in time (10 % at 55 ms, half at 150 ms).
+  double get _progress {
+    const curve = HoverCurve();
+    final v = _controller.value;
+    return _hover ? curve.transform(v) : curve.flipped.transform(v);
+  }
 
   bool _hover = false;
 

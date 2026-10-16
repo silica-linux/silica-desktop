@@ -344,14 +344,12 @@ class _NotificationsLayerState extends State<NotificationsLayer>
   (double, double)? _centerPose() {
     final ms = _center.value * (_center.duration?.inMilliseconds ?? 0);
     if (_centerOpen) {
-      final done = _center.isCompleted;
-      return (
-        done ? 0 : centerOpenOffset(ms),
-        done ? 1 : centerOpenOpacity(ms),
-      );
+      final x = centerOpenOffset(_center.isCompleted ? 1e9 : ms);
+      return (x, 1 - x / centerDistance);
     }
     if (!_center.isAnimating) return null;
-    return (0, centerCloseOpacity(ms));
+    final x = centerCloseOffset(ms);
+    return (x, 1 - x / centerDistance);
   }
 
   @override
@@ -722,7 +720,7 @@ class _CenterCard extends StatefulWidget {
 }
 
 /// A card in the Centre. Dragged to the right it follows the pointer and, on release, fades
-/// out (`fade.standard`) and is cleared (SH-NC-12; the Centre drag was not measured: the
+/// with the banner's exit (measured) and is cleared (SH-NC-12; the Centre drag was not measured: the
 /// banner's N-02 behaviour, provisional).
 class _CenterCardState extends State<_CenterCard>
     with SingleTickerProviderStateMixin {
@@ -750,9 +748,10 @@ class _CenterCardState extends State<_CenterCard>
     final n = widget.notification;
     final exitMs = _exit.value * bannerExitDuration.inMilliseconds;
     final exiting = _exit.value > 0;
+    final dx = _drag + (exiting ? bannerExitOffset(exitMs) : 0);
     final opacity = exiting ? bannerExitOpacity(exitMs) : 1.0;
     return Transform.translate(
-      offset: Offset(_drag, 0),
+      offset: Offset(dx, 0),
       child: Opacity(
         opacity: opacity.clamp(0.0, 1.0),
         child: MouseRegion(

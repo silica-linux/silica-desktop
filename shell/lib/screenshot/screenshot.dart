@@ -165,9 +165,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
   Rect? _selection;
   Offset? _barCenter;
 
-  /// The bar is fading out after × or Esc.
-  bool _barClosing = false;
-
   /// The Options menu's items, made again only when a setting changes (a new list at every
   /// rebuild would reset an open menu).
   List<AmalfiMenuEntry>? _optionsEntries;
@@ -310,31 +307,20 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     setState(() {
       _mode = mode;
       _live = null;
-      _barClosing = false;
     });
     _syncLayer();
     _syncVeil();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
-  /// The bar goes away (× or Esc): it fades and sinks first (`fade.quick`, `spring.panel`);
-  /// a capture never waits for it ([_cancel]).
-  void _closeBar() {
-    if (_mode != _Mode.toolbar || _barClosing) {
-      _cancel();
-      return;
-    }
-    setState(() {
-      _barClosing = true;
-    });
-  }
+  /// The bar goes away (× or Esc) at once.
+  void _closeBar() => _cancel();
 
   void _cancel() {
     _ticker?.cancel();
     setState(() {
       _mode = _Mode.none;
       _live = null;
-      _barClosing = false;
     });
     _syncLayer();
     _syncVeil();
@@ -1238,8 +1224,6 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
           optionsEntries: _optionsEntries ??= _optionsMenu(),
           actionLabel: l.capture,
           closeLabel: l.shotClose,
-          closing: _barClosing,
-          onClosed: _cancel,
           tips: ShotBarTips(
             capture: [
               l.shotTipCaptureScreen,

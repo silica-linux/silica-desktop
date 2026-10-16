@@ -42,7 +42,7 @@ void main() {
   });
 
   group('BarMenuHost', () {
-    testWidgets('fades in and out with fade.instant, without scale', (
+    testWidgets('opens in one frame and fades out linearly in 190 ms', (
       tester,
     ) async {
       var gone = 0;
@@ -59,8 +59,7 @@ void main() {
           .widget<FadeTransition>(find.byType(FadeTransition).first)
           .opacity
           .value;
-      expect(opacity(), 0);
-      await tester.pump(AmalfiFades.instant.duration);
+      // Measured (menubar.md): one frame, no animation.
       expect(opacity(), 1);
       // No scale anywhere around the menu (motion.md).
       expect(
@@ -76,10 +75,11 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
       expect(gone, 0);
-      await tester.pump(AmalfiFades.instant.duration ~/ 2);
-      expect(opacity(), allOf(greaterThan(0), lessThan(1)));
-      await tester.pump(AmalfiFades.instant.duration);
+      await tester.pump(const Duration(milliseconds: 95));
+      expect(opacity(), closeTo(0.5, 0.02));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(gone, 1);
+      expect(BarMenuHostState.fadeOut, const Duration(milliseconds: 190));
     });
 
     testWidgets('a choice blinks, runs and closes; a press outside closes', (
@@ -100,11 +100,11 @@ void main() {
           ),
         ),
       );
-      await tester.pump(AmalfiFades.instant.duration);
+      await tester.pump(const Duration(milliseconds: 10));
       await tester.tap(find.text('One'));
       await tester.pump(const Duration(milliseconds: 120));
       expect(chosen, ['one']);
-      await tester.pump(AmalfiFades.instant.duration * 2);
+      await tester.pump(const Duration(milliseconds: 400));
       expect(gone, 1);
 
       // A press outside the menu: closes.
@@ -119,11 +119,11 @@ void main() {
           ),
         ),
       );
-      await tester.pump(AmalfiFades.instant.duration);
+      await tester.pump(const Duration(milliseconds: 10));
       final host = tester.state<BarMenuHostState>(find.byType(BarMenuHost));
       host.pointerDown(const Offset(600, 300));
       await tester.pump();
-      await tester.pump(AmalfiFades.instant.duration * 2);
+      await tester.pump(const Duration(milliseconds: 400));
       expect(gone, 1);
     });
 
@@ -181,7 +181,7 @@ void main() {
             ),
           ),
         );
-        await tester.pump(AmalfiFades.instant.duration);
+        await tester.pump(const Duration(milliseconds: 10));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(next, 1);
@@ -213,7 +213,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump(AmalfiFades.instant.duration);
+      await tester.pump(const Duration(milliseconds: 10));
       final rect = tester.getRect(find.byType(AmalfiMenu));
       expect(rect.right, lessThanOrEqualTo(400));
       expect(rect.left, greaterThanOrEqualTo(0));

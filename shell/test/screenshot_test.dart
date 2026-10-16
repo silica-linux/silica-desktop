@@ -953,38 +953,17 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   });
 
   testWidgets(
-    '⇧⌘5: the bar appears with fade.quick and an 8 pt rise, and leaves the same',
+    '⇧⌘5: the bar appears and goes at once, with no motion of its own',
     (tester) async {
       await pumpLayer(tester);
       await send(tester, 'command', 'screenshot.toolbar');
       await tester.pump();
-      double opacity() => tester
-          .widget<Opacity>(
-            find
-                .descendant(
-                  of: find.byType(ShotToolbar),
-                  matching: find.byType(Opacity),
-                )
-                .first,
-          )
-          .opacity;
       final close = find.byKey(const ValueKey('close bar'));
       final at = tester.getRect(close);
-      // The first frame: invisible and 8 pt low.
-      expect(opacity(), 0);
-      await tester.pump(AmalfiFades.quick.duration);
-      expect(opacity(), 1);
       await tester.pumpAndSettle();
-      expect(tester.getRect(close).top, closeTo(at.top - 8, 0.01));
-      // × fades and sinks, then the bar is gone.
-      await tester.tapAt(
-        tester.getCenter(find.byKey(const ValueKey('close bar'))),
-      );
+      expect(tester.getRect(close), at);
+      await tester.tapAt(tester.getCenter(close));
       await tester.pump();
-      await tester.pump(AmalfiFades.quick.duration ~/ 2);
-      expect(find.byType(ShotToolbar), findsOneWidget);
-      expect(opacity(), lessThan(1));
-      await tester.pumpAndSettle();
       expect(find.byType(ShotToolbar), findsNothing);
     },
   );

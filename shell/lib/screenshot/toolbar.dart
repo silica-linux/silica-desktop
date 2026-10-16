@@ -11,14 +11,13 @@
 // mode buttons have a tooltip without delay that stays after the pointer leaves; close, Options
 // and the action button have none. In window mode the action button hides while the pointer is
 // on the bar and the bar shrinks on the right. The bar is moved by dragging its background.
-// The bar appears with `fade.quick` and an 8 pt rise on `spring.panel` and goes with the same
-// (motion.md, Screenshot bar); the animation of the width is the measured one (60 ms, 450 ms).
+// The bar appears and goes at once (nothing about it was measured, and the reference has no
+// motion there); the animation of the width is the measured one (60 ms, 450 ms).
 //
 // Recording is not available yet (#153, PipeWire screencast): its segmented control is drawn
 // disabled (35 %) and does nothing.
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -131,8 +130,6 @@ class ShotToolbar extends StatefulWidget {
     required this.onAction,
     required this.onMove,
     required this.onMoved,
-    this.closing = false,
-    this.onClosed,
   });
 
   final ToolbarChoice choice;
@@ -155,10 +152,6 @@ class ShotToolbar extends StatefulWidget {
   final ValueChanged<Offset> onMove;
   final VoidCallback onMoved;
 
-  /// The bar is going (× or Esc): it fades and sinks, then [onClosed] is called.
-  final bool closing;
-  final VoidCallback? onClosed;
-
   @override
   State<ShotToolbar> createState() => _ShotToolbarState();
 }
@@ -168,41 +161,6 @@ class _ShotToolbarState extends State<ShotToolbar>
   /// The mode button whose tooltip is shown: 0..2 capture, 3..5 record. It stays after the
   /// pointer leaves, until another mode button is hovered or the bar goes.
   int? _tip;
-
-  /// 0 → 1: the fade (`fade.quick`) and the rise on `spring.panel`.
-  late final AnimationController _fade = AnimationController(
-    vsync: this,
-    duration: AmalfiFades.quick.duration,
-  );
-  late final AnimationController _rise = AnimationController.unbounded(
-    vsync: this,
-    value: 0,
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _fade.forward();
-    _rise.animateWith(SpringSimulation(AmalfiSprings.panel, 0, 1, 0));
-  }
-
-  @override
-  void didUpdateWidget(ShotToolbar old) {
-    super.didUpdateWidget(old);
-    if (widget.closing && !old.closing) {
-      _fade.reverse().whenComplete(() => widget.onClosed?.call());
-      _rise.animateWith(
-        SpringSimulation(AmalfiSprings.panel, _rise.value, 0, 0),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _fade.dispose();
-    _rise.dispose();
-    super.dispose();
-  }
 
   /// The mode button under `dx` (from the segmented control's left edge), or null on the
   /// track's padding.
@@ -266,114 +224,104 @@ class _ShotToolbarState extends State<ShotToolbar>
               modeTrackInset +
               ((tip % 3) + 0.5) * modeItem;
     // The width: with the action button (shown) or without it, 450 ms after a 60 ms start.
-    return AnimatedBuilder(
-      animation: Listenable.merge([_fade, _rise]),
-      builder: (context, child) => Opacity(
-        opacity: AmalfiFades.quick.curve.transform(_fade.value.clamp(0, 1)),
-        child: Transform.translate(
-          offset: Offset(0, 8 * (1 - _rise.value)),
-          child: child,
-        ),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: widget.showAction ? 1 : 0),
+      duration: actionBarDuration + actionDelay,
+      curve: Interval(
+        actionDelay.inMilliseconds /
+            (actionBarDuration + actionDelay).inMilliseconds,
+        1,
+        curve: Curves.easeInOut,
       ),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(end: widget.showAction ? 1 : 0),
-        duration: actionBarDuration + actionDelay,
-        curve: Interval(
-          actionDelay.inMilliseconds /
-              (actionBarDuration + actionDelay).inMilliseconds,
-          1,
-          curve: Curves.easeInOut,
-        ),
-        builder: (context, open, _) => SizedBox(
-          width: toolbarSize.width - toolbarActionSpace * (1 - open),
-          height: toolbarSize.height,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: ShadowedGlass(
-                  profile: ShellGlassProfile.control,
-                  radius: toolbarRadius,
-                  child: SizedBox.expand(
-                    key: const ValueKey('screenshot bar'),
-                    child: Stack(
-                      children: [
-                        // The background: dragging it moves the bar.
-                        Positioned.fill(
-                          child: GestureDetector(
-                            key: const ValueKey('bar background'),
-                            behavior: HitTestBehavior.opaque,
-                            dragStartBehavior: DragStartBehavior.down,
-                            onPanUpdate: (d) => widget.onMove(d.delta),
-                            onPanEnd: (_) => widget.onMoved(),
-                          ),
+      builder: (context, open, _) => SizedBox(
+        width: toolbarSize.width - toolbarActionSpace * (1 - open),
+        height: toolbarSize.height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: ShadowedGlass(
+                profile: ShellGlassProfile.control,
+                radius: toolbarRadius,
+                child: SizedBox.expand(
+                  key: const ValueKey('screenshot bar'),
+                  child: Stack(
+                    children: [
+                      // The background: dragging it moves the bar.
+                      Positioned.fill(
+                        child: GestureDetector(
+                          key: const ValueKey('bar background'),
+                          behavior: HitTestBehavior.opaque,
+                          dragStartBehavior: DragStartBehavior.down,
+                          onPanUpdate: (d) => widget.onMove(d.delta),
+                          onPanEnd: (_) => widget.onMoved(),
                         ),
-                        Positioned(
-                          left: closeX,
-                          top: barInset,
-                          child: AmalfiToolbarButton(
-                            key: const ValueKey('close bar'),
-                            icon: const AmalfiGlyph(AmalfiGlyphs.xmark),
-                            semanticLabel: widget.closeLabel,
-                            onPressed: widget.onClose,
-                          ),
+                      ),
+                      Positioned(
+                        left: closeX,
+                        top: barInset,
+                        child: AmalfiToolbarButton(
+                          key: const ValueKey('close bar'),
+                          icon: const AmalfiGlyph(AmalfiGlyphs.xmark),
+                          semanticLabel: widget.closeLabel,
+                          onPressed: widget.onClose,
                         ),
-                        _modes(
-                          x: captureModesX,
-                          symbols: captureSymbols,
-                          labels: tips.capture,
-                          tipBase: 0,
-                          selected: {widget.choice.index},
-                          onChanged: (s) {
-                            if (s.isEmpty) return;
-                            widget.onChoose(ToolbarChoice.values[s.first]);
-                          },
+                      ),
+                      _modes(
+                        x: captureModesX,
+                        symbols: captureSymbols,
+                        labels: tips.capture,
+                        tipBase: 0,
+                        selected: {widget.choice.index},
+                        onChanged: (s) {
+                          if (s.isEmpty) return;
+                          widget.onChoose(ToolbarChoice.values[s.first]);
+                        },
+                      ),
+                      _separator(separator1X, colors),
+                      // TODO(#153): screen recording; until then disabled, no action.
+                      _modes(
+                        x: recordModesX,
+                        symbols: recordSymbols,
+                        labels: tips.record,
+                        tipBase: 3,
+                        selected: const {},
+                      ),
+                      _separator(separator2X, colors),
+                      Positioned(
+                        left: optionsX,
+                        top: barInset,
+                        child: AmalfiPullDownButton.entries(
+                          key: const ValueKey('options'),
+                          label: widget.optionsLabel,
+                          entries: widget.optionsEntries,
+                          size: AmalfiControlSize.large,
+                          width: optionsWidth,
                         ),
-                        _separator(separator1X, colors),
-                        // TODO(#153): screen recording; until then disabled, no action.
-                        _modes(
-                          x: recordModesX,
-                          symbols: recordSymbols,
-                          labels: tips.record,
-                          tipBase: 3,
-                          selected: const {},
-                        ),
-                        _separator(separator2X, colors),
-                        Positioned(
-                          left: optionsX,
-                          top: barInset,
-                          child: AmalfiPullDownButton.entries(
-                            key: const ValueKey('options'),
-                            label: widget.optionsLabel,
-                            entries: widget.optionsEntries,
-                            size: AmalfiControlSize.large,
-                            width: optionsWidth,
-                          ),
-                        ),
-                        _action(),
-                      ],
+                      ),
+                      _action(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (tipText != null)
+              // Centred on the button, its bottom 8 pt over the bar's top edge.
+              Positioned(
+                left: tipX - 200,
+                width: 400,
+                top: -tipAboveBar - tipHeight,
+                height: tipHeight,
+                child: IgnorePointer(
+                  child: Center(
+                    child: ShotTip(
+                      key: const ValueKey('bar tooltip'),
+                      text: tipText,
                     ),
                   ),
                 ),
               ),
-              if (tipText != null)
-                // Centred on the button, its bottom 8 pt over the bar's top edge.
-                Positioned(
-                  left: tipX - 200,
-                  width: 400,
-                  top: -tipAboveBar - tipHeight,
-                  height: tipHeight,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: ShotTip(
-                        key: const ValueKey('bar tooltip'),
-                        text: tipText,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

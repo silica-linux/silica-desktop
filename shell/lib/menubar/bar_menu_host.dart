@@ -128,20 +128,22 @@ class BarMenuHost extends StatefulWidget {
 
 class BarMenuHostState extends State<BarMenuHost>
     with SingleTickerProviderStateMixin {
+  /// Measured (menubar.md "Menus"): the menu opens in one frame, with no animation (the
+  /// value starts at 1), and fades out linearly over ~190 ms after a choice or Esc.
+  static const Duration fadeOut = Duration(milliseconds: 190);
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: AmalfiFades.instant.duration,
-  )..forward();
-  late final Animation<double> _opacity = CurvedAnimation(
-    parent: _fade,
-    curve: AmalfiFades.instant.curve,
+    duration: fadeOut,
+    value: 1,
   );
+  late final Animation<double> _opacity = _fade;
   final GlobalKey _overlayKey = GlobalKey();
   late final OverlayEntry _entry = OverlayEntry(builder: _buildMenu);
   GlobalKey _menuKey = GlobalKey();
   List<Rect> _submenus = const [];
   List<Rect> _rects = const [];
   bool _closing = false;
+  bool _disposed = false;
 
   /// The menu's rectangle (and the submenu's) as last seen, in the surface.
   List<Rect> get rects => _rects;
@@ -167,6 +169,7 @@ class BarMenuHostState extends State<BarMenuHost>
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_key);
+    _disposed = true;
     _fade.dispose();
     super.dispose();
   }
@@ -175,7 +178,10 @@ class BarMenuHostState extends State<BarMenuHost>
   void close() {
     if (_closing || !mounted) return;
     _closing = true;
-    _fade.reverse().whenCompleteOrCancel(() => widget.onDismissed?.call());
+    _fade.reverse().whenCompleteOrCancel(() {
+      // A fade cut short by the menu leaving the tree must not report to a bar that is gone.
+      if (!_disposed) widget.onDismissed?.call();
+    });
   }
 
   /// A press at `p` (in the surface): outside the menu and its submenu it closes them.

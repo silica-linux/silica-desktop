@@ -6,7 +6,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
 import 'package:silica_shell/controlcenter/detail.dart'
-    show detailProgress, detailWidth, othersOpacity;
+    show
+        detailBackStretch,
+        detailProgress,
+        detailTimeScale,
+        detailWidth,
+        othersOpacity;
 import 'package:silica_shell/controlcenter/edit.dart';
 import 'package:silica_shell/controlcenter/modules.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
@@ -170,39 +175,111 @@ void main() {
     },
   );
 
-  test('the panel opens with fade.instant and a spring.panel height', () {
-    // fade.instant: 100 ms, ease-out (0.2, 0, 0, 1).
-    expect(openOpacityAt(0), 0);
-    expect(openOpacityAt(100), 1);
-    expect(openOpacityAt(1000), 1);
-    expect(openOpacityAt(50), greaterThan(0.5));
-    expect(closeOpacityAt(0), 1);
-    expect(closeOpacityAt(100), 0);
-    // The height starts at 0.97 and settles on 1 (a ~1-2 % overshoot is spring.panel's).
-    expect(openHeightAt(0), closeTo(panelHeightFrom, 1e-9));
-    expect(
-      openHeightAt(openDuration.inMilliseconds.toDouble()),
-      closeTo(1, 2e-3),
-    );
-    var peak = 0.0;
-    for (var ms = 0.0; ms < 450; ms += 5) {
-      peak = peak > openHeightAt(ms) ? peak : openHeightAt(ms);
+  test('the panel opens and closes on the measured opacity tables and scale', () {
+    // controlcenter.md "Animations": the table's first point is one frame (13 ms) earlier
+    // than the spec's t = 0.
+    const open = {
+      0: 0.09,
+      13: 0.16,
+      27: 0.25,
+      53: 0.44,
+      67: 0.53,
+      80: 0.64,
+      107: 0.74,
+      160: 0.91,
+      213: 0.97,
+      267: 0.99,
+    };
+    for (final MapEntry(:key, :value) in open.entries) {
+      expect(
+        openOpacityAt(key + 13.0),
+        closeTo(value, 0.012),
+        reason: '$key ms',
+      );
     }
-    expect(peak, inInclusiveRange(1.0, 1.01));
+    expect(openOpacityAt(0), 0);
+    expect(openOpacityAt(1000), 1);
+    const close = {
+      0: 0.92,
+      13: 0.86,
+      40: 0.61,
+      53: 0.49,
+      67: 0.38,
+      93: 0.24,
+      120: 0.14,
+      160: 0.07,
+      200: 0.02,
+      280: 0.0,
+    };
+    for (final MapEntry(:key, :value) in close.entries) {
+      expect(
+        closeOpacityAt(key + 13.0),
+        closeTo(value, 0.012),
+        reason: '$key ms',
+      );
+    }
+    expect(closeOpacityAt(0), 1);
+    // Scale: 1.0075 -> 1 in ~107 ms opening, 1 -> 1.0075 in ~120 ms closing; no height spring.
+    expect(panelScaleAt(0, opening: true), closeTo(1.0075, 1e-9));
+    expect(panelScaleAt(107, opening: true), 1);
+    expect(panelScaleAt(500, opening: true), 1);
+    expect(panelScaleAt(0, opening: false), 1);
+    expect(panelScaleAt(120, opening: false), closeTo(1.0075, 1e-9));
+    expect(openDuration, const Duration(milliseconds: 310));
+    expect(closeDuration, const Duration(milliseconds: 293));
   });
 
-  test('the detail morph is spring.morph: it overshoots ~5 % and settles', () {
-    expect(detailProgress(0), 0);
-    expect(detailProgress(1), closeTo(1, 3e-3));
-    var peak = 0.0;
-    for (var t = 0.0; t <= 1; t += 0.01) {
-      peak = peak > detailProgress(t) ? peak : detailProgress(t);
-    }
-    expect(peak, inInclusiveRange(1.03, 1.06));
-    // The other modules are gone within fade.quick (150 ms of the 950).
-    expect(othersOpacity(0), 1);
-    expect(othersOpacity(150 / 950), closeTo(0, 1e-6));
-  });
+  test(
+    'the detail morph is the measured slow-fast-slow curve, no overshoot',
+    () {
+      // controlcenter.md "Module to detail", Display (time scale 1).
+      const p = {
+        0: 0.0,
+        13: 0.08,
+        26: 0.19,
+        40: 0.31,
+        66: 0.54,
+        80: 0.63,
+        120: 0.82,
+        173: 0.94,
+        253: 0.99,
+        333: 1.0,
+      };
+      for (final MapEntry(:key, :value) in p.entries) {
+        expect(
+          detailProgress(key.toDouble(), 1),
+          closeTo(value, 0.01),
+          reason: '$key ms',
+        );
+      }
+      var peak = 0.0;
+      for (var ms = 0.0; ms <= 400; ms += 1) {
+        peak = peak > detailProgress(ms, 1) ? peak : detailProgress(ms, 1);
+      }
+      expect(peak, 1);
+      // Nearer modules take 0.65 of the time (Wi-Fi ~215 ms), Display 1.
+      expect(detailTimeScale(0, 400), closeTo(0.65, 1e-9));
+      expect(detailTimeScale(400, 400), 1);
+      expect(detailProgress(215, detailTimeScale(0, 400)), closeTo(0.98, 0.02));
+      // The other modules: 0.56 at 67 ms, 0.28 at 107 ms, gone at 240 ms.
+      expect(othersOpacity(0), 1);
+      expect(othersOpacity(67), closeTo(0.56, 1e-9));
+      expect(othersOpacity(107), closeTo(0.28, 1e-9));
+      expect(othersOpacity(240), 0);
+      expect(detailBackStretch, 1.35);
+    },
+  );
+
+  test(
+    'the module hover is the measured curve: 10 % at 50 ms, half at 150, done at 300',
+    () {
+      const c = HoverCurve();
+      expect(hoverDuration, const Duration(milliseconds: 300));
+      expect(c.transform(50 / 300), closeTo(0.1, 1e-9));
+      expect(c.transform(150 / 300), closeTo(0.5, 1e-9));
+      expect(c.transform(1), 1);
+    },
+  );
 
   testWidgets('opens from the command, the modules act, Esc closes', (
     tester,
@@ -765,13 +842,12 @@ void main() {
     expect(hoverLift(tester), 0);
     await mouse.moveTo(tester.getCenter(wifi));
     await tester.pump();
-    // Timing: fade.quick (150 ms, ease-out).
+    // Measured timing: 10 % at 50 ms, half at 150 ms, done at 300 ms.
     await tester.pump(const Duration(milliseconds: 50));
-    expect(
-      hoverLift(tester),
-      closeTo(AmalfiFades.quick.curve.transform(50 / 150), 0.02),
-    );
+    expect(hoverLift(tester), closeTo(0.1, 0.02));
     await tester.pump(const Duration(milliseconds: 100));
+    expect(hoverLift(tester), closeTo(0.5, 0.02));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(hoverLift(tester), closeTo(1, 1e-6));
     // The lift is Amalfi's `State/Hover Overlay`, and the module does not move or grow.
     expect(
@@ -790,7 +866,9 @@ void main() {
     await mouse.moveTo(Offset.zero);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(hoverLift(tester), lessThan(1));
+    expect(hoverLift(tester), closeTo(0.9, 0.02));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(hoverLift(tester), closeTo(0.5, 0.02));
     await tester.pumpAndSettle();
     expect(hoverLift(tester), 0);
     expect(chevron(), 0);

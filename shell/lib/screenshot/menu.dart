@@ -7,8 +7,9 @@
 // the layer uses. (The Options menu is the pull-down's own, [AmalfiPullDownButton.entries], on
 // Ossido's glass.)
 //
-// A menu appears with `fade.instant`; a click outside, Esc or a choice closes it (the choice
-// blinks, then [onDismissed] is called at +114 ms, as in every Amalfi menu).
+// A menu opens in one frame; a click outside, Esc or a choice closes it with the measured
+// linear ~190 ms fade (menubar.md "Menus"; the choice blinks, then the menu's dismissal comes
+// at +114 ms, as in every Amalfi menu), and [onDismissed] is called once it has faded.
 
 import 'dart:math' as math;
 
@@ -32,7 +33,7 @@ double shotMenuHeight(List<AmalfiMenuEntry> entries) =>
 /// anchor's y, otherwise its top; its left edge at the anchor's x, moved left when it would
 /// leave the screen. With [alternative] (the anchor below the bar) it flips when there is no
 /// room between [top] and the anchor.
-class ShotMenu extends StatelessWidget {
+class ShotMenu extends StatefulWidget {
   const ShotMenu({
     super.key,
     required this.entries,
@@ -59,6 +60,40 @@ class ShotMenu extends StatelessWidget {
   final double width;
   final VoidCallback onDismissed;
 
+  /// Measured (menubar.md "Menus"): the fade out after a choice or Esc.
+  static const Duration fadeOut = Duration(milliseconds: 190);
+
+  @override
+  State<ShotMenu> createState() => _ShotMenuState();
+}
+
+class _ShotMenuState extends State<ShotMenu>
+    with SingleTickerProviderStateMixin {
+  // Opens in one frame (value 1), fades out linearly.
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: ShotMenu.fadeOut,
+    value: 1,
+  );
+  bool _closing = false;
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
+  }
+
+  void _dismiss() {
+    if (_closing) return;
+    _closing = true;
+    _fade.reverse().whenCompleteOrCancel(() {
+      if (mounted) widget.onDismissed();
+    });
+  }
+
+  List<AmalfiMenuEntry> get entries => widget.entries;
+  double get width => widget.width;
+
   @override
   Widget build(BuildContext context) {
     final height = shotMenuHeight(entries);
@@ -68,26 +103,25 @@ class ShotMenu extends StatelessWidget {
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: (_) => onDismissed(),
-            onSecondaryTapDown: (_) => onDismissed(),
+            onTapDown: (_) => _dismiss(),
+            onSecondaryTapDown: (_) => _dismiss(),
           ),
         ),
         Positioned.fill(
           child: CustomSingleChildLayout(
             delegate: _Place(
-              anchor: anchor,
-              alternative: alternative,
-              upwards: upwards,
-              top: top,
+              anchor: widget.anchor,
+              alternative: widget.alternative,
+              upwards: widget.upwards,
+              top: widget.top,
               height: height,
             ),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: 1),
-              duration: AmalfiFades.instant.duration,
-              curve: AmalfiFades.instant.curve,
-              builder: (context, opacity, child) =>
-                  Opacity(opacity: opacity, child: child),
-              child: SizedBox(width: width, child: _opaque()),
+            child: FadeTransition(
+              opacity: _fade,
+              child: IgnorePointer(
+                ignoring: _closing,
+                child: SizedBox(width: width, child: _opaque()),
+              ),
             ),
           ),
         ),
@@ -103,7 +137,7 @@ class ShotMenu extends StatelessWidget {
       width: width,
       opaque: true,
       autofocus: true,
-      onDismiss: onDismissed,
+      onDismiss: _dismiss,
     ),
   );
 }
