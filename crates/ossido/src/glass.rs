@@ -16,7 +16,9 @@ use smithay::wayland::compositor::{Cacheable, with_states};
 
 use crate::state::State;
 
-/// The two measured glass families (`plan/reference/glass.md`).
+/// The material a region declares (`add_region`). Ossido draws every region with the Amalfi
+/// material of its kind (`Profile`); a region without a profile takes the kind of its
+/// material ([`Material::default_profile`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Material {

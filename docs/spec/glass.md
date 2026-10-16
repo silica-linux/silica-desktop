@@ -1,6 +1,9 @@
 # Glass materials
 
-How the translucent surfaces of the shell transform what lies behind them. Measured over
+How the translucent surfaces of the reference desktop transform what lies behind them. These
+are measurements of behaviour: since UI 1.0.0 Ossido draws the Amalfi materials instead
+([`../design/amalfi/materials.md`](../design/amalfi/materials.md), [`../m2-glass.md`](../m2-glass.md)),
+and only the sharp share of the blur model below is kept on top of them. Measured over
 generated test wallpapers:
 
 - solid grey `#7a7b80`, black and white;

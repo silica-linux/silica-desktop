@@ -14,16 +14,15 @@ top.
   (a second one is the `already_has_glass` error).
 - `silica_glass_v1.clear()`, `add_region(x, y, width, height, radius, material)`: pending
   state, current at the next `wl_surface.commit`. Surface coordinates in logical pixels;
-  circular-arc corners of radius `radius`, like the measured glass (Dock, menus,
-  notifications: windows instead have superellipse corners).
-- Materials: `clear` (clear glass, like the Dock), `thick` (thick glass, like menus and
-  search) and `regular` (the lens glass of the controls, like the Control Center modules:
-  a strong lens that near the edge folds in the background from well inside), from the measurements
-  in `plan/reference/glass.md`. Since version 2 also `notification` (banners and Notification
-  Center: very wide blur, almost opaque, dark edge line on the first pixel of the region,
-  which the client widens by 1 pt per side; the regions do not merge). A client bound to
-  version 1 that asks for it gets an `invalid_region` error; the embedder falls back to
-  `thick` there.
+  circular-arc corners of radius `radius` (Dock, menus, notifications: windows instead have
+  superellipse corners).
+- Materials: `clear` (the Dock), `thick` (menus and search) and `regular` (the Control Center
+  modules); since version 2 also `notification` (banners and Notification Center cards; the
+  regions do not merge). A client bound to version 1 that asks for it gets an
+  `invalid_region` error; the embedder falls back to `thick` there. Since Amalfi the
+  declared material only picks the kind of surface of a region without a profile (below):
+  every kind is drawn with its Amalfi material, Glass/Regular or Glass/Thick
+  (`docs/design/amalfi/materials.md`, [`m2-glass.md`](m2-glass.md)).
 - Errors: `invalid_region` (non-positive size, negative or non-finite radius, unknown
   material), `too_many_regions` (over 64). The client is disconnected; Ossido goes on.
 
@@ -56,9 +55,9 @@ top.
   Center, search, launcher), `module` (Control Center modules, HUDs), `control` (small
   controls on glass: toolbar buttons, pills), `dock`, `tooltip`, `sheet`, `banner`, `popover`; `default`
   derives the kind from the material (clear: dock, thick: menu, regular: module,
-  notification: banner). The material stays the base color; the profile sets the blur, the
-  lens (strength and how far it reaches from the edge), the edge light and dark line,
-  saturation and tint, and the shadow (`crates/ossido-render/src/glass_profile.rs`). With
+  notification: banner). The kind picks the Amalfi material (blur, saturation, tint, inside
+  rim, rim light, shadow), the sharp share and the resolution of the blur
+  (`crates/ossido-render/src/glass_profile.rs`, table in [`m2-glass.md`](m2-glass.md)). With
   `shadow` = `compositor` Ossido draws the profile's shadow outside the shape (the client then
   draws none); with `client` it draws none. Unknown values are `invalid_profile`. On every
   shape the lens narrows so it never samples past the far edge. `silica_ui` sends the

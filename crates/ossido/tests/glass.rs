@@ -104,52 +104,47 @@ fn rgb(shot: &[u8], x: u32, y: u32) -> [u8; 3] {
     [r, g, b]
 }
 
-#[test]
-fn materials_on_the_reference_gray_match_the_measured_fill() {
-    let ossido = Headless::start_with("glass-gray", SHOT, &["--background", "7a7b80"]);
-    let size = (200, 100);
-    let mut clear = TestWindow::open_pixels(&ossido.wayland, "clear", size, &transparent(size));
-    clear
-        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Clear)])
-        .unwrap();
-    let mut thick = TestWindow::open_pixels(&ossido.wayland, "thick", size, &transparent(size));
-    thick
-        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Thick)])
-        .unwrap();
-    // The two windows: the first at (32, 32), the second at (64, 64) above.
-    ossido
-        .client()
-        .call(
-            silica_control::commands::WINDOW_MOVE,
-            serde_json::json!({"x": 330, "y": 200}),
-        )
-        .unwrap();
-    let shot = shot(&ossido, "glass-gray.png");
-    // Fill on #7a7b80 (glass.md): light Dock #818289, light menu #c7c8cd.
-    let expect = |at: (u32, u32), expected: [u8; 3], name: &str| {
-        let got = rgb(&shot, at.0, at.1);
-        let worst = got
-            .iter()
-            .zip(expected)
-            .map(|(g, e)| g.abs_diff(e))
-            .max()
-            .unwrap_or(0);
-        eprintln!("{name}: {got:?} (reference {expected:?})");
-        assert!(worst <= 3, "{name}: {got:?}, reference {expected:?}");
-    };
-    expect((132, 82), [0x81, 0x82, 0x89], "clear glass");
-    expect((430, 250), [0xc7, 0xc8, 0xcd], "thick glass");
+/// What an Amalfi material shows over a flat color (levels): the color saturated by 1.5 around
+/// its Rec. 709 luminance, then the tint `tint` at `amount` over it
+/// (`docs/design/amalfi/materials.md`).
+fn amalfi_fill(color: [f64; 3], tint: [f64; 3], amount: f64) -> [u8; 3] {
+    let l = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
+    let mut out = [0u8; 3];
+    for c in 0..3 {
+        let saturated = l + (color[c] - l) * 1.5;
+        out[c] = (saturated + (tint[c] - saturated) * amount)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+    }
+    out
 }
 
-/// In dark (`--appearance dark`) Dock and menu take the dark materials; the Control Center
-/// modules stay almost the same (glass.md, "Comparison between the materials").
-#[test]
-fn dark_materials_on_the_reference_gray() {
-    let ossido = Headless::start_with(
-        "glass-gray-dark",
-        SHOT,
-        &["--background", "7a7b80", "--appearance", "dark"],
-    );
+/// The reference gray of the glass tests, `#7a7b80`.
+const GRAY: [f64; 3] = [122.0, 123.0, 128.0];
+/// The tints of `tokens.json`: white in light, `#2A2B30` in dark; 60 % on Glass/Regular, 76 %
+/// (`C2`) on Glass/Thick.
+const TINT_LIGHT: [f64; 3] = [255.0; 3];
+const TINT_DARK: [f64; 3] = [42.0, 43.0, 48.0];
+const REGULAR: f64 = 0.6;
+const THICK: f64 = 194.0 / 255.0;
+
+/// The largest channel difference between two colors.
+fn worst(a: [u8; 3], b: [u8; 3]) -> u8 {
+    a.iter()
+        .zip(b)
+        .map(|(a, b)| a.abs_diff(b))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Light (or dark, `--appearance dark`) glass on the reference gray: a `clear` region (the
+/// Dock: Glass/Regular) at (32, 32) and a `thick` one (a menu: Glass/Thick) at (330, 200).
+fn fills_on_gray(name: &str, dark: bool) -> ([u8; 3], [u8; 3]) {
+    let mut args = vec!["--background", "7a7b80"];
+    if dark {
+        args.extend(["--appearance", "dark"]);
+    }
+    let ossido = Headless::start_with(name, SHOT, &args);
     let size = (200, 100);
     let mut clear = TestWindow::open_pixels(&ossido.wayland, "clear", size, &transparent(size));
     clear
@@ -159,6 +154,7 @@ fn dark_materials_on_the_reference_gray() {
     thick
         .set_glass(&[(0, 0, 200, 100, 0.0, Material::Thick)])
         .unwrap();
+    // The two windows: the first at (32, 32), the second moved to (330, 200), above.
     ossido
         .client()
         .call(
@@ -166,30 +162,42 @@ fn dark_materials_on_the_reference_gray() {
             serde_json::json!({"x": 330, "y": 200}),
         )
         .unwrap();
-    let shot = shot(&ossido, "glass-gray-dark.png");
-    let expect = |at: (u32, u32), expected: [u8; 3], tolerance: u8, name: &str| {
-        let got = rgb(&shot, at.0, at.1);
-        let worst = got
-            .iter()
-            .zip(expected)
-            .map(|(g, e)| g.abs_diff(e))
-            .max()
-            .unwrap_or(0);
-        eprintln!("{name}: {got:?} (reference {expected:?})");
-        assert!(
-            worst <= tolerance,
-            "{name}: {got:?}, reference {expected:?}"
-        );
-    };
-    // Dark Dock `#68696e`: the measured matrix (rmse 4.7) on the gray gives ~7 levels less,
-    // because the dark transfer is not linear.
-    expect((132, 82), [0x68, 0x69, 0x6e], 8, "clear glass, dark");
-    // Dark menu `#6f7075`: the offset is recomputed for this gray.
-    expect((430, 250), [0x6f, 0x70, 0x75], 3, "thick glass, dark");
+    let shot = shot(&ossido, &format!("{name}.png"));
+    (rgb(&shot, 132, 82), rgb(&shot, 430, 250))
+}
+
+#[test]
+fn materials_on_the_reference_gray_are_the_amalfi_fill() {
+    let (regular, thick) = fills_on_gray("glass-gray", false);
+    let want_regular = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
+    let want_thick = amalfi_fill(GRAY, TINT_LIGHT, THICK);
+    eprintln!("regular {regular:?} (Amalfi {want_regular:?}), thick {thick:?} ({want_thick:?})");
+    assert!(
+        worst(regular, want_regular) <= 2,
+        "Glass/Regular {regular:?}"
+    );
+    assert!(worst(thick, want_thick) <= 2, "Glass/Thick {thick:?}");
+    // Thick glass is the more opaque one.
+    assert!(thick[1] > regular[1]);
+}
+
+/// In dark (`--appearance dark`) the tint is `#2A2B30`.
+#[test]
+fn dark_materials_on_the_reference_gray() {
+    let (regular, thick) = fills_on_gray("glass-gray-dark", true);
+    let want_regular = amalfi_fill(GRAY, TINT_DARK, REGULAR);
+    let want_thick = amalfi_fill(GRAY, TINT_DARK, THICK);
+    eprintln!("regular {regular:?} (Amalfi {want_regular:?}), thick {thick:?} ({want_thick:?})");
+    assert!(
+        worst(regular, want_regular) <= 2,
+        "Glass/Regular {regular:?}"
+    );
+    assert!(worst(thick, want_thick) <= 2, "Glass/Thick {thick:?}");
+    assert!(thick[1] < regular[1]);
 }
 
 /// A window that overrides the appearance with dark in a light session gets the dark glass
-/// tones for the regions it declares (silica-window-v1 `set_appearance`).
+/// for the regions it declares (silica-window-v1 `set_appearance`).
 #[test]
 fn glass_of_a_dark_window_in_a_light_session_has_the_dark_tone() {
     let ossido = Headless::start_with("glass-override-dark", SHOT, &["--background", "7a7b80"]);
@@ -208,23 +216,32 @@ fn glass_of_a_dark_window_in_a_light_session_has_the_dark_tone() {
         .unwrap();
     let shot = shot(&ossido, "glass-override-dark.png");
     let got = rgb(&shot, 430, 250);
-    // The dark menu tone of `dark_materials_on_the_reference_gray`, not the light one.
-    let expected = [0x6f, 0x70, 0x75];
+    let expected = amalfi_fill(GRAY, TINT_DARK, THICK);
     assert!(
-        got.iter().zip(expected).all(|(g, e)| g.abs_diff(e) <= 3),
+        worst(got, expected) <= 2,
         "thick glass of a dark window: {got:?}, expected {expected:?}"
     );
 }
 
-/// Profile of a stripe edge (black → white) inside the Dock background, light, row 1366
-/// (glass.md, "Glass · Dock · Blur"), 1 pt per value.
-const DOCK_EDGE: [f64; 20] = [
-    39., 40., 41., 42., 45., 50., 55., 59., 66., 102., 166., 202., 208., 213., 218., 223., 226.,
-    227., 228., 229.,
-];
+/// The standard normal cumulative distribution (Abramowitz and Stegun 7.1.26, |error| <
+/// 1.5e-7).
+fn normal_cdf(x: f64) -> f64 {
+    let z = x.abs() / std::f64::consts::SQRT_2;
+    let t = 1.0 / (1.0 + 0.327_591_1 * z);
+    let poly = t
+        * (0.254_829_592
+            + t * (-0.284_496_736
+                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
+    let erf = 1.0 - poly * (-z * z).exp();
+    if x >= 0.0 {
+        0.5 * (1.0 + erf)
+    } else {
+        0.5 * (1.0 - erf)
+    }
+}
 
 #[test]
-fn clear_glass_blurs_a_stripe_edge_like_the_dock() {
+fn regular_glass_blurs_a_stripe_edge_with_sigma_6() {
     let ossido = Headless::start_with("glass-blur", SHOT, &[]);
     let back = (400, 200);
     let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &stripes(back));
@@ -234,142 +251,142 @@ fn clear_glass_blurs_a_stripe_edge_like_the_dock() {
         .set_glass(&[(0, 0, 200, 100, 0.0, Material::Clear)])
         .unwrap();
     let shot = shot(&ossido, "glass-blur.png");
-    // Stripes at x 32 + 96k (black) and 80 + 96k (white); glass on x 64–263, y 64–163.
-    // Black → white edge at x 176; the measured profile aligns to the sharpest step.
+    // Stripes at x 32 + 96k (black) and 80 + 96k (white); glass on x 64–263, y 64–163. The
+    // black → white edge at x 176, far from the glass edges and from the next stripe edges.
     let row: Vec<f64> = (150..202)
         .map(|x| f64::from(rgb(&shot, x, 114)[1]))
         .collect();
-    let mut best = (f64::MAX, 0);
-    for start in 0..row.len() - DOCK_EDGE.len() {
-        let rms = (row[start..start + DOCK_EDGE.len()]
-            .iter()
-            .zip(DOCK_EDGE)
-            .map(|(got, want)| (got - want).powi(2))
-            .sum::<f64>()
-            / DOCK_EDGE.len() as f64)
-            .sqrt();
-        if rms < best.0 {
-            best = (rms, start);
-        }
-    }
-    let (rms, start) = best;
-    eprintln!("profile: {:?}", &row[start..start + DOCK_EDGE.len()]);
-    eprintln!("reference: {DOCK_EDGE:?}, rms {rms:.2}");
-    // The model fit on the recordings has rmse 3.4: twice that is accepted.
-    assert!(rms <= 7.0, "blurred edge far from the Dock: rms {rms:.2}");
+    // Glass/Regular over a gray step: the sharp share (0.28 on the Dock) plus a Gaussian of σ
+    // `sigma` px, then 60 % white (gray does not change with the saturation).
+    let model = |sigma: f64, edge: f64, x: f64| {
+        let sharp = if x >= edge { 255.0 } else { 0.0 };
+        let blurred = 255.0 * normal_cdf((x - edge) / sigma);
+        let backdrop = 0.28 * sharp + 0.72 * blurred;
+        backdrop + (255.0 - backdrop) * REGULAR
+    };
+    let fit = |sigma: f64| {
+        (0..200)
+            .map(|step| 170.0 + f64::from(step) * 0.05)
+            .map(|edge| {
+                let sum: f64 = row
+                    .iter()
+                    .enumerate()
+                    .map(|(i, got)| (got - model(sigma, edge, 150.0 + i as f64 + 0.5)).powi(2))
+                    .sum();
+                (sum / row.len() as f64).sqrt()
+            })
+            .fold(f64::MAX, f64::min)
+    };
+    let (rms3, rms6, rms12) = (fit(3.0), fit(6.0), fit(12.0));
+    eprintln!("row {row:?}");
+    eprintln!("rms against σ 3 px {rms3:.2}, σ 6 px {rms6:.2}, σ 12 px {rms12:.2}");
+    assert!(rms6 <= 2.0, "the edge is not a σ 6 blur: rms {rms6:.2}");
+    assert!(rms6 < rms3 && rms6 < rms12);
 }
 
-/// Edge of the Dock background on `#7a7b80`, light (dock.md): top row, 7 pt gradient
-/// towards the fill, side edge.
-const DOCK_RIM: [u8; 3] = [0xbd, 0xbe, 0xc8];
-const DOCK_GLOW: [[u8; 3]; 7] = [
-    [0x8e, 0x8f, 0x97],
-    [0x89, 0x8a, 0x91],
-    [0x86, 0x87, 0x8e],
-    [0x84, 0x85, 0x8c],
-    [0x83, 0x84, 0x8b],
-    [0x82, 0x83, 0x8a],
-    [0x81, 0x82, 0x89],
-];
-const DOCK_SIDE: [u8; 3] = [0x3c, 0x3c, 0x40];
-
+/// The Amalfi rims of a capsule on the reference gray at 1×: the inside rim (1 pt of black, 12 %
+/// in light) on the first row all around, the rim light (white 70 %, an inner shadow moved 1
+/// pt down and blurred by 1 pt) on the top inner edge only, nothing outside the shape.
 #[test]
-fn clear_glass_edge_matches_the_dock_border() {
+fn the_rims_are_a_dark_inside_line_and_a_light_top_edge() {
     let ossido = Headless::start_with("glass-edge", SHOT, &["--background", "7a7b80"]);
-    let size = (300, 80);
+    // The glass 20 px inside a larger window, so that the window's own shadow is not next to it.
+    let size = (340, 120);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "edge", size, &transparent(size));
     glass
-        .set_glass(&[(0, 0, 300, 80, 22.0, Material::Clear)])
+        .set_glass(&[(20, 20, 300, 80, 22.0, Material::Clear)])
         .unwrap();
     let shot = shot(&ossido, "glass-edge.png");
-    // Window at (32, 32): column halfway, row halfway.
-    let (x, top, bottom, mid) = (182, 32, 111, 72);
-    let mut worst = 0;
-    let mut check = |at: (u32, u32), expected: [u8; 3], what: &str| {
+    // Window at (32, 32), glass from (52, 52) to (351, 131): column halfway, rows top 52 and
+    // bottom 131, row halfway 92.
+    let (x, top, bottom, mid) = (202, 52, 131, 92);
+    let level = |at: (u32, u32)| f64::from(rgb(&shot, at.0, at.1)[1]);
+    let fill = level((x, mid));
+    let want_fill = f64::from(amalfi_fill(GRAY, TINT_LIGHT, REGULAR)[1]);
+    assert!((fill - want_fill).abs() <= 2.0, "fill {fill}");
+    // The first row's pixel centre is 0.5 px inside: the inside rim covers it (fill × 0.88),
+    // the rim light reaches it on top at 1 / (1 + e^-1.702) of 70 %, at the bottom not at all.
+    let rim = fill * (1.0 - 31.0 / 255.0);
+    let lit = 0.702 / (1.0 + (-1.702_f64).exp());
+    let top_row = rim + (255.0 - rim) * lit;
+    let measured = [
+        (level((x, top)), top_row, "top row"),
+        (level((x, bottom)), rim, "bottom row"),
+        // The second row on top still gets the light's tail; at the bottom it is the fill.
+        (
+            level((x, top + 1)),
+            fill + (255.0 - fill) * 0.702 / (1.0 + 1.702_f64.exp()),
+            "second row on top",
+        ),
+        (level((x, bottom - 1)), fill, "second row at the bottom"),
+    ];
+    for (got, want, what) in measured {
+        eprintln!("{what}: {got} (Amalfi {want:.1})");
+        assert!((got - want).abs() <= 3.0, "{what}: {got}, Amalfi {want:.1}");
+    }
+    // The sides: the inside rim and only the light's spill (≤ 11 % of the blur at 0.5 px).
+    let left = level((52, mid));
+    let right = level((351, mid));
+    for side in [left, right] {
+        assert!(side < fill - 10.0 && side > rim - 2.0, "side {side}");
+    }
+    // Nothing outside: no outline, the background right next to every edge.
+    for at in [(x, top - 1), (x, bottom + 1), (51, mid), (352, mid)] {
         let got = rgb(&shot, at.0, at.1);
-        let diff = got
-            .iter()
-            .zip(expected)
-            .map(|(g, e)| g.abs_diff(e))
-            .max()
-            .unwrap_or(0);
-        eprintln!("{what}: {got:?} (reference {expected:?})");
-        worst = worst.max(diff);
-    };
-    check((x, top), DOCK_RIM, "top row");
-    check((x, bottom), DOCK_RIM, "bottom row");
-    for (row, expected) in DOCK_GLOW.iter().enumerate() {
-        check((x, top + 1 + row as u32), *expected, "gradient on top");
-        check(
-            (x, bottom - 1 - row as u32),
-            *expected,
-            "gradient at the bottom",
+        assert!(
+            worst(got, [0x7a, 0x7b, 0x80]) <= 1,
+            "outside at {at:?}: {got:?}"
         );
     }
-    check((32, mid), DOCK_SIDE, "left edge");
-    check((331, mid), DOCK_SIDE, "right edge");
-    // The measured edge offsets are neutral: the top row's slight blue tint (B +4 over R and
-    // G more than the fill's) is not modelled. The profile lifts the rim row by 3 levels
-    // (+64 over the grey, GLASS-PROFILES, against the capture's +61).
-    assert!(worst <= 5, "edge far from the Dock: {worst} levels");
 }
 
 #[test]
-fn clear_glass_refracts_near_the_side_edges_like_the_dock() {
-    let ossido = Headless::start_with("glass-refraction", SHOT, &[]);
-    // 12 px stripes behind (black for (x + 6) mod 24 < 12), window at (32, 32): edges at
-    // x 26 + 12k, one 10 pt from the glass edge, where the displacement is largest.
-    let back = (500, 200);
-    let mut pixels = Vec::new();
-    for _ in 0..back.1 {
-        for x in 0..back.0 {
-            let level = if (x + 6) % 24 < 12 { 0 } else { 255 };
-            pixels.extend_from_slice(&[level, level, level, 255]);
+fn regular_and_thick_glass_do_not_refract() {
+    // 12 px stripes behind (black for (x + 6) mod 24 < 12), window at (32, 32): stripe edges at
+    // x 26 + 12k, under the glass from x 64. Glass/Regular and Glass/Thick have no lens: the
+    // edges inside the glass stay where they are behind it.
+    for material in [Material::Clear, Material::Thick] {
+        let ossido = Headless::start_with("glass-refraction", SHOT, &[]);
+        let back = (500, 200);
+        let mut pixels = Vec::new();
+        for _ in 0..back.1 {
+            for x in 0..back.0 {
+                let level = if (x + 6) % 24 < 12 { 0 } else { 255 };
+                pixels.extend_from_slice(&[level, level, level, 255]);
+            }
         }
-    }
-    let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &pixels);
-    let size = (300, 100);
-    let mut glass = TestWindow::open_pixels(&ossido.wayland, "glass", size, &transparent(size));
-    glass
-        .set_glass(&[(0, 0, 300, 100, 0.0, Material::Clear)])
-        .unwrap();
-    let shot = shot(&ossido, "glass-refraction.png");
-    // Glass from x 64; stripe edges at 26 + 12k. Crossings of the mid level on the row
-    // halfway through the glass (y 114), interpolated.
-    let row: Vec<f64> = (64..364)
-        .map(|x| f64::from(rgb(&shot, x, 114)[1]))
-        .collect();
-    let mid = (row.iter().cloned().fold(f64::MAX, f64::min)
-        + row.iter().cloned().fold(0.0, f64::max))
-        / 2.0;
-    let mut near = 0.0_f64;
-    let mut far = 0.0_f64;
-    for i in 3..row.len() / 2 {
-        let (a, b) = (row[i - 1], row[i]);
-        if (a - mid) * (b - mid) > 0.0 || a == b {
+        let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &pixels);
+        let size = (300, 100);
+        let mut glass = TestWindow::open_pixels(&ossido.wayland, "glass", size, &transparent(size));
+        glass.set_glass(&[(0, 0, 300, 100, 0.0, material)]).unwrap();
+        let shot = shot(&ossido, "glass-refraction.png");
+        let row: Vec<f64> = (64..364)
+            .map(|x| f64::from(rgb(&shot, x, 114)[1]))
+            .collect();
+        let low = row.iter().cloned().fold(f64::MAX, f64::min);
+        let high = row.iter().cloned().fold(0.0, f64::max);
+        if high - low < 6.0 {
+            // Thick glass (σ 16) blurs 12 px stripes flat: nothing to displace.
             continue;
         }
-        // Position of the pixel (center) where the mid level is crossed.
-        let crossing = 64.0 + (i - 1) as f64 + 0.5 + (mid - a) / (b - a);
-        let distance = crossing - 64.0;
-        // The sampled background is further inside: the true edge is the first one after.
-        let edge = 26.0 + 12.0 * ((crossing - 26.0) / 12.0 - 1e-6).ceil();
-        let shift = edge - crossing;
-        eprintln!("crossing {distance:.1} pt from the edge: displacement {shift:.2} pt");
-        if (3.0..=12.0).contains(&distance) {
-            near = near.max(shift);
+        let mid = (low + high) / 2.0;
+        let mut worst_shift = 0.0_f64;
+        for i in 3..row.len() - 3 {
+            let (a, b) = (row[i - 1], row[i]);
+            if (a - mid) * (b - mid) > 0.0 || a == b {
+                continue;
+            }
+            // Where the mid level is crossed, against the nearest stripe edge behind.
+            let crossing = 64.0 + (i - 1) as f64 + 0.5 + (mid - a) / (b - a);
+            let edge = 26.0 + 12.0 * ((crossing - 26.0) / 12.0).round();
+            worst_shift = worst_shift.max((crossing - edge).abs());
         }
-        if distance >= 28.0 {
-            far = far.max(shift.min(12.0 - shift));
-        }
+        eprintln!("{material:?}: largest shift {worst_shift:.2} px");
+        assert!(
+            worst_shift <= 1.0,
+            "{material:?} refracts: {worst_shift:.2} px"
+        );
     }
-    eprintln!("maximum near the edge {near:.2} pt, far {far:.2} pt");
-    // Dock (GLASS-PROFILES): 2-3 pt, nothing beyond ~28 pt (noise ±0.5–1).
-    assert!(
-        (1.5..=3.5).contains(&near),
-        "refraction near the edge: {near:.2} pt"
-    );
-    assert!(far <= 1.0, "refraction far from the edge: {far:.2} pt");
 }
 
 #[test]
@@ -383,7 +400,8 @@ fn glass_quality_levels_choose_what_the_glass_sees() {
         .set_glass(&[(0, 0, 200, 100, 0.0, Material::Clear)])
         .unwrap();
     let mut client = ossido.client();
-    // Swing of the green on the row halfway through the glass (x 74–254, far from the edges).
+    // Swing of the green on the row halfway through the glass (x 74–254, far from the edges),
+    // and its middle.
     let mut spread = |quality: &str| {
         let resolved = client
             .call(
@@ -394,99 +412,72 @@ fn glass_quality_levels_choose_what_the_glass_sees() {
         let shot = shot(&ossido, &format!("glass-{quality}.png"));
         let row: Vec<u8> = (74..254).map(|x| rgb(&shot, x, 114)[1]).collect();
         let spread = row.iter().max().unwrap() - row.iter().min().unwrap();
-        eprintln!("{quality} ({resolved}): escursione {spread}");
+        eprintln!("{quality} ({resolved}): spread {spread}");
         (
             resolved["quality"].as_str().unwrap_or_default().to_owned(),
             spread,
+            rgb(&shot, 164, 114),
         )
     };
-    // Full: the blurred stripes stay (black → 39, white → 228).
-    assert!(spread("full").1 > 150);
-    // Frosted: sees only the desktop, not the striped window; opaque: no background.
+    // Full: the blurred stripes stay under the tint (60 % white: black → 153, white → 255).
+    assert!(spread("full").1 > 80);
+    // Frosted: sees only the desktop, not the striped window; opaque: no background at all,
+    // the tint over Surface/Window (white in light: white).
     assert!(spread("frosted").1 <= 2);
-    assert!(spread("opaque").1 <= 2);
+    let (_, flat, opaque) = spread("opaque");
+    assert!(flat <= 2);
+    assert!(
+        worst(opaque, [255, 255, 255]) <= 1,
+        "opaque fill {opaque:?}"
+    );
     // On llvmpipe (headless) the automatic level is frosted.
     assert_eq!(spread("auto").0, "frosted");
 }
 
 #[test]
-fn regular_glass_is_the_liquid_lens_of_the_control_center() {
-    // Fill on the reference gray: the Control Center modules, #6a6b70.
-    let ossido = Headless::start_with("glass-liquid-fill", SHOT, &["--background", "7a7b80"]);
+fn without_blur_dark_glass_is_its_tint_over_the_window_surface() {
+    // Reduced transparency in dark: thick glass is 76 % `#2A2B30` over `#1B1C1F`, whatever is
+    // behind (here white).
+    let ossido = Headless::start_with(
+        "glass-opaque-dark",
+        SHOT,
+        &["--background", "ffffff", "--appearance", "dark"],
+    );
     let size = (200, 100);
-    let mut glass = TestWindow::open_pixels(&ossido.wayland, "liquid", size, &transparent(size));
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "thick", size, &transparent(size));
+    glass
+        .set_glass(&[(0, 0, 200, 100, 0.0, Material::Thick)])
+        .unwrap();
+    ossido
+        .client()
+        .call(
+            silica_control::commands::UI_GLASS_QUALITY,
+            serde_json::json!({ "quality": "opaque" }),
+        )
+        .unwrap();
+    let got = rgb(&shot(&ossido, "glass-opaque-dark.png"), 132, 82);
+    let mix = |surface: f64, tint: f64| (surface + (tint - surface) * THICK).round() as u8;
+    let want = [mix(27.0, 42.0), mix(28.0, 43.0), mix(31.0, 48.0)];
+    assert!(
+        worst(got, want) <= 1,
+        "opaque dark thick glass {got:?}, want {want:?}"
+    );
+}
+
+#[test]
+fn the_regular_protocol_material_is_the_thick_glass_of_the_modules() {
+    // `regular` without a profile is a Control Center module: Glass/Thick, with its sharp share
+    // (0.04) that a flat gray does not show.
+    let ossido = Headless::start_with("glass-module-fill", SHOT, &["--background", "7a7b80"]);
+    let size = (200, 100);
+    let mut glass = TestWindow::open_pixels(&ossido.wayland, "module", size, &transparent(size));
     glass
         .set_glass(&[(0, 0, 200, 100, 0.0, Material::Regular)])
         .unwrap();
-    let fill = rgb(&shot(&ossido, "glass-liquid-fill.png"), 132, 82);
-    eprintln!("fill: {fill:?} (reference [106, 107, 112])");
-    for (got, want) in fill.iter().zip([0x6a_u8, 0x6b, 0x70]) {
-        assert!(got.abs_diff(want) <= 3, "riempimento {fill:?}");
-    }
-    drop(glass);
-    drop(ossido);
-
-    // Lens: a horizontal ramp behind (level = x up to 255: the blur does not change a linear
-    // ramp), glass from x 64 to 363; the same glass over gray gives the edge's own light,
-    // taken out before reading the source position from the level.
-    let row_over = |name: &str, level: fn(u32) -> u8| {
-        let ossido = Headless::start_with(name, SHOT, &[]);
-        let back = (500, 200);
-        let mut pixels = Vec::new();
-        for _ in 0..back.1 {
-            for x in 0..back.0 {
-                let l = level(x);
-                pixels.extend_from_slice(&[l, l, l, 255]);
-            }
-        }
-        let _back = TestWindow::open_pixels(&ossido.wayland, "back", back, &pixels);
-        let size = (300, 100);
-        let mut glass =
-            TestWindow::open_pixels(&ossido.wayland, "liquid", size, &transparent(size));
-        glass
-            .set_glass(&[(0, 0, 300, 100, 0.0, Material::Regular)])
-            .unwrap();
-        let shot = shot(&ossido, &format!("{name}.png"));
-        (64..164)
-            .map(|x| f64::from(rgb(&shot, x, 114)[1]))
-            .collect::<Vec<f64>>()
-    };
-    let ramp = row_over("glass-liquid-ramp", |x| x.min(255) as u8);
-    let gray = row_over("glass-liquid-gray", |_| 0x7b);
-    // Past ~24 pt the glass shows what is behind it: there the level gives the scale.
-    let (t0, t1) = (40, 90);
-    let gain = (ramp[t1] - ramp[t0]) / (t1 - t0) as f64;
-    let source = |t: usize| {
-        let edge = gray[t] - gray[t1];
-        t1 as f64 + (ramp[t] - edge - ramp[t1]) / gain
-    };
-    // The lens of the Control Center modules (GLASS-PROFILES): up to ~3.5 pt further inside,
-    // around 15 pt from the edge, nothing past 30 pt. (distance from the edge, source) in pt.
-    let measured = [
-        (4, 5.6),
-        (6, 8.2),
-        (8, 10.8),
-        (12, 15.3),
-        (15, 18.5),
-        (16, 19.3),
-        (30, 30.0),
-    ];
-    let mut worst: f64 = 0.0;
-    for (t, expected) in measured {
-        let got = source(t);
-        eprintln!("t {t} pt → source {got:.1} pt (measured {expected:.1})");
-        worst = worst.max((got - expected).abs());
-    }
-    assert!(
-        worst <= 3.0,
-        "lens far from the measured curve: {worst:.1} pt"
-    );
-    // It peaks at ~3.5 pt around 15 pt from the edge.
-    assert!(
-        (2.0..=5.0).contains(&(source(15) - 15.0)),
-        "the lens does not peak at 15 pt: {:.1}",
-        source(15)
-    );
+    let fill = rgb(&shot(&ossido, "glass-module-fill.png"), 132, 82);
+    let want = amalfi_fill(GRAY, TINT_LIGHT, THICK);
+    eprintln!("fill: {fill:?} (Amalfi {want:?})");
+    assert!(worst(fill, want) <= 2, "module fill {fill:?}");
 }
 
 #[test]
@@ -657,10 +648,11 @@ fn tips_point_every_way_with_the_same_shape() {
         let widths = tip_widths(&format!("glass-tip-{side}"), side);
         eprintln!("{side}: {widths:?} (down {down:?})");
         for (k, (a, b)) in widths.iter().zip(&down).enumerate() {
-            // At the base the fillets' antialiased pixels also carry the edge light, which
-            // differs by orientation (the menus' top and bottom rows are lighter than the
-            // sides): a pixel more or less per fillet there.
-            let tolerance = if k == 0 { 2 } else { 1 };
+            // The half-covered pixels along the flanks also carry the rims, which depend on the
+            // orientation (the rim light falls on the flanks of a tip pointing up, only the
+            // dark inside rim on those of a tip pointing down): they read as glass or not, a
+            // pixel more or less per flank.
+            let tolerance = 2;
             assert!(
                 a.abs_diff(*b) <= tolerance,
                 "{side}, step {k}: {a} px against {b} down"
@@ -739,9 +731,8 @@ fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
 }
 
 #[test]
-fn notification_glass_matches_the_isolated_banner() {
-    // The isolated banner on the reference gray: #bfc0c5 on top, #c2c3c8 at the bottom
-    // (notifications.md, "Banner · material on gray").
+fn notification_glass_is_regular_glass_whose_cards_stay_apart() {
+    // A banner is Glass/Regular.
     let ossido = Headless::start_with("glass-notification", SHOT, &["--background", "7a7b80"]);
     let size = (344, 91);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
@@ -749,10 +740,9 @@ fn notification_glass_matches_the_isolated_banner() {
         .set_glass(&[(0, 0, 344, 91, 20.0, Material::Notification)])
         .unwrap();
     let fill = rgb(&shot(&ossido, "glass-notification.png"), 32 + 172, 32 + 45);
-    eprintln!("fill: {fill:?} (reference [192, 193, 198])");
-    for (got, want) in fill.iter().zip([0xc0_u8, 0xc1, 0xc6]) {
-        assert!(got.abs_diff(want) <= 3, "riempimento {fill:?}");
-    }
+    let want = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
+    eprintln!("fill: {fill:?} (Amalfi {want:?})");
+    assert!(worst(fill, want) <= 2, "banner fill {fill:?}");
 
     // Two cards 6 pt apart (the Center's cards, with the glass 1 pt wider per side) stay
     // separate: in the gap between them there is the background.
@@ -783,8 +773,8 @@ fn notification_glass_matches_the_isolated_banner() {
 #[test]
 fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
     // Like the Control Center modules: regions of the same material far from each other,
-    // capsules and rounded rectangles. The bright line sits on the first row of each
-    // region, top and bottom, even far from the center of the group.
+    // capsules and rounded rectangles. The rim light sits on the first row of each region's
+    // top and the inside rim (darker) on its last row, even far from the center of the group.
     let ossido = Headless::start_with("glass-group-rim", SHOT, &["--background", "7a7b80"]);
     let size = (292, 330);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "stack", size, &transparent(size));
@@ -801,52 +791,49 @@ fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
     let shot = shot(&ossido, "glass-group-rim.png");
     let brightest =
         |x: u32, y0: u32, y1: u32| (y0..y1).max_by_key(|&y| rgb(&shot, x, y)[0]).unwrap();
+    let darkest = |x: u32, y0: u32, y1: u32| (y0..y1).min_by_key(|&y| rgb(&shot, x, y)[0]).unwrap();
+    let background = [0x7a_u8, 0x7b, 0x80];
     for (x, y, w, h, _, _) in regions {
         let column = 32 + x as u32 + w as u32 / 2;
         let top = 32 + y as u32;
         let bottom = top + h as u32 - 1;
         assert_eq!(
-            brightest(column, top - 3, top + 3),
+            brightest(column, top, top + 4),
             top,
             "region at y {y}: top row"
         );
         assert_eq!(
-            brightest(column, bottom - 3, bottom + 4),
+            darkest(column, bottom - 3, bottom + 1),
             bottom,
             "region at y {y}: bottom row"
         );
-        // At 12 pt the modules do not touch: the row right outside is background (in the
-        // reference `#6e6f73` below the Wi-Fi, no bridge towards the Bluetooth).
+        // At 12 pt the modules do not touch, and the rims stay inside: the row right below is
+        // background.
         let outside = rgb(&shot, column, bottom + 1);
         assert!(
-            outside
-                .iter()
-                .zip([0x7a_u8, 0x7b, 0x80])
-                .all(|(a, b)| a.abs_diff(b) <= 4),
+            worst(outside, background) <= 1,
             "region at y {y}: below the edge {outside:?}"
         );
     }
-    // Between the first module and the media one: the dark line just outside the side edge
-    // (controlcenter.md, "1 pt border sticking out"), then background.
-    let line = rgb(&shot, 32 + 142, 32 + 32);
-    assert!(
-        line[0] < 0x50,
-        "no dark line outside the side edge {line:?}"
-    );
-    let beside = rgb(&shot, 32 + 144, 32 + 32);
-    assert!(
-        beside
-            .iter()
-            .zip([0x7a_u8, 0x7b, 0x80])
-            .all(|(a, b)| a.abs_diff(b) <= 4),
-        "next to the side edge {beside:?}"
-    );
+    // Between the first module and the media one: the inside rim on the side edge's last
+    // column, then background (no outline outside; the faint start of the merging bridge
+    // between the two shapes, 10 pt apart, lifts the first column by a level or two).
+    let fill = rgb(&shot, 32 + 71, 32 + 32);
+    let side = rgb(&shot, 32 + 141, 32 + 32);
+    assert!(side[0] < fill[0] - 10, "no inside rim on the side {side:?}");
+    for x in [142, 144] {
+        let beside = rgb(&shot, 32 + x, 32 + 32);
+        assert!(
+            worst(beside, background) <= 3,
+            "next to the side edge {beside:?}"
+        );
+    }
 }
 
 #[test]
 fn translucent_glass_fades_with_its_panel() {
     // At half opacity the notification glass on the gray is halfway between the background
-    // (#7a7b80) and the full fill (#c0c1c6): a fading panel carries the glass with it.
+    // (#7a7b80) and the full fill: a fading panel carries the glass with it.
     let ossido = Headless::start_with("glass-translucent", SHOT, &["--background", "7a7b80"]);
     let size = (344, 91);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
@@ -854,9 +841,15 @@ fn translucent_glass_fades_with_its_panel() {
         .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 0.5)])
         .unwrap();
     let fill = rgb(&shot(&ossido, "glass-translucent.png"), 32 + 172, 32 + 45);
-    for (got, want) in fill.iter().zip([157_u8, 158, 163]) {
-        assert!(got.abs_diff(want) <= 4, "half opacity: {fill:?}");
+    let full = amalfi_fill(GRAY, TINT_LIGHT, REGULAR);
+    let mut half = [0u8; 3];
+    for c in 0..3 {
+        half[c] = ((GRAY[c] + f64::from(full[c])) / 2.0).round() as u8;
     }
+    assert!(
+        worst(fill, half) <= 2,
+        "half opacity: {fill:?}, want {half:?}"
+    );
     // Fully transparent: the background stays.
     glass
         .set_translucent_glass(&[((0, 0, 344, 91, 20.0, Material::Notification), 0.0)])
@@ -934,41 +927,42 @@ fn glass_cut_by_the_screen_edge_does_not_blur_in_the_far_side() {
 }
 
 #[test]
-fn the_dark_side_line_stays_on_the_side_of_a_capsule() {
-    // A Control Center module (a capsule, 142 × 64, radius 32) over the reference gray. The
-    // dark line just outside the edge is on the side and fades within ~45° around the end,
-    // as measured on the modules; it used to wrap the whole end (a black crescent, #168).
+fn the_rims_follow_the_end_of_a_capsule_without_an_outline() {
+    // A Control Center module (a capsule, 142 × 64, radius 32) over the reference gray. Around
+    // the end the inside rim stays inside the shape and nothing is drawn outside it (the
+    // measured glass had a dark line outside the sides that once wrapped the whole end, a
+    // black crescent, #168).
     let ossido = Headless::start_with("glass-capsule-end", SHOT, &[]);
     let (_back, mut glass) = full_screen_glass(&ossido, |_, _| [0x7a, 0x7b, 0x80]);
     glass
         .set_glass(&[(40 + 100, 40 + 100, 142, 64, 32.0, Material::Regular)])
         .unwrap();
     let shot = shot(&ossido, "glass-capsule-end.png");
-    let background = f64::from(rgb(&shot, 40, 40)[1]);
-    // The darkest pixel just outside the edge at an angle from the left side (0°) towards the
-    // top, relative to the background.
+    let background = rgb(&shot, 40, 40);
+    let fill = f64::from(rgb(&shot, 171, 132)[1]);
     let (cx, cy, r) = (100.0 + 32.0, 100.0 + 32.0, 32.0);
-    let darkness = |deg: f64| {
+    let at = |deg: f64, d: f64| {
         let a = deg.to_radians();
-        (0..3)
-            .map(|step| {
-                let d = r + 0.25 + f64::from(step) * 0.5;
-                let x = cx - a.cos() * d;
-                let y = cy - a.sin() * d;
-                1.0 - f64::from(rgb(&shot, x.floor() as u32, y.floor() as u32)[1]) / background
-            })
-            .fold(0.0, f64::max)
+        let x = cx - a.cos() * d;
+        let y = cy - a.sin() * d;
+        rgb(&shot, x.floor() as u32, y.floor() as u32)
     };
-    let side = darkness(0.0);
-    eprintln!(
-        "dark line: 0° {side:.2}, 30° {:.2}, 45° {:.2}, 60° {:.2}",
-        darkness(30.0),
-        darkness(45.0),
-        darkness(60.0)
-    );
-    assert!(side > 0.45, "no dark line on the side: {side:.2}");
-    assert!(darkness(45.0) < 0.3 * side, "45°: {:.2}", darkness(45.0));
-    assert!(darkness(60.0) < 0.15 * side, "60°: {:.2}", darkness(60.0));
+    for deg in [0.0, 30.0, 45.0, 60.0, -30.0, -60.0] {
+        // 1.5 px outside the arc: the background.
+        let outside = at(deg, r + 1.5);
+        assert!(
+            worst(outside, background) <= 2,
+            "{deg}°: outside the end {outside:?}"
+        );
+    }
+    // Just inside the side (0°) and the lower part of the end, the inside rim darkens the fill.
+    for deg in [0.0, -45.0] {
+        let rim = f64::from(at(deg, r - 0.75)[1]);
+        assert!(
+            rim < fill - 8.0,
+            "{deg}°: no inside rim {rim} (fill {fill})"
+        );
+    }
 }
 
 #[test]
@@ -1000,57 +994,6 @@ fn a_profile_applies_to_the_following_regions_until_clear() {
 
     let windows = ossido.client().call(WINDOW_LIST, Value::Null).unwrap();
     assert!(windows.as_array().is_some_and(|list| !list.is_empty()));
-}
-
-/// The source of the lens at `t` pt from the left end of a 120 × 24 pill over a ramp
-/// (level = x), with a profile or the material's.
-fn pill_source(name: &str, profile: Option<Profile>) -> Vec<f64> {
-    common::client::GLASS_VERSION.with(|v| v.set(7));
-    let ossido = Headless::start_with(name, SHOT, &[]);
-    let (_back, mut glass) = full_screen_glass(&ossido, |x, _| {
-        let l = x.min(255) as u8;
-        [l, l, l]
-    });
-    glass
-        .set_glass_with(|g| {
-            if let Some(profile) = profile {
-                g.set_profile(profile, Shadow::Client);
-            }
-            g.add_region(40 + 60, 40 + 100, 120, 24, 12.0, Material::Regular);
-        })
-        .unwrap();
-    let image = shot(&ossido, &format!("{name}.png"));
-    (60..120)
-        .map(|x| f64::from(rgb(&image, x, 112)[1]))
-        .collect()
-}
-
-#[test]
-fn small_controls_refract_less_than_modules() {
-    // A 24 pt pill. With the module lens, scaled to the pill (it never samples past the far
-    // edge), the left end shows the ramp a few pt from inside; with the control profile the
-    // displacement is about half (glass_profile.rs). The control's tone has its own gain, so
-    // each row is read with its own scale.
-    let module = pill_source("glass-pill-module", None);
-    let control = pill_source("glass-pill-control", Some(Profile::Control));
-    // At 40 pt the lens no longer acts: the ramp's slope gives the scale.
-    let shift = |row: &[f64], t: usize| {
-        let gain = (row[50] - row[40]) / 10.0;
-        assert!(gain > 0.2, "no ramp under the pill: {row:?}");
-        (row[t] - row[40]) / gain + 40.0 - t as f64
-    };
-    // The most the lens moves the background within the first 12 pt (the edge's own light
-    // adds to the level very near the edge, so it is not read closer than 5 pt).
-    let strongest = |row: &[f64]| (5..12).map(|t| shift(row, t)).fold(f64::MIN, f64::max);
-    let (m, c) = (strongest(&module), strongest(&control));
-    eprintln!("strongest displacement: module lens {m:.1} pt, control {c:.1} pt");
-    assert!(m > 1.0, "the module lens does not act on the pill: {m:.1}");
-    // Never past the pill's far end.
-    assert!(m + 5.0 <= 24.0, "the lens samples past the pill: {m:.1}");
-    assert!(
-        c < 0.9 * m,
-        "the control lens is not gentler: {c:.1} against {m:.1}"
-    );
 }
 
 #[test]
@@ -1160,11 +1103,12 @@ fn a_rotated_region_turns_its_whole_shape() {
 #[test]
 fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
     common::client::GLASS_VERSION.with(|v| v.set(8));
-    let ossido = Headless::start_with("glass-rotated-edge", SHOT, &["--background", "7a7b80"]);
+    // Over black, where the rim light stands out most against the fill.
+    let ossido = Headless::start_with("glass-rotated-edge", SHOT, &["--background", "000000"]);
     let size = (320, 320);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "turned", size, &transparent(size));
-    // A Control Center module (a light row on top and at the bottom, none on the sides),
-    // turned 60°: read upright, its top edge would be a side (no light) and its side a bottom.
+    // A Control Center module (the rim light on its top edge, none on the sides), turned 60°:
+    // read upright, its top edge would be a side (no light) and its side a bottom.
     glass
         .set_glass_with(|g| {
             g.set_rotation(60.0);
@@ -1178,25 +1122,36 @@ fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
     };
     let centre = (160.0, 160.0);
     let fill = level(turned(centre, 60.0, (0.0, 0.0)));
-    // The brightest pixel inside an edge's middle, from 0.5 to 4 px in (the background
-    // outside is lighter than the module).
-    let brightest = |along: (f64, f64), half: f64| {
-        (5..=40)
-            .map(|step| {
+    // The brightest pixel along the middle 40 px of an edge, from 0.5 to 4 px in (on a turned
+    // edge the pixel centres sit at every depth: some of them right where the light is).
+    let brightest = |normal: (f64, f64), half: f64| {
+        let tangent = (-normal.1, normal.0);
+        (-20..=20)
+            .flat_map(|along| (5..=40).map(move |step| (f64::from(along), step)))
+            .map(|(along, step)| {
                 let d = half - f64::from(step) / 10.0;
-                level(turned(centre, 60.0, (along.0 * d, along.1 * d)))
+                level(turned(
+                    centre,
+                    60.0,
+                    (
+                        normal.0 * d + tangent.0 * along,
+                        normal.1 * d + tangent.1 * along,
+                    ),
+                ))
             })
             .fold(f64::MIN, f64::max)
     };
     let top = brightest((0.0, -1.0), 40.0);
     let side = brightest((1.0, 0.0), 100.0);
     eprintln!("fill {fill:.1}, top edge {top:.1}, side edge {side:.1}");
+    // Thick glass over black: the fill 76 % white (194), the top row ~27 levels lighter, the
+    // sides no lighter than the fill.
     assert!(
-        top > fill + 30.0,
+        top > fill + 15.0,
         "no light on the turned top edge: {top:.1} over {fill:.1}"
     );
     assert!(
-        side < fill + 12.0,
+        side < fill + 2.0,
         "light on the turned side edge: {side:.1} over {fill:.1}"
     );
 }

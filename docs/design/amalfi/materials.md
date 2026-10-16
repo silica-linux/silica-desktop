@@ -87,3 +87,24 @@ No warm/yellowish greys anywhere: all neutrals are cool-neutral (user decision).
 
 Same structure, dark tokens. Glass tint switches to `#2A2B30`, rim dark gets stronger (40 %) and rim light
 weaker (22 %); shadows are ~2× denser (`shadows.dark`).
+
+## Implementation in Ossido
+
+The compositor's glass pass draws Glass/Regular and Glass/Thick for every glass region a surface
+declares (`crates/ossido-render/src/glass_profile.rs`, details and the kind → material table in
+[`docs/m2-glass.md`](../../m2-glass.md)):
+
+- The kit's background blur radius is the σ of a CSS `blur()`: σ 6 pt (Regular), 16 pt (Thick),
+  2 pt (Clear). A drop shadow's blur is a CSS `box-shadow` blur: σ = blur / 2.
+- Each kind of surface of `silica-glass-v1` maps to one material by the table above; the radius
+  and shape come from the region the shell declares.
+- Ossido keeps its **sharp share**: before the saturation the blurred backdrop is mixed with a
+  little of the sharp one, so the glass blurs a little and keeps part of the backdrop sharp. It
+  is one parameter per material of a kind and keeps for now the share each kind had before
+  Amalfi (0.28 on the Dock, 0.04 on modules and controls, 0.03 / 0.02 on banners, none on the
+  other thick glass). Its value is to be tuned against the kit's PNG exports of each material
+  once they are exported; until then it is provisional.
+- No lens, measured edge or outline on Regular and Thick; the blur radius never animates (a
+  fading surface changes the glass's opacity only).
+- Reduced transparency is the `opaque` glass quality (`ui.glass_quality`): the tint over
+  `Surface/Window`, rims and shadow kept, no saturation.

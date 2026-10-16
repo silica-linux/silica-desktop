@@ -73,6 +73,19 @@ uniform float line;
 uniform float saturation;
 uniform vec4 tint_color;
 uniform vec3 shadow;
+// Whether the material has an edge of its own (`edges`): the Amalfi materials have none.
+uniform float edge_on;
+// The Amalfi rims (glass_profile.rs), after the tint: the inside rim, a band `inside_rim_width`
+// pixels wide just inside the edge, filled with a color; the rim light, an inner shadow of a
+// color: the outside of the shape moved down by `rim_light_shape.x` pixels and blurred by σ
+// `rim_light_shape.y`, drawn inside it (it lights the top inner edge).
+uniform vec4 inside_rim;
+uniform float inside_rim_width;
+uniform vec4 rim_light;
+uniform vec2 rim_light_shape;
+// Without blur (the opaque quality level, `fallback.a` 1): the tint covers `fallback.rgb`
+// (Surface/Window) instead of the blurred backdrop.
+uniform vec4 fallback;
 
 // The rotation of region i, (cos, sin).
 vec2 rotation_of(int i) {
@@ -279,69 +292,92 @@ void main() {
     vec2 none = vec2(0.0);
     float sd = union_distance(p, 0.0, none);
     float t = -sd;
-    // Outward normal from the distance (central differences), on a shape with corners at
-    // least as wide as the refraction band: without it, on the diagonal of a right angle the
-    // normal jumps and the displacement leaves a seam.
     vec2 e = vec2(0.5, 0.0);
-    vec2 n = vec2(union_distance(p + e.xy, lens_reach, none) - union_distance(p - e.xy, lens_reach, none),
-                  union_distance(p + e.yx, lens_reach, none) - union_distance(p - e.yx, lens_reach, none));
-    n = length(n) > 0.0 ? normalize(n) : vec2(0.0, -1.0);
     // The nearest region's frame: its own top, sides and bottom pick the lens curves and the
     // edge profiles however it is rotated (the displacement itself stays along the screen
     // normal, the background is sampled in screen space).
     vec2 frame;
     float band = lens_width_at(p, frame);
-    vec2 nf = to_frame(n, frame);
-    float vertical = nf.y * nf.y;
 
     // Lens: the pixel at distance t samples the background at distance s along the normal
     // (glass.md, "Refraction"). The profile scales the band's width (the curve keeps its
     // shape: evaluated at t / width, its displacement times width) and the displacement.
-    float tb = t / band;
-    float measured = mix(lens_source(lens[0], tb),
-                         lens_source(nf.y < 0.0 ? lens[1] : lens[2], tb), vertical);
-    float source = t + refraction * band * (measured - tb);
+    // Glass/Regular and Glass/Thick have none: the pixel samples its own place.
+    vec2 sample_at = p;
+    if (refraction > 0.0) {
+        // Outward normal from the distance (central differences), on a shape with corners at
+        // least as wide as the refraction band: without it, on the diagonal of a right angle
+        // the normal jumps and the displacement leaves a seam.
+        vec2 n = vec2(union_distance(p + e.xy, lens_reach, none) - union_distance(p - e.xy, lens_reach, none),
+                      union_distance(p + e.yx, lens_reach, none) - union_distance(p - e.yx, lens_reach, none));
+        n = length(n) > 0.0 ? normalize(n) : vec2(0.0, -1.0);
+        vec2 nf = to_frame(n, frame);
+        float vertical = nf.y * nf.y;
+        float tb = t / band;
+        float measured = mix(lens_source(lens[0], tb),
+                             lens_source(nf.y < 0.0 ? lens[1] : lens[2], tb), vertical);
+        float source = t + refraction * band * (measured - tb);
+        sample_at = p + n * (t - source);
+    }
     // Clamped to the texture: it repeats by default, and outside it lies the opposite side.
     vec2 half_texel = 0.5 / tex_size;
-    vec2 sample_at = clamp((p + n * (t - source)) / tex_size, half_texel, vec2(1.0) - half_texel);
+    sample_at = clamp(sample_at / tex_size, half_texel, vec2(1.0) - half_texel);
 
-    vec3 background = texture2D(tex, sample_at).rgb;
+    // Without blur the tint covers the fallback surface, not the backdrop.
+    bool opaque = fallback.a > 0.5;
+    vec3 background = opaque ? fallback.rgb : texture2D(tex, sample_at).rgb;
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
     float luminance = (background.r + background.g + background.b) / 3.0;
     color += (curve2 + curve3 * luminance) * luminance * luminance;
-    // The profile over the material: saturation around the luminance, then the tint.
+    // The profile over the material: saturation around the luminance (not on the fallback
+    // surface), then the tint fill.
     float rec709 = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    color = mix(vec3(rec709), color, saturation);
+    color = mix(vec3(rec709), color, opaque ? 1.0 : saturation);
     color = mix(color, tint_color.rgb, tint_color.a);
 
-    // Edge: the measured profiles, weighted by the orientation of the true shape's normal
-    // (top, sides, bottom), so corners, tips and merged bridges blend continuously.
-    vec2 m = vec2(union_distance(p + e.xy, 0.0, none) - union_distance(p - e.xy, 0.0, none),
-                  union_distance(p + e.yx, 0.0, none) - union_distance(p - e.yx, 0.0, none));
-    m = length(m) > 0.0 ? to_frame(normalize(m), frame) : vec2(0.0, -1.0);
-    float w_top = pow(max(-m.y, 0.0), edge_power);
-    float w_bottom = pow(max(m.y, 0.0), edge_power);
-    float w_side = pow(abs(m.x), edge_power);
-    float w_shared = max(1.0 - w_top - w_bottom - w_side, 0.0);
-    float s_in = t / scale_px - 0.5;
-    float in_top = profile_at(edges[0], s_in);
-    float in_side = profile_at(edges[1], s_in);
-    float in_bottom = profile_at(edges[2], s_in);
-    float offset_in = w_top * in_top + w_side * in_side + w_bottom * in_bottom
-                    + w_shared * shared_value(in_top, in_side, in_bottom);
-    offset_in *= offset_in > 0.0 ? rim : line;
-    if (offset_in > 0.0) {
-        color += offset_in * min(vec3(1.0), (vec3(1.0) - color) / max(1.0 - fill_gray, 0.05));
-    } else {
-        color *= 1.0 + offset_in / max(fill_gray, 0.05);
+    // The material's own edge, if any: the profiles, weighted by the orientation of the true
+    // shape's normal (top, sides, bottom), so corners, tips and merged bridges blend
+    // continuously.
+    float outline = 0.0;
+    if (edge_on > 0.5) {
+        vec2 m = vec2(union_distance(p + e.xy, 0.0, none) - union_distance(p - e.xy, 0.0, none),
+                      union_distance(p + e.yx, 0.0, none) - union_distance(p - e.yx, 0.0, none));
+        m = length(m) > 0.0 ? to_frame(normalize(m), frame) : vec2(0.0, -1.0);
+        float w_top = pow(max(-m.y, 0.0), edge_power);
+        float w_bottom = pow(max(m.y, 0.0), edge_power);
+        float w_side = pow(abs(m.x), edge_power);
+        float w_shared = max(1.0 - w_top - w_bottom - w_side, 0.0);
+        float s_in = t / scale_px - 0.5;
+        float in_top = profile_at(edges[0], s_in);
+        float in_side = profile_at(edges[1], s_in);
+        float in_bottom = profile_at(edges[2], s_in);
+        float offset_in = w_top * in_top + w_side * in_side + w_bottom * in_bottom
+                        + w_shared * shared_value(in_top, in_side, in_bottom);
+        offset_in *= offset_in > 0.0 ? rim : line;
+        if (offset_in > 0.0) {
+            color += offset_in * min(vec3(1.0), (vec3(1.0) - color) / max(1.0 - fill_gray, 0.05));
+        } else {
+            color *= 1.0 + offset_in / max(fill_gray, 0.05);
+        }
+        float u_out = sd / scale_px - 0.5;
+        float out_top = outline_at(edges[0], u_out);
+        float out_side = outline_at(edges[1], u_out);
+        float out_bottom = outline_at(edges[2], u_out);
+        outline = w_top * out_top + w_side * out_side + w_bottom * out_bottom
+                + w_shared * min(out_top, min(out_side, out_bottom));
+        outline = clamp(outline * line, 0.0, 1.0);
     }
-    float u_out = sd / scale_px - 0.5;
-    float out_top = outline_at(edges[0], u_out);
-    float out_side = outline_at(edges[1], u_out);
-    float out_bottom = outline_at(edges[2], u_out);
-    float outline = w_top * out_top + w_side * out_side + w_bottom * out_bottom
-                  + w_shared * min(out_top, min(out_side, out_bottom));
-    outline = clamp(outline * line, 0.0, 1.0);
+
+    // The inside rim: the part of the pixel within `inside_rim_width` of the edge.
+    float in_band = clamp(inside_rim_width + 0.5 - t, 0.0, 1.0);
+    color = mix(color, inside_rim.rgb, inside_rim.a * in_band);
+    // The rim light: the outside of the shape moved down, blurred (the logistic approximation
+    // of a Gaussian edge), seen from inside.
+    if (rim_light.a > 0.0) {
+        float lit_distance = union_distance(p, 0.0, vec2(0.0, rim_light_shape.x));
+        float lit = 1.0 / (1.0 + exp(-1.702 * lit_distance / max(rim_light_shape.y, 0.25)));
+        color = mix(color, rim_light.rgb, rim_light.a * lit);
+    }
 
     color = clamp(color, 0.0, 1.0);
     float coverage = clamp(0.5 - sd, 0.0, 1.0);
