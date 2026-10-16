@@ -24,7 +24,7 @@ environment written from scratch in Rust, with the visual language of macOS 27
 ## Never crash
 
 - In non-test code no `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`;
-  `unsafe` is forbidden except for the embedder's FFI (`crates/embedder/src/ffi/`) and
+  `unsafe` is forbidden except for the embedder's FFI (`crates/embedder/src/ffi/`), the memory mapping and C ABI of `silica-assets` (`crates/silica-assets/src/ffi/`) and
   Ossido's EGL/GLES initialization (`crates/ossido/src/egl.rs`), isolated in a module
   with a `SAFETY` comment for every block. Clippy enforces it (see `[workspace.lints]` in `Cargo.toml`).
 - Errors as `Result` with `?`; input from Wayland clients, files and commands treated as
@@ -86,7 +86,7 @@ Forbidden:
 Assets:
 
 - Every asset has a row in `ASSETS.md` with author, license and source;
-  `cargo xtask assets` (part of `cargo xtask ci`) blocks files without a row.
+  `cargo xtask assets check` (part of `cargo xtask ci`) blocks files without a row.
 - Allowed licenses: the project's own original work, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache.
   Graphics generated in code are preferred.
 - App, file and system icons: repo `silica-os/silica-icons`, license

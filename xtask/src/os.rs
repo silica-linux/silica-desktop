@@ -650,7 +650,7 @@ fn stop() -> Result<()> {
 }
 
 /// The cargo target directory (`CARGO_TARGET_DIR` or `target/`).
-fn target_dir() -> Result<PathBuf> {
+pub(crate) fn target_dir() -> Result<PathBuf> {
     match std::env::var_os("CARGO_TARGET_DIR") {
         Some(dir) => Ok(PathBuf::from(dir)),
         None => Ok(root()?.join("target")),
@@ -776,6 +776,13 @@ fn deploy(args: &[String]) -> Result<()> {
         &root.join("data/sounds"),
         &share.join("share/silica/sounds"),
     )?;
+    // The compiled system assets (docs/assets-format.md), the same file for every process.
+    let compiled = if options.build || !crate::silica_assets::default_output()?.is_file() {
+        crate::silica_assets::build(&[])?
+    } else {
+        crate::silica_assets::default_output()?
+    };
+    replace_file(&compiled, &share.join("silica.assets"))?;
     if let Some(icons) = sibling("silica-icons") {
         let staged = work.join("icons.stage");
         let _ = std::fs::remove_dir_all(&staged);
@@ -1076,6 +1083,7 @@ export PATH="$D/bin:/usr/libexec/silica:$PATH"
 # The share's .desktop entries (deployed apps) come before the installed ones.
 export XDG_DATA_DIRS="$D/share:${{XDG_DATA_DIRS:-/usr/local/share:/usr/share}}"
 [ -d "$D/icons" ] && export SILICA_ICONS_DIR="$D/icons"
+[ -f "$D/silica.assets" ] && export SILICA_ASSETS="$D/silica.assets"
 # Pointer cursors: the standard Adwaita XCursor theme, for Ossido and for the apps (GTK, Qt,
 # the embedder).
 export XCURSOR_THEME=Adwaita XCURSOR_SIZE=24
@@ -1087,7 +1095,7 @@ set -- \
 {spawn}
 if [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; then
   set -- "$@" \
-    --spawn "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XCURSOR_THEME XCURSOR_SIZE SILICA_ICONS_DIR SILICA_RENDERER PATH && systemctl --user start silica-session.target" \
+    --spawn "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XCURSOR_THEME XCURSOR_SIZE SILICA_ICONS_DIR SILICA_ASSETS SILICA_RENDERER PATH && systemctl --user start silica-session.target" \
     --spawn "silica-daemon --replace"
 else
   set -- --session-bus "$@"
@@ -1187,6 +1195,7 @@ mod tests {
         assert_eq!(script.matches("--namespace ").count(), 8);
         assert!(!script.contains("--spawn-shell"));
         assert!(script.contains("SILICA_ICONS_DIR"));
+        assert!(script.contains("export SILICA_ASSETS=\"$D/silica.assets\""));
         // Before the first copy it falls back to the share.
         assert!(script.contains("D=/var/lib/silica-dev"));
         assert!(script.contains("|| D=/run/silica-dev"));

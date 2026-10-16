@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "id": "trash-empty",
+  "name": "trash-empty",
+  "kind": "file",
+  "layers": [
+    {
+      "role": "artwork",
+      "file": "icon.svg"
+    }
+  ],
+  "variants": {
+    "dark": {
+      "artwork": "icon-dark.svg"
+    }
+  },
+  "dynamic": null
+}

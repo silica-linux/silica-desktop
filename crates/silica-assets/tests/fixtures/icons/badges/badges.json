@@ -1,0 +1,48 @@
+{
+  "format": 1,
+  "body": [
+    100,
+    100,
+    824,
+    824
+  ],
+  "sizes": [
+    {
+      "min_size": 32,
+      "fraction": 0.381966
+    },
+    {
+      "min_size": 16,
+      "fraction": 0.618034,
+      "single": true
+    }
+  ],
+  "order": [
+    "unreadable",
+    "alias"
+  ],
+  "corners": {
+    "bottom-left": [
+      100,
+      924
+    ],
+    "bottom-right": [
+      924,
+      924
+    ]
+  },
+  "badges": {
+    "alias": {
+      "file": "alias.svg",
+      "dark": "alias-dark.svg",
+      "corner": "bottom-left",
+      "priority": 0
+    },
+    "unreadable": {
+      "file": "unreadable.svg",
+      "dark": "unreadable-dark.svg",
+      "corner": "bottom-right",
+      "priority": 0
+    }
+  }
+}

@@ -24,3 +24,38 @@ unreachable = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
 undocumented_unsafe_blocks = "deny"
+
+# The asset compiler renders SVG and encodes images: slow in an unoptimized build, and the
+# tests of silica-assets compile whole icon sets.
+[profile.dev.package.silica-assets]
+opt-level = 2
+
+[profile.dev.package.resvg]
+opt-level = 3
+
+[profile.dev.package.usvg]
+opt-level = 3
+
+[profile.dev.package.tiny-skia]
+opt-level = 3
+
+[profile.dev.package.tiny-skia-path]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.qoi]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.xxhash-rust]
+opt-level = 3
