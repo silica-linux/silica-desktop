@@ -390,7 +390,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     // Whole on the screen, though the thumbnail touches the right edge.
     expect(
       tester.getRect(find.byType(AmalfiMenuList)).right,
-      lessThanOrEqualTo(1280),
+      lessThanOrEqualTo(1280 - 8),
     );
     for (final item in [
       'Save to Desktop',

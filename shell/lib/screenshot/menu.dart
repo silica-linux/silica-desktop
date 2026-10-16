@@ -156,8 +156,9 @@ class _Place extends SingleChildLayoutDelegate {
       up = false;
     }
     final y = up ? at.dy - childSize.height : at.dy;
+    // Whole on the screen, 8 pt from its right edge.
     final x = at.dx
-        .clamp(0.0, math.max(0.0, size.width - childSize.width))
+        .clamp(0.0, math.max(0.0, size.width - childSize.width - 8))
         .toDouble();
     return Offset(
       x,

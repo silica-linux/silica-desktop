@@ -344,6 +344,10 @@ class AuthDialogState extends State<AuthDialog>
     _shake.forward(from: 0);
   }
 
+  /// polkit's explanation as a sentence: it comes without a full stop.
+  static String _sentence(String text) =>
+      RegExp(r'[.!?…]$').hasMatch(text) ? text : '$text.';
+
   @override
   Widget build(BuildContext context) {
     final l10n = l10nOf(context);
@@ -415,7 +419,7 @@ class AuthDialogState extends State<AuthDialog>
                   const SizedBox(height: AmalfiAlertMetrics.gap),
                   Text(
                     [
-                      if (message.isNotEmpty) message,
+                      if (message.isNotEmpty) _sentence(message),
                       _error ? l10n.authUnavailable : l10n.authPrompt,
                     ].join(' '),
                     style: AmalfiType.callout(color: colors.textSecondary),
