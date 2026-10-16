@@ -13,10 +13,8 @@ uniform float radius;
 uniform float exponent;
 // Points per physical pixel, for antialiasing.
 uniform float pixel;
-// Colors of the top row, of the sides and of the bottom row.
-uniform vec3 top;
-uniform vec3 side;
-uniform vec3 bottom;
+// The rim colour (straight alpha): `Line/Border` of the Amalfi tokens.
+uniform vec4 rim;
 
 // Signed distance (positive outside) from the window's superellipse outline.
 float shape_distance(vec2 p) {
@@ -39,15 +37,7 @@ void main() {
     float d = shape_distance(p);
     // The 1 pt band just inside the outline.
     float band = cover(d) - cover(d + 1.0);
-    // The nearest side chooses the color.
-    float left_right = min(p.x, size.x - p.x);
-    vec3 color = side;
-    if (p.y < left_right && p.y <= size.y - p.y) {
-        color = top;
-    } else if (size.y - p.y < left_right) {
-        color = bottom;
-    }
-    vec4 result = vec4(color, 1.0) * band * alpha;
+    vec4 result = vec4(rim.rgb * rim.a, rim.a) * band * alpha;
 #if defined(DEBUG_FLAGS)
     if (tint == 1.0)
         result = vec4(0.0, 0.2, 0.0, 0.2) + result * 0.8;

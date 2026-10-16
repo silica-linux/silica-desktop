@@ -1,10 +1,10 @@
 //! The title in the server-side decorations bar.
 //!
-//! Plain 32 pt bar (`plan/reference/titlebar.md` §1): the title is LEFT-aligned, the text
-//! starts at x 100 (the document icon sits at x 81), about 13 pt bold (Inter semibold here:
-//! the system font cannot be identified), ink centred on the bar, and when it does not fit
-//! it is shortened with an ellipsis that stays 10 pt from the right edge. In 52 pt toolbars
-//! the app draws the title itself (Ossido draws none).
+//! Amalfi title-only bar (kit `Titlebars/Bar/Title Only`): the title is centred on the window,
+//! Inter semibold 13 pt on an 18 pt line (baseline 21 pt from the top of the 32 pt bar), and
+//! the text box stops 84 pt from each side (the window controls and the matching spacer), so
+//! a long title is shortened with an ellipsis there. In 52 pt toolbars the app draws the title
+//! itself (Ossido draws none).
 
 use std::cell::RefCell;
 
@@ -18,22 +18,18 @@ use tracing::warn;
 
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.ttf");
 
-/// Title size in points (32 pt bar: ascender ink 10 px, x-height 7 px, about 13 pt bold).
+/// Title size in points (the kit's `Title` text: Inter 13, weight 8, line height 18).
 pub const SIZE: f32 = 13.0;
-/// Baseline from the top of the frame, in points: the ink is centred on the 32 pt bar
-/// (rows 11-20).
+/// Baseline from the top of the frame, in points: the 18 pt line starts at y 7 of the bar.
 pub const BASELINE: f64 = 21.0;
-/// Where the text starts, from the left edge (after the buttons and the document icon at
-/// x 81; Ossido draws no icon).
-const LEFT: f64 = 100.0;
-/// Distance of the ellipsis from the right edge.
-const RIGHT: f64 = 10.0;
-// Ink colors of the measured title (titlebar.md §1): light #4c4c4c / #bfbfbf, dark #aaa9a8 /
-// #6f6e6d.
-const ACTIVE: [u8; 3] = [0x4c, 0x4c, 0x4c];
-const INACTIVE: [u8; 3] = [0xbf, 0xbf, 0xbf];
-const ACTIVE_DARK: [u8; 3] = [0xaa, 0xa9, 0xa8];
-const INACTIVE_DARK: [u8; 3] = [0x6f, 0x6e, 0x6d];
+/// The text box starts this far from each side (kit: x 84 in a 520 pt bar, 64 pt of controls
+/// after 20 pt, mirrored by a spacer on the right).
+const INSET: f64 = 84.0;
+// Ink colors (the kit's `Title` text): `Text/Primary` when active, `Text/Tertiary` when not.
+const ACTIVE: [u8; 3] = [0x1d, 0x1e, 0x21];
+const INACTIVE: [u8; 3] = [0x9a, 0x9e, 0xa6];
+const ACTIVE_DARK: [u8; 3] = [0xf4, 0xf5, 0xf7];
+const INACTIVE_DARK: [u8; 3] = [0x7c, 0x80, 0x8a];
 
 /// The title color according to state and appearance.
 pub fn color(active: bool, dark: bool) -> [u8; 3] {
@@ -149,6 +145,8 @@ struct Cached {
     buffer: TextureBuffer<GlesTexture>,
     /// Position of the baseline in the raster, in points.
     ascent: f64,
+    /// Width of the raster in pixels.
+    width: u32,
 }
 
 impl Title {
@@ -167,7 +165,7 @@ impl Title {
             return None;
         }
         let buffer_scale = scale.round().max(1.0) as i32;
-        let available = f64::from(frame.size.w) - LEFT - RIGHT;
+        let available = f64::from(frame.size.w) - 2.0 * INSET;
         if available < f64::from(SIZE) {
             return None;
         }
@@ -210,11 +208,13 @@ impl Title {
                 key,
                 buffer,
                 ascent: f64::from(raster.ascent) / f64::from(buffer_scale),
+                width: raster.width,
             });
         }
         let cached = state.as_ref()?;
-        // Left-aligned, after the buttons.
-        let x = f64::from(frame.loc.x) + LEFT;
+        // Centred on the window (the box is symmetric), never closer to the sides than INSET.
+        let width = f64::from(cached.width) / f64::from(buffer_scale);
+        let x = f64::from(frame.loc.x) + ((f64::from(frame.size.w) - width) / 2.0).max(INSET);
         let y = f64::from(frame.loc.y) + BASELINE - cached.ascent;
         let location: Point<i32, smithay::utils::Physical> =
             Point::<f64, Logical>::from((x, y)).to_physical_precise_round(scale);

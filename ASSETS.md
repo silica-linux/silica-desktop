@@ -98,3 +98,16 @@ generated in code are preferred.
 | `tools/sounds/candidates/alert-pebble-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/alert-woodblock-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/volume-feedback-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+| `data/cursors/Silica/cursors/default` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/text` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/pointer` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/ew-resize` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/ns-resize` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/nwse-resize` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/nesw-resize` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/crosshair` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/wait` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/not-allowed` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/copy` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/context-menu` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |
+| `data/cursors/Silica/cursors/grabbing` | Silica project (silica-design, Amalfi pointers) | CC BY-SA 4.0 | rendered from `kit/symbols/Pointers` by `tools/cursors` (other names in the folder are symlinks to it) |

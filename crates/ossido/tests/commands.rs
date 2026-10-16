@@ -89,8 +89,8 @@ fn window_list_focus_move_and_close() {
         .unwrap();
     assert_eq!((moved.x, moved.y), (200, 130));
     let shot = screenshot(&ossido);
-    // Halfway along the left side: far from the cut corners.
-    assert_eq!(pixel(&shot, 200, 160), [255, 0, 0, 255]);
+    // Halfway along the left side: far from the cut corners (x 200 is the 1 pt rim).
+    assert_eq!(pixel(&shot, 201, 160), [255, 0, 0, 255]);
     assert_outside_window(&shot, 199, 160);
 
     // Without an id, window.close acts on the focused window.

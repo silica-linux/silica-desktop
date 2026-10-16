@@ -25,56 +25,28 @@ pub struct ShadowStyle {
     pub extent: (i32, i32, i32),
 }
 
-/// Active window, light appearance: A 100, s 0.5, σ 19.5, shift 18, ring 81 and 54,
-/// margins 56 / 38 / 74.
-pub const ACTIVE_LIGHT: ShadowStyle = ShadowStyle {
-    amplitude: 100.0 / 255.0,
-    shift: 0.5,
-    sigma: 19.5,
-    offset_y: 18.0,
-    ring_side: 81.0 / 255.0,
-    ring_top: 54.0 / 255.0,
-    extent: (56, 38, 74),
-};
+/// `shadows.3` of the Amalfi tokens, on every window (active or not; `materials.md`: only the
+/// window has a shadow): y 12, blur 32 (a CSS blur, so sigma 16), black at 18 % in light
+/// (`#0000002E`) and 36 % in dark (`#0000005C`), no spread, no contact ring. Margins where the
+/// Gaussian reaches zero (3 sigma): sides 48, top 48 - 12, bottom 48 + 12.
+const fn shadow_3(alpha: u8) -> ShadowStyle {
+    ShadowStyle {
+        amplitude: alpha as f32 / 255.0,
+        // The shader measures from the first pixel after the edge (0.5 pt in): undo it.
+        shift: -0.5,
+        sigma: 16.0,
+        offset_y: 12.0,
+        ring_side: 0.0,
+        ring_top: 0.0,
+        extent: (50, 38, 62),
+    }
+}
 
-/// Inactive window, light appearance: A 72, s −2, σ 8.5, shift 7, ring 59 and 44,
-/// margins 23 / 16 / 30.
-pub const INACTIVE_LIGHT: ShadowStyle = ShadowStyle {
-    amplitude: 72.0 / 255.0,
-    shift: -2.0,
-    sigma: 8.5,
-    offset_y: 7.0,
-    ring_side: 59.0 / 255.0,
-    ring_top: 44.0 / 255.0,
-    extent: (23, 16, 30),
-};
+pub const ACTIVE_LIGHT: ShadowStyle = shadow_3(0x2e);
+pub const INACTIVE_LIGHT: ShadowStyle = shadow_3(0x2e);
+pub const ACTIVE_DARK: ShadowStyle = shadow_3(0x5c);
+pub const INACTIVE_DARK: ShadowStyle = shadow_3(0x5c);
 
-/// Active window, dark appearance: A 190, s −1, σ 20, same shift (18), ring 243 on the
-/// sides and 239 on top (practically a 1 pt black border). Margins as in light: the profile
-/// reaches 1 at d = 48 (windows.md, "Windows · shadow").
-pub const ACTIVE_DARK: ShadowStyle = ShadowStyle {
-    amplitude: 190.0 / 255.0,
-    shift: -1.0,
-    sigma: 20.0,
-    offset_y: 18.0,
-    ring_side: 243.0 / 255.0,
-    ring_top: 239.0 / 255.0,
-    extent: (56, 38, 74),
-};
-
-/// Inactive window, dark appearance: A 194, s −4, σ 9, shift 7, ring 223 and 215,
-/// margins as in light (the profile is at 0 at d = 20).
-pub const INACTIVE_DARK: ShadowStyle = ShadowStyle {
-    amplitude: 194.0 / 255.0,
-    shift: -4.0,
-    sigma: 9.0,
-    offset_y: 7.0,
-    ring_side: 223.0 / 255.0,
-    ring_top: 215.0 / 255.0,
-    extent: (23, 16, 30),
-};
-
-/// The shadow of a window according to state and appearance.
 pub fn style(active: bool, dark: bool) -> ShadowStyle {
     match (active, dark) {
         (true, false) => ACTIVE_LIGHT,

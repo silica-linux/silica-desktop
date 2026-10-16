@@ -42,25 +42,31 @@ const EXPANDED_BORDER_ALPHA: f64 = 0.22;
 /// ~20 %) and from `#6a6b6f` (expanded, ~13 %) back to `#7a7b80`. Dark: not measured.
 const BAR_SHADOW_ALPHA: f64 = 0.2;
 const EXPANDED_SHADOW_ALPHA: f64 = 0.13;
+/// `App/Mission Control/Bar Capsule` of the Amalfi tokens (light `#87888E`, dark `#78797E`),
+/// drawn at 55 % opacity under the current space's name (kit `Apps/Mission Control/Panorama`).
 const CAPSULE_FILL: [u8; 4] = [0x87, 0x88, 0x8e, 0xff];
-const CAPSULE_BORDER: [u8; 4] = [0x8d, 0x8e, 0x94, 0xff];
 const CAPSULE_FILL_DARK: [u8; 4] = [0x78, 0x79, 0x7e, 0xff];
-const CAPSULE_BORDER_DARK: [u8; 4] = [0x6e, 0x6f, 0x74, 0xff];
-const LABEL_COLOR: [u8; 4] = [0, 0, 0, 0xff];
-const LABEL_COLOR_DARK: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
-const PLUS_COLOR: [u8; 4] = [0x4c, 0x4c, 0x4c, 0xff];
-const PLUS_COLOR_DARK: [u8; 4] = [0xe5, 0xe5, 0xe5, 0xff];
-/// Labels: size ~13–14 pt; capsule of the current space 24 tall at 7 pt from the edge, with
-/// ~11 pt of margin around the text; 2 pt between one entry and the next.
-const LABEL_SIZE: f32 = 13.5;
-const CAPSULE_TOP: f64 = 7.0;
+const CAPSULE_OPACITY: f64 = 0.55;
+/// `Text/Primary` (names) and `Text/Secondary` (the "+") of the Amalfi tokens.
+const LABEL_COLOR: [u8; 4] = [0x1d, 0x1e, 0x21, 0xff];
+const LABEL_COLOR_DARK: [u8; 4] = [0xf4, 0xf5, 0xf7, 0xff];
+const PLUS_COLOR: [u8; 4] = [0x5f, 0x63, 0x6b, 0xff];
+const PLUS_COLOR_DARK: [u8; 4] = [0xb0, 0xb4, 0xbc, 0xff];
+/// Labels (Inter 13 regular): the capsule of each space is 112 × 24, radius 8, 8 pt from the top
+/// and 8 pt from the next one, the name centred in it; a longer name widens its capsule (12 pt
+/// of margin each side).
+const LABEL_SIZE: f32 = 13.0;
+const CAPSULE_TOP: f64 = 8.0;
 const CAPSULE_HEIGHT: f64 = 24.0;
-const CAPSULE_RADIUS: f32 = 6.5;
-const LABEL_PADDING: f64 = 11.0;
-const LABEL_GAP: f64 = 2.0;
-/// The "+": 20 × 20 cross, 2 stroke, center at 26 pt from the right edge and 20 from the top.
+const CAPSULE_RADIUS: f32 = 8.0;
+const CAPSULE_WIDTH: f64 = 112.0;
+const LABEL_PADDING: f64 = 12.0;
+const LABEL_GAP: f64 = 8.0;
+/// The "+" (`Regular / plus`, 20 × 20, `Text/Secondary`): centre 26 pt from the right edge (the
+/// glyph box is 16 from it) and 20 from the top.
 const PLUS_SIZE: f64 = 20.0;
 const PLUS_RIGHT: f64 = 26.0;
+const PLUS_STROKE: f32 = 1.6;
 
 /// Gap between the arranged windows.
 pub const WINDOW_GAP: f64 = 16.0;
@@ -69,9 +75,9 @@ const MARGIN_SIDE: f64 = 48.0;
 const MARGIN_TOP: f64 = 48.0;
 const MARGIN_BOTTOM: f64 = 24.0;
 
-/// Expanded bar (pointer at the top): 170 pt tall with border `#5f6063` and ~40 pt of shadow;
+/// Expanded bar (pointer at the top): 168 pt tall (kit) with ~40 pt of shadow;
 /// the fill goes from `#9e9fa5` to `#a4a5ab` (y 114 and below).
-pub const EXPANDED_HEIGHT: f64 = 170.0;
+pub const EXPANDED_HEIGHT: f64 = 168.0;
 const EXPANDED_SHADOW: f64 = 44.0;
 /// Ring of the current space: 3 pt, 1 pt of bar between ring and thumbnail, sRGB `#3b99fd`.
 const RING_WIDTH: f64 = 3.0;
@@ -93,9 +99,9 @@ const CLOSE_DELAY_MS: f64 = 1030.0;
 /// Crossing the gap to a neighbor keeps the button showing for this long (not measured).
 const CLOSE_REARM_MS: f64 = 300.0;
 const THUMB_LABEL_BASELINE: f64 = 18.0;
-/// The "+" comes down with the bar: center at y 20 compact, 101.5 expanded.
+/// The "+" comes down with the bar: center at y 20 compact, 98 expanded (kit: y 88 + 10).
 const PLUS_Y: f64 = 20.0;
-const PLUS_Y_EXPANDED: f64 = 101.5;
+const PLUS_Y_EXPANDED: f64 = 98.0;
 /// The thumbnails appear halfway through the expansion (in the video between 63 % and 80 %).
 const THUMBS_FROM: f64 = 0.6;
 const THUMBS_FULL: f64 = 0.8;
@@ -541,6 +547,8 @@ pub struct Panorama {
     pub row: Option<crate::thumbnail_row::Row>,
     /// The thumbnail under the pointer, for its close button.
     pub hover: Option<Hover>,
+    /// Where the pointer is (for the ring and the title of the window under it).
+    pub pointer: Option<Point<f64, Logical>>,
     /// A close button just left with its button showing: a neighbor shows its own at once.
     pub rearm_until: Option<Instant>,
     /// The close button pressed (the space goes on release over it).
@@ -599,6 +607,18 @@ pub struct PanoramaView {
     pub drag: Option<(Window, Rectangle<f64, Logical>)>,
     /// The label of each space.
     pub labels: Vec<String>,
+    /// The window under the pointer: where it is now and its title (Panorama only).
+    pub hover_window: Option<HoverWindow>,
+}
+
+/// The ring and the title capsule of the window under the pointer (kit: `Hover ring`, `Hover
+/// title`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HoverWindow {
+    pub rect: Rectangle<f64, Logical>,
+    /// The title in the capsule; none in App Windows (the title is under each window there).
+    pub title: Option<String>,
+    pub dark: bool,
 }
 
 /// An entry of the spaces bar, in points in the output.
@@ -687,8 +707,9 @@ fn bar_items(labels: &[String], width: f64) -> Vec<BarItem> {
     let mut items: Vec<BarItem> = (0..labels.len())
         .map(|index| {
             let label = labels.get(index).cloned().unwrap_or_default();
-            let w =
-                f64::from(text_width(&label, LABEL_SIZE, Weight::Regular)) + 2.0 * LABEL_PADDING;
+            let w = (f64::from(text_width(&label, LABEL_SIZE, Weight::Regular))
+                + 2.0 * LABEL_PADDING)
+                .max(CAPSULE_WIDTH);
             BarItem {
                 index,
                 label,
@@ -870,6 +891,7 @@ impl State {
             returning: None,
             row: None,
             hover: None,
+            pointer: None,
             rearm_until: None,
             close_press: None,
             plus_press: false,
@@ -1107,6 +1129,7 @@ impl State {
             thumbnail_rects: self.thumbnail_rects_now(),
             drag,
             labels: self.space_labels(),
+            hover_window: self.hover_window(),
             plus: self.workspaces.count() < crate::workspaces::MAX_SPACES,
             zoom: panorama.zoom.map(|(index, rect)| {
                 let output = self.output_size();
@@ -1165,6 +1188,36 @@ impl State {
                 (location.x - center.x).hypot(location.y - center.y) <= CLOSE_RADIUS
             })
             .map(|(index, _)| index)
+    }
+
+    /// The window under the pointer, once the windows are in place: the topmost arranged one
+    /// that contains it, below the spaces bar and with no window grabbed.
+    fn hover_window(&self) -> Option<HoverWindow> {
+        let panorama = self.panorama.as_ref()?;
+        if !panorama.opening
+            || panorama.progress < 1.0
+            || panorama.drag.is_some()
+            || panorama.returning.is_some()
+            || !matches!(panorama.mode, Mode::Panorama | Mode::App)
+        {
+            return None;
+        }
+        let pointer = panorama.pointer?;
+        if panorama.mode == Mode::Panorama && pointer.y < bar_height(panorama.expansion) {
+            return None;
+        }
+        let placement = panorama
+            .placements
+            .iter()
+            .rev()
+            .find(|p| p.to.contains(pointer))?;
+        Some(HoverWindow {
+            rect: placement.to,
+            title: (panorama.mode == Mode::Panorama)
+                .then(|| window_title_of(&placement.window))
+                .filter(|title| !title.is_empty()),
+            dark: self.dark(),
+        })
     }
 
     /// The pointer over the thumbnails: which one shows its close button.
@@ -1249,6 +1302,7 @@ impl State {
         if !panorama.opening {
             return;
         }
+        panorama.pointer = Some(location);
         if panorama.mode != Mode::Panorama {
             return;
         }
@@ -1538,15 +1592,10 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
         let alpha = (strength * t * t * 255.0).round() as u8;
         canvas.fill_rect([0.0, bar + 1.0 + row as f32, w, 1.0], [0, 0, 0, alpha]);
     }
-    let (capsule_fill, capsule_border, label_color, plus_color) = if look.dark {
-        (
-            CAPSULE_FILL_DARK,
-            CAPSULE_BORDER_DARK,
-            LABEL_COLOR_DARK,
-            PLUS_COLOR_DARK,
-        )
+    let (capsule_fill, label_color, plus_color) = if look.dark {
+        (CAPSULE_FILL_DARK, LABEL_COLOR_DARK, PLUS_COLOR_DARK)
     } else {
-        (CAPSULE_FILL, CAPSULE_BORDER, LABEL_COLOR, PLUS_COLOR)
+        (CAPSULE_FILL, LABEL_COLOR, PLUS_COLOR)
     };
     // The compact entries vanish at the start of the expansion.
     let compact = 1.0 - e / 0.3;
@@ -1560,13 +1609,18 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
                     r.size.w as f32,
                     r.size.h as f32,
                 ];
-                canvas.fill_rounded(rect, CAPSULE_RADIUS, faded(capsule_fill, compact));
-                canvas.stroke_rounded(rect, CAPSULE_RADIUS, 1.0, faded(capsule_border, compact));
+                canvas.fill_rounded(
+                    rect,
+                    CAPSULE_RADIUS,
+                    faded(capsule_fill, compact * CAPSULE_OPACITY),
+                );
             }
-            // Baseline: ~10 pt capitals centered in the capsule.
-            let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 5.0) as f32;
+            // Baseline: the 13 pt line of 18 sits at y 11 of the bar (cap height 9.4, centred
+            // on the 24 pt capsule).
+            let baseline = (CAPSULE_TOP + CAPSULE_HEIGHT / 2.0 + 4.7) as f32;
+            let text = f64::from(text_width(&item.label, LABEL_SIZE, Weight::Regular));
             canvas.text(
-                [(r.loc.x + LABEL_PADDING) as f32, baseline],
+                [(r.loc.x + (r.size.w - text) / 2.0) as f32, baseline],
                 &item.label,
                 LABEL_SIZE,
                 Weight::Regular,
@@ -1628,8 +1682,8 @@ pub fn draw_bar(canvas: &mut Canvas, look: &BarLook) {
     let cx = (plus.loc.x + plus.size.w / 2.0) as f32;
     let cy = (plus.loc.y + plus.size.h / 2.0) as f32;
     let half = (PLUS_SIZE / 2.0) as f32 - 1.0;
-    canvas.line([cx - half, cy], [cx + half, cy], 2.0, plus_color);
-    canvas.line([cx, cy - half], [cx, cy + half], 2.0, plus_color);
+    canvas.line([cx - half, cy], [cx + half, cy], PLUS_STROKE, plus_color);
+    canvas.line([cx, cy - half], [cx, cy + half], PLUS_STROKE, plus_color);
 }
 
 /// Draws the close buttons (`origin`: where the canvas starts in the output).
@@ -1666,6 +1720,97 @@ pub fn draw_close_buttons(canvas: &mut Canvas, buttons: &[CloseButton]) {
         canvas.line([x - c, y + c], [x + c, y - c], 2.0, CLOSE_CROSS_COLOR);
     }
 }
+
+/// Ring of the window under the pointer: `App/Mission Control/Ring`, 4 pt inside the edge, radius
+/// 20 (kit `Hover ring`).
+const WINDOW_RING_WIDTH: f32 = 4.0;
+const WINDOW_RING_RADIUS: f32 = 20.0;
+/// Title capsule (kit `Hover title`): 32 tall, radius 16, at least 112 wide, Inter 12 regular,
+/// translucent `Surface` fill and 1 pt border (the kit's blur 6 and soft shadow are not drawn).
+const TITLE_HEIGHT: f32 = 32.0;
+const TITLE_MIN_WIDTH: f32 = 112.0;
+const TITLE_PADDING: f32 = 20.0;
+const TITLE_SIZE: f32 = 12.0;
+const TITLE_FILL: [u8; 4] = [0xff, 0xff, 0xff, 0x99];
+const TITLE_FILL_DARK: [u8; 4] = [0x2a, 0x2b, 0x30, 0x99];
+const TITLE_BORDER: [u8; 4] = [0x00, 0x00, 0x00, 0x1f];
+const TITLE_BORDER_DARK: [u8; 4] = [0x00, 0x00, 0x00, 0x66];
+
+/// The window title of a placement (the label shown in the capsule).
+fn window_title_of(window: &Window) -> String {
+    window_label(window)
+}
+
+/// Draws the ring and the capsule of a hovered window (canvas = the window's rectangle).
+pub fn draw_hover_window(canvas: &mut Canvas, hover: &HoverWindow) {
+    let (w, h) = (hover.rect.size.w as f32, hover.rect.size.h as f32);
+    let inset = WINDOW_RING_WIDTH / 2.0;
+    canvas.stroke_rounded(
+        [inset, inset, w - 2.0 * inset, h - 2.0 * inset],
+        WINDOW_RING_RADIUS - inset,
+        WINDOW_RING_WIDTH,
+        RING_COLOR,
+    );
+    let Some(title) = &hover.title else {
+        return;
+    };
+    let text = text_width(title, TITLE_SIZE, Weight::Regular);
+    let width = (text + 2.0 * TITLE_PADDING)
+        .max(TITLE_MIN_WIDTH)
+        .min((w - 2.0 * WINDOW_RING_WIDTH).max(0.0));
+    let (fill, border, ink) = if hover.dark {
+        (TITLE_FILL_DARK, TITLE_BORDER_DARK, LABEL_COLOR_DARK)
+    } else {
+        (TITLE_FILL, TITLE_BORDER, LABEL_COLOR)
+    };
+    let rect = [
+        (w - width) / 2.0,
+        (h - TITLE_HEIGHT) / 2.0,
+        width,
+        TITLE_HEIGHT,
+    ];
+    canvas.fill_rounded(rect, TITLE_HEIGHT / 2.0, fill);
+    canvas.stroke_rounded(
+        [rect[0] + 0.5, rect[1] + 0.5, rect[2] - 1.0, rect[3] - 1.0],
+        TITLE_HEIGHT / 2.0 - 0.5,
+        1.0,
+        border,
+    );
+    // The 16 pt line of the text sits 8 pt below the capsule's top: baseline ~ 11.6 under it.
+    canvas.text(
+        [(w - text.min(width)) / 2.0, rect[1] + 8.0 + 11.6],
+        title,
+        TITLE_SIZE,
+        Weight::Regular,
+        ink,
+    );
+}
+
+/// The hovered window's ring and title as an element at the window.
+pub fn hover_window_element(
+    renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
+    sprite: &HoverSprite,
+    hover: &HoverWindow,
+    scale: f64,
+) -> Option<
+    smithay::backend::renderer::element::texture::TextureRenderElement<
+        smithay::backend::renderer::gles::GlesTexture,
+    >,
+> {
+    sprite.0.element(
+        renderer,
+        &format!("{}:{:?}", hover.dark, hover.title),
+        hover.rect.size,
+        hover.rect.loc,
+        scale,
+        1.0,
+        |canvas| draw_hover_window(canvas, hover),
+    )
+}
+
+/// The cached drawing of the hovered window (in the output's data).
+#[derive(Default)]
+pub struct HoverSprite(Sprite);
 
 /// The close buttons as an element over the whole bar.
 pub fn close_buttons_element(

@@ -172,10 +172,11 @@ void main() {
         min_o = vec3(0.816, 0.553, 0.043); min_ot = mix(min_t, min_o, edge_weak); min_ob = mix(min_b, min_o, edge_weak);
         zoom_t = vec3(0.384, 0.816, 0.180); zoom_b = vec3(0.604, 0.855, 0.486); zoom_c = (zoom_t + zoom_b) * 0.5;
         zoom_o = vec3(0.318, 0.620, 0.196); zoom_ot = mix(zoom_t, zoom_o, edge_weak); zoom_ob = mix(zoom_b, zoom_o, edge_weak);
-        // Inactive: near white (lum 240 → 246), grey outline at the sides (~203), softer at
-        // the top (239) and bottom (236).
-        grey_t = vec3(0.941); grey_b = vec3(0.965); grey_c = (grey_t + grey_b) * 0.5;
-        grey_o = vec3(0.796); grey_ot = vec3(0.937); grey_ob = vec3(0.925);
+        // Inactive (kit `Titlebars/Dot/*/Inactive/Light`): gradient #f4f4f7 -> #eaebec, 0.5 pt
+        // outline #c3c3c7 (the 1 px ring of the disc is mixed halfway at the top and bottom).
+        grey_t = vec3(0.957, 0.957, 0.969); grey_b = vec3(0.918, 0.922, 0.925); grey_c = (grey_t + grey_b) * 0.5;
+        grey_o = vec3(0.765, 0.765, 0.780);
+        grey_ot = mix(grey_t, grey_o, 0.5); grey_ob = mix(grey_b, grey_o, 0.5);
     }
     if (!lit) {
         close_c = grey_c; close_t = grey_t; close_b = grey_b;

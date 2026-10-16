@@ -273,7 +273,7 @@ fn demo_renders_reacts_to_clicks_and_closes() {
 
     // First frame: background and probe square at density 1.
     session.expect_pixel(x + 150, y + 190, IDLE);
-    // Inside the probe but outside the corner cut by Ossido (superellipse, radius 33.5).
+    // Inside the probe but outside the corner cut by Ossido (superellipse, radius 21.5).
     session.expect_pixel(x + 15, y + 15, LO_DPI);
 
     // A click crosses Ossido, Wayland, the embedder and Flutter.

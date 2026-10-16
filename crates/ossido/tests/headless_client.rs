@@ -22,12 +22,13 @@ fn xdg_toplevel_appears_in_screenshot() {
     let (w, h) = WINDOW;
     let at = FIRST_WINDOW_AT;
     // Center and the middle of the sides: the corners are cut (window_corners_follow_the_reference).
+    // The outermost pixel row or column is the 1 pt rim, so the points are 1 pt inside.
     for (x, y) in [
         (at + w / 2, at + h / 2),
-        (at, at + h / 2),
-        (at + w - 1, at + h / 2),
-        (at + w / 2, at),
-        (at + w / 2, at + h - 1),
+        (at + 1, at + h / 2),
+        (at + w - 2, at + h / 2),
+        (at + w / 2, at + 1),
+        (at + w / 2, at + h - 2),
     ] {
         assert_eq!(
             pixel(&shot, x, y),

@@ -11,11 +11,12 @@ use smithay::backend::renderer::gles::{
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
-/// Superellipse |x/r|ⁿ + |y/r|ⁿ = 1 that reproduces the measured corner mask
-/// (squared error 0.42 on the missing pixels; r and n are correlated, the pair is not
-/// determined). In logical points.
-pub const CORNER_RADIUS: f64 = 33.5;
-pub const CORNER_EXPONENT: f32 = 4.5;
+/// Superellipse |x/r|ⁿ + |y/r|ⁿ = 1 that stands for the Amalfi window corner: radius 18 with
+/// smoothing 0.6 (the kit's smooth corner, `tokens.json` `radii.window`). Fitted to the
+/// smoothed-corner curve (a 28.8 pt long cubic-arc-cubic path), RMS error 0.05 pt. In logical
+/// points.
+pub const CORNER_RADIUS: f64 = 21.5;
+pub const CORNER_EXPONENT: f32 = 2.5;
 
 /// The radius in physical pixels for a window of this size: not more than half the
 /// shorter side, so that the corner boxes do not overlap.
@@ -244,8 +245,8 @@ mod tests {
 
     #[test]
     fn radius_is_clamped_to_half_the_short_side() {
-        assert_eq!(radius_for(Size::from((900.0, 600.0)), 1.0), 33.5);
-        assert_eq!(radius_for(Size::from((900.0, 600.0)), 2.0), 67.0);
+        assert_eq!(radius_for(Size::from((900.0, 600.0)), 1.0), 21.5);
+        assert_eq!(radius_for(Size::from((900.0, 600.0)), 2.0), 43.0);
         assert_eq!(radius_for(Size::from((100.0, 40.0)), 1.0), 20.0);
         assert_eq!(radius_for(Size::from((0.0, 0.0)), 1.0), 0.0);
     }

@@ -665,7 +665,7 @@ fn window_elements(
             }
         }
     }
-    // The 1 pt inner border (only in dark), above the content.
+    // The 1 pt rim (Line/Border), above the content.
     if let Some(style) = ossido_render::border::style(active, dark)
         && let Some(program) = &shaders.border
     {
@@ -951,6 +951,24 @@ pub fn output_elements(
                 Point::default(),
                 1.0,
             )));
+        }
+        // The ring and the title of the window under the pointer, in front of the windows.
+        if let Some(hover) = &panorama.hover_window {
+            let sprite = output
+                .user_data()
+                .get_or_insert(crate::panorama::HoverSprite::default);
+            if let Some(element) =
+                crate::panorama::hover_window_element(renderer, sprite, hover, scale)
+            {
+                elements.insert(
+                    0,
+                    OutputElement::Texture(RescaleRenderElement::from_element(
+                        element,
+                        Point::default(),
+                        1.0,
+                    )),
+                );
+            }
         }
         for thumbnail in &panorama.thumbnails {
             let s = thumbnail.rect.size.w / output_logical.w.max(1.0);
