@@ -81,7 +81,7 @@ height; the panel only grows downwards. All values on the 4 pt grid.
 | Round buttons | 4 circles 56 × 56, same glass as the bar, gap 8 (pitch 64); 8 pt between bar and first button: 384 + 8 + 4·56 + 3·8 = 640 |
 | Button glyphs | 24 pt (Icon Kit, Regular/24), order: Applications, Files, Actions, Clipboard |
 | Magnifier / scope glyph | 24 pt at x 20, centred on the 56 pt header |
-| Field text | Title 1 size (24/32 style), starting at x 56 |
+| Field text | text style **Field**: Inter 26 / 32 Regular (placeholder in Tertiary), starting at x 56 |
 | Handler icon at the right | 28 pt, 20 from the right edge |
 | Panel with results | 640 wide, radius 28; header 56; 1 pt separator inset 20; filter row 40 (pills 24 tall, gap 8, inset 20); rows 56; bottom padding 8 |
 | Result list | at most 6 rows visible (panel max 440 tall), then it scrolls |
