@@ -74,12 +74,6 @@ Future<void> main(List<String> args) async {
   runApp(ShellComponent(component: component));
 }
 
-/// The desktop entries, read once for every component of this process (each gets its own
-/// map: a component may change its copy).
-Map<String, DesktopEntry> desktopEntries() =>
-    Map.of(_desktopEntries ??= loadDesktopEntries(locale: systemLanguage()));
-Map<String, DesktopEntry>? _desktopEntries;
-
 class ShellComponent extends StatelessWidget {
   const ShellComponent({super.key, required this.component});
 
@@ -89,30 +83,36 @@ class ShellComponent extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget child = switch (component) {
       'dock-demo' => const Dock(items: placeholderItems),
-      'menubar' => MenuBar(
-        entries: desktopEntries(),
-        onSearch: () => ShellChannel.instance.execute('faro.toggle'),
-        onClock: () => ShellChannel.instance.execute('notifications.toggle'),
-        onControls: () => ShellChannel.instance.execute('controlcenter.toggle'),
-        system: DBusSystem(),
-        media: MediaPlayers.instance,
+      // The components that name or list apps follow the installed ones (#198, #200).
+      'menubar' => _followsEntries(
+        () => MenuBar(
+          entries: desktopEntries(),
+          onSearch: () => ShellChannel.instance.execute('faro.toggle'),
+          onClock: () => ShellChannel.instance.execute('notifications.toggle'),
+          onControls: () =>
+              ShellChannel.instance.execute('controlcenter.toggle'),
+          system: DBusSystem(),
+          media: MediaPlayers.instance,
+        ),
       ),
       'wallpaper' => Wallpaper(choice: loadWallpaperChoice()),
-      'faro' => Faro(entries: desktopEntries()),
+      'faro' => _followsEntries(() => Faro(entries: desktopEntries())),
       'notifications' => NotificationsLayer(
         source: DBusNotifications(),
         system: DBusSystem(),
       ),
       'controlcenter' => ControlCenter(system: DBusSystem()),
       // The app switcher never takes input: the same layer hosts the screenshots.
-      'switcher' => Stack(
-        children: [
-          AppSwitcher(entries: desktopEntries()),
-          ScreenshotLayer(entries: desktopEntries()),
-          ForceQuitLayer(entries: desktopEntries()),
-          // The polkit agent's password dialog, above everything else here.
-          AuthLayer(source: DBusAuth(), entries: desktopEntries()),
-        ],
+      'switcher' => _followsEntries(
+        () => Stack(
+          children: [
+            AppSwitcher(entries: desktopEntries()),
+            ScreenshotLayer(entries: desktopEntries()),
+            ForceQuitLayer(entries: desktopEntries()),
+            // The polkit agent's password dialog, above everything else here.
+            AuthLayer(source: DBusAuth(), entries: desktopEntries()),
+          ],
+        ),
       ),
       _ => const LiveDock(),
     };
@@ -129,4 +129,10 @@ class ShellComponent extends StatelessWidget {
       child: Directionality(textDirection: TextDirection.ltr, child: glass),
     );
   }
+
+  /// Builds the component again whenever the installed apps change.
+  static Widget _followsEntries(Widget Function() build) => ListenableBuilder(
+    listenable: desktopEntryStore,
+    builder: (context, _) => build(),
+  );
 }

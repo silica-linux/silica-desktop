@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart' show Locale;
@@ -29,6 +30,7 @@ String downloadsName() =>
     downloadDir(Platform.environment['HOME'] ?? '').split('/').last;
 
 void main() {
+  liveEntriesTests();
   test(
     'a .desktop entry: localized name, Exec without codes, actions ignored',
     () {
@@ -315,5 +317,79 @@ void main() {
     expect(byLabel[user], home.path);
     // Mustache has no Recents view yet: shown disabled.
     expect(byLabel['Recents'], isNull);
+  });
+}
+
+const String firefoxEntry = '''
+[Desktop Entry]
+Name=Firefox
+Exec=flatpak run org.mozilla.firefox %u
+Icon=org.mozilla.firefox
+Type=Application
+''';
+
+void liveEntriesTests() {
+  test('Flatpak exports are searched even when XDG_DATA_DIRS lacks them', () {
+    final dirs = appDataDirs({
+      'HOME': '/home/u',
+      'XDG_DATA_DIRS': '/usr/share:/var/lib/flatpak/exports/share/',
+    });
+    expect(dirs, contains('/home/u/.local/share/flatpak/exports/share'));
+    expect(dirs.where((d) => d.startsWith('/var/lib/flatpak')), hasLength(1));
+  });
+
+  test(
+    'an app installed while the store runs appears, and removed goes',
+    () async {
+      final root = Directory.systemTemp.createTempSync('silica-entries');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final apps = Directory('${root.path}/data/applications')
+        ..createSync(recursive: true);
+      final store = DesktopEntryStore(
+        env: {
+          'HOME': root.path,
+          'XDG_DATA_HOME': '${root.path}/none',
+          'XDG_DATA_DIRS': '${root.path}/data',
+        },
+        debounce: const Duration(milliseconds: 20),
+        rescan: const Duration(milliseconds: 50),
+      );
+      addTearDown(store.dispose);
+      expect(store.entries, isEmpty);
+      final changed = Completer<void>();
+      store.addListener(() {
+        if (!changed.isCompleted) changed.complete();
+      });
+      File(
+        '${apps.path}/org.mozilla.firefox.desktop',
+      ).writeAsStringSync(firefoxEntry);
+      await changed.future.timeout(const Duration(seconds: 5));
+      expect(store.entries['org.mozilla.firefox']?.name, 'Firefox');
+      expect(
+        store.entries['org.mozilla.firefox']!.matchesAppId(
+          'org.mozilla.firefox',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test('a running app that is not pinned gets a Dock item with its entry', () {
+    final firefox = parseDesktopEntry('org.mozilla.firefox', firefoxEntry)!;
+    final items = dockItems(
+      {'org.mozilla.firefox': firefox},
+      const [],
+      [
+        const Toplevel(
+          id: '1',
+          title: 'Mozilla Firefox',
+          appId: 'org.mozilla.firefox',
+        ),
+      ],
+    );
+    final item = items.firstWhere((i) => i.id == 'org.mozilla.firefox');
+    expect(item.label, 'Firefox');
+    expect(item.running, isTrue);
+    expect(item.pinned, isFalse);
   });
 }
