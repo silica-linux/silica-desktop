@@ -23,6 +23,7 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../l10n/l10n.dart';
+import '../dock/apps.dart' show appsItemId;
 import '../system/desktop_entries.dart';
 import '../system/icon_lookup.dart';
 import '../system/silica_icons.dart';
@@ -191,7 +192,8 @@ List<DesktopEntry> launcherApps(
 }) {
   final inCategory = [
     for (final e in entries)
-      if (category == null || categoryOf(e) == category) e,
+      if (e.id != appsItemId && (category == null || categoryOf(e) == category))
+        e,
   ];
   if (query.trim().isEmpty) return inCategory..sort(_byName);
   final found = searchApps(inCategory, query);
