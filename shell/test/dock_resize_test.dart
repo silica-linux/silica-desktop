@@ -25,7 +25,7 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final env = {'XDG_CONFIG_HOME': dir.path};
       final defaults = DockOptions.read(env: env);
-      expect(defaults.tileSize, 48);
+      expect(defaults.tileSize, 60);
       expect(defaults.magnify, isFalse);
       saveDockOption('tileSize', 200, env: env);
       expect(DockOptions.read(env: env).tileSize, 128);
@@ -73,7 +73,7 @@ void main() {
     double shelfHeight(WidgetTester tester) => tester
         .widgetList<Positioned>(find.byType(Positioned))
         .firstWhere(
-          (p) => p.width != null && p.height != null && p.height! >= 28,
+          (p) => p.width != null && p.height != null && p.height! >= 36,
         )
         .height!;
 
@@ -84,7 +84,7 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final env = {'XDG_CONFIG_HOME': dir.path};
       final (mouse, start) = await setUp(tester, env);
-      expect(shelfHeight(tester), 60);
+      expect(shelfHeight(tester), 80);
 
       // Over the separator: the ns-resize pointer.
       await mouse.moveTo(start);
@@ -97,26 +97,26 @@ void main() {
       await mouse.down(start);
       await mouse.moveTo(start - const Offset(0, 10));
       await tester.pump();
-      // Canvas 58: the shelf is canvas + 12, at once (no animation).
-      expect(shelfHeight(tester), 70);
+      // Canvas 70: the shelf is canvas + 20, at once (no animation).
+      expect(shelfHeight(tester), 90);
       // Continuous but snapped to whole points.
       await mouse.moveTo(start - const Offset(0, 17.4));
       await tester.pump();
-      expect(shelfHeight(tester), 77);
+      expect(shelfHeight(tester), 97);
       // Nothing is saved before the release.
       expect(saved, isEmpty);
-      expect(DockOptions.read(env: env).tileSize, 48);
+      expect(DockOptions.read(env: env).tileSize, 60);
       // Down again, below the starting size.
       await mouse.moveTo(start + const Offset(0, 8));
       await tester.pump();
-      expect(shelfHeight(tester), 52);
+      expect(shelfHeight(tester), 72);
       await mouse.moveTo(start - const Offset(0, 20));
       await tester.pump();
       await mouse.up();
       await tester.pump();
-      expect(saved, [68]);
-      expect(DockOptions.read(env: env).tileSize, 68);
-      expect(shelfHeight(tester), 80);
+      expect(saved, [80]);
+      expect(DockOptions.read(env: env).tileSize, 80);
+      expect(shelfHeight(tester), 100);
     });
 
     testWidgets('clamped to 16 and 128', (tester) async {
@@ -126,10 +126,10 @@ void main() {
       await mouse.down(start);
       await mouse.moveTo(start - const Offset(0, 300));
       await tester.pump();
-      expect(shelfHeight(tester), 140);
+      expect(shelfHeight(tester), 148);
       await mouse.moveTo(start + const Offset(0, 300));
       await tester.pump();
-      expect(shelfHeight(tester), 28);
+      expect(shelfHeight(tester), 36);
       await mouse.up();
       await tester.pump();
       expect(saved, [16]);
@@ -143,7 +143,7 @@ void main() {
       await mouse.up();
       await tester.pump();
       expect(saved, isEmpty);
-      expect(shelfHeight(tester), 60);
+      expect(shelfHeight(tester), 80);
     });
   });
 

@@ -104,7 +104,7 @@ void main() {
 
   testWidgets('Dock: dark separator, indicator and label', (tester) async {
     final context = await _context(tester);
-    expect(DockColors.of(context).separator, const Color(0x29F4F5F7));
+    expect(DockColors.of(context).separator, const Color(0x4DF4F5F7));
     expect(DockColors.of(context).indicator, const Color(0xFFB0B4BC));
     expect(MenuColors.of(context).text, const Color(0xD9FFFFFF));
   });

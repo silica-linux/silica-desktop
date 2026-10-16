@@ -3,9 +3,10 @@
 // Thick glass surface that Ossido draws (`menu` kind, radius 12, 4 pt padding) instead of
 // `AmalfiMenu`'s own Flutter-side glass (a shell surface has no backdrop of its own).
 //
-// The menu sits above the item it belongs to, with its bottom [menuAboveShelf] pt over the
-// shelf and centred on the item (clamped to the screen): Amalfi menus have no tip. It fades in
-// and out with `fade.instant`.
+// The menu sits above the item it belongs to (kit `Dock/Menu`): its arrow, 6 pt deep under the
+// body, has its tip [menuAboveShelf] pt over the shelf (12 at the default size) and centred on
+// the item (the body is clamped to the screen, the arrow keeps pointing at the item). It fades
+// in and out with `fade.instant`.
 
 import 'dart:math' as math;
 
@@ -14,12 +15,14 @@ import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/glass_profile.dart';
+import 'arrow.dart';
 
 /// The key of the menu's surface (glass, shadow and rows).
 const Key dockMenuSurface = ValueKey('dock menu');
 
-/// The menu's bottom edge above the shelf's top.
-const double menuAboveShelf = 8;
+/// The tip of the menu's arrow above the shelf's top, at the default size (`DockMetrics.labelOffset`
+/// scales it).
+const double menuAboveShelf = 12;
 
 /// Distance kept from the screen's sides.
 const double menuScreenMargin = 8;
@@ -86,7 +89,7 @@ class DockMenuHost extends StatefulWidget {
   /// The centre of the item the menu belongs to, in the host's coordinates.
   final double anchorX;
 
-  /// The y of the menu's bottom edge.
+  /// The y of the tip of the menu's arrow (the bottom edge of the menu's frame).
   final double bottom;
 
   /// The glass group of the surface.
@@ -112,6 +115,10 @@ class DockMenuHostState extends State<DockMenuHost>
   Rect? _reported;
   bool _closing = false;
   int _synthetic = 0;
+
+  /// The x of the arrow's tip from the left of the menu; null until the menu is placed (the
+  /// middle).
+  double? _tipX;
 
   /// The rectangle of the surface, in the host's coordinates.
   Rect? get rect => _layout.rect;
@@ -257,7 +264,12 @@ class DockMenuHostState extends State<DockMenuHost>
     if (r == null || r == _reported) return;
     _reported = r;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onRectChanged?.call(r);
+      if (!mounted) return;
+      final tip = widget.anchorX - r.left;
+      if (_tipX == null || (_tipX! - tip).abs() > 0.01) {
+        setState(() => _tipX = tip);
+      }
+      widget.onRectChanged?.call(r);
     });
   }
 
@@ -287,20 +299,30 @@ class DockMenuHostState extends State<DockMenuHost>
             ),
             child: IntrinsicWidth(
               stepWidth: AmalfiGrid.base,
-              child: CustomPaint(
-                key: dockMenuSurface,
-                painter: _MenuShadow(shadows),
-                child: ProfiledGlass(
-                  profile: ShellGlassProfile.menu,
-                  radius: AmalfiMenuMetrics.radius,
-                  material: GlassMaterial.thick,
-                  group: widget.group,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AmalfiMenuMetrics.padding),
-                    child: AmalfiMenuList(
-                      entries: _rows,
-                      autofocus: true,
-                      onDismiss: close,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: dockArrowDepth),
+                child: CustomPaint(
+                  key: dockMenuSurface,
+                  painter: _MenuShadow(shadows, _tipX),
+                  child: ProfiledGlass(
+                    profile: ShellGlassProfile.menu,
+                    radius: AmalfiMenuMetrics.radius,
+                    material: GlassMaterial.thick,
+                    group: widget.group,
+                    tip: _tipX == null
+                        ? null
+                        : GlassTip(
+                            x: _tipX!,
+                            width: dockArrowHalfBase * 2,
+                            height: dockArrowDepth,
+                          ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AmalfiMenuMetrics.padding),
+                      child: AmalfiMenuList(
+                        entries: _rows,
+                        autofocus: true,
+                        onDismiss: close,
+                      ),
                     ),
                   ),
                 ),
@@ -314,19 +336,33 @@ class DockMenuHostState extends State<DockMenuHost>
 }
 
 class _MenuShadow extends CustomPainter {
-  const _MenuShadow(this.shadows);
+  const _MenuShadow(this.shadows, this.tipX);
   final List<BoxShadow> shadows;
+  final double? tipX;
 
   @override
-  void paint(Canvas canvas, Size size) => paintAmalfiShadows(
-    canvas,
-    Offset.zero & size,
-    shadows,
-    shape: const AmalfiSmoothBorder(radius: AmalfiMenuMetrics.radius),
-  );
+  void paint(Canvas canvas, Size size) {
+    if (tipX == null) {
+      return paintAmalfiShadows(
+        canvas,
+        Offset.zero & size,
+        shadows,
+        shape: const AmalfiSmoothBorder(radius: AmalfiMenuMetrics.radius),
+      );
+    }
+    // The shape with its arrow (the frame is the body and the arrow under it).
+    final frame = Rect.fromLTWH(0, 0, size.width, size.height + dockArrowDepth);
+    paintAmalfiShadows(
+      canvas,
+      frame,
+      shadows,
+      shape: DockArrowBorder(radius: AmalfiMenuMetrics.radius, tipX: tipX),
+    );
+  }
 
   @override
-  bool shouldRepaint(_MenuShadow old) => old.shadows != shadows;
+  bool shouldRepaint(_MenuShadow old) =>
+      old.shadows != shadows || old.tipX != tipX;
 }
 
 /// Places the menu above its item, centred and kept on screen; remembers where.

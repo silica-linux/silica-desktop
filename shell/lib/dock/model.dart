@@ -11,52 +11,54 @@ import 'package:flutter/foundation.dart' show immutable;
 
 import 'package:silica_ui/silica_ui.dart';
 
-/// Pitch between app cells: 56 pt (Amalfi, kit `Dock/Shelf/Default`: tiles 52 wide every 56
-/// pt, 8 pt from the shelf edge to the first tile).
-const double cellPitch = 56;
+/// Pitch between cells: 64 pt (Amalfi, kit `Dock/Shelf/Default`: tiles 64 wide, gap 0).
+const double cellPitch = 64;
 
-/// The Amalfi pitch over the 63 pt pitch the reference was measured at: the measured
-/// distances and amplitudes (magnification profile, lift, hops) are rescaled by it
-/// (`motion.md` rule 3); the timings are not.
-const double amalfiScale = cellPitch / 63;
+/// The scale of the measured distances and amplitudes (magnification profile, lift, hops;
+/// `motion.md` rule 3), from the 56 pt pitch they were first rescaled to; the timings are not.
+const double amalfiScale = 56 / 63;
 
-/// Width of the separator cell: 12 pt, so that the 8 x 44 separator master (1 pt line at x 4)
-/// sits between the tiles as in the kit (tile, 4 pt, separator, 4 pt, tile; tiles 52 wide in
-/// 56 pt cells).
-const double separatorCell = 12;
+/// Width of the separator cell: 28 pt (kit `Dock/Separator/Line`: 28 x 80, the 1 pt line at
+/// x 14, y 10, 60 tall), with no gap around it.
+const double separatorCell = 28;
 
-/// Shelf height: 60 pt (kit `Dock/Shelf/Default`, 528 x 60 at the default size).
-const double backgroundHeight = 60;
+/// Shelf height: 80 pt (kit `Dock/Shelf/Default`, 620 x 80 at the default size).
+const double backgroundHeight = 80;
 
-/// Distance between the background and the bottom edge of the screen: 5 pt.
-const double bottomGap = 5;
+/// Distance between the background and the bottom edge of the screen: 4 pt.
+const double bottomGap = 4;
 
-/// Corner radius of the shelf: 20 (Glass/Regular, `materials.md`).
-const double backgroundRadius = 20;
+/// Corner radius of the shelf: 24 (kit `Dock/Shelf/Default`).
+const double backgroundRadius = 24;
 
-/// Margin between the cells and the shelf edge, at the sides: 6 pt (the kit's first tile is
-/// at x 8 in a 56 pt cell; 9 cells + separator cell + 2 x 6 = the kit's 528).
-const double sidePadding = 6;
+/// Margin between the cells and the shelf edge, at the sides: 8 pt (kit: 8 + 9 tiles of 64 + the
+/// 28 pt separator + 8 = 620).
+const double sidePadding = 8;
 
-/// Icon side at rest and distance from the top of the shelf: 48 pt, 4 pt (kit tile).
+/// Distance from the top of the shelf to the icon canvas: 10 pt (kit tile: the 60 pt canvas is
+/// at x 2, y 10 of the 64 x 80 tile).
+const double iconTop = 10;
+
+/// The side of the icon the badges were measured on (48 pt, with the canvas 4 pt below the top
+/// of the old tile); the badges scale from it.
 const double iconSize = 48;
-const double iconTop = 4;
+const double badgeIconTop = 4;
 
-/// Separator: a 1 pt line 44 pt tall, 8 pt from the shelf's top (kit `Dock/Separator`).
-const double separatorHeight = 44;
+/// Separator: a 1 pt line, 10 pt from the top and bottom of the shelf (kit `Dock/Separator`).
+const double separatorHeight = 60;
 
-/// Indicator of open apps: a 4 pt disc at y 56-60 of the tile (kit `Dock/Indicator/Dot`),
-/// its centre 2 pt above the shelf's bottom edge.
+/// Indicator of open apps: a 4 pt disc at y 72-76 of the tile (kit `Dock/Indicator/Dot`),
+/// its centre 6 pt above the shelf's bottom edge.
 const double indicatorSize = 4;
-const double indicatorAbove = 2;
+const double indicatorAbove = 6;
 
 /// Canvas side of an app icon at rest and its limits (dock.json `tileSize`, Settings).
-const double defaultCanvas = 48;
+const double defaultCanvas = 60;
 const double minCanvas = 16;
 const double maxCanvas = 128;
 
-/// The magnified canvas when dock.json has none (Settings: 52).
-const double defaultMagnifiedCanvas = 52;
+/// The magnified canvas when dock.json has none (Settings: 65).
+const double defaultMagnifiedCanvas = 65;
 
 /// Whole points, inside [minCanvas, maxCanvas].
 double clampCanvas(num value) => value.isFinite
@@ -74,9 +76,10 @@ double profile(double distance, [double pitch = cellPitch]) {
 }
 
 /// The geometry of one Dock from the side of the icon canvas (whole points, 16-128; the
-/// default is 48). Everything scales by k = canvas / 48 around the kit's values (Dock
-/// masters, Amalfi): tile `canvas + 4` x `canvas + 12`, gap 4k, shelf padding 8k, radius 20k,
-/// separator 8k x `canvas - 4`, dot max(3, 4k), label offset 12k.
+/// default is 60). Everything scales by k = canvas / 60 around the kit's values (Dock masters,
+/// Amalfi), rounded to whole points: tile `canvas + 4` x `canvas + 20`, the canvas at (2k, 10k),
+/// no gap, padding 8k, radius 24k, separator 28k wide with its line 14k from the left and 10k
+/// from the top and bottom, dot 4k with its centre 6k above the shelf's bottom, label offset 12k.
 @immutable
 class DockMetrics {
   const DockMetrics([this.canvas = defaultCanvas]);
@@ -88,28 +91,40 @@ class DockMetrics {
 
   double get k => canvas / defaultCanvas;
   double get tileWidth => canvas + 4;
-  double get tileHeight => canvas + 12;
-  double get gap => (4 * k).roundToDouble();
+  double get tileHeight => canvas + 20;
+  double get gap => 0;
 
   /// Distance between the centres of two tiles.
   double get pitch => tileWidth + gap;
 
-  /// The shelf: its height is the tile's, the padding is measured from the first tile.
+  /// The shelf: its height is the tile's.
   double get backgroundHeight => tileHeight;
   double get shelfPadding => (8 * k).roundToDouble();
 
-  /// Margin between the cells (the tile and half the gap) and the shelf edge.
-  double get sidePadding => shelfPadding - gap / 2;
-  double get radius => (20 * k).roundToDouble();
-  double get separatorWidth => (8 * k).roundToDouble();
+  /// Margin between the first or last cell and the shelf edge.
+  double get sidePadding => shelfPadding;
+  double get radius => (24 * k).roundToDouble();
 
-  /// The separator cell: the item and one gap (the tile cells carry the other).
-  double get separatorCell => separatorWidth + gap;
-  double get separatorHeight => canvas - 4;
+  /// The canvas in its tile: its distance from the tile's left edge and from the shelf's top.
+  double get iconLeft => (2 * k).roundToDouble();
+  double get iconTop => (10 * k).roundToDouble();
+  double get separatorWidth => (28 * k).roundToDouble();
+
+  /// The separator cell: the item itself.
+  double get separatorCell => separatorWidth;
+
+  /// The separator's line: 10k from the top and bottom, 14k from the left.
+  double get separatorInset => (10 * k).roundToDouble();
+  double get separatorHeight => tileHeight - 2 * separatorInset;
+  double get separatorLine => (14 * k).roundToDouble();
   double get dot => math.max(3, (4 * k).roundToDouble());
+
+  /// The dot's centre above the shelf's bottom.
+  double get dotAbove => (6 * k).roundToDouble();
   double get labelOffset => (12 * k).roundToDouble();
 
-  /// Gap between the top of the icon and the bottom of the label.
+  /// Gap between the top of the icon and the tip of the label or of the menu's arrow
+  /// (the tip is [labelOffset] above the shelf's top).
   double get labelGap => iconTop + labelOffset;
 
   @override
@@ -452,7 +467,7 @@ Layout layout(
 (double, double, double) iconRect(Layout l, int i, double height) {
   final m = l.metrics;
   final side = m.canvas * l.scales[i] * l.presence[i];
-  final bottom = height - bottomGap - m.backgroundHeight + iconTop + m.canvas;
+  final bottom = height - bottomGap - m.backgroundHeight + m.iconTop + m.canvas;
   return (l.center(i) - side / 2, bottom - side, side);
 }
 
@@ -468,7 +483,7 @@ const double bodyInset = (1 - 824 / 1024) / 2;
     final body = side * (1 - 2 * bodyInset);
     return (side * bodyInset, side * bodyInset, body);
   }
-  return (0, -side * bodyInset, side);
+  return (0, 0, side);
 }
 
 /// The pointer is in the active zone: inside the resting background horizontally (x 816 no,

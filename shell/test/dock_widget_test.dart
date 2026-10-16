@@ -94,13 +94,13 @@ void main() {
     await tester.tapAt(icon);
     await tester.pump(const Duration(milliseconds: 50));
     expect(log, ['attiva Terminal']);
-    // Right click: the menu above the icon (no tip), 8 pt over the shelf.
+    // Right click: the menu above the icon, the tip of its 6 pt arrow 12 pt over the shelf.
     await tester.tapAt(icon, buttons: kSecondaryButton);
     await tester.pump();
     expect(find.text('Apri Terminal'), findsOneWidget);
     final body = tester.getRect(find.byKey(dockMenuSurface));
     final shelfTop = 300 - bottomGap - backgroundHeight;
-    expect(body.bottom, closeTo(shelfTop - menuAboveShelf, 0.5));
+    expect(body.bottom, closeTo(shelfTop - menuAboveShelf - 6, 0.5));
     // Centred on the item unless the screen's edge is in the way (8 pt margin).
     expect(
       body.left,

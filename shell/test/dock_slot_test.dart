@@ -146,7 +146,7 @@ void main() {
       presenceOf: (i) => identical(i, _c) ? 0.5 : 1,
     );
     expect(open.cells[1].$2, cellPitch / 2);
-    expect(iconRect(open, 1, 300).$3, iconSize / 2);
+    expect(iconRect(open, 1, 300).$3, defaultCanvas / 2);
     expect(open.background.$3, cellPitch * 1.5 + 2 * sidePadding);
     // Centered while it changes.
     expect(
