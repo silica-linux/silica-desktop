@@ -506,7 +506,20 @@ impl State {
                 Ok(Value::Null)
             }
             APP_LAUNCH => {
-                let AppLaunch { command, shell } = parse_required(params)?;
+                let AppLaunch {
+                    command,
+                    app,
+                    shell,
+                } = parse_required(params)?;
+                // An app is run through its desktop entry, as the Dock does (its Exec keeps
+                // the `--app-id`); a command runs as given.
+                let command = match (command, app) {
+                    (Some(command), None) => command,
+                    (None, Some(app)) => {
+                        crate::desktop_entry::command_for(&app, &|k| std::env::var(k).ok())?
+                    }
+                    _ => return Err("app.launch takes either command or app".to_owned()),
+                };
                 let pid = self.launch_with(&command, shell)?;
                 Ok(json!({ "pid": pid }))
             }
