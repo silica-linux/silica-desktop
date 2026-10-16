@@ -64,8 +64,9 @@ an opaque fill = tint over `Surface/Window`, keep rim and shadow.
 ## Lens rule
 
 - Trigger: pointer down on a glass segment, or drag of a slider/switch thumb.
-- Shape: `Glass/Clear` capsule, 8 pt larger than the control on every side (a 72 × 20 segment gets an
-  88 × 44 lens... i.e. width + 16, height + 16 for segments; switch thumb + 12 at Regular), radius = height / 2 − 1.
+- Shape: `Glass/Clear` capsule as drawn in the kit: 8 pt wider on each side and 12 pt taller above and
+  below the control (a 72 × 20 segment gets an 88 × 44 lens); switch lens = thumb + 12 at Regular;
+  radius = height / 2 − 1.
 - Content under the lens is magnified ≈ 1.1× and refracted; the label/glyph under it stays readable.
 - Motion: grows in with `motion.spring.snappy`, follows the pointer 1:1 while dragging, settles into the
   selected segment on release, fades out in 120 ms.
