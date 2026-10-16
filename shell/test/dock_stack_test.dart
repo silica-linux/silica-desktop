@@ -163,9 +163,8 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('griglia');
     addTearDown(() => dir.deleteSync(recursive: true));
     for (var i = 1; i <= 20; i++) {
-      File(
-        '${dir.path}/documento con un nome molto lungo $i.txt',
-      ).writeAsStringSync('x');
+      File('${dir.path}/documento con un nome molto lungo $i.txt')
+          .writeAsStringSync('x');
     }
     tester.view.physicalSize = const Size(2560, 1440);
     tester.view.devicePixelRatio = 1;
@@ -322,6 +321,121 @@ void main() {
     expect(
       downloadDir(dir.path, env: {'XDG_CONFIG_HOME': '${dir.path}/cfg'}),
       '${dir.path}/Scaricamenti',
+    );
+  });
+
+  test('pile geometry: 50 pt canvases at x 7, y 17 / 15 / 13, scaled by k', () {
+    // c = 60 (k = 1): the exact frames of the design session.
+    expect(PileIcon.frames(60, 3), const [
+      Rect.fromLTWH(7, 17, 50, 50),
+      Rect.fromLTWH(7, 15, 50, 50),
+      Rect.fromLTWH(7, 13, 50, 50),
+    ]);
+    // At most three, front first.
+    expect(PileIcon.frames(60, 5), hasLength(3));
+    expect(PileIcon.frames(60, 1), const [Rect.fromLTWH(7, 17, 50, 50)]);
+    // c = 16 (k = 4/15) and c = 128 (k = 32/15): every number scaled, whole points.
+    expect(PileIcon.frames(16, 3), const [
+      Rect.fromLTWH(2, 5, 13, 13),
+      Rect.fromLTWH(2, 4, 13, 13),
+      Rect.fromLTWH(2, 3, 13, 13),
+    ]);
+    expect(PileIcon.frames(128, 3), const [
+      Rect.fromLTWH(15, 36, 107, 107),
+      Rect.fromLTWH(15, 32, 107, 107),
+      Rect.fromLTWH(15, 28, 107, 107),
+    ]);
+  });
+
+  for (final canvas in [16.0, 60.0, 128.0]) {
+    testWidgets(
+      'pile icon: the first item in front, the rest behind (c = $canvas)',
+      (tester) async {
+        final metrics = DockMetrics(canvas);
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: PileIcon(
+                side: canvas,
+                sources: const [
+                  FlatSource('/nonexistent/a.png'),
+                  FlatSource('/nonexistent/b.png'),
+                  FlatSource('/nonexistent/c.png'),
+                ],
+              ),
+            ),
+          ),
+        );
+        final icons = find.byType(SilicaIcon);
+        expect(icons, findsNWidgets(3));
+        // The canvas box is at (iconLeft, iconTop) of the tile.
+        final origin = tester.getTopLeft(find.byType(PileIcon));
+        final frames = PileIcon.frames(canvas, 3);
+        final sources = tester
+            .widgetList<SilicaIcon>(icons)
+            .map((w) => (w.source as FlatSource).path)
+            .toList();
+        // Painted back to front: the first source is the last widget, in front.
+        expect(sources, [
+          '/nonexistent/c.png',
+          '/nonexistent/b.png',
+          '/nonexistent/a.png',
+        ]);
+        for (var i = 0; i < 3; i++) {
+          final rect = tester.getRect(icons.at(2 - i));
+          final tile = rect.shift(
+            Offset(metrics.iconLeft, metrics.iconTop) - origin,
+          );
+          expect(tile, frames[i], reason: 'item $i');
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'empty folder and "Show as Folder": the folder icon, not a pile',
+    (tester) async {
+      final empty = Directory.systemTemp.createTempSync('vuota');
+      final full = Directory.systemTemp.createTempSync('piena');
+      addTearDown(() {
+        empty.deleteSync(recursive: true);
+        full.deleteSync(recursive: true);
+      });
+      File('${full.path}/a.txt').writeAsStringSync('x');
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Widget dock(String folder, StackDisplay display) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dock(
+          items: [Item.app('Stack', command: 'x', folder: folder)],
+          onOpenPath: (_) {},
+          stackSettingsFor: (_) => StackSettings(display: display),
+        ),
+      );
+      await tester.pumpWidget(dock(empty.path, StackDisplay.stack));
+      await tester.pump();
+      expect(find.byType(PileIcon), findsNothing);
+      await tester.pumpWidget(dock(full.path, StackDisplay.folder));
+      await tester.pump();
+      expect(find.byType(PileIcon), findsNothing);
+    },
+  );
+
+  test('Downloads stacks by Date Added unless configured', () {
+    final home = Directory.systemTemp.createTempSync('casa');
+    addTearDown(() => home.deleteSync(recursive: true));
+    Directory('${home.path}/Downloads').createSync();
+    final env = {'HOME': home.path, 'XDG_CONFIG_HOME': '${home.path}/cfg'};
+    expect(
+      defaultStackSettings('${home.path}/Downloads', env: env).sort,
+      StackSort.added,
+    );
+    expect(
+      defaultStackSettings('${home.path}/Documents', env: env).sort,
+      StackSort.name,
     );
   });
 }

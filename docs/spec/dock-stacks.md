@@ -11,21 +11,18 @@ viewed **automatically**.
 
 ## The icon in the Dock
 
-- **Stack:** the folder's documents overlap, with the first one in front and the top edges
-  of the others showing above it. They are offset vertically by a few pt and not rotated.
-- **Folder:** the folder's own icon.
-- **Open stack, fan or grid:** the icon turns into a **close button**.
-  - It is a rounded square of **51 × 52 pt**, centred on the cell, with radius about 12.
-  - It carries a downward chevron of **19 × 11 pt** with a stroke of about 2.5 pt.
-
-  | | Light | Dark |
-  |---|---|---|
-  | Square, top → bottom (vertical gradient) | `#adadb0` → `#8b8b90` | `#5c5c5f` → `#313232` |
-  | 1 pt hairline at the top | `#c2c2c5` | `#8b8c8e` |
-  | Chevron | `#19191b` | `#ffffff` |
-
-  Compared with the Dock background, the square is lighter in light appearance and darker
-  in dark.
+- **Stack:** a pile of at most three items of the folder in the stack's sort order (default
+  Name; the Downloads folder: Date Added, newest first), the first in front and the others
+  behind, offset upward, not rotated, with no extra shadow or darkening.
+  - Each item is drawn on a **50 pt canvas** of the default 64 x 80 tile (never the full 60),
+    at x = 7 and y = 17 (front), 15 and 13. Everything scales by k = canvas / 60 and rounds to
+    whole points.
+  - A folder inside the stack uses the same 50 pt canvas.
+- **Empty folder, or Display as Folder:** the folder's own icon on the full 60 pt canvas at
+  (2, 10).
+- **Open stack, fan or grid:** the tile shows the silica-icons "Stack Close" badge
+  (`badges.json` > `dock` > `stack-close`, light and dark) on the folder icon's canvas; the shell
+  draws no cross of its own.
 - **Open stack, list view:** the folder icon stays, darkened as when pressed.
 
 ## Automatic view
