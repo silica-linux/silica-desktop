@@ -776,11 +776,6 @@ fn deploy(args: &[String]) -> Result<()> {
         &root.join("data/sounds"),
         &share.join("share/silica/sounds"),
     )?;
-    // The pointers, an XCursor theme found through $XDG_DATA_DIRS.
-    replace_dir(
-        &root.join("data/cursors/Silica"),
-        &share.join("share/icons/Silica"),
-    )?;
     if let Some(icons) = sibling("silica-icons") {
         let staged = work.join("icons.stage");
         let _ = std::fs::remove_dir_all(&staged);
@@ -1081,9 +1076,9 @@ export PATH="$D/bin:/usr/libexec/silica:$PATH"
 # The share's .desktop entries (deployed apps) come before the installed ones.
 export XDG_DATA_DIRS="$D/share:${{XDG_DATA_DIRS:-/usr/local/share:/usr/share}}"
 [ -d "$D/icons" ] && export SILICA_ICONS_DIR="$D/icons"
-# Pointer cursors: the Silica XCursor theme (the Amalfi pointers, share/share/icons/Silica), for
-# Ossido and for the apps (GTK, Qt, the embedder); 32 is the kit's canvas.
-export XCURSOR_THEME=Silica XCURSOR_SIZE=32
+# Pointer cursors: the standard Adwaita XCursor theme, for Ossido and for the apps (GTK, Qt,
+# the embedder).
+export XCURSOR_THEME=Adwaita XCURSOR_SIZE=24
 # Reads the engine and the apps once, in the background, so that the first launch of each does
 # not wait for the disk (a cold launch takes 1 to 2 s more than a warm one).
 (nice -n 19 find "$D/engine" "$D/apps" "$D/bin" -type f -exec cat {{}} + >/dev/null 2>&1 &)
