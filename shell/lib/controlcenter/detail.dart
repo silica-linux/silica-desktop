@@ -4,13 +4,12 @@
 // the header row, 1 pt separators, 32 pt rows with a 28 pt disc and a 16 pt glyph, 20 pt
 // section labels and a 24 pt footer item that opens Settings at the panel's pane.
 //
-// The clicked module turns into the panel (one interpolated rectangle, `spring.morph`,
-// motion.md) while the others fade out; the behaviour of each panel is that of
+// The clicked module turns into the panel (one interpolated rectangle on the measured
+// slow-fast-slow curve, controlcenter.md) while the others fade out; the behaviour of each panel is that of
 // docs/spec/controlcenter.md. Night Light has no backend yet: its tile shows disabled.
 
 import 'dart:math' as math;
 
-import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -38,24 +37,71 @@ const double detailSection = 20;
 const double detailFooter = 24;
 const double detailBottom = 8;
 
-/// How long the morph is simulated: `spring.morph` (response 0.5 s, ζ 0.7) settles within
-/// 0.2 % of its target in ~0.95 s.
-const Duration detailDuration = Duration(milliseconds: 950);
+/// Progress of the module -> panel morph (top edge of the Display panel, ~333 ms; measured,
+/// controlcenter.md "Module to detail": slow, fast, slow, no overshoot). Modules nearer the panel
+/// take less time (Wi-Fi: ~215 ms), see [detailTimeScale].
+const List<(double, double)> detailCurve = [
+  (0, 0),
+  (13, 0.08),
+  (26, 0.19),
+  (40, 0.31),
+  (66, 0.54),
+  (80, 0.63),
+  (93, 0.71),
+  (120, 0.82),
+  (133, 0.86),
+  (146, 0.89),
+  (173, 0.94),
+  (186, 0.95),
+  (226, 0.98),
+  (253, 0.99),
+  (333, 1),
+];
+const double detailCurveEnd = 333;
 
-final SpringSimulation _morph = SpringSimulation(AmalfiSprings.morph, 0, 1, 0);
+/// Opacity of the other modules while the panel opens (measured, ~240 ms).
+const List<(double, double)> othersFade = [
+  (0, 1),
+  (13, 0.94),
+  (67, 0.56),
+  (107, 0.28),
+  (147, 0.13),
+  (200, 0.05),
+  (213, 0.04),
+  (240, 0),
+];
 
-/// Progress 0–1 (it overshoots by ~4–5 %, as `spring.morph` does) of the module → panel
-/// morph at [t] (0–1 of [detailDuration]).
-double detailProgress(double t) => t >= 1
-    ? 1
-    : _morph.x(t.clamp(0.0, 1.0) * detailDuration.inMilliseconds / 1000);
+/// The return to the Center (Esc) takes longer: ~440 ms for the main part (measured 360-500 ms).
+const double detailBackStretch = 1.35;
 
-/// Opacity of the other modules while the panel opens: out in `fade.quick`.
-double othersOpacity(double t) {
-  final ms = t.clamp(0.0, 1.0) * detailDuration.inMilliseconds;
-  final fade = AmalfiFades.quick;
-  return 1 -
-      fade.curve.transform((ms / fade.duration.inMilliseconds).clamp(0, 1));
+/// How long the morph is simulated, in ms (the return included).
+const double detailTotalMs = detailCurveEnd * detailBackStretch;
+
+/// How long the morph lasts for a module [distance] pt below the panel's top edge, relative to
+/// the Display module ([displayDistance], 338 pt in the reference): 0.65 for the nearest, 1 for
+/// Display. The distance is normalised by the Display's own, so it scales with the Amalfi
+/// geometry and the time does not change.
+double detailTimeScale(double distance, double displayDistance) =>
+    0.65 + 0.35 * (distance / displayDistance).clamp(0.0, 1.0);
+
+/// Progress 0-1 after [ms].
+double detailProgress(double ms, double timeScale) =>
+    tableAt(detailCurve, ms / timeScale);
+
+/// Opacity of the other modules after [ms].
+double othersOpacity(double ms) => tableAt(othersFade, ms);
+
+/// Linear interpolation in a (ms, value) table.
+double tableAt(List<(double, double)> table, double ms) {
+  if (ms <= table.first.$1) return table.first.$2;
+  for (var i = 1; i < table.length; i++) {
+    final (t1, v1) = table[i];
+    if (ms <= t1) {
+      final (t0, v0) = table[i - 1];
+      return v0 + (v1 - v0) * (ms - t0) / (t1 - t0);
+    }
+  }
+  return table.last.$2;
 }
 
 Rect lerpRect(Rect a, Rect b, double t) => Rect.fromLTRB(
