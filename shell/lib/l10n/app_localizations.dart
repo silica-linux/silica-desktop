@@ -2059,6 +2059,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Allow'**
   String get authAllow;
+
+  /// Desktop item context menu: the submenu with the tag colours
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get menubarTags;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Red'**
+  String get menubarTagRed;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Orange'**
+  String get menubarTagOrange;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Yellow'**
+  String get menubarTagYellow;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Green'**
+  String get menubarTagGreen;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Blue'**
+  String get menubarTagBlue;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Purple'**
+  String get menubarTagPurple;
+
+  /// Desktop item context menu > Tags: colour
+  ///
+  /// In en, this message translates to:
+  /// **'Gray'**
+  String get menubarTagGray;
 }
 
 class _AppLocalizationsDelegate

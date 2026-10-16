@@ -147,15 +147,13 @@ void main() {
     expect(tester.widget<Text>(title).style?.color, stackTextDark);
   });
 
-  testWidgets('window popover: #e1e1e1 glyphs', (tester) async {
+  testWidgets('window popover: Text/Primary glyphs of the dark appearance', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      dark(
-        Align(
-          alignment: Alignment.topLeft,
-          child: MenuPanel(entries: windowMenuEntries((_) {})),
-        ),
-      ),
+      dark(WindowMenuPopover(tip: const Offset(300, 40), execute: (_) {})),
     );
+    await tester.pump(const Duration(milliseconds: 500));
     final painters = tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
         .map((p) => p.painter)
@@ -163,7 +161,8 @@ void main() {
         .toList();
     expect(painters, hasLength(9));
     // The eight icons of the rows and the full screen item in the text color.
-    expect(painters.where((p) => p.color == tileGlyphDark), hasLength(8));
+    final ink = AmalfiColors.of(Brightness.dark).textPrimary;
+    expect(painters.where((p) => p.color == ink), hasLength(9));
   });
 
   testWidgets('force quit: Amalfi dark window', (tester) async {

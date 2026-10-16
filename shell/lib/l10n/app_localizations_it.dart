@@ -1078,4 +1078,28 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get authAllow => 'Consenti';
+
+  @override
+  String get menubarTags => 'Tag';
+
+  @override
+  String get menubarTagRed => 'Rosso';
+
+  @override
+  String get menubarTagOrange => 'Arancione';
+
+  @override
+  String get menubarTagYellow => 'Giallo';
+
+  @override
+  String get menubarTagGreen => 'Verde';
+
+  @override
+  String get menubarTagBlue => 'Blu';
+
+  @override
+  String get menubarTagPurple => 'Viola';
+
+  @override
+  String get menubarTagGray => 'Grigio';
 }

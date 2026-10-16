@@ -1,7 +1,9 @@
-// The menu bar, from plan/reference/menubar.md (identical in light and dark): 30 pt tall,
-// with no background (the gradient that compresses the lights under it is done by Ossido),
-// white text in Inter 13 pt with the baseline at y 19, app name in bold, status area and
-// clock in white at 90 %.
+// The menu bar (Amalfi, kit `Menu Bar/*`): a 28 pt transparent strip on the wallpaper (no
+// material), 24 pt items at y 2 with their text 8 pt from the edges, the Silica mark and the
+// status glyphs at 16 pt in 32 pt items. Text and glyphs are Text/Primary of the appearance
+// (dark on the light desktop, light on the dark one); the item of an open menu or panel has
+// a translucent white capsule (`Menu Bar/Selection`, radius 12); label and glyph stay Text/Primary. Menus open on
+// press below their title (bar_menu_host.dart) and follow the pointer to the next title.
 
 import 'dart:async';
 import 'dart:io';
@@ -25,6 +27,7 @@ import '../system/layer_control.dart';
 import '../system/media.dart';
 import '../system/system_status.dart';
 import 'app_menus.dart';
+import 'bar_menu_host.dart';
 import 'desktop_menu.dart';
 import 'logo_menu.dart';
 import 'menubar_config.dart';
@@ -33,52 +36,52 @@ import 'menus.dart';
 import 'status_icons.dart';
 import 'window_menu.dart';
 
-const double barHeight = 30;
-const double fontSize = 13;
+const double barHeight = 28;
 
-/// Text baseline: y 19.0.
-const double baseline = 19;
+/// An item: 24 tall, 2 pt from the bar's top and bottom; its text is 8 pt from its edges.
+const double itemHeight = 24;
+const double itemTop = (barHeight - itemHeight) / 2;
+const double itemPadding = 8;
 
-/// Logo box: x 10, 34 pt wide; boxes overlap by 1 pt.
-const double logoLeft = 10;
-const double logoCell = 34;
+/// The corner radius of the active item's capsule (`Menu Bar/Selection`: radius 12).
+const double itemRadius = 12;
 
-/// Space around the text of an item: box = text + ~21.5 pt (~10.75 per side).
-const double itemPadding = 10.75;
+/// A status item (a glyph of 16 pt): 32 wide. The Silica mark's item is one too.
+const double statusCell = 32;
 
-/// Clock: the text ends 20 pt before the right edge; 16 pt between the Control Center and
-/// the clock; 7 pt between the icon boxes.
-const double clockRightMargin = 20;
-const double clockGap = 16;
-const double statusGap = 7;
+/// The bar's inset from the screen's sides.
+const double barSide = 8;
 
-const Color itemColor = Color(0xFFFFFFFF);
-
-/// Open menu (menubar.md): body 5 pt left of the item's box, 1 pt below the bar; the item
-/// has a capsule 24 tall, 3.5 pt beyond the box per side (`#7e7f84` over `#6f7075`: white
-/// at ~10 %). Moving onto another item the menu changes after ~85 ms.
-const double menuLeftOfItem = 5;
-const double capsuleHeight = 24;
-const double capsuleOutset = 3.5;
-const Color capsuleFill = Color(0x1AFFFFFF);
+/// An open menu: its body 4 pt left of the title's item (the text lines up: 4 + 8 inside the
+/// menu), 8 pt below the bar (kit `Menu Bar/Bar/Menu Open`: the menu at y 36).
+const double menuLeftOfItem = 4;
+const double menuBelowBar = 8;
 const Duration menuSwitchDelay = Duration(milliseconds: 85);
 
 /// Room below the menu for its shadow, when the surface grows.
 const double menuShadowRoom = 40;
 
-/// White at 90 % (status icons and clock: 241 over 112).
-const Color statusColor = Color(0xE6FFFFFF);
+/// The bar's text and glyph colour: `Text/Primary` of the appearance.
+Color barTextColor(BuildContext context) =>
+    AmalfiTheme.of(context).colors.textPrimary;
+
+/// The capsule of the item that has its menu or panel open: the token `Menu Bar/Selection`
+/// (silica-design cb7efda8; not in silica_ui's generated tokens yet): translucent white,
+/// #FFFFFF66 light and #FFFFFF33 dark. Label and glyph keep `Text/Primary`.
+Color barSelectionColor(BuildContext context) => AmalfiTheme.of(context).isDark
+    ? const Color(0x33FFFFFF)
+    : const Color(0x66FFFFFF);
+
+/// The bar's text, like the kit: titles Body, the app name Headline, the clock Body Emphasis.
+TextStyle barTitleStyle(Color color) => AmalfiType.body(color: color);
+TextStyle barNameStyle(Color color) => AmalfiType.headline(color: color);
+TextStyle barClockStyle(Color color) => AmalfiType.bodyEmphasis(color: color);
 
 /// The menus of an app that published none (silica-menu-v1, #25): generic ids, shown with
 /// `menuTitle`.
 const List<String> genericMenus = ['file', 'edit', 'view', 'window', 'help'];
 
 /// Date and time as in the bar: "Lun 12 ott  22:15" (double space between date and time).
-/// The capsule on the icon of the open Control Center: 46 × 24, just lighter than the bar
-/// (`#727478` over `#6f7075`, controlcenter.md).
-const Size controlsCapsule = Size(46, 24);
-const Color controlsCapsuleFill = Color(0x05FFFFFF);
-
 String clockText(DateTime t, [String locale = 'en']) {
   _dates ??= initializeDateFormatting();
   final date = DateFormat('EEE d MMM', locale).format(t);
@@ -181,7 +184,12 @@ class _MenuBarState extends State<MenuBar> {
   List<MenuEntry>? _openEntries;
   final Map<String, GlobalKey> _itemKeys = {};
   final GlobalKey _rootKey = GlobalKey();
-  final GlobalKey<MenuHostState> _menuKey = GlobalKey();
+  final GlobalKey<BarMenuHostState> _menuKey = GlobalKey();
+  final GlobalKey<WindowMenuPopoverState> _windowKey = GlobalKey();
+  final GlobalKey<BarMenuHostState> _desktopKey = GlobalKey();
+
+  /// The next menu opens with its first row highlighted (it was reached with ← or →).
+  bool _highlightFirst = false;
   Timer? _switchTimer;
 
   /// The bar items with a menu: the logo, the app menu, then the app's own menus
@@ -365,24 +373,24 @@ class _MenuBarState extends State<MenuBar> {
     return null;
   }
 
-  /// Opens a menu below its item: the body 5 pt left of the box, 1 pt below the bar. The
+  /// Opens a menu below its item: the body 4 pt left of the box, 8 pt below the bar. The
   /// surface grows down to the menu and its shadow.
-  void _openMenu(String name) {
+  void _openMenu(String name, {bool byKeyboard = false}) {
     final entries = _entries(name);
     final rect = _rectOf(name);
     if (entries.isEmpty || rect == null) return;
     if (name == 'logo') _recent = _loadRecent();
-    final size = menuSize(entries);
-    final anchor = Offset(rect.left - menuLeftOfItem, barHeight + 1);
+    final anchor = Offset(rect.left - menuLeftOfItem, barHeight + menuBelowBar);
     _switchTimer?.cancel();
     setState(() {
       _open = name;
       _openEntries = entries;
+      _highlightFirst = byKeyboard;
     });
     // The surface grows to the screen, but takes the pointer only on the bar and the menus
     // (`_menuRegion`, from the menu's rectangles): the windows below keep their hover, and a
     // press outside arrives from Ossido as transientDismissed (#149).
-    _layer.size(0, anchor.dy + size.height + menuShadowRoom);
+    _layer.size(0, anchor.dy + estimatedMenuHeight(entries) + menuShadowRoom);
     _layer.inputRegion([_barRect]);
     _layer.keyboard('exclusive');
     _coverScreen();
@@ -423,8 +431,14 @@ class _MenuBarState extends State<MenuBar> {
       final menu = _menuKey.currentState;
       menu == null ? _closeMenu() : menu.close();
     }
-    _closeWindowMenu();
-    _closeDesktopMenu();
+    if (_windowMenuTip != null) {
+      final popover = _windowKey.currentState;
+      popover == null ? _closeWindowMenu() : popover.close();
+    }
+    if (_desktopMenuAt != null) {
+      final menu = _desktopKey.currentState;
+      menu == null ? _closeDesktopMenu() : menu.close();
+    }
   }
 
   Future<void> _coverScreen() async {
@@ -454,7 +468,7 @@ class _MenuBarState extends State<MenuBar> {
     ];
     final at = withMenu.indexOf(_open ?? '');
     if (at < 0 || withMenu.isEmpty) return;
-    _openMenu(withMenu[(at + delta) % withMenu.length]);
+    _openMenu(withMenu[(at + delta) % withMenu.length], byKeyboard: true);
   }
 
   void _pointerDown(PointerDownEvent e) {
@@ -465,6 +479,15 @@ class _MenuBarState extends State<MenuBar> {
       return;
     }
     if (_open != null) _menuKey.currentState?.pointerDown(e.localPosition);
+    if (_desktopMenuAt != null) {
+      _desktopKey.currentState?.pointerDown(e.localPosition);
+    }
+    final popover = _windowKey.currentState;
+    if (_windowMenuTip != null &&
+        popover != null &&
+        popover.outside(e.localPosition)) {
+      popover.close();
+    }
   }
 
   void _pointerMoved(Offset p) {
@@ -479,7 +502,6 @@ class _MenuBarState extends State<MenuBar> {
     } else if (item == null || item == _open) {
       _switchTimer?.cancel();
     }
-    _menuKey.currentState?.pointerMoved(p);
   }
 
   MenubarConfigWatcher? _ownConfig;
@@ -729,156 +751,91 @@ class _MenuBarState extends State<MenuBar> {
 
   @override
   Widget build(BuildContext context) {
-    final regular = uiText(size: fontSize, color: itemColor);
-    final bold = TextStyle(
-      fontFamily: uiFontFamily,
-      package: 'silica_ui',
-      fontSize: fontSize,
-      fontWeight: FontWeight.w600,
-      color: itemColor,
-    );
-    final status = uiText(size: fontSize, color: statusColor);
-    final open = _open == null ? null : _rectOf(_open!);
+    final text = barTextColor(context);
     final states = ShellChannel.instance.states.value;
-    // Control Center open: 46 × 24 capsule on the icon, just lighter than the bar
-    // (controlcenter.md: +3 levels). Notification Center open: the clock with the capsule
-    // of the open items (notifications.md, N-03).
-    final controls = states['controlcenter.open'] == '1'
-        ? _rectOf('controls')
-        : null;
-    final clock = states['notifications.open'] == '1' ? _rectOf('clock') : null;
-    // A status menu open: its icon with the capsule of the open items.
+    // Items with a capsule: the open menu's title, the Control Center and Notification
+    // Center while they are up, the status item whose panel is open.
     final statusMenuKey = (states['statusmenu'] ?? '').split(' ').first;
-    final statusMenu = statusMenuKey.isEmpty ? null : _rectOf(statusMenuKey);
+    final controlsOpen = states['controlcenter.open'] == '1';
+    final clockOpen = states['notifications.open'] == '1';
+    bool on(String name) => _open == name || statusMenuKey == name;
     final bar = SizedBox(
       height: barHeight,
       child: Stack(
         children: [
-          if (controls != null)
-            Positioned(
-              left: controls.center.dx - controlsCapsule.width / 2,
-              top: (barHeight - controlsCapsule.height) / 2,
-              width: controlsCapsule.width,
-              height: controlsCapsule.height,
-              child: const DecoratedBox(
-                key: ValueKey('control center capsule'),
-                decoration: BoxDecoration(
-                  color: controlsCapsuleFill,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(capsuleHeight / 2),
-                  ),
-                ),
-              ),
-            ),
-          if (statusMenu != null)
-            Positioned(
-              left: statusMenu.left - capsuleOutset,
-              top: (barHeight - capsuleHeight) / 2,
-              width: statusMenu.width + 2 * capsuleOutset,
-              height: capsuleHeight,
-              child: const DecoratedBox(
-                key: ValueKey('status menu capsule'),
-                decoration: BoxDecoration(
-                  color: capsuleFill,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(capsuleHeight / 2),
-                  ),
-                ),
-              ),
-            ),
-          if (clock != null)
-            Positioned(
-              left: clock.left - capsuleOutset,
-              top: (barHeight - capsuleHeight) / 2,
-              width: clock.width + 2 * capsuleOutset,
-              height: capsuleHeight,
-              child: const DecoratedBox(
-                key: ValueKey('clock capsule'),
-                decoration: BoxDecoration(
-                  color: capsuleFill,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(capsuleHeight / 2),
-                  ),
-                ),
-              ),
-            ),
-          // The item with the open menu: capsule 24 tall, ~3.5 pt beyond the box per side.
-          if (open != null)
-            Positioned(
-              left: open.left - capsuleOutset,
-              top: (barHeight - capsuleHeight) / 2,
-              width: open.width + 2 * capsuleOutset,
-              height: capsuleHeight,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(
-                  color: capsuleFill,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(capsuleHeight / 2),
-                  ),
-                ),
-              ),
-            ),
           Positioned(
-            left: logoLeft,
-            top: 0,
-            width: logoCell,
-            height: barHeight,
-            child: SizedBox(
-              key: _keyFor('logo'),
-              child: const Center(child: SilicaMark(color: itemColor)),
-            ),
-          ),
-          Positioned(
-            left: logoLeft + logoCell - 1,
-            top: 0,
-            height: barHeight,
+            left: barSide,
+            top: itemTop,
+            height: itemHeight,
             child: Row(
               children: [
-                _item(_appName, bold, key: _keyFor('app')),
+                _glyphItem(
+                  key: _keyFor('logo'),
+                  active: on('logo'),
+                  child: SilicaMark(color: text),
+                ),
+                _titleItem(
+                  _appName,
+                  barNameStyle,
+                  key: _keyFor('app'),
+                  active: on('app'),
+                ),
                 if (_appMenus() case final own?)
                   for (var i = 1; i < own.length; i++)
-                    _item(own[i].title, regular, key: _keyFor('menu$i'))
+                    _titleItem(
+                      own[i].title,
+                      barTitleStyle,
+                      key: _keyFor('menu$i'),
+                      active: on('menu$i'),
+                    )
                 else
                   for (final menu in genericMenus)
                     if (_entries(menu).isNotEmpty)
-                      _item(
+                      _titleItem(
                         menuTitle(l10nOf(context), menu),
-                        regular,
+                        barTitleStyle,
                         key: _keyFor(menu),
+                        active: on(menu),
                       ),
               ],
             ),
           ),
           Positioned(
-            right: clockRightMargin,
-            top: 0,
-            height: barHeight,
+            right: barSide,
+            top: itemTop,
+            height: itemHeight,
             child: Row(
               children: [
-                ..._systemIcons(),
-                const SizedBox(width: statusGap),
+                ..._systemIcons(on),
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: widget.onSearch,
-                  child: const StatusIcon(kind: StatusKind.search, cell: 33),
+                  child: _glyphItem(
+                    key: _keyFor('search'),
+                    active: false,
+                    child: const StatusIcon(kind: StatusKind.search),
+                  ),
                 ),
-                const SizedBox(width: statusGap),
                 GestureDetector(
-                  key: _keyFor('controls'),
-                  onTap: widget.onControls,
                   behavior: HitTestBehavior.opaque,
-                  child: const StatusIcon(kind: StatusKind.controls, cell: 26),
-                ),
-                const SizedBox(width: clockGap),
-                GestureDetector(
-                  key: _keyFor('clock'),
                   onTap: widget.onClock,
-                  behavior: HitTestBehavior.opaque,
-                  child: _baselined(
+                  child: _titleItem(
                     clockText(
                       widget.now ?? DateTime.now(),
                       l10nOf(context).localeName,
                     ),
-                    status,
+                    barClockStyle,
+                    key: _keyFor('clock'),
+                    active: clockOpen,
+                  ),
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onControls,
+                  child: _glyphItem(
+                    key: _keyFor('controls'),
+                    active: controlsOpen,
+                    child: StatusIcon(kind: StatusKind.controls),
                   ),
                 ),
               ],
@@ -895,7 +852,6 @@ class _MenuBarState extends State<MenuBar> {
           onPointerDown: _pointerDown,
           onPointerMove: (e) => _pointerMoved(e.localPosition),
           onPointerHover: (e) => _pointerMoved(e.localPosition),
-          onPointerUp: (e) => _menuKey.currentState?.pointerUp(e.localPosition),
           child: SizedBox.expand(
             child: Stack(
               children: [
@@ -910,18 +866,13 @@ class _MenuBarState extends State<MenuBar> {
                   Positioned.fill(
                     child: _withBrightness(
                       _windowMenuBrightness,
-                      MenuHost(
-                        key: ValueKey(tip),
-                        entries: windowMenuEntries(
-                          (id) => ShellChannel.instance.execute(id),
-                          texts: l10nOf(context),
-                        ),
-                        anchor: Offset.zero,
+                      WindowMenuPopover(
+                        key: _windowKey,
                         tip: tip,
-                        tipUp: true,
-                        top: barHeight,
+                        execute: (id) => ShellChannel.instance.execute(id),
+                        texts: l10nOf(context),
                         onDismissed: _closeWindowMenu,
-                        onRectsChanged: _menuRegion,
+                        onRectChanged: (r) => _menuRegion([r]),
                       ),
                     ),
                   ),
@@ -955,26 +906,28 @@ class _MenuBarState extends State<MenuBar> {
                   ),
                 if (_desktopMenuAt case final at?)
                   Positioned.fill(
-                    child: MenuHost(
-                      key: ValueKey(at),
-                      entries: _desktopMenuEntries ?? _desktopEntries(),
+                    child: BarMenuHost(
+                      key: _desktopKey,
+                      entries: amalfiEntries(
+                        _desktopMenuEntries ?? _desktopEntries(),
+                      ),
                       anchor: Offset(at.dx, at.dy - desktopMenuAbove),
-                      top: barHeight,
+                      flip: true,
                       onDismissed: _closeDesktopMenu,
                       onRectsChanged: _menuRegion,
                     ),
                   ),
                 if (_open case final name?)
                   Positioned.fill(
-                    child: MenuHost(
+                    child: BarMenuHost(
                       key: _menuKey,
-                      entries: _openEntries ?? _entries(name),
+                      entryKey: name,
+                      entries: amalfiEntries(_openEntries ?? _entries(name)),
                       anchor: Offset(
-                        (open?.left ?? 0) - menuLeftOfItem,
-                        barHeight + 1,
+                        (_rectOf(name)?.left ?? 0) - menuLeftOfItem,
+                        barHeight + menuBelowBar,
                       ),
-                      handlesPointer: false,
-                      top: barHeight,
+                      highlightFirst: _highlightFirst,
                       onDismissed: _closeMenu,
                       onNext: () => _neighbour(1),
                       onPrevious: () => _neighbour(-1),
@@ -991,110 +944,107 @@ class _MenuBarState extends State<MenuBar> {
   }
 
   /// Battery (if any) and network, from the system state; without it, the full Wi-Fi icon.
-  List<Widget> _systemIcons() {
+  /// `on` tells whether the item of a name has its menu or panel open.
+  List<Widget> _systemIcons(bool Function(String name) on) {
     final s = widget.system?.value;
     final config = _config.value;
+    Widget item(
+      String name,
+      StatusKind kind, {
+      double level = 1,
+      bool dim = false,
+      bool charging = false,
+      VoidCallback? onTap,
+      String? caption,
+    }) {
+      final open = on(name);
+      final glyph = StatusIcon(
+        kind: kind,
+        level: level,
+        dim: dim,
+        charging: charging,
+      );
+      final child = caption == null
+          ? glyph
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(caption, style: barTitleStyle(barTextColor(context))),
+                const SizedBox(width: 4),
+                glyph,
+              ],
+            );
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: _glyphItem(
+          key: _keyFor(name),
+          active: open,
+          wide: caption != null,
+          child: child,
+        ),
+      );
+    }
+
     if (s == null) {
-      return const [StatusIcon(kind: StatusKind.network, cell: 22)];
+      return [item('wifi', StatusKind.network)];
     }
     return [
-      // While media plays (SH-MB-33): the play glyph, 17 pt; the menu is the Now Playing
-      // panel.
-      if (widget.media?.now?.playing ?? false) ...[
-        GestureDetector(
-          key: _keyFor('media'),
-          behavior: HitTestBehavior.opaque,
+      // While media plays (SH-MB-33): the play glyph; the menu is the Now Playing panel.
+      if (widget.media?.now?.playing ?? false)
+        item(
+          'media',
+          StatusKind.nowPlaying,
           onTap: () => _toggleStatusMenu('media'),
-          child: const StatusIcon(kind: StatusKind.nowPlaying, cell: 17),
         ),
-        const SizedBox(width: statusGap),
-      ],
       // While a Focus is on, its moon (SH-MB-26); the menu is the Focus panel.
-      if (s.doNotDisturb) ...[
-        GestureDetector(
-          key: _keyFor('dnd'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _toggleStatusMenu('dnd'),
-          child: const StatusIcon(kind: StatusKind.focus, cell: 22),
-        ),
-        const SizedBox(width: statusGap),
-      ],
+      if (s.doNotDisturb)
+        item('dnd', StatusKind.focus, onTap: () => _toggleStatusMenu('dnd')),
       // Bluetooth and Sound when Settings › Menu Bar asks for them (SH-MB-24, SH-MB-25):
       // their menus are the Control Center's detail panels, like Wi-Fi. Sound "when
       // active" shows while media plays (provisional reading of the setting).
-      if (config.bluetooth && s.bluetoothAvailable) ...[
-        GestureDetector(
-          key: _keyFor('bluetooth'),
-          behavior: HitTestBehavior.opaque,
+      if (config.bluetooth && s.bluetoothAvailable)
+        item(
+          'bluetooth',
+          StatusKind.bluetooth,
+          dim: !s.bluetoothPowered,
           onTap: () => _toggleStatusMenu('bluetooth'),
-          child: StatusIcon(
-            kind: StatusKind.bluetooth,
-            cell: 22,
-            dim: !s.bluetoothPowered,
-          ),
         ),
-        const SizedBox(width: statusGap),
-      ],
+      if (s.wired && s.wifiSsid.isEmpty)
+        item('wired', StatusKind.wired)
+      else if (s.wifiAvailable)
+        item(
+          'wifi',
+          StatusKind.network,
+          level: s.wifiStrength / 100,
+          dim: !s.wifiEnabled || s.wifiSsid.isEmpty,
+          onTap: () => _toggleStatusMenu('wifi'),
+        ),
       if (s.audioAvailable &&
           switch (config.sound) {
             SoundItem.always => true,
             SoundItem.active => widget.media?.now?.playing ?? false,
             SoundItem.never => false,
-          }) ...[
-        GestureDetector(
-          key: _keyFor('sound'),
-          behavior: HitTestBehavior.opaque,
+          })
+        item(
+          'sound',
+          StatusKind.sound,
+          level: s.muted ? 0 : s.volume,
+          dim: s.muted,
           onTap: () => _toggleStatusMenu('sound'),
-          child: StatusIcon(
-            kind: StatusKind.sound,
-            cell: 26,
-            level: s.muted ? 0 : s.volume,
-            dim: s.muted,
-          ),
         ),
-        const SizedBox(width: statusGap),
-      ],
-      if (s.batteryPresent && config.battery) ...[
-        // The battery menu (SH-MB-27): a standard menu with the charge, the power source
-        // and Battery Settings.
-        GestureDetector(
-          key: _keyFor('battery'),
-          behavior: HitTestBehavior.opaque,
+      // The battery menu (SH-MB-27): a standard menu with the charge, the power source and
+      // Battery Settings.
+      if (s.batteryPresent && config.battery)
+        item(
+          'battery',
+          StatusKind.battery,
+          level: s.batteryPercent / 100,
+          charging: s.batteryCharging,
+          caption: config.batteryPercent
+              ? '${s.batteryPercent.round()} %'
+              : null,
           onTap: () => _open == 'battery' ? _closeMenu() : _openMenu('battery'),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (config.batteryPercent) ...[
-                Text(
-                  '${s.batteryPercent.round()} %',
-                  style: uiText(size: fontSize, color: statusColor),
-                ),
-                const SizedBox(width: 4),
-              ],
-              StatusIcon(
-                kind: StatusKind.battery,
-                cell: 33,
-                level: s.batteryPercent / 100,
-                charging: s.batteryCharging,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: statusGap),
-      ],
-      if (s.wired && s.wifiSsid.isEmpty)
-        const StatusIcon(kind: StatusKind.wired, cell: 22)
-      else if (s.wifiAvailable)
-        GestureDetector(
-          key: _keyFor('wifi'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _toggleStatusMenu('wifi'),
-          child: StatusIcon(
-            kind: StatusKind.network,
-            cell: 22,
-            level: s.wifiStrength / 100,
-            dim: !s.wifiEnabled || s.wifiSsid.isEmpty,
-          ),
         ),
     ];
   }
@@ -1110,22 +1060,77 @@ class _MenuBarState extends State<MenuBar> {
     shell.broadcast('statusmenu', open ? '' : '$key ${rect.right}');
   }
 
-  /// An item: the text with ~10.75 pt per side.
-  Widget _item(String text, TextStyle style, {Key? key}) => Padding(
-    key: key,
-    padding: const EdgeInsets.symmetric(horizontal: itemPadding),
-    child: _baselined(text, style),
-  );
+  /// An item's box: 24 tall, with the translucent white capsule (radius 12) while its menu
+  /// or panel is open (`Menu Bar/Selection`).
+  Widget _box({
+    Key? key,
+    required bool active,
+    double? width,
+    required Widget child,
+  }) {
+    final soft = barSelectionColor(context);
+    return SizedBox(
+      key: key,
+      width: width,
+      height: itemHeight,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: active ? soft : null,
+          shape: const AmalfiSmoothBorder(radius: itemRadius),
+        ),
+        child: Center(widthFactor: width == null ? 1 : null, child: child),
+      ),
+    );
+  }
 
-  /// Text with the baseline at y 19.
-  Widget _baselined(String text, TextStyle style) => SizedBox(
-    height: barHeight,
-    child: Baseline(
-      baseline: baseline,
-      baselineType: TextBaseline.alphabetic,
-      child: Text(text, style: style),
+  /// A glyph item (the Silica mark, a status icon): 32 wide, the glyph at its centre; with a
+  /// caption (the battery's percentage) as wide as its content plus 8 on each side.
+  Widget _glyphItem({
+    Key? key,
+    required bool active,
+    required Widget child,
+    bool wide = false,
+  }) => wide
+      ? _box(
+          key: key,
+          active: active,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: itemPadding),
+            child: child,
+          ),
+        )
+      : _box(key: key, active: active, width: statusCell, child: child);
+
+  /// A text item (a menu title, the app name, the clock): the text 8 pt from the edges, in
+  /// `Text/Primary` also while the item is open.
+  Widget _titleItem(
+    String text,
+    TextStyle Function(Color color) style, {
+    Key? key,
+    required bool active,
+  }) => _box(
+    key: key,
+    active: active,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: itemPadding),
+      child: Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        style: style(barTextColor(context)),
+      ),
     ),
   );
+}
+
+/// How tall a menu of `entries` is (24 per item and header, 8 per separator, 4 of padding on
+/// each side), to size the surface before the screen's size is known.
+double estimatedMenuHeight(List<MenuEntry> entries) {
+  var height = 8.0;
+  for (final entry in entries) {
+    height += entry is MenuDivider ? 8 : 24;
+  }
+  return height;
 }
 
 /// The user's full name for the log out item: the first field of the comment in

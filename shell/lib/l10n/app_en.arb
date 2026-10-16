@@ -1468,5 +1468,37 @@
   "authAllow": "Allow",
   "@authAllow": {
     "description": "Authentication dialog: confirm button"
+  },
+  "menubarTags": "Tags",
+  "@menubarTags": {
+    "description": "Desktop item context menu: the submenu with the tag colours"
+  },
+  "menubarTagRed": "Red",
+  "@menubarTagRed": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagOrange": "Orange",
+  "@menubarTagOrange": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagYellow": "Yellow",
+  "@menubarTagYellow": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagGreen": "Green",
+  "@menubarTagGreen": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagBlue": "Blue",
+  "@menubarTagBlue": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagPurple": "Purple",
+  "@menubarTagPurple": {
+    "description": "Desktop item context menu > Tags: colour"
+  },
+  "menubarTagGray": "Gray",
+  "@menubarTagGray": {
+    "description": "Desktop item context menu > Tags: colour"
   }
 }

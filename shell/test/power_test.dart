@@ -38,30 +38,35 @@ void main() {
     expect(powerAvailable(const {}), isFalse);
   });
 
-  testWidgets('measured size; the countdown ticks every second from 60', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_card(PowerAction.shutDown));
-    await tester.pump(const Duration(milliseconds: 300));
-    final card = find.byKey(const ValueKey('power confirmation'));
-    expect(tester.getSize(card), const Size(292, 266));
-    expect(find.text(englishTexts.powerShutDownBody(60)), findsOneWidget);
-    await tester.pump(const Duration(seconds: 1));
-    expect(find.text(englishTexts.powerShutDownBody(59)), findsOneWidget);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('power confirm'))),
-      const Size(128, 30),
-    );
-  });
+  testWidgets(
+    'the Amalfi alert: 280 wide; the countdown ticks every second from 60',
+    (tester) async {
+      await tester.pumpWidget(_card(PowerAction.shutDown));
+      await tester.pump(const Duration(milliseconds: 300));
+      final card = find.byKey(const ValueKey('power confirmation'));
+      expect(tester.getSize(card).width, 280);
+      expect(tester.getSize(card).height % 4, 0, reason: 'on the 4 pt grid');
+      expect(find.text(englishTexts.powerShutDownBody(60)), findsOneWidget);
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(englishTexts.powerShutDownBody(59)), findsOneWidget);
+      final confirm = tester.getSize(
+        find.byKey(const ValueKey('power confirm')),
+      );
+      expect(confirm.height, 28);
+      expect(confirm.width, greaterThanOrEqualTo(72));
+    },
+  );
 
-  testWidgets('log out has the taller card for its two-line title', (
-    tester,
-  ) async {
+  testWidgets('log out names the user in its title', (tester) async {
     await tester.pumpWidget(_card(PowerAction.logOut));
     await tester.pump(const Duration(milliseconds: 300));
     expect(
-      tester.getSize(find.byKey(const ValueKey('power confirmation'))),
-      const Size(292, 282),
+      find.text(englishTexts.powerLogOutTitle('Alex Rivera')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('power confirmation'))).width,
+      280,
     );
   });
 

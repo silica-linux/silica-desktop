@@ -11,8 +11,7 @@ import 'package:silica_shell/menubar/menubar.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/menubar/status_icons.dart';
 import 'package:silica_shell/menubar/window_menu.dart';
-import 'package:silica_ui/silica_ui.dart'
-    show MenuAction, MenuCustom, MenuDivider, MenuEntry, MenuHost, MenuPanel;
+import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/system/shell_channel.dart';
 import 'package:silica_shell/system/system_status.dart';
 
@@ -306,9 +305,18 @@ void main() {
       layer,
       containsAll(['setSize', 'setInputRegion', 'setKeyboardInteractivity']),
     );
-    // The menu body 5 pt left of the box (which has ~10.75 pt before the text).
+    // The menu body 4 pt left of the item's box (the text is 8 pt in), the label 24 pt
+    // from the row's edge (checkmark slot), the rows 4 pt in.
     final riduci = tester.getTopLeft(find.text('Minimize'));
-    expect(riduci.dx, closeTo(finestra.left - itemPadding - 5 + 17, 1));
+    expect(
+      riduci.dx,
+      closeTo(finestra.left - itemPadding - menuLeftOfItem + 4 + 24, 1),
+    );
+    // 8 pt below the bar.
+    expect(
+      tester.getRect(find.byType(AmalfiMenu)).top,
+      barHeight + menuBelowBar,
+    );
     await tester.tapAt(tester.getCenter(find.text('Minimize')));
     await tester.pump(const Duration(milliseconds: 150));
     expect(executed, ['window.minimize']);
@@ -358,12 +366,12 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('Half of the screen'), findsOneWidget);
-      // The body below the tip: 8 pt below the apex, 27 to the left.
-      final panel = tester.getRect(find.byType(MenuPanel));
-      expect(panel.top, 208);
-      expect(panel.left, 273);
-      expect(panel.width, windowMenuWidth);
-      expect(panel.height, windowMenuHeight);
+      // The popover below the tip (its arrow's apex), centred on it, once it has grown.
+      await tester.pumpAndSettle();
+      final panel = tester.getRect(find.byType(AmalfiPopover));
+      expect(panel.top, closeTo(200, 0.05));
+      expect(panel.left, closeTo(300 - windowPopoverWidth / 2, 0.05));
+      expect(panel.width, closeTo(windowPopoverWidth, 0.05));
       // Cells of 54 × 44 with the icon (25 × 20) and the pointer's highlight (46 × 36).
       expect(
         tester.getSize(find.byKey(const ValueKey('window.tile_left'))),
@@ -398,7 +406,7 @@ void main() {
   );
 
   testWidgets(
-    'capsules on the controls icon and on the clock with the Centers open',
+    'the item of an open Center has the Accent Soft capsule and its glyph or text in the accent',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 400);
       tester.view.devicePixelRatio = 1;
@@ -422,22 +430,95 @@ void main() {
             ),
             (_) {},
           );
-      const controls = ValueKey('control center capsule');
-      const clock = ValueKey('clock capsule');
-      expect(find.byKey(controls), findsNothing);
+      final colors = AmalfiColors.of(Brightness.light);
+      // The capsule of the item around `of`: its box and fill.
+      (Rect, Color?) capsule(Finder of) {
+        final box = find
+            .ancestor(of: of, matching: find.byType(DecoratedBox))
+            .first;
+        final decoration = tester.widget<DecoratedBox>(box).decoration;
+        return (
+          tester.getRect(box),
+          decoration is ShapeDecoration ? decoration.color : null,
+        );
+      }
+
+      final controls = find.byWidgetPredicate(
+        (w) => w is StatusIcon && w.kind == StatusKind.controls,
+      );
+      final clock = find.text('Mon 12 Oct  22:34');
+      expect(capsule(controls).$2, isNull);
+      expect(capsule(clock).$2, isNull);
       await announce('controlcenter.open', '1');
       await tester.pump();
       await tester.pump();
-      final capsule = tester.getRect(find.byKey(controls));
-      expect(capsule.size, controlsCapsule);
+      // A status item: 32 × 24, the capsule Accent/Amalfi Soft, the glyph in the accent.
+      final (box, fill) = capsule(controls);
+      expect(box.size, const Size(statusCell, itemHeight));
+      expect(box.top, itemTop);
+      expect(fill, const Color(0x66FFFFFF));
+      expect(tester.widget<StatusIcon>(controls).color, isNull);
       await announce('notifications.open', '1');
       await tester.pump();
-      expect(find.byKey(clock), findsOneWidget);
+      expect(capsule(clock).$2, const Color(0x66FFFFFF));
+      expect(tester.widget<Text>(clock).style?.color, colors.textPrimary);
       await announce('controlcenter.open', '0');
       await announce('notifications.open', '0');
       await tester.pump();
-      expect(find.byKey(controls), findsNothing);
-      expect(find.byKey(clock), findsNothing);
+      expect(capsule(controls).$2, isNull);
+      expect(capsule(clock).$2, isNull);
+    },
+  );
+
+  testWidgets(
+    'the bar follows the kit: 28 tall, items 24, mark and glyphs 32 wide',
+    (tester) async {
+      tester.view.physicalSize = const Size(960, 200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        ShellChannel.channel,
+        (call) async => null,
+      );
+      final system = FakeSystem(
+        const SystemSnapshot(wifiAvailable: true, wifiSsid: 'Casa'),
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MenuBar(system: system, now: DateTime(2026, 10, 16, 9, 41)),
+        ),
+      );
+      await tester.pump();
+      expect(barHeight, 28);
+      // The mark's item: x 8, 32 × 24 at y 2 (kit `Silica mark`).
+      final mark = find
+          .ancestor(
+            of: find.byType(SilicaMark),
+            matching: find.byType(SizedBox),
+          )
+          .first;
+      expect(tester.getRect(mark), const Rect.fromLTWH(8, 2, 32, 24));
+      // The app name follows at x 40, its text 8 pt in (kit `App name`), Headline.
+      final name = find.text('Silica');
+      expect(tester.getRect(name).left, 48);
+      expect(tester.widget<Text>(name).style?.fontWeight, FontWeight.w600);
+      // The clock ends 8 + 32 pt before the right edge (its item, then the control centre).
+      final clock = find.text('Fri 16 Oct  09:41');
+      expect(tester.getRect(clock).right, 960 - 8 - 32 - 8);
+      expect(
+        tester
+            .getRect(
+              find.byWidgetPredicate(
+                (w) => w is StatusIcon && w.kind == StatusKind.controls,
+              ),
+            )
+            .center
+            .dx,
+        960 - 8 - 16,
+      );
+      // The bar paints no material: no glass above its items.
+      expect(find.byType(Glass), findsNothing);
     },
   );
 
@@ -642,92 +723,57 @@ void main() {
       expect(labels, isNot(contains('Tags…')));
       entries.whereType<MenuAction>().last.onSelected?.call();
       expect(sent, ['customize']);
-      // As in the window menu: a divider, the row of dots, then the item.
-      final last = entries.length - 1;
-      expect(entries[last - 1], isA<MenuCustom>());
-      expect(entries[last - 2], isA<MenuDivider>());
-      final row = entries[last - 1] as MenuCustom;
-      expect(row.height, 25);
-      expect(row.width, 18 + 24.0 * 7 + 12);
+      // A divider, the Tags submenu, then the item.
+      final tags = entries.whereType<MenuAction>().firstWhere(
+        (a) => a.label == 'Tags',
+      );
+      expect(entries[entries.indexOf(tags) - 1], isA<MenuDivider>());
+      expect(entries.last, isA<MenuAction>());
+      expect((entries.last as MenuAction).label, 'Customize Folder…');
     });
 
-    group('the colour dots', () {
-      Future<void> pumpRow(
-        WidgetTester tester,
-        Set<String> assigned,
-        List<String> sent,
-      ) => tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: DesktopTagRow(assigned: assigned, onToggle: sent.add),
-          ),
-        ),
+    group('the Tags submenu', () {
+      List<MenuAction> tagItems(Set<String> assigned, List<String> sent) =>
+          (ownerItemsMenu(
+                    l: englishTexts,
+                    state: DesktopOwnerState(selected: 1, tags: assigned),
+                    onAction: sent.add,
+                  )
+                  .whereType<MenuAction>()
+                  .firstWhere((a) => a.label == 'Tags')
+                  .submenu!)
+              .whereType<MenuAction>()
+              .toList();
+
+      test(
+        'seven colours in the file manager order, the shared ones checked',
+        () {
+          final items = tagItems({'red', 'blue'}, []);
+          expect(
+            [for (final a in items) a.label],
+            ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple', 'Gray'],
+          );
+          expect(
+            [for (final a in items) a.checked],
+            [true, false, false, false, true, false, false],
+          );
+          // Each has its coloured dot.
+          expect(items.every((a) => a.icon != null), isTrue);
+        },
       );
 
-      testWidgets('seven dots at a 24 pt pitch, the checked ones marked', (
-        tester,
-      ) async {
-        await pumpRow(tester, {'red', 'blue'}, []);
-        const names = [
-          'red',
-          'orange',
-          'yellow',
-          'green',
-          'blue',
-          'purple',
-          'gray',
-        ];
-        for (final n in names) {
-          expect(find.byKey(ValueKey('tag $n')), findsOneWidget);
-        }
-        final first = tester.getRect(find.byKey(const ValueKey('tag red')));
-        expect(first.size, const Size(24, 25));
-        expect(first.left, 18 - 3);
-        expect(
-          tester.getRect(find.byKey(const ValueKey('tag orange'))).left -
-              first.left,
-          24,
-        );
-        // A check mark on the colours every selected icon has, none on the others.
-        expect(find.text('✓'), findsNWidgets(2));
-        for (final n in ['red', 'blue']) {
-          expect(
-            find.descendant(
-              of: find.byKey(ValueKey('tag $n')),
-              matching: find.text('✓'),
-            ),
-            findsOneWidget,
-          );
-        }
-      });
-
-      testWidgets('a click sends the colour back', (tester) async {
+      test('a choice sends the colour back', () {
         final sent = <String>[];
-        await pumpRow(tester, {'red'}, sent);
-        await tester.tap(find.byKey(const ValueKey('tag green')));
-        await tester.tap(find.byKey(const ValueKey('tag red')));
-        expect(sent, ['green', 'red']);
+        final items = tagItems({'red'}, sent);
+        items[3].onSelected?.call();
+        items[0].onSelected?.call();
+        expect(sent, ['tag:green', 'tag:red']);
       });
 
-      testWidgets('under the pointer a dot grows and shows + or ×', (
-        tester,
-      ) async {
-        await pumpRow(tester, {'red'}, []);
-        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-        addTearDown(mouse.removePointer);
-        await mouse.addPointer(location: Offset.zero);
-        await mouse.moveTo(
-          tester.getCenter(find.byKey(const ValueKey('tag green'))),
-        );
-        await tester.pump();
-        expect(find.text('+'), findsOneWidget);
-        await mouse.moveTo(
-          tester.getCenter(find.byKey(const ValueKey('tag red'))),
-        );
-        await tester.pump();
-        expect(find.text('×'), findsOneWidget);
+      test('the colours are localised', () {
+        final l = lookupAppLocalizations(const Locale('it'));
+        expect(desktopTagName(l, 'red'), 'Rosso');
+        expect(desktopTagName(l, 'gray'), 'Grigio');
       });
     });
 
@@ -747,11 +793,11 @@ void main() {
           'Rename',
           'Duplicate',
           'Quick Preview',
-          // Not one folder: Tags…, disabled.
-          'Tags…',
+          // The colours of the tags, in a submenu.
+          'Tags',
         ],
       );
-      expect(many.last.enabled, isFalse);
+      expect(many.last.submenu, hasLength(7));
       // Rename only one at a time.
       expect(many.firstWhere((a) => a.label == 'Rename').enabled, isFalse);
       many.firstWhere((a) => a.label == 'Move to Trash').onSelected?.call();
@@ -889,18 +935,23 @@ void main() {
         await broadcast('desktopmenu', '400 100 items');
         await tester.pump();
         await tester.pump();
-        expect(find.byKey(const ValueKey('tag red')), findsOneWidget);
-        expect(find.text('✓'), findsOneWidget);
-        expect(
-          find.descendant(
-            of: find.byKey(const ValueKey('tag green')),
-            matching: find.text('✓'),
-          ),
-          findsOneWidget,
-        );
+        expect(find.text('Tags'), findsOneWidget);
         expect(find.text('Tags…'), findsNothing);
+        // Tags opens a submenu of the colours with a check on the shared ones.
+        await tester.tap(find.text('Tags'));
+        await tester.pump();
+        await tester.pump();
+        bool checked(String label) => tester
+            .widget<AmalfiMenuItem>(
+              find.byWidgetPredicate(
+                (w) => w is AmalfiMenuItem && w.label == label,
+              ),
+            )
+            .checked;
+        expect(checked('Green'), isTrue);
+        expect(checked('Red'), isFalse);
 
-        await tester.tap(find.byKey(const ValueKey('tag blue')));
+        await tester.tap(find.text('Blue'));
         for (var i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 16));
           if (sent.any((s) => s.startsWith('desktop.action=tag:blue'))) break;
@@ -966,7 +1017,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         final texts = find.descendant(
-          of: find.byType(MenuHost),
+          of: find.byType(AmalfiMenu),
           matching: find.byType(Text),
         );
         expect(texts, findsWidgets);
