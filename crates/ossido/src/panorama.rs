@@ -1876,7 +1876,7 @@ pub fn bar_material_rect(width: f64, expansion: f64, progress: f64) -> Rectangle
 }
 
 /// The glass region of the spaces bar (physical pixels): Glass/Thick exactly like the Amalfi
-/// kinds that are thick (σ 16, saturation 1.5, tint 76 %, inside rim, rim light, and their blur
+/// kinds that are thick (σ 10, saturation 1.1, tint 58 %, refraction, inside rim, rim light, and their blur
 /// scale, which the equivalence test covers), without the kind's drop shadow (the bar's sprite
 /// draws its own).
 pub fn bar_region(
@@ -2048,9 +2048,10 @@ mod tests {
         for dark in [false, true] {
             let region = bar_region(rect, dark, 1.0, 1.0);
             let thick = Amalfi::Thick.material(dark);
-            // Exactly the Amalfi Thick material: σ 16, saturation 1.5, tint 76 %, rims.
-            assert_eq!(region.sigma(), 16.0);
-            assert_eq!(region.profile.saturation, 1.5);
+            // Exactly the Amalfi Thick material: σ 10, saturation 1.1, brightness, tint 58 %, rims.
+            assert_eq!(region.sigma(), 10.0);
+            assert_eq!(region.profile.saturation, 1.1);
+            assert_eq!(region.profile.brightness, thick.brightness);
             assert_eq!(region.profile.tint, thick.tint);
             assert_eq!(region.profile.inside_rim, thick.inside_rim);
             assert_eq!(region.profile.rim_light, thick.rim_light);
@@ -2058,7 +2059,7 @@ mod tests {
             for (got, want) in region.profile.tint.iter().zip(tint) {
                 assert!((got * 255.0 - f32::from(want)).abs() < 0.5);
             }
-            assert!((region.profile.tint[3] - 0.76).abs() < 0.005);
+            assert!((region.profile.tint[3] - 0.58).abs() < 0.005);
             assert_eq!(region.profile.inside_rim.width, 1.0);
             let rim = if dark { 0.40 } else { 0.12 };
             assert!((region.profile.inside_rim.color[3] - rim).abs() < 0.005);

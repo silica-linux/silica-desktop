@@ -659,6 +659,187 @@ fn table_of_factors() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Refraction at the edge
+
+/// A 400 × 160 canvas of stripes 20 px wide (black and white) whose edges are at
+/// `first + 20 k` along x (vertical stripes) or y (horizontal ones).
+fn stripes(first: i32, horizontal: bool) -> Image {
+    Image::from_fn(400, 160, |x, y| {
+        let along = if horizontal { y } else { x } as i32;
+        let level = if (along - first).rem_euclid(40) < 20 {
+            0.0
+        } else {
+            1.0
+        };
+        [level; 3]
+    })
+}
+
+/// The glass of `kind` (light) over the stripes: a 280 × 120 px region at (60, 20), blurred
+/// with σ 1 px and no sharp share so that the stripe edges stay measurable, with the profile's
+/// refraction kept or taken away, at `quality`.
+fn refracted(
+    gpu: &mut Gpu,
+    kind: GlassKind,
+    backdrop: &Image,
+    refraction: bool,
+    quality: GlassQuality,
+) -> Image {
+    let size = backdrop.size();
+    let mut profile = kind.profile(false);
+    profile.sigma = Some(1.0);
+    profile.blur_scale = BlurScale::FULL;
+    profile.shadow = ossido_render::glass_profile::GlassShadow::NONE;
+    if !refraction {
+        profile.refraction = 0.0;
+        profile.chromatic = 0.0;
+    }
+    let mut material = kind.material(false);
+    material.sharp = 0.0;
+    let region = PhysicalRegion {
+        rect: Rectangle::new((60, 20).into(), (280, 120).into()),
+        radius: 24.0,
+        material,
+        opacity: 1.0,
+        scale: 1.0,
+        tip: None,
+        group: 0,
+        profile,
+        rotation: 0.0,
+    };
+    let layers = [Layer::new(
+        &mut gpu.renderer,
+        backdrop.clone(),
+        Point::from((0, 0)),
+    )];
+    let clear = [0.0, 0.0, 0.0, 1.0];
+    let glass = GlassCache::default()
+        .elements(
+            &mut gpu.renderer,
+            &gpu.glass,
+            &[region],
+            &layers,
+            &layers,
+            quality,
+            Rectangle::from_size(size),
+            1.0,
+            clear,
+        )
+        .unwrap();
+    compose(&mut gpu.renderer, size, clear, &layers, &glass)
+}
+
+/// Where channel `c` crosses the middle between its levels along a line near `expected`
+/// (sub-pixel, by linear interpolation), the line being row `y` (or column `x` when
+/// `horizontal`).
+fn crossing(image: &Image, channel: usize, line: i32, expected: i32, horizontal: bool) -> f64 {
+    let level = |along: i32| {
+        let (x, y) = if horizontal {
+            (line, along)
+        } else {
+            (along, line)
+        };
+        f64::from(image.rgba[((y * image.w + x) * 4) as usize + channel])
+    };
+    let span = expected - 3..expected + 12;
+    let lo = span.clone().map(level).fold(f64::MAX, f64::min);
+    let hi = span.clone().map(level).fold(0.0, f64::max);
+    let mid = (lo + hi) / 2.0;
+    for along in span {
+        let (a, b) = (level(along), level(along + 1));
+        if (a - mid) * (b - mid) < 0.0 || (a < mid && b >= mid) || (a > mid && b <= mid) {
+            return f64::from(along) + 0.5 + (mid - a) / (b - a);
+        }
+    }
+    panic!("no crossing near {expected} on line {line}");
+}
+
+/// The edge band bends the backdrop and nothing else: a stripe edge just inside the glass's
+/// left and top edge is moved towards the inside (the glass shows what lies nearer the rim),
+/// one in the middle of the glass stays where it is, and the red and blue samples split by a
+/// fraction of a pixel in the band and not in the middle.
+#[test]
+fn the_edge_band_bends_the_stripes_and_the_centre_does_not() {
+    let mut gpu = gpu();
+    for kind in [GlassKind::Dock, GlassKind::Menu] {
+        // The glass is 280 × 120: the band is `depth × 60` px (21 for Regular, 16.8 for Thick).
+        // Stripe edges 6 px inside the left edge (x 66) and the top edge (y 26), and in the
+        // middle (x 206, y 86).
+        for horizontal in [false, true] {
+            let (first, near, centre, line) = if horizontal {
+                (26, 26, 86, 200)
+            } else {
+                (66, 66, 206, 80)
+            };
+            let backdrop = stripes(first, horizontal);
+            let bent = refracted(&mut gpu, kind, &backdrop, true, GlassQuality::Full);
+            let flat = refracted(&mut gpu, kind, &backdrop, false, GlassQuality::Full);
+            let shift = |at: i32, channel: usize| {
+                crossing(&bent, channel, line, at, horizontal)
+                    - crossing(&flat, channel, line, at, horizontal)
+            };
+            let in_band = shift(near, 1);
+            let in_centre = shift(centre, 1);
+            eprintln!("{kind:?} horizontal {horizontal}: band {in_band:.2}, centre {in_centre:.2}");
+            // Towards the inside, by about the distortion × the band at that depth
+            // (Regular 2.3 px, Thick 1.2 px).
+            let (low, high) = if kind == GlassKind::Dock {
+                (1.5, 4.0)
+            } else {
+                (0.8, 2.5)
+            };
+            assert!(
+                (low..high).contains(&in_band),
+                "{kind:?} horizontal {horizontal}: band shift {in_band:.2}"
+            );
+            assert!(
+                in_centre.abs() < 0.15,
+                "{kind:?} horizontal {horizontal}: centre shift {in_centre:.2}"
+            );
+            // The chromatic split: small in the band, none in the middle or without refraction.
+            let split = |image: &Image, at: i32| {
+                (crossing(image, 0, line, at, horizontal)
+                    - crossing(image, 2, line, at, horizontal))
+                .abs()
+            };
+            let band_split = split(&bent, near);
+            eprintln!("{kind:?} horizontal {horizontal}: split {band_split:.2}");
+            assert!(
+                (0.1..1.5).contains(&band_split),
+                "{kind:?} horizontal {horizontal}: split {band_split:.2}"
+            );
+            assert!(split(&bent, centre) < 0.1, "{kind:?}: split in the centre");
+            assert!(
+                split(&flat, near) < 0.1,
+                "{kind:?}: split without refraction"
+            );
+        }
+    }
+}
+
+/// Reduced transparency is unchanged: no backdrop, so nothing to bend and no brightness, the
+/// tint over `Surface/Window` all over the glass, from the band to the middle.
+#[test]
+fn the_opaque_fallback_does_not_refract() {
+    let mut gpu = gpu();
+    let backdrop = stripes(66, false);
+    for kind in [GlassKind::Dock, GlassKind::Menu] {
+        let shot = refracted(&mut gpu, kind, &backdrop, true, GlassQuality::Opaque);
+        let want = ossido_render::glass::fallback_color(&kind.profile(false)).map(|c| c * 255.0);
+        for x in [70, 76, 84, 120, 206, 300] {
+            let i = ((80 * shot.w + x) * 4) as usize;
+            for c in 0..3 {
+                assert!(
+                    (f32::from(shot.rgba[i + c]) - want[c]).abs() <= 1.0,
+                    "{kind:?} x {x}: {:?} against {want:?}",
+                    &shot.rgba[i..i + 3]
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // The backdrop cache
 
 /// A scene: a wallpaper, a window partly under the glass, the glass.
@@ -932,8 +1113,13 @@ fn glass_cost() {
             };
             let full = time(&mut gpu, &[make(BlurScale::FULL)]) - base;
             let chosen = time(&mut gpu, &[make(case.profile.blur_scale)]) - base;
+            // The same without the refraction (one sample instead of three, no normal).
+            let mut flat = make(case.profile.blur_scale);
+            flat.profile.refraction = 0.0;
+            flat.profile.chromatic = 0.0;
+            let flat = time(&mut gpu, &[flat]) - base;
             eprintln!(
-                "{:<22} {scale}×: full {full:6.2} ms, at its scale (f{}) {chosen:6.2} ms",
+                "{:<22} {scale}×: full {full:6.2} ms, at its scale (f{}) {chosen:6.2} ms, without refraction {flat:6.2} ms",
                 case.name,
                 case.profile.blur_scale.factor(scale)
             );

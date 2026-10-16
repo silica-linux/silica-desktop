@@ -70,7 +70,7 @@ fn windows_spread_out_and_a_click_picks_one() {
     let shot = screenshot(&ossido);
     // The spaces bar: Glass/Thick (light tint over the gray) at the top left, no window.
     assert!(
-        close(pixel(&shot, 4, 4), [0xdf, 0xdf, 0xe1, 255]),
+        close(pixel(&shot, 4, 4), [0xcd, 0xce, 0xd0, 255]),
         "{:?}",
         pixel(&shot, 4, 4)
     );
@@ -121,7 +121,7 @@ fn windows_spread_out_and_a_click_picks_one() {
     assert!(!state(&ossido).open);
     // Once closed, the menu bar and the windows go back to their place.
     let shot = screenshot(&ossido);
-    assert!(!close(pixel(&shot, 4, 4), [0xdf, 0xdf, 0xe1, 255]));
+    assert!(!close(pixel(&shot, 4, 4), [0xcd, 0xce, 0xd0, 255]));
 }
 
 fn spaces(ossido: &Headless) -> Vec<SpaceInfo> {
@@ -437,7 +437,7 @@ fn the_spaces_bar_is_glass_thick_over_the_wallpaper() {
     let gray = ossido_render::glass::REFERENCE_GRAY.map(|c| c * 255.0);
     for dark in [false, true] {
         let want = thick_over(dark, gray);
-        // Light: ~#e0e1e2 over the reference gray; dark: ~#3d3e43.
+        // Light: ~#cdced0 over the reference gray; dark: much darker.
         assert!(if dark { want[0] < 80 } else { want[0] > 200 }, "{want:?}");
         let name = if dark {
             "panorama-bar-dark"
@@ -473,11 +473,11 @@ fn the_spaces_bar_is_glass_thick_over_the_wallpaper() {
 }
 
 #[test]
-fn the_spaces_bar_blurs_the_wallpaper_under_it_with_sigma_16() {
+fn the_spaces_bar_blurs_the_wallpaper_under_it_with_sigma_10() {
     let ossido = Headless::start_with("panorama-bar-blur", (1280, 800), &["--appearance", "dark"]);
-    // Left half: black and white stripes 16 px wide; right half: black above y 20, white below.
+    // Left half: black and white stripes 8 px wide; right half: black above y 20, white below.
     let _wallpaper = wallpaper(&ossido, |x, y, w, _| {
-        let white = if x < w / 2 { x % 32 >= 16 } else { y >= 20 };
+        let white = if x < w / 2 { x % 16 >= 8 } else { y >= 20 };
         if white {
             [255, 255, 255, 255]
         } else {
@@ -489,7 +489,7 @@ fn the_spaces_bar_blurs_the_wallpaper_under_it_with_sigma_16() {
         .unwrap();
     c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
     let shot = screenshot(&ossido);
-    // The stripes (period 32 px) are wiped out by σ 16: the mean gray under the tint.
+    // The stripes (period 16 px) are wiped out by σ 10: the mean gray under the tint.
     let mean = thick_over(true, [127.5; 3]);
     for x in (100..500).step_by(7) {
         let v = rgb_at(&shot, f64::from(x), 20.0);

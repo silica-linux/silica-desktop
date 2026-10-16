@@ -68,6 +68,10 @@ uniform float edge_power;
 // shadow outside the shape (black alpha, σ and downward offset in pixels; 0 alpha: none).
 uniform mat4 lens_widths;
 uniform float refraction;
+// The split of the red and blue samples along the normal at the rim, as a fraction of the
+// refraction band (0: none), and the backdrop's brightness (a multiplier before the tint).
+uniform float chromatic;
+uniform float brightness;
 uniform float rim;
 uniform float line;
 uniform float saturation;
@@ -302,8 +306,11 @@ void main() {
     // Lens: the pixel at distance t samples the background at distance s along the normal
     // (glass.md, "Refraction"). The profile scales the band's width (the curve keeps its
     // shape: evaluated at t / width, its displacement times width) and the displacement.
-    // Glass/Regular and Glass/Thick have none: the pixel samples its own place.
+    // The Amalfi glass materials (Regular, Thick) use it as a refraction at the edge: the curve
+    // pulls the backdrop in over a band along the edge, nothing past it, and `chromatic` splits
+    // the red and blue samples a little along the normal.
     vec2 sample_at = p;
+    vec2 split = vec2(0.0);
     if (refraction > 0.0) {
         // Outward normal from the distance (central differences), on a shape with corners at
         // least as wide as the refraction band: without it, on the diagonal of a right angle
@@ -318,14 +325,27 @@ void main() {
                              lens_source(nf.y < 0.0 ? lens[1] : lens[2], tb), vertical);
         float source = t + refraction * band * (measured - tb);
         sample_at = p + n * (t - source);
+        // The split grows from the band's inner side to the rim.
+        float rim_ness = clamp(1.0 - tb / max(lens_reach, 1.0), 0.0, 1.0);
+        split = n * (chromatic * band * lens_reach * rim_ness);
     }
     // Clamped to the texture: it repeats by default, and outside it lies the opposite side.
     vec2 half_texel = 0.5 / tex_size;
-    sample_at = clamp(sample_at / tex_size, half_texel, vec2(1.0) - half_texel);
+    vec2 sample_g = clamp(sample_at / tex_size, half_texel, vec2(1.0) - half_texel);
 
     // Without blur the tint covers the fallback surface, not the backdrop.
     bool opaque = fallback.a > 0.5;
-    vec3 background = opaque ? fallback.rgb : texture2D(tex, sample_at).rgb;
+    vec3 background;
+    if (opaque) {
+        background = fallback.rgb;
+    } else if (chromatic > 0.0 && refraction > 0.0) {
+        vec2 sample_r = clamp((sample_at + split) / tex_size, half_texel, vec2(1.0) - half_texel);
+        vec2 sample_b = clamp((sample_at - split) / tex_size, half_texel, vec2(1.0) - half_texel);
+        background = vec3(texture2D(tex, sample_r).r, texture2D(tex, sample_g).g,
+                          texture2D(tex, sample_b).b);
+    } else {
+        background = texture2D(tex, sample_g).rgb;
+    }
     vec3 color = vec3(dot(row_r, background), dot(row_g, background), dot(row_b, background)) + offset;
     float luminance = (background.r + background.g + background.b) / 3.0;
     color += (curve2 + curve3 * luminance) * luminance * luminance;
@@ -333,6 +353,9 @@ void main() {
     // surface), then the tint fill.
     float rec709 = dot(color, vec3(0.2126, 0.7152, 0.0722));
     color = mix(vec3(rec709), color, opaque ? 1.0 : saturation);
+    if (!opaque) {
+        color = clamp(color * brightness, 0.0, 1.0);
+    }
     color = mix(color, tint_color.rgb, tint_color.a);
 
     // The material's own edge, if any: the profiles, weighted by the orientation of the true

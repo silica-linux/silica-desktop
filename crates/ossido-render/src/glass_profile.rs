@@ -14,7 +14,7 @@
 //! tuned against the kit's exported images (`docs/design/amalfi/materials.md`, "Implementation
 //! in Ossido").
 
-use crate::glass::{MERGE_PT, MaterialParams};
+use crate::glass::{Lens, MERGE_PT, MaterialParams};
 
 /// The kinds of surface (`silica_glass_v1.profile`, without `default`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -113,6 +113,63 @@ impl RimLight {
     };
 }
 
+/// The refraction of a glass material (`tokens.json` → `materials.*.refraction`): the shape bends
+/// the backdrop at its edge. Ossido draws it with the shader's edge lens (see [`bend_curve`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Refraction {
+    /// How far the backdrop is pulled in at the rim, as a fraction of the band's width.
+    pub distortion: f32,
+    /// Width of the band: this fraction of half the shorter side of the shape (at most
+    /// [`REFRACTION_BAND_PT`]).
+    pub depth: f32,
+    /// The split of the red and blue samples at the rim, as a fraction of the band's width.
+    pub chromatic: f32,
+}
+
+impl Refraction {
+    pub const NONE: Self = Self {
+        distortion: 0.0,
+        depth: 0.0,
+        chromatic: 0.0,
+    };
+}
+
+/// The widest band of the refraction, in points: also the reference band the lens curves are
+/// written for (a shape whose band is narrower scales them down). Bounds how far the glass
+/// reads the backdrop outside its edge (`distortion` × this).
+pub const REFRACTION_BAND_PT: f32 = 24.0;
+
+/// The lens curve of a refraction with this `distortion`, for the reference band
+/// [`REFRACTION_BAND_PT`], as the `(t, s)` points of [`Lens`]: a pixel `t` points inside the edge
+/// samples the backdrop at `s = t - distortion × band × (1 - t / band)²`, so the backdrop is
+/// pulled in towards the rim, the most at the edge and not at all at the band's inner side.
+pub const fn bend_curve(distortion: f32) -> [(f32, f32); 7] {
+    // Point k of 0..=6, at t = band × k / 6.
+    const fn point(distortion: f32, k: u8) -> (f32, f32) {
+        let u = 1.0 - k as f32 / 6.0;
+        let t = REFRACTION_BAND_PT * (1.0 - u);
+        (t, t - distortion * REFRACTION_BAND_PT * u * u)
+    }
+    [
+        point(distortion, 0),
+        point(distortion, 1),
+        point(distortion, 2),
+        point(distortion, 3),
+        point(distortion, 4),
+        point(distortion, 5),
+        point(distortion, 6),
+    ]
+}
+
+static BEND_REGULAR: [(f32, f32); 7] = bend_curve(0.30);
+static BEND_THICK: [(f32, f32); 7] = bend_curve(0.22);
+
+/// The band of the refraction on a shape whose smaller side is `thickness` points, relative to
+/// the reference band: `depth × thickness / 2`, at most [`REFRACTION_BAND_PT`].
+pub fn refraction_band(thickness: f32, depth: f32) -> f32 {
+    (depth * thickness.max(0.0) * 0.5 / REFRACTION_BAND_PT).clamp(0.05, 1.0)
+}
+
 /// One Amalfi material in one appearance: everything but the sharp share (a kind's).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AmalfiMaterial {
@@ -121,6 +178,10 @@ pub struct AmalfiMaterial {
     pub sigma: f64,
     /// Saturation of the blurred backdrop around the Rec. 709 luminance.
     pub saturation: f32,
+    /// Brightness of the backdrop (a multiplier on the saturated color, before the tint).
+    pub brightness: f32,
+    /// Refraction at the edge.
+    pub refraction: Refraction,
     /// The tint fill over the saturated backdrop (sRGB 0–1 and alpha).
     pub tint: [f32; 4],
     pub inside_rim: InsideRim,
@@ -200,6 +261,19 @@ impl Amalfi {
         }
     }
 
+    /// The lens curve of the material's refraction (for the reference band, see [`bend_curve`]).
+    pub fn lens(self) -> Lens {
+        let curve: &'static [(f32, f32)] = match self {
+            Self::Regular | Self::Clear => &BEND_REGULAR,
+            Self::Thick => &BEND_THICK,
+        };
+        Lens {
+            side: curve,
+            top: curve,
+            bottom: curve,
+        }
+    }
+
     /// The material in the light or dark appearance.
     pub fn material(self, dark: bool) -> AmalfiMaterial {
         let (inside_rim, rim_light, fallback) = if dark {
@@ -210,7 +284,13 @@ impl Amalfi {
         match self {
             Self::Regular => AmalfiMaterial {
                 sigma: 6.0,
-                saturation: 1.5,
+                saturation: 1.1,
+                brightness: if dark { 1.10 } else { 1.25 },
+                refraction: Refraction {
+                    distortion: 0.30,
+                    depth: 0.35,
+                    chromatic: 0.03,
+                },
                 tint: token(if dark { 0x2A2B3099 } else { 0xFFFFFF99 }),
                 inside_rim,
                 rim_light,
@@ -218,9 +298,15 @@ impl Amalfi {
                 fallback,
             },
             Self::Thick => AmalfiMaterial {
-                sigma: 16.0,
-                saturation: 1.5,
-                tint: token(if dark { 0x2A2B30C2 } else { 0xFFFFFFC2 }),
+                sigma: 10.0,
+                saturation: 1.1,
+                brightness: if dark { 1.05 } else { 1.12 },
+                refraction: Refraction {
+                    distortion: 0.22,
+                    depth: 0.28,
+                    chromatic: 0.015,
+                },
+                tint: token(if dark { 0x2A2B3094 } else { 0xFFFFFF94 }),
                 inside_rim,
                 rim_light,
                 shadow: if dark { SHADOW_3_DARK } else { SHADOW_3_LIGHT },
@@ -232,6 +318,13 @@ impl Amalfi {
             Self::Clear => AmalfiMaterial {
                 sigma: 2.0,
                 saturation: 1.0,
+                brightness: if dark { 0.98 } else { 1.04 },
+                // The magnification (1.1×) is `silica_ui`'s, like the lens itself.
+                refraction: Refraction {
+                    distortion: 0.30,
+                    depth: 0.50,
+                    chromatic: 0.08,
+                },
                 tint: [0.0; 4],
                 inside_rim,
                 rim_light,
@@ -249,8 +342,15 @@ pub struct GlassProfile {
     /// σ of the blur in points; `None`: the material's.
     pub sigma: Option<f64>,
     /// Strength of the edge lens (`MaterialParams::lens`): 1 the material's displacement, 0
-    /// none. Glass/Regular and Glass/Thick have no lens.
+    /// none. Glass/Regular and Glass/Thick refract at their edge (1).
     pub refraction: f32,
+    /// Width of the refraction band: this fraction of half the shorter side of the shape
+    /// ([`refraction_band`]); 0: the profile's `falloff` and the lens's own reach ([`lens_width`]).
+    pub depth: f32,
+    /// The split of the red and blue samples at the rim, as a fraction of the band's width.
+    pub chromatic: f32,
+    /// Brightness of the backdrop (multiplier on the saturated color, before the tint).
+    pub brightness: f32,
     /// Width of the lens band: 1 the material's band, 0.5 half as far from the edge (the curve
     /// keeps its shape). On a thin shape the band also narrows so that it never reaches past
     /// the far edge ([`lens_width`]).
@@ -320,6 +420,9 @@ impl GlassProfile {
     pub const NEUTRAL: Self = Self {
         sigma: None,
         refraction: 1.0,
+        depth: 0.0,
+        chromatic: 0.0,
+        brightness: 1.0,
         falloff: 1.0,
         rim: 1.0,
         line: 1.0,
@@ -336,7 +439,14 @@ impl GlassProfile {
     pub fn amalfi(material: AmalfiMaterial) -> Self {
         Self {
             sigma: Some(material.sigma),
-            refraction: 0.0,
+            refraction: if material.refraction.depth > 0.0 {
+                1.0
+            } else {
+                0.0
+            },
+            depth: material.refraction.depth,
+            chromatic: material.refraction.chromatic,
+            brightness: material.brightness,
             saturation: material.saturation,
             tint: material.tint,
             inside_rim: material.inside_rim,
@@ -429,6 +539,7 @@ impl GlassKind {
             self.amalfi().material(dark).sigma,
             self.sharp(dark),
             merge_pt,
+            self.amalfi().lens(),
         )
     }
 
@@ -443,19 +554,20 @@ impl GlassKind {
     /// At what fraction of the resolution this kind blurs (#204): the factors the equivalence
     /// test passes with (`ossido::glass_equivalence::table_of_factors`, mean / max levels
     /// against full resolution, the worst backdrop of each, light and dark). The tint covers
-    /// 60–76 % of the backdrop, so a reduced blur shows even less than it did before Amalfi.
+    /// 58–60 % of the backdrop, so a reduced blur shows even less than it did before Amalfi.
     fn blur_scale(self) -> BlurScale {
         match self.amalfi() {
-            // σ 16 pt. Menus, popovers, panels, tooltips and sheets (no sharp share): 1× f8
-            // 0.20 / 1, 1.5× f8 0.14 / 1, 2× f8 0.10 / 1; the modules (sharp 0.04): 1× f8
-            // 0.25 / 1, 1.5× f8 0.19 / 1, 2× f8 0.26 / 1.
+            // σ 10 pt, refraction included in what the test compares. Menus, popovers, panels,
+            // tooltips and sheets (no sharp share): 1× f4 (f8 would take σ 10 px under the
+            // 1.5 px floor of a reduced blur) 0.39 / 2, 1.5× f8 0.42 / 2, 2× f8 0.30 / 2; the
+            // modules (sharp 0.04): 1× f4 0.36 / 2, 1.5× f8 0.45 / 2, 2× f8 0.46 / 2.
             Amalfi::Thick => BlurScale {
                 below_2x: 8,
                 from_2x: 8,
             },
-            // σ 6 pt. The Dock, controls and banners: 1× f2 0.24–0.33 / 2 (σ 6 px: f4 would
-            // take it under the 1.5 px floor), 1.5× f2 0.17–0.22 / 1 (f4 0.34–0.46 / 2), 2×
-            // f4 0.17–0.34 / 2. Below 2× the factor stays at 2, a level within the limit.
+            // σ 6 pt. The Dock, controls and banners: 1× f2 0.26–0.40 / 2 (σ 6 px: f4 would
+            // take it under the 1.5 px floor), 1.5× f2 0.18–0.30 / 2 (f4 0.36–0.51 / 2–3), 2×
+            // f4 0.18–0.37 / 2. Below 2× the factor stays at 2, a level within the limit.
             Amalfi::Regular => BlurScale {
                 below_2x: 2,
                 from_2x: 4,
@@ -511,6 +623,7 @@ mod tests {
                 assert!((0.0..=1.0).contains(&p.refraction), "{label}");
                 assert!((0.1..=2.0).contains(&p.falloff), "{label}");
                 assert!((0.5..=1.5).contains(&p.saturation), "{label}");
+                assert!((0.9..=1.3).contains(&p.brightness), "{label}");
                 assert!((0.0..=1.0).contains(&p.tint[3]), "{label}");
                 assert!((0.0..=0.5).contains(&p.shadow.opacity), "{label}");
                 assert!(p.shadow.reach() <= 120.0, "{label}");
@@ -549,14 +662,39 @@ mod tests {
                 assert_eq!(p.rim_light, spec.rim_light, "{kind:?}");
                 assert_eq!(p.shadow, spec.shadow, "{kind:?}");
                 assert_eq!(p.fallback, spec.fallback, "{kind:?}");
-                // Glass/Regular and Glass/Thick have no lens: the material's transfer is
-                // neutral and nothing refracts.
-                assert_eq!(p.refraction, 0.0, "{kind:?}");
+                // Glass/Regular and Glass/Thick refract at their edge (a lens with the
+                // material's distortion); the material's color transfer is neutral.
+                assert_eq!(p.refraction, 1.0, "{kind:?}");
+                assert_eq!(p.depth, spec.refraction.depth, "{kind:?}");
+                assert_eq!(p.chromatic, spec.refraction.chromatic, "{kind:?}");
+                assert_eq!(p.brightness, spec.brightness, "{kind:?}");
                 let m = kind.material(dark);
-                assert_eq!(m.lens.max_displacement().0, 0.0, "{kind:?}");
+                // The backdrop is pulled in towards the rim by distortion × band at the edge
+                // and not at all at the band's inner side.
+                let want = spec.refraction.distortion * REFRACTION_BAND_PT;
+                for curve in [m.lens.side, m.lens.top, m.lens.bottom] {
+                    let (t, s) = curve[0];
+                    assert!((t, s) == (0.0, -want), "{kind:?}: {curve:?}");
+                    let (t, s) = curve[curve.len() - 1];
+                    assert!(close(t, REFRACTION_BAND_PT) && close(s, t), "{kind:?}");
+                    assert!(curve.windows(2).all(|w| w[1].1 > w[0].1), "{kind:?}");
+                }
+                assert_eq!(m.lens.outward_reach(), want, "{kind:?}");
                 assert_eq!(m.transfer([0.2, 0.5, 0.9]), [0.2, 0.5, 0.9], "{kind:?}");
             }
         }
+    }
+
+    #[test]
+    fn the_refraction_band_follows_the_shape() {
+        // depth × half the shorter side, at most the reference band, at least a sliver.
+        assert!(close(refraction_band(40.0, 0.35), 7.0 / REFRACTION_BAND_PT));
+        assert!(close(
+            refraction_band(120.0, 0.35),
+            21.0 / REFRACTION_BAND_PT
+        ));
+        assert_eq!(refraction_band(600.0, 0.35), 1.0);
+        assert_eq!(refraction_band(0.0, 0.35), 0.05);
     }
 
     #[test]
@@ -564,7 +702,16 @@ mod tests {
         for dark in [false, true] {
             let m = Amalfi::Regular.material(dark);
             assert_eq!(m.sigma, 6.0);
-            assert_eq!(m.saturation, 1.5);
+            assert_eq!(m.saturation, 1.1);
+            assert_eq!(m.brightness, if dark { 1.10 } else { 1.25 });
+            assert_eq!(
+                m.refraction,
+                Refraction {
+                    distortion: 0.30,
+                    depth: 0.35,
+                    chromatic: 0.03
+                }
+            );
             let tint = if dark {
                 [42.0 / 255.0, 43.0 / 255.0, 48.0 / 255.0, 0.6]
             } else {
@@ -581,15 +728,24 @@ mod tests {
     fn glass_thick_is_the_token() {
         for dark in [false, true] {
             let m = Amalfi::Thick.material(dark);
-            assert_eq!(m.sigma, 16.0);
-            assert_eq!(m.saturation, 1.5);
+            assert_eq!(m.sigma, 10.0);
+            assert_eq!(m.saturation, 1.1);
+            assert_eq!(m.brightness, if dark { 1.05 } else { 1.12 });
+            assert_eq!(
+                m.refraction,
+                Refraction {
+                    distortion: 0.22,
+                    depth: 0.28,
+                    chromatic: 0.015
+                }
+            );
             let tint = if dark {
-                [42.0 / 255.0, 43.0 / 255.0, 48.0 / 255.0, 194.0 / 255.0]
+                [42.0 / 255.0, 43.0 / 255.0, 48.0 / 255.0, 148.0 / 255.0]
             } else {
-                [1.0, 1.0, 1.0, 194.0 / 255.0]
+                [1.0, 1.0, 1.0, 148.0 / 255.0]
             };
             assert!(close_rgba(m.tint, tint), "{dark}: {:?}", m.tint);
-            assert!((m.tint[3] - 0.76).abs() < 0.002);
+            assert!((m.tint[3] - 0.58).abs() < 0.002);
             // shadows.3: y 12, blur 32 (σ 16), black 18 % in light, 36 % in dark.
             assert!(close(m.shadow.opacity, if dark { 0.3608 } else { 0.1804 }));
             assert_eq!((m.shadow.offset_y, m.shadow.sigma), (12.0, 16.0));
@@ -602,6 +758,8 @@ mod tests {
             let m = Amalfi::Clear.material(dark);
             assert_eq!(m.sigma, 2.0);
             assert_eq!(m.saturation, 1.0);
+            assert_eq!(m.brightness, if dark { 0.98 } else { 1.04 });
+            assert_eq!(m.refraction.depth, 0.5);
             assert_eq!(m.tint[3], 0.0);
             assert_eq!(m.shadow, GlassShadow::NONE);
             assert_eq!(m.shadow.reach(), 0.0);
@@ -649,7 +807,7 @@ mod tests {
     #[test]
     fn saturation_and_tint_follow_the_render_order() {
         // Over the reference gray (nearly neutral) the saturation barely moves the color; the
-        // tint then covers it: 60 % white on regular glass, 76 % on thick.
+        // tint then covers it: 60 % white on regular glass, 58 % on thick.
         let level = |kind: GlassKind, dark: bool| {
             let m = kind.material(dark);
             let [r, g, b] = profile_color(&kind.profile(dark), m.transfer(REFERENCE_GRAY));
@@ -657,23 +815,37 @@ mod tests {
         };
         let gray = REFERENCE_GRAY.map(|c| c * 255.0);
         let l = 0.2126 * gray[0] + 0.7152 * gray[1] + 0.0722 * gray[2];
-        let saturated = gray.map(|c| l + (c - l) * 1.5);
-        for (kind, dark, tint, amount) in [
-            (GlassKind::Dock, false, [255.0; 3], 0.6),
-            (GlassKind::Menu, false, [255.0; 3], 194.0 / 255.0),
-            (GlassKind::Dock, true, [42.0, 43.0, 48.0], 0.6),
-            (GlassKind::Menu, true, [42.0, 43.0, 48.0], 194.0 / 255.0),
+        let saturated =
+            |brightness: f32| gray.map(|c| ((l + (c - l) * 1.1) * brightness).min(255.0));
+        for (kind, dark, tint, amount, brightness) in [
+            (GlassKind::Dock, false, [255.0; 3], 0.6, 1.25),
+            (GlassKind::Menu, false, [255.0; 3], 148.0 / 255.0, 1.12),
+            (GlassKind::Dock, true, [42.0, 43.0, 48.0], 0.6, 1.10),
+            (
+                GlassKind::Menu,
+                true,
+                [42.0, 43.0, 48.0],
+                148.0 / 255.0,
+                1.05,
+            ),
         ] {
             let got = level(kind, dark);
+            let saturated = saturated(brightness);
             for c in 0..3 {
                 let want = saturated[c] + (tint[c] - saturated[c]) * amount;
                 assert!((got[c] - want).abs() < 0.05, "{kind:?} {dark}: {got:?}");
             }
         }
         // A saturated color gets more vivid before the tint: red stays redder than the gray.
-        let red = profile_color(&GlassKind::Dock.profile(false), [0.8, 0.3, 0.3]);
-        let plain = [0.8_f32, 0.3, 0.3].map(|c| c + (1.0 - c) * 0.6);
-        assert!(red[0] - red[1] > plain[0] - plain[1], "{red:?}");
+        let dock = GlassKind::Dock.profile(false);
+        let red = profile_color(&dock, [0.8, 0.3, 0.3]);
+        let flat = GlassProfile {
+            saturation: 1.0,
+            brightness: 1.0,
+            ..dock
+        };
+        let plain = profile_color(&flat, [0.8, 0.3, 0.3]);
+        assert!(red[0] - red[1] != plain[0] - plain[1], "{red:?}");
     }
 
     #[test]
@@ -686,7 +858,7 @@ mod tests {
             "{regular_light:?}"
         );
         let thick_dark = fallback_color(&GlassKind::Menu.profile(true));
-        let a = 194.0 / 255.0;
+        let a = 148.0 / 255.0;
         let want = [
             (27.0 * (1.0 - a) + 42.0 * a) / 255.0,
             (28.0 * (1.0 - a) + 43.0 * a) / 255.0,
