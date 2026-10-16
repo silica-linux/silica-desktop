@@ -261,9 +261,9 @@ mod tests {
             "--anchor",
             "top,left,right",
             "--size",
-            "1280x30",
+            "1280x28",
             "--exclusive-zone",
-            "30",
+            "28",
             "--namespace",
             "menubar",
             "--view",
@@ -284,9 +284,9 @@ mod tests {
         assert_eq!(options.layer_views.len(), 2);
         let bar = &options.layer_views[0];
         assert_eq!(bar.layer.namespace, "menubar");
-        assert_eq!(bar.layer.exclusive_zone, 30);
+        assert_eq!(bar.layer.exclusive_zone, 28);
         assert!(bar.layer.anchor.top && !bar.layer.anchor.bottom);
-        assert_eq!(bar.size, (1280, 30));
+        assert_eq!(bar.size, (1280, 28));
         let faro = &options.layer_views[1];
         assert_eq!(faro.layer.layer, LayerKind::Overlay);
         assert_eq!(faro.layer.keyboard, LayerKeyboard::OnDemand);

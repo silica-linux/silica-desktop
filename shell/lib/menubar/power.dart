@@ -2,12 +2,12 @@
 // Down… and Log Out… open an alert card with a 60-second countdown; at zero, or with the
 // default button, the action runs. With ⌥ the menu items act at once, without the card.
 //
-// Card (measured): 292 × 266 pt (282 with a two-line title), radius ~28, centred in the upper
-// third of the screen, above everything; 66 pt gray icon at (+19, +19); bold 13 pt title at
-// y +99 (250 pt wide); 13 pt body with the countdown at y +141; the checkbox row at y +189;
-// two 128 × 30 capsules at y +221, gap 6 (gray cancel, accent default), 15 pt from the bottom.
-// It zooms in with a small overshoot (~106 % at ~90 ms, 100 % by ~210 ms) while the content
-// fades in; cancelling removes it in one frame. The texts are our own.
+// Card: Amalfi's system alert (Alerts/Alert/Two Buttons, glass variant: 280 wide, radius 20,
+// Glass/Thick), centred in the upper third of the screen, above everything: a 56 pt gray icon
+// at the top, the title and the body with the countdown, the "reopen windows" checkbox and
+// two buttons (Cancel, and the default one). It zooms in with a small overshoot (~106 % at
+// ~90 ms, 100 % by ~210 ms, measured: kept) while the content fades in; cancelling removes it
+// in one frame. The texts are our own.
 //
 // The actions go to logind (org.freedesktop.login1) on the system bus, only in a real Silica
 // session (XDG_SESSION_DESKTOP=silica): a nested or test session must never power off the
@@ -64,61 +64,9 @@ Future<void> runPower(
   }
 }
 
-const Size powerCardSize = Size(292, 266);
-const double powerCardTallHeight = 282;
-const double powerCardRadius = 28;
+/// The card: the alert's width; the height depends on the title's lines.
+const Size powerCardSize = Size(AmalfiAlertMetrics.width, 266);
 const int powerCountdown = 60;
-
-@immutable
-class PowerColors {
-  const PowerColors({
-    required this.fill,
-    required this.edge,
-    required this.text,
-    required this.icon,
-    required this.iconGlyph,
-    required this.cancel,
-    required this.cancelText,
-    required this.accent,
-  });
-
-  final Color fill;
-  final Color edge;
-  final Color text;
-  final Color icon;
-  final Color iconGlyph;
-  final Color cancel;
-  final Color cancelText;
-  final Color accent;
-
-  static const PowerColors light = PowerColors(
-    fill: Color(0xFFFEFEFE),
-    edge: Color(0xFFADADAD),
-    text: Color(0xFF1D1D1F),
-    // Provisional: the icon disc; the glyph is the measured `#969899`.
-    icon: Color(0xFFE3E3E5),
-    iconGlyph: Color(0xFF969899),
-    cancel: Color(0xFFEAEAEA),
-    cancelText: Color(0xFF1D1D1F),
-    accent: Color(0xFF296FFB),
-  );
-
-  static const PowerColors dark = PowerColors(
-    fill: Color(0xFF3E3E3F),
-    edge: Color(0xFF000000),
-    text: Color(0xFFEDEDED),
-    icon: Color(0xFF58585A),
-    iconGlyph: Color(0xFFB4B5B6),
-    cancel: Color(0xFF4C4C4D),
-    cancelText: Color(0xFFEDEDED),
-    accent: Color(0xFF296FFB),
-  );
-
-  static PowerColors of(BuildContext context) =>
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
-      ? dark
-      : light;
-}
 
 /// The scale of the card `ms` after it appears: from 0.9 up to ~106 % at 90 ms, then 100 %
 /// at 210 ms (damped, measured from the appearance frames).
@@ -189,7 +137,6 @@ class _PowerConfirmationState extends State<PowerConfirmation>
   @override
   Widget build(BuildContext context) {
     final l = l10nOf(context);
-    final c = PowerColors.of(context);
     final (title, body, button) = switch (widget.action) {
       PowerAction.restart => (
         l.powerRestartTitle,
@@ -207,16 +154,7 @@ class _PowerConfirmationState extends State<PowerConfirmation>
         l.powerLogOutButton,
       ),
     };
-    final height = widget.action == PowerAction.logOut
-        ? powerCardTallHeight
-        : powerCardSize.height;
-    final regular = TextStyle(
-      fontFamily: uiFontFamily,
-      package: 'silica_ui',
-      fontSize: 13,
-      color: c.text,
-      height: 16 / 13,
-    );
+    final colors = AmalfiTheme.of(context).colors;
     return KeyboardListener(
       focusNode: _focus,
       onKeyEvent: (e) {
@@ -233,133 +171,59 @@ class _PowerConfirmationState extends State<PowerConfirmation>
             child: Opacity(opacity: powerCardOpacity(ms), child: child),
           );
         },
-        child: Container(
+        child: AmalfiAlert(
           key: const ValueKey('power confirmation'),
-          width: powerCardSize.width,
-          height: height,
-          decoration: BoxDecoration(
-            color: c.fill,
-            borderRadius: BorderRadius.circular(powerCardRadius),
-            border: Border.all(color: c.edge, width: 0.5),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 40,
-                offset: Offset(0, 12),
-              ),
-            ],
+          material: AmalfiAlertMaterial.glass,
+          icon: CustomPaint(
+            painter: _PowerIconPainter(
+              disc: colors.surfaceSunken,
+              glyph: colors.textSecondary,
+              person: widget.action == PowerAction.logOut,
+            ),
           ),
-          child: Stack(
-            children: [
-              Positioned(
-                left: 19,
-                top: 19,
-                width: 66,
-                height: 66,
-                child: CustomPaint(
-                  painter: _PowerIconPainter(
-                    disc: c.icon,
-                    glyph: c.iconGlyph,
-                    person: widget.action == PowerAction.logOut,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 21,
-                top: 99,
-                width: 250,
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  style: regular.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-              Positioned(
-                left: 21,
-                top: height - 125,
-                width: 250,
-                child: Text(body, style: regular),
-              ),
-              Positioned(
-                left: 21,
-                top: height - 77,
-                height: 18,
-                child: SilicaCheckbox(
+          title: title,
+          message: body,
+          accessory: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _reopen = !_reopen),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AmalfiCheckbox(
                   value: _reopen,
-                  label: l.powerReopenWindows,
                   onChanged: (v) => setState(() => _reopen = v),
                 ),
-              ),
-              Positioned(
-                left: 15,
-                top: height - 45,
-                child: _Capsule(
-                  key: const ValueKey('power cancel'),
-                  label: l.cancel,
-                  fill: c.cancel,
-                  color: c.cancelText,
-                  onTap: widget.onCancel,
+                const SizedBox(width: 8),
+                // The label wraps: the alert is 280 wide.
+                Expanded(
+                  child: Text(
+                    l.powerReopenWindows,
+                    style: AmalfiType.body(color: colors.textPrimary),
+                  ),
                 ),
-              ),
-              Positioned(
-                left: 149,
-                top: height - 45,
-                child: _Capsule(
-                  key: const ValueKey('power confirm'),
-                  label: button,
-                  fill: c.accent,
-                  color: const Color(0xFFFFFFFF),
-                  onTap: widget.onConfirm,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            AmalfiPushButton(
+              key: const ValueKey('power cancel'),
+              label: l.cancel,
+              onPressed: widget.onCancel,
+            ),
+            AmalfiPushButton(
+              key: const ValueKey('power confirm'),
+              label: button,
+              variant: AmalfiPushButtonVariant.primary,
+              onPressed: widget.onConfirm,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _Capsule extends StatelessWidget {
-  const _Capsule({
-    super.key,
-    required this.label,
-    required this.fill,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color fill;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    behavior: HitTestBehavior.opaque,
-    child: Container(
-      width: 128,
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: uiFontFamily,
-          package: 'silica_ui',
-          fontSize: 13,
-          color: color,
-        ),
-      ),
-    ),
-  );
-}
-
-/// The 66 pt icon: a gray disc with the power glyph (or a person for log out).
+/// The 56 pt icon: a gray disc with the power glyph (or a person for log out).
 class _PowerIconPainter extends CustomPainter {
   const _PowerIconPainter({
     required this.disc,
@@ -373,6 +237,10 @@ class _PowerIconPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Drawn on the 66 pt grid it was measured on, scaled to the alert's 56 pt icon.
+    canvas.save();
+    canvas.scale(size.width / 66);
+    size = const Size(66, 66);
     final c = size.center(Offset.zero);
     canvas.drawCircle(c, size.width / 2, Paint()..color = disc);
     final stroke = Paint()
@@ -390,6 +258,7 @@ class _PowerIconPainter extends CustomPainter {
         true,
         fill,
       );
+      canvas.restore();
       return;
     }
     // The power glyph: an open ring with a bar at the top.
@@ -402,6 +271,7 @@ class _PowerIconPainter extends CustomPainter {
       stroke,
     );
     canvas.drawLine(c.translate(0, -16), c.translate(0, -2), stroke);
+    canvas.restore();
   }
 
   @override

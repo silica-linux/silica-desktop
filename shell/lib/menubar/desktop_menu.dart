@@ -8,7 +8,7 @@
 // out. When the file manager draws the desktop (#147) it announces the click itself
 // ("x y desktop" or "x y items") and runs the items it owns, sent back as `desktop.action`;
 // without it (the wallpaper's "x y") the items that need desktop icons are disabled. The menu of
-// selected icons ends with the file manager window's row of colour dots (`tag:<colour>`) and
+// selected icons ends with the Tags submenu of the colours (`tag:<colour>`) and
 // Customize Folder… (`customize`), checked and enabled from `desktop.state`.
 
 import 'dart:convert';
@@ -103,97 +103,36 @@ const Map<String, Color> desktopTagColors = {
   'gray': Color(0xFFA5A5A9),
 };
 
-/// The row of colour dots of the item menu: 14 pt at a 24 pt pitch, the first 18 pt from the
-/// edge, 25 pt tall; a dot under the pointer grows to 20 pt with + (or x if the tag is there,
-/// a check mark at rest). Provisional, as in the file manager's window menu.
-const double desktopDotRowHeight = 25;
-final double desktopDotRowWidth = 18 + 24.0 * desktopTagColors.length + 12;
+/// The shown name of a tag colour.
+String desktopTagName(AppLocalizations l, String name) => switch (name) {
+  'red' => l.menubarTagRed,
+  'orange' => l.menubarTagOrange,
+  'yellow' => l.menubarTagYellow,
+  'green' => l.menubarTagGreen,
+  'blue' => l.menubarTagBlue,
+  'purple' => l.menubarTagPurple,
+  _ => l.menubarTagGray,
+};
 
-class DesktopTagRow extends StatefulWidget {
-  const DesktopTagRow({
-    super.key,
-    required this.assigned,
-    required this.onToggle,
-  });
-
-  /// The colours (by name) every selected icon has.
-  final Set<String> assigned;
-  final ValueChanged<String> onToggle;
-
-  @override
-  State<DesktopTagRow> createState() => _DesktopTagRowState();
-}
-
-class _DesktopTagRowState extends State<DesktopTagRow> {
-  String? _hovered;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 18 - 3),
-    child: Row(
-      children: [
-        for (final name in desktopTagColors.keys)
-          MouseRegion(
-            onEnter: (_) => setState(() => _hovered = name),
-            onExit: (_) => setState(() {
-              if (_hovered == name) _hovered = null;
-            }),
-            child: GestureDetector(
-              key: ValueKey('tag $name'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () => widget.onToggle(name),
-              child: SizedBox(
-                width: 24,
-                height: desktopDotRowHeight,
-                child: Center(child: _dot(name)),
-              ),
-            ),
-          ),
-      ],
+/// The coloured dot of a tag in the Tags submenu (a 12 pt disc, the same hue a little
+/// darker around it).
+Widget desktopTagDot(String name) {
+  final color = desktopTagColors[name] ?? const Color(0xFFA5A5A9);
+  final hsl = HSLColor.fromColor(color);
+  return SizedBox.square(
+    dimension: 12,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(
+          color: hsl
+              .withLightness((hsl.lightness - 0.08).clamp(0.0, 1.0))
+              .toColor(),
+        ),
+      ),
     ),
   );
-
-  Widget _dot(String name) {
-    final hovered = _hovered == name;
-    final assigned = widget.assigned.contains(name);
-    final side = hovered ? 20.0 : 14.0;
-    final glyph = hovered
-        ? (assigned ? '×' : '+')
-        : assigned
-        ? '✓'
-        : null;
-    final color = desktopTagColors[name]!;
-    final hsl = HSLColor.fromColor(color);
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: side,
-          height: side,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            // The same hue ~10% darker.
-            border: Border.all(
-              color: hsl
-                  .withLightness((hsl.lightness - 0.08).clamp(0.0, 1.0))
-                  .toColor(),
-            ),
-          ),
-        ),
-        if (glyph != null)
-          Text(
-            glyph,
-            style: TextStyle(
-              fontSize: hovered ? 14 : 10,
-              height: 1,
-              color: const Color(0xFFFFFFFF),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-      ],
-    );
-  }
 }
 
 /// The sort orders of the desktop, as the file manager names them.
@@ -340,26 +279,26 @@ List<MenuEntry> ownerItemsMenu({
   MenuAction(l.desktopDuplicate, onSelected: () => onAction('duplicate')),
   MenuAction(l.desktopQuickPreview, enabled: false),
   const MenuDivider(),
-  // As the file manager's window menu: the colour dots, then Customize Folder… on one folder
-  // (Tags…, disabled, otherwise).
-  MenuCustom(
-    height: desktopDotRowHeight,
-    width: desktopDotRowWidth,
-    builder: (context, close) => DesktopTagRow(
-      assigned: state.tags,
-      onToggle: (name) {
-        onAction('tag:$name');
-        close();
-      },
-    ),
+  // The tags as a submenu of coloured items (the file manager's row of dots has no Amalfi
+  // menu row), checked when every selected icon has the tag: `tag:<colour>` toggles one.
+  // Customize Folder… on one folder.
+  MenuAction(
+    l.menubarTags,
+    submenu: [
+      for (final name in desktopTagColors.keys)
+        MenuAction(
+          desktopTagName(l, name),
+          icon: (_) => desktopTagDot(name),
+          checked: state.tags.contains(name),
+          onSelected: () => onAction('tag:$name'),
+        ),
+    ],
   ),
   if (state.folder)
     MenuAction(
       l.desktopCustomizeFolder,
       onSelected: () => onAction('customize'),
-    )
-  else
-    MenuAction(l.desktopTags, enabled: false),
+    ),
 ];
 
 List<MenuEntry> desktopMenu({

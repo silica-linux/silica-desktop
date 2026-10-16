@@ -1,8 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart'
-    show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,7 +61,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     opened = [];
-    final items = [Item.app('Downloads', command: 'x', folder: dir.path), ...others];
+    final items = [
+      Item.app('Downloads', command: 'x', folder: dir.path),
+      ...others,
+    ];
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,

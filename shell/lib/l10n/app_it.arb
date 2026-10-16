@@ -326,5 +326,13 @@
   "authUnavailable": "Non è stato possibile verificare la password: riprova.",
   "authUserName": "Nome utente",
   "authPassword": "Password",
-  "authAllow": "Consenti"
+  "authAllow": "Consenti",
+  "menubarTags": "Tag",
+  "menubarTagRed": "Rosso",
+  "menubarTagOrange": "Arancione",
+  "menubarTagYellow": "Giallo",
+  "menubarTagGreen": "Verde",
+  "menubarTagBlue": "Blu",
+  "menubarTagPurple": "Viola",
+  "menubarTagGray": "Grigio"
 }

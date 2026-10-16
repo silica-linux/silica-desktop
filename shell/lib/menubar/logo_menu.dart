@@ -129,13 +129,23 @@ List<MenuEntry> logoMenu({
   return [
     MenuAction(
       option ? l.systemInformation : l.aboutSilica,
-      icon: (color) => CustomPaint(painter: _ComputerGlyph(color)),
+      icon: (color) => AmalfiSymbol(
+        'desktop',
+        size: 16,
+        color: color,
+        fallback: CustomPaint(painter: _ComputerGlyph(color)),
+      ),
       enabled: false,
     ),
     const MenuDivider(),
     MenuAction(
       l.systemSettings,
-      icon: (color) => CustomPaint(painter: _GearGlyph(color)),
+      icon: (color) => AmalfiSymbol(
+        'gear',
+        size: 16,
+        color: color,
+        fallback: CustomPaint(painter: _GearGlyph(color)),
+      ),
       enabled: settings != null,
       onSelected: settings == null ? null : () => launch(settings),
     ),
@@ -202,8 +212,8 @@ List<MenuEntry> logoMenu({
   ];
 }
 
-/// Colored 14 pt icons in the recent items (menubar.md › Submenu).
-const double recentIconSide = 14;
+/// Colored 16 pt icons in the recent items (menubar.md › Submenu).
+const double recentIconSide = 16;
 
 Widget _appIcon(DesktopEntry entry) {
   final layered = silicaIconFor(entry);

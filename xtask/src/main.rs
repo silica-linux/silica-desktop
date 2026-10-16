@@ -266,7 +266,7 @@ pub(crate) fn desktop_component_args(embedder: &str, bundle: &str) -> Vec<String
 /// switcher, notifications, Control Center. The namespace names the component Dart draws.
 pub(crate) const SHELL_LAYERS: [&str; 7] = [
     "--layer background --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --namespace wallpaper",
-    "--layer top --anchor top,left,right --size 1280x30 --exclusive-zone 30 --namespace menubar",
+    "--layer top --anchor top,left,right --size 1280x28 --exclusive-zone 28 --namespace menubar",
     "--layer top --anchor left,right,bottom --size 1280x200 --exclusive-zone 84 --namespace dock",
     "--layer overlay --anchor top,bottom,left,right --size 1280x800 --keyboard none --namespace faro",
     "--layer overlay --anchor top,bottom,left,right --size 1280x800 --exclusive-zone -1 --keyboard none --namespace switcher",

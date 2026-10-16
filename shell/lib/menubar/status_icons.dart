@@ -1,10 +1,11 @@
 // Bar icons drawn in code (generic shapes, not assets): the Silica mark, the network,
-// search (Faro), the Control Center. White at 90 % like the measured status icons; ink
-// size 12–18 pt in the boxes.
+// search (Faro), the Control Center. The status items draw the Icon Kit symbols (16 pt); these
+// shapes are what they fall back to when silica-icons is not installed.
 
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 import 'menubar.dart';
 
@@ -61,11 +62,56 @@ enum StatusKind {
   bluetooth,
 }
 
+/// The Icon Kit symbol of a status item (silica-icons, Regular), by what it shows. The bar
+/// draws it 16 pt in the item (`Menu Bar/Item/Status`).
+String statusSymbol(
+  StatusKind kind, {
+  double level = 1,
+  bool dim = false,
+  bool charging = false,
+}) => switch (kind) {
+  StatusKind.network =>
+    dim
+        ? 'wifi-slash'
+        : switch (wifiArcs(level)) {
+            3 => 'wifi',
+            2 => 'wifi-2',
+            _ => 'wifi-1',
+          },
+  StatusKind.wired => 'ethernet',
+  StatusKind.battery =>
+    charging
+        ? 'battery-charging'
+        : level < 0.05
+        ? 'battery-0'
+        : level < 0.3
+        ? 'battery-10'
+        : level < 0.8
+        ? 'battery-50'
+        : 'battery',
+  StatusKind.search => 'search',
+  StatusKind.controls => 'control-center',
+  StatusKind.focus => 'moon',
+  StatusKind.nowPlaying => 'play-circle',
+  StatusKind.sound =>
+    dim || level <= 0
+        ? 'volume-slash'
+        : level < 0.34
+        ? 'volume-1'
+        : level < 0.67
+        ? 'volume-2'
+        : 'volume',
+  StatusKind.bluetooth => dim ? 'bluetooth-slash' : 'bluetooth',
+};
+
+/// The side of a status glyph in the bar.
+const double statusGlyph = 16;
+
 class StatusIcon extends StatelessWidget {
   const StatusIcon({
     super.key,
     required this.kind,
-    required this.cell,
+    this.color,
     this.level = 1,
     this.dim = false,
     this.charging = false,
@@ -73,26 +119,40 @@ class StatusIcon extends StatelessWidget {
 
   final StatusKind kind;
 
-  /// Box width (the measurements: 22–33 pt).
-  final double cell;
+  /// The glyph's colour; null: the bar's text colour of the appearance.
+  final Color? color;
 
   /// Wi-Fi strength or battery charge, 0–1.
   final double level;
 
-  /// Off (Wi-Fi disabled): everything at 35 %.
+  /// Off (Wi-Fi disabled, Bluetooth off, muted).
   final bool dim;
 
-  /// Battery charging: a bolt cut out of the fill.
+  /// Battery charging.
   final bool charging;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: cell,
-    height: barHeight,
-    child: CustomPaint(
-      painter: _StatusPainter(kind, level: level, dim: dim, charging: charging),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final ink = color ?? barTextColor(context);
+    return SizedBox.square(
+      dimension: statusGlyph,
+      child: AmalfiSymbol(
+        statusSymbol(kind, level: level, dim: dim, charging: charging),
+        size: statusGlyph,
+        color: ink,
+        // Without the installed symbols: the shapes drawn in code.
+        fallback: CustomPaint(
+          painter: _StatusPainter(
+            kind,
+            ink,
+            level: level,
+            dim: dim,
+            charging: charging,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// How many Wi-Fi arcs are lit for a strength 0–1 (the dot always is).
@@ -104,13 +164,15 @@ int wifiArcs(double level) => level >= 0.67
 
 class _StatusPainter extends CustomPainter {
   _StatusPainter(
-    this.kind, {
+    this.kind,
+    this.color, {
     this.level = 1,
     this.dim = false,
     this.charging = false,
   });
 
   final StatusKind kind;
+  final Color color;
   final double level;
   final bool dim;
   final bool charging;
@@ -119,16 +181,16 @@ class _StatusPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final stroke = Paint()
-      ..color = statusColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
       ..strokeCap = StrokeCap.round;
-    final fill = Paint()..color = statusColor;
+    final fill = Paint()..color = color;
     switch (kind) {
       case StatusKind.network:
         // Three arcs and a dot, ~17 × 12 pt; the arcs beyond the strength at 35 %.
         final base = c + const Offset(0, 5);
-        final faint = statusColor.withValues(alpha: statusColor.a * 0.35);
+        final faint = color.withValues(alpha: color.a * 0.35);
         final lit = dim ? 0 : wifiArcs(level);
         final radii = [4.5, 8.0, 11.5];
         for (var i = 0; i < radii.length; i++) {
@@ -137,7 +199,7 @@ class _StatusPainter extends CustomPainter {
             -math.pi * 0.75,
             math.pi * 0.5,
             false,
-            Paint.from(stroke)..color = i < lit ? statusColor : faint,
+            Paint.from(stroke)..color = i < lit ? color : faint,
           );
         }
         canvas.drawCircle(base, 1.4, dim ? (Paint()..color = faint) : fill);
@@ -287,9 +349,7 @@ class _StatusPainter extends CustomPainter {
         final ink = Paint.from(stroke)
           ..strokeWidth = 1.4
           ..strokeJoin = StrokeJoin.round
-          ..color = dim
-              ? statusColor.withValues(alpha: statusColor.a * 0.35)
-              : statusColor;
+          ..color = dim ? color.withValues(alpha: color.a * 0.35) : color;
         final rune = Path()
           ..moveTo(c.dx - 3.8, c.dy - 3.6)
           ..lineTo(c.dx + 3.6, c.dy + 3.6)
@@ -314,6 +374,7 @@ class _StatusPainter extends CustomPainter {
   @override
   bool shouldRepaint(_StatusPainter old) =>
       old.kind != kind ||
+      old.color != color ||
       old.level != level ||
       old.dim != dim ||
       old.charging != charging;
