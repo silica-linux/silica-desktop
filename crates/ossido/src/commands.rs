@@ -136,7 +136,8 @@ impl State {
             SCREENSHOT_SCREEN => {
                 let options: CaptureOptions = parse(params)?;
                 let capture = self.screenshot()?;
-                self.publish_screenshot(capture, options, (0.0, 0.0))
+                let scale = self.capture_scale();
+                self.publish_screenshot(capture, options, (0.0, 0.0), scale)
             }
             SCREENSHOT_SCREEN_CLIPBOARD => {
                 let capture = self.screenshot()?;
@@ -144,7 +145,8 @@ impl State {
                     pointer: None,
                     clipboard: true,
                 };
-                self.publish_screenshot(capture, options, (0.0, 0.0))
+                let scale = self.capture_scale();
+                self.publish_screenshot(capture, options, (0.0, 0.0), scale)
             }
             SCREENSHOT_SETTINGS => {
                 let settings: ScreenshotSettings = parse_required(params)?;
@@ -154,7 +156,7 @@ impl State {
             SCREENSHOT_REGION => {
                 let region: silica_control::RegionParams = parse_required(params)?;
                 let capture = self.screenshot()?;
-                let scale = self.output.current_scale().fractional_scale();
+                let scale = self.capture_scale();
                 let origin = self
                     .space
                     .output_geometry(&self.output)
@@ -174,7 +176,7 @@ impl State {
                     x.round().clamp(0.0, f64::from(capture.width)),
                     y.round().clamp(0.0, f64::from(capture.height)),
                 );
-                self.publish_screenshot(crop, region.options(), corner)
+                self.publish_screenshot(crop, region.options(), corner, scale)
             }
             SCREENSHOT_WINDOW_AT => {
                 let shot: silica_control::WindowShotParams = parse_required(params)?;
@@ -183,13 +185,16 @@ impl State {
                     | Some(crate::decorations::Hit::Content(window)) => window,
                     None if shot.or_screen => {
                         let capture = self.screenshot()?;
-                        return self.publish_screenshot(capture, shot.options(), (0.0, 0.0));
+                        let scale = self.capture_scale();
+                        return self.publish_screenshot(capture, shot.options(), (0.0, 0.0), scale);
                     }
                     None => return Err("no window at that point".to_owned()),
                 };
                 let (capture, corner) =
                     self.window_capture(&window, shot.shadow.unwrap_or(true))?;
-                self.publish_screenshot(capture, shot.options(), corner)
+                // A window is captured at the size it is drawn (2x in a scaled mode).
+                let scale = self.output.current_scale().fractional_scale();
+                self.publish_screenshot(capture, shot.options(), corner, scale)
             }
             SCREENSHOT_WINDOW_VEIL => {
                 let EnabledParams { enabled } = parse_required(params)?;
@@ -947,18 +952,18 @@ impl State {
 
     /// Writes the screenshot to a temporary file and announces it to the shell (`broadcast`
     /// "screenshot" = [`CaptureAnnouncement`] as JSON): the thumbnail, then its place.
-    /// `corner` is where the image's top-left pixel sits on the output (physical pixels),
-    /// to draw the pointer in when asked.
+    /// `corner` is where the image's top-left pixel sits on the output (physical pixels of the
+    /// image, `scale` of them per logical pixel), to draw the pointer in when asked.
     fn publish_screenshot(
         &mut self,
         mut capture: crate::capture::Capture,
         options: CaptureOptions,
         corner: (f64, f64),
+        scale: f64,
     ) -> Result<Value, String> {
         if options.pointer.unwrap_or(self.screenshot_settings.pointer)
             && let Some(pointer) = self.seat.get_pointer()
         {
-            let scale = self.output.current_scale().fractional_scale();
             let origin = self
                 .space
                 .output_geometry(&self.output)

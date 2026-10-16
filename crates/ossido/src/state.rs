@@ -124,6 +124,9 @@ pub struct State {
     pub keyboard_config: crate::config::KeyboardConfig,
     /// The night light's colour temperature in kelvin (6500: off), `output.color_temperature`.
     pub color_temperature: u32,
+    /// The scaled mode of the output, if any (`displays.rs`): then the output is the 2x size
+    /// that is drawn and the backend reduces it to the display's mode.
+    pub hidpi: Option<crate::displays::HiDpi>,
     /// Energy (`power.json`, `idle.rs`): the last input, whether the display is off, whether
     /// this idle period already asked for sleep.
     pub power_config: crate::config::PowerConfig,
@@ -413,6 +416,7 @@ impl State {
             redraw: true,
             idle_slept: false,
             color_temperature: crate::displays::NEUTRAL_KELVIN,
+            hidpi: None,
             perf: crate::perf::Perf::default(),
             clear_color: CLEAR_COLOR,
             minimized: Vec::new(),

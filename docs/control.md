@@ -84,8 +84,8 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `keyboard.state` | — | the keyboard settings in use: `repeatDelay`, `repeatRate`, `layouts`, `model`, `options`, `active` (index of the active source) |
 | `input.state` | — | the pointer settings in use (`mouse`, `touchpad`: `speed`, `naturalScroll`, `scrollSpeed`, `leftHanded`, `secondaryClick`, `tapToClick`, `disableWhileTyping`) and `devices` (`mouse`, `touchpad`: connected) |
 | `idle.state` | — | `idleSeconds` since the last input, `displayOff`, and `displayOffMinutes`, `sleepMinutes`, `preventSleep` from `power.json` |
-| `output.list` | — | the connected displays: `connector`, `identity` (EDID make, model and serial; the connector without EDID), `make`, `model`, `serial`, `modes` and `current` (`width`, `height`, `refresh` in Hz, `preferred`), `scale`, `transform`, `enabled`, `primary`, `widthMm`, `heightMm` |
-| `output.configure` | `connector?`, `mode?` (`width`, `height`, `refresh?`), `scale?` (1–4, quarter steps), `transform?` (`normal`, `90`, `180`, `270`, `flipped`, `flipped-90`…) | the display after the change; applied at once and saved in `displays.json` for that display. Without `connector`: the display in use. The real session drives one display: the others are listed but not configurable yet; nested and headless cannot change mode |
+| `output.list` | — | the connected displays: `connector`, `identity` (EDID make, model and serial; the connector without EDID), `make`, `model`, `serial`, `modes` and `current` (`width`, `height`, `refresh` in Hz, `preferred`), `scale`, `transform`, `enabled`, `primary`, `widthMm`, `heightMm`, and for scaled modes (`docs/displays.md`) `logical` (`width`, `height`: what the display looks like), `hidpi` and `looksLike` (the sizes it can look like: `width`, `height`, `scaled`) |
+| `output.configure` | `connector?`, `mode?` (`width`, `height`, `refresh?`), `scale?` (1–4, quarter steps), `logical?` (`width`, `height`: a scaled mode, drawn at 2x and reduced to the mode; `null` leaves it; not with `scale`), `transform?` (`normal`, `90`, `180`, `270`, `flipped`, `flipped-90`…) | the display after the change; applied at once and saved in `displays.json` for that display. Without `connector`: the display in use. The real session drives one display: the others are listed but not configurable yet; nested and headless cannot change mode |
 | `output.color_temperature` | `kelvin` (1000–6500) | `kelvin`, `applied`: the night light on every display through the CRTC gamma ramp (6500 is neutral; `applied` false where there is no gamma: nested, headless, some virtual GPUs). silica-daemon drives it with the schedule |
 | `keyboard.next_source` | — | `switched`, `active`: the next input source (⌃Space; with a single source the shortcut goes to the app) |
 | `perf.render` | `reset?` | Ossido's rendering (winit): `frames`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `max_ms` |
@@ -148,7 +148,7 @@ source when there are two or more.
 Written by Ossido on `output.configure` (keeping the other keys of the file), read at start,
 when the file changes and when a display is plugged in. The key is the display's identity
 (`output.list` › `identity`), so a display gets its choice back on any connector. A mode is
-matched by size and the closest refresh; a mode the display does not have is ignored.
+matched by size and the closest refresh; a mode the display does not have is ignored. `logical` (`{"width": 1536, "height": 960}`) replaces `scale`: the display is in a scaled mode (`docs/displays.md`); one that no longer fits the mode is ignored.
 
 ### power.json
 
