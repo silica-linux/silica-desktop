@@ -142,6 +142,7 @@ impl Dispatch<WlShm, ()> for App {
 
 delegate_noop!(App: ignore WlCompositor);
 delegate_noop!(App: ignore WlSurface);
+delegate_noop!(App: ignore wayland_client::protocol::wl_region::WlRegion);
 delegate_noop!(App: ignore WlBuffer);
 delegate_noop!(App: WlShmPool);
 delegate_noop!(App: ignore ZwlrLayerShellV1);
@@ -153,6 +154,9 @@ enum Mode {
     V6(Outside),
     /// Version 7: the owner app and the two rules.
     V7(&'static str, Rule, Rule),
+    /// Version 7 on a surface as big as the screen whose input region and transient region
+    /// are only the menu's corner, like the Dock with its menu open (#206).
+    V7Wide(&'static str, Rule, Rule),
 }
 
 impl Mode {
@@ -166,6 +170,7 @@ impl Mode {
             Mode::V6(Outside::PassThrough) => "v6 pass_through".to_owned(),
             Mode::V6(_) => "v6 consume".to_owned(),
             Mode::V7(owner, a, b) => format!("v7 {} {} {owner}", rule(a), rule(b)),
+            Mode::V7Wide(owner, a, b) => format!("v7wide {} {} {owner}", rule(a), rule(b)),
         }
     }
 }
@@ -188,8 +193,14 @@ fn menu_client(socket: &str, mode: &str) {
         &qh,
         (),
     );
-    layer.set_anchor(Anchor::Bottom | Anchor::Right);
-    layer.set_size(MENU.0, MENU.1);
+    let wide = mode.starts_with("v7wide");
+    if wide {
+        layer.set_anchor(Anchor::Bottom | Anchor::Left | Anchor::Right | Anchor::Top);
+        layer.set_size(0, 0);
+    } else {
+        layer.set_anchor(Anchor::Bottom | Anchor::Right);
+        layer.set_size(MENU.0, MENU.1);
+    }
     surface.commit();
     while app.size.is_none() {
         queue.blocking_dispatch(&mut app).unwrap();
@@ -214,6 +225,18 @@ fn menu_client(socket: &str, mode: &str) {
     surface.attach(Some(&buffer), 0, 0);
     surface.commit();
     let manager = app.manager.clone().expect("silica_shell_manager_v1");
+    // The wide surface takes the pointer only in the menu's corner, and so does the transient.
+    let corner = app.compositor.as_ref().unwrap().create_region(&qh, ());
+    corner.add(
+        w as i32 - MENU.0 as i32,
+        h as i32 - MENU.1 as i32,
+        MENU.0 as i32,
+        MENU.1 as i32,
+    );
+    if wide {
+        surface.set_input_region(Some(&corner));
+        surface.commit();
+    }
     let words: Vec<&str> = mode.split(' ').collect();
     let rule = |word: &str| match word {
         "pass" => Rule::Pass,
@@ -221,6 +244,15 @@ fn menu_client(socket: &str, mode: &str) {
         _ => Rule::Modal,
     };
     match words.as_slice() {
+        ["v7wide", owner_rule, other_rule, owner @ ..] => {
+            manager.set_owned_transient(
+                &surface,
+                Some(&corner),
+                owner.join(" "),
+                rule(owner_rule),
+                rule(other_rule),
+            );
+        }
         ["v7", owner_rule, other_rule, owner @ ..] => {
             assert!(wayland_client::Proxy::version(&manager) >= 7);
             manager.set_owned_transient(
@@ -615,4 +647,29 @@ fn an_app_popup_click_in_another_app_closes_it_and_goes_through() {
     assert!(done, "the popup stayed open");
     assert_eq!(back.presses, 1, "the click did not reach the other app");
     assert!(back_focused);
+}
+
+#[test]
+fn a_full_screen_dock_with_a_small_region_still_ends_on_a_press_outside() {
+    // The Dock's surface is as tall as the screen; only its menu's corner takes the pointer.
+    let wide = Mode::V7Wide(OTHER_APP, Rule::Activate, Rule::Pass);
+    let o = run(
+        "t-dock-wide-other",
+        wide,
+        OWNER_APP,
+        &[Act::Click(ON_FRONT, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(
+        o.front.presses, 1,
+        "the click did not reach the window below"
+    );
+    let o = run(
+        "t-dock-wide-owner",
+        wide,
+        OTHER_APP,
+        &[Act::Click(ON_BACK, "left")],
+    );
+    assert_eq!(o.dismissed, 1);
+    assert_eq!(o.back.presses, 0);
 }

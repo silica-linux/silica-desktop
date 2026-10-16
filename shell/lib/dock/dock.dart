@@ -1662,6 +1662,21 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   bool _altHeld = false;
 
   bool _onKey(KeyEvent event) {
+    // Esc closes the open menu or stack even when the keyboard focus is not on them (the
+    // surface got the keyboard after the menu's rows asked for it, #206). With the focus on
+    // the rows or the stack, they handle it themselves (a submenu closes before its menu).
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_menuIndex != null) {
+        if (!(_menuKey.currentState?.hasFocus ?? false)) {
+          _menuKey.currentState?.close();
+          return true;
+        }
+      } else if (_stackIndex != null && !_stackFocus.hasFocus) {
+        _closeStack();
+        return true;
+      }
+    }
     final alt = HardwareKeyboard.instance.isAltPressed;
     if (alt != _altHeld) {
       _altHeld = alt;
