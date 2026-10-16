@@ -118,6 +118,9 @@ pub struct State {
     pub shortcuts: Vec<(Shortcut, &'static str)>,
     /// Keycodes for the synthetic keys (`input.key`, `input.type`).
     pub keys: crate::keys::KeyLookup,
+    /// What `keys` was built for (the keyboard settings and the active input source): it is
+    /// built again when they change.
+    pub keys_for: Option<(String, String, String, String, u32)>,
     /// The user's settings folder (`config.rs`), watched; `None` without a home.
     pub config_dir: Option<std::path::PathBuf>,
     /// The keyboard settings applied (`keyboard.json`).
@@ -404,6 +407,7 @@ impl State {
             next_window_id: 0,
             shortcuts: crate::commands::shortcuts(),
             keys: crate::keys::KeyLookup::new()?,
+            keys_for: None,
             config_dir: None,
             keyboard_config: crate::config::KeyboardConfig::parse(None, key_repeat()),
             input_config: crate::config::InputConfig::default(),

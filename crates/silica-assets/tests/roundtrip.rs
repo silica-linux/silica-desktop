@@ -236,16 +236,27 @@ fn variant_pick_by_requested_side() {
     let v = assets.pick(folder, full).unwrap();
     assert_eq!((v.state, v.theme), (State::Full, Theme::Dark));
 
-    // A wallpaper: 64 wide and 128 wide; 100 asks for the larger one.
+    // A wallpaper: light 128 wide and a 4 wide preview, dark 64 wide; 100 asks for the larger one.
     let wallpaper = assets.lookup(KeySpace::Wallpaper, "silica").unwrap();
     let v = assets
         .pick(wallpaper, Query::composite(Theme::Default, 100))
         .unwrap();
     assert_eq!((v.encoding, v.width, v.height), (Encoding::Png, 128, 72));
     let v = assets
+        .pick(wallpaper, Query::composite(Theme::Default, 4))
+        .unwrap();
+    assert_eq!((v.encoding, v.width, v.height), (Encoding::Jpeg, 4, 2));
+    let v = assets
         .pick(wallpaper, Query::composite(Theme::Dark, 100))
         .unwrap();
     assert_eq!((v.theme, v.width, v.height), (Theme::Dark, 64, 36));
+    let title = assets
+        .entry(wallpaper)
+        .unwrap()
+        .slots()
+        .find(|s| s.kind == SlotKind::Title)
+        .and_then(|s| s.format.map(str::to_owned));
+    assert_eq!(title.as_deref(), Some("Silica test"));
 
     // An id that is not an entry.
     assert!(

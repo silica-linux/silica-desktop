@@ -12,6 +12,7 @@ mod control;
 mod cursor;
 mod cursor_theme;
 mod decorations;
+mod desktop_entry;
 pub mod display_layout;
 mod displays;
 mod dmabuf;

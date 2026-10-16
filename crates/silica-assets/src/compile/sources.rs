@@ -210,11 +210,8 @@ pub(super) fn compile(options: &Options) -> Result<(Vec<u8>, Report), CompileErr
     if let Some(sounds) = sounds {
         sounds_from(&mut ctx, &sounds)?;
     }
-    if let Some(brand) = &options.brand {
-        let dir = brand.join("exports").join("wallpapers");
-        if dir.is_dir() {
-            wallpapers(&mut ctx, &dir)?;
-        }
+    if let Some(dir) = &options.wallpapers {
+        wallpaper_sets(&mut ctx, dir)?;
     }
     aliases(&mut ctx, &types, &type_ids, &app_ids)?;
 
@@ -782,27 +779,10 @@ fn sounds_from(ctx: &mut Ctx<'_>, dir: &Path) -> Result<(), CompileError> {
     Ok(())
 }
 
-/// A wallpaper PNG: theme, the file, width, height.
-type WallpaperFile = (Theme, Vec<u8>, u32, u32);
-
-/// `silica-light.png`, `silica-light@2x.png`, `silica-dark.png`...: one entry per name, one
-/// variant per theme and scale, stored as the PNG file itself.
-fn wallpapers(ctx: &mut Ctx<'_>, dir: &Path) -> Result<(), CompileError> {
-    let mut by_name: BTreeMap<String, Vec<WallpaperFile>> = BTreeMap::new();
-    for file in list(dir)? {
-        let Some(stem) = file.strip_suffix(".png") else {
-            continue;
-        };
-        let stem = stem.strip_suffix("@2x").unwrap_or(stem);
-        let (name, theme) = if let Some(n) = stem.strip_suffix("-dark") {
-            (n, Theme::Dark)
-        } else if let Some(n) = stem.strip_suffix("-light") {
-            (n, Theme::Default)
-        } else {
-            (stem, Theme::Default)
-        };
-        let bytes = ctx.reader.read(dir, &file)?;
-        // The size is in the IHDR chunk: width and height at bytes 16..24.
+/// The size of a PNG (IHDR) or JPEG (the first SOF marker) file.
+fn image_size(bytes: &[u8], file: &str) -> Result<(u32, u32), CompileError> {
+    let not_image = || CompileError::new(format!("{file}: not a PNG or JPEG"));
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         let width = bytes
             .get(16..20)
             .and_then(|b| b.try_into().ok())
@@ -811,41 +791,107 @@ fn wallpapers(ctx: &mut Ctx<'_>, dir: &Path) -> Result<(), CompileError> {
             .get(20..24)
             .and_then(|b| b.try_into().ok())
             .map(u32::from_be_bytes);
-        let (Some(width), Some(height)) = (width, height) else {
-            return Err(CompileError::new(format!("{file}: not a PNG")));
-        };
-        by_name
-            .entry(name.to_owned())
-            .or_default()
-            .push((theme, bytes, width, height));
+        return width.zip(height).ok_or_else(not_image);
     }
-    for (name, mut variants) in by_name {
-        variants.sort_by_key(|(theme, _, width, _)| (*theme, *width));
-        let entry = ctx
-            .builder
-            .add_entry(&name, EntryKind::Wallpaper, FLAG_HAS_DARK);
-        ctx.builder.register(KeySpace::Wallpaper, entry)?;
-        for (theme, data, width, height) in variants {
-            let (Ok(w), Ok(h)) = (u16::try_from(width), u16::try_from(height)) else {
-                return Err(CompileError::new(format!(
-                    "wallpaper {name}: {width}x{height} is too large"
-                )));
-            };
-            ctx.builder.add_variant(
+    if bytes.starts_with(&[0xff, 0xd8]) {
+        let be16 = |at: usize| -> Option<usize> {
+            let pair = bytes.get(at..at + 2)?;
+            Some(usize::from(u16::from_be_bytes(pair.try_into().ok()?)))
+        };
+        let mut at = 2;
+        while bytes.get(at) == Some(&0xff) {
+            let marker = *bytes.get(at + 1).ok_or_else(not_image)?;
+            let length = be16(at + 2).ok_or_else(not_image)?;
+            // SOF0..SOF15, but not DHT (c4), JPG (c8) and DAC (cc).
+            if (0xc0..=0xcf).contains(&marker) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+                let height = be16(at + 5).ok_or_else(not_image)?;
+                let width = be16(at + 7).ok_or_else(not_image)?;
+                return Ok((
+                    u32::try_from(width).map_err(|_| not_image())?,
+                    u32::try_from(height).map_err(|_| not_image())?,
+                ));
+            }
+            at = at.checked_add(2 + length).ok_or_else(not_image)?;
+        }
+    }
+    Err(not_image())
+}
+
+/// The wallpaper sets of a silica-wallpapers checkout: every folder with a `wallpapers.json`
+/// (`{"wallpapers": [{"id", "title", "variants": {"light": {"file"}, "dark": {"file"}}}]}`).
+/// One entry per id, a light and a dark PNG as they are, the preview
+/// `previews/<id>-<light|dark>.jpg` (when present) as the small variant of each theme, and the
+/// title as a `Title` slot.
+fn wallpaper_sets(ctx: &mut Ctx<'_>, dir: &Path) -> Result<(), CompileError> {
+    for set in list(dir)? {
+        let folder = dir.join(&set);
+        if !folder.join("wallpapers.json").is_file() {
+            continue;
+        }
+        let manifest = ctx.reader.read(&folder, "wallpapers.json")?;
+        let json = parse_json(&manifest, &format!("{set}/wallpapers.json"))?;
+        let list = json
+            .get("wallpapers")
+            .and_then(Value::as_array)
+            .ok_or_else(|| CompileError::new(format!("{set}/wallpapers.json: no wallpapers")))?;
+        for item in list {
+            let id = item
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| CompileError::new(format!("{set}/wallpapers.json: no id")))?;
+            let title = item.get("title").and_then(Value::as_str).unwrap_or(id);
+            let entry = ctx
+                .builder
+                .add_entry(id, EntryKind::Wallpaper, FLAG_HAS_DARK);
+            ctx.builder.register(KeySpace::Wallpaper, entry)?;
+            ctx.builder.add_slot(
                 entry,
-                VariantSpec {
-                    theme,
-                    layer: Layer::Composite,
-                    encoding: Encoding::Png,
-                    state: State::Normal,
-                    size_px: w,
-                    width: w,
-                    height: h,
-                    data,
+                SlotSpec {
+                    kind: Some(SlotKind::Title),
+                    format: Some(title.to_owned()),
+                    ..SlotSpec::default()
                 },
             )?;
+            for (name, theme) in [("light", Theme::Default), ("dark", Theme::Dark)] {
+                let Some(file) = item
+                    .pointer(&format!("/variants/{name}/file"))
+                    .and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let add = |ctx: &mut Ctx<'_>,
+                           relative: String,
+                           encoding: Encoding|
+                 -> Result<(), CompileError> {
+                    let data = ctx.reader.read(&folder, &relative)?;
+                    let (width, height) = image_size(&data, &relative)?;
+                    let (Ok(w), Ok(h)) = (u16::try_from(width), u16::try_from(height)) else {
+                        return Err(CompileError::new(format!(
+                            "wallpaper {id}: {width}x{height} is too large"
+                        )));
+                    };
+                    ctx.builder.add_variant(
+                        entry,
+                        VariantSpec {
+                            theme,
+                            layer: Layer::Composite,
+                            encoding,
+                            state: State::Normal,
+                            size_px: w,
+                            width: w,
+                            height: h,
+                            data,
+                        },
+                    )
+                };
+                add(ctx, file.to_owned(), Encoding::Png)?;
+                let preview = format!("previews/{id}-{name}.jpg");
+                if folder.join(&preview).is_file() {
+                    add(ctx, preview, Encoding::Jpeg)?;
+                }
+            }
+            ctx.report.wallpapers += 1;
         }
-        ctx.report.wallpapers += 1;
     }
     Ok(())
 }

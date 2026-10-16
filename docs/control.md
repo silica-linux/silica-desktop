@@ -71,7 +71,7 @@ parameter schemas. Every catalog id is run by Ossido (test
 | `window.move` | `id?`, `x`, `y` | — |
 | `window.minimize` | `id?` | — (Logo+M) |
 | `window.fullscreen` | `id?` | — (Logo+Ctrl+F; again to go back) |
-| `app.launch` | `command`, `shell?` | `pid` (with `shell` the process sees the shell protocols) |
+| `app.launch` | `command` or `app` (a desktop entry id, run like the Dock does), `shell?` | `pid` (with `shell` the process sees the shell protocols) |
 | `session.quit` | — | — |
 | `input.pointer_move` | `x`, `y` | — |
 | `input.pointer_button` | `button?`, `pressed` | — |

@@ -9,7 +9,8 @@
 //! - `closeWindow {viewId}`: the window goes away (the main one as its close button does);
 //! - `setTitle {viewId, title}`: the title of a window (the main one also follows
 //!   `SystemChrome.setApplicationSwitcherDescription`);
-//! - every other call (`setFullSizeContent`, `startMove`, `setSize`, `setSizeLimits`) takes an
+//! - every other call (`setFullSizeContent`, `startMove`, `zoom`, `minimize`, `setSize`,
+//!   `setSizeLimits`) takes an
 //!   optional `viewId`, 0 when missing.
 //!
 //! And sends to Dart, on the same channel:

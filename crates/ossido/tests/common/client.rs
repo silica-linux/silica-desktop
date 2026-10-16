@@ -73,6 +73,8 @@ struct App {
     /// How many `xdg_toplevel.configure` arrived, and whether the last one had `resizing`.
     configure_count: u32,
     configured_resizing: bool,
+    /// Whether the last configure carried the `maximized` state.
+    configured_maximized: bool,
     /// Configures are not acked until `TestWindow::ack_held` (a slow client).
     hold_acks: bool,
     held: Vec<u32>,
@@ -442,6 +444,12 @@ impl Dispatch<XdgToplevel, ()> for App {
                     .0
                     .iter()
                     .any(|c| u32::from_ne_bytes(*c) == resizing);
+                let maximized = xdg_toplevel::State::Maximized as u32;
+                state.configured_maximized = states
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|c| u32::from_ne_bytes(*c) == maximized);
             }
             _ => {}
         }
@@ -1104,6 +1112,32 @@ impl TestWindow {
     pub fn resizing(&mut self) -> bool {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.configured_resizing
+    }
+
+    /// Whether the last configure carried the `maximized` state.
+    #[allow(dead_code)]
+    pub fn maximized(&mut self) -> bool {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.configured_maximized
+    }
+
+    /// `xdg_toplevel.set_maximized` / `unset_maximized`.
+    #[allow(dead_code)]
+    pub fn request_maximized(&mut self, on: bool) {
+        let toplevel = self._toplevel.as_ref().unwrap();
+        if on {
+            toplevel.set_maximized();
+        } else {
+            toplevel.unset_maximized();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
+    }
+
+    /// `xdg_toplevel.set_minimized`.
+    #[allow(dead_code)]
+    pub fn request_minimized(&mut self) {
+        self._toplevel.as_ref().unwrap().set_minimized();
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// From now on the configures wait for `ack_held` (a client slow to answer).

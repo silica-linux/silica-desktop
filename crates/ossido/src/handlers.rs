@@ -346,6 +346,49 @@ impl XdgShellHandler for State {
         self.moving = Some((window, grab));
     }
 
+    /// The app zooms its window (a double click on its toolbar, #169): it fills the usable
+    /// area. The client always gets a configure back, even when nothing changed.
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.zoom_window(&window, true));
+        match done {
+            Some(Ok(())) => {}
+            Some(Err(err)) => {
+                warn!("maximize: {err}");
+                surface.send_pending_configure();
+            }
+            None => {
+                surface.send_pending_configure();
+            }
+        }
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.zoom_window(&window, false));
+        match done {
+            Some(Ok(())) => {}
+            Some(Err(err)) => {
+                warn!("unmaximize: {err}");
+                surface.send_pending_configure();
+            }
+            None => {
+                surface.send_pending_configure();
+            }
+        }
+    }
+
+    /// The app minimizes its window (its title bar double click, #169): like the yellow button.
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_for(surface.wl_surface())
+            && let Err(err) = self.minimize_window(&window)
+        {
+            warn!("minimize: {err}");
+        }
+    }
+
     /// The client resizes the window from one of its edges (client-side decorations), with
     /// the button still pressed.
     fn resize_request(

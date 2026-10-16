@@ -914,16 +914,17 @@ pub const CATALOG: &[CommandSpec] = &[
     CommandSpec {
         id: APP_LAUNCH,
         label: "Open app",
-        description: "Starts a command as a client of this session.",
+        description: "Starts a command, or an app by its desktop entry id, as a client of this session.",
         shortcut: None,
         params: || {
             json!({
                 "type": "object",
                 "properties": {
                     "command": {"type": "string"},
+                    "app": {"type": "string", "description": "Desktop entry id (org.mozilla.firefox): runs its Exec without field codes, as the Dock does"},
                     "shell": {"type": "boolean", "description": "Shell component (sees silica-shell-v1)"}
                 },
-                "required": ["command"],
+                "oneOf": [{"required": ["command"]}, {"required": ["app"]}],
                 "additionalProperties": false
             })
         },
@@ -1186,7 +1187,13 @@ pub struct WindowMove {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AppLaunch {
-    pub command: String,
+    /// A command for `sh -c`; or [`Self::app`].
+    #[serde(default)]
+    pub command: Option<String>,
+    /// A desktop entry id (`org.mozilla.firefox`): its `Exec` runs with the field codes
+    /// stripped, as the Dock and Faro run it.
+    #[serde(default)]
+    pub app: Option<String>,
     /// A shell component: sees the shell protocols.
     #[serde(default)]
     pub shell: bool,

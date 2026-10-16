@@ -1,9 +1,14 @@
 // The installed apps, from .desktop files (freedesktop Desktop Entry specification): the
 // applications/ folders of XDG_DATA_HOME and XDG_DATA_DIRS, the first one wins on equal ids.
 
+import 'dart:async';
+import 'dart:collection' show UnmodifiableMapView;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
+
+import '../l10n/l10n.dart' show systemLanguage;
 
 export 'package:silica_ui/silica_ui.dart' show xdgDataDirs;
 
@@ -216,7 +221,7 @@ Map<String, DesktopEntry> loadDesktopEntries({
 }) {
   final entries = <String, DesktopEntry>{};
   final seen = <String>{};
-  for (final dir in xdgDataDirs(env ?? Platform.environment)) {
+  for (final dir in appDataDirs(env ?? Platform.environment)) {
     final apps = Directory('$dir/applications');
     if (!apps.existsSync()) continue;
     for (final file in apps.listSync(recursive: true).whereType<File>()) {
@@ -241,3 +246,125 @@ Map<String, DesktopEntry> loadDesktopEntries({
   }
   return entries;
 }
+
+/// The data folders to look for apps and their icons in: the XDG ones, plus the Flatpak
+/// exports (user and system) when the session's XDG_DATA_DIRS does not list them (a shell
+/// started outside the login scripts that add them, #198).
+List<String> appDataDirs(Map<String, String> env) {
+  final dirs = xdgDataDirs(env);
+  final home = env['HOME'] ?? '';
+  final flatpak = [
+    if (home.isNotEmpty) '$home/.local/share/flatpak/exports/share',
+    '/var/lib/flatpak/exports/share',
+  ];
+  bool trimmed(String a, String b) =>
+      a.replaceAll(RegExp(r'/+$'), '') == b.replaceAll(RegExp(r'/+$'), '');
+  return [
+    ...dirs,
+    for (final dir in flatpak)
+      if (!dirs.any((d) => trimmed(d, dir))) dir,
+  ];
+}
+
+/// The installed apps, kept up to date: the `applications/` folders are watched (an app
+/// installed or removed while the session runs, Flatpak included) and [entries] is reloaded in
+/// place, so everyone holding it sees the change; listeners are told after each reload.
+class DesktopEntryStore extends ChangeNotifier {
+  DesktopEntryStore({
+    this.locale = 'en',
+    Map<String, String>? env,
+    this.debounce = const Duration(milliseconds: 300),
+    this.rescan = const Duration(seconds: 10),
+  }) : _env = env {
+    _live.addAll(loadDesktopEntries(env: _env, locale: locale));
+    _watch();
+    // A folder that did not exist yet (the first Flatpak install creates its exports) cannot
+    // be watched: look again now and then.
+    // (A zero [rescan] turns the look off.)
+    if (rescan > Duration.zero) {
+      _timer = Timer.periodic(rescan, (_) {
+        final now = _existing();
+        if (now.length != _watched.length || !now.every(_watched.containsKey)) {
+          _watch();
+          _schedule();
+        }
+      });
+    }
+  }
+
+  final String locale;
+  final Duration debounce;
+  final Duration rescan;
+  final Map<String, String>? _env;
+  final Map<String, DesktopEntry> _live = {};
+  late final Map<String, DesktopEntry> entries = UnmodifiableMapView(_live);
+  final Map<String, StreamSubscription<FileSystemEvent>> _watched = {};
+  Timer? _timer;
+  Timer? _reload;
+  bool _disposed = false;
+
+  Set<String> _existing() => {
+    for (final dir in appDataDirs(_env ?? Platform.environment))
+      if (Directory('$dir/applications').existsSync()) '$dir/applications',
+  };
+
+  void _watch() {
+    final now = _existing();
+    for (final path in _watched.keys.toList()) {
+      if (!now.contains(path)) _watched.remove(path)?.cancel();
+    }
+    for (final path in now) {
+      if (_watched.containsKey(path)) continue;
+      try {
+        _watched[path] = Directory(path)
+            .watch(recursive: true)
+            .listen((_) => _schedule(), onError: (Object _) {});
+      } on FileSystemException {
+        // Not watchable: the periodic look still notices folders appearing.
+      }
+    }
+  }
+
+  void _schedule() {
+    _reload?.cancel();
+    _reload = Timer(debounce, reload);
+  }
+
+  /// Reads the folders again now.
+  void reload() {
+    if (_disposed) return;
+    final fresh = loadDesktopEntries(env: _env, locale: locale);
+    _live
+      ..clear()
+      ..addAll(fresh);
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    _reload?.cancel();
+    for (final sub in _watched.values) {
+      sub.cancel();
+    }
+    _watched.clear();
+    super.dispose();
+  }
+}
+
+/// The installed apps of this process, shared by every component and kept up to date by
+/// watching the applications folders (#198, #200).
+DesktopEntryStore get desktopEntryStore =>
+    _desktopEntryStore ??= DesktopEntryStore(
+      locale: systemLanguage(),
+      // Widget tests build components in fake time: no timer left running.
+      rescan: Platform.environment.containsKey('FLUTTER_TEST')
+          ? Duration.zero
+          : const Duration(seconds: 10),
+    );
+DesktopEntryStore? _desktopEntryStore;
+
+/// The desktop entries: a read-only live view that changes when apps are installed or removed
+/// (listen to [desktopEntryStore] to redraw).
+Map<String, DesktopEntry> desktopEntries() => desktopEntryStore.entries;

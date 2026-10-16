@@ -140,7 +140,7 @@ String trashFilesDir({Map<String, String>? env}) {
 /// The .desktop file of app `id` (the first data folder that has it), for "Show in" the
 /// file manager.
 String? desktopFilePath(String id, {Map<String, String>? env}) {
-  for (final dir in xdgDataDirs(env ?? Platform.environment)) {
+  for (final dir in appDataDirs(env ?? Platform.environment)) {
     final file = File('$dir/applications/$id.desktop');
     if (file.existsSync()) return file.path;
   }

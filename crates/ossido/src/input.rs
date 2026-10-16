@@ -136,10 +136,11 @@ impl State {
             None
         };
         let on_bar = matches!(hit, Some(Hit::Titlebar(..)));
-        // On the bar the pointer is not on any client surface.
+        // On the bar the pointer is not on any client surface; during a resize the whole grab
+        // belongs to Ossido (the desktop below must not see the motion, #214).
         let under = match hit {
             Some(Hit::Titlebar(..)) => None,
-            _ if in_panorama || hover_blocked => None,
+            _ if in_panorama || hover_blocked || self.resizing.is_some() => None,
             _ => self.surface_under(location),
         };
         self.cursor_override = match edges {
@@ -203,6 +204,10 @@ impl State {
             self.transient_press = false;
             return;
         }
+        // A resize owns its press, the motion and the release: no client (the desktop below
+        // the edge included) sees them (#214).
+        let was_resizing = self.resizing.is_some();
+        let mut grab = false;
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
             match self.layer_under(&[Layer::Overlay, Layer::Top], location) {
                 // A click on a layer does not touch the windows; the focus only if it asks for it.
@@ -217,6 +222,7 @@ impl State {
                 {
                     self.focus_window(Some(window.clone()));
                     self.start_resize(window, edges, location);
+                    grab = true;
                 }
                 None => match self.window_hit(location) {
                     Some(Hit::Titlebar(window, part, local)) => {
@@ -252,6 +258,9 @@ impl State {
             {
                 self.titlebar_action(&window, part);
             }
+        }
+        if grab || (state == ButtonState::Released && was_resizing) {
+            return;
         }
         pointer.button(
             self,

@@ -1,4 +1,4 @@
-//! `silica-assets-compile --icons DIR [--brand DIR] [--fonts DIR] [--sounds DIR] [--types FILE]
+//! `silica-assets-compile --icons DIR [--brand DIR] [--wallpapers DIR] [--fonts DIR] [--sounds DIR] [--types FILE]
 //! [--version TEXT] --out FILE`: compiles the sources into a `silica.assets`.
 //!
 //! The file is written to a temporary name and renamed over `--out`, so a running session that
@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use silica_assets::compile::{Options, compile};
 
-const USAGE: &str = "usage: silica-assets-compile --icons DIR [--brand DIR] [--fonts DIR] \
+const USAGE: &str = "usage: silica-assets-compile --icons DIR [--brand DIR] [--wallpapers DIR] [--fonts DIR] \
 [--sounds DIR] [--types FILE] [--version TEXT] --out FILE";
 
 fn run() -> Result<(), String> {
@@ -21,6 +21,7 @@ fn run() -> Result<(), String> {
         match flag.as_str() {
             "--icons" => options.icons = PathBuf::from(value("--icons")?),
             "--brand" => options.brand = Some(PathBuf::from(value("--brand")?)),
+            "--wallpapers" => options.wallpapers = Some(PathBuf::from(value("--wallpapers")?)),
             "--fonts" => options.fonts = Some(PathBuf::from(value("--fonts")?)),
             "--sounds" => options.sounds = Some(PathBuf::from(value("--sounds")?)),
             "--types" => options.types = Some(PathBuf::from(value("--types")?)),

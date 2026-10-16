@@ -60,9 +60,8 @@ class _LiveDockState extends State<LiveDock> {
   /// This component's layer surface (several share one engine, #201).
   late final LayerControl _layer;
 
-  late final Map<String, DesktopEntry> _entries = loadDesktopEntries(
-    locale: systemLanguage(),
-  );
+  /// The installed apps, live: the Dock redraws when one is installed or removed (#199).
+  late final Map<String, DesktopEntry> _entries = desktopEntries();
   late final List<String> _pinned = pinnedIds(_entries);
 
   /// The folders right of the separator (dock.json `folders`), the downloads one by default.
@@ -240,6 +239,7 @@ class _LiveDockState extends State<LiveDock> {
   void initState() {
     super.initState();
     _layer = LayerControl.of(context);
+    desktopEntryStore.addListener(_entriesChanged);
     ShellChannel.instance.toplevels.addListener(_changed);
     AppRegistry.instance.apps.addListener(_changed);
     AppRegistry.instance.start();
@@ -256,6 +256,10 @@ class _LiveDockState extends State<LiveDock> {
   }
 
   void _launcherChanged() => setState(() {});
+
+  /// An app was installed or removed: the running ones get their tiles, the pinned ones that
+  /// appeared theirs.
+  void _entriesChanged() => _changed();
 
   /// The separator was dragged to a new size: the same key Settings writes (dock.json `tileSize`);
   /// the magnified size never goes below it.
@@ -306,6 +310,7 @@ class _LiveDockState extends State<LiveDock> {
 
   @override
   void dispose() {
+    desktopEntryStore.removeListener(_entriesChanged);
     ShellChannel.instance.toplevels.removeListener(_changed);
     AppRegistry.instance.apps.removeListener(_changed);
     ShellChannel.instance.focused.removeListener(_focused);

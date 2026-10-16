@@ -27,7 +27,7 @@ String? findIcon(String? name, {Map<String, String>? env}) {
   final home = environment['HOME'] ?? '';
   final bases = [
     '$home/.icons',
-    for (final dir in xdgDataDirs(environment)) '$dir/icons',
+    for (final dir in appDataDirs(environment)) '$dir/icons',
   ];
   for (final theme in iconThemes) {
     for (final base in bases) {
