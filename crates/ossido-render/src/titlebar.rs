@@ -51,7 +51,7 @@ const BACKGROUND_DARK: [f32; 3] = [27.0 / 255.0, 28.0 / 255.0, 31.0 / 255.0];
 const NO_SEPARATOR: [f32; 4] = [0.0; 4];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
-pub const UNIFORMS: [(&str, UniformType); 19] = [
+pub const UNIFORMS: [(&str, UniformType); 18] = [
     ("frame_height", UniformType::_1f),
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
@@ -69,36 +69,25 @@ pub const UNIFORMS: [(&str, UniformType); 19] = [
     ("dark", UniformType::_1f),
     ("edge_fade", UniformType::_1f),
     ("edge_weak", UniformType::_1f),
-    ("glass", UniformType::_3f),
     ("shadow", UniformType::_1f),
 ];
 
 /// Radius of a button disc, in points.
 const DISC_RADIUS: f32 = 7.0;
 
-/// Glass of one disc (TL-GLASS, #94, measured at 1x on the dark and light discs).
-///
-/// Dark: a 1 px light arc only on the top and bottom edges (none on the sides), fading
-/// over about ±55° from the vertical axis; inside, a darker band at 30–45 % of the height
-/// and a round glow at 75–80 % of the height, ~10 px wide. Light: no light rim, a darker
-/// outline strongest at the sides and weak at the top and bottom, a plain top-to-bottom
-/// gradient and a 1 px shadow under the disc. Hover does not change the glass (only the
-/// symbols appear).
+/// The light discs (TL-GLASS, #94, measured at 1x): no light rim, a darker outline strongest
+/// at the sides and weak at the top and bottom, a plain top-to-bottom gradient and a 1 px
+/// shadow under the disc. The dark discs are a plain gradient with one rim color
+/// ([`dark_dot`]). Hover does not change the discs (only the symbols appear).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Glass {
     /// Angle from the vertical axis (radians) over which the outline goes from its
-    /// top/bottom color to its side color: the arc fade in dark; in light the whole
-    /// quarter turn (side outline at the sides, weaker towards top and bottom).
+    /// top/bottom color to its side color: in light the whole quarter turn (side outline
+    /// at the sides, weaker towards top and bottom).
     pub edge_fade: f32,
     /// Light only: how much of the side outline stays at the top and bottom (0 = the
-    /// fill color, 1 = as strong as the sides); dark spells its arc colors out.
+    /// fill color, 1 = as strong as the sides).
     pub edge_weak: f32,
-    /// The darker band as fractions of the disc height from the top (dark only).
-    pub band: [f32; 2],
-    /// The round glow: center as a fraction of the height from the top, and radius in
-    /// points (dark only; radius 0 = none).
-    pub glow_center: f32,
-    pub glow_radius: f32,
     /// Alpha of the 1 px black shadow under the disc (light only).
     pub shadow: f32,
 }
@@ -107,39 +96,18 @@ impl Glass {
     pub const fn new(dark: bool) -> Self {
         if dark {
             Self {
-                edge_fade: 0.959_931, // 55°
+                edge_fade: std::f32::consts::FRAC_PI_2,
                 edge_weak: 1.0,
-                band: [0.30, 0.45],
-                glow_center: 0.775,
-                glow_radius: 5.0,
                 shadow: 0.0,
             }
         } else {
             Self {
                 edge_fade: std::f32::consts::FRAC_PI_2,
                 edge_weak: 0.35,
-                band: [0.30, 0.45],
-                glow_center: 0.775,
-                glow_radius: 0.0,
                 // lum 243 on 255 under the disc.
                 shadow: 12.0 / 255.0,
             }
         }
-    }
-
-    /// Offset from the disc center (up is negative) of a fraction of the height.
-    fn at(fraction: f32) -> f32 {
-        (fraction - 0.5) * 2.0 * DISC_RADIUS
-    }
-
-    /// The darker band, as offsets from the disc center.
-    pub fn band_range(&self) -> [f32; 2] {
-        [Self::at(self.band[0]), Self::at(self.band[1])]
-    }
-
-    /// Glow center y, as an offset from the disc center.
-    pub fn glow_y(&self) -> f32 {
-        Self::at(self.glow_center)
     }
 
     /// How far the outline at `(dx, dy)` from the center is towards its top/bottom color:
@@ -150,15 +118,6 @@ impl Glass {
         1.0 - t * t * (3.0 - 2.0 * t)
     }
 
-    /// Weight of the glow color at `(dx, dy)`: round, 0 outside its radius.
-    pub fn glow(&self, dx: f32, dy: f32) -> f32 {
-        if self.glow_radius <= 0.0 {
-            return 0.0;
-        }
-        let t = (dx.hypot(dy - self.glow_y()) / self.glow_radius).clamp(0.0, 1.0);
-        1.0 - t * t
-    }
-
     /// Alpha of the shadow at `(dx, dy)` from the disc center: the disc moved 1 pt down
     /// and hard-edged (the part under the disc itself is covered by it).
     pub fn shadow_at(&self, dx: f32, dy: f32) -> f32 {
@@ -167,6 +126,49 @@ impl Glass {
         } else {
             0.0
         }
+    }
+}
+
+/// A window button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dot {
+    Close,
+    Minimize,
+    Zoom,
+}
+
+/// The colors of a dark disc (kit `Titlebars/Dot/<dot>/<state>/Dark`, windows.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DarkDot {
+    /// Gradient from the top of the disc to its bottom, `#RRGGBB`.
+    pub top: [u8; 3],
+    pub bottom: [u8; 3],
+    /// The rim: 1 pt around an active disc; 0.5 pt, at `rim_alpha`, around an inactive one.
+    pub rim: [u8; 3],
+    pub rim_alpha: u8,
+}
+
+/// The dark disc of `dot` in an active window (rest and hover alike) or an inactive one (or a
+/// disabled button). Light discs keep the values of the shader.
+pub const fn dark_dot(dot: Dot, lit: bool) -> DarkDot {
+    if !lit {
+        return DarkDot {
+            top: [0x4d, 0x4d, 0x4d],
+            bottom: [0x55, 0x55, 0x55],
+            rim: [0x99, 0x99, 0x99],
+            rim_alpha: 0xb3,
+        };
+    }
+    let (top, bottom, rim) = match dot {
+        Dot::Close => ([0xf8, 0x63, 0x5a], [0xee, 0x66, 0x60], [0xee, 0x55, 0x49]),
+        Dot::Minimize => ([0xfa, 0xb5, 0x00], [0xfd, 0xcd, 0x29], [0xf8, 0xb9, 0x04]),
+        Dot::Zoom => ([0x01, 0xbc, 0x00], [0x4b, 0xc1, 0x33], [0x09, 0xb9, 0x01]),
+    };
+    DarkDot {
+        top,
+        bottom,
+        rim,
+        rim_alpha: 0xff,
     }
 }
 
@@ -304,10 +306,6 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         Uniform::new("dark", UniformValue::_1f(flag(state.dark))),
         Uniform::new("edge_fade", UniformValue::_1f(glass.edge_fade)),
         Uniform::new("edge_weak", UniformValue::_1f(glass.edge_weak)),
-        Uniform::new(
-            "glass",
-            UniformValue::_3f(glass.band_range()[0], glass.glow_y(), glass.glow_radius),
-        ),
         Uniform::new("shadow", UniformValue::_1f(glass.shadow)),
     ]
 }
@@ -436,43 +434,13 @@ mod glass_tests {
 
     #[test]
     fn measured_parameters() {
-        let dark = Glass::new(true);
-        // Arc fading over ~±55° from the vertical axis.
-        assert!((dark.edge_fade.to_degrees() - 55.0).abs() < 0.01);
-        // Darker band at 30–45 % of the height, glow centered at 75–80 %.
-        assert_eq!(dark.band, [0.30, 0.45]);
-        assert!((0.75..=0.80).contains(&dark.glow_center));
-        // ~10 px wide glow.
-        assert_eq!(dark.glow_radius * 2.0, 10.0);
-        let [lo, hi] = dark.band_range();
-        assert!((lo - -2.8).abs() < 1e-5 && (hi - -0.7).abs() < 1e-5);
-        assert!(dark.glow_y() > 3.0 && dark.glow_y() < 4.5);
-        assert_eq!(dark.shadow, 0.0);
-
         let light = Glass::new(false);
-        // No glow, the outline goes the whole quarter turn, weak at top and bottom.
-        assert_eq!(light.glow_radius, 0.0);
+        // The outline goes the whole quarter turn, weak at top and bottom.
         assert!((light.edge_fade - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
         assert!(light.edge_weak > 0.0 && light.edge_weak < 1.0);
         // 1 px shadow, lum 243 on 255.
         assert!((light.shadow * 255.0 - 12.0).abs() < 1e-4);
-    }
-
-    /// CPU model of the shader at 1x (1 pt = 1 px): the dark arc is on the top and bottom
-    /// edges only, brightest at the center, gone on the sides.
-    #[test]
-    fn dark_arc_is_only_on_top_and_bottom() {
-        let g = Glass::new(true);
-        assert!((g.edge_weight(0.0, -6.5) - 1.0).abs() < 1e-6);
-        assert!((g.edge_weight(0.0, 6.5) - 1.0).abs() < 1e-6);
-        assert_eq!(g.edge_weight(6.5, 0.0), 0.0);
-        assert_eq!(g.edge_weight(-6.5, 0.0), 0.0);
-        // Fading along the top row: monotonic from the center, ~0 at ±55°.
-        let row: Vec<f32> = (0..7)
-            .map(|x| g.edge_weight(x as f32 + 0.5, -(49.0 - (x as f32 + 0.5).powi(2)).sqrt()))
-            .collect();
-        assert!(row.windows(2).all(|w| w[0] >= w[1]));
-        assert!(row[0] > 0.9 && row[6] < 0.1);
+        assert_eq!(Glass::new(true).shadow, 0.0);
     }
 
     #[test]
@@ -480,27 +448,6 @@ mod glass_tests {
         let g = Glass::new(false);
         assert_eq!(g.edge_weight(7.0, 0.0), 0.0); // side color
         assert!((g.edge_weight(0.0, -7.0) - 1.0).abs() < 1e-6); // weak color
-    }
-
-    /// Dark glow: round, in the lower half, centered, symmetric left-right at 1x.
-    #[test]
-    fn glow_is_round_in_the_lower_half_and_symmetric() {
-        let g = Glass::new(true);
-        let sample = |px: i32, py: i32| g.glow(px as f32 + 0.5 - 7.0, py as f32 + 0.5 - 7.0);
-        for py in 0..14 {
-            for px in 0..7 {
-                assert!((sample(px, py) - sample(13 - px, py)).abs() < 1e-6);
-            }
-        }
-        // Row at 75–80 % (y 10–11): centre brighter than the sides; none in the upper half.
-        assert!(sample(6, 10) > sample(2, 10));
-        assert!(sample(6, 10) > 0.8);
-        assert_eq!(sample(6, 2), 0.0);
-        assert_eq!(sample(6, 5), 0.0);
-        // Round: as wide as tall around the center.
-        let (cx, cy) = (0.0, g.glow_y());
-        assert!((g.glow(cx + 3.0, cy) - g.glow(cx, cy + 3.0)).abs() < 1e-6);
-        assert_eq!(Glass::new(false).glow(0.0, 4.0), 0.0);
     }
 
     #[test]
@@ -517,8 +464,69 @@ mod glass_tests {
     #[test]
     fn uniform_list_covers_the_glass_uniforms() {
         let names: Vec<_> = UNIFORMS.iter().map(|(n, _)| *n).collect();
-        for n in ["edge_fade", "edge_weak", "glass", "shadow"] {
+        for n in ["edge_fade", "edge_weak", "shadow"] {
             assert!(names.contains(&n));
         }
+        assert!(!names.contains(&"glass"));
+    }
+
+    #[test]
+    fn dark_dots_follow_the_kit_per_state() {
+        use Dot::{Close, Minimize, Zoom};
+        // Active (rest and hover): the gradients and rims of the kit.
+        for (dot, top, bottom, rim) in [
+            (Close, 0xf8635a, 0xee6660, 0xee5549),
+            (Minimize, 0xfab500, 0xfdcd29, 0xf8b904),
+            (Zoom, 0x01bc00, 0x4bc133, 0x09b901),
+        ] {
+            let d = dark_dot(dot, true);
+            let hex = |c: [u8; 3]| u32::from(c[0]) << 16 | u32::from(c[1]) << 8 | u32::from(c[2]);
+            assert_eq!(
+                (hex(d.top), hex(d.bottom), hex(d.rim), d.rim_alpha),
+                (top, bottom, rim, 0xff),
+                "{dot:?}"
+            );
+        }
+        // Inactive: the same grey for all three, light 0.5 pt rim at 70 %.
+        for dot in [Close, Minimize, Zoom] {
+            let d = dark_dot(dot, false);
+            assert_eq!(d.top, [0x4d; 3]);
+            assert_eq!(d.bottom, [0x55; 3]);
+            assert_eq!((d.rim, d.rim_alpha), ([0x99; 3], 0xb3));
+        }
+    }
+
+    /// The shader spells the same colors (as 3-decimal floats, the way it is written).
+    #[test]
+    fn the_shader_draws_the_dark_dot_colors() {
+        let vec3 = |c: [u8; 3]| {
+            format!(
+                "vec3({:.3}, {:.3}, {:.3})",
+                f32::from(c[0]) / 255.0,
+                f32::from(c[1]) / 255.0,
+                f32::from(c[2]) / 255.0
+            )
+        };
+        let dark = SHADER
+            .find("if (is_dark) {")
+            .and_then(|a| SHADER[a..].find("} else {").map(|b| &SHADER[a..a + b]))
+            .unwrap_or_default();
+        assert!(!dark.is_empty());
+        for dot in [Dot::Close, Dot::Minimize, Dot::Zoom] {
+            let d = dark_dot(dot, true);
+            for c in [d.top, d.bottom, d.rim] {
+                assert!(dark.contains(&vec3(c)), "{dot:?}: {} missing", vec3(c));
+            }
+        }
+        let grey = dark_dot(Dot::Close, false);
+        assert!(dark.contains(&format!(
+            "grey_t = vec3({:.3})",
+            f32::from(grey.top[0]) / 255.0
+        )));
+        assert!(dark.contains(&format!(
+            "grey_b = vec3({:.3})",
+            f32::from(grey.bottom[0]) / 255.0
+        )));
+        assert!(dark.contains("vec3(0.600)"));
     }
 }

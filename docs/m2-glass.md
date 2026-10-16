@@ -66,9 +66,10 @@ Not glass in Ossido:
 - **The menu bar** requests no glass: it is a transparent strip on the wallpaper (Amalfi:
   "none"). Ossido keeps only the gradient that compresses the wallpaper's highlights under it
   (`backdrop.rs`, measured in `spec/glass.md` › Menu bar gradient), which is not a material.
-- **The Panorama spaces bar** keeps its own material (`bar_material.rs`: the wallpaper under it
-  through a compressive tone curve and a mirrored blur of σ ≈ 26 pt): `materials.md` does not
-  list it, so it is unchanged.
+- **The Panorama spaces bar** is Glass/Thick (design decision of the Amalfi session): the
+  wallpaper under it, and only that, goes through the Thick material (σ 16, saturation 1.5, tint
+  76 %, inside rim, rim light) via the ordinary glass pass (`panorama::bar_region`). The bar's
+  own shadow below it stays; the wallpaper behind Mission Control is not dimmed or blurred.
 
 ### The sharp share
 

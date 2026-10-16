@@ -211,14 +211,15 @@ At rest in an active window. Each disc has a vertical gradient, more saturated a
 | Minimise | `#fcc93b` / `#fcb82e` / `#fed344` / `#d08d0b` | `#fdc002` / `#fab500` / `#fdcd29` / `#f8b904` |
 | Full screen | `#85d660` / `#62d02e` / `#99d979` / `#519e32` | `#39c101` / `#01bc00` / `#4bc133` / `#09b901` |
 
-- **Edges in dark:** a 1 pt bright outline at the top and bottom of each disc.
-  - Close: `#fab1a7` / `#fbada5`.
-  - Minimise: `#fbee5a` / `#fbf869`.
-  - Full screen: `#96fb78` / `#8bfb76`.
+- **Dark discs as Ossido draws them** (kit `Titlebars/Dot/*/<state>/Dark`, a design decision over
+  the measured arcs, band and glow): a plain gradient from the top to the bottom of the disc
+  (Close `#f8635a` to `#ee6660`, Minimise `#fab500` to `#fdcd29`, Full screen `#01bc00` to
+  `#4bc133`) and one 1 pt rim all around (`#ee5549`, `#f8b904`, `#09b901`), at rest and on
+  hover. Light discs are unchanged.
 - **Inactive window at rest:** all three discs are the same grey.
   - Light: `#eaebec`–`#f4f4f7`, with an outline `#c3c3c7` at the sides.
-  - Dark: `#4d4d4d`–`#555555`, with an outline only at the top (`#999999`) and bottom
-    (`#909091`).
+  - Dark: gradient `#4d4d4d` (top) to `#555555` (bottom) with a light 0.5 pt rim, `#999999` at
+    70 %, all around.
 
 ### States
 

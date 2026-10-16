@@ -6,6 +6,7 @@
 //! images, text, sharp edges, light and dark) at full resolution and at its `BlurScale`; the
 //! two may differ by at most 1/255 on average over the glass and 3/255 at any pixel and
 //! channel. `GLASS_EQUIVALENCE_WALLPAPERS` (PNG paths separated by `:`) adds real wallpapers;
+//! The Panorama spaces bar is Glass/Thick: it uses the thick kinds' profile and so their scale.
 //! `cargo test -p ossido glass_equivalence -- --ignored --nocapture` prints the table every
 //! factor gives, to choose the scales.
 
@@ -16,7 +17,6 @@
     clippy::indexing_slicing
 )]
 
-use ossido_render::bar_material::{self, BarPrograms, BarTone};
 use ossido_render::glass::{
     GlassCache, GlassElement, GlassPrograms, GlassQuality, PhysicalRegion, effective_factor,
 };
@@ -334,7 +334,6 @@ impl RenderElement<GlesRenderer> for Layer {
 struct Gpu {
     renderer: GlesRenderer,
     glass: GlassPrograms,
-    bar: BarPrograms,
     /// The backdrops made so far, by scale (bits).
     backdrops: Vec<(u64, Vec<(String, Image)>)>,
 }
@@ -344,7 +343,6 @@ fn gpu() -> Gpu {
     let shaders = ossido_render::shaders(&mut renderer);
     Gpu {
         glass: shaders.glass.expect("glass shaders"),
-        bar: shaders.bar.expect("spaces bar shaders"),
         renderer,
         backdrops: Vec::new(),
     }
@@ -658,76 +656,6 @@ fn table_of_factors() {
             eprintln!("{row}");
         }
     }
-    for factor in [2, 4, 8] {
-        let (mean, max) = bar_difference(&mut gpu, factor);
-        eprintln!("spaces-bar f{factor}: {mean:.3} / {max}");
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// The spaces bar material
-
-/// The worst difference of the spaces bar material at `factor` against full resolution.
-fn bar_difference(gpu: &mut Gpu, factor: u32) -> (f64, u8) {
-    let (mut worst_mean, mut worst_max) = (0.0_f64, 0u8);
-    for scale in SCALES {
-        // The bar at rest: the whole width, ~100 pt tall.
-        let size = Size::from((px(CANVAS_PT.0, scale), px(100.0, scale)));
-        for (_, image) in backdrops(size.w, size.h, scale) {
-            for (light, expansion, sigma_pt) in [(true, 0.0, 26.0), (false, 1.0, 27.0)] {
-                let tone = BarTone {
-                    light,
-                    expansion,
-                    sigma_pt,
-                };
-                let sharp = import(&mut gpu.renderer, &image);
-                let full = bar_material::material(
-                    &mut gpu.renderer,
-                    &gpu.bar,
-                    &sharp,
-                    size,
-                    scale,
-                    tone,
-                    1,
-                )
-                .unwrap();
-                let reduced = bar_material::material(
-                    &mut gpu.renderer,
-                    &gpu.bar,
-                    &sharp,
-                    size,
-                    scale,
-                    tone,
-                    factor,
-                )
-                .unwrap();
-                let mut read = |texture: GlesTexture| -> Image {
-                    let layer = Layer {
-                        texture,
-                        ..Layer::new(&mut gpu.renderer, image.clone(), Point::from((0, 0)))
-                    };
-                    compose(&mut gpu.renderer, size, [0.0; 4], &[layer], &[])
-                };
-                let (a, b) = (read(full), read(reduced));
-                let (mean, max) = difference(&a, &b, Rectangle::from_size(size));
-                worst_mean = worst_mean.max(mean);
-                worst_max = worst_max.max(max);
-            }
-        }
-    }
-    (worst_mean, worst_max)
-}
-
-#[test]
-fn the_spaces_bar_blurs_at_its_scale_like_at_full_resolution() {
-    let mut gpu = gpu();
-    let factor = bar_material::BLUR_SCALE;
-    let (mean, max) = bar_difference(&mut gpu, factor.factor(1.0).max(factor.factor(2.0)));
-    eprintln!("spaces bar {factor:?}: mean {mean:.3}, max {max}");
-    assert!(
-        mean <= MAX_MEAN && max <= MAX_ANY,
-        "mean {mean:.3}, max {max}"
-    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -955,7 +883,6 @@ fn glass_cost() {
     let shaders = ossido_render::shaders(&mut renderer);
     let mut gpu = Gpu {
         glass: shaders.glass.expect("glass shaders"),
-        bar: shaders.bar.expect("spaces bar shaders"),
         renderer,
         backdrops: Vec::new(),
     };

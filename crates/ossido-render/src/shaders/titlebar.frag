@@ -37,14 +37,11 @@ uniform float button_x;
 uniform float button_y;
 // 1 = dark appearance (windows.md: "Dark" tables of the buttons).
 uniform float dark;
-// Glass of the buttons (TL-GLASS), mirrored by `titlebar::Glass`: angle from the vertical
-// axis over which the outline goes from its top/bottom color to its side color; light only,
-// share of the side outline kept at the top and bottom; the darker band start, the glow
-// center y and its radius (0 = no glow), in points from the disc center; alpha of the 1 pt
-// shadow under the disc.
+// Look of the light buttons (TL-GLASS), mirrored by `titlebar::Glass`: angle from the vertical
+// axis over which the outline goes from its top/bottom color to its side color; share of the
+// side outline kept at the top and bottom; alpha of the 1 pt shadow under the disc.
 uniform float edge_fade;
 uniform float edge_weak;
-uniform vec3 glass;
 uniform float shadow;
 
 float shape_distance(vec2 p, vec4 rect) {
@@ -74,25 +71,22 @@ vec3 gradient(float dy, vec3 top, vec3 middle, vec3 bottom) {
                     : mix(middle, bottom, clamp(dy / 5.0, 0.0, 1.0));
 }
 
-// Dark fill: lighter row under the top arc, the darkest band, then the round glow in the
-// lower half (`top`, `band`, `glow` are the colors of the centre column).
-vec3 glass_fill(vec2 d, vec3 top, vec3 band, vec3 glow_color) {
-    vec3 f = mix(top, band, clamp((d.y + 6.0) / (glass.x + 6.0), 0.0, 1.0));
-    float t = glass.z > 0.0 ? clamp(length(d - vec2(0.0, glass.y)) / glass.z, 0.0, 1.0) : 1.0;
-    float g = 1.0 - t * t;
-    return mix(f, glow_color, g);
+// Dark fill: a linear gradient from the top to the bottom of the disc (kit
+// `Titlebars/Dot/*/<state>/Dark`).
+vec3 linear_fill(float dy, vec3 top, vec3 bottom) {
+    return mix(top, bottom, clamp((dy + 7.0) / 14.0, 0.0, 1.0));
 }
 
-// `glassy`: dark colored disc (band and glow); `grey`: inactive or disabled.
+// `linear`: dark disc (a plain top-to-bottom gradient); `grey`: inactive or disabled.
 vec4 button(vec2 p, vec2 center, vec3 top, vec3 middle, vec3 bottom, vec3 outline_side,
-            vec3 outline_top, vec3 outline_bottom, vec3 shift, bool grey, bool glassy) {
+            vec3 outline_top, vec3 outline_bottom, vec3 shift, bool grey, bool linear) {
     vec2 d = p - center;
     float r = length(d);
     float disc = cover(r - 7.0);
-    vec3 plain = glassy ? glass_fill(d, top, middle, bottom) : gradient(d.y, top, middle, bottom);
+    vec3 plain = linear ? linear_fill(d.y, top, bottom) : gradient(d.y, top, middle, bottom);
     vec3 fill = clamp(plain + shift, 0.0, 1.0);
     // Outline: the side color at the sides, the top/bottom one towards the vertical axis
-    // (dark: the 1 px light arc).
+    // (dark: all the same color).
     float theta = atan(abs(d.x), max(abs(d.y), 0.0001));
     float arc = 1.0 - smoothstep(0.0, edge_fade, theta);
     vec3 edge = d.y < 0.0 ? outline_top : outline_bottom;
@@ -149,20 +143,20 @@ void main() {
     vec3 grey_c, grey_t, grey_b, grey_o, grey_ot, grey_ob;
     bool lit = active > 0.5 || symbols > 0.0;
     bool is_dark = dark > 0.5;
-    bool glassy = is_dark && lit;
     if (is_dark) {
-        // Dark (center column): top, darkest band (c), glow (b); the outline is the side
-        // color plus the light arc on top (ot) and at the bottom (ob).
-        close_t = vec3(0.973, 0.388, 0.353); close_c = vec3(0.961, 0.318, 0.271); close_b = vec3(0.937, 0.412, 0.388);
-        close_o = vec3(0.933, 0.333, 0.286); close_ot = vec3(0.980, 0.694, 0.655); close_ob = vec3(0.984, 0.678, 0.647);
-        min_t = vec3(0.980, 0.710, 0.000); min_c = vec3(0.988, 0.698, 0.000); min_b = vec3(0.996, 0.812, 0.188);
-        min_o = vec3(0.973, 0.725, 0.016); min_ot = vec3(0.984, 0.933, 0.353); min_ob = vec3(0.984, 0.973, 0.412);
-        zoom_t = vec3(0.275, 0.769, 0.102); zoom_c = vec3(0.004, 0.737, 0.000); zoom_b = vec3(0.314, 0.769, 0.224);
-        zoom_o = vec3(0.035, 0.725, 0.004); zoom_ot = vec3(0.588, 0.984, 0.471); zoom_ob = vec3(0.545, 0.984, 0.463);
-        // Inactive (lum 85 at the top, 77 at the bottom): the same arcs (154 / 146), no side
-        // outline, no glow.
-        grey_c = vec3(0.318); grey_t = vec3(0.333); grey_b = vec3(0.302);
-        grey_o = grey_c; grey_ot = vec3(0.604); grey_ob = vec3(0.573);
+        // Dark (windows.md, kit `Titlebars/Dot/*/Rest/Dark`, mirrored by `titlebar::dark_dot`):
+        // a gradient from the top to the bottom and one rim color all around.
+        close_t = vec3(0.973, 0.388, 0.353); close_b = vec3(0.933, 0.400, 0.376); close_c = (close_t + close_b) * 0.5;
+        close_o = vec3(0.933, 0.333, 0.286); close_ot = close_o; close_ob = close_o;
+        min_t = vec3(0.980, 0.710, 0.000); min_b = vec3(0.992, 0.804, 0.161); min_c = (min_t + min_b) * 0.5;
+        min_o = vec3(0.973, 0.725, 0.016); min_ot = min_o; min_ob = min_o;
+        zoom_t = vec3(0.004, 0.737, 0.000); zoom_b = vec3(0.294, 0.757, 0.200); zoom_c = (zoom_t + zoom_b) * 0.5;
+        zoom_o = vec3(0.035, 0.725, 0.004); zoom_ot = zoom_o; zoom_ob = zoom_o;
+        // Inactive (kit `Titlebars/Dot/*/Inactive/Dark`): gradient #4d4d4d -> #555555 and a
+        // 0.5 pt rim #999999 at 70 % (the 1 px ring of the disc is mixed at 0.7 * 0.5 = 0.35).
+        grey_t = vec3(0.302); grey_b = vec3(0.333); grey_c = (grey_t + grey_b) * 0.5;
+        grey_o = mix(grey_c, vec3(0.600), 0.351);
+        grey_ot = mix(grey_t, vec3(0.600), 0.351); grey_ob = mix(grey_b, vec3(0.600), 0.351);
     } else {
         // Light: darker outline, strongest at the sides and weaker (edge_weak) at the top
         // and bottom; plain vertical gradient.
@@ -200,17 +194,17 @@ void main() {
     vec2 c1 = vec2(button_x, button_y);
     vec2 c2 = vec2(button_x + 23.0, button_y);
     vec2 c3 = vec2(button_x + 46.0, button_y);
-    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s, !lit, glassy),
+    color = over(button(p, c1, close_t, close_c, close_b, close_o, close_ot, close_ob, close_s, !lit, is_dark),
                  color);
     if (min_off) {
-        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, false), color);
+        color = over(button(p, c2, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, is_dark), color);
     } else {
-        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s, !lit, glassy), color);
+        color = over(button(p, c2, min_t, min_c, min_b, min_o, min_ot, min_ob, min_s, !lit, is_dark), color);
     }
     if (zoom_off) {
-        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, false), color);
+        color = over(button(p, c3, grey_t, grey_c, grey_b, grey_o, grey_ot, grey_ob, no_shift, true, is_dark), color);
     } else {
-        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s, !lit, glassy), color);
+        color = over(button(p, c3, zoom_t, zoom_c, zoom_b, zoom_o, zoom_ot, zoom_ob, zoom_s, !lit, is_dark), color);
     }
 
     if (symbols > 0.0) {

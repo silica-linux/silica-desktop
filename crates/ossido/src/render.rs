@@ -59,9 +59,9 @@ render_elements! {
     Blurred=ossido_render::backdrop::BlurredElement,
 }
 
-/// The blur under the spaces bar, between frames.
+/// The glass of the spaces bar (Glass/Thick, over the wallpaper only), between frames.
 #[derive(Default)]
-struct BarMaterial(ossido_render::bar_material::BarMaterial);
+struct BarGlass(GlassCache);
 
 /// The opacity of a shell layer while Panorama is open: the menu bar and the desktop (its
 /// icons) fade out as Panorama opens and come back as it closes (`missioncontrol.md`: in
@@ -1442,17 +1442,15 @@ pub fn output_elements(
             }
         }
     }
-    // The spaces bar is a material: the wallpaper under it (only that), toned and blurred
-    // (missioncontrol.md › MC-BLUR), just behind the bar.
+    // The spaces bar is Glass/Thick over the wallpaper under it (and only that: no windows, no
+    // Dock), just behind the bar's sprite.
     if let Some(panorama) = &context.panorama
         && let Some(id) = &bar_id
-        && let Some(programs) = &shaders.bar
+        && let Some(programs) = &shaders.glass
         && let Some(at) = elements.iter().position(|element| element.id() == id)
     {
         let width = f64::from(output_size.w) / scale;
-        let rest = crate::panorama::bar_material_rect(width, panorama.expansion, 1.0);
-        let area = rest.to_physical_precise_round(scale);
-        let dst = crate::panorama::bar_material_rect(width, panorama.expansion, panorama.progress)
+        let rect = crate::panorama::bar_material_rect(width, panorama.expansion, panorama.progress)
             .to_physical_precise_round(scale);
         let mut wallpaper: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
         for layer in layer_map.layers_on(Layer::Background).rev() {
@@ -1469,28 +1467,30 @@ pub fn output_elements(
                 1.0,
             ));
         }
-        let tone = ossido_render::bar_material::BarTone {
-            light: !context.dark,
-            expansion: panorama.expansion,
-            sigma_pt: crate::panorama::bar_blur_sigma(panorama.expansion),
-        };
-        let cache = output.user_data().get_or_insert(BarMaterial::default);
-        match cache.0.element(
+        let region = crate::panorama::bar_region(
+            rect,
+            context.dark,
+            crate::panorama::bar_alpha(panorama.progress),
+            scale,
+        );
+        let cache = output.user_data().get_or_insert(BarGlass::default);
+        match cache.0.elements(
             renderer,
             programs,
+            &[region],
             &wallpaper,
-            area,
-            dst,
+            &wallpaper,
+            context.glass_quality,
+            Rectangle::from_size(output_size),
             scale,
-            tone,
             context.clear_color,
-            crate::panorama::bar_alpha(panorama.progress),
         ) {
-            Ok(Some(material)) => {
-                elements.insert(at + 1, OutputElement::Blurred(material));
+            Ok(glass) => {
+                let glass: Vec<OutputElement> =
+                    glass.into_iter().rev().map(OutputElement::Glass).collect();
+                elements.splice(at + 1..at + 1, glass);
             }
-            Ok(None) => {}
-            Err(err) => warn!("spaces bar material skipped: {err:?}"),
+            Err(err) => warn!("spaces bar glass skipped: {err:?}"),
         }
     }
     if let Some((icon, at)) = &context.drag_icon {
