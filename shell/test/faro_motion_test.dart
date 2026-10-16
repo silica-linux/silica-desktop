@@ -18,79 +18,48 @@ List<double> samples(Simulation simulation, int ms) => [
 ];
 
 void main() {
-  group('the springs reproduce the measured motion', () {
+  group('the springs are the Amalfi motion tokens', () {
+    test('the shapes use the tokens of motion.md', () {
+      expect(verticalSpring, AmalfiSprings.panel);
+      expect(scopeSpring, AmalfiSprings.panel);
+      expect(widthSpring, AmalfiSprings.morph);
+      expect(engageWidthSpring, AmalfiSprings.morph);
+      expect(buttonsSpring, AmalfiSprings.morph);
+      expect(engageButtonsSpring, AmalfiSprings.morph);
+      expect(engageDelay, AmalfiDelays.hoverIntent);
+      expect(closeDuration, AmalfiFades.instant.duration);
+    });
+
     test(
-      'width: 661 → 384 pt, ~22 pt undershoot near +193 ms, settled by ~400 ms',
+      'spring.panel: ~+2 pt on a 270 pt growth, settled in well under 600 ms',
       () {
-        final s = samples(SpringSimulation(widthSpring, 661, 384, 0), 700);
+        final s = samples(SpringSimulation(verticalSpring, 56, 326, 0), 800);
+        final high = s.reduce((a, b) => a > b ? a : b);
+        expect(high - 326, inInclusiveRange(1, 6));
+        for (var t = 600; t <= 800; t++) {
+          expect(s[t], closeTo(326, 1), reason: 't = $t ms');
+        }
+      },
+    );
+
+    test(
+      'spring.morph: the bar narrows with a few percent of undershoot and settles',
+      () {
+        final s = samples(SpringSimulation(widthSpring, 640, 384, 0), 1000);
         final low = s.reduce((a, b) => a < b ? a : b);
-        final at = s.indexOf(low);
-        expect(low, closeTo(362, 3));
-        expect(at, inInclusiveRange(175, 215));
-        for (var t = 430; t <= 700; t++) {
+        // 4-5 % of the 256 pt travel.
+        expect(384 - low, inInclusiveRange(6, 16));
+        for (var t = 800; t <= 1000; t++) {
           expect(s[t], closeTo(384, 1), reason: 't = $t ms');
         }
       },
     );
 
-    test(
-      'height: 0.966 → 1 with a +2 pt overshoot on 447 near +133 ms, settled by ~190 ms',
-      () {
-        final s = samples(SpringSimulation(verticalSpring, 432, 447, 0), 400);
-        final high = s.reduce((a, b) => a > b ? a : b);
-        expect(high, closeTo(449, 0.8));
-        expect(s.indexOf(high), inInclusiveRange(110, 155));
-        for (var t = 190; t <= 400; t++) {
-          expect(s[t], closeTo(447, 1), reason: 't = $t ms');
-        }
-      },
-    );
-
-    test(
-      'buttons: 146 pt with ~11 pt overshoot ~300 ms after their start, settled by ~590 ms',
-      () {
-        final s = samples(SpringSimulation(buttonsSpring, 0, 146, 0), 800);
-        final high = s.reduce((a, b) => a > b ? a : b);
-        expect(high - 146, closeTo(11, 2));
-        expect(s.indexOf(high), inInclusiveRange(260, 340));
-        for (var t = 590; t <= 800; t++) {
-          expect(s[t], closeTo(146, 1), reason: 't = $t ms');
-        }
-      },
-    );
-
-    test(
-      'engaged field and discs settle by ~630 ms and ~660 ms after they start',
-      () {
-        final w = samples(
-          SpringSimulation(engageWidthSpring, 640, 384, 0),
-          900,
-        );
-        for (var t = 630; t <= 900; t++) {
-          expect(w[t], closeTo(384, 1), reason: 't = $t ms');
-        }
-        final d = samples(
-          SpringSimulation(engageButtonsSpring, 0, 146, 0),
-          900,
-        );
-        for (var t = 660; t <= 900; t++) {
-          expect(d[t], closeTo(146, 1), reason: 't = $t ms');
-        }
-        expect(engageDelay, const Duration(milliseconds: 60));
-      },
-    );
-
-    test('a scope change overshoots by +5 pt on its travel', () {
-      final s = samples(SpringSimulation(scopeSpring, 56, 547, 0), 800);
-      final high = s.reduce((a, b) => a > b ? a : b);
-      expect(high - 547, closeTo(5, 0.5));
-    });
-
     test('the tables: fade, Launcher scale, return to Faro', () {
       expect(opacityAt(0), 0.22);
       expect(opacityAt(26.7), closeTo(0.79, 0.001));
       expect(opacityAt(fadeMs), 1);
-      expect(launcherScaleAt(0), closeTo(1.08, 1e-9));
+      expect(launcherScaleAt(0), closeTo(1.06, 1e-9));
       expect(launcherScaleAt(launcherOpenMs), 1);
       expect(backProgress(0), 0);
       expect(backProgress(backDuration), 1);
@@ -135,13 +104,14 @@ void main() {
     Finder button(int i) => find.byKey(ValueKey('faro button $i'));
 
     testWidgets(
-      'opening: 1.033 wide and 0.966 tall at the first frame, faded at 0.22',
+      'opening: 0.97 tall at the first frame, never wider than 640, faded at 0.22',
       (tester) async {
         await open(tester);
         expect(panel().width, closeTo(640 * openScaleX, 0.5));
         expect(scaleY(), closeTo(openScaleY, 0.001));
         expect(opacity(), closeTo(0.22, 0.01));
-        // Centred on the 640 pt frame while wider than it.
+        // The envelope: never wider than 640 pt.
+        expect(panel().width, 640);
         expect(panel().center.dx, closeTo(720, 0.5));
         await tester.pump(const Duration(milliseconds: 70));
         expect(opacity(), 1);

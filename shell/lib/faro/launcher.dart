@@ -1,19 +1,19 @@
-// The app launcher: Faro in another mode, from plan/reference/launcher.md (light
-// appearance). An 844 × 577 pt panel with its top at 30 % of the screen, radius 25, Faro's
-// material. A 56 pt header (apps icon 22 pt from the edge, "Applications" placeholder at
-// 26 pt, "…" on the right), a separator, a row of 7 categories, then the grid: 7 columns at a
-// 112.5 pt pitch, rows at a 102 pitch, 61 pt icons, 14 pt names truncated at the end; at the
-// top a row of recent apps separated by a line. The scroll bar is always visible.
+// The app launcher: Faro in apps mode, on the Amalfi kit (`Apps/Faro/Launcher`, `Launcher
+// Category`, `Launcher List`; docs/design/amalfi/components.md › Launcher). Its own panel,
+// Glass/Thick radius 28: 844 × 580 in grid mode, 640 × 560 in list mode, top edge on Faro's
+// 30 % line. A 56 pt header (apps glyph or back chevron at x 20, field text at x 56, "…" view
+// menu at the right), a separator, a row of seven category capsules, then the grid (7 columns
+// of 112 pt, 60 pt icons) or the list (56 pt rows); at the top a row of recent apps separated
+// by a line.
 //
 // A category becomes a token in the field and the grid shows only that one; typing filters
 // (inside the category, or over all apps with the best first and a ring around it).
 // Esc removes the text, then the category, then goes back to Faro.
 //
 // Searching all apps, if the first result starts with the text the field completes it
-// inline ("cal" + "endar — Open" in a grey rectangle) and shows the app icon on the right.
+// inline ("cal" + "endar — Open") and shows the app icon on the right.
 //
-// Not done (PA-60): keyboard selection in the grid, the "…" menu, the final wobble of the
-// opening.
+// Not done (PA-60): keyboard selection in the grid (the list has it).
 
 import 'dart:convert';
 import 'dart:io';
@@ -28,79 +28,74 @@ import '../system/icon_lookup.dart';
 import '../system/silica_icons.dart';
 import 'search.dart';
 
+/// Grid mode: 844 × 580.
 const double launcherWidth = 844;
-const double launcherHeight = 577;
-const double launcherRadius = 25;
+const double launcherHeight = 580;
+
+/// List mode: 640 × 560.
+const double launcherListWidth = 640;
+const double launcherListHeight = 560;
+const double launcherRadius = AmalfiRadii.faroAndLauncher;
 const double launcherHeader = 56;
 
-/// Side margin of separators, capsules and grid.
+/// The panel's size in grid or list mode.
+Size launcherSize({required bool list}) => list
+    ? const Size(launcherListWidth, launcherListHeight)
+    : const Size(launcherWidth, launcherHeight);
+
+/// Side margin of separators and capsules.
 const double launcherMargin = 20;
 
-/// Capsule area: 47 pt, capsules 26 tall 10 pt below the separator, 8 pt apart, at least
-/// 85.5 pt wide or the text plus 9 pt per side, radius 9.
-const double categoryZone = 47;
-const double categoryTop = 10;
-const double categoryHeight = 26;
+/// Category capsules: 28 tall from y 68 (12 under the separator), 8 apart, text 8 from each
+/// edge, radius 8, Callout.
+const double categoryTop = 68;
+const double categoryHeight = 28;
 const double categoryGap = 8;
-const double categoryMinWidth = 85.5;
-const double categoryPadding = 9;
-const double categoryRadius = 9;
-const double categoryText = 15;
+const double categoryPadding = 8;
+const double categoryRadius = 8;
 
-/// Grid: 112.5 × 92 cells, 61 icons 7 pt from the top of the cell, name at 75 pt (18 tall,
-/// at most 110 wide); first cell 11 pt from the start of the area; rows at a 102 pitch;
-/// between the recents and the list a line 13 pt below the cells, the list 12 pt below it.
+/// Grid: cells 112 wide (the first at x 28), icons 60 at +28 (the kit), labels 16 tall 68 pt
+/// under the icon top, 104 between rows. Browsing: the first row's icons at y 124; with a
+/// category or a query, at y 88.
 const int gridColumns = 7;
-const double cellWidth = 112.5;
-const double cellHeight = 92;
-const double gridIcon = 61;
-const double gridIconTop = 7;
-const double gridLabelTop = 75;
-const double gridLabelHeight = 18;
-const double gridLabelWidth = 110;
-const double gridLabelSize = 14;
-const double gridTop = 11;
-const double rowPitch = 102;
-const double recentGap = 13;
-const double recentAfter = 12;
+const double cellWidth = 112;
+const double cellOriginX = 28;
+const double gridIcon = 60;
+const double gridIconX = 28;
+const double gridLabelTop = 68;
+const double gridLabelHeight = 16;
+const double rowPitch = 104;
+const double browsingIconTop = 124;
+const double plainIconTop = 88;
 
-/// Scroll bar: an opaque 11 pt track 3 pt from the edge, from 40 pt below the start of the
-/// area to 49 pt from the bottom of the panel; semicircular ends.
-const double scrollbarWidth = 11;
-const double scrollbarRight = 3;
-const double scrollbarTop = 40;
-const double scrollbarBottom = 49;
+/// Under the recents a separator at y 216 (8 under the labels), the list's icons at 236.
+const double recentSeparatorY = 216;
+const double recentListTop = 236;
+
+/// List mode: 5 recents in cells of 116 (icons at y 108, labels 68 below), the separator at
+/// y 208 and the 56 pt rows from y 220 (browsing) or 64.
+const int listRecents = 5;
+const double listCellWidth = 116;
+const double listRecentTop = 108;
+const double listSeparatorY = 208;
+const double listRowHeight = 56;
+const double listRowsTop = 220;
+const double listPlainTop = 64;
 
 /// Ring of the first result: 4 pt around the icon, outer radius 17.
 const double ringWidth = 4;
 const double ringRadius = 17;
 
-/// Category token in the field: 31 tall, radius 10, text 6 pt from the edge and 11 after.
-const double tokenHeight = 31;
+/// Category token in the field: 32 tall, radius 10, Title 3.
+const double tokenHeight = 32;
 const double tokenRadius = 10;
 
-const Color launcherText = Color(0xFF16171C);
-const Color launcherPlaceholder = Color(0xFF494A4F);
-const Color launcherLine = Color(0x20000000);
-
-/// `#d9dadf` over the `#c8c9ce` fill: white at ~31 %.
-const Color categoryFill = Color(0x4FFFFFFF);
-const Color categoryTextColor = Color(0xFF5A5B60);
-
-/// `#afb0b5` over `#c8c9ce`: like Faro's selected row.
-const Color tokenFill = Color(0x20000000);
-const Color tokenText = Color(0xFF0D0E13);
-const Color scrollTrack = Color(0xFFF2F2F2);
-const Color scrollThumb = Color(0xFF808080);
-
-/// Inline completion: a rectangle 32 tall centered in the header (12 pt from the top), radius 8, `#a2a3a8` over
-/// `#c8c9ce` (black at ~19 %); text `#232429`. App preview: 27 pt, 18 pt from the "…".
+/// Inline completion: a rectangle 32 tall (12 from the top of the header), radius 8.
 const double completionHeight = 32;
 const double completionRadius = 8;
-const Color completionFill = Color(0x30000000);
-const Color completionText = Color(0xFF232429);
-const double previewSide = 27;
-const double previewRight = 60;
+
+/// The app that handles the chosen row, at the right of the field: 28 pt.
+const double previewSide = 28;
 
 /// The suffix to complete: the rest of the first result's name, if it starts with the typed
 /// text (and there is no category). The field shows it followed by "— Open".
@@ -112,123 +107,35 @@ String? completionFor(String query, List<DesktopEntry> results) {
   return first.name.substring(q.length);
 }
 
-/// `#838488 → #747579` over `#c8c9ce`.
-const Color ringColor = Color(0x80404145);
-
-/// The colors of Faro and the launcher over thick glass, light and dark (spotlight.md,
-/// launcher.md). In dark the fill is `#717276`: the backgrounds measured over it become
-/// translucent white (chosen row and token `#949599` → 25 %, capsules `#828387` → 12 %,
-/// completion `#97989c` → 27 %, ring `#abacb0 → #98999d` → ~35 %); texts are solid.
-/// The shadow in dark is ~1.7 times denser (at contact −68 against −39 below): the opacity
-/// is *estimated* by scaling the light one.
+/// The colours of Faro and the launcher: Amalfi tokens (`Text/*`, `App/Faro/*`,
+/// `Surface/Sunken`, `Line/Separator`), light and dark, resolved from the appearance.
 @immutable
 class FaroColors {
-  const FaroColors({
-    required this.text,
-    required this.selectedText,
-    required this.placeholder,
-    required this.subtitle,
-    required this.selection,
-    required this.categoryFill,
-    required this.categoryText,
-    required this.tokenText,
-    required this.completionFill,
-    required this.completionText,
-    required this.ring,
-    required this.track,
-    required this.thumb,
-    required this.shadowScale,
-    required this.cardBorder,
-    required this.copyFill,
-    required this.hint,
-    required this.keycapFill,
-    required this.keycapText,
-  });
+  const FaroColors._(this.theme);
 
-  final Color text;
-  final Color selectedText;
-  final Color placeholder;
-  final Color subtitle;
+  final AmalfiThemeData theme;
 
-  /// Chosen row, separators and category token.
-  final Color selection;
-  final Color categoryFill;
-  final Color categoryText;
-  final Color tokenText;
-  final Color completionFill;
-  final Color completionText;
-  final Color ring;
-  final Color track;
-  final Color thumb;
+  AmalfiColors get _t => theme.colors;
 
-  /// Factor on the opacity of the panel shadows.
-  final double shadowScale;
+  Color get text => _t.textPrimary;
+  Color get placeholder => _t.textTertiary;
+  Color get subtitle => _t.textSecondary;
+  Color get separator => _t.lineSeparator;
 
-  /// Faro's answer card (SH-SP-13): the 2 pt border of the chosen card (light `#888 98e`,
-  /// dark `#b2b3b7` over the fill) and the copy disc over the card (`#96979c` light,
-  /// `#b7b8bc` dark).
-  final Color cardBorder;
-  final Color copyFill;
+  /// The chosen row, the category token, the ring.
+  Color get selection => _t.faro.selection;
+  Color get pill => _t.faro.pill;
+  Color get completion => _t.faro.completion;
+  Color get key => _t.faro.key;
 
-  /// "Search in …" hint and "Tab" key capsule on the chosen folder row (spotlight.md:
-  /// hint `#6f7075` / `#d5d6da`, capsule `#d2d3d8` / `#b7b8bc` over the chosen row, with
-  /// dark text in both; the text color is provisional).
-  final Color hint;
-  final Color keycapFill;
-  final Color keycapText;
+  /// Glyph tiles and the answer card.
+  Color get sunken => _t.surfaceSunken;
 
-  static const FaroColors light = FaroColors(
-    text: launcherText,
-    selectedText: Color(0xFF000003),
-    placeholder: launcherPlaceholder,
-    subtitle: Color(0xFF88898E),
-    selection: launcherLine,
-    categoryFill: Color(0x4FFFFFFF),
-    categoryText: categoryTextColor,
-    tokenText: Color(0xFF0D0E13),
-    completionFill: Color(0x30000000),
-    completionText: Color(0xFF232429),
-    ring: ringColor,
-    track: scrollTrack,
-    thumb: scrollThumb,
-    shadowScale: 1,
-    cardBorder: Color(0x52000000),
-    copyFill: Color(0x24000000),
-    hint: Color(0xFF6F7075),
-    keycapFill: Color(0x70FFFFFF),
-    keycapText: Color(0xFF3C3D42),
-  );
-
-  static const FaroColors dark = FaroColors(
-    text: Color(0xFFFFFFFF),
-    selectedText: Color(0xFFFFFFFF),
-    placeholder: Color(0xFFEDEEF2),
-    subtitle: Color(0xFFB2B3B7),
-    selection: Color(0x41FFFFFF),
-    categoryFill: Color(0x1FFFFFFF),
-    categoryText: Color(0xFFFEFFFF),
-    tokenText: Color(0xFFFFFFFF),
-    completionFill: Color(0x45FFFFFF),
-    completionText: Color(0xFFFFFFFF),
-    ring: Color(0x58FFFFFF),
-    track: Color(0xFF141414),
-    thumb: Color(0xFF7C7C7C),
-    shadowScale: 1.7,
-    cardBorder: Color(0x75FFFFFF),
-    copyFill: Color(0x54FFFFFF),
-    hint: Color(0xFFD5D6DA),
-    keycapFill: Color(0x54FFFFFF),
-    keycapText: Color(0xFF1E1F22),
-  );
+  /// Drop shadow of the panel (`Shadow/3`, level 3).
+  BoxShadow get shadow => theme.shadows.level3.first;
 
   static FaroColors of(BuildContext context) =>
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
-      ? dark
-      : light;
-
-  /// The shadow `color` with the opacity of this appearance.
-  Color shadow(Color color) =>
-      color.withValues(alpha: (color.a * shadowScale).clamp(0.0, 1.0));
+      FaroColors._(AmalfiTheme.of(context));
 }
 
 /// The launcher categories (stable ids) and the freedesktop categories they contain, from
@@ -348,6 +255,8 @@ class Launcher extends StatefulWidget {
     required this.recents,
     required this.onLaunch,
     required this.onBack,
+    this.list = false,
+    this.onListChanged,
   });
 
   final Map<String, DesktopEntry> entries;
@@ -359,6 +268,12 @@ class Launcher extends StatefulWidget {
   /// Esc with no text and no category: back to Faro.
   final VoidCallback onBack;
 
+  /// List mode (640 × 560) instead of the grid (844 × 580).
+  final bool list;
+
+  /// The "…" menu chose the grid (false) or the list (true).
+  final ValueChanged<bool>? onListChanged;
+
   @override
   State<Launcher> createState() => LauncherState();
 }
@@ -369,6 +284,12 @@ class LauncherState extends State<Launcher>
   final FocusNode _focus = FocusNode();
   final ScrollController _scroll = ScrollController();
   String? _category;
+
+  /// The row chosen in list mode.
+  int _selected = 0;
+
+  /// The "…" menu is open.
+  bool _menu = false;
 
   /// The category change: the grid disappears at once and fades back in after a gap
   /// (controller value = ms since the change).
@@ -384,7 +305,7 @@ class LauncherState extends State<Launcher>
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() {}));
+    _query.addListener(() => setState(() => _selected = 0));
     _scroll.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
@@ -402,9 +323,16 @@ class LauncherState extends State<Launcher>
     _fade.forward(from: 0);
     setState(() {
       _category = name;
+      _selected = 0;
       _query.clear();
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _closeMenu() {
+    if (!_menu) return;
+    setState(() => _menu = false);
+    _focus.requestFocus();
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event, List<DesktopEntry> apps) {
@@ -423,9 +351,16 @@ class LauncherState extends State<Launcher>
       case LogicalKeyboardKey.backspace
           when _query.text.isEmpty && _category != null:
         chooseCategory(null);
+      case LogicalKeyboardKey.arrowDown when widget.list && apps.isNotEmpty:
+        setState(() => _selected = (_selected + 1).clamp(0, apps.length - 1));
+      case LogicalKeyboardKey.arrowUp when widget.list && apps.isNotEmpty:
+        setState(() => _selected = (_selected - 1).clamp(0, apps.length - 1));
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
-        if (_query.text.trim().isNotEmpty && apps.isNotEmpty)
+        if (widget.list && apps.isNotEmpty) {
+          widget.onLaunch(apps[_selected.clamp(0, apps.length - 1)]);
+        } else if (_query.text.trim().isNotEmpty && apps.isNotEmpty) {
           widget.onLaunch(apps.first);
+        }
       default:
         return KeyEventResult.ignored;
     }
@@ -439,6 +374,8 @@ class LauncherState extends State<Launcher>
 
   @override
   Widget build(BuildContext context) {
+    final list = widget.list;
+    final size = launcherSize(list: list);
     final searching = _query.text.trim().isNotEmpty;
     final apps = launcherApps(
       widget.entries.values,
@@ -447,15 +384,21 @@ class LauncherState extends State<Launcher>
     );
     final recents = [
       if (!searching && _category == null)
-        for (final id in widget.recents)
+        for (final id in widget.recents.take(list ? listRecents : gridColumns))
           if (widget.entries[id] case final entry?) entry,
     ];
     final browsing = !searching && _category == null;
-    final areaTop = launcherHeader + 1 + (browsing ? categoryZone : 0);
-    final areaHeight = launcherHeight - areaTop;
+    final layout = GridLayout(
+      recents: recents.length,
+      apps: apps.length,
+      list: list,
+      browsing: browsing,
+    );
+    final areaTop = layout.areaTop;
+    final areaHeight = size.height - areaTop;
     return SizedBox(
-      width: launcherWidth,
-      height: launcherHeight,
+      width: size.width,
+      height: size.height,
       child: Stack(
         children: [
           Positioned(
@@ -463,19 +406,19 @@ class LauncherState extends State<Launcher>
             top: 0,
             right: 0,
             height: launcherHeader,
-            child: _header(apps),
+            child: _header(apps, size.width),
           ),
           Positioned(
             left: launcherMargin,
             right: launcherMargin,
             top: launcherHeader,
             height: 1,
-            child: ColoredBox(color: _c.selection),
+            child: ColoredBox(color: _c.separator),
           ),
           if (browsing)
             Positioned(
               left: launcherMargin,
-              top: launcherHeader + 1 + categoryTop,
+              top: categoryTop,
               right: launcherMargin,
               height: categoryHeight,
               child: _categories(),
@@ -487,11 +430,12 @@ class LauncherState extends State<Launcher>
             height: areaHeight,
             child: Opacity(
               opacity: _gridOpacity(),
-              child: _grid(
+              child: _area(
                 apps,
                 recents,
+                layout,
                 areaHeight,
-                ringFirst: _completion(apps) != null,
+                ringFirst: !list && _completion(apps) != null,
               ),
             ),
           ),
@@ -502,8 +446,37 @@ class LauncherState extends State<Launcher>
               right: launcherMargin,
               top: areaTop - 1,
               height: 1,
-              child: ColoredBox(color: _c.selection),
+              child: ColoredBox(color: _c.separator),
             ),
+          if (_menu) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _closeMenu,
+              ),
+            ),
+            Positioned(
+              right: 20,
+              top: 44,
+              child: AmalfiMenu(
+                key: const ValueKey('launcher view menu'),
+                autofocus: true,
+                onDismiss: _closeMenu,
+                entries: [
+                  AmalfiMenuAction(
+                    l10nOf(context).launcherViewGrid,
+                    checked: !list,
+                    onSelected: () => widget.onListChanged?.call(false),
+                  ),
+                  AmalfiMenuAction(
+                    l10nOf(context).launcherViewList,
+                    checked: list,
+                    onSelected: () => widget.onListChanged?.call(true),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -512,16 +485,14 @@ class LauncherState extends State<Launcher>
   String? _completion(List<DesktopEntry> apps) =>
       _category == null ? completionFor(_query.text, apps) : null;
 
-  Widget _header(List<DesktopEntry> apps) {
+  Widget _header(List<DesktopEntry> apps, double width) {
     final token = _category;
     final completion = _completion(apps);
+    final fieldStyle = AmalfiType.field(color: _c.text);
     final typed = completion == null
         ? 0.0
         : (TextPainter(
-            text: TextSpan(
-              text: _query.text,
-              style: uiText(size: 26, color: _c.text),
-            ),
+            text: TextSpan(text: _query.text, style: fieldStyle),
             textDirection: TextDirection.ltr,
           )..layout()).width;
     final preview = completion == null ? null : iconOf(apps.first);
@@ -529,37 +500,43 @@ class LauncherState extends State<Launcher>
       onKeyEvent: (node, event) => _key(node, event, apps),
       child: Stack(
         children: [
+          // The apps glyph goes back to Faro; with a category it is the back chevron.
           Positioned(
-            left: 22,
-            top: (launcherHeader - 22) / 2,
-            width: 25,
-            height: 22,
+            left: 20,
+            top: 16,
+            width: 24,
+            height: 24,
             child: GestureDetector(
-              onTap: widget.onBack,
-              child: CustomPaint(painter: AppsGlyphPainter(_c.placeholder)),
+              key: const ValueKey('launcher back'),
+              behavior: HitTestBehavior.opaque,
+              onTap: token == null ? widget.onBack : () => chooseCategory(null),
+              child: AmalfiSymbol(
+                token == null ? 'square-grid-2x2' : 'chevron-left',
+                size: 24,
+                color: _c.subtitle,
+              ),
             ),
           ),
           Positioned(
-            left: 61,
+            left: 56,
             top: 0,
             bottom: 0,
-            right: 61,
+            right: preview == null ? 64 : 64 + previewSide + 20,
             child: Row(
               children: [
                 if (token != null) ...[
                   Container(
+                    key: const ValueKey('launcher category token'),
                     height: tokenHeight,
-                    padding: const EdgeInsets.only(left: 6, right: 11),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: _c.selection,
-                      borderRadius: BorderRadius.all(
-                        Radius.circular(tokenRadius),
-                      ),
+                      borderRadius: BorderRadius.circular(tokenRadius),
                     ),
                     child: Text(
                       categoryLabel(l10nOf(context), token),
-                      style: uiText(size: 26, color: _c.tokenText),
+                      style: AmalfiType.title3(color: _c.text),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -570,17 +547,15 @@ class LauncherState extends State<Launcher>
                     children: [
                       if (_query.text.isEmpty && token == null)
                         IgnorePointer(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 2),
-                            child: Text(
-                              l10nOf(context).launcherPlaceholder,
-                              style: uiText(size: 26, color: _c.placeholder),
-                            ),
+                          child: Text(
+                            l10nOf(context).launcherPlaceholder,
+                            maxLines: 1,
+                            style: AmalfiType.field(color: _c.placeholder),
                           ),
                         ),
                       if (completion != null)
                         Positioned(
-                          left: typed + 1,
+                          left: typed - 2,
                           top: 0,
                           bottom: 0,
                           child: IgnorePointer(
@@ -588,23 +563,20 @@ class LauncherState extends State<Launcher>
                               child: Container(
                                 height: completionHeight,
                                 padding: const EdgeInsets.only(
-                                  left: 1,
-                                  right: 6,
+                                  left: 4,
+                                  right: 1,
                                 ),
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
-                                  color: _c.completionFill,
-                                  borderRadius: BorderRadius.all(
-                                    Radius.circular(completionRadius),
+                                  color: _c.completion,
+                                  borderRadius: BorderRadius.circular(
+                                    completionRadius,
                                   ),
                                 ),
                                 child: Text(
                                   l10nOf(context).completionOpen(completion),
                                   maxLines: 1,
-                                  style: uiText(
-                                    size: 26,
-                                    color: _c.completionText,
-                                  ),
+                                  style: fieldStyle,
                                 ),
                               ),
                             ),
@@ -613,10 +585,10 @@ class LauncherState extends State<Launcher>
                       EditableText(
                         controller: _query,
                         focusNode: _focus,
-                        style: uiText(size: 26, color: _c.text),
+                        style: fieldStyle,
                         cursorColor: _c.text,
                         cursorWidth: 2,
-                        cursorHeight: 31,
+                        cursorHeight: 28,
                         backgroundCursorColor: const Color(0x00000000),
                       ),
                     ],
@@ -627,19 +599,24 @@ class LauncherState extends State<Launcher>
           ),
           if (preview != null)
             Positioned(
-              right: previewRight,
-              top: (launcherHeader - previewSide) / 2,
+              right: 64,
+              top: 14,
               width: previewSide,
               height: previewSide,
               child: SilicaIcon(preview, side: previewSide, dark: false),
             ),
-          // "…": three 4 × 3 dots at a 7 pitch, the last one 23 pt from the right edge.
+          // "…": the view menu (grid or list), 20 pt, 24 from the right edge.
           Positioned(
-            right: 23,
-            top: (launcherHeader - 3) / 2,
-            width: 18,
-            height: 3,
-            child: CustomPaint(painter: _DotsPainter(_c.placeholder)),
+            left: width - 44,
+            top: 18,
+            width: 20,
+            height: 20,
+            child: GestureDetector(
+              key: const ValueKey('launcher more'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _menu = !_menu),
+              child: AmalfiSymbol('ellipsis', size: 20, color: _c.subtitle),
+            ),
           ),
         ],
       ),
@@ -647,54 +624,48 @@ class LauncherState extends State<Launcher>
   }
 
   Widget _categories() {
-    // Names longer than expected (other languages): the row shrinks instead of overflowing.
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: _categoryRow(),
-    );
-  }
-
-  Widget _categoryRow() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final (i, name) in categoryNames.indexed) ...[
-          if (i > 0) const SizedBox(width: categoryGap),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => chooseCategory(name),
-            child: Container(
-              height: categoryHeight,
-              constraints: const BoxConstraints(minWidth: categoryMinWidth),
-              padding: const EdgeInsets.symmetric(horizontal: categoryPadding),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _c.categoryFill,
-                borderRadius: const BorderRadius.all(
-                  Radius.circular(categoryRadius),
+    // Capsules at their natural width; more than fit (other languages, list mode) scroll
+    // sideways.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (i, name) in categoryNames.indexed) ...[
+            if (i > 0) const SizedBox(width: categoryGap),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => chooseCategory(name),
+              child: Container(
+                height: categoryHeight,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: categoryPadding,
+                ),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _c.pill,
+                  borderRadius: BorderRadius.circular(categoryRadius),
+                ),
+                child: Text(
+                  categoryLabel(l10nOf(context), name),
+                  maxLines: 1,
+                  style: AmalfiType.callout(color: _c.text),
                 ),
               ),
-              child: Text(
-                categoryLabel(l10nOf(context), name),
-                maxLines: 1,
-                style: uiText(size: categoryText, color: _c.categoryText),
-              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
-  Widget _grid(
+  Widget _area(
     List<DesktopEntry> apps,
     List<DesktopEntry> recents,
+    GridLayout layout,
     double areaHeight, {
     required bool ringFirst,
   }) {
-    final layout = GridLayout(recents: recents.length, apps: apps.length);
-    final contentHeight = layout.height;
     final children = <Widget>[
       for (final (i, entry) in recents.indexed)
         _cell(entry, layout.recentCell(i), ring: false),
@@ -702,54 +673,87 @@ class LauncherState extends State<Launcher>
         Positioned(
           left: launcherMargin,
           top: layout.separatorY,
-          width: gridColumns * cellWidth,
+          right: launcherMargin,
           height: 1,
-          child: ColoredBox(color: _c.selection),
+          child: ColoredBox(color: _c.separator),
         ),
       for (final (i, entry) in apps.indexed)
-        _cell(entry, layout.cell(i), ring: ringFirst && i == 0),
+        if (widget.list)
+          _row(entry, layout.rowY(i), i == _selected, i)
+        else
+          _cell(entry, layout.cell(i), ring: ringFirst && i == 0),
     ];
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: ScrollConfiguration(
-            behavior: const _NoBars(),
-            child: SingleChildScrollView(
-              controller: _scroll,
-              child: SizedBox(
-                height: contentHeight,
-                child: Stack(clipBehavior: Clip.none, children: children),
+    return AmalfiScrollbar(
+      child: ScrollConfiguration(
+        behavior: const _NoBars(),
+        child: SingleChildScrollView(
+          controller: _scroll,
+          child: SizedBox(
+            height: layout.height,
+            child: Stack(clipBehavior: Clip.none, children: children),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A row of the list mode (`Apps/Faro/Row One Image`): icon 32 at x 20, title at x 64,
+  /// the chosen row inset 8, radius 16.
+  Widget _row(DesktopEntry entry, double top, bool selected, int index) {
+    final icon = iconOf(entry);
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: top,
+      height: listRowHeight,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _selected = index),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onLaunch(entry),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: selected ? _c.selection : null,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: icon == null
+                        ? null
+                        : SilicaIcon(icon, side: 32, dark: false),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      entry.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AmalfiType.bodyEmphasis(color: _c.text),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        Positioned(
-          right: scrollbarRight,
-          top: scrollbarTop,
-          width: scrollbarWidth,
-          bottom: scrollbarBottom,
-          child: CustomPaint(
-            painter: LauncherScrollbar(
-              track: _c.track,
-              thumbColor: _c.thumb,
-              visible: areaHeight,
-              content: contentHeight,
-              offset: _scroll.hasClients ? _scroll.offset : 0,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _cell(DesktopEntry entry, Offset at, {required bool ring}) {
     final icon = iconOf(entry);
-    final iconLeft = (cellWidth - gridIcon) / 2;
+    final cell = widget.list ? listCellWidth : cellWidth;
     return Positioned(
       left: at.dx,
       top: at.dy,
-      width: cellWidth,
-      height: cellHeight,
+      width: cell,
+      height: gridLabelTop + gridLabelHeight,
       child: GestureDetector(
         // The whole cell: an image icon is not hit-testable by itself, and a click on it
         // would fall through to the backdrop and close the panel without opening the app.
@@ -760,22 +764,20 @@ class LauncherState extends State<Launcher>
           children: [
             if (ring)
               Positioned(
-                left: iconLeft - ringWidth,
-                top: gridIconTop - ringWidth,
+                left: gridIconX - ringWidth,
+                top: -ringWidth,
                 width: gridIcon + 2 * ringWidth,
                 height: gridIcon + 2 * ringWidth,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(color: _c.ring, width: ringWidth),
-                    borderRadius: const BorderRadius.all(
-                      Radius.circular(ringRadius),
-                    ),
+                    border: Border.all(color: _c.selection, width: ringWidth),
+                    borderRadius: BorderRadius.circular(ringRadius),
                   ),
                 ),
               ),
             Positioned(
-              left: iconLeft,
-              top: gridIconTop,
+              left: gridIconX,
+              top: 0,
               width: gridIcon,
               height: gridIcon,
               child: icon == null
@@ -783,16 +785,16 @@ class LauncherState extends State<Launcher>
                   : SilicaIcon(icon, side: gridIcon, dark: false),
             ),
             Positioned(
-              left: (cellWidth - gridLabelWidth) / 2,
+              left: 0,
               top: gridLabelTop,
-              width: gridLabelWidth,
+              width: cellWidth,
               height: gridLabelHeight,
               child: Text(
                 entry.name,
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: uiText(size: gridLabelSize, color: _c.text),
+                style: AmalfiType.callout(color: _c.text),
               ),
             ),
           ],
@@ -829,81 +831,68 @@ double categoryFade(double ms) {
   return 1;
 }
 
-/// Where the cells are in the scroll area.
+/// Where the cells and rows are, in the scroll area (below the header, or below the
+/// category capsules when browsing). All values are those of the kit masters, in panel
+/// coordinates, shifted by the area's top.
 class GridLayout {
-  const GridLayout({required this.recents, required this.apps});
+  const GridLayout({
+    required this.recents,
+    required this.apps,
+    this.list = false,
+    this.browsing = true,
+  });
 
   final int recents;
   final int apps;
+  final bool list;
 
-  double get _listTop =>
-      recents == 0 ? gridTop : gridTop + cellHeight + recentGap + recentAfter;
+  /// No category and no text: the capsules show and the recents come first.
+  final bool browsing;
 
-  double get separatorY => gridTop + cellHeight + recentGap;
+  /// The area's top in the panel: below the capsules when browsing, else below the
+  /// separator.
+  double get areaTop =>
+      browsing ? categoryTop + categoryHeight : launcherHeader + 1;
 
-  Offset recentCell(int i) => Offset(launcherMargin + i * cellWidth, gridTop);
+  double get _recentTop => list ? listRecentTop : browsingIconTop;
 
-  Offset cell(int i) => Offset(
-    launcherMargin + (i % gridColumns) * cellWidth,
-    _listTop + (i ~/ gridColumns) * rowPitch,
+  /// The separator under the recents.
+  double get separatorY => (list ? listSeparatorY : recentSeparatorY) - areaTop;
+
+  /// Top of the first icon of the grid, or of the first row of the list (panel coordinates).
+  double get _listTop {
+    if (list) {
+      return !browsing
+          ? listPlainTop
+          : recents == 0
+          ? _recentTop
+          : listRowsTop;
+    }
+    return !browsing
+        ? plainIconTop
+        : recents == 0
+        ? browsingIconTop
+        : recentListTop;
+  }
+
+  Offset recentCell(int i) => Offset(
+    list ? launcherMargin + i * listCellWidth : cellOriginX + i * cellWidth,
+    _recentTop - areaTop,
   );
 
+  Offset cell(int i) => Offset(
+    cellOriginX + (i % gridColumns) * cellWidth,
+    _listTop - areaTop + (i ~/ gridColumns) * rowPitch,
+  );
+
+  double rowY(int i) => _listTop - areaTop + i * listRowHeight;
+
   double get height {
+    if (list) return rowY(apps) + 8;
     final rows = (apps + gridColumns - 1) ~/ gridColumns;
-    return rows == 0
-        ? _listTop
-        : _listTop + (rows - 1) * rowPitch + cellHeight + gridTop;
+    final last = rows == 0 ? _listTop : _listTop + (rows - 1) * rowPitch;
+    return last - areaTop + gridLabelTop + gridLabelHeight + 24;
   }
-}
-
-/// The scroll bar: always the track, the thumb only if the content does not fit.
-class LauncherScrollbar extends CustomPainter {
-  const LauncherScrollbar({
-    required this.visible,
-    required this.content,
-    required this.offset,
-    this.track = scrollTrack,
-    this.thumbColor = scrollThumb,
-  });
-
-  final Color track;
-  final Color thumbColor;
-
-  final double visible;
-  final double content;
-  final double offset;
-
-  /// The thumb in a track `track` tall, or null if not needed.
-  Rect? thumb(double track) {
-    if (content <= visible || track <= 0) return null;
-    final height = (track * visible / content).clamp(scrollbarWidth, track);
-    final travel = track - height;
-    final top = travel * (offset / (content - visible)).clamp(0.0, 1.0);
-    return Rect.fromLTWH(0, top, scrollbarWidth, height);
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const radius = Radius.circular(scrollbarWidth / 2);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = track,
-    );
-    if (thumb(size.height) case final rect?) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, radius),
-        Paint()..color = thumbColor,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(LauncherScrollbar old) =>
-      old.visible != visible ||
-      old.content != content ||
-      old.offset != offset ||
-      old.track != track ||
-      old.thumbColor != thumbColor;
 }
 
 class _NoBars extends ScrollBehavior {
@@ -915,57 +904,4 @@ class _NoBars extends ScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) => child;
-}
-
-class _DotsPainter extends CustomPainter {
-  const _DotsPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    for (var i = 0; i < 3; i++) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(i * 7.0, 0, 4, 3),
-          const Radius.circular(1.5),
-        ),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DotsPainter old) => old.color != color;
-}
-
-/// The apps glyph: four rounded squares.
-class AppsGlyphPainter extends CustomPainter {
-  const AppsGlyphPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final w = (size.width - 6) / 2;
-    final h = (size.height - 6) / 2;
-    for (final dx in [1.0, w + 5]) {
-      for (final dy in [1.0, h + 5]) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(dx, dy, w, h),
-            const Radius.circular(3),
-          ),
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(AppsGlyphPainter old) => old.color != color;
 }

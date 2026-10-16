@@ -1,7 +1,9 @@
-// Faro, the app search: from plan/reference/spotlight.md (light appearance). A thick glass
-// panel, centered, with its top at 30 % of the screen; a 56 pt header with the lens and the
-// field; empty: 384 pt wide with four 54 pt round buttons (64 pitch); with results: 640 pt
-// wide, 57 pt rows, at most 467 pt tall.
+// Faro, the search panel, on the Amalfi kit (`Apps/Faro/*`; docs/design/amalfi/components.md ›
+// Faro). Thick glass, centred, its top at 30 % of the screen and never wider than 640 pt: a
+// 640 × 56 capsule (radius 28) with the magnifier at x 20 and the field at x 56; after the
+// pointer enters the empty bar it is 384 pt wide with four 56 pt round buttons beside it;
+// with results a panel 640 wide, header 56, filter row 40, rows 56, at most 440 pt tall; the
+// Files and Actions scopes are 544 pt tall.
 //
 // The component always runs on a full-screen overlay layer: when closed it draws nothing
 // and takes neither pointer nor keyboard (silica/layer).
@@ -55,16 +57,15 @@ double panelLeft(Size screen, double width, double devicePixelRatio) =>
     ((screen.width - width) / 2 * devicePixelRatio).roundToDouble() /
     devicePixelRatio;
 const double headerHeight = 56;
-const double rowHeight = 57;
+const double rowHeight = 56;
 
-/// App icon in the row: ~38–39 pt visible (spotlight.md).
-const double rowIconSide = 38;
-const double maxHeight = 467;
-const double radius = 28.5;
+/// App icon in the row: 32 pt at x 20.
+const double rowIconSide = 32;
+const double maxHeight = 440;
+const double radius = AmalfiRadii.faroAndLauncher;
 
-/// The files scope: 640 x 547 pt, a grid of 5 columns (the header, a 1 pt separator and
-/// 490 pt of cells).
-const double filesHeight = 547;
+/// The Files and Actions scopes: 640 x 544 pt (the header and 488 pt below it).
+const double filesHeight = 544;
 const int filesColumns = 5;
 const double gridInset = 10;
 const double gridCell = 104;
@@ -72,18 +73,34 @@ const double gridCell = 104;
 /// The heading above the first action of an app in the actions scope.
 const double sectionHeight = 28;
 
-/// Round buttons of the empty state: diameter 54, pitch 64, 10 pt from the panel.
-const double circle = 54;
+/// The actions scope's footer (a separator at 504 and a caption).
+const double scopeFooterHeight = 40;
+
+/// Round buttons of the empty state: diameter 56, pitch 64, 8 pt from the bar.
+const double circle = 56;
 const double circlePitch = 64;
+const double circleGap = 8;
 
-const Color placeholderColor = Color(0xFF494A4F);
-const Color textColor = Color(0xFF16171C);
-const Color selectedTextColor = Color(0xFF000003);
-const Color subtitleColor = Color(0xFF88898E);
+/// The panel's drop shadow: the kit's `Shadow/3`, drawn outside the glass.
+class PanelShadow extends StatelessWidget {
+  const PanelShadow({super.key, required this.radius, required this.child});
 
-/// Selected row and separator: `#afb0b5` over the `#c8c9ce` fill (−25 levels): black at
-/// ~12 %, so it follows the material over different backgrounds.
-const Color selection = Color(0x20000000);
+  final double radius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final shadow = FaroColors.of(context).shadow;
+    return OuterShadow(
+      radius: radius,
+      // The kit's CSS blur has σ = blur / 2; OuterShadow takes a Skia blur radius.
+      blurRadius: (shadow.blurRadius / 2 - 0.5) / 0.57735,
+      offset: shadow.offset,
+      color: shadow.color,
+      child: child,
+    );
+  }
+}
 
 class Faro extends StatefulWidget {
   const Faro({
@@ -163,26 +180,27 @@ List<FaroItem> faroItems(
   ];
 }
 
-/// Answer card (SH-SP-13/14): 18 pt from the panel sides, 1 pt under the field, 62 tall
-/// with a 2 pt border, radius 18; the separator 9 pt under it.
-const double cardInset = 18;
-const double cardHeight = 62;
-const double cardRadius = 18;
+/// Answer card (`Apps/Faro/Calculation`): 20 pt from the panel sides, 8 under the header,
+/// 84 tall, radius 16, `Surface/Sunken`; 4 pt of space under it.
+const double cardInset = 20;
+const double cardBefore = 8;
+const double cardHeight = 84;
+const double cardRadius = 16;
 const double cardBorder = 2;
-const double cardAfter = 9;
+const double cardAfter = 4;
 
-/// Copy button in the card: a 26 pt disc.
-const double copySide = 26;
+/// Copy button in the card: the 28 pt round icon button.
+const double copySide = 28;
 
-/// The result list has 10 pt above the first row and below the last (INV-A3).
-const double listPadding = 10;
+/// The result list: rows start right under the header or the filter row, and end with 8 pt.
+const double listPadding = 8;
 
 /// The icon of the app handling the chosen row, at the right of the field.
-const double fieldIconSide = 26;
-const double fieldIconRight = 24;
+const double fieldIconSide = 28;
+const double fieldIconRight = 20;
 
-/// The filter row over the results: 47 pt (10 above the pills, 26, 11 below).
-const double filterHeight = 47;
+/// The filter row over the results: 40 pt (pills 24 tall from 8 under the header).
+const double filterHeight = 40;
 
 class _Pill {
   const _Pill(this.label, {required this.onTap, this.selected = false});
@@ -195,10 +213,9 @@ class _Pill {
 /// reference's list threshold, 5 pt in the sidebar).
 const double dragThreshold = 5;
 
-/// "Tab" key capsule on the chosen folder row: 18 tall, radius 5.5, 10 pt from the row's
-/// right edge; the hint before it at ~11 pt.
-const double keycapHeight = 18;
-const double keycapRadius = 5.5;
+/// "Tab" key capsule on the chosen folder row: 20 tall, radius 10, 20 pt from the row's end.
+const double keycapHeight = 20;
+const double keycapRadius = 10;
 
 class _FaroState extends State<Faro>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -215,6 +232,9 @@ class _FaroState extends State<Faro>
   String _regionKey = '';
   bool _visible = false;
   bool _launcher = false;
+
+  /// The Launcher's list mode (the "…" menu's choice), kept while Faro runs.
+  bool _launcherList = false;
 
   /// The pointer is on the 640 pt frame of the empty panel: the round buttons come out.
   bool _hovered = false;
@@ -895,25 +915,36 @@ class _FaroState extends State<Faro>
     final pillsBlock = pills.isEmpty ? 0.0 : filterHeight;
     final count = items.length + (answer == null ? 0 : 1);
     final selected = count == 0 ? 0 : _selected.clamp(0, count - 1);
-    final cardBlock = answer == null ? 0.0 : 1 + cardHeight + cardAfter;
+    final cardBlock = answer == null
+        ? 0.0
+        : cardBefore + cardHeight + cardAfter;
     final grid = _scope == FaroScope.files;
-    final headings = _scope == FaroScope.actions
-        ? _headings(items)
-        : const <int, String>{};
+    final actionsScope = _scope == FaroScope.actions;
+    final headings = actionsScope ? _headings(items) : const <int, String>{};
+    // Files and Actions are 544 tall, the list scrolling inside; the rest is as tall as its
+    // rows (at most 440).
     final listHeight = grid
-        ? filesHeight - headerHeight - 1
+        ? filesHeight - headerHeight
+        : actionsScope
+        ? filesHeight - headerHeight - scopeFooterHeight
         : items.isEmpty
         ? 0.0
         : (items.length * rowHeight +
                   headings.length * sectionHeight +
-                  2 * listPadding)
-              .clamp(
-                0.0,
-                maxHeight - headerHeight - cardBlock - pillsBlock - 1,
-              );
-    final shows = grid || searching && (items.isNotEmpty || answer != null);
+                  listPadding)
+              .clamp(0.0, maxHeight - headerHeight - cardBlock - pillsBlock);
+    final shows =
+        grid ||
+        actionsScope ||
+        searching && (items.isNotEmpty || answer != null);
     _followHeight(
-      headerHeight + (shows ? cardBlock + 1 + pillsBlock + listHeight : 0),
+      headerHeight +
+          (shows
+              ? cardBlock +
+                    pillsBlock +
+                    listHeight +
+                    (actionsScope ? scopeFooterHeight : 0)
+              : 0),
     );
     final height = _height.value;
     final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
@@ -940,9 +971,10 @@ class _FaroState extends State<Faro>
         var panelRadius = radius;
         if (back < 1) {
           double lerp(double a, double b) => a + (b - a) * back;
-          left = lerp(panelLeft(screen, launcherWidth, dpr), left);
-          panelWidth = lerp(launcherWidth, width);
-          panelHeight = lerp(launcherHeight, height);
+          final big = launcherSize(list: _launcherList);
+          left = lerp(panelLeft(screen, big.width, dpr), left);
+          panelWidth = lerp(big.width, width);
+          panelHeight = lerp(big.height, height);
           panelRadius = lerp(launcherRadius, radius);
         }
         _syncRegion([
@@ -993,7 +1025,7 @@ class _FaroState extends State<Faro>
                           left:
                               -circle +
                               (narrowWidth +
-                                      10 +
+                                      circleGap +
                                       i * circlePitch -
                                       width +
                                       circle) *
@@ -1067,12 +1099,12 @@ class _FaroState extends State<Faro>
   }) {
     final offset = answer == null ? 0 : 1;
     final grid = _scope == FaroScope.files;
-    return OuterShadow(
-      // Shadow moved down (~20 pt): it extends ~65 pt below, ~25 above, ~45 at the sides.
+    final actionsScope = _scope == FaroScope.actions;
+    final l = l10nOf(context);
+    // The separator under the header (kit: y 55, 20 pt inset) when something shows below.
+    final body = items.isNotEmpty || answer != null || grid || actionsScope;
+    return PanelShadow(
       radius: panelRadius,
-      blurRadius: 42,
-      offset: const Offset(0, 20),
-      color: _c.shadow(const Color(0x40000000)),
       child: ProfiledGlass(
         profile: ShellGlassProfile.panel,
         radius: panelRadius,
@@ -1086,62 +1118,101 @@ class _FaroState extends State<Faro>
               children: [
                 SizedBox(
                   height: headerHeight,
-                  child: _field(answer, items, selected),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(child: _field(answer, items, selected)),
+                      if (body)
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 0,
+                          height: 1,
+                          child: ColoredBox(color: _c.separator),
+                        ),
+                    ],
+                  ),
                 ),
                 if (answer != null) ...[
-                  const SizedBox(height: 1),
+                  const SizedBox(height: cardBefore),
                   _card(answer, selected == 0),
                   const SizedBox(height: cardAfter),
                 ],
-                if (items.isNotEmpty || answer != null || grid)
-                  Container(
-                    height: 1,
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    color: _c.selection,
-                  ),
                 if (pills.isNotEmpty) _filterRow(pills),
                 if (grid)
                   SizedBox(
                     height: listHeight,
-                    child: GridView.builder(
-                      key: const ValueKey('faro files grid'),
-                      padding: const EdgeInsets.all(gridInset),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: filesColumns,
-                            mainAxisExtent: gridCell,
-                          ),
-                      itemCount: items.length,
-                      itemBuilder: (context, i) =>
-                          _cell(items[i], i + offset == selected),
+                    child: AmalfiScrollbar(
+                      child: GridView.builder(
+                        key: const ValueKey('faro files grid'),
+                        padding: const EdgeInsets.all(gridInset),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: filesColumns,
+                              mainAxisExtent: gridCell,
+                            ),
+                        itemCount: items.length,
+                        itemBuilder: (context, i) =>
+                            _cell(items[i], i + offset == selected),
+                      ),
                     ),
                   )
                 else if (items.isNotEmpty)
                   SizedBox(
                     height: listHeight,
-                    child: ListView.builder(
-                      // Rows are 619 pt cells 2 pt from the left edge; the rest
-                      // is the scroll bar's (spotlight.md › result rows).
-                      padding: const EdgeInsets.fromLTRB(
-                        2,
-                        listPadding,
-                        19,
-                        listPadding,
+                    child: AmalfiScrollbar(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(bottom: listPadding),
+                        itemExtentBuilder: (i, _) =>
+                            rowHeight +
+                            (headings.containsKey(i) ? sectionHeight : 0),
+                        itemCount: items.length,
+                        itemBuilder: (context, i) {
+                          final row = SizedBox(
+                            height: rowHeight,
+                            child: _row(items[i], i + offset == selected),
+                          );
+                          final heading = headings[i];
+                          return heading == null
+                              ? row
+                              : Column(children: [_heading(heading), row]);
+                        },
                       ),
-                      itemExtentBuilder: (i, _) =>
-                          rowHeight +
-                          (headings.containsKey(i) ? sectionHeight : 0),
-                      itemCount: items.length,
-                      itemBuilder: (context, i) {
-                        final row = SizedBox(
-                          height: rowHeight,
-                          child: _row(items[i], i + offset == selected),
-                        );
-                        final heading = headings[i];
-                        return heading == null
-                            ? row
-                            : Column(children: [_heading(heading), row]);
-                      },
+                    ),
+                  ),
+                if (actionsScope)
+                  SizedBox(
+                    height: scopeFooterHeight,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          top: 0,
+                          height: 1,
+                          child: ColoredBox(color: _c.separator),
+                        ),
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          top: 1,
+                          bottom: 0,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              key: const ValueKey('faro actions footer'),
+                              items.length <= _actionsVisible
+                                  ? l.faroActionsFooter(items.length)
+                                  : l.faroActionsFooterMore(
+                                      _actionsVisible,
+                                      items.length,
+                                    ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AmalfiType.caption(color: _c.subtitle),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -1151,6 +1222,10 @@ class _FaroState extends State<Faro>
       ),
     );
   }
+
+  /// Rows that fit in the actions scope's list (448 pt of 56).
+  static const int _actionsVisible =
+      (filesHeight - headerHeight - scopeFooterHeight) ~/ rowHeight;
 
   /// The text completed inline in the field for the chosen row, and the icon at the right
   /// of the field (the app that handles it).
@@ -1263,6 +1338,11 @@ class _FaroState extends State<Faro>
     };
   }
 
+  /// What the field says in a scope: its name, or "Search in <folder>" inside a folder.
+  String get _scopeLabel => _scope == FaroScope.files && _underName != null
+      ? l10nOf(context).faroSearchIn(_underName!)
+      : _scopeName(_scope);
+
   String _scopeName(FaroScope scope) {
     final l = l10nOf(context);
     return switch (scope) {
@@ -1290,120 +1370,101 @@ class _FaroState extends State<Faro>
     return flat == null ? null : FlatSource(flat);
   }
 
+  /// The Icon Kit glyph of a scope (the round buttons and the field's leading glyph).
+  static String _scopeSymbol(FaroScope scope) => switch (scope) {
+    FaroScope.all => 'search',
+    FaroScope.files => 'folder',
+    FaroScope.actions => 'bolt',
+    FaroScope.clipboard => 'clipboard',
+  };
+
   Widget _field(FaroAnswer? answer, List<FaroItem> items, int selected) {
     final (completion, preview) = _completion(answer, items, selected);
     // While the reopened query is selected the completion waits for typing.
     final hasSelection =
         _query.selection.isValid && !_query.selection.isCollapsed;
     final shown = hasSelection ? null : completion;
+    final fieldStyle = AmalfiType.field(color: _c.text);
     final typed = shown == null
         ? 0.0
         : (TextPainter(
-            text: TextSpan(
-              text: _query.text,
-              style: uiText(size: 26, color: _c.text),
-            ),
+            text: TextSpan(text: _query.text, style: fieldStyle),
             textDirection: TextDirection.ltr,
           )..layout()).width;
     final icon = _query.text.isEmpty ? null : preview;
+    final scoped = _scope != FaroScope.all;
     return Focus(
       onKeyEvent: (node, event) => _key(node, event, answer, items),
       child: Stack(
         children: [
-          Positioned.fill(
-            child: Row(
+          // The magnifier; inside a scope it is the scope's glyph and goes back to all.
+          Positioned(
+            left: 20,
+            top: 16,
+            width: 24,
+            height: 24,
+            child: GestureDetector(
+              key: scoped ? const ValueKey('faro scope token') : null,
+              behavior: HitTestBehavior.opaque,
+              onTap: scoped ? () => _setScope(FaroScope.all) : null,
+              child: AmalfiSymbol(
+                _scopeSymbol(_scope),
+                size: 24,
+                color: _c.subtitle,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 56,
+            top: 0,
+            bottom: 0,
+            right: icon == null ? 20 : fieldIconSide + 2 * fieldIconRight,
+            child: Stack(
+              alignment: Alignment.centerLeft,
               children: [
-                const SizedBox(width: 23),
-                CustomPaint(
-                  size: const Size(23, 23),
-                  painter: _LensPainter(_c.placeholder),
-                ),
-                const SizedBox(width: 16),
-                // The scope as a token, like the Launcher's category (PROVISIONAL size: the
-                // Launcher's 31 pt token).
-                if (_scope != FaroScope.all) ...[
-                  GestureDetector(
-                    onTap: () => _setScope(FaroScope.all),
-                    child: Container(
-                      key: const ValueKey('faro scope token'),
-                      height: tokenHeight,
-                      padding: const EdgeInsets.only(left: 6, right: 11),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: _c.selection,
-                        borderRadius: const BorderRadius.all(
-                          Radius.circular(tokenRadius),
-                        ),
-                      ),
-                      child: Text(
-                        _scopeName(_scope),
-                        maxLines: 1,
-                        style: uiText(size: 26, color: _c.tokenText),
+                if (_query.text.isEmpty)
+                  IgnorePointer(
+                    child: Text(
+                      // In a scope the placeholder is the scope's name.
+                      scoped ? _scopeLabel : _placeholder,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AmalfiType.field(
+                        color: scoped ? _c.text : _c.placeholder,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Stack(
-                    alignment: Alignment.centerLeft,
-                    children: [
-                      if (_query.text.isEmpty)
-                        IgnorePointer(
-                          child: Text(
-                            _placeholder,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: uiText(size: 26, color: _c.placeholder),
-                          ),
-                        ),
-                      if (shown != null)
-                        Positioned(
-                          left: typed + 1,
-                          top: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: Center(
-                              child: Container(
-                                height: completionHeight,
-                                padding: const EdgeInsets.only(
-                                  left: 1,
-                                  right: 6,
-                                ),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: _c.completionFill,
-                                  borderRadius: const BorderRadius.all(
-                                    Radius.circular(completionRadius),
-                                  ),
-                                ),
-                                child: Text(
-                                  shown,
-                                  maxLines: 1,
-                                  style: uiText(
-                                    size: 26,
-                                    color: _c.completionText,
-                                  ),
-                                ),
-                              ),
+                if (shown != null)
+                  Positioned(
+                    left: typed - 2,
+                    top: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          height: completionHeight,
+                          padding: const EdgeInsets.only(left: 4, right: 1),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _c.completion,
+                            borderRadius: BorderRadius.circular(
+                              completionRadius,
                             ),
                           ),
+                          child: Text(shown, maxLines: 1, style: fieldStyle),
                         ),
-                      EditableText(
-                        controller: _query,
-                        focusNode: _focus,
-                        style: uiText(size: 26, color: _c.text),
-                        cursorColor: _c.text,
-                        cursorWidth: 2,
-                        cursorHeight: 31,
-                        selectionColor: _c.completionFill,
-                        backgroundCursorColor: const Color(0x00000000),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                SizedBox(
-                  width: icon == null ? 23 : fieldIconSide + 2 * fieldIconRight,
+                EditableText(
+                  controller: _query,
+                  focusNode: _focus,
+                  style: fieldStyle,
+                  cursorColor: _c.text,
+                  cursorWidth: 2,
+                  cursorHeight: 28,
+                  selectionColor: _c.completion,
+                  backgroundCursorColor: const Color(0x00000000),
                 ),
               ],
             ),
@@ -1421,19 +1482,19 @@ class _FaroState extends State<Faro>
     );
   }
 
-  /// The answer card: the expression small on top, the result below, the copy button on
-  /// the right (SH-SP-13).
+  /// The answer card (`Apps/Faro/Calculation`): the expression small on top (Callout,
+  /// secondary), the result below (Title 1), the copy button on the right.
   Widget _card(FaroAnswer answer, bool selected) => Container(
     height: cardHeight,
     margin: const EdgeInsets.symmetric(horizontal: cardInset),
-    padding: const EdgeInsets.only(left: 16, right: 14),
+    padding: const EdgeInsets.only(left: 20, right: 20),
     decoration: BoxDecoration(
-      color: _c.selection,
+      color: _c.sunken,
       border: Border.all(
-        color: selected ? _c.cardBorder : const Color(0x00000000),
+        color: selected ? _c.selection : const Color(0x00000000),
         width: cardBorder,
       ),
-      borderRadius: const BorderRadius.all(Radius.circular(cardRadius)),
+      borderRadius: BorderRadius.circular(cardRadius),
     ),
     child: Row(
       children: [
@@ -1446,43 +1507,63 @@ class _FaroState extends State<Faro>
                 answer.expression,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: uiText(size: 11, color: _c.text),
+                style: AmalfiType.callout(color: _c.subtitle),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 6),
               Text(
                 answer.result,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: uiText(size: 16.5, color: _c.selectedText),
+                style: AmalfiType.title1(color: _c.text),
               ),
             ],
           ),
         ),
-        Semantics(
-          button: true,
-          label: l10nOf(context).faroCopy,
-          child: GestureDetector(
-            onTap: () => _copy(answer),
-            child: Container(
-              width: copySide,
-              height: copySide,
-              decoration: BoxDecoration(
-                color: _c.copyFill,
-                shape: BoxShape.circle,
-              ),
-              child: CustomPaint(painter: _CopyGlyphPainter(_c.text)),
-            ),
-          ),
+        AmalfiIconButton(
+          semanticLabel: l10nOf(context).faroCopy,
+          onPressed: () => _copy(answer),
+          icon: const AmalfiSymbol('copy', size: 16),
         ),
       ],
     ),
   );
 
+  /// A 32 pt tile with a 20 pt Icon Kit glyph (`Apps/Faro/Row * Glyph`).
+  Widget _glyphTile(String symbol) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: _c.sunken,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Center(child: AmalfiSymbol(symbol, size: 20, color: _c.subtitle)),
+  );
+
+  /// The Icon Kit glyph of a system action.
+  static String _actionSymbol(String id) => switch (id) {
+    'screenshot.selection' => 'crop',
+    final i when i.startsWith('screenshot.') => 'camera',
+    'system.dark_toggle' => 'moon',
+    'system.mute_toggle' => 'volume-slash',
+    'system.volume_up' => 'volume-2',
+    'system.volume_down' => 'volume-1',
+    'system.brightness_up' => 'sun',
+    'system.brightness_down' => 'sun-min',
+    final i when i.startsWith('panorama.') => 'window-stack',
+    'desktop.show' => 'desktop',
+    final i when i.startsWith('space.') => 'square-stack',
+    'launcher.toggle' => 'square-grid-2x2',
+    'notifications.toggle' => 'bell',
+    'controlcenter.toggle' => 'sliders',
+    final i when i.startsWith('window.arrange') => 'window-split-3',
+    final i when i.startsWith('window.tile') => 'window-split',
+    final i when i.startsWith('window.') => 'window',
+    'app.force_quit_panel' => 'xmark',
+    'session.quit' => 'power',
+    _ => 'bolt',
+  };
+
   Widget _row(FaroItem item, bool selected) {
     final l = l10nOf(context);
-    final subtitleStyle = uiText(size: 15, color: _c.subtitle);
-    Widget glyph(int index) =>
-        CustomPaint(painter: _CircleGlyphPainter(index, _c.placeholder));
+    final subtitleStyle = AmalfiType.caption(color: _c.subtitle);
     final (
       IconSource? icon,
       Widget? leading,
@@ -1512,15 +1593,15 @@ class _FaroState extends State<Faro>
           final e? => _icon(e),
           null => null,
         },
-        CustomPaint(painter: _FallbackGlyphPainter(kind, _c.placeholder)),
+        _glyphTile(kind == FallbackKind.files ? 'folder' : 'globe'),
         _fallbackLabel(kind),
         null,
       ),
       ActionItem(:final action) => (
         null,
-        glyph(2),
+        _glyphTile(_actionSymbol(action.id)),
         _actionLabel(action),
-        Text(l.faroSystemAction, style: subtitleStyle),
+        null,
       ),
       AppActionItem(:final entry, :final action) => (
         _icon(entry),
@@ -1534,20 +1615,31 @@ class _FaroState extends State<Faro>
             : null,
         switch (clip.kind) {
           ClipKind.image when clip.image != null => ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
             child: Image.file(
               File(clip.image!),
-              width: 38,
-              height: 38,
+              width: rowIconSide,
+              height: rowIconSide,
               fit: BoxFit.cover,
             ),
           ),
-          _ => glyph(3),
+          _ => _glyphTile(
+            clip.kind == ClipKind.image
+                ? 'photo'
+                : clip.title.startsWith('http')
+                ? 'link'
+                : 'doc-text',
+          ),
         },
         clip.kind == ClipKind.image ? l.faroImage : clip.title,
         Text(l.faroCopied(_when(clip.time)), style: subtitleStyle),
       ),
-      ClearClipboardItem() => (null, null, l.faroClearHistory, null),
+      ClearClipboardItem() => (
+        null,
+        _glyphTile('trash'),
+        l.faroClearHistory,
+        null,
+      ),
     };
     // Keyboard shortcuts as key glyphs; media keys (XF86…) have their own keys on the
     // keyboard, not a combination to remember: none shown.
@@ -1567,24 +1659,25 @@ class _FaroState extends State<Faro>
       behavior: HitTestBehavior.opaque,
       onTap: () => _activate(item),
       child: Padding(
+        // The selection is inset 8 from the panel's sides.
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: selected ? _c.selection : null,
-            borderRadius: const BorderRadius.all(Radius.circular(16.5)),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             children: [
-              const SizedBox(width: 9),
+              const SizedBox(width: 12),
               SizedBox(
-                width: 38,
-                height: 38,
+                width: rowIconSide,
+                height: rowIconSide,
                 child: switch (icon) {
                   final i? => Center(child: SilicaIcon(i, side: rowIconSide)),
                   null => leading,
                 },
               ),
-              const SizedBox(width: 15),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1594,10 +1687,7 @@ class _FaroState extends State<Faro>
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: uiText(
-                        size: 16.5,
-                        color: selected ? _c.selectedText : _c.text,
-                      ),
+                      style: AmalfiType.bodyEmphasis(color: _c.text),
                     ),
                     ?subtitle,
                   ],
@@ -1607,35 +1697,35 @@ class _FaroState extends State<Faro>
                 const SizedBox(width: 8),
                 Text(
                   shortcutGlyphs(shortcut),
-                  style: uiText(size: 15, color: _c.subtitle),
+                  style: AmalfiType.caption(color: _c.subtitle),
                 ),
-                const SizedBox(width: 14),
               ],
               if (selected && item is FolderItem) ...[
                 const SizedBox(width: 8),
                 Text(
                   l.faroSearchIn(item.folder.name),
                   maxLines: 1,
-                  style: uiText(size: 11, color: _c.hint),
+                  style: AmalfiType.caption(color: _c.subtitle),
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(width: 8),
+                // "Tab" key capsule: 20 tall.
                 Container(
                   height: keycapHeight,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  constraints: const BoxConstraints(minWidth: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: _c.keycapFill,
-                    borderRadius: const BorderRadius.all(
-                      Radius.circular(keycapRadius),
-                    ),
+                    color: _c.key,
+                    borderRadius: BorderRadius.circular(keycapRadius),
                   ),
                   child: Text(
                     l.faroTabKey,
-                    style: uiText(size: 11, color: _c.keycapText),
+                    style: AmalfiType.caption(color: _c.text),
                   ),
                 ),
-                const SizedBox(width: 10),
               ],
+              // Rows end 20 pt from the panel's edge (the selection ends 8 from it).
+              const SizedBox(width: 12),
             ],
           ),
         ),
@@ -1684,7 +1774,7 @@ class _FaroState extends State<Faro>
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: selected ? _c.selection : null,
-            borderRadius: const BorderRadius.all(Radius.circular(12)),
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
           ),
           child: Column(
             children: [
@@ -1702,10 +1792,7 @@ class _FaroState extends State<Faro>
                   maxLines: 2,
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
-                  style: uiText(
-                    size: 13,
-                    color: selected ? _c.selectedText : _c.text,
-                  ),
+                  style: AmalfiType.callout(color: _c.text),
                 ),
               ),
             ],
@@ -1726,7 +1813,7 @@ class _FaroState extends State<Faro>
           title,
           maxLines: 1,
           key: ValueKey('faro section $title'),
-          style: uiText(size: 12, color: _c.subtitle),
+          style: AmalfiType.caption(color: _c.subtitle),
         ),
       ),
     ),
@@ -1773,15 +1860,14 @@ class _FaroState extends State<Faro>
     ];
   }
 
-  /// Pills 26 pt tall, 8 pt apart, radius 7.5, 10 pt above and 11 below, in a row that
-  /// scrolls sideways and is cut by the panel. Their fill and text are the Launcher's
-  /// category capsules' (the same measured `#d9dadf` over `#c8c9ce` and `#5a5b60` in light).
+  /// The filter row (kit: 40 pt, pills 24 tall from 8 under the header, 8 apart, 20 pt
+  /// inset, radius 12, Callout), scrolling sideways and cut by the panel.
   Widget _filterRow(List<_Pill> pills) => SizedBox(
     height: filterHeight,
     child: ListView.separated(
       key: const ValueKey('faro pills'),
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 11),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       itemCount: pills.length,
       separatorBuilder: (_, _) => const SizedBox(width: 8),
       itemBuilder: (context, i) {
@@ -1789,17 +1875,14 @@ class _FaroState extends State<Faro>
         return GestureDetector(
           onTap: pill.onTap,
           child: Container(
-            height: 26,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            height: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: pill.selected ? _c.selection : _c.categoryFill,
-              borderRadius: const BorderRadius.all(Radius.circular(7.5)),
+              color: pill.selected ? _c.selection : _c.pill,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              pill.label,
-              style: uiText(size: 15, color: _c.categoryText),
-            ),
+            child: Text(pill.label, style: AmalfiType.callout(color: _c.text)),
           ),
         );
       },
@@ -1837,14 +1920,11 @@ class _FaroState extends State<Faro>
         : !m.isBefore(day.subtract(const Duration(days: 1)))
         ? l.faroYesterday(time)
         : DateFormat.yMMMd(l.localeName).format(m);
-    final style = uiText(size: 15, color: _c.subtitle);
+    final style = AmalfiType.caption(color: _c.subtitle);
     return Row(
       children: [
         Text('$date · ', style: style),
-        CustomPaint(
-          size: const Size(13, 11),
-          painter: _FolderGlyphPainter(_c.subtitle),
-        ),
+        AmalfiSymbol('folder', size: 12, color: _c.subtitle),
         const SizedBox(width: 4),
         Flexible(
           child: Text(
@@ -1872,33 +1952,40 @@ class _FaroState extends State<Faro>
       button: true,
       label: name,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: LiquidGlass(
           radius: circle / 2,
           material: GlassMaterial.thick,
           interactive: false,
-          child: CustomPaint(
-            painter: _CircleGlyphPainter(index, _c.placeholder),
+          child: Center(
+            child: AmalfiSymbol(_buttonSymbol(index), size: 24, color: _c.text),
           ),
         ),
       ),
     );
   }
 
+  /// The glyph of a round button (Applications, Files, Actions, Clipboard).
+  static String _buttonSymbol(int index) => switch (index) {
+    0 => 'square-grid-2x2',
+    1 => 'folder',
+    2 => 'bolt',
+    _ => 'clipboard',
+  };
+
   Widget _launcherView() {
     final elapsed = _launcherClock.value;
     final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
+    final size = launcherSize(list: _launcherList);
     return LayoutBuilder(
       builder: (context, constraints) {
         final screen = constraints.biggest;
         final dpr = MediaQuery.devicePixelRatioOf(context);
+        final left = panelLeft(screen, size.width, dpr);
+        final top = panelTop(screen, dpr);
         _syncRegion([
-          Rect.fromLTWH(
-            panelLeft(screen, launcherWidth, dpr),
-            panelTop(screen, dpr),
-            launcherWidth,
-            launcherHeight,
-          ).inflate(2),
+          Rect.fromLTWH(left, top, size.width, size.height).inflate(2),
         ]);
         return Stack(
           children: [
@@ -1909,20 +1996,16 @@ class _FaroState extends State<Faro>
               ),
             ),
             Positioned(
-              left: panelLeft(screen, launcherWidth, dpr),
-              top: panelTop(screen, dpr),
-              width: launcherWidth,
-              height: launcherHeight,
+              left: left,
+              top: top,
+              width: size.width,
+              height: size.height,
               child: Transform.scale(
                 scale: launcherScaleAt(elapsed),
                 child: Opacity(
                   opacity: opacity,
-                  // Shadow moved down by ~17 pt, extending ~35 pt.
-                  child: OuterShadow(
+                  child: PanelShadow(
                     radius: launcherRadius,
-                    blurRadius: 36,
-                    color: _c.shadow(const Color(0x5C000000)),
-                    offset: const Offset(0, 17),
                     child: ProfiledGlass(
                       profile: ShellGlassProfile.panel,
                       radius: launcherRadius,
@@ -1934,6 +2017,9 @@ class _FaroState extends State<Faro>
                         child: Launcher(
                           entries: widget.entries,
                           recents: _recentIds,
+                          list: _launcherList,
+                          onListChanged: (list) =>
+                              setState(() => _launcherList = list),
                           onLaunch: _launch,
                           onBack: _backToFaro,
                         ),
@@ -1948,223 +2034,6 @@ class _FaroState extends State<Faro>
       },
     );
   }
-}
-
-class _LensPainter extends CustomPainter {
-  const _LensPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawCircle(
-      Offset(size.width * 0.42, size.height * 0.42),
-      size.width * 0.32,
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.66, size.height * 0.66),
-      Offset(size.width * 0.94, size.height * 0.94),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_LensPainter old) => old.color != color;
-}
-
-/// Generic glyphs of the four buttons: apps, files, actions, clipboard.
-class _CircleGlyphPainter extends CustomPainter {
-  const _CircleGlyphPainter(this.index, this.color);
-
-  final int index;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeJoin = StrokeJoin.round;
-    switch (index) {
-      case 0:
-        for (final dx in [-5.0, 5.0]) {
-          for (final dy in [-5.0, 5.0]) {
-            canvas.drawRRect(
-              RRect.fromRectAndRadius(
-                Rect.fromCenter(
-                  center: c + Offset(dx, dy),
-                  width: 8,
-                  height: 8,
-                ),
-                const Radius.circular(2.5),
-              ),
-              paint,
-            );
-          }
-        }
-      case 1:
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(center: c, width: 20, height: 15),
-            const Radius.circular(3),
-          ),
-          paint,
-        );
-        canvas.drawLine(
-          c + const Offset(-10, -3),
-          c + const Offset(10, -3),
-          paint,
-        );
-      case 2:
-        final bolt = Path()
-          ..moveTo(c.dx + 2, c.dy - 11)
-          ..lineTo(c.dx - 6, c.dy + 2)
-          ..lineTo(c.dx, c.dy + 2)
-          ..lineTo(c.dx - 2, c.dy + 11)
-          ..lineTo(c.dx + 6, c.dy - 2)
-          ..lineTo(c.dx, c.dy - 2)
-          ..close();
-        canvas.drawPath(bolt, paint);
-      default:
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(
-              center: c + const Offset(0, 2),
-              width: 16,
-              height: 22,
-            ),
-            const Radius.circular(3),
-          ),
-          paint,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(
-              center: c + const Offset(0, -9),
-              width: 8,
-              height: 5,
-            ),
-            const Radius.circular(1.5),
-          ),
-          paint,
-        );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_CircleGlyphPainter old) =>
-      old.index != index || old.color != color;
-}
-
-/// Two overlapping rounded sheets: the copy glyph of the answer card.
-class _CopyGlyphPainter extends CustomPainter {
-  const _CopyGlyphPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final back = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: c + const Offset(-1.5, -1.5),
-        width: 8,
-        height: 10,
-      ),
-      const Radius.circular(1.5),
-    );
-    final front = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: c + const Offset(1.5, 1.5), width: 8, height: 10),
-      const Radius.circular(1.5),
-    );
-    canvas
-      ..drawRRect(
-        back,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.3,
-      )
-      ..drawRRect(front, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_CopyGlyphPainter old) => old.color != color;
-}
-
-/// The small folder before the parent's name in a folder row's subtitle.
-class _FolderGlyphPainter extends CustomPainter {
-  const _FolderGlyphPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final path = Path()
-      ..moveTo(0.5, 2)
-      ..lineTo(0.5, h - 1)
-      ..quadraticBezierTo(0.5, h - 0.5, 1.5, h - 0.5)
-      ..lineTo(w - 1.5, h - 0.5)
-      ..quadraticBezierTo(w - 0.5, h - 0.5, w - 0.5, h - 1.5)
-      ..lineTo(w - 0.5, 3.5)
-      ..quadraticBezierTo(w - 0.5, 2.5, w - 1.5, 2.5)
-      ..lineTo(w * 0.45, 2.5)
-      ..lineTo(w * 0.35, 0.5)
-      ..lineTo(1.5, 0.5)
-      ..quadraticBezierTo(0.5, 0.5, 0.5, 2)
-      ..moveTo(0.5, 4.5)
-      ..lineTo(w - 0.5, 4.5);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_FolderGlyphPainter old) => old.color != color;
-}
-
-/// The glyph of a fallback row without an app icon: a globe for the web search, a
-/// magnifier on a sheet for the file search.
-class _FallbackGlyphPainter extends CustomPainter {
-  const _FallbackGlyphPainter(this.kind, this.color);
-  final FallbackKind kind;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-    switch (kind) {
-      case FallbackKind.web:
-        canvas
-          ..drawCircle(c, 14, paint)
-          ..drawOval(Rect.fromCenter(center: c, width: 13, height: 28), paint)
-          ..drawLine(c + const Offset(-14, 0), c + const Offset(14, 0), paint)
-          ..drawLine(c + const Offset(-12, -7), c + const Offset(12, -7), paint)
-          ..drawLine(c + const Offset(-12, 7), c + const Offset(12, 7), paint);
-      case FallbackKind.files:
-        canvas
-          ..drawCircle(c + const Offset(-3, -3), 9, paint)
-          ..drawLine(c + const Offset(4, 4), c + const Offset(12, 12), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_FallbackGlyphPainter old) =>
-      old.kind != kind || old.color != color;
 }
 
 /// The shadow of a glass panel drawn only outside the panel: under the glass, which Ossido
