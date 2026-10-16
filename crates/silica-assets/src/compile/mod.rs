@@ -35,8 +35,11 @@ impl std::error::Error for CompileError {}
 pub struct Options {
     /// silica-icons checkout (`apps/`, `files/`, `badges/`, `symbols/`).
     pub icons: PathBuf,
-    /// silica-brand checkout; its `exports/wallpapers` and `sounds` are used when present.
+    /// silica-brand checkout; its `sounds` are used when present.
     pub brand: Option<PathBuf>,
+    /// silica-wallpapers checkout: every `<set>/wallpapers.json` (`amalfi/`) with its images
+    /// and previews.
+    pub wallpapers: Option<PathBuf>,
     /// A folder with `.ttf` / `.otf` files.
     pub fonts: Option<PathBuf>,
     /// A folder with `.wav` / `.ogg` / `.flac` files (default: `<brand>/sounds` if it exists).

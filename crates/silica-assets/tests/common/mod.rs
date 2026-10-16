@@ -216,25 +216,27 @@ pub fn fixture() -> Fixture {
     let sounds = root.join("sounds");
     write(&sounds.join("alert-drop.wav"), SOUND_BYTES);
 
-    let brand = root.join("brand");
-    let wallpapers = brand.join("exports/wallpapers");
+    // silica-wallpapers: one set, with a title, light and dark PNGs and a light preview.
+    let wallpapers = root.join("wallpapers");
+    let set = wallpapers.join("amalfi");
     write(
-        &wallpapers.join("silica-light.png"),
-        png_bytes(64, 36, |_, _| [250, 200, 100, 255]),
-    );
-    write(
-        &wallpapers.join("silica-light@2x.png"),
+        &set.join("silica/light.png"),
         png_bytes(128, 72, |_, _| [250, 200, 100, 255]),
     );
     write(
-        &wallpapers.join("silica-dark.png"),
+        &set.join("silica/dark.png"),
         png_bytes(64, 36, |_, _| [10, 20, 40, 255]),
     );
-    write(&wallpapers.join("wallpapers.json"), "{}");
+    write(&set.join("previews/silica-light.jpg"), JPEG_BYTES);
+    write(
+        &set.join("wallpapers.json"),
+        r#"{"version":"Amalfi","wallpapers":[{"id":"silica","title":"Silica test","variants":{"light":{"file":"silica/light.png"},"dark":{"file":"silica/dark.png"}}}]}"#,
+    );
 
     let options = Options {
         icons,
-        brand: Some(brand),
+        brand: None,
+        wallpapers: Some(wallpapers),
         fonts: Some(fonts),
         sounds: Some(sounds),
         types: Some(fixtures.join("types.toml")),
@@ -250,3 +252,9 @@ pub fn compile_fixture(fixture: &Fixture) -> Vec<u8> {
 pub fn path_of(dir: &Path, name: &str) -> PathBuf {
     dir.join(name)
 }
+
+/// A 4 x 2 baseline JPEG header up to the start of frame (enough for the size; never decoded).
+pub const JPEG_BYTES: &[u8] = &[
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x02, 0x00,
+    0x04, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9,
+];

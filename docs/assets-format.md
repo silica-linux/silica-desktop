@@ -17,7 +17,7 @@ Status: design accepted by the user on 2026-10-16. Format version 1.
 | System symbols | silica-icons `symbols/` | Icon Kit, light/regular/semibold; the SVG as it is (tintable template), not rasterized |
 | Fonts | Inter, JetBrains Mono | loaded with `FontLoader` from the mapped bytes |
 | Sounds | silica-brand (`sounds/`), meanwhile `data/sounds` of silica-desktop | alert sounds, screenshot, Trash; WAV, OGG or FLAC as they are |
-| Wallpapers | silica-brand `exports/wallpapers` | the wallpaper layer and Settings; the PNG files as they are (1x and 2x, light and dark) |
+| Wallpapers | silica-wallpapers (CC BY-SA 4.0): `<set>/wallpapers.json`, `<set>/<id>/{light,dark}.png`, `<set>/previews/<id>-{light,dark}.jpg` (today the Amalfi set) | the wallpaper layer and Settings; the PNG files as they are (2880 square, light and dark), the 640 px JPEG previews as the small variant of each theme (`Jpeg` encoding), the title as a `Title` slot. `cargo xtask assets --wallpapers DIR` (default: the `silica-wallpapers` checkout next to this repository) |
 
 Not in it: the icons of Silica's other apps (Mustache, Calculator, Clock, Mail, Terminal,
 Settings, Preview, Notes, Text Editor, Calendar, Reminders, Photos, Disks, Fonts, Passwords...:

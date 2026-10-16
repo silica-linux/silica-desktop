@@ -1,8 +1,8 @@
-// The desktop wallpaper (background layer). Default: the Silica wallpaper of silica-brand
-// (exports/wallpapers, a trademark asset of the project), rendered in code from its recipe at
-// any size, light or dark with the appearance. Alternatively a
-// solid color or a user image, from ~/.config/silica/wallpaper.json: {"color": "#7a7b80"}
-// or {"image": "/path"}.
+// The desktop wallpaper (background layer). Default: Ravello of the Amalfi set of
+// silica-wallpapers (CC BY-SA 4.0), light or dark with the appearance, the square image
+// aspect-filled and centred (the excess is cropped). From ~/.config/silica/wallpaper.json:
+// {"wallpaper": "positano-1"} (an id of the set), {"color": "#7a7b80"} or {"image": "/path"}.
+// Without the set installed, the Silica wallpaper rendered in code from its recipe.
 
 import 'dart:convert';
 import 'dart:io';
@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import '../system/shell_channel.dart';
+import 'amalfi_wallpapers.dart';
 
 /// The wallpaper choice.
 sealed class WallpaperChoice {
@@ -24,6 +25,12 @@ class GeneratedWallpaper extends WallpaperChoice {
 class ColorWallpaper extends WallpaperChoice {
   const ColorWallpaper(this.color);
   final Color color;
+}
+
+/// A wallpaper of the Amalfi set (light and dark images).
+class AmalfiWallpaper extends WallpaperChoice {
+  const AmalfiWallpaper(this.info);
+  final AmalfiWallpaperInfo info;
 }
 
 class ImageWallpaper extends WallpaperChoice {
@@ -40,8 +47,22 @@ Color? parseHexColor(String text) {
 }
 
 /// The choice from the JSON configuration; the default if missing or invalid.
-WallpaperChoice parseWallpaperChoice(String? json) {
-  if (json == null) return const GeneratedWallpaper();
+WallpaperChoice parseWallpaperChoice(String? json, {Map<String, String>? env}) {
+  final amalfi = loadAmalfiWallpapers(env: env);
+  WallpaperChoice byId(String? id) {
+    for (final w in amalfi) {
+      if (w.id == (id ?? defaultWallpaperId)) return AmalfiWallpaper(w);
+    }
+    // An unknown id, or no set: the default, then the first one, then the generated one.
+    for (final w in amalfi) {
+      if (w.id == defaultWallpaperId) return AmalfiWallpaper(w);
+    }
+    return amalfi.isEmpty
+        ? const GeneratedWallpaper()
+        : AmalfiWallpaper(amalfi.first);
+  }
+
+  if (json == null) return byId(null);
   try {
     final value = jsonDecode(json);
     if (value is Map) {
@@ -49,14 +70,16 @@ WallpaperChoice parseWallpaperChoice(String? json) {
         return ImageWallpaper(path);
       }
       if (value['color'] case final String color) {
-        if (parseHexColor(color) case final parsed?)
+        if (parseHexColor(color) case final parsed?) {
           return ColorWallpaper(parsed);
+        }
       }
+      if (value['wallpaper'] case final String id) return byId(id);
     }
   } on FormatException {
     // Broken configuration: the default.
   }
-  return const GeneratedWallpaper();
+  return byId(null);
 }
 
 WallpaperChoice loadWallpaperChoice({Map<String, String>? env}) {
@@ -64,6 +87,7 @@ WallpaperChoice loadWallpaperChoice({Map<String, String>? env}) {
   final file = File('$home/.config/silica/wallpaper.json');
   return parseWallpaperChoice(
     file.existsSync() ? file.readAsStringSync() : null,
+    env: env,
   );
 }
 
@@ -90,6 +114,22 @@ class Wallpaper extends StatelessWidget {
           dark: MediaQuery.platformBrightnessOf(context) == Brightness.dark,
         ),
         size: Size.infinite,
+      ),
+    ),
+    AmalfiWallpaper(:final info) => Builder(
+      builder: (context) => Image.file(
+        File(
+          info.image(
+            dark: MediaQuery.platformBrightnessOf(context) == Brightness.dark,
+          ),
+        ),
+        // The square image fills the screen, centred; the excess is cropped.
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        width: double.infinity,
+        height: double.infinity,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xFF000000)),
       ),
     ),
     ColorWallpaper(:final color) => ColoredBox(color: color),

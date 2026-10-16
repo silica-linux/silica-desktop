@@ -138,6 +138,8 @@ byte_enum! {
         /// A PNG file (wallpapers: large, smooth images that QOI compresses badly).
         Png = 7,
         Wav = 8,
+        /// A JPEG file (wallpaper previews).
+        Jpeg = 9,
     }
 }
 
@@ -164,6 +166,8 @@ byte_enum! {
         Badge = 6,
         /// A color of the generic file's label for a category (`format` is the category).
         TypeCategory = 7,
+        /// The display title of an entry (`format` is the title): wallpapers.
+        Title = 8,
     }
 }
 

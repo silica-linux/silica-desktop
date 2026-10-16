@@ -98,3 +98,8 @@ generated in code are preferred.
 | `tools/sounds/candidates/alert-pebble-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/alert-woodblock-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
 | `tools/sounds/candidates/volume-feedback-A.wav` | Silica project | MIT OR Apache-2.0 | original, synthesized by `tools/sounds/synth.py` |
+
+The wallpapers are not stored here: they come from
+[silica-wallpapers](https://github.com/silica-os/silica-wallpapers) (CC BY-SA 4.0, the Amalfi set:
+Positano 1, Positano 2, Ravello; author Emanuele Frascella; the rows are in that repository's
+`ASSETS.md`) and are compiled into `silica.assets` by `cargo xtask assets --wallpapers DIR`.

@@ -1,4 +1,4 @@
-//! `cargo xtask assets [--icons DIR] [--brand DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`:
+//! `cargo xtask assets [--icons DIR] [--brand DIR] [--wallpapers DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`:
 //! compiles `silica.assets` (docs/assets-format.md) with `silica-assets-compile`.
 //!
 //! Without `--icons`, the sources are the branch `amalfi-icons` of the silica-icons checkout
@@ -87,6 +87,7 @@ fn extract_branch(repo: &Path) -> Option<Scratch> {
 pub(crate) fn build(args: &[String]) -> Result<PathBuf> {
     let mut icons: Option<PathBuf> = None;
     let mut brand: Option<PathBuf> = None;
+    let mut wallpapers: Option<PathBuf> = None;
     let mut fonts: Option<PathBuf> = None;
     let mut sounds: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
@@ -100,12 +101,13 @@ pub(crate) fn build(args: &[String]) -> Result<PathBuf> {
         let slot = match flag.as_str() {
             "--icons" => &mut icons,
             "--brand" => &mut brand,
+            "--wallpapers" => &mut wallpapers,
             "--fonts" => &mut fonts,
             "--sounds" => &mut sounds,
             "--out" => &mut out,
             other => {
                 return Err(format!(
-                    "unknown option {other} (usage: cargo xtask assets [--icons DIR] [--brand DIR] [--fonts DIR] [--sounds DIR] [--out FILE])"
+                    "unknown option {other} (usage: cargo xtask assets [--icons DIR] [--brand DIR] [--wallpapers DIR] [--fonts DIR] [--sounds DIR] [--out FILE])"
                 ));
             }
         };
@@ -148,6 +150,8 @@ pub(crate) fn build(args: &[String]) -> Result<PathBuf> {
         }
     };
     let brand = brand.or_else(|| sibling("silica-brand"));
+    // The wallpapers are the Amalfi set of silica-wallpapers (CC BY-SA 4.0).
+    let wallpapers = wallpapers.or_else(|| sibling("silica-wallpapers"));
     let fonts = fonts.or_else(|| {
         sibling("silica-ui")
             .map(|dir| dir.join("fonts"))
@@ -169,6 +173,9 @@ pub(crate) fn build(args: &[String]) -> Result<PathBuf> {
     command.arg("--icons").arg(&icons).arg("--out").arg(&out);
     if let Some(brand) = &brand {
         command.arg("--brand").arg(brand);
+    }
+    if let Some(wallpapers) = &wallpapers {
+        command.arg("--wallpapers").arg(wallpapers);
     }
     if let Some(fonts) = &fonts {
         command.arg("--fonts").arg(fonts);

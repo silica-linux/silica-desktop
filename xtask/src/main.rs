@@ -3,7 +3,7 @@
 //! - `ci`: fmt, flutter analyze/test, clippy with warnings as errors, tests, layers, assets, unsafe.
 //! - `layers`: checks the forbidden dependencies between layers.
 //! - `assets check`: blocks assets without a row in `ASSETS.md`.
-//! - `assets [--icons DIR] [--brand DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`: compiles
+//! - `assets [--icons DIR] [--brand DIR] [--wallpapers DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`: compiles
 //!   `target/silica.assets` from silica-icons (branch `amalfi-icons`), the fonts, the sounds and
 //!   the wallpapers (docs/assets-format.md).
 //! - `run`: starts Ossido (`--nested` or `--headless`, `--control PORT`); with `--shell` also
