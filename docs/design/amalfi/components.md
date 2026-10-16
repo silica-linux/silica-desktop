@@ -13,6 +13,17 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 - Sidebar: width 240 (min 200), horizontal padding 12, row height 28, row pitch 32 (4 pt gap), section
   header 28 tall, 16 above a header (except the first, 8), and 8 between the last row of a section and the
   next header. The selection capsule is the row inset 0 horizontally, radius 8. Row icon 16 at x 12, label at x 36.
+- Sidebar in a split title bar (user decision 2026-10-16; Mustache, Mail, Notes and every `Split Toolbar`
+  window):
+  - the divider between sidebar and content is **one** 1 pt `Line/Separator` at x = sidebar width − 1
+    (239), from the window's top edge to its bottom edge: it crosses the title bar. No second line at 240.
+  - the sidebar body runs from y 0, under the title bar; its first row sits where it did (header at y 60,
+    i.e. 52 + 8), and the rows scroll **under** the title bar section.
+  - the title bar section over the sidebar (`Titlebars/Section/Sidebar`, 240 × 52, controls and sidebar
+    toggle on it) is a **blur strip**, not glass: background blur σ 10 pt, saturation 1.0, no refraction,
+    no rim, no shadow, tint `Surface/Sidebar` at 80 % (`#F5F6F8CC` light, `#232428CC` dark), no line under it.
+    The divider is drawn on top of it.
+  - unified title bars (one bar over sidebar and content) keep the opaque bar.
 - Inspector: width 260, padding 16, groups separated by 20.
 - Toolbar items are glass (Glass/Regular), centred at y 10:
   - single icon button 32 × 32 circle;
@@ -28,6 +39,9 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 - Calculator keypad: keys 48 × 48 (capsule or circle), gap 8 (pitch 56), padding 16, display height 72.
 - Terminal: content padding 12, line height 16 (Mono 12/16).
 - Text baselines: put text frames on whole points, with the line height from the text style.
+- Push buttons: the label is centred in the button on both axes (text centre = button centre); the
+  kit's text frames are auto-width, centre-aligned and centred in all 200 masters. Do not take the frame x
+  from the kit and draw the text left-aligned: centre the measured label width in code.
 
 Pointers are not part of Amalfi: Silica uses the classic Adwaita cursor theme (user decision 2026-10-16).
 
