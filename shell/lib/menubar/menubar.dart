@@ -368,7 +368,8 @@ class _MenuBarState extends State<MenuBar> {
   String? _itemAt(Offset p) {
     if (p.dy >= barHeight) return null;
     for (final name in _menuNames) {
-      if (_rectOf(name)?.contains(p) ?? false) return name;
+      final rect = _rectOf(name);
+      if (rect != null && p.dx >= rect.left && p.dx < rect.right) return name;
     }
     return null;
   }
@@ -765,8 +766,8 @@ class _MenuBarState extends State<MenuBar> {
         children: [
           Positioned(
             left: barSide,
-            top: itemTop,
-            height: itemHeight,
+            top: 0,
+            height: barHeight,
             child: Row(
               children: [
                 _glyphItem(
@@ -802,8 +803,8 @@ class _MenuBarState extends State<MenuBar> {
           ),
           Positioned(
             right: barSide,
-            top: itemTop,
-            height: itemHeight,
+            top: 0,
+            height: barHeight,
             child: Row(
               children: [
                 ..._systemIcons(on),
@@ -1069,16 +1070,24 @@ class _MenuBarState extends State<MenuBar> {
     required Widget child,
   }) {
     final soft = barSelectionColor(context);
+    // The capsule is 24 tall, but the item takes the bar's whole height: a click anywhere
+    // above or below it counts (silica-desktop#208).
     return SizedBox(
-      key: key,
-      width: width,
-      height: itemHeight,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: active ? soft : null,
-          shape: const AmalfiSmoothBorder(radius: itemRadius),
+      height: barHeight,
+      child: Center(
+        widthFactor: 1,
+        child: SizedBox(
+          key: key,
+          width: width,
+          height: itemHeight,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: active ? soft : null,
+              shape: const AmalfiSmoothBorder(radius: itemRadius),
+            ),
+            child: Center(widthFactor: width == null ? 1 : null, child: child),
+          ),
         ),
-        child: Center(widthFactor: width == null ? 1 : null, child: child),
       ),
     );
   }
