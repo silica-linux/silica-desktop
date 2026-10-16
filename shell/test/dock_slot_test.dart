@@ -11,10 +11,10 @@ const _b = Item.app('B', command: 'b');
 const _c = Item.app('C', command: 'c', running: true);
 const _sep = Item.separator();
 
-Widget _dock(List<Item> items, {bool autohide = false, double mag = 1}) =>
+Widget _dock(List<Item> items, {bool autohide = false, double? mag}) =>
     Directionality(
       textDirection: TextDirection.ltr,
-      child: Dock(items: items, autohide: autohide, magnification: mag),
+      child: Dock(items: items, autohide: autohide, magnified: mag),
     );
 
 void main() {
@@ -114,8 +114,8 @@ void main() {
 
   testWidgets('with magnification the neighbours do not jump', (tester) async {
     await setUp(tester);
-    await tester.pumpWidget(_dock([_a, _b], mag: maxMagnification));
-    await tester.pumpWidget(_dock([_a, _b, _c], mag: maxMagnification));
+    await tester.pumpWidget(_dock([_a, _b], mag: 128));
+    await tester.pumpWidget(_dock([_a, _b, _c], mag: 128));
     var last = glassWidth(tester);
     for (var i = 0; i < 20; i++) {
       await tester.pump(launchDuration ~/ 20);

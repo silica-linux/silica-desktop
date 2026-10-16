@@ -24,7 +24,7 @@ void main() {
     expect(o.position, DockPosition.left);
     expect(o.minimizeEffect, MinimizeEffect.scale);
     expect(o.indicators, isFalse);
-    expect(o.magnify, isTrue);
+    expect(o.magnify, isFalse);
     // A broken value falls back to the default.
     saveDockOption('position', 'top', env: env);
     expect(DockOptions.read(env: env).position, DockPosition.bottom);

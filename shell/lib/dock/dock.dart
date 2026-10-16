@@ -23,7 +23,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
 import 'package:silica_ui/silica_ui.dart';
 
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show kPrimaryButton, kSecondaryButton;
 
 import '../l10n/l10n.dart';
 import '../system/desktop_entries.dart';
@@ -254,6 +254,16 @@ class _LiveDockState extends State<LiveDock> {
 
   void _launcherChanged() => setState(() {});
 
+  /// The separator was dragged to a new size: the same key Settings writes (dock.json `tileSize`);
+  /// the magnified size never goes below it.
+  void _resized(double canvas) {
+    saveDockOption('tileSize', canvas.round());
+    if (_o.magnifiedSize < canvas) {
+      saveDockOption('magnifiedSize', canvas.round());
+    }
+    _options.reload();
+  }
+
   void _optionsChanged() {
     setState(() {});
     _applyOptions();
@@ -262,7 +272,9 @@ class _LiveDockState extends State<LiveDock> {
   /// What the options ask of the compositor: the room the Dock keeps (none while it hides
   /// itself) and the minimize effect.
   void _applyOptions() {
-    _layer.exclusiveZone(_o.autohide ? 0 : backgroundHeight + bottomGap);
+    _layer.exclusiveZone(
+      _o.autohide ? 0 : DockMetrics(_o.tileSize).backgroundHeight + bottomGap,
+    );
     ShellChannel.instance.execute('window.minimize_effect', {
       'effect': _o.minimizeEffect.name,
     });
@@ -682,7 +694,9 @@ class _LiveDockState extends State<LiveDock> {
       registered: AppRegistry.instance.apps.value,
       folders: _folders,
     ),
-    magnification: _magnify ? defaultMagnification : 1,
+    canvas: _o.tileSize,
+    magnified: _magnify ? _o.magnifiedSize : null,
+    onResize: _resized,
     autohide: _o.autohide,
     indicators: _o.indicators,
     revealAtStart: true,
@@ -954,7 +968,9 @@ class Dock extends StatefulWidget {
   const Dock({
     super.key,
     required this.items,
-    this.magnification = defaultMagnification,
+    this.canvas = defaultCanvas,
+    this.magnified,
+    this.onResize,
     this.autohide = false,
     this.indicators = true,
     this.launcher = const {},
@@ -977,7 +993,16 @@ class Dock extends StatefulWidget {
   /// that fill in), then it slides up ([sessionReveal]). Without it the Dock is there at once
   /// (tests, the demo).
   final bool revealAtStart;
-  final double magnification;
+
+  /// The side of the whole canvas of an app icon at rest (whole points, 16-128).
+  final double canvas;
+
+  /// The canvas of the icon under the pointer, up to 128; null: no magnification.
+  final double? magnified;
+
+  /// The size was changed by dragging the separator and the pointer was released: the
+  /// canvas to keep (dock.json `tileSize`).
+  final ValueChanged<double>? onResize;
 
   /// Hidden below the screen until the pointer reaches the last row (SH-DK-07).
   final bool autohide;
@@ -1031,6 +1056,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   late final LayerControl _layer;
 
   late final Ticker _ticker = createTicker(_tick);
+
+  /// The size being dragged on the separator (null: [Dock.canvas] stands), and the drag.
+  double? _resizeCanvas;
+  _Resize? _resize;
+  bool _overSeparator = false;
+
+  /// The geometry at the current size.
+  DockMetrics get _m => DockMetrics(_resizeCanvas ?? widget.canvas);
+
+  /// No magnification while the separator is being dragged.
+  double? get _magnified => _resize == null ? widget.magnified : null;
 
   /// The label: the item it belongs to and its opacity.
   int? _labelIndex;
@@ -1147,12 +1183,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         _hover(local, size);
         final current = layout(
           presenceOf: _presenceOf,
+          metrics: _m,
           _items,
           width: size.width,
           height: size.height,
           pointerX: _pointerX,
           amount: _amount,
-          magnification: widget.magnification,
+          magnified: _magnified,
         );
         final index = _inside ? itemAt(current, _items, local.dx) : null;
         final target = index != null && _items[index].acceptsFiles
@@ -1183,6 +1220,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           final local = box.globalToLocal(position);
           final current = layout(
             presenceOf: _presenceOf,
+            metrics: _m,
             _items,
             width: size.width,
             height: size.height,
@@ -1262,6 +1300,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   void didUpdateWidget(Dock old) {
     super.didUpdateWidget(old);
     if (!identical(old.items, widget.items)) _syncSlots(first: false);
+    if (old.canvas != widget.canvas && _resize == null) _resizeCanvas = null;
     if (old.autohide != widget.autohide) {
       widget.autohide ? _hideDock() : _revealDock();
     }
@@ -1499,6 +1538,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   int _dropSlot(List<Item> rest, Size size, double x) {
     final l = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       rest,
       width: size.width,
       height: size.height,
@@ -1520,12 +1560,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (item.kind != ItemKind.app || item.fixed) return;
     final l = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       _items,
       width: size.width,
       height: size.height,
       pointerX: _pointerX,
       amount: _amount,
-      magnification: widget.magnification,
+      magnified: _magnified,
     );
     final (x, y, side) = iconRect(l, index, size.height);
     _longPress?.cancel();
@@ -1550,6 +1591,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     if (drag == null) return;
     final rest = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       _items,
       width: size.width,
       height: size.height,
@@ -1558,7 +1600,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       drag.pointer = p;
       drag.inside =
           inActiveZone(rest, p.dx, p.dy, size.height) ||
-          p.dy >= size.height - bottomGap - backgroundHeight - dragInsideAbove;
+          p.dy >=
+              size.height - bottomGap - _m.backgroundHeight - dragInsideAbove;
       // "Remove" appears 125–135 pt above the grab point.
       drag.remove = p.dy < drag.downY - removeAbove;
     });
@@ -1655,6 +1698,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
     final rest = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       _items,
       width: size.width,
       height: size.height,
@@ -1668,6 +1712,15 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         _openMenu(cell, longPress: false);
       }
       return;
+    }
+    // The separator drags to resize the Dock.
+    if (index == null && inZone && e.buttons & kPrimaryButton != 0) {
+      final cell = cellAt(l, p.dx);
+      if (cell != null && _items[cell].kind == ItemKind.separator) {
+        _showLabel(null);
+        setState(() => _resize = _Resize(p.dy, _m.canvas));
+        return;
+      }
     }
     if (index == null) return;
     if (e.buttons & kSecondaryButton != 0) {
@@ -1690,6 +1743,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   void _pointerMove(Offset p, Size size) {
+    if (_resize case final resize?) {
+      // Up is bigger: 1 pt of canvas per point dragged, whole points, no animation.
+      final canvas = clampCanvas(resize.canvas + (resize.downY - p.dy));
+      if (canvas != _resizeCanvas) setState(() => _resizeCanvas = canvas);
+      return;
+    }
     if (_drag != null) {
       _moveDrag(p, size);
       return;
@@ -1710,6 +1769,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   void _pointerUp(PointerUpEvent e, Layout l, Size size) {
     final p = e.localPosition;
+    if (_resize case final resize?) {
+      // Released: the size is kept (dock.json `tileSize`, the same key as Settings).
+      final canvas = _resizeCanvas ?? resize.canvas;
+      setState(() => _resize = null);
+      if (canvas != resize.canvas) widget.onResize?.call(canvas);
+      return;
+    }
     if (_drag != null) {
       _endDrag(size);
       return;
@@ -1864,11 +1930,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       // Attention (SH-DK-30): hops every 2 s until the app is activated.
       final since = widget.launcher[item.id]?.urgentSince;
       if (since == null) return 0;
-      return attentionHeight(
-        DateTime.now().difference(since).inMicroseconds / 1000,
-      );
+      return _m.k *
+          attentionHeight(
+            DateTime.now().difference(since).inMicroseconds / 1000,
+          );
     }
-    return bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
+    return _m.k *
+        bounceHeight(DateTime.now().difference(start).inMicroseconds / 1000);
   }
 
   /// The first files of a folder shown as a stack, for the icon: read again only when the
@@ -2000,7 +2068,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
 
   void _tick(Duration elapsed) {
     _start ??= elapsed;
-    final duration = enterDuration(widget.magnification);
+    final duration = enterDuration((widget.magnified ?? _m.canvas) / _m.canvas);
     final t = (elapsed - _start!).inMicroseconds / duration.inMicroseconds;
     final target = _inside ? 1.0 : 0.0;
     final eased = enterProgress(t);
@@ -2039,19 +2107,30 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     }
     final rest = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       _items,
       width: size.width,
       height: size.height,
     );
     final current = layout(
       presenceOf: _presenceOf,
+      metrics: _m,
       _items,
       width: size.width,
       height: size.height,
       pointerX: _pointerX,
       amount: _amount,
-      magnification: widget.magnification,
+      magnified: _magnified,
     );
+    // The separator shows the resize pointer.
+    final cell = cellAt(current, position.dx);
+    final overSeparator =
+        cell != null &&
+        _items[cell].kind == ItemKind.separator &&
+        inActiveZone(rest, position.dx, position.dy, size.height);
+    if (overSeparator != _overSeparator) {
+      setState(() => _overSeparator = overSeparator);
+    }
     // Entering uses the fixed threshold; exiting only by leaving the magnified cell (hysteresis).
     final inside = _inside
         ? staysInActiveZone(
@@ -2084,12 +2163,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         final dragging = _drag != null;
         final l = layout(
           presenceOf: _presenceOf,
+          metrics: _m,
           items,
           width: size.width,
           height: size.height,
           pointerX: _pointerX,
           amount: _amount,
-          magnification: widget.magnification,
+          magnified: _magnified,
         );
         final (bx, by, bw, bh) = l.background;
         final label = _labelIndex;
@@ -2136,7 +2216,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         // Outside the Dock (and the menu) the pointer goes to the windows below.
         final dockRect = Rect.fromLTRB(
           bx - dockInputMargin,
-          by - dockInputAbove,
+          by -
+              dockInputAbove -
+              math.max(0, (widget.magnified ?? 0) - _m.canvas),
           bx + bw + dockInputMargin,
           size.height,
         );
@@ -2228,6 +2310,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           onPointerMove: (e) => _pointerMove(e.localPosition, size),
           onPointerUp: (e) => _pointerUp(e, l, size),
           onPointerCancel: (_) {
+            if (_resize != null) {
+              setState(() {
+                _resize = null;
+                _resizeCanvas = null;
+              });
+            }
             if (_drag != null) setState(() => _drag = null);
             _longPress?.cancel();
             _labelOff?.cancel();
@@ -2235,8 +2323,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             if (_menuIndex == null) setState(() => _pressed = null);
           },
           child: MouseRegion(
+            cursor: _resize != null || _overSeparator
+                ? SystemMouseCursors.resizeUpDown
+                : MouseCursor.defer,
             onHover: (event) => _hover(event.localPosition, size),
             onExit: (_) {
+              if (_overSeparator) setState(() => _overSeparator = false);
               _setInside(false);
               _showLabel(null);
               _hideDock();
@@ -2245,7 +2337,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               // Auto-hide: the whole Dock slides below the screen.
               offset: Offset(
                 0,
-                (1 - _shown.value) * (backgroundHeight + bottomGap + 2),
+                (1 - _shown.value) * (_m.backgroundHeight + bottomGap + 2),
               ),
               child: Stack(
                 children: [
@@ -2254,9 +2346,9 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                     top: by,
                     width: bw,
                     height: bh,
-                    child: const ProfiledGlass(
+                    child: ProfiledGlass(
                       profile: ShellGlassProfile.dock,
-                      radius: backgroundRadius,
+                      radius: _m.radius,
                       material: GlassMaterial.regular,
                       // The lowest: the stack, the labels and the menus sit on it.
                       group: DockGlass.dock,
@@ -2391,13 +2483,17 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           top: at.dy,
           width: drag.side,
           height: drag.side,
-          child: SilicaIcon(source, side: drag.side, besideApps: true),
+          child: _drawn(
+            (body) => SilicaIcon(source, side: body, besideApps: true),
+            drag.side,
+            place: drag.item.isPlace,
+          ),
         ),
       if (drag.remove)
         _capsule(
           l10nOf(context).dockRemove,
           at.dx + drag.side / 2,
-          at.dy - labelGap,
+          at.dy - _m.labelGap,
           1,
         ),
     ];
@@ -2420,12 +2516,16 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   top: ghost.at.dy,
                   width: ghost.side,
                   height: ghost.side,
-                  child: SilicaIcon(source, side: ghost.side, besideApps: true),
+                  child: _drawn(
+                    (body) => SilicaIcon(source, side: body, besideApps: true),
+                    ghost.side,
+                    place: ghost.item.isPlace,
+                  ),
                 ),
               _capsule(
                 l10nOf(context).dockRemove,
                 ghost.at.dx + ghost.side / 2,
-                ghost.at.dy - labelGap,
+                ghost.at.dy - _m.labelGap,
                 1,
               ),
             ],
@@ -2526,16 +2626,21 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             pressed: _pressed == index,
           )
         : pile != null && pile.isNotEmpty
-        ? PileIcon(sources: pile, side: side)
+        ? _drawn(
+            (body) => PileIcon(sources: pile, side: body),
+            side,
+            place: true,
+          )
         : source == null
         ? const SizedBox.shrink()
-        : SilicaIcon(source, side: side, besideApps: true);
+        : _drawn(
+            (body) => SilicaIcon(source, side: body, besideApps: true),
+            side,
+            place: item.isPlace,
+          );
     final live = _live[item];
     // The launch hop: 17 pt (about 18 with the magnification) in the same animation.
-    final hop =
-        (live?.hopFraction ?? 0) *
-        (launchHopPeak +
-            math.min(1, (l.scales[index] - 1) / (defaultMagnification - 1)));
+    final hop = (live?.hopFraction ?? 0) * (launchHopPeak * _m.k);
     return AnimatedPositioned(
       key: ValueKey(_key(item)),
       duration: sliding ? gapSlide : Duration.zero,
@@ -2561,11 +2666,33 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     );
   }
 
+  /// An icon of the canvas `side` at the origin of its box: the canvas of an app, the body of
+  /// a place (see [iconBody]); it spills over the box, unclipped.
+  Widget _drawn(
+    Widget Function(double body) build,
+    double side, {
+    required bool place,
+  }) {
+    final (x, y, body) = iconBody(side, place: place);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: x,
+          top: y,
+          width: body,
+          height: body,
+          child: build(body),
+        ),
+      ],
+    );
+  }
+
   Widget _label(Layout l, int index, double height, double opacity) {
     final (_, iconTop, _) = iconRect(l, index, height);
     // During the bounce the label rises with the icon.
     final iconTopY = iconTop - _bounce(index);
-    final tipY = iconTopY - labelGap;
+    final tipY = iconTopY - _m.labelGap;
     final style = dockLabelStyle(context);
     final width = dockLabelWidth(_items[index].label, style);
     return Positioned(
@@ -2579,6 +2706,13 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       ),
     );
   }
+}
+
+/// A drag on the separator: where it began and the canvas then.
+class _Resize {
+  _Resize(this.downY, this.canvas);
+  final double downY;
+  final double canvas;
 }
 
 class _DockPainter extends CustomPainter {
@@ -2614,7 +2748,12 @@ class _DockPainter extends CustomPainter {
       if (item.kind == ItemKind.separator) {
         final x = l.center(i).roundToDouble();
         canvas.drawRect(
-          Rect.fromLTWH(x, by + (bh - separatorHeight) / 2, 1, separatorHeight),
+          Rect.fromLTWH(
+            x,
+            by + (bh - l.metrics.separatorHeight) / 2,
+            1,
+            l.metrics.separatorHeight,
+          ),
           Paint()
             ..color = colors.separator.withValues(
               alpha: colors.separator.a * l.presence[i],
@@ -2633,14 +2772,20 @@ class _DockPainter extends CustomPainter {
             Paint()..color = Color.fromRGBO(0, 0, 0, presence),
           );
         }
-        paintIcon(canvas, Rect.fromLTWH(ix, iy, side, side), item.label, i);
+        final (bx, byy, body) = iconBody(side, place: item.isPlace);
+        paintIcon(
+          canvas,
+          Rect.fromLTWH(ix + bx, iy + byy, body, body),
+          item.label,
+          i,
+        );
         if (presence < 1) canvas.restore();
       }
       if (launcher[item.id]?.progress case final progress?) {
         // The progress bar replaces the dot (SH-DK-30).
         final bar = RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(l.center(i), by + bh - indicatorAbove),
+            center: Offset(l.center(i), by + bh - l.metrics.dot / 2),
             width: progressWidth,
             height: progressHeight,
           ),
@@ -2662,8 +2807,8 @@ class _DockPainter extends CustomPainter {
         );
       } else if (item.running && indicators) {
         canvas.drawCircle(
-          Offset(l.center(i), by + bh - indicatorAbove),
-          indicatorSize / 2,
+          Offset(l.center(i), by + bh - l.metrics.dot / 2),
+          l.metrics.dot / 2,
           Paint()
             ..color = colors.indicator.withValues(
               alpha: colors.indicator.a * dot,
