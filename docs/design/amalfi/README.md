@@ -43,7 +43,7 @@ do not integrate icon changes (the stop on silica-icons v0.7–v0.8 still holds)
 - 4 pt grid, no half points.
 - Each app may have its own palette and appearance (light + dark, or a single one), as
   `colors.<light|dark>["App/<App>/<Token>"]` in `tokens.json`.
-- Faro and the Launcher are never wider than 640 pt. The four Faro buttons appear only after the pointer
+- Faro is never wider than 640 pt; the Launcher keeps its own 844 × 580 panel. The four Faro buttons appear only after the pointer
   enters the empty bar and disappear while typing, with results and inside a scope (`components.md`).
 - Inter for UI, JetBrains Mono for monospaced text. No reference-vendor fonts or names in code, assets or
   strings.

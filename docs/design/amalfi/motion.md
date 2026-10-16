@@ -51,7 +51,7 @@ Reduced motion (accessibility): springs become `fade.quick` cross-fades, no over
 | Faro | results appear | ~500 ms after the last key, bottom edge grows with `spring.panel`, ~400 ms; content swaps in one frame | FARO-02 |
 | Faro | enter/leave scope | height with `spring.panel`, +4 / −4 pt, ~450 ms; width fixed 640 | FARO-02 |
 | Faro | close | `fade.instant` with a slight brighten and scale to 0.97 toward the centre, gone ~100 ms | FARO-02 |
-| Launcher | open / Esc to bar | width is always 640 now: only height animates, `spring.panel`; content fades `fade.quick` | `docs/spec/launcher.md` |
+| Launcher | open / Esc to bar | open: from ~1.06 scale to 1 with a small bounce; Esc: content fades, then the 844 × 580 panel shrinks into Faro's 640 × 56 bar (keep the measured curve) | `docs/spec/launcher.md` |
 | Menus | open | fade 0 → 1 `fade.instant`, no scale; close `fade.instant` | `docs/spec/menubar.md` |
 | Popovers | open/close | fade + scale 0.96 → 1 from the arrow, `spring.panel` | `docs/spec/misc.md` |
 | Tooltips | show/hide | `fade.quick` after `delay.tooltip` | `docs/spec/tip.md` |

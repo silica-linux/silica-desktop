@@ -71,7 +71,7 @@ Read each one from the kit for exact geometry (see README, "How to read the kit"
 Behaviour copies the desktop's search panel exactly (state machine and timings below); the measures are Amalfi's.
 
 **Envelope.** Faro never exceeds **640 pt** in width in any state (bar, bar + buttons, results, scopes). Every
-Faro symbol is 640 wide, the Launcher included. Top edge fixed at 30 % of the screen
+Faro symbol is 640 wide; the Launcher is a separate mode with its own size (below). Top edge fixed at 30 % of the screen
 height; the panel only grows downwards. All values on the 4 pt grid.
 
 | Element | Amalfi value |
@@ -116,16 +116,17 @@ Buttons have no hover or pressed look and no tooltip; the scope opens on release
 | Esc with a query | shrinks back to 56 starting ~150 ms after the key, −4 undershoot, settled ~530 ms |
 | Close | starts ~35 ms after the key: brightens and shrinks toward the centre, gone at ~100 ms; no slide |
 
-**Launcher (Faro in apps mode, ⌘1 or the Dock).** Same 640 envelope as Faro (user decision 2026-10-16).
+## Launcher
+
+Faro in apps mode (⌘1 or the Dock). It keeps its **own size** and is not limited to Faro's 640 pt (user
+decision, 2026-10-16, reverting an earlier 640 request).
 
 | Element | Amalfi value |
 |---|---|
-| Panel | 640 × 576, radius 28, Glass/Thick, top edge at the same 30 % line as Faro |
-| Header | 56, same as Faro (apps glyph / back at x 20, field text at x 56, "…" view menu 20 from the right) |
-| Category row | 40 tall, capsules 24 tall, gap 8, inset 20; the row scrolls horizontally and is clipped by the panel edge |
-| Grid | 5 columns, cell 120 × 104 (pitch 120), first column at x 20; icon 64 centred, 8 below the cell top; label Caption, centred, one line, truncated with "…", 8 below the icon |
-| Recents | first grid row = recent apps, then a 1 pt separator inset 20, 8 above and below, then all apps A–Z |
-| Visible | recents + 3 rows; the grid scrolls; overlay scroller 4 pt from the right |
-| Selection | ring 3 pt Accent around the 64 icon (radius as the icon body + 3); completion target gets a gray ring |
-| List mode | already 640: rows 56 like Faro |
-| Esc | width never changes now: the panel only shrinks in height to the 56 bar (same spring as "Esc with a query") |
+| Panel | 844 × 580, Glass/Thick, top edge on Faro's 30 % line |
+| Header | 56, like Faro (apps glyph / back at x 20, field text at x 56, "…" view menu at the right) |
+| Category row | seven capsules, all visible |
+| Grid | 7 columns; recents row, separator, then all apps A–Z; cell, icon and label geometry from the kit masters `Apps/Faro/Launcher/<Light|Dark>` |
+| Category chosen | `Apps/Faro/Launcher Category/*`, 844 × 580, token in the field, no capsule row |
+| List mode | `Apps/Faro/Launcher List/*`, 640 × 560 |
+| Esc | the panel morphs into Faro's 640 × 56 bar (width and height change), as in `docs/spec/launcher.md` |
