@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'apps.dart';
+import 'model.dart';
 
 /// Where the Dock sits (dock.md › SH-DK-05/06). Only the bottom is implemented: the side
 /// Docks are a vertical layout still to do (silica-desktop#72, #73).
@@ -19,16 +20,26 @@ enum MinimizeEffect { genie, scale }
 @immutable
 class DockOptions {
   const DockOptions({
-    this.magnify = true,
+    this.magnify = false,
     this.recents = false,
     this.autohide = false,
     this.position = DockPosition.bottom,
     this.minimizeEffect = MinimizeEffect.genie,
     this.indicators = true,
+    this.tileSize = defaultCanvas,
+    this.magnifiedSize = defaultMagnifiedCanvas,
   });
 
-  /// Magnification (separator menu, Settings).
+  /// Magnification (separator menu, Settings): off by default.
   final bool magnify;
+
+  /// The canvas of an app icon at rest, in whole points, 16-128 (`tileSize`: Settings and the
+  /// drag on the separator write it).
+  final double tileSize;
+
+  /// The canvas of the icon under the pointer with magnification on, from [tileSize] up to
+  /// 128 (`magnifiedSize`).
+  final double magnifiedSize;
 
   /// The recent and suggested apps section (D-08).
   final bool recents;
@@ -45,10 +56,16 @@ class DockOptions {
     final c = readDockConfig(env: env);
     bool flag(String key, bool fallback) =>
         c[key] is bool ? c[key] as bool : fallback;
+    double number(Object? v, double fallback) =>
+        v is num ? v.toDouble() : fallback;
     T named<T extends Enum>(String key, List<T> values, T fallback) =>
         values.where((v) => v.name == c[key]).firstOrNull ?? fallback;
+    final tile = clampCanvas(number(c['tileSize'], defaultCanvas));
+    final magnified = number(c['magnifiedSize'], defaultMagnifiedCanvas);
     return DockOptions(
-      magnify: flag('magnify', true),
+      magnify: flag('magnify', false),
+      tileSize: tile,
+      magnifiedSize: magnified.clamp(tile, maxCanvas).roundToDouble(),
       recents: flag('recents', false),
       autohide: flag('autohide', false),
       position: named('position', DockPosition.values, DockPosition.bottom),
@@ -69,7 +86,9 @@ class DockOptions {
       other.autohide == autohide &&
       other.position == position &&
       other.minimizeEffect == minimizeEffect &&
-      other.indicators == indicators;
+      other.indicators == indicators &&
+      other.tileSize == tileSize &&
+      other.magnifiedSize == magnifiedSize;
 
   @override
   int get hashCode => Object.hash(
@@ -79,6 +98,8 @@ class DockOptions {
     position,
     minimizeEffect,
     indicators,
+    tileSize,
+    magnifiedSize,
   );
 }
 

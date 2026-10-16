@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/animation.dart' show Cubic;
+import 'package:flutter/foundation.dart' show immutable;
 
 import 'package:silica_ui/silica_ui.dart';
 
@@ -41,10 +42,6 @@ const double sidePadding = 6;
 const double iconSize = 48;
 const double iconTop = 4;
 
-/// How much the bottom edge of the magnified icon rises, per unit of scale above 1:
-/// +7 pt at ×2.095, +1 pt at ×1.079 (measured to 1 pt).
-const double iconLiftPerScale = 6.4 * amalfiScale;
-
 /// Separator: a 1 pt line 44 pt tall, 8 pt from the shelf's top (kit `Dock/Separator`).
 const double separatorHeight = 44;
 
@@ -53,47 +50,80 @@ const double separatorHeight = 44;
 const double indicatorSize = 4;
 const double indicatorAbove = 2;
 
-/// Magnification at the recordings' setting: the cell under the pointer goes from 63 to
-/// 68 pt (×1.0794). At the maximum of the slider: 132 pt (×2.0952).
-const double defaultMagnification = 68 / 63;
-const double maxMagnification = 132 / 63;
+/// Canvas side of an app icon at rest and its limits (dock.json `tileSize`, Settings).
+const double defaultCanvas = 48;
+const double minCanvas = 16;
+const double maxCanvas = 128;
+
+/// The magnified canvas when dock.json has none (Settings: 52).
+const double defaultMagnifiedCanvas = 52;
+
+/// Whole points, inside [minCanvas, maxCanvas].
+double clampCanvas(num value) => value.isFinite
+    ? value.clamp(minCanvas, maxCanvas).roundToDouble()
+    : defaultCanvas;
 
 /// The active zone starts 5 pt above the background.
 const double activeZoneAbove = 5;
 
-/// Magnification profile f(d) as a function of the distance d (pt) between the pointer and
-/// the center of the cell at rest: measured table, it vanishes between 208 and 224 pt.
-const List<(double, double)> magnificationProfile = [
-  (0, 1.000),
-  (16, 0.991),
-  (32, 0.964),
-  (48, 0.921),
-  (64, 0.861),
-  (80, 0.786),
-  (96, 0.698),
-  (112, 0.597),
-  (128, 0.485),
-  (144, 0.365),
-  (160, 0.240),
-  (176, 0.131),
-  (192, 0.055),
-  (208, 0.011),
-  (224, 0.000),
-];
-
-/// f(d) by linear interpolation of the table.
-double profile(double distance) {
-  // The table is measured at the reference's 63 pt pitch: rescale the distance.
-  final d = distance.abs() / amalfiScale;
-  for (var i = 1; i < magnificationProfile.length; i++) {
-    final (d1, f1) = magnificationProfile[i];
-    if (d <= d1) {
-      final (d0, f0) = magnificationProfile[i - 1];
-      return f0 + (f1 - f0) * (d - d0) / (d1 - d0);
-    }
-  }
-  return 0;
+/// Fall-off of the magnification: 1 under the pointer, a cosine down to 0 at 3 tiles
+/// (`pitch` each) from it.
+double profile(double distance, [double pitch = cellPitch]) {
+  final d = distance.abs() / (3 * pitch);
+  return d >= 1 ? 0 : (1 + math.cos(math.pi * d)) / 2;
 }
+
+/// The geometry of one Dock from the side of the icon canvas (whole points, 16-128; the
+/// default is 48). Everything scales by k = canvas / 48 around the kit's values (Dock
+/// masters, Amalfi): tile `canvas + 4` x `canvas + 12`, gap 4k, shelf padding 8k, radius 20k,
+/// separator 8k x `canvas - 4`, dot max(3, 4k), label offset 12k.
+@immutable
+class DockMetrics {
+  const DockMetrics([this.canvas = defaultCanvas]);
+
+  /// The side of the whole 1024 canvas of an app icon, in points.
+  final double canvas;
+
+  static const DockMetrics standard = DockMetrics();
+
+  double get k => canvas / defaultCanvas;
+  double get tileWidth => canvas + 4;
+  double get tileHeight => canvas + 12;
+  double get gap => (4 * k).roundToDouble();
+
+  /// Distance between the centres of two tiles.
+  double get pitch => tileWidth + gap;
+
+  /// The shelf: its height is the tile's, the padding is measured from the first tile.
+  double get backgroundHeight => tileHeight;
+  double get shelfPadding => (8 * k).roundToDouble();
+
+  /// Margin between the cells (the tile and half the gap) and the shelf edge.
+  double get sidePadding => shelfPadding - gap / 2;
+  double get radius => (20 * k).roundToDouble();
+  double get separatorWidth => (8 * k).roundToDouble();
+
+  /// The separator cell: the item and one gap (the tile cells carry the other).
+  double get separatorCell => separatorWidth + gap;
+  double get separatorHeight => canvas - 4;
+  double get dot => math.max(3, (4 * k).roundToDouble());
+  double get labelOffset => (12 * k).roundToDouble();
+
+  /// Gap between the top of the icon and the bottom of the label.
+  double get labelGap => iconTop + labelOffset;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DockMetrics && other.canvas == canvas;
+
+  @override
+  int get hashCode => canvas.hashCode;
+}
+
+/// The canvas of the icon at `distance` from the pointer, growing from the resting canvas to
+/// `magnified` (cosine, over 3 tiles each way).
+double magnifiedCanvas(DockMetrics m, double magnified, double distance) =>
+    m.canvas + math.max(0, magnified - m.canvas) * profile(distance, m.pitch);
 
 /// Curve of entering and leaving the active zone (equal within 0.01: here the mean of
 /// the two), 3 cycles at maximum magnification: progress every 10 ms over ~160 ms.
@@ -124,12 +154,10 @@ double enterProgress(double t) {
   return enterCurve[i] + (enterCurve[i + 1] - enterCurve[i]) * (x - i);
 }
 
-/// Entrance duration: ~60 ms at 68 pt, ~160 ms at 132 pt; it grows with the amplitude (with
-/// only two points it is interpolated linearly).
-Duration enterDuration(double magnification) {
-  final span =
-      (magnification - defaultMagnification) /
-      (maxMagnification - defaultMagnification);
+/// Entrance duration: ~60 ms for a small growth, ~160 ms for a large one; it grows with the
+/// ratio between the magnified and the resting canvas (1.08 to 2.1 and over).
+Duration enterDuration(double ratio) {
+  final span = (ratio - 1.08) / (2.1 - 1.08);
   final ms = 60 + (160 - 60) * span.clamp(0.0, 1.0);
   return Duration(microseconds: (ms * 1000).round());
 }
@@ -257,8 +285,19 @@ class Item {
     _ => null,
   };
 
-  double get restWidth =>
-      kind == ItemKind.separator ? separatorCell : cellPitch;
+  double get restWidth => restWidthIn(DockMetrics.standard);
+
+  /// The width of its cell at rest.
+  double restWidthIn(DockMetrics m) =>
+      kind == ItemKind.separator ? m.separatorCell : m.pitch;
+
+  /// A folder, the Trash or another place: its icon is drawn on the place canvas, whose body
+  /// is as large as the canvas of an app (SilicaIcon.besideApps).
+  bool get isPlace =>
+      trash ||
+      folder != null ||
+      folderIcon != null ||
+      (layered != null && layered!.kind != IconKind.app);
 }
 
 /// Launch of an app that is not kept in the Dock (dock.md, DOCK-ANIM, measured): the item is
@@ -300,7 +339,16 @@ double launchHop(double ms) {
 
 /// The Dock layout at one moment: cells, background, icons.
 class Layout {
-  Layout._(this.cells, this.scales, this.background, this.presence);
+  Layout._(
+    this.cells,
+    this.scales,
+    this.background,
+    this.presence,
+    this.metrics,
+  );
+
+  /// The size the layout was computed for.
+  final DockMetrics metrics;
 
   /// How present every item is (1 normally; 0..1 while its slot opens or closes, see
   /// [launchDuration]): it scales the width of the cell, the icon and its opacity.
@@ -321,21 +369,22 @@ class Layout {
 
 /// Computes the layout for a surface `width` wide and `height` tall, with the pointer at
 /// `pointerX` (null: outside the active zone) and the magnification `amount` (0–1, the
-/// progress of the entrance) up to `magnification`.
+/// progress of the entrance) up to the canvas `magnified` (null: no magnification).
 Layout layout(
   List<Item> items, {
   required double width,
   required double height,
   double? pointerX,
   double amount = 0,
-  double magnification = defaultMagnification,
+  double? magnified,
+  DockMetrics metrics = DockMetrics.standard,
   double Function(Item item)? presenceOf,
 }) {
   final presence = [
     for (final item in items) presenceOf?.call(item).clamp(0.0, 1.0) ?? 1.0,
   ];
   // The resting width of a cell, shrunk while its slot is opening or closing.
-  double rest(int i) => items[i].restWidth * presence[i];
+  double rest(int i) => items[i].restWidthIn(metrics) * presence[i];
   var restTotal = 0.0;
   for (var i = 0; i < items.length; i++) {
     restTotal += rest(i);
@@ -350,17 +399,25 @@ Layout layout(
   }
   final scales = [
     for (var i = 0; i < items.length; i++)
-      if (items[i].kind == ItemKind.separator || pointerX == null)
+      if (items[i].kind == ItemKind.separator ||
+          pointerX == null ||
+          magnified == null)
         1.0
       else
-        1 + (magnification - 1) * profile(pointerX - restCenters[i]) * amount,
+        1 +
+            (magnifiedCanvas(metrics, magnified, pointerX - restCenters[i]) /
+                        metrics.canvas -
+                    1) *
+                amount,
   ];
+  // How much wider a cell is than at rest: its tile grows with its canvas, the gap does not.
+  double grown(int i) => (scales[i] - 1) * metrics.canvas * presence[i];
   // Lateral expansion: the point under the pointer stays still. Every cell gives its growth
   // to the side it is on relative to the pointer; the one under the pointer splits it
   // according to the pointer's position in the resting cell.
   var leftGrowth = 0.0;
   for (var i = 0; i < items.length; i++) {
-    final extra = rest(i) * (scales[i] - 1);
+    final extra = grown(i);
     if (extra == 0 || pointerX == null) continue;
     final cellLeft = restCenters[i] - rest(i) / 2;
     final fraction = ((pointerX - cellLeft) / rest(i)).clamp(0.0, 1.0);
@@ -369,33 +426,56 @@ Layout layout(
   final cells = <(double, double)>[];
   x = restLeft - leftGrowth;
   for (var i = 0; i < items.length; i++) {
-    final w = rest(i) * scales[i];
+    final w = rest(i) + grown(i);
     cells.add((x, w));
     x += w;
   }
   final first = cells.first.$1;
   final last = cells.last.$1 + cells.last.$2;
-  final top = height - bottomGap - backgroundHeight;
-  return Layout._(cells, scales, (
-    first - sidePadding,
-    top,
-    last - first + 2 * sidePadding,
-    backgroundHeight,
-  ), presence);
+  final top = height - bottomGap - metrics.backgroundHeight;
+  return Layout._(
+    cells,
+    scales,
+    (
+      first - metrics.sidePadding,
+      top,
+      last - first + 2 * metrics.sidePadding,
+      metrics.backgroundHeight,
+    ),
+    presence,
+    metrics,
+  );
 }
 
-/// The icon square of cell `i`: left, top, side.
+/// The canvas square of the icon of cell `i`: left, top, side. Magnified, the bottom stays
+/// where it was at rest and the icon overflows upward (the shelf keeps its height).
 (double, double, double) iconRect(Layout l, int i, double height) {
-  final side = iconSize * l.scales[i] * l.presence[i];
-  final restBottom = height - bottomGap - backgroundHeight + iconTop + iconSize;
-  final bottom = restBottom - iconLiftPerScale * (l.scales[i] - 1);
+  final m = l.metrics;
+  final side = m.canvas * l.scales[i] * l.presence[i];
+  final bottom = height - bottomGap - m.backgroundHeight + iconTop + m.canvas;
   return (l.center(i) - side / 2, bottom - side, side);
+}
+
+/// The 824 body of an app is inset in its canvas by this fraction of the side, per side.
+const double bodyInset = (1 - 824 / 1024) / 2;
+
+/// Where to put a `SilicaIcon(side: …, besideApps: true)` for the canvas square `side` at
+/// (0, 0): an app's body is inset in its canvas; a place (folder, Trash, stack) has a body
+/// as large as that canvas, its bottom on the bottom of the app bodies, so it spills over the
+/// tile on every side (unclipped).
+(double, double, double) iconBody(double side, {required bool place}) {
+  if (!place) {
+    final body = side * (1 - 2 * bodyInset);
+    return (side * bodyInset, side * bodyInset, body);
+  }
+  return (0, -side * bodyInset, side);
 }
 
 /// The pointer is in the active zone: inside the resting background horizontally (x 816 no,
 /// x 820 yes with the background from 816.5), from 5 pt above the background downwards.
 bool inActiveZone(Layout rest, double x, double y, double height) {
-  final top = height - bottomGap - backgroundHeight - activeZoneAbove;
+  final top =
+      height - bottomGap - rest.metrics.backgroundHeight - activeZoneAbove;
   final (left, _, w, _) = rest.background;
   return y >= top && x >= left && x <= left + w;
 }
