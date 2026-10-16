@@ -18,7 +18,7 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
   - single icon button 32 × 32 circle;
   - action capsules 32 tall, made of 32 pt segments with 1 × 16 separators (Back/Forward 65);
   - search capsule 32 tall;
-  - 8 between capsules; trailing padding 16.
+  - 8 between capsules; trailing padding 16 (user decision 2026-10-16: the kit's "Full Inset 8" windows are defects).
   Small 24 (segment 24, icon 14), mini 20 (segment 20, icon 12). Amalfi's own sizes: do not copy Silica's
   measured 37/38 pt values.
 - Icon grids (file manager): tile 104 × 104 (icon 64, label below), gap 16, first tile at the content
