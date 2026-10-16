@@ -10,7 +10,6 @@ import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
 import 'package:silica_shell/notifications/settings.dart';
-import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/system_status.dart';
 import 'package:silica_ui/silica_ui.dart';
 
