@@ -47,17 +47,20 @@ void main() {
     },
   );
 
-  test('the bounce is spring.bouncy: 17 pt scaled to the Amalfi size, every ~0.7 s', () {
-    expect(bounceHeight(0), 0);
-    // Peak of the under-damped response at ~115 ms (response 0.6 s, zeta 0.5).
-    expect(bounceHeight(115), closeTo(bouncePeak, 0.05));
-    expect(bouncePeak, closeTo(17 * 56 / 63, 1e-9));
-    expect(bounceHeight(115 + 693), closeTo(bouncePeak, 0.05));
-    // It lands before the next jump and stays down (never below rest).
-    expect(bounceHeight(400), 0);
-    expect(bounceHeight(692), 0);
-    expect(bounceHeight(693), 0);
-  });
+  test(
+    'the bounce is spring.bouncy: 17 pt scaled to the Amalfi size, every ~0.7 s',
+    () {
+      expect(bounceHeight(0), 0);
+      // Peak of the under-damped response at ~115 ms (response 0.6 s, zeta 0.5).
+      expect(bounceHeight(115), closeTo(bouncePeak, 0.05));
+      expect(bouncePeak, closeTo(17 * 56 / 63, 1e-9));
+      expect(bounceHeight(115 + 693), closeTo(bouncePeak, 0.05));
+      // It lands before the next jump and stays down (never below rest).
+      expect(bounceHeight(400), 0);
+      expect(bounceHeight(692), 0);
+      expect(bounceHeight(693), 0);
+    },
+  );
 
   testWidgets('right click and long press open the menu; the click activates', (
     tester,
@@ -99,7 +102,10 @@ void main() {
     final shelfTop = 300 - bottomGap - backgroundHeight;
     expect(body.bottom, closeTo(shelfTop - menuAboveShelf, 0.5));
     // Centred on the item unless the screen's edge is in the way (8 pt margin).
-    expect(body.left, closeTo(math.max(8, rest.center(0) - body.width / 2), 0.5));
+    expect(
+      body.left,
+      closeTo(math.max(8, rest.center(0) - body.width / 2), 0.5),
+    );
     // Click outside: it closes without choosing.
     await tester.tapAt(const Offset(10, 10));
     await tester.pump(const Duration(milliseconds: 100));

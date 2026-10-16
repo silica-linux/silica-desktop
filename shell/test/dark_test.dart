@@ -8,7 +8,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/dock/dock.dart';
 import 'package:silica_shell/dock/model.dart';
-import 'package:silica_shell/dock/stack.dart';
 import 'package:silica_shell/dock/stack_settings.dart';
 import 'package:silica_shell/faro/launcher.dart';
 import 'package:silica_shell/forcequit/force_quit.dart';
@@ -147,7 +146,10 @@ void main() {
       AmalfiColors.of(Brightness.dark).textPrimary,
     );
     final title = find.text('Download').last;
-    expect(tester.widget<Text>(title).style?.color, AmalfiColors.of(Brightness.dark).textPrimary);
+    expect(
+      tester.widget<Text>(title).style?.color,
+      AmalfiColors.of(Brightness.dark).textPrimary,
+    );
   });
 
   testWidgets('window popover: #e1e1e1 glyphs', (tester) async {

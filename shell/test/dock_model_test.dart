@@ -89,22 +89,25 @@ void main() {
     expect(l.cells.first.$1, closeTo(rest.cells.first.$1, 0.3));
   });
 
-  test('maximum magnification: 132/63 of the pitch and the icon edge rises', () {
-    final rest = layout(items, width: width, height: height);
-    final mail = rest.center(4);
-    final l = layout(
-      items,
-      width: width,
-      height: height,
-      pointerX: mail,
-      amount: 1,
-      magnification: maxMagnification,
-    );
-    expect(l.cells[4].$2, closeTo(56 * 132 / 63, 0.01));
-    final (_, restTop, restSide) = iconRect(rest, 4, height);
-    final (_, top, side) = iconRect(l, 4, height);
-    expect((restTop + restSide) - (top + side), closeTo(7 * amalfiScale, 1));
-  });
+  test(
+    'maximum magnification: 132/63 of the pitch and the icon edge rises',
+    () {
+      final rest = layout(items, width: width, height: height);
+      final mail = rest.center(4);
+      final l = layout(
+        items,
+        width: width,
+        height: height,
+        pointerX: mail,
+        amount: 1,
+        magnification: maxMagnification,
+      );
+      expect(l.cells[4].$2, closeTo(56 * 132 / 63, 0.01));
+      final (_, restTop, restSide) = iconRect(rest, 4, height);
+      final (_, top, side) = iconRect(l, 4, height);
+      expect((restTop + restSide) - (top + side), closeTo(7 * amalfiScale, 1));
+    },
+  );
 
   test('entrance: ~60 ms at 68 pt, ~160 ms at 132 pt, measured curve', () {
     expect(enterDuration(defaultMagnification).inMilliseconds, 60);

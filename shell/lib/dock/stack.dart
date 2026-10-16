@@ -94,6 +94,7 @@ const double gridLeft = 17;
 const double gridRight = 17;
 const double gridTop = 32;
 const double gridBottom = 11;
+
 /// The panel is a popover on Glass/Thick: radius 16, arrow 20 wide and 8 deep (kit `Popovers`,
 /// `AmalfiPopoverMetrics`); the cell geometry below is the Dock's own (derived, not in the kit).
 const double gridRadius = AmalfiPopoverMetrics.radius;
