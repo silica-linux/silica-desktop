@@ -4,7 +4,8 @@
 // level 2 shadow: 96 pt icons in one row, 120 pt pitch, 20 pt from the sides and the top; with 4
 // apps it is 496 × 160 pt. The chosen app has a 112 × 112 box behind it (radius 24, a state
 // overlay of the appearance) and below it the name (Body Emphasis, `Text/Primary`). The panel
-// appears with `fade.instant` (motion.md); it goes at once. Sizes are on the 4 pt grid; there is
+// appears in one frame (no fade, no scale) and, once the modifier is released, fades out in
+// ~190 ms, linearly; Esc closes it at once (all measured, app-switcher.md). Sizes are on the 4 pt grid; there is
 // no switcher master in the kit, so they are ours, scaled from the Dock shelf (tile 52).
 //
 // Ossido handles the keys and forwards `switcher.next`, `switcher.previous` (⇧⌘Tab, with ⌘
@@ -222,11 +223,48 @@ class AppSwitcher extends StatefulWidget {
   State<AppSwitcher> createState() => _AppSwitcherState();
 }
 
-class _AppSwitcherState extends State<AppSwitcher> {
+class _AppSwitcherState extends State<AppSwitcher>
+    with SingleTickerProviderStateMixin {
   /// This component's layer surface (several share one engine, #201).
   late final LayerControl _layer;
 
   late final SwitcherModel _model = SwitcherModel(entries: widget.entries);
+
+  /// Measured (app-switcher.md): releasing the modifier fades the panel out in ~190 ms,
+  /// roughly linear; it appears in one frame and Esc closes it in the next, with no animation.
+  static const Duration releaseFade = Duration(milliseconds: 190);
+  late final AnimationController _release = AnimationController(
+    vsync: this,
+    duration: releaseFade,
+    value: 1,
+  )..addListener(() => setState(() {}));
+
+  /// The panel being faded out after a release (null: none).
+  ({List<SwitcherApp> apps, int selected})? _leaving;
+
+  /// A new switcher opens over a fading one: the old panel goes at once.
+  void _reopen() {
+    if (_leaving == null) return;
+    _release
+      ..stop()
+      ..value = 1;
+    _leaving = null;
+  }
+
+  /// Commits the choice and fades the panel out from where it was.
+  String? _commit() {
+    final apps = _model.apps;
+    final selected = _model.selected;
+    final window = _model.commit();
+    if (apps != null && apps.isNotEmpty) {
+      _leaving = (apps: apps, selected: selected);
+      _release.reverse(from: 1).whenCompleteOrCancel(() {
+        if (mounted) setState(() => _leaving = null);
+      });
+    }
+    return window;
+  }
+
   StreamSubscription<String>? _commands;
   StreamSubscription<SilicaDragEvent>? _drags;
   final ShellChannel _shell = ShellChannel.instance;
@@ -252,6 +290,7 @@ class _AppSwitcherState extends State<AppSwitcher> {
 
   @override
   void dispose() {
+    _release.dispose();
     _commands?.cancel();
     _drags?.cancel();
     _shell.toplevels.removeListener(_toplevels);
@@ -266,18 +305,20 @@ class _AppSwitcherState extends State<AppSwitcher> {
   void _command(String id) {
     switch (id) {
       case 'switcher.next':
+        _reopen();
         setState(_model.next);
       case 'switcher.previous':
+        _reopen();
         setState(_model.previous);
       case 'switcher.commit':
-        final window = _model.commit();
+        final window = _commit();
         setState(() {});
         if (window != null) unawaited(_shell.activate(window));
       case 'switcher.cancel':
         setState(_model.cancel);
       case 'switcher.expose':
         // ↑ or ↓: App Exposé of the chosen app, which stays after ⌘ is released.
-        final window = _model.commit();
+        final window = _commit();
         setState(() {});
         if (window != null) unawaited(_exposeOf(window));
     }
@@ -331,7 +372,7 @@ class _AppSwitcherState extends State<AppSwitcher> {
   /// A click on an icon activates that app, as releasing ⌘ on it would.
   void _click(int index) {
     setState(() => _model.select(index));
-    final window = _model.commit();
+    final window = _commit();
     setState(() {});
     if (window != null) unawaited(_shell.activate(window));
   }
@@ -343,16 +384,28 @@ class _AppSwitcherState extends State<AppSwitcher> {
         _size = constraints.biggest;
         final apps = _model.apps;
         _syncRegion(apps);
-        if (apps == null || apps.isEmpty) return const SizedBox.expand();
-        return _FadeIn(
-          child: SwitcherPanel(
-            apps: apps,
-            selected: _model.selected,
-            onHover: (i) {
-              if (i != _model.selected) setState(() => _model.select(i));
-            },
-            onTap: _click,
-          ),
+        if (apps == null || apps.isEmpty) {
+          // After a release the panel fades out, linearly, without taking the pointer.
+          final leaving = _leaving;
+          if (leaving == null) return const SizedBox.expand();
+          return IgnorePointer(
+            child: Opacity(
+              opacity: _release.value.clamp(0.0, 1.0),
+              child: SwitcherPanel(
+                apps: leaving.apps,
+                selected: leaving.selected,
+              ),
+            ),
+          );
+        }
+        // Opens in one frame, with no fade and no scale.
+        return SwitcherPanel(
+          apps: apps,
+          selected: _model.selected,
+          onHover: (i) {
+            if (i != _model.selected) setState(() => _model.select(i));
+          },
+          onTap: _click,
         );
       },
     );
@@ -495,21 +548,4 @@ class SwitcherPanel extends StatelessWidget {
         ),
     ];
   }
-}
-
-/// Shows its child with `fade.instant` (motion.md, App switcher › show).
-class _FadeIn extends StatelessWidget {
-  const _FadeIn({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 0, end: 1),
-    duration: AmalfiFades.instant.duration,
-    curve: AmalfiFades.instant.curve,
-    builder: (context, opacity, child) =>
-        Opacity(opacity: opacity, child: child),
-    child: child,
-  );
 }

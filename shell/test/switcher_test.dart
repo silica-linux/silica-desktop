@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/switcher/switcher.dart';
 import 'package:silica_shell/system/glass_profile.dart';
-import 'package:silica_ui/silica_ui.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/layer_control.dart';
 import 'package:silica_shell/system/shell_channel.dart';
@@ -214,7 +213,7 @@ Exec=files %U
       await command(tester, 'switcher.next');
       expect(find.byType(SwitcherPanel), findsOneWidget);
       await command(tester, 'switcher.expose');
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       expect(find.byType(SwitcherPanel), findsNothing);
       final names = [for (final c in calls) c.method];
       expect(names.where((m) => m == 'activate'), hasLength(1));
@@ -270,27 +269,48 @@ Exec=files %U
       },
     );
 
-    testWidgets('the panel appears with fade.instant and is Glass/Regular', (
-      tester,
-    ) async {
-      await open(tester);
-      await command(tester, 'switcher.next');
-      double opacity() => tester
-          .widget<Opacity>(
-            find.descendant(
-              of: find.byType(AppSwitcher),
-              matching: find.byType(Opacity),
-            ),
-          )
-          .opacity;
-      expect(opacity(), lessThan(1));
-      await tester.pump(AmalfiFades.instant.duration);
-      expect(opacity(), 1);
-      // The Dock's kind of glass: Regular, with the level 2 shadow.
-      final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
-      expect(glass.surface, ShellGlassProfile.dock);
-      expect(glass.radius, 28);
-      await command(tester, 'switcher.cancel');
-    });
+    testWidgets(
+      'the panel appears in one frame, fades out linearly in 190 ms on release, Esc is instant',
+      (tester) async {
+        await open(tester);
+        await command(tester, 'switcher.next');
+        // No fade in: no Opacity around the panel on the first frame.
+        expect(
+          find.ancestor(
+            of: find.byType(SwitcherPanel),
+            matching: find.byType(Opacity),
+          ),
+          findsNothing,
+        );
+        double opacity() => tester
+            .widget<Opacity>(
+              find.ancestor(
+                of: find.byType(SwitcherPanel),
+                matching: find.byType(Opacity),
+              ),
+            )
+            .opacity;
+        // Release: linear fade over ~190 ms.
+        await command(tester, 'switcher.commit');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 95));
+        expect(opacity(), closeTo(0.5, 0.02));
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(opacity(), closeTo(0.29, 0.03));
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(find.byType(SwitcherPanel), findsNothing);
+        // Esc: gone in the next frame.
+        await command(tester, 'switcher.next');
+        await command(tester, 'switcher.cancel');
+        await tester.pump();
+        expect(find.byType(SwitcherPanel), findsNothing);
+        // The Dock's kind of glass: Regular, with the level 2 shadow.
+        await command(tester, 'switcher.next');
+        final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
+        expect(glass.surface, ShellGlassProfile.dock);
+        expect(glass.radius, 28);
+        await command(tester, 'switcher.cancel');
+      },
+    );
   });
 }
