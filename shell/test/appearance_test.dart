@@ -6,7 +6,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
 import 'package:silica_shell/controlcenter/hud.dart';
-import 'package:silica_shell/controlcenter/palette.dart';
 import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_ui/silica_ui.dart';
