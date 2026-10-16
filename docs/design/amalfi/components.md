@@ -129,19 +129,3 @@ Buttons have no hover or pressed look and no tooltip; the scope opens on release
 | Selection | ring 3 pt Accent around the 64 icon (radius as the icon body + 3); completion target gets a gray ring |
 | List mode | already 640: rows 56 like Faro |
 | Esc | width never changes now: the panel only shrinks in height to the 56 bar (same spring as "Esc with a query") |
-
-## Launcher
-
-Faro in apps mode (⌘1 or the Dock). Same 640 envelope as Faro (user decision 2026-10-16).
-
-| Element | Amalfi value |
-|---|---|
-| Panel | 640 × 576, radius 28, Glass/Thick, top edge at the same 30 % line as Faro |
-| Header | 56, same as Faro (apps glyph / back at x 20, field text at x 56, "…" view menu 20 from the right) |
-| Category row | 40 tall, capsules 24 tall, gap 8, inset 20; the row scrolls horizontally and is clipped by the panel edge |
-| Grid | 5 columns, cell 120 × 104 (pitch 120), first column at x 20; icon 64 centred, 8 below the cell top; label Caption, centred, one line, truncated with "…", 8 below the icon |
-| Recents | first grid row = recent apps, then a 1 pt separator inset 20, 8 above and below, then all apps A–Z |
-| Visible | recents + 3 rows; the grid scrolls; overlay scroller 4 pt from the right |
-| Selection | ring 3 pt Accent around the 64 icon (radius as the icon body + 3); completion target gets a gray ring |
-| List mode | already 640: rows 56 like Faro |
-| Esc | width never changes now: the panel only shrinks in height to the 56 bar (same spring as "Esc with a query") |
