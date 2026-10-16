@@ -1,5 +1,6 @@
-//! Dark appearance of windows (`--appearance dark`): title bar, buttons, 1 pt inner border
-//! and shadow, with the colors measured on macOS 27 (`plan/reference/windows.md`).
+//! Dark appearance of windows (`--appearance dark`): title bar (Amalfi `Surface/Window`),
+//! buttons (measured on macOS 27, `docs/spec/windows.md`), the 1 pt rim (`Line/Border`) and the
+//! shadow (`shadows.3`).
 
 #![allow(
     clippy::unwrap_used,
@@ -19,6 +20,17 @@ use silica_protocols::window::client::silica_window_v1::Appearance;
 const SIZE: (u32, u32) = (640, 400);
 const BAR: i32 = 32;
 const GRAY: &str = "7a7b80";
+/// `Dark/Surface/Window`.
+const DARK_BAR: [u8; 3] = [0x1b, 0x1c, 0x1f];
+
+/// `Dark/Line/Border` (`#F4F5F729`) over `under`.
+fn dark_rim_over(under: [u8; 3]) -> [u8; 3] {
+    let alpha = 0x29_u8 as f32 / 255.0;
+    let rim: [u8; 3] = [0xf4, 0xf5, 0xf7];
+    std::array::from_fn(|i| {
+        (f32::from(under[i]) * (1.0 - alpha) + f32::from(rim[i]) * alpha).round() as u8
+    })
+}
 
 fn start(name: &str, appearance: &str) -> Headless {
     Headless::start_with(
@@ -71,11 +83,11 @@ fn dark_windows_use_the_measured_bar_buttons_and_inner_border() {
     let info = windows(&ossido).remove(0);
     let shot = shot(&ossido, "appearance-dark");
 
-    // Active bar: like the content in dark, `#272728`.
+    // Active bar: `Dark/Surface/Window`.
     assert_near(
         &shot,
         (info.x + 150, info.y - 16),
-        [39, 39, 40],
+        DARK_BAR,
         1,
         "background",
     );
@@ -90,19 +102,25 @@ fn dark_windows_use_the_measured_bar_buttons_and_inner_border() {
         32,
         "full screen",
     );
-    // 1 pt inner border `#3d3d3d`: above the bar, on the left and at the bottom on the content.
+    // 1 pt rim `Line/Border`: above the bar, on the left and at the bottom on the content.
     assert_near(
         &shot,
         (info.x + 150, info.y - BAR),
-        [0x3d; 3],
+        dark_rim_over(DARK_BAR),
         2,
         "top border",
     );
-    assert_near(&shot, (info.x, info.y + 70), [0x3d; 3], 2, "left border");
+    assert_near(
+        &shot,
+        (info.x, info.y + 70),
+        dark_rim_over([255, 0, 0]),
+        2,
+        "left border",
+    );
     assert_near(
         &shot,
         (info.x + 120, info.y + 139),
-        [0x3d; 3],
+        dark_rim_over([255, 0, 0]),
         2,
         "bottom border",
     );
@@ -126,20 +144,20 @@ fn inactive_dark_windows_have_their_own_bar_and_gray_buttons() {
         .unwrap();
     let shot = shot(&ossido, "appearance-dark-inactive");
 
-    // Inactive bar `#2f2f30`, 1 pt separator `#363636` above the content.
+    // Inactive bar: the same `Surface/Window`, and no separator row above the content.
     assert_near(
         &shot,
         (first.x + 150, first.y - 16),
-        [47, 47, 48],
+        DARK_BAR,
         1,
         "background",
     );
     assert_near(
         &shot,
-        (first.x + 150, first.y - 1),
-        [54, 54, 54],
+        (first.x + 150, first.y - 2),
+        DARK_BAR,
         1,
-        "separator",
+        "no separator",
     );
     // Inactive buttons: center `#4d4d4d`.
     for index in 0..3 {
@@ -151,18 +169,18 @@ fn inactive_dark_windows_have_their_own_bar_and_gray_buttons() {
             "inactive button",
         );
     }
-    // Inactive border: `#404041` on top, `#3a3a3b` on the sides.
+    // The rim is the same when inactive.
     assert_near(
         &shot,
         (first.x + 150, first.y - BAR),
-        [0x40, 0x40, 0x41],
+        dark_rim_over(DARK_BAR),
         2,
         "top border",
     );
     assert_near(
         &shot,
         (first.x, first.y + 70),
-        [0x3a, 0x3a, 0x3b],
+        dark_rim_over([255, 0, 0]),
         2,
         "left border",
     );
@@ -179,9 +197,9 @@ fn the_dark_shadow_is_stronger_than_the_light_one() {
         // Below the window (shadow shifted down) and on the side, over gray.
         let under = rgb(&shot, (info.x + 120, info.y + 140 + 8))[1];
         let side = rgb(&shot, (info.x - 6, info.y + 70))[1];
-        // The contact ring: in dark almost a black border (alpha 0.95 against 0.32).
-        let ring = rgb(&shot, (info.x - 1, info.y + 70))[1];
-        below.push((under, side, ring));
+        // Next to the rim: shadows.3 has no contact ring, only the soft Gaussian.
+        let edge = rgb(&shot, (info.x - 2, info.y + 70))[1];
+        below.push((under, side, edge));
     }
     let (light, dark) = (below[0], below[1]);
     assert!(
@@ -192,10 +210,7 @@ fn the_dark_shadow_is_stronger_than_the_light_one() {
         dark.1 + 5 < light.1,
         "beside: light {light:?}, dark {dark:?}"
     );
-    assert!(
-        dark.2 < 20 && light.2 > 60,
-        "ring: light {light:?}, dark {dark:?}"
-    );
+    assert!(dark.2 + 8 < light.2, "edge: light {light:?}, dark {dark:?}");
 }
 
 #[test]
@@ -218,13 +233,7 @@ fn a_dark_window_in_a_light_session_draws_the_dark_traffic_lights_and_bar() {
     let info = windows(&ossido).remove(0);
     let shot = shot(&ossido, "appearance-override-dark");
 
-    assert_near(
-        &shot,
-        (info.x + 150, info.y - 16),
-        [39, 39, 40],
-        1,
-        "dark bar",
-    );
+    assert_near(&shot, (info.x + 150, info.y - 16), DARK_BAR, 1, "dark bar");
     assert_near(
         &shot,
         button(&info, 0),
@@ -242,7 +251,7 @@ fn a_dark_window_in_a_light_session_draws_the_dark_traffic_lights_and_bar() {
     assert_near(
         &shot,
         (info.x + 150, info.y - BAR),
-        [0x3d; 3],
+        dark_rim_over(DARK_BAR),
         2,
         "dark top border",
     );
@@ -278,7 +287,7 @@ fn a_light_window_in_a_dark_session_stays_light_and_system_follows_the_session()
     assert_near(
         &image,
         (info.x + 150, info.y - 16),
-        [39, 39, 40],
+        DARK_BAR,
         1,
         "the dark session's bar again",
     );
@@ -301,8 +310,8 @@ fn the_override_is_per_window() {
     assert_near(
         &image,
         (dark_info.x + 150, dark_info.y - 16),
-        // Inactive here (the other window was opened after it): the dark inactive bar.
-        [47, 47, 48],
+        // Inactive here (the other window was opened after it): the same dark bar.
+        DARK_BAR,
         1,
         "the overriding window",
     );

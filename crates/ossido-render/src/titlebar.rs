@@ -1,6 +1,7 @@
-//! Title bar of the server-side decorations: 32 pt like the measured plain title bar, with
-//! the three window buttons (`plan/reference/windows.md`, "Window buttons" and
-//! "Windows · border and background"; `plan/reference/titlebar.md` §1), in light and dark.
+//! Title bar of the server-side decorations: the Amalfi title-only bar (32 pt, flat opaque
+//! `Surface/Window`, kit `Titlebars/Bar/Title Only`) with the three window controls, which keep
+//! the values measured in `docs/spec/windows.md` ("Window buttons"; a 14 pt disc in the kit's
+//! 16 pt cell), in light and dark.
 //!
 //! Button placement rule (TITLEBAR-GLASS, #86): 14 pt discs at a 23 pt pitch, always
 //! centred vertically on the bar; the first centre is 16 pt from the left edge in bars up to
@@ -41,15 +42,13 @@ pub fn button_centers(bar: f64) -> [(f64, f64); 3] {
     [(x, y), (x + BUTTON_PITCH, y), (x + 2.0 * BUTTON_PITCH, y)]
 }
 
-/// Bar background: like the content of the active window in light (`#ffffff`).
+/// Bar background: flat opaque `Surface/Window` of the Amalfi tokens (`#FFFFFF` light,
+/// `#1B1C1F` dark), the same in an active and an inactive window.
 const BACKGROUND: [f32; 3] = [1.0, 1.0, 1.0];
-/// Dark: like the content when the window is active (`#272728`); when inactive the bar has
-/// its own background, `#2f2f30`.
-const BACKGROUND_DARK: [f32; 3] = [39.0 / 255.0, 39.0 / 255.0, 40.0 / 255.0];
-const BACKGROUND_DARK_INACTIVE: [f32; 3] = [47.0 / 255.0, 47.0 / 255.0, 48.0 / 255.0];
-/// Inactive window: 1 pt row `#e5e5e5` between bar and content; in dark `#363636`.
-const SEPARATOR_INACTIVE: [f32; 4] = [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 1.0];
-const SEPARATOR_INACTIVE_DARK: [f32; 4] = [54.0 / 255.0, 54.0 / 255.0, 54.0 / 255.0, 1.0];
+const BACKGROUND_DARK: [f32; 3] = [27.0 / 255.0, 28.0 / 255.0, 31.0 / 255.0];
+/// The kit's title-only and plain bars have no separator row of their own (the Window
+/// masters put the content right under the bar), also when inactive.
+const NO_SEPARATOR: [f32; 4] = [0.0; 4];
 
 pub const SHADER: &str = include_str!("shaders/titlebar.frag");
 pub const UNIFORMS: [(&str, UniformType); 19] = [
@@ -266,15 +265,11 @@ fn uniforms(frame: Size<i32, Logical>, state: TitlebarState) -> Vec<Uniform<'sta
         .min(frame.w as f32 / 2.0)
         .min(frame.h as f32 / 2.0)
         .max(0.0);
-    let separator = match (state.active, state.dark) {
-        (true, _) => [0.0; 4],
-        (false, false) => SEPARATOR_INACTIVE,
-        (false, true) => SEPARATOR_INACTIVE_DARK,
-    };
-    let background = match (state.active, state.dark) {
-        (_, false) => BACKGROUND,
-        (true, true) => BACKGROUND_DARK,
-        (false, true) => BACKGROUND_DARK_INACTIVE,
+    let separator = NO_SEPARATOR;
+    let background = if state.dark {
+        BACKGROUND_DARK
+    } else {
+        BACKGROUND
     };
     let centers = button_centers(f64::from(state.bar_height));
     let flag = |on: bool| if on { 1.0 } else { 0.0 };

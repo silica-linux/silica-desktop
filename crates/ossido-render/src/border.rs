@@ -1,6 +1,6 @@
-//! The inner border of windows in the dark appearance: 1 pt lighter than the background along
-//! the whole outline, above the content (`plan/reference/windows.md`, "Windows · border and
-//! background"). In light there is none.
+//! The rim of windows: 1 pt inside the outline, above the content, in `Line/Border` of the
+//! Amalfi tokens (`#1D1E21` at 14 % in light, `#F4F5F7` at 16 % in dark), the same for an active
+//! and an inactive window (the kit's "Window rim" layer).
 
 use smithay::backend::renderer::gles::element::PixelShaderElement;
 use smithay::backend::renderer::gles::{GlesPixelProgram, Uniform, UniformType, UniformValue};
@@ -9,63 +9,42 @@ use smithay::utils::{Logical, Size};
 use crate::cache::ShaderCache;
 use crate::corners::{CORNER_EXPONENT, CORNER_RADIUS};
 
-/// The border colors (sRGB 0–1): top row, sides, bottom row.
+/// The rim colour: sRGB 0-1 with straight alpha.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BorderStyle {
-    pub top: [f32; 3],
-    pub side: [f32; 3],
-    pub bottom: [f32; 3],
+    pub rgba: [f32; 4],
 }
 
-const fn gray(level: u8) -> [f32; 3] {
-    let v = level as f32 / 255.0;
-    [v, v, v]
+const fn rgba(r: u8, g: u8, b: u8, a: u8) -> [f32; 4] {
+    [
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ]
 }
 
-/// Active, dark: `#3d3d3d` (61) on every side, against the `#272728` background.
-pub const ACTIVE_DARK: BorderStyle = BorderStyle {
-    top: gray(0x3d),
-    side: gray(0x3d),
-    bottom: gray(0x3d),
+/// `Light/Line/Border` `#1D1E2124`.
+pub const LIGHT: BorderStyle = BorderStyle {
+    rgba: rgba(0x1d, 0x1e, 0x21, 0x24),
 };
 
-/// Inactive, dark: `#404041` on top (64), `#3a3a3b` on the left (58). The bottom row is not
-/// measured: like the sides.
-pub const INACTIVE_DARK: BorderStyle = BorderStyle {
-    top: [
-        0x40 as f32 / 255.0,
-        0x40 as f32 / 255.0,
-        0x41 as f32 / 255.0,
-    ],
-    side: [
-        0x3a as f32 / 255.0,
-        0x3a as f32 / 255.0,
-        0x3b as f32 / 255.0,
-    ],
-    bottom: [
-        0x3a as f32 / 255.0,
-        0x3a as f32 / 255.0,
-        0x3b as f32 / 255.0,
-    ],
+/// `Dark/Line/Border` `#F4F5F729`.
+pub const DARK: BorderStyle = BorderStyle {
+    rgba: rgba(0xf4, 0xf5, 0xf7, 0x29),
 };
 
-/// The border of a window according to state and appearance; none in light.
-pub fn style(active: bool, dark: bool) -> Option<BorderStyle> {
-    match (dark, active) {
-        (false, _) => None,
-        (true, true) => Some(ACTIVE_DARK),
-        (true, false) => Some(INACTIVE_DARK),
-    }
+/// The rim of a window according to the appearance (the state does not change it).
+pub fn style(_active: bool, dark: bool) -> Option<BorderStyle> {
+    Some(if dark { DARK } else { LIGHT })
 }
 
 pub const SHADER: &str = include_str!("shaders/border.frag");
-pub const UNIFORMS: [(&str, UniformType); 6] = [
+pub const UNIFORMS: [(&str, UniformType); 4] = [
     ("radius", UniformType::_1f),
     ("exponent", UniformType::_1f),
     ("pixel", UniformType::_1f),
-    ("top", UniformType::_3f),
-    ("side", UniformType::_3f),
-    ("bottom", UniformType::_3f),
+    ("rim", UniformType::_4f),
 ];
 
 /// The border of a window, kept in its data.
@@ -90,15 +69,19 @@ impl WindowBorder {
                     .min(frame.size.w as f32 / 2.0)
                     .min(frame.size.h as f32 / 2.0)
                     .max(0.0);
-                let color =
-                    |name, [r, g, b]: [f32; 3]| Uniform::new(name, UniformValue::_3f(r, g, b));
                 vec![
                     Uniform::new("radius", UniformValue::_1f(radius)),
                     Uniform::new("exponent", UniformValue::_1f(CORNER_EXPONENT)),
                     Uniform::new("pixel", UniformValue::_1f(pixel)),
-                    color("top", style.top),
-                    color("side", style.side),
-                    color("bottom", style.bottom),
+                    Uniform::new(
+                        "rim",
+                        UniformValue::_4f(
+                            style.rgba[0],
+                            style.rgba[1],
+                            style.rgba[2],
+                            style.rgba[3],
+                        ),
+                    ),
                 ]
             })
     }
@@ -109,11 +92,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn border_only_in_dark() {
-        assert_eq!(style(true, false), None);
-        assert_eq!(style(false, false), None);
-        assert_eq!(style(true, true), Some(ACTIVE_DARK));
-        assert_eq!(style(false, true), Some(INACTIVE_DARK));
-        assert_eq!(ACTIVE_DARK.top, gray(61));
+    fn the_rim_is_line_border_in_both_appearances() {
+        assert_eq!(style(true, false), Some(LIGHT));
+        assert_eq!(style(false, false), Some(LIGHT));
+        assert_eq!(style(true, true), Some(DARK));
+        assert_eq!(style(false, true), Some(DARK));
+        assert_eq!(LIGHT.rgba[3], 36.0 / 255.0);
+        assert_eq!(DARK.rgba[3], 41.0 / 255.0);
     }
 }

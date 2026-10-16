@@ -665,7 +665,7 @@ fn window_elements(
             }
         }
     }
-    // The 1 pt inner border (only in dark), above the content.
+    // The 1 pt rim (Line/Border), above the content.
     if let Some(style) = ossido_render::border::style(active, dark)
         && let Some(program) = &shaders.border
     {
