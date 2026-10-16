@@ -565,7 +565,8 @@ impl State {
             }
             INPUT_KEY => {
                 let Key { key, pressed } = parse_required(params)?;
-                let (code, shift) = self
+                self.refresh_keys();
+                let stroke = self
                     .keys
                     .find(&key)
                     .ok_or_else(|| format!("unknown key: {key}"))?;
@@ -575,7 +576,7 @@ impl State {
                     None => &[KeyState::Pressed, KeyState::Released],
                 };
                 for state in states {
-                    self.synthetic_key(code, shift, *state);
+                    self.synthetic_key(stroke, *state);
                 }
                 Ok(Value::Null)
             }
@@ -603,18 +604,39 @@ impl State {
             }
             INPUT_TYPE => {
                 let TypeText { text } = parse_required(params)?;
-                // Everything is checked before pressing anything: no half-typed text.
-                let codes = text
-                    .chars()
-                    .map(|ch| {
-                        self.keys
-                            .find(&ch.to_string())
-                            .ok_or_else(|| format!("character cannot be typed: {ch:?}"))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                for (code, shift) in codes {
-                    self.synthetic_key(code, shift, KeyState::Pressed);
-                    self.synthetic_key(code, shift, KeyState::Released);
+                self.refresh_keys();
+                // Everything is checked before pressing anything: no half-typed text. A
+                // character the active layout lacks goes on a temporary key.
+                let mut plan = Vec::new();
+                for ch in text.chars() {
+                    match self.keys.find(&ch.to_string()) {
+                        Some(stroke) => plan.push((ch, Some(stroke))),
+                        None if !ch.is_control() => plan.push((ch, None)),
+                        None => return Err(format!("character cannot be typed: {ch:?}")),
+                    }
+                }
+                let mut temporary = false;
+                let mut failed = None;
+                for (ch, stroke) in plan {
+                    match stroke {
+                        Some(stroke) => {
+                            self.synthetic_key(stroke, KeyState::Pressed);
+                            self.synthetic_key(stroke, KeyState::Released);
+                        }
+                        None => match self.type_on_temporary_key(ch) {
+                            Ok(()) => temporary = true,
+                            Err(err) => {
+                                failed = Some(err);
+                                break;
+                            }
+                        },
+                    }
+                }
+                if temporary {
+                    self.restore_keymap();
+                }
+                if let Some(err) = failed {
+                    return Err(err);
                 }
                 Ok(Value::Null)
             }
@@ -639,21 +661,111 @@ impl State {
         }
     }
 
-    /// A synthetic key to the focused window, with Shift around it if needed.
+    /// A synthetic key to the focused window, with Shift and AltGr around it if needed.
     /// It goes through the same filter as real keys, so shortcuts work too.
-    fn synthetic_key(&mut self, code: u32, shift: bool, state: KeyState) {
+    fn synthetic_key(&mut self, stroke: crate::keys::KeyStroke, state: KeyState) {
         let time = self.now_msec();
         // Like a real key: catalog shortcuts too.
         let press = |state: &mut Self, code: u32, key_state: KeyState| {
             state.handle_key(Keycode::new(code), key_state, time);
         };
-        if shift && state == KeyState::Pressed {
-            press(self, crate::keys::SHIFT_LEFT, KeyState::Pressed);
+        let modifiers: Vec<u32> = [
+            stroke.shift.then_some(crate::keys::SHIFT_LEFT),
+            stroke.level3,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if state == KeyState::Pressed {
+            for code in &modifiers {
+                press(self, *code, KeyState::Pressed);
+            }
         }
-        press(self, code, state);
-        if shift && state == KeyState::Released {
-            press(self, crate::keys::SHIFT_LEFT, KeyState::Released);
+        press(self, stroke.code, state);
+        if state == KeyState::Released {
+            for code in modifiers.iter().rev() {
+                press(self, *code, KeyState::Released);
+            }
         }
+    }
+
+    /// The xkb names of the keyboard in use: layouts, variants, model, options.
+    fn keyboard_names(&self) -> (String, String, String, Option<String>) {
+        let config = &self.keyboard_config;
+        let (layout, variant) = config.xkb_names();
+        let options = (!config.options.is_empty()).then(|| config.options.clone());
+        (layout, variant, config.model.clone(), options)
+    }
+
+    /// Builds the synthetic keys again if the keyboard settings or the active input source
+    /// changed: `input.type` and `input.key` follow the keymap the apps have (#195).
+    fn refresh_keys(&mut self) {
+        let active = self.active_layout();
+        let (layout, variant, model, options) = self.keyboard_names();
+        let key = (
+            layout.clone(),
+            variant.clone(),
+            model.clone(),
+            options.clone().unwrap_or_default(),
+            active,
+        );
+        if self.keys_for.as_ref() == Some(&key) {
+            return;
+        }
+        match crate::keys::KeyLookup::for_names(&layout, &variant, &model, options, active) {
+            Ok(keys) => {
+                self.keys = keys;
+                self.keys_for = Some(key);
+            }
+            Err(err) => warn!("synthetic keys: {err}"),
+        }
+    }
+
+    /// Types `ch` on a temporary key: a keymap with one more key that has the character is sent
+    /// to the apps, the key is pressed, and the caller restores the keymap afterwards.
+    fn type_on_temporary_key(&mut self, ch: char) -> Result<(), String> {
+        let (layout, variant, model, options) = self.keyboard_names();
+        let (text, code) = crate::keys::keymap_with_key_for(&layout, &variant, &model, options, ch)
+            .ok_or_else(|| format!("character cannot be typed: {ch:?}"))?;
+        let keyboard = self.seat.get_keyboard().ok_or("no keyboard")?;
+        let active = self.active_layout();
+        keyboard
+            .set_keymap_from_string(self, text)
+            .map_err(|e| format!("character cannot be typed: {ch:?} ({e:?})"))?;
+        keyboard.with_xkb_state(self, |mut context| {
+            context.set_layout(smithay::input::keyboard::Layout(active));
+        });
+        let stroke = crate::keys::KeyStroke {
+            code,
+            shift: false,
+            level3: None,
+        };
+        self.synthetic_key(stroke, KeyState::Pressed);
+        self.synthetic_key(stroke, KeyState::Released);
+        Ok(())
+    }
+
+    /// Puts the keymap of the keyboard settings back after the temporary keys.
+    fn restore_keymap(&mut self) {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let active = self.active_layout();
+        let (layout, variant, model, options) = self.keyboard_names();
+        let xkb = smithay::input::keyboard::XkbConfig {
+            rules: "",
+            model: &model,
+            layout: &layout,
+            variant: &variant,
+            options,
+        };
+        if let Err(err) = keyboard.set_xkb_config(self, xkb) {
+            warn!("restoring the keymap: {err:?}");
+            return;
+        }
+        keyboard.with_xkb_state(self, |mut context| {
+            context.set_layout(smithay::input::keyboard::Layout(active));
+        });
     }
 
     /// Time for synthetic input events, in milliseconds since start.

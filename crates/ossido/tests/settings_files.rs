@@ -284,3 +284,39 @@ fn input_json_is_read_live() {
     write_setting(&ossido, "input.json", &json!("not an object"));
     wait_for(&ossido, "input.state", |s| s["mouse"]["speed"].is_null());
 }
+
+#[test]
+fn input_type_follows_the_active_keymap_with_a_temporary_key_fallback() {
+    let ossido = Headless::start("keyboard-type");
+    let (_connection, mut queue, mut keyboard) = connect(&ossido.wayland);
+    write_setting(&ossido, "keyboard.json", &json!({"layouts": ["it"]}));
+    wait_for(&ossido, "keyboard.state", |s| s["layouts"] == json!(["it"]));
+    queue.roundtrip(&mut keyboard).unwrap();
+    // Characters the Italian layout has (the ones that put "ò" for ";" on US keycodes), some
+    // with AltGr: no error, and no keymap change.
+    let before = keyboard.keymaps;
+    ossido
+        .client()
+        .call("input.type", json!({"text": "clear; ls @ò€"}))
+        .unwrap();
+    queue.roundtrip(&mut keyboard).unwrap();
+    assert_eq!(keyboard.keymaps, before);
+    // A character no layout has: a temporary keymap is sent, then the real one again.
+    ossido
+        .client()
+        .call("input.type", json!({"text": "aǆb"}))
+        .unwrap();
+    queue.roundtrip(&mut keyboard).unwrap();
+    assert_eq!(keyboard.keymaps, before + 2);
+    // A control character other than the keys cannot be typed, and nothing is pressed.
+    assert!(
+        ossido
+            .client()
+            .call("input.type", json!({"text": "a\u{1}"}))
+            .is_err()
+    );
+    assert_eq!(
+        ossido.client().call("keyboard.state", Value::Null).unwrap()["layouts"],
+        json!(["it"])
+    );
+}
