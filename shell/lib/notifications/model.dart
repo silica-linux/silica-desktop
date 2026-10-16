@@ -1,9 +1,11 @@
 // Notifications as silica-daemon sends them (dev.frascella.Silica.Notifications1,
-// docs/daemon.md), the Notification Center groups and the banner curves.
+// docs/daemon.md), the Notification Centre groups and the Amalfi motion of banners and panel.
 
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/physics.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 /// The action key of the reply field.
 const String replyAction = 'inline-reply';
@@ -126,38 +128,31 @@ List<NotificationGroup> groupNotifications(Iterable<ShellNotification> all) {
   return [for (final e in groups.entries) NotificationGroup(e.key, e.value)];
 }
 
-/// Banner entrance (notifications.md, "Banner life cycle"): it slides in from the right
-/// from off screen; the remaining distance shrinks by ~0.83 per frame (75 Hz), time
-/// constant ~71 ms, arrival within 1 pt in ~400 ms, no overshoot.
-const double bannerEnterTau = 71;
+/// Banner entrance (motion.md, Notifications: "slide from the trailing edge + fade,
+/// `spring.panel`"): the banner starts off screen, the whole banner plus the margin to the
+/// right of its place, and settles with `spring.panel` (it overshoots by ~1-2 %, a few points).
+const double bannerEnterDistance = 360 + 16;
 
-/// Starting distance: the whole banner plus the margin, off screen.
-const double bannerEnterDistance = 344 + 16;
+/// How long the entrance is simulated: `spring.panel` (response 0.35 s, zeta 0.82) is within
+/// 0.1 % of its place in ~0.45 s.
+const Duration bannerEnterDuration = Duration(milliseconds: 450);
 
-/// Entrance duration: until half a point from arrival.
-final Duration bannerEnterDuration = Duration(
-  milliseconds: (bannerEnterTau * math.log(bannerEnterDistance / 0.5)).ceil(),
-);
+final SpringSimulation _slide = SpringSimulation(AmalfiSprings.panel, 0, 1, 0);
+
+/// How far (0-1) the spring has taken a surface from its start to its place [ms] after it
+/// started (1 once [duration] has passed).
+double springProgress(double ms, Duration duration) =>
+    ms >= duration.inMilliseconds ? 1 : _slide.x(math.max(0, ms) / 1000);
 
 /// Rightward offset of the banner `ms` after the start of the entrance.
-double bannerEnterOffset(double ms) {
-  if (ms <= 0) return bannerEnterDistance;
-  final offset = bannerEnterDistance * math.exp(-ms / bannerEnterTau);
-  return offset < 0.5 ? 0 : offset;
-}
+double bannerEnterOffset(double ms) =>
+    bannerEnterDistance * (1 - springProgress(ms, bannerEnterDuration));
 
-/// While entering the banner fades in (~210 ms) and is blurred, sharp in ~215 ms.
-const double bannerFadeInMs = 210;
-const double bannerFocusMs = 215;
-
-/// Maximum blur (σ in pt) of the banner entering or leaving: the outline of the content
-/// almost disappears in the first frame (maximum gradient 4 over 118).
-const double bannerBlurSigma = 8;
-
-/// Opacity and blur of the entrance `ms` after the start.
-double bannerEnterOpacity(double ms) => (ms / bannerFadeInMs).clamp(0.0, 1.0);
-double bannerEnterBlur(double ms) =>
-    bannerBlurSigma * (1 - (ms / bannerFocusMs).clamp(0.0, 1.0));
+/// Opacity of the entrance `ms` after the start: `fade.quick` (the opacity reaches 1 long
+/// before the geometry settles, motion.md rule 1).
+double bannerEnterOpacity(double ms) => AmalfiFades.quick.curve.transform(
+  (ms / AmalfiFades.quick.duration.inMilliseconds).clamp(0.0, 1.0),
+);
 
 /// From appearing to the start of the exit: ~5.0 s. Critical notifications stay until the
 /// user closes them.
@@ -166,76 +161,30 @@ const Duration bannerDuration = Duration(seconds: 5);
 /// With the pointer over it the banner does not expire; after the pointer exits, ~1.1 s.
 const Duration bannerLinger = Duration(milliseconds: 1100);
 
-/// Exit: to the right, ~180–190 ms, fading out halfway and with growing blur.
-const Duration bannerExitDuration = Duration(milliseconds: 190);
+/// Exit: `fade.standard` (250 ms, ease-in-out), nothing else moves.
+final Duration bannerExitDuration = AmalfiFades.standard.duration;
 
-/// Measured exit offsets at ~13.3 ms steps (left edge − 2200, pt).
-const List<double> bannerExitSteps = [
-  0,
-  37,
-  66,
-  104,
-  141,
-  175,
-  207,
-  234,
-  264,
-  287,
-  305,
-  321,
-  335,
-  346,
-  356,
-];
-
-/// Rightward offset `ms` after the start of the exit (interpolating the measurements).
-double bannerExitOffset(double ms) {
-  final step = ms / (1000 / 75);
-  if (step <= 0) return 0;
-  final i = step.floor();
-  if (i >= bannerExitSteps.length - 1) return bannerEnterDistance;
-  return bannerExitSteps[i] +
-      (bannerExitSteps[i + 1] - bannerExitSteps[i]) * (step - i);
-}
-
+/// Opacity of the exit `ms` after its start.
 double bannerExitOpacity(double ms) =>
-    1 - 0.5 * (ms / bannerExitDuration.inMilliseconds).clamp(0.0, 1.0);
-double bannerExitBlur(double ms) =>
-    bannerBlurSigma * (ms / bannerExitDuration.inMilliseconds).clamp(0.0, 1.0);
+    1 -
+    AmalfiFades.standard.curve.transform(
+      (ms / AmalfiFades.standard.duration.inMilliseconds).clamp(0.0, 1.0),
+    );
 
-/// Notification Center opening: it slides in from the right, almost all of it in ~35 ms
-/// and then a long tail up to ~235 ms (content edge 2545 → 2198 → 2158): the sum of two
-/// exponentials, a fast one and a slow one.
-const double centerDistance = 387;
-const Duration centerOpenDuration = Duration(milliseconds: 235);
+/// Notification Centre opening: like a banner, it slides in from the trailing edge and fades
+/// in with `spring.panel`. Closing is `fade.instant` (a transient surface closing; the
+/// reference closing curve is not carried over: assumption, motion.md has no row for it).
+const double centerDistance = 380 + 16;
+const Duration centerOpenDuration = Duration(milliseconds: 450);
+final Duration centerCloseDuration = AmalfiFades.instant.duration;
 
-double centerOpenOffset(double ms) {
-  if (ms <= 0) return centerDistance;
-  final x = 347 * math.exp(-ms / 12) + 40 * math.exp(-ms / 70);
-  return ms >= centerOpenDuration.inMilliseconds || x < 0.5 ? 0 : x;
-}
+double centerOpenOffset(double ms) =>
+    centerDistance * (1 - springProgress(ms, centerOpenDuration));
 
-/// Closing (~300 ms, the same with Esc, a click on the clock or a click outside): a slight
-/// slow shift, then a fast exit and a tail.
-const Duration centerCloseDuration = Duration(milliseconds: 300);
-const List<(double, double)> centerCloseSteps = [
-  (0, 0),
-  (60, 10),
-  (120, 37),
-  (135, 104),
-  (150, 357),
-  (200, 380),
-  (300, centerDistance),
-];
+double centerOpenOpacity(double ms) => bannerEnterOpacity(ms);
 
-double centerCloseOffset(double ms) {
-  if (ms <= 0) return 0;
-  for (var i = 1; i < centerCloseSteps.length; i++) {
-    final (t1, x1) = centerCloseSteps[i];
-    if (ms <= t1) {
-      final (t0, x0) = centerCloseSteps[i - 1];
-      return x0 + (x1 - x0) * (ms - t0) / (t1 - t0);
-    }
-  }
-  return centerDistance;
-}
+double centerCloseOpacity(double ms) =>
+    1 -
+    AmalfiFades.instant.curve.transform(
+      (ms / AmalfiFades.instant.duration.inMilliseconds).clamp(0.0, 1.0),
+    );

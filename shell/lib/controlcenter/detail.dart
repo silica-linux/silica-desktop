@@ -1,16 +1,16 @@
-// The detail panels of the Control Center (Wi-Fi, Sound, Display), from
-// plan/reference/controlcenter.md, "detail panels" and "From the CC to the detail".
+// The detail panels of the Control Center (Wi-Fi, Bluetooth, Focus, Display, Sound, Now
+// Playing), on the Amalfi kit (`Control Center/Detail/*` and `Row/*`): 312 pt wide Glass/Thick
+// panels with a 16 pt radius, 16 pt insets, a 22 pt title (Title 3) with the master switch on
+// the header row, 1 pt separators, 32 pt rows with a 28 pt disc and a 16 pt glyph, 20 pt
+// section labels and a 24 pt footer item that opens Settings at the panel's pane.
 //
-// A 308 pt wide panel, 10 pt left of the stack and 6 pt above the first module, radius 16,
-// 14 pt margins; 14 pt header; 32 pt rows with a 26 circle and the text at 52 pt; 1 pt
-// separators; section headings in light grey bold. The clicked module turns into the panel
-// (a single interpolated rectangle, slow-fast-slow curve, longer if the module is lower)
-// while the others fade out.
-//
-// The footer item opens the Settings app at the panel's pane. Not done: the personal hotspot
-// section (NetworkManager offers no nearby hotspots to Silica yet) and night light (Ossido
-// has no colour temperature yet: the tile shows disabled).
+// The clicked module turns into the panel (one interpolated rectangle, `spring.morph`,
+// motion.md) while the others fade out; the behaviour of each panel is that of
+// docs/spec/controlcenter.md. Night Light has no backend yet: its tile shows disabled.
 
+import 'dart:math' as math;
+
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
@@ -19,85 +19,44 @@ import '../system/system_status.dart';
 import 'glyphs.dart';
 import 'palette.dart';
 
-const double detailWidth = 308;
-
-/// Relative to the stack: 10 pt to the left, 6 pt above.
-const double detailLeft = -10;
+/// The detail panel is 312 pt wide (components.md: "Control Center detail panels are 312
+/// wide"), on the stack's right edge plus 8 pt: it sticks out 14 pt to the left of the stack
+/// and 6 pt above the first module.
+const double detailWidth = 312;
+const double detailLeft = -14;
 const double detailTop = -6;
 const double detailRadius = 16;
-const double detailInset = 14;
-const double detailTitleSize = 14;
+
+/// Insets and metrics of the kit's rows.
+const double detailInset = 16;
+const double detailHeader = 48;
 const double detailRow = 32;
-const double detailCircle = 26;
-const double detailTextLeft = 52;
+const double detailDisc = 28;
+const double detailGlyph = 16;
+const double detailTextLeft = 40;
+const double detailSection = 20;
+const double detailFooter = 24;
+const double detailBottom = 8;
 
-const Color detailCircleOff = Color(0xFF8F9095);
-const Color detailBlue = Color(0xFF007AFF);
+/// How long the morph is simulated: `spring.morph` (response 0.5 s, ζ 0.7) settles within
+/// 0.2 % of its target in ~0.95 s.
+const Duration detailDuration = Duration(milliseconds: 950);
 
-/// Wi-Fi switch: 54 × 24 capsule (radius 12) 9 pt from the top and flush with the right
-/// margin, `#0074f8`; white 32 × 20 knob 2 pt from the edge.
-const Size switchSize = Size(54, 24);
-const double switchTop = 9;
-const Color switchOn = Color(0xFF0074F8);
+final SpringSimulation _morph = SpringSimulation(AmalfiSprings.morph, 0, 1, 0);
 
-/// Progress of the transformation (top edge of the panel, Display: 338 pt in ~333 ms);
-/// for closer modules the duration gets shorter (Wi-Fi, 34 pt: ~215 ms).
-const List<(double, double)> detailCurve = [
-  (0, 0),
-  (13, 0.08),
-  (26, 0.19),
-  (40, 0.31),
-  (66, 0.54),
-  (80, 0.63),
-  (93, 0.71),
-  (120, 0.82),
-  (133, 0.86),
-  (146, 0.89),
-  (173, 0.94),
-  (186, 0.95),
-  (226, 0.98),
-  (253, 0.99),
-  (333, 1),
-];
-const double detailCurveEnd = 333;
+/// Progress 0–1 (it overshoots by ~4–5 %, as `spring.morph` does) of the module → panel
+/// morph at [t] (0–1 of [detailDuration]).
+double detailProgress(double t) => t >= 1
+    ? 1
+    : _morph.x(t.clamp(0.0, 1.0) * detailDuration.inMilliseconds / 1000);
 
-/// Opacity of the other modules while the panel opens.
-const List<(double, double)> othersFade = [
-  (0, 1),
-  (13, 0.94),
-  (67, 0.56),
-  (107, 0.28),
-  (147, 0.13),
-  (200, 0.05),
-  (213, 0.04),
-  (240, 0),
-];
-
-/// The return to the Center (Esc) takes longer: ~440 ms for the main part.
-const double detailBackStretch = 1.35;
-
-double _table(List<(double, double)> table, double ms) {
-  if (ms <= table.first.$1) return table.first.$2;
-  for (var i = 1; i < table.length; i++) {
-    final (t1, v1) = table[i];
-    if (ms <= t1) {
-      final (t0, v0) = table[i - 1];
-      return v0 + (v1 - v0) * (ms - t0) / (t1 - t0);
-    }
-  }
-  return table.last.$2;
+/// Opacity of the other modules while the panel opens: out in `fade.quick`.
+double othersOpacity(double t) {
+  final ms = t.clamp(0.0, 1.0) * detailDuration.inMilliseconds;
+  final fade = AmalfiFades.quick;
+  return 1 -
+      fade.curve.transform((ms / fade.duration.inMilliseconds).clamp(0, 1));
 }
-
-/// How long the transformation lasts for a module `distance` pt below the panel.
-double detailTimeScale(double distance) =>
-    0.65 + 0.35 * (distance / 338).clamp(0.0, 1.0);
-
-/// Progress 0–1 after `ms`.
-double detailProgress(double ms, double timeScale) =>
-    _table(detailCurve, ms / timeScale);
-
-/// Opacity of the other modules after `ms`.
-double othersOpacity(double ms) => _table(othersFade, ms);
 
 Rect lerpRect(Rect a, Rect b, double t) => Rect.fromLTRB(
   a.left + (b.left - a.left) * t,
@@ -106,33 +65,9 @@ Rect lerpRect(Rect a, Rect b, double t) => Rect.fromLTRB(
   a.bottom + (b.bottom - a.bottom) * t,
 );
 
-TextStyle detailText(double size, {FontWeight? weight, Color? color}) =>
-    TextStyle(
-      fontFamily: uiFontFamily,
-      package: 'silica_ui',
-      fontSize: size,
-      fontWeight: weight,
-      color: color,
-      height: 1.2,
-    );
-
-/// A secondary label (section titles, subtitles): [CcPalette.secondary].
-Widget detailSecondary(
-  String text,
-  double size, {
-  FontWeight? weight,
-  int? maxLines,
-}) => Builder(
-  builder: (context) => Text(
-    text,
-    maxLines: maxLines,
-    style: detailText(
-      size,
-      weight: weight,
-      color: CcPalette.of(context).secondary,
-    ),
-  ),
-);
+/// A text of the panels: an Amalfi style, in the palette's [color].
+TextStyle detailText(TextStyle base, Color color) =>
+    base.copyWith(color: color);
 
 /// The data of a panel, loaded when it opens.
 class DetailData {
@@ -161,121 +96,194 @@ class DetailContent {
   );
 }
 
-Widget _separator({double inset = detailInset}) => Builder(
-  builder: (context) => Center(
-    child: Container(
-      height: 1,
-      margin: EdgeInsets.symmetric(horizontal: inset),
-      color: CcPalette.of(context).separator,
+_Piece _gap(double height) => (height, const SizedBox());
+
+/// A 1 pt `Line/Separator` inset 16 pt on each side.
+_Piece _separator() => (
+  1,
+  Builder(
+    builder: (context) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: detailInset),
+      child: ColoredBox(color: CcPalette.of(context).separator),
     ),
   ),
 );
 
-/// Header: title on the left (capitals from 16 to 25 pt), optional switch.
-Widget _header(String title, {Widget? trailing}) => Stack(
-  children: [
-    Positioned(
-      left: detailInset,
-      top: 12,
-      child: Text(
-        title,
-        style: detailText(detailTitleSize, weight: FontWeight.w600),
-      ),
-    ),
-    if (trailing != null)
-      Positioned(
-        right: detailInset,
-        top: switchTop,
-        width: switchSize.width,
-        height: switchSize.height,
-        child: trailing,
-      ),
-  ],
-);
-
-/// The footer item that opens Settings at the panel's pane: a separator, then a 280 × 22
-/// row with the label (SH-CC-14…19). Without the Settings app there is no footer.
-List<_Piece> _settingsFooter(String label, VoidCallback? onTap) => [
-  if (onTap != null) ...[
-    (1, _separator()),
-    (5, const SizedBox()),
-    (22, _FooterItem(label: label, onTap: onTap)),
-    (5, const SizedBox()),
-  ],
+/// A separator with its spacing: 4 pt above and 3 pt below (the kit's rhythm). [first]: the
+/// one under the header, which has no gap above.
+List<_Piece> _rule({bool first = false}) => [
+  if (!first) _gap(4),
+  _separator(),
+  _gap(3),
 ];
 
-class _FooterItem extends StatefulWidget {
-  const _FooterItem({required this.label, required this.onTap});
+/// Header: the title (Title 3) on the left, an optional switch on the right.
+_Piece _header(String title, {Widget? trailing, String? subtitle}) => (
+  detailHeader,
+  Builder(
+    builder: (context) {
+      final p = CcPalette.of(context);
+      return Stack(
+        children: [
+          Positioned(
+            left: detailInset,
+            top: subtitle == null ? 12 : 6,
+            right: detailInset + (trailing == null ? 0 : 52),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AmalfiType.title3(color: p.text),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    style: AmalfiType.caption(color: p.secondary),
+                  ),
+              ],
+            ),
+          ),
+          if (trailing != null)
+            Positioned(right: detailInset, top: 12, child: trailing),
+        ],
+      );
+    },
+  ),
+);
 
-  final String label;
-  final VoidCallback onTap;
+/// A section label (`Row/Section`): Label, `Text/Tertiary`, 20 pt tall.
+_Piece _section(String title, {Widget? trailing, VoidCallback? onTap}) => (
+  detailSection,
+  Builder(
+    builder: (context) {
+      final p = CcPalette.of(context);
+      final row = Padding(
+        padding: const EdgeInsets.fromLTRB(detailInset, 2, detailInset, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                style: AmalfiType.label(
+                  color: p.tertiary,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+      );
+      return onTap == null
+          ? row
+          : GestureDetector(
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
+              child: row,
+            );
+    },
+  ),
+);
+
+/// The hover lift under the pointer on a row (`State/Hover Overlay`).
+class _Hover extends StatefulWidget {
+  const _Hover({required this.child, this.onTap, this.label, this.radius = 8});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final String? label;
+  final double radius;
 
   @override
-  State<_FooterItem> createState() => _FooterItemState();
+  State<_Hover> createState() => _HoverState();
 }
 
-class _FooterItemState extends State<_FooterItem> {
+class _HoverState extends State<_Hover> {
   bool _hover = false;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: widget.label,
-    child: MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: detailInset - 6),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            // Under the pointer the row lightens like the menu rows (provisional).
-            color: _hover ? const Color(0x1FFFFFFF) : null,
-            borderRadius: BorderRadius.circular(5),
+  Widget build(BuildContext context) {
+    final p = CcPalette.of(context);
+    final tappable = widget.onTap != null;
+    return Semantics(
+      button: tappable,
+      label: widget.label,
+      child: MouseRegion(
+        cursor: tappable ? SystemMouseCursors.click : MouseCursor.defer,
+        onEnter: (_) => setState(() => _hover = tappable),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _hover ? p.hoverLift : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(widget.radius),
+            ),
+            child: widget.child,
           ),
-          alignment: Alignment.centerLeft,
-          child: Text(widget.label, style: detailText(13)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The footer item that opens Settings at the panel's pane (`Row/Footer`): a separator, then
+/// a 24 pt row with the label. Without the Settings app there is no footer.
+List<_Piece> _settingsFooter(
+  String label,
+  VoidCallback? onTap, {
+  bool first = false,
+}) => [
+  if (onTap != null) ...[
+    ..._rule(first: first),
+    (
+      detailFooter,
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: detailInset),
+        child: _Hover(
+          label: label,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            child: Builder(
+              builder: (context) => Text(
+                label,
+                maxLines: 1,
+                style: AmalfiType.body(color: CcPalette.of(context).text),
+              ),
+            ),
+          ),
         ),
       ),
     ),
-  );
-}
+  ],
+];
 
-Widget _section(String title) => Padding(
-  padding: const EdgeInsets.only(left: detailInset, top: 9),
-  child: detailSecondary(title, 12.4, weight: FontWeight.w600),
-);
-
+/// The master switch of a panel header (Amalfi switch, Regular: 40 × 24).
 class DetailSwitch extends StatelessWidget {
-  const DetailSwitch({super.key, required this.on, required this.onChanged});
+  const DetailSwitch({
+    super.key,
+    required this.on,
+    required this.onChanged,
+    this.label,
+  });
   final bool on;
   final ValueChanged<bool> onChanged;
+  final String? label;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: () => onChanged(!on),
-    child: Container(
-      decoration: BoxDecoration(
-        color: on ? switchOn : CcPalette.of(context).switchOff,
-        borderRadius: BorderRadius.circular(switchSize.height / 2),
-      ),
-      alignment: on ? Alignment.centerRight : Alignment.centerLeft,
-      padding: const EdgeInsets.all(2),
-      child: Container(
-        width: 32,
-        height: 20,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF),
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      AmalfiSwitch(value: on, onChanged: onChanged, semanticLabel: label);
 }
 
-/// A row: a 26 circle with the glyph, text at 52 pt, accessories on the right.
+/// A row (`Row/Item`, `Row/Network *`): a 28 pt disc with a 16 pt glyph (the accent when
+/// active, `Text/Tertiary` otherwise), the label at 40 pt, accessories on the right.
 class DetailRow extends StatelessWidget {
   const DetailRow({
     super.key,
@@ -284,7 +292,6 @@ class DetailRow extends StatelessWidget {
     required this.active,
     this.trailing = const [],
     this.onTap,
-    this.activeGlyph = detailBlue,
   });
 
   final GlyphKind glyph;
@@ -293,141 +300,100 @@ class DetailRow extends StatelessWidget {
   final List<Widget> trailing;
   final VoidCallback? onTap;
 
-  /// The glyph color on the white disc when active (blue; Focus purple).
-  final Color activeGlyph;
-
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    behavior: HitTestBehavior.opaque,
-    child: Row(
-      children: [
-        const SizedBox(width: detailInset),
-        Container(
-          width: detailCircle,
-          height: detailCircle,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            // Light: the active disc is the accent with a white glyph.
-            color: active
-                ? (CcPalette.of(context).light
-                      ? activeGlyph
-                      : const Color(0xFFFFFFFF))
-                : detailCircleOff,
-          ),
-          child: Center(
-            child: Glyph(
-              glyph,
-              color: active && !CcPalette.of(context).light
-                  ? activeGlyph
-                  : const Color(0xFFFFFFFF),
-              size: 14,
+  Widget build(BuildContext context) {
+    final p = CcPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: detailInset),
+      child: _Hover(
+        onTap: onTap,
+        label: label,
+        radius: 8,
+        child: Row(
+          children: [
+            Container(
+              width: detailDisc,
+              height: detailDisc,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: active ? p.accent : p.discOff,
+              ),
+              child: Center(
+                child: CcGlyph(glyph, color: p.onAccent, size: detailGlyph),
+              ),
             ),
-          ),
+            const SizedBox(width: detailTextLeft - detailDisc),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AmalfiType.body(color: p.text),
+              ),
+            ),
+            ...trailing,
+            const SizedBox(width: 8),
+          ],
         ),
-        const SizedBox(width: detailTextLeft - detailInset - detailCircle),
-        Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: detailText(13),
-          ),
-        ),
-        ...trailing,
-        const SizedBox(width: detailInset),
-      ],
-    ),
-  );
-}
-
-/// Lock of protected networks (`#b7b8bd`).
-class _Lock extends StatelessWidget {
-  const _Lock();
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 16,
-    height: 14,
-    child: CustomPaint(painter: _LockPainter(CcPalette.of(context).secondary)),
-  );
-}
-
-class _LockPainter extends CustomPainter {
-  const _LockPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(4, 6, 8, 7),
-        const Radius.circular(1.5),
       ),
-      paint,
-    );
-    canvas.drawArc(
-      Rect.fromLTWH(5.5, 1.5, 5, 8),
-      3.14159,
-      3.14159,
-      false,
-      paint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
     );
   }
-
-  @override
-  bool shouldRepaint(_LockPainter old) => old.color != color;
 }
 
-/// ">" arrow (Other networks, hovering over the modules).
-class Chevron extends StatelessWidget {
-  const Chevron({super.key, this.color, this.down = false});
+/// A glyph of the kit's rows (lock, signal) in `Text/Secondary`.
+class _Accessory extends StatelessWidget {
+  const _Accessory(this.name, this.size, {this.fallback});
 
-  /// Null: the secondary color of the appearance.
+  final String name;
+  final double size;
+  final AmalfiGlyphData? fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = CcPalette.of(context).secondary;
+    final data = fallback;
+    return SizedBox.square(
+      dimension: size,
+      child: AmalfiSymbol(
+        name,
+        size: size,
+        color: color,
+        fallback: data == null
+            ? null
+            : AmalfiGlyph(data, size: size, color: color),
+      ),
+    );
+  }
+}
+
+/// The signal glyph of a network from its strength (0–100).
+String signalSymbol(int strength) => strength >= 67
+    ? 'wifi'
+    : strength >= 34
+    ? 'wifi-2'
+    : 'wifi-1';
+
+/// A chevron (Other networks: down or up) in `Text/Secondary`.
+class Chevron extends StatelessWidget {
+  const Chevron({super.key, this.color, this.down = false, this.right = false});
+
+  /// Null: the secondary color.
   final Color? color;
   final bool down;
 
+  /// Pointing right (the hint on a module with a detail).
+  final bool right;
+
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 8,
-    height: 12,
-    child: CustomPaint(
-      painter: _ChevronPainter(color ?? CcPalette.of(context).secondary, down),
-    ),
+  Widget build(BuildContext context) => AmalfiGlyph(
+    right
+        ? AmalfiGlyphs.chevronRight
+        : down
+        ? AmalfiGlyphs.chevronDown
+        : AmalfiGlyphs.chevronUp,
+    size: 12,
+    color: color ?? CcPalette.of(context).secondary,
   );
-}
-
-class _ChevronPainter extends CustomPainter {
-  const _ChevronPainter(this.color, this.down);
-  final Color color;
-  final bool down;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final path = down
-        ? (Path()
-            ..moveTo(1, 4)
-            ..lineTo(4, 7.5)
-            ..lineTo(7, 4))
-        : (Path()
-            ..moveTo(2, 1.5)
-            ..lineTo(6, 6)
-            ..lineTo(2, 10.5));
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_ChevronPainter old) =>
-      old.color != color || old.down != down;
 }
 
 /// Wi-Fi: switch, known networks, expandable "Other networks".
@@ -442,20 +408,23 @@ DetailContent wifiDetail({
   VoidCallback? onSettings,
 }) {
   final pieces = <_Piece>[
-    (
-      60,
-      _header(
-        'Wi-Fi',
-        trailing: DetailSwitch(on: s.wifiEnabled, onChanged: onSwitch),
+    _header(
+      'Wi-Fi',
+      trailing: DetailSwitch(
+        on: s.wifiEnabled,
+        onChanged: onSwitch,
+        label: 'Wi-Fi',
       ),
     ),
   ];
   if (!s.wifiEnabled) {
     return DetailContent([
       ...pieces,
-      ..._settingsFooter(l.ccWifiSettings, onSettings),
+      ..._settingsFooter(l.ccWifiSettings, onSettings, first: true),
+      _gap(detailBottom),
     ]);
   }
+  pieces.addAll(_rule(first: true));
   // The privacy warning (SH-CC-14): under the header while the joined network is not
   // secured; a click opens the Wi-Fi settings.
   final insecure = networks.any((n) => n.active && !n.secure);
@@ -467,11 +436,26 @@ DetailContent wifiDetail({
         behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: detailInset),
-          child: Row(
-            children: [
-              Expanded(child: detailSecondary(l.ccPrivacyWarning, 13)),
-              detailSecondary('⚠', 13),
-            ],
+          child: Builder(
+            builder: (context) {
+              final p = CcPalette.of(context);
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.ccPrivacyWarning,
+                      maxLines: 1,
+                      style: AmalfiType.caption(color: p.secondary),
+                    ),
+                  ),
+                  AmalfiGlyph(
+                    AmalfiGlyphs.warning,
+                    size: 12,
+                    color: p.secondary,
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -481,84 +465,81 @@ DetailContent wifiDetail({
     glyph: GlyphKind.wifi,
     label: n.ssid,
     active: n.active,
-    trailing: [if (n.secure) const _Lock()],
+    trailing: [
+      if (n.secure) ...[
+        const _Accessory('lock', 12, fallback: AmalfiGlyphs.lock),
+        const SizedBox(width: 12),
+      ],
+      _Accessory(signalSymbol(n.strength), 16),
+    ],
     onTap: n.known && !n.active ? () => onConnect(n.ssid) : null,
   );
   final known = networks.where((n) => n.known || n.active).toList();
   final others = networks.where((n) => !n.known && !n.active).toList();
-  pieces.add((1, _separator()));
   if (known.isNotEmpty) {
-    pieces.add((27, _section(l.knownNetworks(known.length))));
+    pieces.add(_section(l.knownNetworks(known.length)));
     for (final n in known) {
       pieces.add((detailRow, row(n)));
     }
-    pieces
-      ..add((5, const SizedBox()))
-      ..add((1, _separator()));
+    pieces.addAll(_rule());
   }
-  pieces.add((
-    28,
-    GestureDetector(
+  pieces.add(
+    _section(
+      l.otherNetworks,
       onTap: onToggleOthers,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.only(
-          left: detailInset,
-          right: detailInset + 2,
-          top: 9,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: detailSecondary(
-                l.otherNetworks,
-                12.4,
-                weight: FontWeight.w600,
-              ),
-            ),
-            Chevron(down: othersOpen),
-          ],
-        ),
-      ),
+      trailing: Chevron(down: othersOpen),
     ),
-  ));
+  );
   if (othersOpen) {
     for (final n in others) {
       pieces.add((detailRow, row(n)));
     }
   }
   pieces.addAll(_settingsFooter(l.ccWifiSettings, onSettings));
-  pieces.add((10, const SizedBox()));
+  pieces.add(_gap(detailBottom));
   return DetailContent(pieces);
 }
 
-/// A slider track in the panel: 4 pt, from 34 to 265 pt from the edge.
-Widget _detailSlider({
-  required double? value,
-  required ValueChanged<double> onChanged,
-  required Widget Function(double?) track,
-}) {
-  const left = 34.0;
-  const length = 231.0;
-  void set(Offset local) =>
-      onChanged(((local.dx - left - 10) / (length - 20)).clamp(0.0, 1.0));
-  return GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTapDown: (d) => set(d.localPosition),
-    onHorizontalDragUpdate: (d) => set(d.localPosition),
-    child: Stack(
-      children: [
-        Positioned(
-          left: left,
-          width: length,
-          top: 6,
-          height: 4,
-          child: track(value),
-        ),
-      ],
-    ),
-  );
+/// A slider row (`Row/Slider`): a 16 pt glyph at each end of an [AmalfiSlider]. [value]
+/// null: the slider is not adjustable.
+class DetailSlider extends StatelessWidget {
+  const DetailSlider({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    required this.low,
+    required this.high,
+    this.semanticLabel,
+  });
+
+  final double? value;
+  final ValueChanged<double> onChanged;
+  final GlyphKind low;
+  final GlyphKind high;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = CcPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: detailInset),
+      child: Row(
+        children: [
+          CcGlyph(low, color: p.text, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: AmalfiSlider(
+              value: value ?? 0,
+              onChanged: value == null ? null : onChanged,
+              semanticLabel: semanticLabel,
+            ),
+          ),
+          const SizedBox(width: 8),
+          CcGlyph(high, color: p.text, size: 16),
+        ],
+      ),
+    );
+  }
 }
 
 /// Sound: volume and outputs.
@@ -568,130 +549,143 @@ DetailContent soundDetail({
   required List<AudioOutput> outputs,
   required ValueChanged<double> onVolume,
   required ValueChanged<int> onOutput,
-  required Widget Function(double?) track,
   VoidCallback? onSettings,
 }) {
   final pieces = <_Piece>[
-    (38, _header(l.ccSound)),
+    _header(l.ccSound),
+    ..._rule(first: true),
+    _gap(4),
     (
-      16,
-      _detailSlider(
+      detailRow,
+      DetailSlider(
         value: s.audioAvailable ? (s.muted ? 0 : s.volume) : null,
         onChanged: onVolume,
-        track: track,
+        low: GlyphKind.speakerSmall,
+        high: GlyphKind.speakerLarge,
+        semanticLabel: l.ccSound,
       ),
     ),
-    (10, const SizedBox()),
-    (1, _separator()),
   ];
   if (outputs.isNotEmpty) {
-    pieces.add((27, _section(l.soundOutput)));
+    pieces
+      ..add(_gap(4))
+      ..addAll(_rule())
+      ..add(_section(l.soundOutput));
     for (final o in outputs) {
       pieces.add((
         detailRow,
         DetailRow(
-          glyph: GlyphKind.speakerSmall,
+          glyph: GlyphKind.headphones,
           label: o.name,
           active: o.isDefault,
           onTap: o.isDefault ? null : () => onOutput(o.id),
         ),
       ));
     }
-    pieces.add((5, const SizedBox()));
   }
-  pieces.addAll(_settingsFooter(l.ccSoundSettings, onSettings));
-  pieces.add((10, const SizedBox()));
+  pieces
+    ..addAll(_settingsFooter(l.ccSoundSettings, onSettings))
+    ..add(_gap(detailBottom));
   return DetailContent(pieces);
 }
 
-/// Display tiles (SH-CC-15): 40 pt circles (`#8f9094`) centered in 138 pt tiles at 9 and
-/// 161 from the panel edge, label and subtitle centered under them; the separator 15 pt
-/// under the subtitles.
-const double displayTileCircle = 40;
-const double displayTileWidth = 138;
-const List<double> displayTileLefts = [9, 161];
+/// The Dark Mode and Night Light tiles of Display: a 40 pt disc, label and subtitle under it,
+/// centred in a 140 pt half of the 280 pt content.
+const double displayTileDisc = 40;
+const double displayTileWidth = 112;
+const List<double> displayTileCentres = [80, 224];
 
-/// Display: brightness, then the Dark Mode and Night Light tiles.
+/// Display: the built-in display's brightness, then the Dark Mode and Night Light tiles.
 DetailContent displayDetail({
   required AppLocalizations l,
   required SystemSnapshot s,
   required ValueChanged<double> onBrightness,
-  required Widget Function(double?) track,
   required bool dark,
   required VoidCallback onDark,
   VoidCallback? onSettings,
 }) {
   Widget tile(
-    double left,
+    double centre,
     GlyphKind glyph,
     String label,
     String subtitle,
     bool active,
     VoidCallback? onTap,
   ) => Positioned(
-    left: left,
+    left: centre - displayTileWidth / 2,
     width: displayTileWidth,
     top: 0,
     bottom: 0,
     child: Builder(
-      builder: (context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Column(
-          children: [
-            Container(
-              width: displayTileCircle,
-              height: displayTileCircle,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: active
-                    ? (CcPalette.of(context).light
-                          ? detailBlue
-                          : const Color(0xFFFFFFFF))
-                    : detailCircleOff,
-              ),
-              child: Center(
-                child: Glyph(
-                  glyph,
-                  color: active && !CcPalette.of(context).light
-                      ? detailBlue
-                      : const Color(0xFFFFFFFF),
-                  size: 20,
+      builder: (context) {
+        final p = CcPalette.of(context);
+        final body = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Column(
+            children: [
+              Container(
+                width: displayTileDisc,
+                height: displayTileDisc,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: active ? p.accent : p.discOff,
+                ),
+                child: Center(
+                  child: CcGlyph(glyph, color: p.onAccent, size: 20),
                 ),
               ),
-            ),
-            const SizedBox(height: 3),
-            if (onTap == null)
-              detailSecondary(label, 11, weight: FontWeight.w600, maxLines: 1)
-            else
+              const SizedBox(height: 4),
               Text(
                 label,
                 maxLines: 1,
-                style: detailText(11, weight: FontWeight.w600),
+                style: AmalfiType.label(
+                  color: p.text,
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
-            detailSecondary(subtitle, 10, maxLines: 1),
-          ],
-        ),
-      ),
+              Text(
+                subtitle,
+                maxLines: 1,
+                style: AmalfiType.caption(color: p.secondary),
+              ),
+            ],
+          ),
+        );
+        return onTap == null
+            ? Semantics(
+                enabled: false,
+                child: Opacity(
+                  opacity: AmalfiStates.disabledOpacity,
+                  child: AbsorbPointer(child: body),
+                ),
+              )
+            : Semantics(button: true, label: label, child: body);
+      },
     ),
   );
   return DetailContent([
-    (43, _header(l.ccDisplay)),
+    _header(l.ccDisplay),
+    ..._rule(first: true),
+    _section(l.ccBuiltInDisplay),
     (
-      16,
-      _detailSlider(
+      detailRow,
+      DetailSlider(
         value: s.brightnessAvailable ? s.brightness : null,
         onChanged: onBrightness,
-        track: track,
+        low: GlyphKind.sunSmall,
+        high: GlyphKind.sunLarge,
+        semanticLabel: l.ccDisplay,
       ),
     ),
-    (14, const SizedBox()),
+    _gap(4),
+    _separator(),
+    _gap(7),
     (
-      69,
+      74,
       Stack(
         children: [
           tile(
-            displayTileLefts[0],
+            displayTileCentres[0],
             GlyphKind.contrast,
             l.ccDarkMode,
             dark ? l.ccOn : l.ccOff,
@@ -700,7 +694,7 @@ DetailContent displayDetail({
           ),
           // Night Light is not there yet: shown disabled.
           tile(
-            displayTileLefts[1],
+            displayTileCentres[1],
             GlyphKind.sunSmall,
             l.ccNightLight,
             l.ccOff,
@@ -710,10 +704,9 @@ DetailContent displayDetail({
         ],
       ),
     ),
-    (11, const SizedBox()),
-    ..._settingsFooter(l.ccDisplaySettings, onSettings),
-    if (onSettings == null) (1, _separator()),
-    (10, const SizedBox()),
+    _gap(10),
+    ..._settingsFooter(l.ccDisplaySettings, onSettings, first: true),
+    _gap(detailBottom),
   ]);
 }
 
@@ -725,8 +718,8 @@ GlyphKind deviceGlyph(String icon) => switch (icon) {
   _ => GlyphKind.bluetooth,
 };
 
-/// Bluetooth (SH-CC-17): the switch in the header, one 32 pt row per paired device (the
-/// connected ones on the white disc); a click connects or disconnects.
+/// Bluetooth: the switch in the header, one 32 pt row per paired device (the connected ones
+/// on the accent disc); a click connects or disconnects.
 DetailContent bluetoothDetail({
   required AppLocalizations l,
   required SystemSnapshot s,
@@ -735,45 +728,39 @@ DetailContent bluetoothDetail({
   required void Function(BluetoothDevice device) onDevice,
   VoidCallback? onSettings,
 }) {
-  // Header 42 pt: the separator at +42, the first row at +48 (SH-CC-17).
   final pieces = <_Piece>[
-    (
-      42,
-      _header(
-        'Bluetooth',
-        trailing: DetailSwitch(on: s.bluetoothPowered, onChanged: onSwitch),
+    _header(
+      'Bluetooth',
+      trailing: DetailSwitch(
+        on: s.bluetoothPowered,
+        onChanged: onSwitch,
+        label: 'Bluetooth',
       ),
     ),
+    ..._rule(first: true),
   ];
-  if (!s.bluetoothPowered || devices.isEmpty) {
-    return DetailContent([
-      ...pieces,
-      ..._settingsFooter(l.ccBluetoothSettings, onSettings),
-    ]);
+  if (s.bluetoothPowered && devices.isNotEmpty) {
+    pieces.add(_section(l.ccDevices));
+    for (final d in devices) {
+      pieces.add((
+        detailRow,
+        DetailRow(
+          glyph: deviceGlyph(d.icon),
+          label: d.name,
+          active: d.connected,
+          onTap: () => onDevice(d),
+        ),
+      ));
+    }
   }
   pieces
-    ..add((1, _separator()))
-    ..add((5, const SizedBox()));
-  for (final d in devices) {
-    pieces.add((
-      detailRow,
-      DetailRow(
-        glyph: deviceGlyph(d.icon),
-        label: d.name,
-        active: d.connected,
-        onTap: () => onDevice(d),
-      ),
-    ));
-  }
-  pieces.add((5, const SizedBox()));
-  pieces.addAll(_settingsFooter(l.ccBluetoothSettings, onSettings));
-  pieces.add((10, const SizedBox()));
+    ..addAll(_settingsFooter(l.ccBluetoothSettings, onSettings))
+    ..add(_gap(detailBottom));
   return DetailContent(pieces);
 }
 
-/// Focus (SH-CC-19): header with "Focus on" under it while a Focus is on, the Do Not
-/// Disturb row (purple moon on the white disc when on) and, when on, the two duration
-/// options on a tinted band (22 pt rows, white at ~14 %).
+/// Focus: the Do Not Disturb row (accent disc when on) and, when on, the two duration
+/// options on a `Surface/Sunken` band.
 DetailContent focusDetail({
   required AppLocalizations l,
   required SystemSnapshot s,
@@ -783,80 +770,76 @@ DetailContent focusDetail({
 }) {
   final on = s.doNotDisturb;
   final pieces = <_Piece>[
-    // Header 42 pt with or without the subtitle (separator at +42, SH-CC-19).
-    (
-      42,
-      Padding(
-        padding: const EdgeInsets.only(left: detailInset, top: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l.ccFocus,
-              style: detailText(detailTitleSize, weight: FontWeight.w600),
-            ),
-            if (on) detailSecondary(l.ccFocusOn, 11),
-          ],
-        ),
-      ),
-    ),
-    (1, _separator()),
-    (5, const SizedBox()),
+    _header(l.ccFocus, subtitle: on ? l.ccFocusOn : null),
+    ..._rule(first: true),
+    _gap(4),
     (
       detailRow,
       DetailRow(
         glyph: GlyphKind.moon,
         label: l.ccDoNotDisturb,
         active: on,
-        activeGlyph: focusPurpleGlyph,
         onTap: () => onDoNotDisturb(!on),
       ),
     ),
   ];
   if (on) {
-    Widget option(String label, Duration? duration) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    Widget option(String label, Duration? duration) => _Hover(
       onTap: () => onFor(duration),
+      label: label,
+      radius: 6,
       child: Padding(
-        padding: const EdgeInsets.only(left: detailTextLeft),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: Text(label, style: detailText(13)),
+          child: Builder(
+            builder: (context) => Text(
+              label,
+              maxLines: 1,
+              style: AmalfiType.body(color: CcPalette.of(context).text),
+            ),
+          ),
         ),
       ),
     );
     pieces
-      ..add((4, const SizedBox()))
+      ..add(_gap(8))
       ..add((
-        56,
+        52,
         Builder(
-          builder: (context) => ColoredBox(
-            color: CcPalette.of(context).light
-                ? const Color(0x14000000)
-                : focusBand,
-            child: Column(
-              children: [
-                const SizedBox(height: 6),
-                SizedBox(
-                  height: 22,
-                  child: option(l.focusForAnHour, const Duration(hours: 1)),
+          builder: (context) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: CcPalette.of(context).band,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 22,
+                      child: option(l.focusForAnHour, const Duration(hours: 1)),
+                    ),
+                    SizedBox(
+                      height: 22,
+                      child: option(l.focusUntilEvening, null),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 22, child: option(l.focusUntilEvening, null)),
-              ],
+              ),
             ),
           ),
         ),
-      ));
+      ))
+      ..add(_gap(4));
   }
-  pieces.add((5, const SizedBox()));
-  pieces.addAll(_settingsFooter(l.ccFocusSettings, onSettings));
-  pieces.add((10, const SizedBox()));
+  pieces
+    ..addAll(_settingsFooter(l.ccFocusSettings, onSettings))
+    ..add(_gap(detailBottom));
   return DetailContent(pieces);
 }
 
-/// The purple of an active Focus: the moon on the white disc (raw `#6f73fb`, the same
-/// purple as the privacy pill icon, sRGB `#6e7cff`; SH-CC-06).
-const Color focusPurpleGlyph = Color(0xFF6E7CFF);
-
-/// The band of the duration options: `#7e7f84` over `#696b6f` → white at ~14 %.
-const Color focusBand = Color(0x24FFFFFF);
+/// Clamps a progress that may overshoot to a valid opacity.
+double detailOpacity(double progress) => math.max(0, math.min(1, progress));

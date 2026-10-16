@@ -6,11 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/notifications/model.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/notifications/notifications.dart';
 import 'package:silica_shell/notifications/service.dart';
 import 'package:silica_shell/notifications/settings.dart';
-import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/system_status.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 class FakeSource extends ChangeNotifier implements NotificationsSource {
   final Map<int, ShellNotification> items = {};
@@ -130,11 +131,18 @@ void main() {
     },
   );
 
-  test('the banner entrance follows the measured deceleration', () {
+  test('the banner entrance is spring.panel from the trailing edge', () {
     expect(bannerEnterOffset(0), bannerEnterDistance);
-    // A frame at 75 Hz reduces the remaining distance to ~0.82.
-    final ratio = bannerEnterOffset(13.33 * 5) / bannerEnterOffset(13.33 * 4);
-    expect(ratio, closeTo(0.82, 0.01));
+    // The distance to go shrinks, with a small overshoot (a few points) at most.
+    var overshoot = 0.0;
+    var last = bannerEnterDistance;
+    for (var ms = 10.0; ms < 450; ms += 10) {
+      final x = bannerEnterOffset(ms);
+      if (ms < 120) expect(x, lessThan(last));
+      last = x;
+      if (x < overshoot) overshoot = x;
+    }
+    expect(overshoot, greaterThan(-0.03 * bannerEnterDistance));
     expect(bannerEnterOffset(bannerEnterDuration.inMilliseconds.toDouble()), 0);
   });
 
@@ -148,8 +156,8 @@ void main() {
     await tester.pump(bannerEnterDuration);
     final card = find.byType(NotificationCard);
     expect(card, findsOneWidget);
-    expect(tester.getTopLeft(card), const Offset(1280 - 16 - 344, 28 + 16));
-    expect(tester.getSize(card).width, 344);
+    expect(tester.getTopLeft(card), const Offset(1280 - 16 - 360, 28 + 16));
+    expect(tester.getSize(card), const Size(360, 76));
     expect(find.text('Titolo 1'), findsOneWidget);
 
     await tester.pump(bannerDuration);
@@ -201,12 +209,20 @@ void main() {
       tester.getTopLeft(find.text('Titolo 3')).dy,
       lessThan(tester.getTopLeft(find.text('Titolo 2')).dy),
     );
-    // The most recent group sits above the header, the others below it (SH-NC, #11).
+    // The panel (380 wide, 16 pt from the right edge) has the header on top, then the
+    // section label and the cards.
     final header = tester.getTopLeft(find.text('Notifications')).dy;
-    expect(tester.getTopLeft(find.text('Titolo 3')).dy, lessThan(header));
-    expect(tester.getTopLeft(find.text('Titolo 2')).dy, greaterThan(header));
-    // Footer: the pill (disabled, no widgets yet) and the clear menu circle.
-    expect(find.text('Choose Widgets'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Earlier')).dy, greaterThan(header));
+    expect(
+      tester.getTopLeft(find.text('Titolo 3')).dy,
+      greaterThan(tester.getTopLeft(find.text('Earlier')).dy),
+    );
+    expect(find.text('Clear all'), findsOneWidget);
+    // The cards of the panel are 348 wide (opaque, radius 16).
+    expect(
+      tester.getSize(find.byType(NotificationCard).first),
+      const Size(348, 108),
+    );
 
     await tester.tap(find.text('Posticipa'));
     expect(source.calls, ['invoke 3 snooze']);
@@ -216,7 +232,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Titolo 1'), findsOneWidget);
 
-    await tester.tap(find.byType(CloseCircle).first);
+    await tester.tap(find.text('Clear all'));
     await tester.pumpAndSettle();
     expect(source.calls.last, 'clear');
     expect(find.text('No Recent Notifications'), findsOneWidget);
@@ -226,7 +242,7 @@ void main() {
     expect(find.text('Notifications'), findsNothing);
   });
 
-  testWidgets('the group header clear button is a drawn, centred × (#166)', (
+  testWidgets('an expanded group has a header with Collapse and Clear', (
     tester,
   ) async {
     final source = FakeSource()
@@ -237,21 +253,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Titolo 2'));
     await tester.pumpAndSettle();
-    expect(find.text('×'), findsNothing);
-    final glyph = find.byKey(const ValueKey('group clear glyph'));
-    expect(glyph, findsOneWidget);
-    final paint = tester.widget<CustomPaint>(glyph);
-    expect(paint.painter, isA<CrossGlyph>());
-    // The glyph box is the circle: 20 x 20, so the cross is centred on it.
-    expect(tester.getSize(glyph), const Size(groupPillHeight, groupPillHeight));
-    expect(
-      tester.getRect(glyph).center,
-      tester
-          .getRect(
-            find.ancestor(of: glyph, matching: find.byType(AnimatedContainer)),
-          )
-          .center,
-    );
+    expect(find.text('Collapse'), findsOneWidget);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    expect(source.items, isEmpty);
   });
 
   test('per-app styles from notifications.json', () {
@@ -358,50 +363,67 @@ void main() {
     expect(find.text('Notifications'), findsNothing);
   });
 
-  testWidgets('the footer menu clears every notification', (tester) async {
+  testWidgets('"Clear all" in the panel header clears every notification', (
+    tester,
+  ) async {
     final source = FakeSource()
       ..items[1] = note(1, minute: 1)
       ..items[2] = note(2, app: 'Calendar', minute: 2);
     await pumpLayer(tester, source);
     await sendCommand(tester, 'notifications.toggle');
     await tester.pumpAndSettle();
-    final pill = tester.getRect(find.byKey(const ValueKey('choose widgets')));
-    // The disabled pill does nothing.
-    await tester.tap(find.text('Choose Widgets'));
-    await tester.pumpAndSettle();
     expect(source.calls, isEmpty);
-    expect(find.text('Notifications'), findsOneWidget);
-    // The circle 8 pt to the right of the pill opens the menu.
-    await tester.tapAt(Offset(pill.right + 8 + 12, pill.center.dy));
-    await tester.pumpAndSettle();
-    final item = tester.getCenter(find.text('Clear All Notifications'));
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: item - const Offset(0, 1));
-    await mouse.moveTo(item);
-    await tester.pump();
-    await mouse.down(item);
-    await mouse.up();
-    // The menu blinks the item, then acts: timers, not frames.
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Clear all'));
     await tester.pumpAndSettle();
     expect(source.calls, ['clear']);
+    expect(find.text('No Recent Notifications'), findsOneWidget);
   });
 
-  testWidgets(
-    'empty Center: the text 30 pt below the column top, the pill 33 under it',
-    (tester) async {
-      final source = FakeSource();
-      await pumpLayer(tester, source);
-      await sendCommand(tester, 'notifications.toggle');
-      await tester.pumpAndSettle();
-      expect(find.text('Notifications'), findsNothing);
-      final text = tester.getRect(find.text('No Recent Notifications'));
-      final pill = tester.getRect(find.byKey(const ValueKey('choose widgets')));
-      expect(pill.top - text.bottom, closeTo(33 + (17 - text.height) / 2, 1.5));
-      expect(pill.size, const Size(91, 24));
-      expect(pill.center.dx, closeTo(text.center.dx, 0.5));
-    },
-  );
+  testWidgets('empty Centre: the panel keeps its title and says so', (
+    tester,
+  ) async {
+    final source = FakeSource();
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    // 380 wide Glass/Thick panel at the top right, 16 pt from the edge and from the bar.
+    final title = tester.getTopLeft(find.text('Notifications'));
+    expect(title.dx, 1280 - 16 - 380 + 16 + 4);
+    expect(title.dy, greaterThan(30 + 16));
+    expect(find.text('No Recent Notifications'), findsOneWidget);
+    // Nothing to clear: no "Clear all", and no pill that does nothing.
+    expect(find.text('Clear all'), findsNothing);
+    expect(find.text('Choose Widgets'), findsNothing);
+  });
+
+  testWidgets('the panel is Glass/Thick (panel) and the cards are opaque', (
+    tester,
+  ) async {
+    final source = FakeSource()..items[1] = note(1, minute: 1);
+    await pumpLayer(tester, source);
+    await sendCommand(tester, 'notifications.toggle');
+    await tester.pumpAndSettle();
+    final glass = tester.widgetList<ProfiledGlass>(find.byType(ProfiledGlass));
+    expect(glass, hasLength(1));
+    expect(glass.single.surface, ShellGlassProfile.panel);
+    expect(glass.single.radius, centreRadius);
+    expect(tester.getSize(find.byType(ProfiledGlass)).width, 380);
+    expect(tester.getSize(find.byType(NotificationCard)).width, 348);
+  });
+
+  testWidgets('a banner is Glass/Regular, radius 18', (tester) async {
+    final source = FakeSource();
+    await pumpLayer(tester, source);
+    source.post(note(1));
+    await tester.pump();
+    await tester.pump(bannerEnterDuration);
+    final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
+    expect(glass.surface, ShellGlassProfile.banner);
+    expect(glass.radius, 18);
+    // With actions the banner is 108 tall (the kit's Banner/With Actions).
+    await tester.longPress(find.text('Titolo 1'));
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 
   testWidgets(
     'with Do Not Disturb no banner, the notification stays in the Center',
@@ -424,23 +446,24 @@ void main() {
     },
   );
 
-  test('exit and Center follow the measurements of session 8', () {
-    // Exit: offsets at 13.3 ms steps.
-    expect(bannerExitOffset(0), 0);
-    expect(bannerExitOffset(1000 / 75 * 4), 141);
-    expect(bannerExitOffset(1000), bannerEnterDistance);
-    expect(bannerExitOpacity(190), 0.5);
-    // Entrance: blurred and transparent at the start, sharp and solid after ~215 ms.
-    expect(bannerEnterBlur(0), bannerBlurSigma);
-    expect(bannerEnterBlur(215), 0);
-    expect(bannerEnterOpacity(210), 1);
-    // Center: content edge at ~2198 after 35 ms (2158 at the end, 2545 at the start).
+  test('motion tokens: banner in spring.panel + fade, out fade.standard', () {
+    // Out: fade.standard, 250 ms, nothing moves.
+    expect(bannerExitDuration, const Duration(milliseconds: 250));
+    expect(bannerExitOpacity(0), 1);
+    expect(
+      bannerExitOpacity(125),
+      closeTo(1 - AmalfiFades.standard.curve.transform(0.5), 1e-6),
+    );
+    expect(bannerExitOpacity(250), 0);
+    // In: the opacity (fade.quick) is done long before the geometry settles.
+    expect(bannerEnterOpacity(0), 0);
+    expect(bannerEnterOpacity(150), 1);
+    // The Centre slides in like a banner and closes with fade.instant.
     expect(centerOpenOffset(0), centerDistance);
-    expect(centerOpenOffset(35), closeTo(2198 - 2158, 5));
-    expect(centerOpenOffset(300), 0);
-    expect(centerCloseOffset(120), 37);
-    expect(centerCloseOffset(150), 357);
-    expect(centerCloseOffset(400), centerDistance);
+    expect(centerOpenOffset(centerOpenDuration.inMilliseconds.toDouble()), 0);
+    expect(centerCloseDuration, const Duration(milliseconds: 100));
+    expect(centerCloseOpacity(0), 1);
+    expect(centerCloseOpacity(100), 0);
   });
 
   testWidgets(

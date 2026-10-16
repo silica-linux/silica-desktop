@@ -1,75 +1,50 @@
-// The appearance-aware colors of the Control Center's content (modules, detail panels,
-// HUDs). The glass under them is Amalfi's Thick/Regular, near-white in light, so the content
-// follows the appearance: dark text and glyphs in light, today's white in dark.
+// The colors of the Control Center's content (modules, detail panels, HUD), all Amalfi
+// tokens (tokens.json) read from the theme in effect: no hand-picked alphas. The glass under
+// the content is Glass/Thick (modules and details) or Glass/Regular (HUD), which Ossido draws.
 
 import 'package:flutter/widgets.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 @immutable
 class CcPalette {
-  const CcPalette({
-    required this.light,
-    required this.text,
-    required this.secondary,
-    required this.trackRest,
-    required this.trackFill,
-    required this.separator,
-    required this.switchOff,
-    required this.hudDot,
-    required this.outputsFill,
-    required this.hoverLift,
-    required this.nowPlayingTrack,
-  });
+  const CcPalette._(this.colors);
 
-  final bool light;
+  final AmalfiColors colors;
 
-  /// Titles, glyphs and slider fills on the glass.
-  final Color text;
+  bool get light => colors.brightness == Brightness.light;
 
-  /// Subtitles, section labels, times.
-  final Color secondary;
-  final Color trackRest;
-  final Color trackFill;
-  final Color separator;
-  final Color switchOff;
-  final Color hudDot;
-  final Color outputsFill;
-  final Color hoverLift;
-  final Color nowPlayingTrack;
+  /// Titles, glyphs: `Text/Primary`.
+  Color get text => colors.textPrimary;
 
-  static const CcPalette dark = CcPalette(
-    light: false,
-    text: Color(0xFFFFFFFF),
-    secondary: Color(0xFFB7B8BE),
-    trackRest: Color(0xFF7E7F84),
-    trackFill: Color(0xFFFFFFFF),
-    separator: Color(0x1AFFFFFF),
-    switchOff: Color(0x40FFFFFF),
-    hudDot: Color(0x33FFFFFF),
-    outputsFill: Color(0x3DFFFFFF),
-    hoverLift: Color(0x0CFFFFFF),
-    nowPlayingTrack: Color(0xFF232323),
-  );
+  /// Subtitles: `Text/Secondary`.
+  Color get secondary => colors.textSecondary;
 
-  static const CcPalette lightMode = CcPalette(
-    light: true,
-    // Amalfi tokens.json, light: Text/Primary.
-    text: Color(0xFF1D1E21),
-    // Amalfi tokens.json, light: Text/Secondary.
-    secondary: Color(0xFF5F636B),
-    trackRest: Color(0x2E000000),
-    trackFill: Color(0xFF1D1E21),
-    separator: Color(0x1A000000),
-    switchOff: Color(0x33000000),
-    hudDot: Color(0x33000000),
-    outputsFill: Color(0x1A000000),
-    hoverLift: Color(0x0C000000),
-    nowPlayingTrack: Color(0x26000000),
-  );
+  /// Section labels, times, the hint: `Text/Tertiary`.
+  Color get tertiary => colors.textTertiary;
+
+  /// A slider's track and the progress track: `Surface/Sunken`.
+  Color get track => colors.surfaceSunken;
+
+  /// The filled part of a slider, an active disc, an active tile: `Accent/Amalfi`.
+  Color get accent => colors.accentAmalfi;
+
+  /// A glyph on the accent: `Text/On Accent`.
+  Color get onAccent => colors.textOnAccent;
+
+  /// A disc that is off: `Text/Tertiary` (the kit's Toggle Off and Item Rest).
+  Color get discOff => colors.textTertiary;
+
+  /// Separators inside the detail panels: `Line/Separator`.
+  Color get separator => colors.lineSeparator;
+
+  /// The hover lift of a module: `State/Hover Overlay`.
+  Color get hoverLift => colors.stateHoverOverlay;
+
+  /// The band of the Focus options: `Surface/Sunken`.
+  Color get band => colors.surfaceSunken;
 
   static CcPalette of(BuildContext context) =>
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark
-      ? dark
-      : lightMode;
+      CcPalette._(AmalfiTheme.of(context).colors);
 
   /// The text style color the content inherits.
   TextStyle get textStyle => TextStyle(color: text);

@@ -6,9 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/controlcenter.dart';
 import 'package:silica_shell/controlcenter/hud.dart';
-import 'package:silica_shell/controlcenter/palette.dart';
 import 'package:silica_shell/notifications/model.dart';
 import 'package:silica_shell/notifications/notifications.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 import 'controlcenter_test.dart' show FakeSystem, laptop, sendCommand;
 
@@ -45,9 +45,10 @@ void main() {
         Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 344,
+            width: 348,
             child: NotificationCard(
               notification: n,
+              panel: true,
               showTime: true,
               showActions: true,
             ),
@@ -55,15 +56,16 @@ void main() {
         ),
       ),
     );
-    expect(colorOf(tester, 'Resoconto'), NotificationColors.dark.text);
-    expect(colorOf(tester, 'Corpo'), const Color(0xFFEAEAEB));
-    expect(colorOf(tester, 'Disattiva'), const Color(0xFFDADBE0));
-    final section = tester
+    // Amalfi dark tokens: Text/Primary, Text/Secondary and the Surface/Raised of a Centre card.
+    expect(colorOf(tester, 'Resoconto'), AmalfiColors.dark.textPrimary);
+    expect(colorOf(tester, 'Corpo'), AmalfiColors.dark.textSecondary);
+    expect(find.text('Disattiva'), findsOneWidget);
+    final card = tester
         .widgetList<DecoratedBox>(find.byType(DecoratedBox))
         .map((b) => b.decoration)
         .whereType<BoxDecoration>()
-        .where((d) => d.color == NotificationColors.dark.actionsFill);
-    expect(section, isNotEmpty);
+        .where((d) => d.color == AmalfiColors.dark.surfaceRaised);
+    expect(card, isNotEmpty);
   });
 
   testWidgets('Control Center text follows the appearance', (tester) async {
@@ -82,8 +84,8 @@ void main() {
       await tester.pumpAndSettle();
     }
     // Light: Amalfi Text/Primary on the near-white glass; dark: white.
-    expect(colors.first, CcPalette.lightMode.text);
-    expect(colors.last, CcPalette.dark.text);
+    expect(colors.first, AmalfiColors.light.textPrimary);
+    expect(colors.last, AmalfiColors.dark.textPrimary);
   });
 
   testWidgets('HUD text follows the appearance', (tester) async {
@@ -109,7 +111,7 @@ void main() {
       await tester.pumpAndSettle();
     }
     // Light: Amalfi Text/Primary on the near-white glass; dark: white.
-    expect(colors.first, CcPalette.lightMode.text);
-    expect(colors.last, CcPalette.dark.text);
+    expect(colors.first, AmalfiColors.light.textPrimary);
+    expect(colors.last, AmalfiColors.dark.textPrimary);
   });
 }

@@ -1500,5 +1500,33 @@
   "menubarTagGray": "Gray",
   "@menubarTagGray": {
     "description": "Desktop item context menu > Tags: colour"
+  },
+  "ccBuiltInDisplay": "Built-in display",
+  "@ccBuiltInDisplay": {
+    "description": "Control Center, Display panel: section label above the brightness slider"
+  },
+  "ccNearby": "Nearby",
+  "@ccNearby": {
+    "description": "Control Center: title of the Nearby Sharing module (short, it has to fit the 140 pt module)"
+  },
+  "ccDevices": "Devices",
+  "@ccDevices": {
+    "description": "Control Center, Bluetooth panel: section label above the device rows"
+  },
+  "notificationsToday": "Today",
+  "@notificationsToday": {
+    "description": "Notification Centre: section label of the notifications that arrived today"
+  },
+  "notificationsEarlier": "Earlier",
+  "@notificationsEarlier": {
+    "description": "Notification Centre: section label of the older notifications"
+  },
+  "notificationsClearAll": "Clear all",
+  "@notificationsClearAll": {
+    "description": "Notification Centre: header link that clears every notification"
+  },
+  "notificationsNow": "now",
+  "@notificationsNow": {
+    "description": "Notification time label for a notification that arrived less than a minute ago"
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/controlcenter/hud.dart';
 import 'package:silica_shell/system/system_status.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 import 'controlcenter_test.dart' show FakeSystem, laptop;
 
@@ -23,14 +24,17 @@ Future<FakeSystem> pumpHud(
 }
 
 void main() {
-  test('appearance and disappearance follow the measurements', () {
-    expect(hudAppearScale(0), hudScaleFrom);
-    expect(hudAppearScale(1), 1);
-    expect(hudAppearOpacity(0.5), 0.25);
-    // Fast drop in the first 80 ms, then a tail up to 550.
-    expect(hudVanishOpacity(80), closeTo(0.22, 1e-9));
-    expect(hudVanishOpacity(550), 0);
-    expect(hudVanishScale(410), hudScaleFrom);
+  test('in with fade.quick and an 8 pt rise, out with fade.quick', () {
+    // fade.quick is 150 ms: the opacity reaches 1 long before the rise settles (450 ms).
+    expect(hudAppearOpacity(0), 0);
+    expect(hudAppearOpacity(150 / 450), closeTo(1, 1e-9));
+    expect(hudAppearOpacity(1), 1);
+    expect(hudAppearOffset(0), hudRise);
+    expect(hudAppearOffset(1), closeTo(0, 0.05));
+    expect(hudRise, 8);
+    expect(hudVanish, AmalfiFades.quick.duration);
+    expect(hudVanishOpacity(0), 1);
+    expect(hudVanishOpacity(150), 0);
   });
 
   testWidgets(

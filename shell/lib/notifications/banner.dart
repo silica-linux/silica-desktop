@@ -1,19 +1,16 @@
-// A notification banner, from entering to leaving (plan/reference/notifications.md,
-// "Behaviors", session 8):
-// - it slides in from the right (~400 ms), fading in (~210 ms) and blurred, sharpening as it
-//   slows down;
+// A notification banner, from entering to leaving (docs/spec/notifications.md for the
+// behaviour, motion.md for the motion):
+// - it slides in from the trailing edge, fading in, with `spring.panel`;
 // - it stays ~5 s from appearing; with the pointer over it it does not expire, and it leaves
 //   ~1.1 s after the pointer exits; critical notifications stay;
-// - on hover the × appears on the top left corner and the "Details" capsule on the right
+// - on hover the x appears on the top left corner and the "Details" capsule on the right
 //   (the text shortens);
 // - dragged to the right it follows the pointer 1:1 and on release it leaves anyway, without
 //   opening the app; a click opens the app (`default` action);
-// - it leaves to the right in ~190 ms, fading out halfway and blurring. When a new
-//   notification arrives the current banner leaves while the new one enters.
+// - it leaves with `fade.standard`. When a new notification arrives the current banner
+//   leaves while the new one enters.
 
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/widgets.dart';
 
 import 'model.dart';
@@ -113,7 +110,7 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
     _timer = Timer(after, _leave);
   }
 
-  /// Leaves to the right from where it is (even when dragged).
+  /// Leaves from where it is (even when dragged): fades out.
   void leave() => _leave();
 
   Future<void> _leave() async {
@@ -144,16 +141,10 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
     final enterMs = _enter.value * bannerEnterDuration.inMilliseconds;
     final exitMs = _exit.value * bannerExitDuration.inMilliseconds;
     final exiting = _exit.value > 0;
-    final dx =
-        bannerEnterOffset(_enter.isCompleted ? 1e9 : enterMs) +
-        _drag +
-        (exiting ? bannerExitOffset(exitMs) : 0);
+    final dx = bannerEnterOffset(_enter.isCompleted ? 1e9 : enterMs) + _drag;
     final opacity =
         bannerEnterOpacity(enterMs) * (exiting ? bannerExitOpacity(exitMs) : 1);
-    final blur = exiting
-        ? bannerExitBlur(exitMs)
-        : bannerEnterBlur(_enter.isCompleted ? 1e9 : enterMs);
-    Widget card = NotificationCard(
+    final card = NotificationCard(
       notification: widget.notification,
       shadow: true,
       showClose: (_hover || widget.persistent) && !exiting,
@@ -175,12 +166,6 @@ class BannerSlotState extends State<BannerSlot> with TickerProviderStateMixin {
             },
       onReplyFocus: widget.onReplyFocus,
     );
-    if (blur > 0.05) {
-      card = ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: card,
-      );
-    }
     return Transform.translate(
       offset: Offset(dx, 0),
       child: Opacity(
