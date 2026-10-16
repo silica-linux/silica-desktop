@@ -479,12 +479,29 @@ class _FaroState extends State<Faro>
   }
 
   /// The return from the launcher (value = ms from the start).
-  late final AnimationController _back = AnimationController(
+  late final AnimationController _back =
+      AnimationController(
+        vsync: this,
+        upperBound: backDuration,
+        value: backDuration,
+        duration: const Duration(microseconds: 213300),
+      )..addListener(() {
+        // The measured return drives the same morph as the way in: the Launcher-ness runs 1 → 0
+        // along the measured height curve.
+        _mix.value = 1 - backProgress(_back.value);
+      });
+
+  /// How much of the Launcher the one container is: 0 = the Faro bar, 1 = the Launcher
+  /// (position, size and radius of the single glass region interpolate with it).
+  late final AnimationController _mix = AnimationController.unbounded(
     vsync: this,
-    upperBound: backDuration,
-    value: backDuration,
-    duration: const Duration(microseconds: 213300),
-  )..addListener(() => setState(() {}));
+  )..addListener(_tick);
+
+  /// Grid (0) to list (1) in the Launcher: the container morphs between 844 x 580 and 640 x 560.
+  late final AnimationController _listMix = AnimationController.unbounded(
+    vsync: this,
+    value: _launcherList ? 1 : 0,
+  )..addListener(_tick);
   late final RecentApps _recents = widget.recents ?? RecentApps();
   late final FolderIndex _folders = widget.folders ?? FolderIndex.home();
   List<String> _recentIds = const [];
@@ -538,6 +555,8 @@ class _FaroState extends State<Faro>
     _spread.dispose();
     _launcherClock.dispose();
     _back.dispose();
+    _mix.dispose();
+    _listMix.dispose();
     _clipboard.dispose();
     _query.dispose();
     _focus.dispose();
@@ -618,6 +637,7 @@ class _FaroState extends State<Faro>
     _scaleY.value = 1;
     _fade.value = fadeMs;
     _heightTarget = null;
+    _mix.value = 1;
     _back.forward(from: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
@@ -643,17 +663,49 @@ class _FaroState extends State<Faro>
   }
 
   void _showLauncher() {
+    if (_open && !_launcher) {
+      // Faro is open: the bar morphs into the Launcher (one container, one glass region).
+      final mix = _mix.value;
+      setState(() {
+        _launcher = true;
+        _hovered = false;
+        _recentIds = _recents.load();
+      });
+      _spreadDelay?.cancel();
+      _engageTimer?.cancel();
+      _back.value = backDuration;
+      _mix.value = mix;
+      _springTo(_mix, 1, launcherMorphSpring);
+      _layer.keyboard('exclusive');
+      return;
+    }
     setState(() {
       _visible = true;
       _closing = false;
       _launcher = true;
+      _hovered = false;
+      _engaged = false;
       _recentIds = _recents.load();
     });
+    _spreadDelay?.cancel();
+    _engageTimer?.cancel();
+    _width.value = wideWidth;
+    _spread.value = 0;
+    _scaleY.value = 1;
+    _back.value = backDuration;
+    _mix.value = 1;
+    _listMix.value = _launcherList ? 1 : 0;
     _fade.forward(from: 0);
     _launcherClock.forward(from: 0);
     // The region follows the panel from the first frame (_syncRegion); until then nothing.
     _regionKey = '';
     _layer.keyboard('exclusive');
+  }
+
+  /// Grid or list: the container morphs between the two sizes.
+  void _setLauncherList(bool list) {
+    setState(() => _launcherList = list);
+    _springTo(_listMix, list ? 1 : 0, launcherMorphSpring);
   }
 
   void _show() {
@@ -684,6 +736,7 @@ class _FaroState extends State<Faro>
     _engageTimer?.cancel();
     _spread.value = 0;
     _back.value = backDuration;
+    _mix.value = 0;
     if (reopening) {
       // Reopened while it was closing: it comes back from where it is, no restart.
       _fade.forward();
@@ -879,9 +932,13 @@ class _FaroState extends State<Faro>
   @override
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.expand();
-    if (_launcher) return _launcherView();
-    // An overlay of its own (the field's selection handles and toolbar).
-    return Overlay.wrap(child: _faroView(context));
+    // An overlay of its own (the field's selection handles and toolbar). Faro's menus and
+    // popovers declare Ossido glass regions like the panel itself (not silica_ui's in-Flutter
+    // approximation).
+    return AmalfiGlassBackendScope(
+      backend: AmalfiGlassBackend.compositor,
+      child: Overlay.wrap(child: _faroView(context)),
+    );
   }
 
   Widget _faroView(BuildContext context) {
@@ -949,6 +1006,8 @@ class _FaroState extends State<Faro>
     final height = _height.value;
     final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
     final scaleY = _scaleY.value;
+    // The Launcher opened from nothing starts ~8 % larger and shrinks (measured).
+    final openScale = _launcher ? launcherScaleAt(_launcherClock.value) : 1.0;
     final width = _width.value;
     final slide = _spread.value;
     final buttons = slide > 0.001;
@@ -964,22 +1023,24 @@ class _FaroState extends State<Faro>
             ? frameLeft - (width - wideWidth) / 2
             : frameLeft;
         final top = panelTop(screen, dpr);
-        // From the launcher: size and position from the big panel to the Faro one.
-        final back = _back.isAnimating ? backProgress(_back.value) : 1.0;
+        // One container: the Faro bar at mix 0, the Launcher (grid or list) at mix 1. Left,
+        // width, height and radius interpolate; the glass region follows every frame.
+        final mix = _mix.value;
+        final big = _launcherBox();
         var panelWidth = width;
         var panelHeight = height;
         var panelRadius = radius;
-        if (back < 1) {
-          double lerp(double a, double b) => a + (b - a) * back;
-          final big = launcherSize(list: _launcherList);
-          left = lerp(panelLeft(screen, big.width, dpr), left);
-          panelWidth = lerp(big.width, width);
-          panelHeight = lerp(big.height, height);
-          panelRadius = lerp(launcherRadius, radius);
+        if (mix > 0) {
+          double lerp(double a, double b) => a + (b - a) * mix;
+          left = lerp(left, panelLeft(screen, big.width, dpr));
+          panelWidth = lerp(width, big.width);
+          panelHeight = lerp(height, big.height);
+          panelRadius = lerp(radius, launcherRadius);
         }
+        final morphing = mix > 0 || _launcher;
         _syncRegion([
           Rect.fromLTWH(left, top, panelWidth, panelHeight).inflate(2),
-          if (buttons && back >= 1)
+          if (buttons && !morphing)
             Rect.fromLTWH(
               left + width,
               top + (headerHeight - circle) / 2 - 2,
@@ -1002,7 +1063,7 @@ class _FaroState extends State<Faro>
             // The round buttons come out from behind the panel: the panel itself is glass
             // drawn by the compositor under the surface, so what is "behind" it is cut away
             // here, left of its right edge (their glass merges with the panel's, as drops).
-            if (buttons && back >= 1)
+            if (buttons && !morphing)
               Positioned(
                 // Keyed, like the panel: the buttons coming and going must not shift the
                 // panel to another element (its field would lose focus and the typed text).
@@ -1052,7 +1113,11 @@ class _FaroState extends State<Faro>
               child: Transform(
                 key: const ValueKey('faro panel'),
                 alignment: Alignment.center,
-                transform: Matrix4.diagonal3Values(1, scaleY, 1),
+                transform: Matrix4.diagonal3Values(
+                  openScale,
+                  scaleY * openScale,
+                  1,
+                ),
                 child: Opacity(
                   opacity: opacity,
                   child: _panel(
@@ -1063,13 +1128,14 @@ class _FaroState extends State<Faro>
                     pills: pills,
                     headings: headings,
                     panelRadius: panelRadius,
+                    mix: mix,
                   ),
                 ),
               ),
             ),
             // The hover zone is the whole 640 pt frame, buttons included: the panel narrowing
             // under the pointer must not count as leaving it.
-            if (back >= 1)
+            if (!morphing)
               Positioned(
                 left: frameLeft,
                 top: top,
@@ -1096,6 +1162,7 @@ class _FaroState extends State<Faro>
     List<_Pill> pills = const [],
     Map<int, String> headings = const {},
     double panelRadius = radius,
+    double mix = 0,
   }) {
     final offset = answer == null ? 0 : 1;
     final grid = _scope == FaroScope.files;
@@ -1109,117 +1176,183 @@ class _FaroState extends State<Faro>
         profile: ShellGlassProfile.panel,
         radius: panelRadius,
         material: GlassMaterial.thick,
-        child: ClipRect(
-          child: OverflowBox(
-            alignment: Alignment.topLeft,
-            maxHeight: double.infinity,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: headerHeight,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(child: _field(answer, items, selected)),
-                      if (body)
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          bottom: 0,
-                          height: 1,
-                          child: ColoredBox(color: _c.separator),
-                        ),
-                    ],
-                  ),
-                ),
-                if (answer != null) ...[
-                  const SizedBox(height: cardBefore),
-                  _card(answer, selected == 0),
-                  const SizedBox(height: cardAfter),
-                ],
-                if (pills.isNotEmpty) _filterRow(pills),
-                if (grid)
+        child: _morphStack(
+          mix,
+          ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              maxHeight: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   SizedBox(
-                    height: listHeight,
-                    child: AmalfiScrollbar(
-                      child: GridView.builder(
-                        key: const ValueKey('faro files grid'),
-                        padding: const EdgeInsets.all(gridInset),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: filesColumns,
-                              mainAxisExtent: gridCell,
-                            ),
-                        itemCount: items.length,
-                        itemBuilder: (context, i) =>
-                            _cell(items[i], i + offset == selected),
-                      ),
-                    ),
-                  )
-                else if (items.isNotEmpty)
-                  SizedBox(
-                    height: listHeight,
-                    child: AmalfiScrollbar(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.only(bottom: listPadding),
-                        itemExtentBuilder: (i, _) =>
-                            rowHeight +
-                            (headings.containsKey(i) ? sectionHeight : 0),
-                        itemCount: items.length,
-                        itemBuilder: (context, i) {
-                          final row = SizedBox(
-                            height: rowHeight,
-                            child: _row(items[i], i + offset == selected),
-                          );
-                          final heading = headings[i];
-                          return heading == null
-                              ? row
-                              : Column(children: [_heading(heading), row]);
-                        },
-                      ),
-                    ),
-                  ),
-                if (actionsScope)
-                  SizedBox(
-                    height: scopeFooterHeight,
+                    height: headerHeight,
                     child: Stack(
                       children: [
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          top: 0,
-                          height: 1,
-                          child: ColoredBox(color: _c.separator),
-                        ),
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          top: 1,
-                          bottom: 0,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              key: const ValueKey('faro actions footer'),
-                              items.length <= _actionsVisible
-                                  ? l.faroActionsFooter(items.length)
-                                  : l.faroActionsFooterMore(
-                                      _actionsVisible,
-                                      items.length,
-                                    ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AmalfiType.caption(color: _c.subtitle),
-                            ),
+                        Positioned.fill(child: _field(answer, items, selected)),
+                        if (body)
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            bottom: 0,
+                            height: 1,
+                            child: ColoredBox(color: _c.separator),
                           ),
-                        ),
                       ],
                     ),
                   ),
-              ],
+                  if (answer != null) ...[
+                    const SizedBox(height: cardBefore),
+                    _card(answer, selected == 0),
+                    const SizedBox(height: cardAfter),
+                  ],
+                  if (pills.isNotEmpty) _filterRow(pills),
+                  if (grid)
+                    SizedBox(
+                      height: listHeight,
+                      child: AmalfiScrollbar(
+                        child: GridView.builder(
+                          key: const ValueKey('faro files grid'),
+                          padding: const EdgeInsets.all(gridInset),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: filesColumns,
+                                mainAxisExtent: gridCell,
+                              ),
+                          itemCount: items.length,
+                          itemBuilder: (context, i) =>
+                              _cell(items[i], i + offset == selected),
+                        ),
+                      ),
+                    )
+                  else if (items.isNotEmpty)
+                    SizedBox(
+                      height: listHeight,
+                      child: AmalfiScrollbar(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.only(bottom: listPadding),
+                          itemExtentBuilder: (i, _) =>
+                              rowHeight +
+                              (headings.containsKey(i) ? sectionHeight : 0),
+                          itemCount: items.length,
+                          itemBuilder: (context, i) {
+                            final row = SizedBox(
+                              height: rowHeight,
+                              child: _row(items[i], i + offset == selected),
+                            );
+                            final heading = headings[i];
+                            return heading == null
+                                ? row
+                                : Column(children: [_heading(heading), row]);
+                          },
+                        ),
+                      ),
+                    ),
+                  if (actionsScope)
+                    SizedBox(
+                      height: scopeFooterHeight,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            top: 0,
+                            height: 1,
+                            child: ColoredBox(color: _c.separator),
+                          ),
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            top: 1,
+                            bottom: 0,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                key: const ValueKey('faro actions footer'),
+                                items.length <= _actionsVisible
+                                    ? l.faroActionsFooter(items.length)
+                                    : l.faroActionsFooterMore(
+                                        _actionsVisible,
+                                        items.length,
+                                      ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AmalfiType.caption(color: _c.subtitle),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// The size of the Launcher's box now: grid and list morph into each other.
+  Size _launcherBox() {
+    final grid = launcherSize(list: false);
+    final list = launcherSize(list: true);
+    final t = _listMix.value;
+    return Size(
+      grid.width + (list.width - grid.width) * t,
+      grid.height + (list.height - grid.height) * t,
+    );
+  }
+
+  /// The panel's content: Faro's (bar, results) fading out as the Launcher's fades in, in the
+  /// same container. The Launcher lays out at its final size and is cut by the container.
+  /// The fade split is an assumption (not measured): the content arrives in the last 60 % of
+  /// the morph and leaves in the first 40 %.
+  Widget _morphStack(double mix, Widget faro) {
+    final faroOpacity = (1 - mix / 0.4).clamp(0.0, 1.0);
+    final launcherOpacity = ((mix - 0.4) / 0.6).clamp(0.0, 1.0);
+    final size = launcherSize(list: _launcherList);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (faroOpacity > 0)
+          ExcludeFocus(
+            excluding: _launcher,
+            child: IgnorePointer(
+              ignoring: _launcher,
+              child: Opacity(opacity: faroOpacity, child: faro),
+            ),
+          ),
+        if (_launcher || mix > 0)
+          IgnorePointer(
+            ignoring: !_launcher,
+            child: Opacity(
+              opacity: launcherOpacity,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minWidth: size.width,
+                  maxWidth: size.width,
+                  minHeight: size.height,
+                  maxHeight: size.height,
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onKeyEvent: _launcherKey,
+                    child: Launcher(
+                      entries: widget.entries,
+                      recents: _recentIds,
+                      list: _launcherList,
+                      onListChanged: _setLauncherList,
+                      onLaunch: _launch,
+                      onBack: _backToFaro,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1973,67 +2106,6 @@ class _FaroState extends State<Faro>
     2 => 'bolt',
     _ => 'clipboard',
   };
-
-  Widget _launcherView() {
-    final elapsed = _launcherClock.value;
-    final opacity = _fade.value <= 0 && _closing ? 0.0 : opacityAt(_fade.value);
-    final size = launcherSize(list: _launcherList);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screen = constraints.biggest;
-        final dpr = MediaQuery.devicePixelRatioOf(context);
-        final left = panelLeft(screen, size.width, dpr);
-        final top = panelTop(screen, dpr);
-        _syncRegion([
-          Rect.fromLTWH(left, top, size.width, size.height).inflate(2),
-        ]);
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _hide,
-                behavior: HitTestBehavior.opaque,
-              ),
-            ),
-            Positioned(
-              left: left,
-              top: top,
-              width: size.width,
-              height: size.height,
-              child: Transform.scale(
-                scale: launcherScaleAt(elapsed),
-                child: Opacity(
-                  opacity: opacity,
-                  child: PanelShadow(
-                    radius: launcherRadius,
-                    child: ProfiledGlass(
-                      profile: ShellGlassProfile.panel,
-                      radius: launcherRadius,
-                      material: GlassMaterial.thick,
-                      child: Focus(
-                        canRequestFocus: false,
-                        skipTraversal: true,
-                        onKeyEvent: _launcherKey,
-                        child: Launcher(
-                          entries: widget.entries,
-                          recents: _recentIds,
-                          list: _launcherList,
-                          onListChanged: (list) =>
-                              setState(() => _launcherList = list),
-                          onLaunch: _launch,
-                          onBack: _backToFaro,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 /// The shadow of a glass panel drawn only outside the panel: under the glass, which Ossido
