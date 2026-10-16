@@ -121,6 +121,16 @@ class DockMenuHostState extends State<DockMenuHost>
   /// The open submenus' rectangles, as the list reports them.
   List<Rect> _submenus = const [];
 
+  final FocusNode _focus = FocusNode(
+    debugLabel: 'dock menu',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// Whether the keyboard focus is on the menu's rows (or on a submenu): they close the menu
+  /// on Esc themselves, and close a submenu before the menu.
+  bool get hasFocus => _focus.hasFocus;
+
   /// Whether `p` (host coordinates) is on the menu or on an open submenu.
   bool contains(Offset p) {
     final r = _layout.rect;
@@ -252,6 +262,7 @@ class DockMenuHostState extends State<DockMenuHost>
       ..remove()
       ..dispose();
     _fade.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -270,7 +281,10 @@ class DockMenuHostState extends State<DockMenuHost>
   }
 
   @override
-  Widget build(BuildContext context) => Overlay(initialEntries: [_entry]);
+  Widget build(BuildContext context) => Focus(
+    focusNode: _focus,
+    child: Overlay(initialEntries: [_entry]),
+  );
 
   Widget _buildMenu(BuildContext context) {
     final theme = AmalfiTheme.of(context);
