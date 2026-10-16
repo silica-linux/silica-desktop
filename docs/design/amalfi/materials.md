@@ -43,7 +43,7 @@ an opaque fill = tint over `Surface/Window`, keep rim and shadow.
 
 | Surface | Material | Radius | Notes |
 |---|---|---|---|
-| Menu bar | **none** (transparent strip on the wallpaper) | — | items are text/glyphs; an open menu title gets an `Accent/Amalfi Soft` capsule |
+| Menu bar | **none** (transparent strip on the wallpaper) | — | items are text/glyphs; an open menu title or active status item gets a translucent white capsule `Menu Bar/Selection` (white 40 % light, 20 % dark), radius 12, full item size; text and glyph stay Primary (user decision: blue was not visible enough on wallpapers) |
 | Menus, context menus, submenus | Thick | 12 | highlighted item = `Accent/Amalfi` fill, full item width inside the menu padding, radius 7 |
 | Status menus (Wi-Fi, Bluetooth, Battery) | Thick | 12 | the kit uses Regular in a few: use Thick |
 | Popovers (all edges, detached) | Thick | 16 | the kit's rebuilt popovers lost the glass and look opaque white: use Thick |
