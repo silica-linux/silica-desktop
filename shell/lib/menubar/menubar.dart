@@ -969,10 +969,7 @@ class _MenuBarState extends State<MenuBar> {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  caption,
-                  style: barTitleStyle(barTextColor(context)),
-                ),
+                Text(caption, style: barTitleStyle(barTextColor(context))),
                 const SizedBox(width: 4),
                 glyph,
               ],

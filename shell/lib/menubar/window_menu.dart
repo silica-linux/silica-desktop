@@ -197,42 +197,57 @@ class WindowMenuPopoverState extends State<WindowMenuPopover>
           },
           child: KeyedSubtree(
             key: _bodyKey,
-            child: AmalfiPopover(
-              arrowEdge: AmalfiPopoverArrowEdge.top,
-              arrowOffset: arrow,
-              padding: AmalfiPopoverMetrics.listPadding,
-              child: Padding(
-                padding: const EdgeInsets.all(AmalfiMenuMetrics.padding),
-                child: SizedBox(
-                  width: windowMenuWidth,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AmalfiMenuHeader(label: texts.halfScreen),
-                      _row(const [
-                        'window.tile_left',
-                        'window.tile_right',
-                        'window.tile_top',
-                        'window.tile_bottom',
-                      ]),
-                      const AmalfiMenuSeparator(),
-                      AmalfiMenuHeader(label: texts.arrange),
-                      _row(const [
-                        'window.tile_fill',
-                        'window.arrange_2',
-                        'window.arrange_3',
-                        'window.arrange_4',
-                      ]),
-                      const AmalfiMenuSeparator(),
-                      _FullScreenItem(
-                        label: texts.fullScreen,
-                        onPressed: () => _choose('window.fullscreen'),
-                      ),
-                    ],
+            child: Stack(
+              children: [
+                // Ossido's glass (kind `popover`) under the body, not the arrow.
+                const Positioned.fill(
+                  top: 8,
+                  child: IgnorePointer(
+                    child: Glass(
+                      radius: 16,
+                      material: GlassMaterial.thick,
+                      profile: GlassProfile.menu,
+                    ),
                   ),
                 ),
-              ),
+                AmalfiPopover(
+                  arrowEdge: AmalfiPopoverArrowEdge.top,
+                  arrowOffset: arrow,
+                  padding: AmalfiPopoverMetrics.listPadding,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AmalfiMenuMetrics.padding),
+                    child: SizedBox(
+                      width: windowMenuWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AmalfiMenuHeader(label: texts.halfScreen),
+                          _row(const [
+                            'window.tile_left',
+                            'window.tile_right',
+                            'window.tile_top',
+                            'window.tile_bottom',
+                          ]),
+                          const AmalfiMenuSeparator(),
+                          AmalfiMenuHeader(label: texts.arrange),
+                          _row(const [
+                            'window.tile_fill',
+                            'window.arrange_2',
+                            'window.arrange_3',
+                            'window.arrange_4',
+                          ]),
+                          const AmalfiMenuSeparator(),
+                          _FullScreenItem(
+                            label: texts.fullScreen,
+                            onPressed: () => _choose('window.fullscreen'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

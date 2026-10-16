@@ -171,50 +171,63 @@ class _PowerConfirmationState extends State<PowerConfirmation>
             child: Opacity(opacity: powerCardOpacity(ms), child: child),
           );
         },
-        child: AmalfiAlert(
-          key: const ValueKey('power confirmation'),
-          material: AmalfiAlertMaterial.glass,
-          icon: CustomPaint(
-            painter: _PowerIconPainter(
-              disc: colors.surfaceSunken,
-              glyph: colors.textSecondary,
-              person: widget.action == PowerAction.logOut,
-            ),
-          ),
-          title: title,
-          message: body,
-          accessory: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _reopen = !_reopen),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AmalfiCheckbox(
-                  value: _reopen,
-                  onChanged: (v) => setState(() => _reopen = v),
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: Glass(
+                  radius: AmalfiAlertMetrics.radius,
+                  material: GlassMaterial.thick,
+                  profile: GlassProfile.sheet,
                 ),
-                const SizedBox(width: 8),
-                // The label wraps: the alert is 280 wide.
-                Expanded(
-                  child: Text(
-                    l.powerReopenWindows,
-                    style: AmalfiType.body(color: colors.textPrimary),
-                  ),
+              ),
+            ),
+            AmalfiAlert(
+              key: const ValueKey('power confirmation'),
+              material: AmalfiAlertMaterial.glass,
+              icon: CustomPaint(
+                painter: _PowerIconPainter(
+                  disc: colors.surfaceSunken,
+                  glyph: colors.textSecondary,
+                  person: widget.action == PowerAction.logOut,
+                ),
+              ),
+              title: title,
+              message: body,
+              accessory: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _reopen = !_reopen),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AmalfiCheckbox(
+                      value: _reopen,
+                      onChanged: (v) => setState(() => _reopen = v),
+                    ),
+                    const SizedBox(width: 8),
+                    // The label wraps: the alert is 280 wide.
+                    Expanded(
+                      child: Text(
+                        l.powerReopenWindows,
+                        style: AmalfiType.body(color: colors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                AmalfiPushButton(
+                  key: const ValueKey('power cancel'),
+                  label: l.cancel,
+                  onPressed: widget.onCancel,
+                ),
+                AmalfiPushButton(
+                  key: const ValueKey('power confirm'),
+                  label: button,
+                  variant: AmalfiPushButtonVariant.primary,
+                  onPressed: widget.onConfirm,
                 ),
               ],
-            ),
-          ),
-          actions: [
-            AmalfiPushButton(
-              key: const ValueKey('power cancel'),
-              label: l.cancel,
-              onPressed: widget.onCancel,
-            ),
-            AmalfiPushButton(
-              key: const ValueKey('power confirm'),
-              label: button,
-              variant: AmalfiPushButtonVariant.primary,
-              onPressed: widget.onConfirm,
             ),
           ],
         ),

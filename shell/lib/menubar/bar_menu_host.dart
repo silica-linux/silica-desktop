@@ -211,6 +211,8 @@ class BarMenuHostState extends State<BarMenuHost>
     }
     if (listEquals(rects, _rects)) return;
     _rects = rects;
+    // The compositor's glass goes under the menus (see `build`).
+    setState(() {});
     if (rects.isNotEmpty) widget.onRectsChanged?.call(rects);
   }
 
@@ -261,9 +263,29 @@ class BarMenuHostState extends State<BarMenuHost>
   @override
   Widget build(BuildContext context) => FadeTransition(
     opacity: _opacity,
-    child: IgnorePointer(
-      ignoring: _closing,
-      child: Overlay(key: _overlayKey, initialEntries: [_entry]),
+    child: Stack(
+      children: [
+        // The glass is Ossido's (silica-glass-v1, kind `menu`: Glass/Thick): one region per
+        // menu, a submenu in a group above its parent. AmalfiMenu draws only a Flutter
+        // approximation of it, which has no blur on a layer surface (silica_ui need: an
+        // AmalfiGlass that declares the compositor's region itself).
+        for (final (i, r) in _rects.indexed)
+          Positioned.fromRect(
+            rect: r,
+            child: IgnorePointer(
+              child: Glass(
+                radius: AmalfiMenuMetrics.radius,
+                material: GlassMaterial.thick,
+                profile: GlassProfile.menu,
+                group: i,
+              ),
+            ),
+          ),
+        IgnorePointer(
+          ignoring: _closing,
+          child: Overlay(key: _overlayKey, initialEntries: [_entry]),
+        ),
+      ],
     ),
   );
 }
