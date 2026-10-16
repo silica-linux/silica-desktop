@@ -98,10 +98,14 @@ class DockMenuHost extends StatefulWidget {
 
 class DockMenuHostState extends State<DockMenuHost>
     with SingleTickerProviderStateMixin {
+  /// Measured (menubar.md "Menus", dock.md "context menu"): opens in one frame, with no
+  /// animation (the value starts at 1), and fades out linearly over ~190 ms.
+  static const Duration fadeOut = Duration(milliseconds: 190);
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: AmalfiFades.instant.duration,
-  )..forward();
+    duration: fadeOut,
+    value: 1,
+  );
   final _DockMenuLayout _layout = _DockMenuLayout();
   Rect? _reported;
   bool _closing = false;
@@ -130,7 +134,7 @@ class DockMenuHostState extends State<DockMenuHost>
     if (_closing) return;
     _closing = true;
     final done = widget.onDismissed;
-    _fade.animateBack(0, curve: AmalfiFades.instant.curve).whenComplete(() {
+    _fade.animateBack(0, curve: Curves.linear).whenComplete(() {
       if (mounted) done?.call();
     });
   }

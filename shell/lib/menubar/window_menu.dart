@@ -98,6 +98,7 @@ class WindowMenuPopoverState extends State<WindowMenuPopover>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
+    // Assumption: not measured (motion.md "Popovers (open/close in general)").
     duration: AmalfiFades.instant.duration,
   );
   final GlobalKey _bodyKey = GlobalKey();
@@ -107,6 +108,7 @@ class WindowMenuPopoverState extends State<WindowMenuPopover>
   @override
   void initState() {
     super.initState();
+    // Assumption: not measured (motion.md): popovers open with spring.panel.
     const s = AmalfiSprings.panel;
     _controller.animateWith(
       SpringSimulation(
