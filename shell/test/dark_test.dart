@@ -41,7 +41,7 @@ void main() {
         (_) {},
       );
 
-  testWidgets('switcher: #a9aaaf box and #f7f7f8 label', (tester) async {
+  testWidgets('switcher: Amalfi dark tokens', (tester) async {
     tester.view.physicalSize = const Size(2560, 1440);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -50,16 +50,16 @@ void main() {
         SwitcherApp(key: '$i', name: 'App $i', windows: ['$i']),
     ];
     await tester.pumpWidget(dark(SwitcherPanel(apps: apps, selected: 1)));
-    final boxes = tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
-    expect(
-      boxes.any(
-        (b) => (b.decoration as BoxDecoration).color == selectionColorDark,
-      ),
-      isTrue,
+    final colors = AmalfiColors.dark;
+    final box = tester.widget<Positioned>(
+      find.byKey(const ValueKey('switcher selection')),
     );
+    final decoration =
+        (box.child as DecoratedBox).decoration as AmalfiShapeDecoration;
+    expect(decoration.color, colors.stateHoverOverlay);
     expect(
       tester.widget<Text>(find.text('App 1')).style?.color,
-      labelColorDark,
+      colors.textPrimary,
     );
   });
 
@@ -166,7 +166,7 @@ void main() {
     expect(painters.where((p) => p.color == tileGlyphDark), hasLength(8));
   });
 
-  testWidgets('force quit: dark panel', (tester) async {
+  testWidgets('force quit: Amalfi dark window', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -184,47 +184,40 @@ void main() {
     await tester.pumpWidget(dark(const ForceQuitLayer(entries: {})));
     await send(tester, 'app.force_quit_panel');
     await tester.pump();
-    final panel = tester.widget<Container>(
-      find.byKey(const ValueKey('force quit')),
-    );
-    // Measured (K-06): background #272727, chosen row #0059d1, button #007aff, names #dedede.
-    expect((panel.decoration! as BoxDecoration).color, const Color(0xFF272727));
-    expect(
-      tester
-          .widget<Container>(
-            find
-                .descendant(
-                  of: find.byKey(const ValueKey('app org.prova.Nota')),
-                  matching: find.byType(Container),
-                )
-                .first,
-          )
-          .color,
-      const Color(0xFF0059D1),
-    );
-    final button = tester.widget<Container>(
+    final colors = AmalfiColors.dark;
+    // The window is Surface/Window; the chosen row Accent/Amalfi Soft; the button Accent.
+    final window = tester.widget<ColoredBox>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('force quit button')),
-            matching: find.byType(Container),
+            of: find.byType(AmalfiWindow),
+            matching: find.byType(ColoredBox),
+          )
+          .first,
+    );
+    expect(window.color, colors.surfaceWindow);
+    final row = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('app org.prova.Nota')),
+            matching: find.byType(DecoratedBox),
           )
           .first,
     );
     expect(
-      (button.decoration! as BoxDecoration).color,
-      const Color(0xFF007AFF),
+      (row.decoration as AmalfiShapeDecoration).color,
+      colors.accentAmalfiSoft,
     );
     expect(
-      tester.widget<Text>(find.textContaining('does not respond')).style?.color,
-      const Color(0xFFDEDEDE),
+      tester.widget<Text>(find.text('Nota')).style?.color,
+      colors.textPrimary,
     );
     expect(
       tester.widget<Text>(find.text('Quit apps')).style?.color,
-      ForceQuitColors.dark.title,
+      colors.textPrimary,
     );
   });
 
-  testWidgets('screenshot bar: light text', (tester) async {
+  testWidgets('screenshot bar: Amalfi dark tokens', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -238,24 +231,24 @@ void main() {
       dark(ScreenshotLayer(settingsFile: File('${dir.path}/screenshot.json'))),
     );
     await send(tester, 'screenshot.toolbar');
-    await tester.pump();
-    // Measured over grey (K-06): glyphs and "Options" #c7c8cd, chosen glyph #dbdde2.
+    await tester.pumpAndSettle();
+    final colors = AmalfiColors.dark;
     expect(
       tester.widget<Text>(find.textContaining('Options')).style?.color,
-      const Color(0xFFC7C8CD),
+      colors.textPrimary,
     );
-    expect(ShotBarColors.dark.chosenGlyph, const Color(0xFFDBDDE2));
-    final chosen = tester.widget<Container>(
+    // The Options pull-down: Surface/Control; the action button: Accent.
+    final options = tester.widget<DecoratedBox>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('mode selection')),
-            matching: find.byType(Container),
+            of: find.byKey(const ValueKey('options')),
+            matching: find.byType(DecoratedBox),
           )
           .first,
     );
     expect(
-      (chosen.decoration! as BoxDecoration).color,
-      ShotBarColors.dark.chosen,
+      (options.decoration as AmalfiShapeDecoration).color,
+      colors.surfaceControl,
     );
   });
 }

@@ -1,9 +1,11 @@
-// The app switcher (⌘Tab), from plan/reference/appswitcher.md (light appearance).
+// The app switcher (⌘Tab), on the Amalfi design system.
 //
-// Panel centered on the screen with the Dock material: 104 pt icons in one row, 134 pt
-// pitch, 37 pt margin at the sides and 35 at the top; with 4 apps it is 580 × 176 pt, corner radius ~56. The
-// chosen app has a 120 × 120 box behind it (radius 30, `#484950`) and below it the name (14 pt
-// semibold, `#131314`) 7 pt below the box.
+// Panel centred on the screen, Glass/Regular (the Dock's kind) with smooth corners of 28 and the
+// level 2 shadow: 96 pt icons in one row, 120 pt pitch, 20 pt from the sides and the top; with 4
+// apps it is 496 × 160 pt. The chosen app has a 112 × 112 box behind it (radius 24, a state
+// overlay of the appearance) and below it the name (Body Emphasis, `Text/Primary`). The panel
+// appears with `fade.instant` (motion.md); it goes at once. Sizes are on the 4 pt grid; there is
+// no switcher master in the kit, so they are ours, scaled from the Dock shelf (tile 52).
 //
 // Ossido handles the keys and forwards `switcher.next`, `switcher.previous` (⇧⌘Tab, with ⌘
 // held), `switcher.commit` (⌘ released), `switcher.cancel` (Esc) and `switcher.expose` (↑ or
@@ -26,28 +28,21 @@ import '../system/desktop_entries.dart';
 import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_control.dart';
+import '../system/shadowed_glass.dart';
 import '../system/shell_channel.dart';
 import '../system/silica_icons.dart';
 
-const double iconSide = 104;
-const double iconPitch = 134;
-const double sidePadding = 37;
-const double topPadding = 35;
-const double panelHeight = 176;
+const double iconSide = 96;
+const double iconPitch = 120;
+const double sidePadding = 20;
+const double topPadding = 20;
+const double panelHeight = 160;
 
-/// Panel corners: insets of 34, 16 and 7 pt at 4, 16 and 28 pt from the edge, i.e. an arc
-/// of radius ~56 pt (not a full capsule).
-const double panelRadius = 56;
-const double selectionSide = 120;
-const double selectionRadius = 30;
-const double labelGap = 7;
-const double labelSize = 14;
-const Color selectionColor = Color(0xFF484950);
-const Color labelColor = Color(0xFF131314);
-
-/// In dark (appswitcher.md): selection `#a9aaaf`, label `#f7f7f8`.
-const Color selectionColorDark = Color(0xFFA9AAAF);
-const Color labelColorDark = Color(0xFFF7F7F8);
+/// Panel corners (smooth, like the Faro and Launcher panels).
+const double panelRadius = AmalfiRadii.faroAndLauncher;
+const double selectionSide = 112;
+const double selectionRadius = 24;
+const double labelGap = 4;
 
 /// Capsule width for `count` apps at full size.
 double panelWidth(int count) =>
@@ -349,13 +344,15 @@ class _AppSwitcherState extends State<AppSwitcher> {
         final apps = _model.apps;
         _syncRegion(apps);
         if (apps == null || apps.isEmpty) return const SizedBox.expand();
-        return SwitcherPanel(
-          apps: apps,
-          selected: _model.selected,
-          onHover: (i) {
-            if (i != _model.selected) setState(() => _model.select(i));
-          },
-          onTap: _click,
+        return _FadeIn(
+          child: SwitcherPanel(
+            apps: apps,
+            selected: _model.selected,
+            onHover: (i) {
+              if (i != _model.selected) setState(() => _model.select(i));
+            },
+            onTap: _click,
+          ),
         );
       },
     );
@@ -381,8 +378,7 @@ class SwitcherPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark =
-        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
+    final theme = AmalfiTheme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         // Too many apps for the screen: everything shrinks together.
@@ -395,16 +391,15 @@ class SwitcherPanel extends StatelessWidget {
               top: top,
               width: width,
               height: height,
-              child: ProfiledGlass(
+              child: ShadowedGlass(
                 profile: ShellGlassProfile.dock,
                 radius: panelRadius * k,
-                material: GlassMaterial.clear,
                 child: const SizedBox.expand(),
               ),
             ),
             for (var i = 0; i < apps.length; i++)
               ..._item(
-                dark,
+                theme,
                 i,
                 left + (sidePadding + i * iconPitch) * k,
                 top + topPadding * k,
@@ -441,21 +436,30 @@ class SwitcherPanel extends StatelessWidget {
     ];
   }
 
-  List<Widget> _item(bool dark, int index, double x, double y, double k) {
+  List<Widget> _item(
+    AmalfiThemeData theme,
+    int index,
+    double x,
+    double y,
+    double k,
+  ) {
     final app = apps[index];
     final side = iconSide * k;
     final inset = (selectionSide - iconSide) / 2 * k;
     return [
       if (index == selected)
         Positioned(
+          key: const ValueKey('switcher selection'),
           left: x - inset,
           top: y - inset,
           width: selectionSide * k,
           height: selectionSide * k,
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: dark ? selectionColorDark : selectionColor,
-              borderRadius: BorderRadius.circular(selectionRadius * k),
+            decoration: AmalfiShapeDecoration(
+              color: theme.isDark
+                  ? theme.colors.stateHoverOverlay
+                  : theme.colors.statePressOverlay,
+              shape: AmalfiSmoothBorder(radius: selectionRadius * k),
             ),
           ),
         ),
@@ -467,9 +471,9 @@ class SwitcherPanel extends StatelessWidget {
         child: switch (app.icon) {
           final source? => SilicaIcon(source, side: side, dark: false),
           null => DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFFDDDDE2),
-              borderRadius: BorderRadius.circular(side * 0.225),
+            decoration: AmalfiShapeDecoration(
+              color: theme.colors.surfaceControl,
+              shape: AmalfiSmoothBorder(radius: side * 0.225),
             ),
           ),
         },
@@ -484,16 +488,28 @@ class SwitcherPanel extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: uiFontFamily,
-              package: 'silica_ui',
-              fontSize: labelSize * k,
-              fontWeight: FontWeight.w600,
-              height: 1,
-              color: dark ? labelColorDark : labelColor,
-            ),
+            style: AmalfiType.bodyEmphasis(
+              color: theme.colors.textPrimary,
+            ).copyWith(fontSize: AmalfiType.bodyEmphasisToken.size * k),
           ),
         ),
     ];
   }
+}
+
+/// Shows its child with `fade.instant` (motion.md, App switcher › show).
+class _FadeIn extends StatelessWidget {
+  const _FadeIn({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: AmalfiFades.instant.duration,
+    curve: AmalfiFades.instant.curve,
+    builder: (context, opacity, child) =>
+        Opacity(opacity: opacity, child: child),
+    child: child,
+  );
 }

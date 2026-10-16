@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/auth/auth_dialog.dart';
+import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 class FakeAuth implements AuthSource {
   final requests = StreamController<AuthRequest>.broadcast();
@@ -109,7 +111,10 @@ void main() {
     expect(find.byKey(const ValueKey('auth 4')), findsOneWidget);
     await tester.pumpAndSettle();
     final field = tester.widget<EditableText>(
-      find.byKey(const ValueKey('auth password')),
+      find.descendant(
+        of: find.byKey(const ValueKey('auth password')),
+        matching: find.byType(EditableText),
+      ),
     );
     expect(field.controller.text, isEmpty);
     expect(field.obscureText, isTrue);
@@ -181,4 +186,42 @@ void main() {
     expect(auth.answers, isEmpty);
     expect(find.byKey(const ValueKey('auth 4')), findsOneWidget);
   });
+
+  testWidgets(
+    'the card is the Amalfi system alert: 280 wide, Thick glass, radius 20',
+    (tester) async {
+      final auth = FakeAuth()..waiting = const [request];
+      await pump(tester, auth);
+      await tester.pump();
+      final card = tester.getRect(find.byType(ProfiledGlass));
+      expect(card.width, AmalfiAlertMetrics.width);
+      final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
+      // The compositor's `sheet` kind (Glass/Thick); silica_ui draws no second glass over it.
+      expect(glass.surface, ShellGlassProfile.sheet);
+      expect(glass.radius, 20);
+      expect(glass.material, GlassMaterial.thick);
+      expect(find.byType(AmalfiGlass), findsNothing);
+      // 20 pt at the sides; the buttons are push buttons, Allow is the primary one.
+      final title = tester.getRect(find.byKey(const ValueKey('auth title')));
+      expect(title.left - card.left, 20);
+      final allow = tester.widget<AmalfiPushButton>(
+        find.byKey(const ValueKey('auth allow')),
+      );
+      expect(allow.variant, AmalfiPushButtonVariant.primary);
+      final cancel = tester.widget<AmalfiPushButton>(
+        find.byKey(const ValueKey('auth cancel')),
+      );
+      expect(cancel.variant, AmalfiPushButtonVariant.secondary);
+      // The fields fill the width inside the 20 pt padding.
+      expect(
+        tester.getRect(find.byKey(const ValueKey('auth user'))).width,
+        240,
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('auth password'))).width,
+        240,
+      );
+      expect(find.byType(AmalfiSecureField), findsOneWidget);
+    },
+  );
 }

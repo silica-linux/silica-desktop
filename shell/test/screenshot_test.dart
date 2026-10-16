@@ -16,16 +16,17 @@ import 'package:silica_shell/screenshot/services.dart';
 import 'package:silica_shell/screenshot/toolbar.dart'
     show
         ShotToolbar,
-        actionBlue,
-        optionsBelowGap,
-        optionsMenuOverlap,
+        actionWidth,
+        captureModesX,
+        controlHeight,
+        optionsMenuGap,
         optionsMenuWidth,
+        recordModesX,
         tipAboveBar,
-        tipHeight,
         toolbarActionSpace;
-import 'package:silica_shell/system/cross_glyph.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
-import 'package:silica_ui/silica_ui.dart' show MenuPanel;
+import 'package:silica_shell/system/glass_profile.dart';
+import 'package:silica_ui/silica_ui.dart';
 
 /// The system, recorded.
 class FakeServices implements ScreenshotServices {
@@ -93,6 +94,13 @@ class FakeServices implements ScreenshotServices {
   @override
   Future<String?> chooseFolder({required String title, String? start}) async =>
       folder;
+}
+
+/// The centre of a mode button of the bar: [index] 0 screen, 1 window, 2 selection.
+Offset modeAt(WidgetTester tester, int index, {bool record = false}) {
+  final bar = tester.getRect(find.byType(ShotToolbar));
+  return bar.topLeft +
+      Offset((record ? recordModesX : captureModesX) + 4 + 32 * index + 16, 24);
 }
 
 void main() {
@@ -308,13 +316,17 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       expect(thumb.size, const Size(264, 152));
       expect(thumb.right, 1280 - 12);
       expect(thumb.bottom, 800 - 12);
-      final frame = tester.widget<Container>(
+      // White frame of radius 8 (kit `Thumbnail shadow`) with the level 2 shadow.
+      final frame = tester.widget<DecoratedBox>(
         find.byKey(const ValueKey('thumbnail frame')),
       );
+      final decoration = frame.decoration as AmalfiShapeDecoration;
+      expect(decoration.color, AmalfiColors.light.textOnAccent);
       expect(
-        (frame.decoration! as BoxDecoration).borderRadius,
-        BorderRadius.circular(thumbnailRadius),
+        (decoration.shape as AmalfiSmoothBorder).radii.first,
+        thumbnailRadius,
       );
+      expect(decoration.shadows, AmalfiShadows.light.level2);
       expect(find.byType(Transform), findsNothing);
       // It stays ~5.4 s after the fade-in, then leaves in ~250 ms and the file goes to the
       // Desktop.
@@ -374,11 +386,11 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     final thumb = find.byKey(const ValueKey('thumbnail'));
     await tester.tap(thumb, buttons: kSecondaryButton);
     await tester.pump();
-    expect(find.byType(MenuPanel), findsOneWidget);
+    expect(find.byType(AmalfiMenuList), findsOneWidget);
     // Whole on the screen, though the thumbnail touches the right edge.
     expect(
-      tester.getRect(find.byType(MenuPanel)).right,
-      lessThanOrEqualTo(1280),
+      tester.getRect(find.byType(AmalfiMenuList)).right,
+      lessThanOrEqualTo(1280 - 8),
     );
     for (final item in [
       'Save to Desktop',
@@ -416,7 +428,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   /// The labels of the open menu, from top to bottom.
   List<String> menuLabels(WidgetTester tester) {
     final texts = find.descendant(
-      of: find.byType(MenuPanel),
+      of: find.byType(AmalfiMenuList),
       matching: find.byType(Text),
     );
     final found = [
@@ -528,7 +540,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.byType(MenuPanel), findsNothing);
+    expect(find.byType(AmalfiMenuList), findsNothing);
     await tester.pump(const Duration(seconds: 2));
     expect(thumb, findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
@@ -552,31 +564,26 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(thumbnailDragHotspot(const Size(128, 64)), const Offset(52, 20));
   });
 
-  testWidgets('dark appearance: a black frame with a 1 pt light line inside', (
-    tester,
-  ) async {
-    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
-    addTearDown(tester.platformDispatcher.clearAllTestValues);
-    await pumpLayer(tester);
-    await announce(tester);
-    await tester.pump(const Duration(milliseconds: 500));
-    final frame = tester.widget<Container>(
-      find.byKey(const ValueKey('thumbnail frame')),
-    );
-    expect((frame.decoration! as BoxDecoration).color, const Color(0xFF000000));
-    final line = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('thumbnail line')),
-    );
-    final border = (line.decoration as BoxDecoration).border! as Border;
-    expect(border.top.color, const Color(0xFF949494));
-    expect(border.top.width, 1);
-    // 3 pt of black and 1 pt of line make the 4 pt of the frame; the box stays 264 wide.
-    expect(frame.padding, const EdgeInsets.all(3));
-    expect(
-      tester.getRect(find.byKey(const ValueKey('thumbnail'))).size,
-      const Size(264, 152),
-    );
-  });
+  testWidgets(
+    'dark appearance: the frame stays white with the stronger shadow',
+    (tester) async {
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+      addTearDown(tester.platformDispatcher.clearAllTestValues);
+      await pumpLayer(tester);
+      await announce(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      final frame = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('thumbnail frame')),
+      );
+      final decoration = frame.decoration as AmalfiShapeDecoration;
+      expect(decoration.color, AmalfiColors.dark.textOnAccent);
+      expect(decoration.shadows, AmalfiShadows.dark.level2);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('thumbnail'))).size,
+        const Size(264, 152),
+      );
+    },
+  );
 
   testWidgets('the shutter plays once per capture', (tester) async {
     await pumpLayer(tester);
@@ -781,8 +788,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       tester.getRect(find.byKey(const ValueKey('selection'))),
       const Rect.fromLTRB(100, 100, 300, 250),
     );
-    // While dragging, the size of the selection.
-    expect(find.text('200\n150'), findsOneWidget);
+    // While dragging: the pointer's point in the chip, the size in its own capsule.
+    expect(find.text('300\n250'), findsOneWidget);
+    expect(find.text('200 × 150'), findsOneWidget);
     await mouse.up();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -862,7 +870,10 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       await tester.pump();
       final veil = find.byKey(const ValueKey('veil'));
       expect(tester.getRect(veil), window);
-      expect(tester.widget<ColoredBox>(veil).color, const Color(0x8288BAE7));
+      expect(
+        tester.widget<ColoredBox>(veil).color,
+        AmalfiColors.light.accentAmalfi.withValues(alpha: 0.5),
+      );
       // On the desktop: the whole screen.
       await mouse.moveTo(const Offset(1000, 700));
       await tester.pump();
@@ -880,48 +891,113 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     final bar = tester.getRect(find.byType(ShotToolbar));
-    expect(bar.size, toolbarSize);
+    // Kit `Capture Bar`: 496 × 48, 8 pt above the Dock (60 pt shelf, 16 pt from the bottom).
+    expect(bar.size, const Size(496, 48));
     expect(bar.bottom, 800 - toolbarAboveDock);
     expect(bar.center.dx, 640);
-    // The controls at their measured places.
-    expect(
-      tester.getRect(find.byKey(const ValueKey('mode screen'))).left - bar.left,
-      41,
+    // The controls at the kit's places (`Bar Capture Screen`).
+    void near(Finder f, Rect expected) {
+      final r = tester.getRect(f).shift(-bar.topLeft);
+      expect(r.left, closeTo(expected.left, 0.01));
+      expect(r.top, closeTo(expected.top, 0.01));
+      expect(r.width, closeTo(expected.width, 0.01));
+      expect(r.height, closeTo(expected.height, 0.01));
+    }
+
+    near(
+      find.byKey(const ValueKey('close bar')),
+      const Rect.fromLTWH(8, 8, 32, 32),
     );
-    expect(
-      tester.getRect(find.byKey(const ValueKey('mode selection'))).left -
-          bar.left,
-      137,
+    final modes = find.byType(AmalfiSegmentedControl);
+    expect(modes, findsNWidgets(2));
+    near(modes.at(0), const Rect.fromLTWH(44, 8, 104, 32));
+    near(modes.at(1), const Rect.fromLTWH(164, 8, 104, 32));
+    near(
+      find.byKey(const ValueKey('options')),
+      const Rect.fromLTWH(284, 8, 96, 32),
     );
-    expect(find.byKey(const ValueKey('record screen')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('mode screen')));
+    near(
+      find.byKey(const ValueKey('capture fill')),
+      const Rect.fromLTWH(384, 8, 104, 32),
+    );
+    // The bar is Glass/Regular of the `control` kind with a capsule radius of 24.
+    final glass = tester.widget<ProfiledGlass>(
+      find
+          .descendant(
+            of: find.byType(ShotToolbar),
+            matching: find.byType(ProfiledGlass),
+          )
+          .first,
+    );
+    expect(glass.surface, ShellGlassProfile.control);
+    expect(glass.radius, 24);
+    expect(glass.material, GlassMaterial.regular);
+    // The chosen mode is on the pill (the selection by default); the record control is disabled.
+    expect(tester.widget<AmalfiSegmentedControl>(modes.at(0)).selected, {2});
+    expect(
+      tester.widget<AmalfiSegmentedControl>(modes.at(1)).onChanged,
+      isNull,
+    );
+    await tester.tapAt(modeAt(tester, 0));
     await tester.pump();
     expect(savedSettings().mode, ToolbarChoice.screen);
+    expect(find.byKey(const ValueKey('screen tint')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('capture')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(services.captures, ['screenshot.screen']);
   });
 
-  testWidgets('⇧⌘5: the close × is drawn, centred in its 18 pt circle (#166)', (
+  testWidgets(
+    '⇧⌘5: the bar appears with fade.quick and an 8 pt rise, and leaves the same',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pump();
+      double opacity() => tester
+          .widget<Opacity>(
+            find
+                .descendant(
+                  of: find.byType(ShotToolbar),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+      final close = find.byKey(const ValueKey('close bar'));
+      final at = tester.getRect(close);
+      // The first frame: invisible and 8 pt low.
+      expect(opacity(), 0);
+      await tester.pump(AmalfiFades.quick.duration);
+      expect(opacity(), 1);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(close).top, closeTo(at.top - 8, 0.01));
+      // × fades and sinks, then the bar is gone.
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const ValueKey('close bar'))),
+      );
+      await tester.pump();
+      await tester.pump(AmalfiFades.quick.duration ~/ 2);
+      expect(find.byType(ShotToolbar), findsOneWidget);
+      expect(opacity(), lessThan(1));
+      await tester.pumpAndSettle();
+      expect(find.byType(ShotToolbar), findsNothing);
+    },
+  );
+
+  testWidgets('⇧⌘5: the close button is the toolbar icon button, 32 pt', (
     tester,
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
-    expect(find.text('×'), findsNothing);
-    final glyph = find.byKey(const ValueKey('close glyph'));
-    expect(tester.widget<CustomPaint>(glyph).painter, isA<CrossGlyph>());
-    final circle = tester.getRect(
-      find.ancestor(of: glyph, matching: find.byType(Container)).first,
-    );
-    expect(circle.size, const Size(18, 18));
-    expect(tester.getRect(glyph).center, circle.center);
-    // The circle sits in the middle of the bar's height.
+    await tester.pumpAndSettle();
+    expect(find.byType(AmalfiToolbarButton), findsOneWidget);
+    final close = tester.getRect(find.byKey(const ValueKey('close bar')));
+    expect(close.size, const Size(32, 32));
     final bar = tester.getRect(find.byType(ShotToolbar));
-    expect(circle.center.dy - bar.top, closeTo(26, 0.5));
+    expect(close.center.dy - bar.top, closeTo(24, 0.01));
   });
 
   testWidgets(
@@ -929,42 +1005,40 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     (tester) async {
       await pumpLayer(tester);
       await send(tester, 'command', 'screenshot.toolbar');
-      await tester.pump();
+      await tester.pumpAndSettle();
       final tip = find.byKey(const ValueKey('bar tooltip'));
       final bar = tester.getRect(find.byType(ShotToolbar));
-      final modes = {
-        'mode screen': 'Capture Entire Screen',
-        'mode window': 'Capture Selected Window',
-        'mode selection': 'Capture Selected Portion',
-        'record screen': 'Record Entire Screen',
-        'record window': 'Record Selected Window',
-        'record selection': 'Record Selected Portion',
-      };
+      final modes = [
+        (modeAt(tester, 0), 'Capture Entire Screen'),
+        (modeAt(tester, 1), 'Capture Selected Window'),
+        (modeAt(tester, 2), 'Capture Selected Portion'),
+        (modeAt(tester, 0, record: true), 'Record Entire Screen'),
+        (modeAt(tester, 1, record: true), 'Record Selected Window'),
+        (modeAt(tester, 2, record: true), 'Record Selected Portion'),
+      ];
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(5, 5));
       expect(tip, findsNothing);
-      for (final MapEntry(:key, :value) in modes.entries) {
-        final button = tester.getRect(find.byKey(ValueKey(key)));
-        await mouse.moveTo(button.center);
+      for (final (center, value) in modes) {
+        await mouse.moveTo(center);
         // In the first frame, not after a delay.
         await tester.pump();
         expect(
           find.descendant(of: tip, matching: find.text(value)),
           findsOneWidget,
-          reason: key,
+          reason: value,
         );
-        // No bubble: a box 18 pt high, centred on the button, its bottom 32 pt over the bar.
+        // The Amalfi tooltip (Thick, radius 8, 4 × 8 padding), centred on the button, its
+        // bottom 8 pt over the bar.
         final box = tester.getRect(
           find.byKey(const ValueKey('bar tooltip box')),
         );
-        expect(box.height, tipHeight, reason: key);
-        expect(box.center.dx, closeTo(button.center.dx, 0.5), reason: key);
-        expect(box.bottom, closeTo(bar.top - tipAboveBar, 0.5), reason: key);
-        // 10 pt of padding on each side of the text.
+        expect(box.center.dx, closeTo(center.dx, 0.5), reason: value);
+        expect(box.bottom, closeTo(bar.top - tipAboveBar, 0.5), reason: value);
         final text = tester.getRect(
           find.descendant(of: tip, matching: find.text(value)),
         );
-        expect(box.width, closeTo(text.width + 20, 0.5), reason: key);
+        expect(box.width, closeTo(text.width + 16, 0.5), reason: value);
       }
       // It stays after the pointer leaves the bar, for good.
       await mouse.moveTo(const Offset(5, 5));
@@ -977,12 +1051,14 @@ image/png=missing.desktop;org.example.Viewer.desktop;
         // The last mode's tooltip is still there, nothing was added.
         expect(tip, findsOneWidget, reason: key);
         expect(find.text('Close'), findsNothing, reason: key);
-        expect(find.text('Options'), findsNothing, reason: key);
+        expect(
+          find.descendant(of: tip, matching: find.text('Options')),
+          findsNothing,
+          reason: key,
+        );
       }
       // The next mode replaces it.
-      await mouse.moveTo(
-        tester.getCenter(find.byKey(const ValueKey('mode screen'))),
-      );
+      await mouse.moveTo(modeAt(tester, 0));
       await tester.pump();
       expect(tip, findsOneWidget);
       expect(find.text('Capture Entire Screen'), findsOneWidget);
@@ -1002,43 +1078,39 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   });
 
   testWidgets(
-    '⇧⌘5: the action button is 80 × 36, radius 8, 8 pt from the bar',
+    '⇧⌘5: the action button is the Large primary push button, 8 pt from the bar',
     (tester) async {
       await pumpLayer(tester);
       await send(tester, 'command', 'screenshot.toolbar');
-      await tester.pump();
+      await tester.pumpAndSettle();
       final bar = tester.getRect(find.byType(ShotToolbar));
-      expect(bar.size, const Size(551, 52));
       final fill = find.byKey(const ValueKey('capture fill'));
       final rect = tester.getRect(fill);
-      expect(rect.size, const Size(80, 36));
-      expect(rect.top - bar.top, 8);
-      expect(bar.bottom - rect.bottom, 8);
-      expect(bar.right - rect.right, 8);
-      final box = tester.widget<Container>(fill).decoration! as BoxDecoration;
-      expect(box.color, actionBlue);
-      expect(box.borderRadius, BorderRadius.circular(8));
-      expect(
-        find.descendant(of: fill, matching: find.text('Capture')),
-        findsOneWidget,
+      expect(rect.size, Size(actionWidth, controlHeight));
+      expect(rect.top - bar.top, closeTo(8, 0.01));
+      expect(bar.bottom - rect.bottom, closeTo(8, 0.01));
+      expect(bar.right - rect.right, closeTo(8, 0.01));
+      final button = tester.widget<AmalfiPushButton>(
+        find.descendant(of: fill, matching: find.byType(AmalfiPushButton)),
       );
+      expect(button.variant, AmalfiPushButtonVariant.primary);
+      expect(button.size, AmalfiControlSize.large);
+      expect(button.label, 'Capture');
     },
   );
 
   testWidgets(
-    'window mode: the action button hides while the pointer is on the bar, the bar shrinks 85 pt',
+    'window mode: the action button hides while the pointer is on the bar, the bar shrinks 108 pt',
     (tester) async {
       await pumpLayer(tester);
       await send(tester, 'command', 'screenshot.toolbar');
-      await tester.pump();
+      await tester.pumpAndSettle();
       final full = tester.getRect(find.byType(ShotToolbar));
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(5, 5));
-      await mouse.moveTo(
-        tester.getCenter(find.byKey(const ValueKey('mode window'))),
-      );
+      await mouse.moveTo(modeAt(tester, 1));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('mode window')));
+      await tester.tapAt(modeAt(tester, 1));
       await tester.pump();
       // Screen and selection modes keep the button; window mode hides it.
       var bar = tester.getRect(find.byType(ShotToolbar));
@@ -1073,42 +1145,53 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     },
   );
 
-  testWidgets('Options: the menu opens upwards, 210 wide, over the bar (#96)', (
+  /// The Options menu's surface.
+  Finder optionsSurface() => find.descendant(
+    of: find.byKey(const ValueKey('options menu')),
+    matching: find.byType(ProfiledGlass),
+  );
+
+  testWidgets('Options: the menu opens upwards, 208 wide, 8 pt over the bar', (
     tester,
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     final bar = tester.getRect(find.byType(ShotToolbar));
     final button = tester.getRect(find.byKey(const ValueKey('options')));
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
-    final menu = tester.getRect(find.byType(MenuPanel));
-    // 1 pt left of the button, the bottom 22 pt below the bar's top edge, 210 pt wide.
-    expect(menu.left, button.left - 1);
-    expect(menu.bottom, bar.top + optionsMenuOverlap);
+    final menu = tester.getRect(optionsSurface());
+    // Kit `Options Menu`: its left edge on the button's, 208 wide, its bottom 8 pt above the bar.
+    expect(menu.left, button.left);
+    expect(menu.bottom, bar.top - optionsMenuGap);
     expect(menu.width, optionsMenuWidth);
-    expect(menu.overlaps(bar), isTrue);
+    expect(menu.overlaps(bar), isFalse);
+    // Thick glass of the `menu` kind with radius 12.
+    final glass = tester.widget<ProfiledGlass>(optionsSurface());
+    expect(glass.surface, ShellGlassProfile.menu);
+    expect(glass.radius, 12);
+    expect(glass.material, GlassMaterial.thick);
     // Bar dragged to the top: no room above, the menu opens below it.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 500));
     await tester.dragFrom(
-      bar.topLeft + const Offset(377, 26),
+      bar.topLeft + const Offset(282, 24),
       const Offset(0, -700),
     );
     await tester.pump();
     final top = tester.getRect(find.byType(ShotToolbar));
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
-    final below = tester.getRect(find.byType(MenuPanel));
-    expect(below.top, top.bottom + optionsBelowGap);
+    final below = tester.getRect(optionsSurface());
+    expect(below.top, top.bottom + optionsMenuGap);
     expect(below.overlaps(top), isFalse);
   });
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     // The default mode is the selection: half the screen, centered.
     expect(find.byKey(const ValueKey('selection editor')), findsOneWidget);
     // Drag its inside: it moves.
@@ -1131,7 +1214,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     });
     // Opened again: the same selection.
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('capture')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -1143,11 +1226,11 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   ) async {
     await pumpLayer(tester);
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     final before = tester.getRect(find.byType(ShotToolbar));
     // Between the second separator and Options there is only background.
     await tester.dragFrom(
-      before.topLeft + const Offset(377, 26),
+      before.topLeft + const Offset(282, 24),
       const Offset(-200, -300),
     );
     await tester.pump();
@@ -1155,10 +1238,10 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(after.topLeft, before.topLeft + const Offset(-200, -300));
     expect(savedSettings().barCenter, after.center);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pump();
+    await tester.pumpAndSettle();
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
-    expect(tester.getRect(find.byType(ShotToolbar)), after);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byType(ShotToolbar)).center, after.center);
   });
 
   testWidgets('Options: the menu above the button; every item works', (
@@ -1175,8 +1258,8 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       },
     );
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('mode screen')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(modeAt(tester, 0));
     await tester.pump();
     final button = tester.getRect(find.byKey(const ValueKey('options')));
     Future<void> choose(String item) async {
@@ -1189,9 +1272,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
 
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
-    final menu = tester.getRect(find.byType(MenuPanel));
+    final menu = tester.getRect(optionsSurface());
     // Above the button, with its left edge on the button.
-    expect(menu.bottom, lessThan(button.bottom));
+    expect(menu.bottom, lessThan(button.top));
     expect(menu.left, closeTo(button.left, 1));
     for (final item in [
       'Save to',
@@ -1229,7 +1312,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     // Esc closes the menu, the bar stays.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.byType(MenuPanel), findsNothing);
+    expect(find.byType(AmalfiMenuList), findsNothing);
     expect(find.byKey(const ValueKey('options')), findsOneWidget);
 
     // The pointer: Ossido learns it, and the captures ask for it.
@@ -1267,7 +1350,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
 
     // Without a thumbnail the file goes straight into its place.
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     await choose('Show Floating Thumbnail');
     expect(savedSettings().showThumbnail, isFalse);
     await choose('Remember Last Selection');
@@ -1276,9 +1359,9 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(find.byKey(const ValueKey('thumbnail')), findsNothing);
     expect(temp.existsSync(), isFalse);
     expect(File('${docs.path}/$deskName').existsSync(), isTrue);
-    // A second Esc closes the bar.
+    // A second Esc closes the bar (it fades first).
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('options')), findsNothing);
   });
 
@@ -1320,7 +1403,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
       },
     );
     await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('options')));
     await tester.pump();
     expect(find.text('Viewer'), findsOneWidget);

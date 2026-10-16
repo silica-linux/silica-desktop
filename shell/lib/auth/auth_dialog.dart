@@ -1,9 +1,10 @@
 // The system authentication dialog: silica-daemon's polkit agent asks for an administrator's
 // password (docs/daemon.md › Authentication) and the shell shows it here, in the switcher
-// layer, as a system alert: the same glass card as the other alerts (292 pt wide, radius 26,
-// a 66 pt icon at the top left, bold title, secondary text, full-width buttons), with a user
-// name field and a password field. A wrong password shakes the card and clears the field.
-// The texts are our own.
+// layer, as an Amalfi system alert (kit `Alerts/Alert`, glass variant): 280 wide, radius 20,
+// Glass/Thick (Ossido draws it: `sheet` kind), the app icon (56) centred at the top, the title in
+// Title 3 and the explanation in Callout, a user name field and a secure field, and the
+// Cancel and Allow push buttons (Allow is the default one). A wrong password shakes the card and
+// clears the field. The texts are our own.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -12,17 +13,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-import '../dock/trash_alert.dart'
-    show
-        alertCancel,
-        alertCancelText,
-        alertDefault,
-        alertText,
-        trashAlertButtonHeight,
-        trashAlertButtonWidth,
-        trashAlertIcon,
-        trashAlertRadius;
-import '../faro/faro.dart' show OuterShadow;
 import '../l10n/l10n.dart';
 import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
@@ -30,10 +20,10 @@ import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
 import '../system/layer_control.dart';
+import '../system/shadowed_glass.dart';
 import '../system/silica_icons.dart';
 
-const double authDialogWidth = 292;
-const double authFieldHeight = 26;
+const double authDialogWidth = AmalfiAlertMetrics.width;
 const Duration authShake = Duration(milliseconds: 420);
 
 /// A request from the polkit agent.
@@ -354,16 +344,14 @@ class AuthDialogState extends State<AuthDialog>
     _shake.forward(from: 0);
   }
 
+  /// polkit's explanation as a sentence: it comes without a full stop.
+  static String _sentence(String text) =>
+      RegExp(r'[.!?…]$').hasMatch(text) ? text : '$text.';
+
   @override
   Widget build(BuildContext context) {
     final l10n = l10nOf(context);
-    final dark =
-        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
-    final text = dark ? AlertColors.textDark : alertText;
-    final field = dark ? const Color(0x1FFFFFFF) : const Color(0xB3FFFFFF);
-    final fieldBorder = dark
-        ? const Color(0x33FFFFFF)
-        : const Color(0x26000000);
+    final colors = AmalfiTheme.of(context).colors;
     final title = switch (widget.appName) {
       final name? => l10n.authTitleApp(name),
       null => l10n.authTitle,
@@ -388,105 +376,104 @@ class AuthDialogState extends State<AuthDialog>
           }
           return KeyEventResult.ignored;
         },
+        // The alert's layout (`AmalfiAlert`) on the compositor's glass: silica_ui's own glass
+        // blurs inside Flutter, where the layer has nothing behind it.
         child: SizedBox(
           width: authDialogWidth,
-          child: OuterShadow(
-            radius: trashAlertRadius,
-            blurRadius: 40,
-            offset: const Offset(0, 10),
-            color: const Color(0x4D000000),
-            child: ProfiledGlass(
-              profile: ShellGlassProfile.sheet,
-              radius: trashAlertRadius,
-              material: GlassMaterial.thick,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(15, 19, 15, 15),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: SizedBox.square(
-                        dimension: trashAlertIcon,
-                        child: switch (widget.icon) {
-                          final icon? => SilicaIcon(
-                            icon,
-                            side: trashAlertIcon,
-                            dark: false,
-                            besideApps: true,
+          child: ShadowedGlass(
+            profile: ShellGlassProfile.sheet,
+            radius: AmalfiAlertMetrics.radius,
+            thick: true,
+            child: Padding(
+              padding: AmalfiAlertMetrics.padding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: SizedBox.square(
+                      dimension: AmalfiAlertMetrics.icon,
+                      child: switch (widget.icon) {
+                        final icon? => SilicaIcon(
+                          icon,
+                          side: AmalfiAlertMetrics.icon,
+                          dark: false,
+                          besideApps: true,
+                        ),
+                        null => Center(
+                          child: AmalfiGlyph(
+                            AmalfiGlyphs.lock,
+                            size: 40,
+                            color: colors.textSecondary,
                           ),
-                          null => CustomPaint(painter: LockPainter(text)),
-                        },
-                      ),
+                        ),
+                      },
                     ),
-                    const SizedBox(height: 14),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        title,
-                        key: const ValueKey('auth title'),
-                        style: uiText(
-                          size: 13,
-                          color: text,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
+                  ),
+                  const SizedBox(height: AmalfiAlertMetrics.gap),
+                  Text(
+                    title,
+                    key: const ValueKey('auth title'),
+                    style: AmalfiType.title3(color: colors.textPrimary),
+                  ),
+                  const SizedBox(height: AmalfiAlertMetrics.gap),
+                  Text(
+                    [
+                      if (message.isNotEmpty) _sentence(message),
+                      _error ? l10n.authUnavailable : l10n.authPrompt,
+                    ].join(' '),
+                    style: AmalfiType.callout(color: colors.textSecondary),
+                  ),
+                  const SizedBox(height: AmalfiAlertMetrics.gap),
+                  AmalfiTextField(
+                    key: const ValueKey('auth user'),
+                    controller: _user,
+                    focusNode: _userFocus,
+                    placeholder: l10n.authUserName,
+                    width: double.infinity,
+                    onSubmitted: (_) => _passwordFocus.requestFocus(),
+                  ),
+                  const SizedBox(height: 8),
+                  AmalfiSecureField(
+                    key: const ValueKey('auth password'),
+                    controller: _password,
+                    focusNode: _passwordFocus,
+                    placeholder: l10n.authPassword,
+                    width: double.infinity,
+                    onSubmitted: (_) => _submit(),
+                  ),
+                  const SizedBox(height: AmalfiAlertMetrics.gap),
+                  Center(
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: AmalfiAlertMetrics.buttonGap,
+                      runSpacing: AmalfiAlertMetrics.buttonGap,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: AmalfiAlertMetrics.buttonMinWidth,
+                          ),
+                          child: AmalfiPushButton(
+                            key: const ValueKey('auth cancel'),
+                            label: l10n.cancel,
+                            onPressed: widget.onCancel,
+                          ),
+                        ),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: AmalfiAlertMetrics.buttonMinWidth,
+                          ),
+                          child: AmalfiPushButton(
+                            key: const ValueKey('auth allow'),
+                            label: l10n.authAllow,
+                            variant: AmalfiPushButtonVariant.primary,
+                            onPressed: _busy ? null : _submit,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        [
-                          if (message.isNotEmpty) message,
-                          _error ? l10n.authUnavailable : l10n.authPrompt,
-                        ].join(' '),
-                        style: uiText(size: 11, color: text),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _field(
-                      key: const ValueKey('auth user'),
-                      controller: _user,
-                      focus: _userFocus,
-                      hint: l10n.authUserName,
-                      obscure: false,
-                      fill: field,
-                      border: fieldBorder,
-                      text: text,
-                      next: () => _passwordFocus.requestFocus(),
-                    ),
-                    const SizedBox(height: 6),
-                    _field(
-                      key: const ValueKey('auth password'),
-                      controller: _password,
-                      focus: _passwordFocus,
-                      hint: l10n.authPassword,
-                      obscure: true,
-                      fill: field,
-                      border: fieldBorder,
-                      text: text,
-                      next: _submit,
-                    ),
-                    const SizedBox(height: 14),
-                    _button(
-                      key: const ValueKey('auth allow'),
-                      label: l10n.authAllow,
-                      fill: alertDefault,
-                      color: const Color(0xFFFFFFFF),
-                      onTap: _busy ? null : _submit,
-                    ),
-                    const SizedBox(height: 4),
-                    _button(
-                      key: const ValueKey('auth cancel'),
-                      label: l10n.cancel,
-                      fill: dark ? AlertColors.normalDark : alertCancel,
-                      color: dark
-                          ? AlertColors.normalTextDark
-                          : alertCancelText,
-                      onTap: widget.onCancel,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -494,105 +481,4 @@ class AuthDialogState extends State<AuthDialog>
       ),
     );
   }
-
-  Widget _field({
-    required Key key,
-    required TextEditingController controller,
-    required FocusNode focus,
-    required String hint,
-    required bool obscure,
-    required Color fill,
-    required Color border,
-    required Color text,
-    required VoidCallback next,
-  }) => Container(
-    height: authFieldHeight,
-    width: trashAlertButtonWidth,
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    alignment: Alignment.centerLeft,
-    decoration: BoxDecoration(
-      color: fill,
-      border: Border.all(color: border, width: 0.5),
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Stack(
-      alignment: Alignment.centerLeft,
-      children: [
-        ListenableBuilder(
-          listenable: controller,
-          builder: (context, _) => controller.text.isEmpty
-              ? Text(
-                  hint,
-                  style: uiText(size: 13, color: text.withValues(alpha: 0.4)),
-                )
-              : const SizedBox.shrink(),
-        ),
-        EditableText(
-          key: key,
-          controller: controller,
-          focusNode: focus,
-          obscureText: obscure,
-          autocorrect: false,
-          enableSuggestions: false,
-          readOnly: _busy,
-          maxLines: 1,
-          style: uiText(size: 13, color: text),
-          cursorColor: text,
-          backgroundCursorColor: const Color(0x00000000),
-          selectionColor: alertDefault.withValues(alpha: 0.3),
-          onSubmitted: (_) => next(),
-        ),
-      ],
-    ),
-  );
-
-  Widget _button({
-    required Key key,
-    required String label,
-    required Color fill,
-    required Color color,
-    required VoidCallback? onTap,
-  }) => GestureDetector(
-    key: key,
-    onTap: onTap,
-    child: Container(
-      width: trashAlertButtonWidth,
-      height: trashAlertButtonHeight,
-      decoration: BoxDecoration(
-        color: onTap == null ? fill.withValues(alpha: 0.5) : fill,
-        borderRadius: BorderRadius.circular(trashAlertButtonHeight / 2),
-      ),
-      alignment: Alignment.center,
-      child: Text(label, style: uiText(size: 13, color: color)),
-    ),
-  );
-}
-
-/// A padlock, drawn: the dialog's icon when the app that asked is unknown.
-class LockPainter extends CustomPainter {
-  const LockPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.shortestSide;
-    final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(s * 0.2, s * 0.44, s * 0.6, s * 0.46),
-      Radius.circular(s * 0.08),
-    );
-    canvas.drawRRect(body, Paint()..color = color.withValues(alpha: 0.85));
-    final shackle = Paint()
-      ..color = color.withValues(alpha: 0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = s * 0.08;
-    final path = Path()
-      ..moveTo(s * 0.32, s * 0.45)
-      ..lineTo(s * 0.32, s * 0.3)
-      ..arcToPoint(Offset(s * 0.68, s * 0.3), radius: Radius.circular(s * 0.18))
-      ..lineTo(s * 0.68, s * 0.45);
-    canvas.drawPath(path, shackle);
-  }
-
-  @override
-  bool shouldRepaint(LockPainter old) => old.color != color;
 }

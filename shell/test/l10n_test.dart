@@ -117,7 +117,7 @@ void main() {
     await command(tester, 'screenshot.toolbar');
     await tester.pump();
     expect(find.text('Acquisisci'), findsOneWidget);
-    expect(find.text('Opzioni ⌄'), findsOneWidget);
+    expect(find.text('Opzioni'), findsOneWidget);
     expect(
       screenshotName(
         DateTime(2026, 10, 14, 4, 12, 33),
