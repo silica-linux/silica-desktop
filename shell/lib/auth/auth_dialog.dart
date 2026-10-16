@@ -16,11 +16,9 @@ import 'package:silica_ui/silica_ui.dart';
 import '../l10n/l10n.dart';
 import '../system/dbus.dart';
 import '../system/desktop_entries.dart';
-import '../system/glass_profile.dart';
 import '../system/icon_lookup.dart';
 import '../system/layer_arbiter.dart';
 import '../system/layer_control.dart';
-import '../system/shadowed_glass.dart';
 import '../system/silica_icons.dart';
 
 const double authDialogWidth = AmalfiAlertMetrics.width;
@@ -376,14 +374,14 @@ class AuthDialogState extends State<AuthDialog>
           }
           return KeyEventResult.ignored;
         },
-        // The alert's layout (`AmalfiAlert`) on the compositor's glass: silica_ui's own glass
-        // blurs inside Flutter, where the layer has nothing behind it.
+        // The alert's layout (`AmalfiAlert`) on an `AmalfiGlass` of kind `sheet`: under the
+        // layer's compositor backend Ossido draws the glass and the shadow.
         child: SizedBox(
           width: authDialogWidth,
-          child: ShadowedGlass(
-            profile: ShellGlassProfile.sheet,
+          child: AmalfiGlass(
+            material: AmalfiMaterials.thick,
             radius: AmalfiAlertMetrics.radius,
-            thick: true,
+            kind: AmalfiGlassKind.sheet,
             child: Padding(
               padding: AmalfiAlertMetrics.padding,
               child: Column(

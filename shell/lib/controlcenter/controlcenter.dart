@@ -1872,10 +1872,16 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
           _players.playPause,
         ),
         _button('skip-forward', 2, now?.canNext ?? false, _players.next),
+        // The read-only slider, no thumb, centred on the 4 pt progress line.
         Positioned.fromRect(
-          rect: nowPlayingProgress,
-          child: CustomPaint(
-            painter: _ProgressPainter(fraction, p.track, p.accent),
+          rect: Rect.fromCenter(
+            center: nowPlayingProgress.center,
+            width: nowPlayingProgress.width,
+            height: 20,
+          ),
+          child: AmalfiSlider.indicator(
+            key: const ValueKey('now playing progress'),
+            value: fraction.clamp(0.0, 1.0),
           ),
         ),
         if (length > Duration.zero)
@@ -1894,31 +1900,6 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
       ],
     );
   }
-}
-
-class _ProgressPainter extends CustomPainter {
-  const _ProgressPainter(this.fraction, this.rest, this.fill);
-  final double fraction;
-  final Color rest;
-  final Color fill;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final track = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(size.height / 2),
-    );
-    canvas
-      ..drawRRect(track, Paint()..color = rest)
-      ..save()
-      ..clipRect(Rect.fromLTWH(0, 0, size.width * fraction, size.height))
-      ..drawRRect(track, Paint()..color = fill)
-      ..restore();
-  }
-
-  @override
-  bool shouldRepaint(_ProgressPainter old) =>
-      old.fraction != fraction || old.rest != rest || old.fill != fill;
 }
 
 /// A slider module (`Module/Slider/*`): the title (Headline) at (16, 8), a 16 pt glyph at each

@@ -4,9 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/auth/auth_dialog.dart';
-import 'package:silica_shell/system/glass_profile.dart';
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_ui/silica_ui.dart';
+
+import 'glass_backend_probe.dart';
 
 class FakeAuth implements AuthSource {
   final requests = StreamController<AuthRequest>.broadcast();
@@ -51,15 +52,17 @@ Future<void> pump(WidgetTester tester, FakeAuth auth) async {
   await tester.pumpWidget(
     Directionality(
       textDirection: TextDirection.ltr,
-      child: AuthLayer(
-        source: auth,
-        entries: const {
-          'dev.frascella.Settings': DesktopEntry(
-            id: 'dev.frascella.Settings',
-            name: 'Settings',
-            exec: '/usr/bin/settings %U',
-          ),
-        },
+      child: compositorScope(
+        AuthLayer(
+          source: auth,
+          entries: const {
+            'dev.frascella.Settings': DesktopEntry(
+              id: 'dev.frascella.Settings',
+              name: 'Settings',
+              exec: '/usr/bin/settings %U',
+            ),
+          },
+        ),
       ),
     ),
   );
@@ -193,14 +196,16 @@ void main() {
       final auth = FakeAuth()..waiting = const [request];
       await pump(tester, auth);
       await tester.pump();
-      final card = tester.getRect(find.byType(ProfiledGlass));
+      final card = tester.getRect(find.byType(Glass));
       expect(card.width, AmalfiAlertMetrics.width);
-      final glass = tester.widget<ProfiledGlass>(find.byType(ProfiledGlass));
-      // The compositor's `sheet` kind (Glass/Thick); silica_ui draws no second glass over it.
-      expect(glass.surface, ShellGlassProfile.sheet);
+      final glass = tester.widget<Glass>(find.byType(Glass));
+      // The compositor's `sheet` kind (Glass/Thick), declared by `AmalfiGlass` itself;
+      // Flutter paints no tint, rim or backdrop of its own.
+      expect(glass.profile, GlassProfile.sheet);
       expect(glass.radius, 20);
       expect(glass.material, GlassMaterial.thick);
-      expect(find.byType(AmalfiGlass), findsNothing);
+      expectGlassRegion(tester, 'sheet');
+      expectNoFlutterTint(tester);
       // 20 pt at the sides; the buttons are push buttons, Allow is the primary one.
       final title = tester.getRect(find.byKey(const ValueKey('auth title')));
       expect(title.left - card.left, 20);

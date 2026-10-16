@@ -1,7 +1,10 @@
 // The Dock's menus on Amalfi: the rows are silica_ui's `AmalfiMenuList` (the rows of
 // `AmalfiMenu`: Callout items, 24 pt, highlight `Accent/Amalfi` radius 7, submenus), on a
 // Thick glass surface that Ossido draws (`menu` kind, radius 12, 4 pt padding) instead of
-// `AmalfiMenu`'s own Flutter-side glass (a shell surface has no backdrop of its own).
+// the Flutter-side glass (a shell surface has no backdrop of its own). The arrow's outline is the
+// Dock's own (`DockArrowBorder`, 6 pt deep), which `AmalfiGlass` cannot express, so the body and
+// its arrow are a `ProfiledGlass`; the rows and the submenus (`AmalfiMenu`, glass group + 1, under
+// the compositor backend) draw no glass of their own.
 //
 // The menu sits above the item it belongs to (kit `Dock/Menu`): its arrow, 6 pt deep under the
 // body, has its tip [menuAboveShelf] pt over the shelf (12 at the default size) and centred on
@@ -26,10 +29,6 @@ const double menuAboveShelf = 12;
 
 /// Distance kept from the screen's sides.
 const double menuScreenMargin = 8;
-
-/// How far a submenu can reach beyond its parent, for the input region (the submenu is
-/// placed by `AmalfiMenuList` in an overlay of its own, whose size the Dock does not see).
-const double menuSubmenuReach = 320;
 
 /// The Dock's `MenuEntry`s as Amalfi rows.
 List<AmalfiMenuEntry> amalfiMenuEntries(List<MenuEntry> entries) => [
@@ -59,19 +58,6 @@ List<AmalfiMenuEntry> amalfiMenuEntries(List<MenuEntry> entries) => [
     },
 ];
 
-/// Where a submenu of the menu in `menu` can be (its overlay is not measured): beside it, from
-/// the top of the surface down to `bottom` and beyond.
-Rect submenuBand(Rect menu, {required double bottom}) => Rect.fromLTRB(
-  math.max(0, menu.left - menuSubmenuReach),
-  0,
-  menu.right + menuSubmenuReach,
-  bottom + 1000,
-);
-
-/// Whether any row opens a submenu.
-bool hasSubmenu(List<MenuEntry> entries) =>
-    entries.any((e) => e is MenuAction && e.submenu != null);
-
 /// The open Dock menu: glass surface and rows, placed above [anchorX].
 class DockMenuHost extends StatefulWidget {
   const DockMenuHost({
@@ -82,6 +68,7 @@ class DockMenuHost extends StatefulWidget {
     required this.group,
     this.onDismissed,
     this.onRectChanged,
+    this.onSubmenusChanged,
   });
 
   final List<MenuEntry> entries;
@@ -100,6 +87,10 @@ class DockMenuHost extends StatefulWidget {
 
   /// The menu's rectangle (with its shadow's room excluded) changed.
   final ValueChanged<Rect>? onRectChanged;
+
+  /// The rectangles of the open submenus (nested ones included), in global coordinates, when
+  /// they change: the Dock's input region follows them.
+  final ValueChanged<List<Rect>>? onSubmenusChanged;
 
   @override
   State<DockMenuHost> createState() => DockMenuHostState();
@@ -123,14 +114,15 @@ class DockMenuHostState extends State<DockMenuHost>
   /// The rectangle of the surface, in the host's coordinates.
   Rect? get rect => _layout.rect;
 
-  /// Whether `p` (host coordinates) is on the menu or, while a submenu may be open, in the
-  /// band where it would be.
+  /// The open submenus' rectangles, as the list reports them.
+  List<Rect> _submenus = const [];
+
+  /// Whether `p` (host coordinates) is on the menu or on an open submenu.
   bool contains(Offset p) {
     final r = _layout.rect;
     if (r == null) return false;
-    if (r.inflate(2).contains(p)) return true;
-    return hasSubmenu(widget.entries) &&
-        submenuBand(r, bottom: widget.bottom).contains(p);
+    return r.inflate(2).contains(p) ||
+        _submenus.any((s) => s.inflate(2).contains(p));
   }
 
   /// Fades out and calls `onDismissed`.
@@ -321,7 +313,12 @@ class DockMenuHostState extends State<DockMenuHost>
                       child: AmalfiMenuList(
                         entries: _rows,
                         autofocus: true,
+                        group: widget.group,
                         onDismiss: close,
+                        onSubmenusChanged: (rects) {
+                          _submenus = rects;
+                          widget.onSubmenusChanged?.call(rects);
+                        },
                       ),
                     ),
                   ),

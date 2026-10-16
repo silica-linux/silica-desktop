@@ -8,8 +8,6 @@
 // menu and of an open submenu (the bar's input region and Ossido's "press outside" depend
 // on them), and takes ← and → to the neighbouring title.
 
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -140,7 +138,8 @@ class BarMenuHostState extends State<BarMenuHost>
   );
   final GlobalKey _overlayKey = GlobalKey();
   late final OverlayEntry _entry = OverlayEntry(builder: _buildMenu);
-  Timer? _scanner;
+  GlobalKey _menuKey = GlobalKey();
+  List<Rect> _submenus = const [];
   List<Rect> _rects = const [];
   bool _closing = false;
 
@@ -151,14 +150,16 @@ class BarMenuHostState extends State<BarMenuHost>
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_key);
-    // The submenu opens by itself after a delay: look for it while the menu is up.
-    _scanner = Timer.periodic(const Duration(milliseconds: 40), (_) => _scan());
     WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
   }
 
   @override
   void didUpdateWidget(BarMenuHost old) {
     super.didUpdateWidget(old);
+    if (old.entryKey != widget.entryKey) {
+      _menuKey = GlobalKey();
+      _submenus = const [];
+    }
     _entry.markNeedsBuild();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
   }
@@ -166,7 +167,6 @@ class BarMenuHostState extends State<BarMenuHost>
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_key);
-    _scanner?.cancel();
     _fade.dispose();
     super.dispose();
   }
@@ -186,33 +186,18 @@ class BarMenuHostState extends State<BarMenuHost>
 
   bool get closing => _closing;
 
-  /// The Amalfi menus below the overlay: the first is the menu, the others its submenus.
-  Iterable<Element> _menuElements() sync* {
-    final root = _overlayKey.currentContext;
-    if (root is! Element) return;
-    final found = <Element>[];
-    void visit(Element e) {
-      if (e.widget is AmalfiMenu) found.add(e);
-      e.visitChildren(visit);
-    }
-
-    root.visitChildren(visit);
-    yield* found;
-  }
-
+  /// The menu's rectangle and its open submenus' (reported by `onSubmenusChanged`, which
+  /// the menu calls when one opens, closes or moves), in the surface.
   void _scan() {
     if (!mounted) return;
-    final rects = <Rect>[];
-    for (final e in _menuElements()) {
-      final box = e.renderObject;
-      if (box is RenderBox && box.attached && box.hasSize) {
-        rects.add(box.localToGlobal(Offset.zero) & box.size);
-      }
-    }
+    final box = _menuKey.currentContext?.findRenderObject();
+    final rects = <Rect>[
+      if (box is RenderBox && box.attached && box.hasSize)
+        box.localToGlobal(Offset.zero) & box.size,
+      ..._submenus,
+    ];
     if (listEquals(rects, _rects)) return;
     _rects = rects;
-    // The compositor's glass goes under the menus (see `build`).
-    setState(() {});
     if (rects.isNotEmpty) widget.onRectsChanged?.call(rects);
   }
 
@@ -250,12 +235,16 @@ class BarMenuHostState extends State<BarMenuHost>
   Widget _buildMenu(BuildContext context) => CustomSingleChildLayout(
     delegate: _MenuLayout(widget.anchor, flip: widget.flip),
     child: KeyedSubtree(
-      key: ValueKey(widget.entryKey),
+      key: _menuKey,
       child: AmalfiMenu(
         entries: widget.entries,
         autofocus: true,
         highlightFirst: widget.highlightFirst,
         onDismiss: close,
+        onSubmenusChanged: (rects) {
+          _submenus = rects;
+          _scan();
+        },
       ),
     ),
   );
@@ -263,29 +252,11 @@ class BarMenuHostState extends State<BarMenuHost>
   @override
   Widget build(BuildContext context) => FadeTransition(
     opacity: _opacity,
-    child: Stack(
-      children: [
-        // The glass is Ossido's (silica-glass-v1, kind `menu`: Glass/Thick): one region per
-        // menu, a submenu in a group above its parent. AmalfiMenu draws only a Flutter
-        // approximation of it, which has no blur on a layer surface (silica_ui need: an
-        // AmalfiGlass that declares the compositor's region itself).
-        for (final (i, r) in _rects.indexed)
-          Positioned.fromRect(
-            rect: r,
-            child: IgnorePointer(
-              child: Glass(
-                radius: AmalfiMenuMetrics.radius,
-                material: GlassMaterial.thick,
-                profile: GlassProfile.menu,
-                group: i,
-              ),
-            ),
-          ),
-        IgnorePointer(
-          ignoring: _closing,
-          child: Overlay(key: _overlayKey, initialEntries: [_entry]),
-        ),
-      ],
+    // The glass is Ossido's: under `AmalfiGlassBackendScope(compositor)` each AmalfiMenu (and
+    // its submenus, in a group above) declares its own region and paints only its rows.
+    child: IgnorePointer(
+      ignoring: _closing,
+      child: Overlay(key: _overlayKey, initialEntries: [_entry]),
     ),
   );
 }

@@ -199,17 +199,6 @@ class WindowMenuPopoverState extends State<WindowMenuPopover>
             key: _bodyKey,
             child: Stack(
               children: [
-                // Ossido's glass (kind `popover`) under the body, not the arrow.
-                const Positioned.fill(
-                  top: 8,
-                  child: IgnorePointer(
-                    child: Glass(
-                      radius: 16,
-                      material: GlassMaterial.thick,
-                      profile: GlassProfile.menu,
-                    ),
-                  ),
-                ),
                 AmalfiPopover(
                   arrowEdge: AmalfiPopoverArrowEdge.top,
                   arrowOffset: arrow,

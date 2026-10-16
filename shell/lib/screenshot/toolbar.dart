@@ -72,12 +72,6 @@ const Duration actionBarDuration = Duration(milliseconds: 450);
 const double tipAboveBar = AmalfiTooltipMetrics.distance;
 const double tipHeight = 24;
 
-/// The Options menu: 208 wide (kit `Options Menu Panel`), opening upwards with its left edge
-/// on the Options button's and its bottom 8 pt above the bar, or below the bar when there is
-/// no room above.
-const double optionsMenuWidth = 208;
-const double optionsMenuGap = 8;
-
 /// The icons of the modes (Icon Kit `symbols/regular`).
 const List<String> captureSymbols = ['display', 'window', 'selection'];
 const List<String> recordSymbols = ['video', 'screen-share', 'record-circle'];
@@ -127,14 +121,13 @@ class ShotToolbar extends StatefulWidget {
     super.key,
     required this.choice,
     required this.optionsLabel,
-    required this.optionsOpen,
+    required this.optionsEntries,
     required this.actionLabel,
     required this.closeLabel,
     required this.tips,
     required this.showAction,
     required this.onChoose,
     required this.onClose,
-    required this.onOptions,
     required this.onAction,
     required this.onMove,
     required this.onMoved,
@@ -145,8 +138,8 @@ class ShotToolbar extends StatefulWidget {
   final ToolbarChoice choice;
   final String optionsLabel;
 
-  /// The Options menu is open: its button keeps the pressed look.
-  final bool optionsOpen;
+  /// The rows of the Options pull-down (its menu is silica_ui's, on Ossido's glass).
+  final List<AmalfiMenuEntry> optionsEntries;
   final String actionLabel;
   final String closeLabel;
   final ShotBarTips tips;
@@ -156,7 +149,6 @@ class ShotToolbar extends StatefulWidget {
   final bool showAction;
   final ValueChanged<ToolbarChoice> onChoose;
   final VoidCallback onClose;
-  final VoidCallback onOptions;
   final VoidCallback onAction;
 
   /// The background is dragged: the bar moves by this much.
@@ -262,7 +254,7 @@ class _ShotToolbarState extends State<ShotToolbar>
   Widget build(BuildContext context) {
     final colors = AmalfiTheme.of(context).colors;
     final tips = widget.tips;
-    final tip = widget.optionsOpen ? null : _tip;
+    final tip = _tip;
     final tipText = tip == null
         ? null
         : tip < 3
@@ -350,11 +342,12 @@ class _ShotToolbarState extends State<ShotToolbar>
                         Positioned(
                           left: optionsX,
                           top: barInset,
-                          child: ShotOptionsButton(
+                          child: AmalfiPullDownButton.entries(
                             key: const ValueKey('options'),
                             label: widget.optionsLabel,
-                            open: widget.optionsOpen,
-                            onTap: widget.onOptions,
+                            entries: widget.optionsEntries,
+                            size: AmalfiControlSize.large,
+                            width: optionsWidth,
                           ),
                         ),
                         _action(),
@@ -437,100 +430,6 @@ class _ShotToolbarState extends State<ShotToolbar>
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-/// The Options pull-down (`Buttons/Pull-down/Large`): 96 × 32, `Surface/Control` capsule with
-/// its border and soft shadow, the label in Body and a chevron; pressed (or with its menu open)
-/// `Surface/Control Pressed`. The menu itself is [ShotMenu]: silica_ui's pull-down opens a plain
-/// list, and this one has sections, checkmarks and a place of its own.
-class ShotOptionsButton extends StatefulWidget {
-  const ShotOptionsButton({
-    super.key,
-    required this.label,
-    required this.onTap,
-    this.open = false,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final bool open;
-
-  @override
-  State<ShotOptionsButton> createState() => _ShotOptionsButtonState();
-}
-
-class _ShotOptionsButtonState extends State<ShotOptionsButton> {
-  bool _pressed = false;
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AmalfiTheme.of(context).colors;
-    final pressed = _pressed || widget.open;
-    final shape = AmalfiSmoothBorder(
-      radius: AmalfiRadii.capsule(controlHeight),
-      side: BorderSide(
-        color: colors.lineBorder,
-        strokeAlign: BorderSide.strokeAlignInside,
-      ),
-    );
-    return Semantics(
-      button: true,
-      label: widget.label,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapCancel: () => setState(() => _pressed = false),
-          onTapUp: (_) => setState(() => _pressed = false),
-          onTap: widget.onTap,
-          child: DecoratedBox(
-            decoration: AmalfiShapeDecoration(
-              color: pressed
-                  ? colors.surfaceControlPressed
-                  : colors.surfaceControl,
-              shape: shape,
-              shadows: amalfiControlShadows(colors),
-            ),
-            child: DecoratedBox(
-              decoration: AmalfiShapeDecoration(
-                color: _hovered && !pressed ? colors.accentAmalfiSoft : null,
-                shape: shape,
-              ),
-              child: SizedBox(
-                width: optionsWidth,
-                height: controlHeight,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12, right: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.label,
-                          maxLines: 1,
-                          softWrap: false,
-                          overflow: TextOverflow.ellipsis,
-                          style: AmalfiType.body(color: colors.textPrimary),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      AmalfiGlyph(
-                        AmalfiGlyphs.chevronDown,
-                        size: 16,
-                        color: colors.textSecondary,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
