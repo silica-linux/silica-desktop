@@ -6,6 +6,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'apps.dart' show downloadDir;
+
 /// The order of the files in the stack.
 enum StackSort { name, added, modified, created, kind }
 
@@ -56,6 +58,17 @@ class StackSettings {
       ),
     );
   }
+}
+
+/// The settings of a folder nobody has configured: by name, except the Downloads folder, by
+/// Date Added (newest first, like a download stack).
+StackSettings defaultStackSettings(String folder, {Map<String, String>? env}) {
+  final e = env ?? Platform.environment;
+  final home = e['HOME'];
+  if (home != null && folder == downloadDir(home, env: e)) {
+    return const StackSettings(sort: StackSort.added);
+  }
+  return const StackSettings();
 }
 
 File _file(Map<String, String>? env) {

@@ -15,6 +15,7 @@
 //   icon, its apex 5 pt above the Dock; it scales up from the tip in ~240 ms, closes in ~150 ms.
 // A click on a file closes the stack and opens it.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -27,7 +28,8 @@ import '../system/folder_icons.dart';
 import '../system/folder_style.dart';
 import '../system/glass_profile.dart';
 import '../system/silica_symbol.dart';
-import 'dock.dart' show DockLabel;
+import 'dock.dart' show DockLabel, pressedShade;
+import 'model.dart' show defaultCanvas;
 import 'glass_groups.dart';
 import 'stack_settings.dart';
 
@@ -487,144 +489,83 @@ class FolderArrow extends StatelessWidget {
   );
 }
 
-/// The close button's chevron: dark in light, white in dark (dock-stacks.md, close button).
-Color closeGlyph(bool dark) =>
-    dark ? const Color(0xFFFFFFFF) : const Color(0xFF19191B);
+/// The silica-icons "Stack Close" badge (`badges.json` > `dock` > `stack-close`): the PNG
+/// rendered for the light or the dark appearance, or null if silica-icons has none.
+String? stackCloseBadgePath({required bool dark, Map<String, String>? env}) {
+  for (final base in silicaIconDirs(env ?? Platform.environment)) {
+    try {
+      final manifest = jsonDecode(
+        File('$base/badges/badges.json').readAsStringSync(),
+      );
+      final dock = manifest is Map ? manifest['dock'] : null;
+      final badge = dock is Map ? dock['stack-close'] : null;
+      final rendered = badge is Map ? badge['rendered'] : null;
+      final name = rendered is Map ? rendered[dark ? 'dark' : 'default'] : null;
+      if (name is! String || name.contains('/') || name.contains('..')) {
+        continue;
+      }
+      final file = File('$base/badges/$name');
+      if (file.existsSync()) return file.path;
+    } on FileSystemException {
+      continue;
+    } on FormatException {
+      continue;
+    }
+  }
+  return null;
+}
 
-/// The button the stack's Dock icon becomes while it is open (dock-stacks.md, "Close button of
-/// the open stack"): an app tile, the same body as every app icon in the Dock (the `side`
-/// square with the icons' superellipse corners, their drop shadow and bright rim), filled with
-/// the measured gray gradient and its top hairline, with the silica-icons `chevron-down`.
-/// Painted by the shell like the icons, not compositor glass: it cannot merge with anything.
-/// No hover state; `pressed`, the square darkens to ~78 % and the chevron to ~50 %.
+/// What the stack's Dock icon becomes while it is open (fan or grid): the silica-icons
+/// "Stack Close" badge on the folder icon's canvas (`side`), not a shell-drawn cross. Pressed,
+/// it darkens like the other icons.
 class StackCloseButton extends StatelessWidget {
   const StackCloseButton({
     super.key,
     required this.side,
     required this.dark,
     this.pressed = false,
+    this.env,
   });
 
   final double side;
   final bool dark;
   final bool pressed;
 
-  static const String symbol = 'chevron-down';
-
-  /// The symbol's box over the side: the measured chevron is 19 pt wide on a 51 pt square
-  /// (0.37), and silica-icons' chevron-down spans 0.61 of its box.
-  static const double glyph = 0.6;
-
-  /// Top to bottom (measured, linear).
-  static const List<Color> fillLight = [Color(0xFFADADB0), Color(0xFF8B8B90)];
-  static const List<Color> fillDark = [Color(0xFF5C5C5F), Color(0xFF313232)];
-
-  /// The 1 pt line along the top edge.
-  static const Color hairlineLight = Color(0xFFC2C2C5);
-  static const Color hairlineDark = Color(0xFF8B8C8E);
-
-  /// Pressed (measured in dark: gradient 92 -> 73 at the top, 48 -> 38 at the bottom, chevron
-  /// 255 -> 121): the fill and the chevron are multiplied by these.
-  static const double pressedFill = 0.78;
-  static const double pressedGlyph = 0.5;
+  /// The environment for finding silica-icons (tests).
+  final Map<String, String>? env;
 
   @override
   Widget build(BuildContext context) {
-    final glyphColor = closeGlyph(dark);
-    return SizedBox(
+    final path = stackCloseBadgePath(dark: dark, env: env);
+    if (path == null) return SizedBox.square(dimension: side);
+    final ratio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    var decoded = 64;
+    while (decoded < side * ratio && decoded < 1024) {
+      decoded *= 2;
+    }
+    final ImageProvider file = FileImage(File(path));
+    final image = Image(
+      image: decoded < 1024
+          ? ResizeImage(file, width: decoded, height: decoded)
+          : file,
       width: side,
       height: side,
-      child: CustomPaint(
-        painter: StackCloseTilePainter(dark: dark, pressed: pressed),
-        child: Center(
-          child: SilicaSymbol(
-            symbol,
-            size: side * glyph,
-            color: pressed ? scaleColor(glyphColor, pressedGlyph) : glyphColor,
-          ),
-        ),
-      ),
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.medium,
+      gaplessPlayback: true,
+      excludeFromSemantics: true,
+      errorBuilder: (_, _, _) => SizedBox.square(dimension: side),
     );
+    return pressed
+        ? ColorFiltered(
+            colorFilter: const ColorFilter.mode(
+              pressedShade,
+              BlendMode.srcATop,
+            ),
+            child: image,
+          )
+        : image;
   }
-}
-
-/// `color` with its red, green and blue multiplied by `k` (alpha kept).
-Color scaleColor(Color color, double k) => Color.from(
-  alpha: color.a,
-  red: color.r * k,
-  green: color.g * k,
-  blue: color.b * k,
-);
-
-/// The close tile's body: drop shadow, gradient, hairline and rim of an app tile.
-class StackCloseTilePainter extends CustomPainter {
-  const StackCloseTilePainter({required this.dark, this.pressed = false});
-
-  final bool dark;
-  final bool pressed;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final side = size.shortestSide;
-    final body = Offset.zero & Size.square(side);
-    final path = iconBodyPath(body);
-    final k = pressed ? StackCloseButton.pressedFill : 1.0;
-    // The app icons' drop shadow (silica_ui: 3 % of the side below, blurred as much).
-    canvas.drawPath(
-      iconBodyPath(body.shift(Offset(0, side * 0.03))),
-      Paint()
-        ..color = const Color(0x55000000)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, side * 0.03),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            for (final c
-                in dark
-                    ? StackCloseButton.fillDark
-                    : StackCloseButton.fillLight)
-              scaleColor(c, k),
-          ],
-        ).createShader(body),
-    );
-    canvas
-      ..save()
-      ..clipPath(path)
-      ..drawRect(
-        Rect.fromLTWH(0, 0, side, 1),
-        Paint()
-          ..color = scaleColor(
-            dark
-                ? StackCloseButton.hairlineDark
-                : StackCloseButton.hairlineLight,
-            k,
-          ),
-      )
-      ..restore();
-    // The app icons' rim: lighter at the top, fading at the bottom.
-    final width = math.max(1.0, side / 64);
-    canvas.drawPath(
-      iconBodyPath(body.deflate(width / 2)),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: dark
-              ? const [Color(0x40FFFFFF), Color(0x0FFFFFFF)]
-              : const [Color(0x80FFFFFF), Color(0x1AFFFFFF)],
-        ).createShader(body),
-    );
-  }
-
-  @override
-  bool shouldRepaint(StackCloseTilePainter old) =>
-      old.dark != dark || old.pressed != pressed;
 }
 
 /// The grid's "open folder" cell (dock-stacks.md, DOCK-FAN): a stroked circle, no fill, with the
@@ -940,42 +881,57 @@ class MenuHoleClipper extends CustomClipper<Path> {
   }
 }
 
-/// The "stack" icon of a folder in the Dock (dock-stacks.md › Icon in the Dock): the first file in front,
-/// the next two behind, smaller (0.89 and 0.73) and with their tops 4 pt higher each, no
-/// rotation. Measured on a 54 pt icon: front sheet 37 × 46, tops at +0, −4, −8.
+/// The "stack" icon of a folder in the Dock (dock-stacks.md › The icon in the Dock): at most
+/// three items of the folder, the first in front, the others behind and higher, no rotation,
+/// no extra shadow. Each icon is drawn on a 50 pt canvas of the 64 × 80 tile (never the full
+/// 60), at x = 7 and y = 17, 15, 13; everything scales by k = canvas / 60 and rests on whole
+/// points.
 class PileIcon extends StatelessWidget {
   const PileIcon({super.key, required this.sources, required this.side});
 
   /// From the first (in front) to the third.
   final List<IconSource> sources;
+
+  /// The icon canvas of the tile (60 at the default size).
   final double side;
 
-  static const List<double> scales = [1, 0.89, 0.73];
+  /// The canvas of one item, its left edge and the top of the front, second and third, in
+  /// tile points at the default size.
+  static const double itemCanvas = 50;
+  static const double itemLeft = 7;
+  static const List<double> itemTops = [17, 15, 13];
+
+  /// The frames of `count` items (at most 3, front first) in tile coordinates, for the icon
+  /// canvas `canvas`. `rounded` snaps them to whole points (the resting Dock); magnified they
+  /// scale smoothly.
+  static List<Rect> frames(double canvas, int count, {bool rounded = true}) {
+    final k = canvas / defaultCanvas;
+    double snap(double v) => rounded ? v.roundToDouble() : v;
+    final edge = snap(itemCanvas * k);
+    return [
+      for (var i = 0; i < math.min(count, 3); i++)
+        Rect.fromLTWH(snap(itemLeft * k), snap(itemTops[i] * k), edge, edge),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final unit = side / 54;
-    // The front sheet: ~46 tall over 54, resting at the bottom (2 pt margin).
-    final front = side * 0.88;
-    final bottom = side - 2 * unit;
+    final k = side / defaultCanvas;
+    final rounded = side == side.roundToDouble();
+    final origin = rounded
+        ? Offset((2 * k).roundToDouble(), (10 * k).roundToDouble())
+        : Offset(2 * k, 10 * k);
+    final frames = PileIcon.frames(side, sources.length, rounded: rounded);
     return SizedBox(
       width: side,
       height: side,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          for (var i = math.min(sources.length, 3) - 1; i >= 0; i--)
-            Positioned(
-              left: (side - front * scales[i]) / 2,
-              top: bottom - front - 4 * unit * i,
-              width: front * scales[i],
-              height: front * scales[i],
-              // Measured with the sheet on the app body (d06-icon-pila-10).
-              child: SilicaIcon(
-                sources[i],
-                side: front * scales[i],
-                besideApps: true,
-              ),
+          for (var i = frames.length - 1; i >= 0; i--)
+            Positioned.fromRect(
+              rect: frames[i].shift(-origin),
+              child: SilicaIcon(sources[i], side: frames[i].width),
             ),
         ],
       ),

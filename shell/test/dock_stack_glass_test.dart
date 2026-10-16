@@ -200,32 +200,22 @@ void main() {
     expect(byGroup[DockGlass.dock]!.containsKey('frame'), isFalse);
   });
 
-  testWidgets('close button: an app tile with the chevron symbol', (
+  testWidgets('close button: the silica-icons Stack Close badge', (
     tester,
   ) async {
     await openStack(tester, 3);
     final button = find.byType(StackCloseButton);
     expect(button, findsOneWidget);
-    // The same box as an app icon of the Dock at rest: a square of the icon side.
+    // The folder icon's canvas: a square of the icon side, at rest.
     final tile = tester.getRect(button);
     expect(tile.width, tile.height);
     expect(tile.width, closeTo(defaultCanvas, 0.5));
-    // Painted like the app tiles (their superellipse body, drop shadow and rim), not
-    // compositor glass: no circle, nothing to merge with.
+    // Not compositor glass, no shell-drawn cross: neither a chevron symbol nor an app icon.
     expect(find.descendant(of: button, matching: anyGlass), findsNothing);
-    final paint = tester.widget<CustomPaint>(
-      find.descendant(of: button, matching: find.byType(CustomPaint)).first,
-    );
-    expect(paint.painter, isA<StackCloseTilePainter>());
     expect(
-      tester
-          .widget<SilicaSymbol>(
-            find.descendant(of: button, matching: find.byType(SilicaSymbol)),
-          )
-          .name,
-      'chevron-down',
+      find.descendant(of: button, matching: find.byType(SilicaSymbol)),
+      findsNothing,
     );
-    // No layered icon (Sketch artwork) inside.
     expect(
       find.descendant(of: button, matching: find.byType(SilicaIcon)),
       findsNothing,
@@ -239,15 +229,28 @@ void main() {
     expect(find.byType(StackCloseButton), findsNothing);
   });
 
-  test('close tile: the app body outline, the measured gradient', () {
-    // The tile's outline is the app icons' (iconBodyPath): corners rounder than a square,
-    // squarer than a circle.
-    final body = iconBodyPath(const Rect.fromLTWH(0, 0, 48, 48));
-    expect(body.contains(const Offset(24, 0.5)), isTrue);
-    expect(body.contains(const Offset(1, 1)), isFalse);
-    expect(body.contains(const Offset(7, 7)), isTrue);
-    expect(StackCloseButton.fillLight.first, const Color(0xFFADADB0));
-    expect(StackCloseButton.fillDark.last, const Color(0xFF313232));
+  test('close badge: badges.json > dock > stack-close, light and dark', () {
+    final root = Directory.systemTemp.createTempSync('badges');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/badges').createSync(recursive: true);
+    File('${root.path}/badges/badges.json').writeAsStringSync(
+      '{"dock":{"stack-close":{"file":"stack-close.svg",'
+      '"dark":"stack-close-dark.svg","rendered":{"default":"stack-close.png",'
+      '"dark":"stack-close-dark.png"}}}}',
+    );
+    final env = {'SILICA_ICONS_DIR': root.path, 'HOME': root.path};
+    // Without the PNG there is no badge.
+    expect(stackCloseBadgePath(dark: false, env: env), isNull);
+    File('${root.path}/badges/stack-close.png').writeAsBytesSync([0]);
+    File('${root.path}/badges/stack-close-dark.png').writeAsBytesSync([0]);
+    expect(
+      stackCloseBadgePath(dark: false, env: env),
+      '${root.path}/badges/stack-close.png',
+    );
+    expect(
+      stackCloseBadgePath(dark: true, env: env),
+      '${root.path}/badges/stack-close-dark.png',
+    );
   });
 
   testWidgets('glass groups: every surface of the open grid is its own', (
@@ -500,12 +503,6 @@ void main() {
       final gesture = await tester.startGesture(tester.getCenter(button));
       await tester.pump();
       expect(tester.widget<StackCloseButton>(button).pressed, isTrue);
-      final glyph = tester
-          .widget<SilicaSymbol>(
-            find.descendant(of: button, matching: find.byType(SilicaSymbol)),
-          )
-          .color;
-      expect(glyph.r, closeTo(closeGlyph(false).r * 0.5, 0.01));
       await gesture.up();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));

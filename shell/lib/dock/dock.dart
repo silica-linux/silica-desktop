@@ -131,8 +131,10 @@ class _LiveDockState extends State<LiveDock> {
   /// The stack settings, by folder path.
   final Map<String, StackSettings> _stacks = loadStackSettings();
 
+  /// The saved settings of a folder; the defaults otherwise: by name, but the Downloads folder
+  /// by Date Added (newest first).
   StackSettings _stackOf(String folder) =>
-      _stacks[folder] ?? const StackSettings();
+      _stacks[folder] ?? defaultStackSettings(folder);
 
   void _setStack(String folder, StackSettings settings) {
     setState(() => _stacks[folder] = settings);
@@ -2643,8 +2645,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     final closing = _stackIndex == index;
     final pile = closing ? null : _pileOf(item);
     final icon = closing
-        // The close button: a glass circle with the silica-icons chevron (dock-stacks.md,
-        // "Close button of the open stack"; dark: white chevron, light: `#19191b`).
+        // The silica-icons "Stack Close" badge on the folder's canvas (dock-stacks.md,
+        // "The icon in the Dock").
         ? StackCloseButton(
             side: side,
             dark:
