@@ -209,7 +209,7 @@ void main() {
     // The same box as an app icon of the Dock at rest: a square of the icon side.
     final tile = tester.getRect(button);
     expect(tile.width, tile.height);
-    expect(tile.width, closeTo(iconSize, 0.5));
+    expect(tile.width, closeTo(defaultCanvas, 0.5));
     // Painted like the app tiles (their superellipse body, drop shadow and rim), not
     // compositor glass: no circle, nothing to merge with.
     expect(find.descendant(of: button, matching: anyGlass), findsNothing);

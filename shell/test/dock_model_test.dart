@@ -16,22 +16,22 @@ const height = 200.0;
 void main() {
   test('at rest: cells, shelf and icons as in the kit', () {
     final l = layout(items, width: width, height: height);
-    // Cells: 14 x 56 + 12 = 796 pt, centered.
+    // Cells: 14 x 64 + 28 = 924 pt, centered.
     final cellsWidth = l.cells.last.$1 + l.cells.last.$2 - l.cells.first.$1;
-    expect(cellsWidth, closeTo(796, 0.01));
-    // Shelf: cells + 2 x 6, 60 tall, 5 pt from the edge.
+    expect(cellsWidth, closeTo(924, 0.01));
+    // Shelf: cells + 2 x 8, 80 tall, 4 pt from the edge.
     final (bx, by, bw, bh) = l.background;
-    expect(bw, 796 + 12);
+    expect(bw, 924 + 16);
     expect(bx + bw / 2, closeTo(width / 2, 0.01));
-    expect(bh, 60);
-    expect(height - (by + bh), 5);
-    // Icon: 48 pt, 4 pt below the top of the shelf.
+    expect(bh, 80);
+    expect(height - (by + bh), 4);
+    // Icon: 60 pt, 10 pt below the top of the shelf.
     final (_, iy, side) = iconRect(l, 0, height);
-    expect(side, 48);
-    expect(iy - by, 4);
+    expect(side, 60);
+    expect(iy - by, 10);
   });
 
-  test('the default Dock is the kit shelf: 528 x 60, tiles at 8 + 56 n', () {
+  test('the default Dock is the kit shelf: 620 x 80, tiles at 8 + 64 n', () {
     // Launchpad, Mail, Reminders, Photos, Notes, Terminal, Settings, separator, stack, trash.
     final kit = [
       for (var i = 0; i < 7; i++) Item.app('App $i'),
@@ -39,17 +39,17 @@ void main() {
       const Item.app('Downloads'),
       const Item.app('Trash'),
     ];
-    final l = layout(kit, width: 528, height: 100);
+    final l = layout(kit, width: 620, height: 100);
     final (bx, _, bw, bh) = l.background;
-    expect((bx, bw, bh), (0, 528, 60));
+    expect((bx, bw, bh), (0, 620, 80));
     for (var i = 0; i < 7; i++) {
-      // A 52 pt tile at x 8 + 56 i: its 48 pt icon is centred in it.
-      expect(l.center(i), closeTo(8 + 56 * i + 26, 0.01));
+      // A 64 pt tile at x 8 + 64 i: its 60 pt icon is centred in it.
+      expect(l.center(i), closeTo(8 + 64 * i + 32, 0.01));
     }
-    // Separator: the 8 pt master at x 400, its line at x 404.
-    expect(l.center(7), closeTo(404, 0.01));
-    expect(l.center(8), closeTo(412 + 26, 0.01));
-    expect(l.center(9), closeTo(468 + 26, 0.01));
+    // Separator: the 28 pt master at x 456, its line at x 470.
+    expect(l.center(7), closeTo(470, 0.01));
+    expect(l.center(8), closeTo(484 + 32, 0.01));
+    expect(l.center(9), closeTo(548 + 32, 0.01));
   });
 
   test('magnification: cosine fall-off over 3 tiles, only the icons grow', () {
@@ -64,13 +64,13 @@ void main() {
       magnified: 96,
     );
     // Under the pointer: the canvas reaches the magnified size, the tile grows with it.
-    expect(l.scales[4] * 48, closeTo(96, 0.01));
-    expect(l.cells[4].$2, closeTo(56 + 48, 0.01));
+    expect(l.scales[4] * 60, closeTo(96, 0.01));
+    expect(l.cells[4].$2, closeTo(64 + 36, 0.01));
     // One pitch away: (1 + cos(pi / 3)) / 2 = 0.75 of the growth.
-    expect(profile(56), closeTo(0.75, 1e-9));
-    expect(l.scales[5] * 48, closeTo(48 + 48 * 0.75, 0.01));
+    expect(profile(64), closeTo(0.75, 1e-9));
+    expect(l.scales[5] * 60, closeTo(60 + 36 * 0.75, 0.01));
     // Three tiles away and beyond: nothing.
-    expect(profile(3 * 56), 0);
+    expect(profile(3 * 64), 0);
     expect(l.scales[7], 1);
     // The point under the pointer stays still.
     expect(l.center(4), closeTo(mail, 0.01));
@@ -88,7 +88,7 @@ void main() {
     expect(top + side, closeTo(restTop + restSide, 0.001));
     expect(side, closeTo(96, 0.01));
     // Off (null) or not above the resting size: nothing moves.
-    for (final off in [null, 48.0, 30.0]) {
+    for (final off in [null, 60.0, 30.0]) {
       final same = layout(
         items,
         width: width,
@@ -116,14 +116,14 @@ void main() {
   });
 
   test('entrance: ~60 ms for a small growth, ~160 ms for a large one', () {
-    expect(enterDuration(52 / 48).inMilliseconds, 60);
-    expect(enterDuration(128 / 48).inMilliseconds, 160);
+    expect(enterDuration(65 / 60).inMilliseconds, 60);
+    expect(enterDuration(128 / 60).inMilliseconds, 160);
     expect(enterProgress(0), 0);
     expect(enterProgress(50 / 160), closeTo(0.2065, 0.001));
     expect(enterProgress(1), 1);
   });
 
-  test('geometry at 16, 48 and 128 pt', () {
+  test('geometry at 16, 60 and 128 pt', () {
     const small = DockMetrics(16);
     expect(
       (
@@ -137,7 +137,7 @@ void main() {
         small.dot,
         small.labelOffset,
       ),
-      (20, 28, 1, 3, 7, 3, 12, 3, 4),
+      (20, 36, 0, 2, 6, 7, 30, 3, 3),
     );
     const normal = DockMetrics();
     expect(
@@ -154,7 +154,7 @@ void main() {
         normal.dot,
         normal.labelOffset,
       ),
-      (52, 60, 4, 56, 8, 20, 8, 12, 44, 4, 12),
+      (64, 80, 0, 64, 8, 24, 28, 28, 60, 4, 12),
     );
     const big = DockMetrics(128);
     expect(
@@ -170,54 +170,42 @@ void main() {
         big.dot,
         big.labelOffset,
       ),
-      (132, 140, 11, 143, 21, 53, 21, 124, 11, 32),
+      (132, 148, 0, 132, 17, 51, 60, 106, 9, 26),
     );
-    // The shelf of the kit: 9 tiles and a separator at 48, 528 wide, 60 tall.
     for (final m in [small, normal, big]) {
       final kit = [
         for (var i = 0; i < 9; i++) const Item.app('A'),
         const Item.separator(),
       ];
       final l = layout(kit, width: 1000, height: 300, metrics: m);
-      final k = m.k;
-      // Tiles + one separator + the gaps between them + the padding on both sides.
-      final width =
-          9 * m.tileWidth + m.separatorWidth + 9 * m.gap + 2 * m.shelfPadding;
+      // Tiles + one separator + the padding on both sides.
+      final width = 9 * m.tileWidth + m.separatorWidth + 2 * m.shelfPadding;
       expect(l.background.$3, closeTo(width, 0.01));
-      expect(l.background.$4, m.canvas + 12);
-      // The first tile starts at the padding; its canvas is centred in it.
-      expect(
-        l.cells.first.$1 + m.gap / 2 - l.background.$1,
-        closeTo(m.shelfPadding, 0.01),
-      );
-      expect(k, m.canvas / 48);
+      expect(l.background.$4, m.canvas + 20);
+      // The first tile starts at the padding.
+      expect(l.cells.first.$1 - l.background.$1, closeTo(m.shelfPadding, 0.01));
+      expect(m.k, m.canvas / 60);
     }
     expect(
-      layout([const Item.app('A')], width: 528, height: 100).background.$4,
-      60,
+      layout([const Item.app('A')], width: 620, height: 100).background.$4,
+      80,
     );
   });
 
-  test('the whole canvas of an app is the tile canvas, places spill over', () {
+  test('the whole canvas of an app is the tile canvas, places have the same', () {
     final l = layout(items, width: width, height: height);
     final (x, y, side) = iconRect(l, 0, height);
-    expect(side, 48);
-    // Tile 52 x 60: the canvas is at x 2 and y 4 of it.
-    expect(x - (l.cells[0].$1 + 4), closeTo(0, 0.01));
-    expect(y - l.background.$2, closeTo(4, 0.001));
-    // An app: the 824 body of the 1024 canvas is 38.6 pt.
+    expect(side, 60);
+    // Tile 64 x 80: the canvas is at x 2 and y 10 of it.
+    expect(x - l.cells[0].$1, closeTo(2, 0.01));
+    expect(y - l.background.$2, closeTo(10, 0.001));
+    // An app: the 824 body of the 1024 canvas is 48.3 pt.
     final (ax, ay, app) = iconBody(side, place: false);
-    expect(app, closeTo(48 * 824 / 1024, 1e-9));
-    expect(ax, closeTo((48 - app) / 2, 1e-9));
-    // A place: its 824 body is as large as the app canvas (canvas 59.6) and its bottom is
-    // on the bottom of the app bodies.
+    expect(app, closeTo(60 * 824 / 1024, 1e-9));
+    expect(ax, closeTo((60 - app) / 2, 1e-9));
+    // A place: its drawing is the whole canvas, at the same place as the app's.
     final (px, py, place) = iconBody(side, place: true);
-    expect(place, 48);
-    expect(px, 0);
-    expect(py + place, closeTo(ay + app, 1e-9));
-    expect(place * 1024 / 824, closeTo(59.6, 0.1));
-    // It overflows ~6 pt per side.
-    expect((place * 1024 / 824 - 48) / 2, closeTo(5.8, 0.1));
+    expect((px, py, place), (0, 0, 60));
     expect(const Item.app('Trash', trash: true).isPlace, isTrue);
     expect(const Item.app('Folder', folder: '/tmp').isPlace, isTrue);
     expect(const Item.app('App', command: 'a').isPlace, isFalse);

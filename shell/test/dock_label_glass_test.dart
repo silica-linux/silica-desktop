@@ -5,7 +5,7 @@ import 'package:silica_shell/dock/dock_menu.dart';
 import 'package:silica_shell/dock/glass_groups.dart';
 import 'package:silica_ui/silica_ui.dart';
 
-// The Dock label is an Amalfi tooltip (Glass/Thick, radius 8, 24 pt, no tip) drawn by Ossido,
+// The Dock label is an Amalfi tooltip (Glass/Thick, radius 8, 28 pt) drawn by Ossido,
 // and the Dock menu a Thick menu surface (radius 12) over it in the glass order, light and
 // dark.
 void main() {
@@ -63,7 +63,7 @@ void main() {
       expect(label.regions(), hasLength(1));
       expect(label.regions().first['radius'], 8);
       expect(label.size.height, labelHeight);
-      expect(labelHeight, 24);
+      expect(labelHeight, 28);
       expect(menu.regions().first['radius'], 12);
       // A label's glass profile (#168), the menu's own.
       expect(label.regions().map((r) => r['profile']), everyElement('tooltip'));
@@ -86,7 +86,7 @@ void main() {
     });
   }
 
-  test('the label width follows the kit: text on the 4 pt grid + 16', () {
-    expect(dockLabelWidth('', const TextStyle()), 16);
+  test('the label width follows the kit: text on the 4 pt grid + 32', () {
+    expect(dockLabelWidth('', const TextStyle()), 32);
   });
 }

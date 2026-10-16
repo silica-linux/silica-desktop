@@ -36,6 +36,7 @@ import '../system/shell_channel.dart';
 import '../system/sounds.dart';
 import 'apps.dart';
 import 'autostart.dart';
+import 'arrow.dart';
 import 'dock_menu.dart';
 import 'launcher_entry.dart';
 import 'options.dart';
@@ -752,7 +753,7 @@ class _LiveDockState extends State<LiveDock> {
 }
 
 /// Colors of the light appearance (dock.md).
-const Color separatorColor = Color(0x241D1E21);
+const Color separatorColor = Color(0x591D1E21);
 const Color indicatorColor = Color(0xFF5F636B);
 
 /// Icon menu (D-04): at ~530 ms of pressing the label hides and the menu opens (the measured
@@ -925,12 +926,12 @@ class DockColors {
   // Kit `Dock/Separator/Line` (#1d1e2124 / #f4f5f729) and `Dock/Indicator/Dot`
   // (#5f636b / #b0b4bc).
   static const DockColors light = DockColors(
-    separator: Color(0x241D1E21),
+    separator: Color(0x591D1E21),
     indicator: Color(0xFF5F636B),
   );
 
   static const DockColors dark = DockColors(
-    separator: Color(0x29F4F5F7),
+    separator: Color(0x4DF4F5F7),
     indicator: Color(0xFFB0B4BC),
   );
 
@@ -940,17 +941,17 @@ class DockColors {
       : light;
 }
 
-/// Label (Amalfi tooltip, kit `Dock/Shelf/With Label`): 24 pt tall, 8 pt of padding at each
-/// side around the Callout text (width rounded up to the 4 pt grid like the kit's tooltips),
-/// no tip, its bottom 16 pt above the icon's top (12 above the shelf).
-const double labelHeight = 24;
-const double labelTip = 0;
-const double labelGap = 16;
-const double labelPadding = 8;
+/// Label (kit `Dock/Label`, 64 x 34 for "Mail"): a Glass/Thick body 28 pt tall (radius 8) with
+/// 16 pt of padding at each side around the Body text (width rounded up to the 4 pt grid),
+/// and an arrow 6 pt deep under it, centred; the arrow's tip is 12 pt above the shelf's top.
+const double labelHeight = 28;
+const double labelTip = dockArrowDepth;
+const double labelPadding = 16;
+const double labelRadius = 8;
 
-/// The Dock label text: Callout, `Text/Primary` of the appearance.
+/// The Dock label text: Body, `Text/Primary` of the appearance.
 TextStyle dockLabelStyle(BuildContext context) =>
-    AmalfiType.callout(color: AmalfiTheme.of(context).colors.textPrimary);
+    AmalfiType.body(color: AmalfiTheme.of(context).colors.textPrimary);
 
 /// The width of a label for `text`: the text rounded up to the 4 pt grid plus the padding.
 double dockLabelWidth(String text, TextStyle style, {double max = 224}) {
@@ -2194,18 +2195,19 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
             if (mounted) setState(() {});
           });
         }
-        // The menu: above the item, its bottom [menuAboveShelf] over the shelf. Until the
+        // The menu: above the item, the tip of its arrow 12k over the shelf. Until the
         // menu has been laid out its rectangle is estimated from the rows.
         final menuIndex = _menuIndex;
         final menuAnchor = menuIndex == null || menuIndex >= l.cells.length
             ? null
-            : Offset(l.center(menuIndex), by - menuAboveShelf);
+            : Offset(l.center(menuIndex), by - _m.labelOffset);
         final menuRect = menuAnchor == null
             ? null
             : _menuRects.isNotEmpty
             ? _menuRects.first
             : () {
-                final height = 8.0 + 24.0 * _menuEntries.length;
+                final height =
+                    8.0 + 24.0 * _menuEntries.length + dockArrowDepth;
                 return Rect.fromLTWH(
                   menuAnchor.dx - AmalfiMenuMetrics.minWidth / 2,
                   menuAnchor.dy - height,
@@ -2484,7 +2486,8 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
           width: drag.side,
           height: drag.side,
           child: _drawn(
-            (body) => SilicaIcon(source, side: body, besideApps: true),
+            (body) =>
+                SilicaIcon(source, side: body, besideApps: !drag.item.isPlace),
             drag.side,
             place: drag.item.isPlace,
           ),
@@ -2517,7 +2520,11 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   width: ghost.side,
                   height: ghost.side,
                   child: _drawn(
-                    (body) => SilicaIcon(source, side: body, besideApps: true),
+                    (body) => SilicaIcon(
+                      source,
+                      side: body,
+                      besideApps: !ghost.item.isPlace,
+                    ),
                     ghost.side,
                     place: ghost.item.isPlace,
                   ),
@@ -2546,7 +2553,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       height: labelHeight + labelTip,
       child: Opacity(
         opacity: opacity,
-        child: DockLabel(text: text, style: style),
+        child: DockLabel(text: text, style: style, arrow: true),
       ),
     );
   }
@@ -2634,7 +2641,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         : source == null
         ? const SizedBox.shrink()
         : _drawn(
-            (body) => SilicaIcon(source, side: body, besideApps: true),
+            (body) => SilicaIcon(source, side: body, besideApps: !item.isPlace),
             side,
             place: item.isPlace,
           );
@@ -2702,7 +2709,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
       height: labelHeight + labelTip,
       child: Opacity(
         opacity: opacity,
-        child: DockLabel(text: _items[index].label, style: style),
+        child: DockLabel(text: _items[index].label, style: style, arrow: true),
       ),
     );
   }
@@ -2746,11 +2753,15 @@ class _DockPainter extends CustomPainter {
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
       if (item.kind == ItemKind.separator) {
-        final x = l.center(i).roundToDouble();
+        final x =
+            (l.center(i) -
+                    l.metrics.separatorWidth / 2 +
+                    l.metrics.separatorLine)
+                .roundToDouble();
         canvas.drawRect(
           Rect.fromLTWH(
             x,
-            by + (bh - l.metrics.separatorHeight) / 2,
+            by + l.metrics.separatorInset,
             1,
             l.metrics.separatorHeight,
           ),
@@ -2785,7 +2796,7 @@ class _DockPainter extends CustomPainter {
         // The progress bar replaces the dot (SH-DK-30).
         final bar = RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(l.center(i), by + bh - l.metrics.dot / 2),
+            center: Offset(l.center(i), by + bh - l.metrics.dotAbove),
             width: progressWidth,
             height: progressHeight,
           ),
@@ -2807,7 +2818,7 @@ class _DockPainter extends CustomPainter {
         );
       } else if (item.running && indicators) {
         canvas.drawCircle(
-          Offset(l.center(i), by + bh - l.metrics.dot / 2),
+          Offset(l.center(i), by + bh - l.metrics.dotAbove),
           l.metrics.dot / 2,
           Paint()
             ..color = colors.indicator.withValues(
@@ -2845,7 +2856,7 @@ class _BadgePainter extends CustomPainter {
       final w = badgeWidth(text) * k;
       final rect = Rect.fromLTWH(
         cellRight - badgeRightInset * k - w,
-        iy - (iconTop - badgeTop) * k - (i < lifts.length ? lifts[i] : 0),
+        iy - (badgeIconTop - badgeTop) * k - (i < lifts.length ? lifts[i] : 0),
         w,
         badgeHeight * k,
       );
@@ -2879,9 +2890,10 @@ class _BadgePainter extends CustomPainter {
   bool shouldRepaint(_BadgePainter old) => true;
 }
 
-/// The Dock label (Amalfi: a tooltip, kit `Tooltips/Tooltip/One Line`): Glass/Thick drawn by
-/// Ossido (`tooltip` kind) with radius 8, 24 pt tall, no tip, and the Thick drop shadow
-/// (0, 12, blur 32) outside the shape.
+/// The Dock label (kit `Dock/Label`): Glass/Thick drawn by Ossido (`tooltip` kind), radius 8, a
+/// body [labelHeight] tall and, with [arrow], the 6 pt arrow under it (the widget is then
+/// `height + dockArrowDepth` tall), and the Thick drop shadow (0, 12, blur 32) outside the
+/// shape.
 class DockLabel extends StatelessWidget {
   const DockLabel({
     super.key,
@@ -2890,6 +2902,7 @@ class DockLabel extends StatelessWidget {
     this.group = DockGlass.label,
     this.height = labelHeight,
     this.shadow = true,
+    this.arrow = false,
   });
 
   final String text;
@@ -2899,11 +2912,14 @@ class DockLabel extends StatelessWidget {
   /// panel or the other labels.
   final int group;
 
-  /// The label's height (the kit's tooltip: 24).
+  /// The height of the body (the kit's label: 28).
   final double height;
 
   /// The Thick shadow under the label (the fan's labels have none, DOCK-FAN).
   final bool shadow;
+
+  /// The arrow towards the icon, under the body (the fan's labels have none).
+  final bool arrow;
 
   /// The glass the label declares (`materials.md`: tooltips are Thick).
   static const GlassMaterial material = GlassMaterial.thick;
@@ -2919,9 +2935,16 @@ class DockLabel extends StatelessWidget {
             height: height,
             child: ProfiledGlass(
               profile: ShellGlassProfile.tooltip,
-              radius: AmalfiTooltipMetrics.radius,
+              radius: labelRadius,
               material: material,
               group: group,
+              tip: arrow
+                  ? GlassTip(
+                      x: box.maxWidth / 2,
+                      width: dockArrowHalfBase * 2,
+                      height: dockArrowDepth,
+                    )
+                  : null,
               child: Center(
                 child: Text(
                   text,
@@ -2938,10 +2961,11 @@ class DockLabel extends StatelessWidget {
           AmalfiMaterials.thick,
           brightness,
         );
+        final tip = arrow ? dockArrowDepth : 0.0;
         return CachedShadow(
-          cacheKey: Object.hash(box.maxWidth, height, brightness),
+          cacheKey: Object.hash(box.maxWidth, height, brightness, arrow),
           bleed: 80,
-          paintShadow: _LabelShadow(box.maxWidth, height, shadows).paint,
+          paintShadow: _LabelShadow(box.maxWidth, height + tip, shadows).paint,
           child: capsule,
         );
       },
@@ -2949,31 +2973,37 @@ class DockLabel extends StatelessWidget {
   }
 }
 
-/// The label's shadow: the token's drop shadows of the shape, outside it only.
+/// The label's shadow: the token's drop shadows of the shape (body and arrow), outside it only.
 class _LabelShadow extends CustomPainter {
   const _LabelShadow(this.width, this.height, this.shadows);
+
+  /// The frame, with the arrow if there is one (the body is 6 pt shorter then).
   final double width;
   final double height;
   final List<BoxShadow> shadows;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, width, height),
-      const Radius.circular(AmalfiTooltipMetrics.radius),
-    );
+    final frame = Rect.fromLTWH(0, 0, width, height);
+    final shape = height > labelHeight
+        ? const DockArrowBorder(radius: labelRadius).getOuterPath(frame)
+        : Path.combine(
+            PathOperation.union,
+            Path(),
+            const AmalfiSmoothBorder(radius: labelRadius).getOuterPath(frame),
+          );
     canvas
       ..save()
       ..clipPath(
         Path.combine(
           PathOperation.difference,
-          Path()..addRect(Rect.fromLTWH(0, 0, width, height).inflate(80)),
-          Path()..addRRect(body),
+          Path()..addRect(frame.inflate(80)),
+          shape,
         ),
       );
     for (final shadow in shadows) {
-      canvas.drawRRect(
-        body.shift(shadow.offset).inflate(shadow.spreadRadius),
+      canvas.drawPath(
+        shape.shift(shadow.offset),
         Paint()
           ..color = shadow.color
           ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadow.blurSigma),
