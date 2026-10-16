@@ -1,7 +1,7 @@
 # Assets
 
 Every asset in the repository (images, icons, fonts, sounds, wallpapers) has a row
-here. `cargo xtask assets` blocks files with an asset extension that do not appear in the
+here. `cargo xtask assets check` blocks files with an asset extension that do not appear in the
 Path column.
 
 Allowed licenses: original to the project, CC0, CC-BY, CC BY-SA, OFL, MIT/Apache. Graphics

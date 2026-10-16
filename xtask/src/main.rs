@@ -2,7 +2,10 @@
 //!
 //! - `ci`: fmt, flutter analyze/test, clippy with warnings as errors, tests, layers, assets, unsafe.
 //! - `layers`: checks the forbidden dependencies between layers.
-//! - `assets`: blocks assets without a row in `ASSETS.md`.
+//! - `assets check`: blocks assets without a row in `ASSETS.md`.
+//! - `assets [--icons DIR] [--brand DIR] [--fonts DIR] [--sounds DIR] [--out FILE]`: compiles
+//!   `target/silica.assets` from silica-icons (branch `amalfi-icons`), the fonts, the sounds and
+//!   the wallpapers (docs/assets-format.md).
 //! - `run`: starts Ossido (`--nested` or `--headless`, `--control PORT`); with `--shell` also
 //!   the full shell (wallpaper, menu bar, Dock, Faro, notifications) and the private session
 //!   bus with `silica-daemon`, in release.
@@ -10,7 +13,7 @@
 //!   checked with a screenshot (`vm.rs`, docs/vm.md).
 //! - `os`: development and tests inside the real Silica OS, in a VM on the user's screen:
 //!   `start`, `deploy`, `shot`, `cmd`, `ssh`, `log`, `status`, `stop` (`os.rs`, docs/vm.md).
-//! - `unsafe`: `unsafe` allowed only in the embedder FFI.
+//! - `unsafe`: `unsafe` allowed only in the embedder FFI, Ossido's EGL and silica-assets' ffi.
 //! - `engine`, `bindings`, `keymap`, `bundle <app>`: Flutter for the embedder (see `flutter.rs`).
 
 mod bench;
@@ -18,6 +21,7 @@ mod bench_glass;
 mod flutter;
 mod install;
 mod os;
+mod silica_assets;
 mod vm;
 
 use std::collections::{BTreeSet, HashMap};
@@ -38,7 +42,7 @@ const FORBIDDEN: &[(&str, &str, &str)] = &[(
 /// Crates that bring Flutter: no workspace crate below the shell uses them.
 const FLUTTER_CRATES: &[&str] = &["flutter_rust_bridge"];
 
-/// Extensions treated as assets by `cargo xtask assets`.
+/// Extensions treated as assets by `cargo xtask assets check`.
 const ASSET_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "icns", "ttf", "otf", "woff", "woff2",
     "wav", "ogg", "oga", "mp3", "flac", "xcf", "psd",
@@ -49,7 +53,10 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("ci") => ci(),
         Some("layers") => layers(),
-        Some("assets") => assets(),
+        Some("assets") => match args.get(1).map(String::as_str) {
+            Some("check") => assets_check(),
+            _ => silica_assets::build(args.get(1..).unwrap_or_default()).map(|_| ()),
+        },
         Some("run") => run(args.get(1..).unwrap_or_default()),
         Some("unsafe") => unsafe_check(),
         Some("engine") => match args.get(1).map(String::as_str) {
@@ -76,7 +83,7 @@ fn main() -> ExitCode {
         Some("vm") => vm::vm(args.get(1..).unwrap_or_default()),
         Some("os") => os::os(args.get(1..).unwrap_or_default()),
         _ => Err(
-            "usage: cargo xtask <ci|layers|assets|unsafe|run|vm|os|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
+            "usage: cargo xtask <ci|layers|assets [check]|unsafe|run|vm|os|engine|bindings|keymap|bundle|install-app|install-portal> [arguments]"
                 .to_owned(),
         ),
     };
@@ -145,7 +152,7 @@ fn ci() -> Result<()> {
     ])?;
     cargo(&["test", "--workspace", "--locked"])?;
     layers()?;
-    assets()?;
+    assets_check()?;
     unsafe_check()?;
     eprintln!("xtask: ci ok");
     Ok(())
@@ -396,7 +403,7 @@ fn transitive<'a>(
     found
 }
 
-fn assets() -> Result<()> {
+fn assets_check() -> Result<()> {
     let root = root()?;
     let listing = std::fs::read_to_string(root.join("ASSETS.md"))
         .map_err(|e| format!("unreadable ASSETS.md: {e}"))?;
@@ -440,7 +447,11 @@ fn assets() -> Result<()> {
 
 /// Where `unsafe` is allowed: the embedder FFI and Ossido's EGL initialization
 /// (AGENTS.md, "Never crash").
-const UNSAFE_ALLOWED: [&str; 2] = ["crates/embedder/src/ffi/", "crates/ossido/src/egl.rs"];
+const UNSAFE_ALLOWED: [&str; 3] = [
+    "crates/embedder/src/ffi/",
+    "crates/ossido/src/egl.rs",
+    "crates/silica-assets/src/ffi/",
+];
 
 fn unsafe_check() -> Result<()> {
     let root = root()?;
