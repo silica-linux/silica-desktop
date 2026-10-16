@@ -1,22 +1,20 @@
-//! Glass profiles: the settings of the glass per kind of surface (silica-glass-v1 version 7).
+//! Glass profiles: the Amalfi materials and the settings of the glass per kind of surface
+//! (silica-glass-v1 version 7).
 //!
-//! The material (`glass::MaterialParams`) is the measured color transfer and edge of a glass
-//! family; the profile says how a kind of surface uses it: how much it blurs, how strong the
-//! lens at the edge is and how far it reaches, how bright the edge light and how dark the edge
-//! line, a tint and saturation over the material, and the shadow the compositor may draw
-//! under it. The neutral values (strength 1, width 1, no tint) are the material as measured.
+//! Silica 1.0 "Amalfi" has three glass materials (`docs/design/amalfi/materials.md`, values
+//! from `docs/design/amalfi/tokens.json` → `materials`, `shadows`, `colors.*.Glass/*`):
+//! Glass/Regular, Glass/Thick and Glass/Clear (the lens). Every kind of surface the protocol
+//! names is drawn with one of them ([`GlassKind::amalfi`]), in the render order of the spec:
+//! backdrop → blur → saturation → tint fill → inside rim → rim light (the top inner edge) →
+//! drop shadow outside the shape.
 //!
-//! Each kind also owns its material ([`GlassKind::material`]): the tone (what black, the
-//! reference gray and white become), the edge and the lens. The numbers come from the
-//! GLASS-PROFILES measurement (silica-reference #97); where a value is not measured it is tuned
-//! by eye against the reference captures (`plan/reference/glass.md` and the notes it cites)
-//! and marked *provisional*.
+//! On top of the spec Ossido keeps its sharp share (`MaterialParams::sharp`): the blurred
+//! backdrop is mixed with a little of the sharp one, so the glass "blurs a little and keeps part
+//! of the backdrop sharp". Each kind keeps the share it had before Amalfi until the share is
+//! tuned against the kit's exported images (`docs/design/amalfi/materials.md`, "Implementation
+//! in Ossido").
 
-use crate::glass::{
-    CLEAR_DARK, CLEAR_LIGHT, CONTROL_DARK, CONTROL_LIGHT, MaterialParams, NOTIFICATION_DARK,
-    NOTIFICATION_LIGHT, POPOVER_DARK, POPOVER_LIGHT, REGULAR_DARK, REGULAR_LIGHT, SHEET_DARK,
-    SHEET_LIGHT, THICK_DARK, THICK_LIGHT, TOOLTIP_DARK, TOOLTIP_LIGHT,
-};
+use crate::glass::{MERGE_PT, MaterialParams};
 
 /// The kinds of surface (`silica_glass_v1.profile`, without `default`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,6 +37,17 @@ pub enum GlassKind {
     Sheet,
     /// Notification banners.
     Banner,
+}
+
+/// The three Amalfi glass materials.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Amalfi {
+    /// Light objects close to content: the Dock, banners, HUDs, toolbar controls.
+    Regular,
+    /// Panels you read from: menus, popovers, Faro, the Control Center modules, sheets.
+    Thick,
+    /// The transient lens over a pressed or dragged control (drawn by `silica_ui`).
+    Clear,
 }
 
 /// The shadow under a glass, outside its shape (drawn by Ossido only when the client asks).
@@ -68,27 +77,202 @@ impl GlassShadow {
     }
 }
 
-/// The settings of a kind of surface.
+/// The inside rim: a band just inside the shape's edge filled with a color over the tint.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InsideRim {
+    /// sRGB 0–1 and alpha.
+    pub color: [f32; 4],
+    /// Width of the band, in points.
+    pub width: f32,
+}
+
+impl InsideRim {
+    pub const NONE: Self = Self {
+        color: [0.0; 4],
+        width: 0.0,
+    };
+}
+
+/// The rim light: an inner shadow of a light color, the outside of the shape moved by
+/// `offset_y` and blurred, drawn inside it. With a downward offset it lights the top inner edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RimLight {
+    /// sRGB 0–1 and alpha.
+    pub color: [f32; 4],
+    /// How far the outside is moved down, in points.
+    pub offset_y: f32,
+    /// σ of its blur, in points.
+    pub sigma: f32,
+}
+
+impl RimLight {
+    pub const NONE: Self = Self {
+        color: [0.0; 4],
+        offset_y: 0.0,
+        sigma: 0.0,
+    };
+}
+
+/// One Amalfi material in one appearance: everything but the sharp share (a kind's).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AmalfiMaterial {
+    /// σ of the background blur, in points: the kit's background blur radius, read as the σ
+    /// of a CSS `blur()`.
+    pub sigma: f64,
+    /// Saturation of the blurred backdrop around the Rec. 709 luminance.
+    pub saturation: f32,
+    /// The tint fill over the saturated backdrop (sRGB 0–1 and alpha).
+    pub tint: [f32; 4],
+    pub inside_rim: InsideRim,
+    pub rim_light: RimLight,
+    /// The drop shadow outside the shape (`shadows.2`, `shadows.3`).
+    pub shadow: GlassShadow,
+    /// `Surface/Window`: what the tint covers when the glass cannot blur (reduced transparency).
+    pub fallback: [f32; 3],
+}
+
+/// A `#RRGGBBAA` token as sRGB 0–1 and alpha.
+const fn token(hex: u32) -> [f32; 4] {
+    [
+        ((hex >> 24) & 0xff) as f32 / 255.0,
+        ((hex >> 16) & 0xff) as f32 / 255.0,
+        ((hex >> 8) & 0xff) as f32 / 255.0,
+        (hex & 0xff) as f32 / 255.0,
+    ]
+}
+
+/// A `#RRGGBB` token as sRGB 0–1.
+const fn opaque(hex: u32) -> [f32; 3] {
+    let [r, g, b, _] = token((hex << 8) | 0xff);
+    [r, g, b]
+}
+
+/// A black drop shadow of the kit (`shadows.N`): color `#000000AA`, y offset and blur radius in
+/// points, the blur read as a CSS `box-shadow` blur (σ = blur / 2).
+const fn drop_shadow(color: u32, y: f32, blur: f32) -> GlassShadow {
+    GlassShadow {
+        opacity: token(color)[3],
+        sigma: blur / 2.0,
+        offset_y: y,
+    }
+}
+
+/// `Surface/Window`, light and dark.
+const SURFACE_WINDOW_LIGHT: [f32; 3] = opaque(0xFFFFFF);
+const SURFACE_WINDOW_DARK: [f32; 3] = opaque(0x1B1C1F);
+
+/// `shadows.2` (Glass/Regular) and `shadows.3` (Glass/Thick), light and dark (~2× denser).
+const SHADOW_2_LIGHT: GlassShadow = drop_shadow(0x0000001F, 4.0, 12.0);
+const SHADOW_2_DARK: GlassShadow = drop_shadow(0x00000052, 4.0, 12.0);
+const SHADOW_3_LIGHT: GlassShadow = drop_shadow(0x0000002E, 12.0, 32.0);
+const SHADOW_3_DARK: GlassShadow = drop_shadow(0x0000005C, 12.0, 32.0);
+
+/// The inside rim of every material: 1 pt of `Glass/Rim Dark`.
+const INSIDE_RIM_LIGHT: InsideRim = InsideRim {
+    color: token(0x0000001F),
+    width: 1.0,
+};
+const INSIDE_RIM_DARK: InsideRim = InsideRim {
+    color: token(0x00000066),
+    width: 1.0,
+};
+
+/// The rim light of every material: an inner shadow (x 0, y 1, blur 1) of `Glass/Rim Light`.
+const RIM_LIGHT_LIGHT: RimLight = RimLight {
+    color: token(0xFFFFFFB3),
+    offset_y: 1.0,
+    sigma: 0.5,
+};
+const RIM_LIGHT_DARK: RimLight = RimLight {
+    color: token(0xFFFFFF38),
+    ..RIM_LIGHT_LIGHT
+};
+
+impl Amalfi {
+    pub const ALL: [Self; 3] = [Self::Regular, Self::Thick, Self::Clear];
+
+    /// The name of the material in the kit and in `tokens.json`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Regular => "Glass/Regular",
+            Self::Thick => "Glass/Thick",
+            Self::Clear => "Glass/Clear",
+        }
+    }
+
+    /// The material in the light or dark appearance.
+    pub fn material(self, dark: bool) -> AmalfiMaterial {
+        let (inside_rim, rim_light, fallback) = if dark {
+            (INSIDE_RIM_DARK, RIM_LIGHT_DARK, SURFACE_WINDOW_DARK)
+        } else {
+            (INSIDE_RIM_LIGHT, RIM_LIGHT_LIGHT, SURFACE_WINDOW_LIGHT)
+        };
+        match self {
+            Self::Regular => AmalfiMaterial {
+                sigma: 6.0,
+                saturation: 1.5,
+                tint: token(if dark { 0x2A2B3099 } else { 0xFFFFFF99 }),
+                inside_rim,
+                rim_light,
+                shadow: if dark { SHADOW_2_DARK } else { SHADOW_2_LIGHT },
+                fallback,
+            },
+            Self::Thick => AmalfiMaterial {
+                sigma: 16.0,
+                saturation: 1.5,
+                tint: token(if dark { 0x2A2B30C2 } else { 0xFFFFFFC2 }),
+                inside_rim,
+                rim_light,
+                shadow: if dark { SHADOW_3_DARK } else { SHADOW_3_LIGHT },
+                fallback,
+            },
+            // The refraction, magnification, specular highlight and brightness of the lens are
+            // `silica_ui`'s (the lens is a client-side effect over a control): here only what the
+            // glass pass would draw.
+            Self::Clear => AmalfiMaterial {
+                sigma: 2.0,
+                saturation: 1.0,
+                tint: [0.0; 4],
+                inside_rim,
+                rim_light,
+                shadow: GlassShadow::NONE,
+                fallback,
+            },
+        }
+    }
+}
+
+/// The settings of a kind of surface: its Amalfi material plus what the glass pass needs to
+/// draw it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlassProfile {
-    /// σ of the blur in points; `None`: the material's measured σ.
+    /// σ of the blur in points; `None`: the material's.
     pub sigma: Option<f64>,
-    /// Strength of the edge lens: 1 the measured displacement, 0 none.
+    /// Strength of the edge lens (`MaterialParams::lens`): 1 the material's displacement, 0
+    /// none. Glass/Regular and Glass/Thick have no lens.
     pub refraction: f32,
-    /// Width of the lens band: 1 the measured band, 0.5 half as far from the edge (the curve
+    /// Width of the lens band: 1 the material's band, 0.5 half as far from the edge (the curve
     /// keeps its shape). On a thin shape the band also narrows so that it never reaches past
     /// the far edge ([`lens_width`]).
     pub falloff: f32,
-    /// Edge light (the light rows and the inner glow): 1 as measured.
+    /// Strength of the material's edge light (`MaterialParams::edge`, the light offsets): 1 as
+    /// in the material.
     pub rim: f32,
-    /// Edge dark (the dark line outside and the darker inner bands): 1 as measured.
+    /// Strength of the material's edge dark (the dark offsets and the outline): 1 as in the
+    /// material.
     pub line: f32,
-    /// Saturation over the material's (around the Rec. 709 luminance): 1 unchanged.
+    /// Saturation over the material's color (around the Rec. 709 luminance): 1 unchanged.
     pub saturation: f32,
-    /// A color mixed over the fill (sRGB 0–1, amount in the fourth slot): 0 none.
+    /// The tint fill over the saturated color (sRGB 0–1, alpha in the fourth slot): 0 none.
     pub tint: [f32; 4],
+    /// The band just inside the edge.
+    pub inside_rim: InsideRim,
+    /// The light on the top inner edge.
+    pub rim_light: RimLight,
     /// The shadow under the glass.
     pub shadow: GlassShadow,
+    /// What the tint covers instead of the blurred backdrop at the opaque quality level (sRGB).
+    pub fallback: [f32; 3],
     /// At what fraction of the resolution its blur runs (#204).
     pub blur_scale: BlurScale,
 }
@@ -132,7 +316,7 @@ impl BlurScale {
 }
 
 impl GlassProfile {
-    /// The material as measured, without a shadow.
+    /// The material alone: no saturation, tint, rims or shadow.
     pub const NEUTRAL: Self = Self {
         sigma: None,
         refraction: 1.0,
@@ -141,9 +325,27 @@ impl GlassProfile {
         line: 1.0,
         saturation: 1.0,
         tint: [0.0; 4],
+        inside_rim: InsideRim::NONE,
+        rim_light: RimLight::NONE,
         shadow: GlassShadow::NONE,
+        fallback: SURFACE_WINDOW_LIGHT,
         blur_scale: BlurScale::FULL,
     };
+
+    /// An Amalfi material as a profile, at full resolution.
+    pub fn amalfi(material: AmalfiMaterial) -> Self {
+        Self {
+            sigma: Some(material.sigma),
+            refraction: 0.0,
+            saturation: material.saturation,
+            tint: material.tint,
+            inside_rim: material.inside_rim,
+            rim_light: material.rim_light,
+            shadow: material.shadow,
+            fallback: material.fallback,
+            ..Self::NEUTRAL
+        }
+    }
 
     /// Without the shadow (the client draws its own).
     pub fn without_shadow(self) -> Self {
@@ -153,18 +355,6 @@ impl GlassProfile {
         }
     }
 }
-
-/// The menus' shadow: blur 16 pt (σ ≈ 9.7), 4 pt lower, black 20 % in light and 26 % in
-/// dark: the values `silica_ui`'s menu panel draws, measured on the menus (menubar.md).
-const MENU_SHADOW_LIGHT: GlassShadow = GlassShadow {
-    opacity: 0.20,
-    sigma: 9.7,
-    offset_y: 4.0,
-};
-const MENU_SHADOW_DARK: GlassShadow = GlassShadow {
-    opacity: 0.26,
-    ..MENU_SHADOW_LIGHT
-};
 
 impl GlassKind {
     pub const ALL: [Self; 9] = [
@@ -199,203 +389,79 @@ impl GlassKind {
         Self::ALL.into_iter().find(|kind| kind.name() == name)
     }
 
-    /// The material of this kind (tone, edge, lens) in the light or dark appearance; `None`
-    /// for the panels, which take the material the client declares (Spotlight and the
-    /// launcher are thick glass, an expanded module is regular).
-    pub fn material(self, dark: bool) -> Option<MaterialParams> {
-        let pick =
-            |light: MaterialParams, darker: MaterialParams| if dark { darker } else { light };
+    /// The Amalfi material of this kind ("Where each material goes" in
+    /// `docs/design/amalfi/materials.md`): what you read from is thick (menus, status menus,
+    /// popovers, tooltips, Faro and the launcher, the Control Center modules and their detail
+    /// views, the Notification Centre panel, sheets and system alerts), light objects close to
+    /// content are regular (the Dock and the app switcher, toolbar controls, banners).
+    pub fn amalfi(self) -> Amalfi {
         match self {
-            Self::Dock => Some(pick(CLEAR_LIGHT, CLEAR_DARK)),
-            Self::Module => Some(pick(REGULAR_LIGHT, REGULAR_DARK)),
-            Self::Control => Some(pick(CONTROL_LIGHT, CONTROL_DARK)),
-            Self::Menu => Some(pick(THICK_LIGHT, THICK_DARK)),
-            Self::Popover => Some(pick(POPOVER_LIGHT, POPOVER_DARK)),
-            Self::Tooltip => Some(pick(TOOLTIP_LIGHT, TOOLTIP_DARK)),
-            Self::Sheet => Some(pick(SHEET_LIGHT, SHEET_DARK)),
-            Self::Banner => Some(pick(NOTIFICATION_LIGHT, NOTIFICATION_DARK)),
-            Self::Panel => None,
+            Self::Menu
+            | Self::Popover
+            | Self::Panel
+            | Self::Module
+            | Self::Tooltip
+            | Self::Sheet => Amalfi::Thick,
+            Self::Dock | Self::Control | Self::Banner => Amalfi::Regular,
         }
+    }
+
+    /// The share of the sharp backdrop mixed into the blur: the one each kind had before Amalfi
+    /// (the Dock's 0.28, the thin glass's 0.04, the banners' 0.03 / 0.02, none on thick glass),
+    /// until it is tuned against the kit's images.
+    pub fn sharp(self, dark: bool) -> f32 {
+        match self {
+            Self::Dock => 0.28,
+            Self::Module | Self::Control => 0.04,
+            Self::Banner if dark => 0.02,
+            Self::Banner => 0.03,
+            Self::Menu | Self::Popover | Self::Panel | Self::Tooltip | Self::Sheet => 0.0,
+        }
+    }
+
+    /// The material the glass pass draws this kind with, in the light or dark appearance: its
+    /// Amalfi blur and its sharp share, a neutral color transfer (the profile adds saturation,
+    /// tint and rims), no lens.
+    pub fn material(self, dark: bool) -> MaterialParams {
+        // Banners and Notification Center cards separate even a few points apart.
+        let merge_pt = if self == Self::Banner { 0.0 } else { MERGE_PT };
+        MaterialParams::amalfi(
+            self.amalfi().material(dark).sigma,
+            self.sharp(dark),
+            merge_pt,
+        )
     }
 
     /// The settings of this kind in the light or dark appearance.
     pub fn profile(self, dark: bool) -> GlassProfile {
-        let neutral = GlassProfile::NEUTRAL;
-        let menu_shadow = if dark {
-            MENU_SHADOW_DARK
-        } else {
-            MENU_SHADOW_LIGHT
-        };
-        match self {
-            // Measured (GLASS-PROFILES): blur σ 2.8 pt; the edge light is +64 (light) / +41
-            // (dark) over the grey, against the material's +61 / +38; the lens is the
-            // material's (2-3 pt, gone within 30 pt). No shadow under the Dock in the
-            // captures (dock.md).
-            Self::Dock => GlassProfile {
-                sigma: Some(2.8),
-                rim: if dark { 41.0 / 38.0 } else { 64.0 / 61.0 },
-                // Equivalence (mean / max levels against full resolution): 1×, σ 2.8 px, too
-                // small to reduce; 1.5× f2 0.69 / 3 (light), 0.76 / 3 (dark): passes, but the
-                // Dock is always on screen, so full resolution below 2×; 2× f2 0.47 / 2 and
-                // 0.52 / 2.
-                blur_scale: BlurScale {
-                    below_2x: 1,
-                    from_2x: 2,
-                },
-                ..neutral
+        GlassProfile {
+            blur_scale: self.blur_scale(),
+            ..GlassProfile::amalfi(self.amalfi().material(dark))
+        }
+    }
+
+    /// At what fraction of the resolution this kind blurs (#204): the factors the equivalence
+    /// test passes with (`ossido::glass_equivalence::table_of_factors`, mean / max levels
+    /// against full resolution, the worst backdrop of each, light and dark). The tint covers
+    /// 60–76 % of the backdrop, so a reduced blur shows even less than it did before Amalfi.
+    fn blur_scale(self) -> BlurScale {
+        match self.amalfi() {
+            // σ 16 pt. Menus, popovers, panels, tooltips and sheets (no sharp share): 1× f8
+            // 0.20 / 1, 1.5× f8 0.14 / 1, 2× f8 0.10 / 1; the modules (sharp 0.04): 1× f8
+            // 0.25 / 1, 1.5× f8 0.19 / 1, 2× f8 0.26 / 1.
+            Amalfi::Thick => BlurScale {
+                below_2x: 8,
+                from_2x: 8,
             },
-            // Measured: blur σ 8 pt in dark, 13 pt in light; thick glass, no lens. The shadow
-            // is the one the menus draw.
-            Self::Menu => GlassProfile {
-                sigma: Some(if dark { 8.0 } else { 13.0 }),
-                refraction: 0.0,
-                shadow: menu_shadow,
-                // Equivalence: light 1× f4 0.21 / 2 (f8 0.53 / 3), 1.5× f4 0.19 / 2, 2× f8
-                // 0.22 / 2; dark (σ 8, its strong tone amplifies the rounding) 1× f2 0.51 / 3
-                // (f4 0.93 / 4 fails), 1.5× f2 0.29 / 3, 2× f2 0.40 / 3 (f8 fails).
-                blur_scale: if dark {
-                    BlurScale {
-                        below_2x: 2,
-                        from_2x: 2,
-                    }
-                } else {
-                    BlurScale {
-                        below_2x: 4,
-                        from_2x: 8,
-                    }
-                },
-                ..neutral
+            // σ 6 pt. The Dock, controls and banners: 1× f2 0.24–0.33 / 2 (σ 6 px: f4 would
+            // take it under the 1.5 px floor), 1.5× f2 0.17–0.22 / 1 (f4 0.34–0.46 / 2), 2×
+            // f4 0.17–0.34 / 2. Below 2× the factor stays at 2, a level within the limit.
+            Amalfi::Regular => BlurScale {
+                below_2x: 2,
+                from_2x: 4,
             },
-            // Measured: blur σ 18 pt in dark, 13 pt in light; no lens; the menus' shadow.
-            Self::Popover => GlassProfile {
-                sigma: Some(if dark { 18.0 } else { 13.0 }),
-                refraction: 0.0,
-                shadow: menu_shadow,
-                // Equivalence: light as the menus (1× f4 0.21 / 2, 1.5× f4 0.19 / 2, 2× f8
-                // 0.22 / 2); dark 1× f8 0.52 / 2, 1.5× f8 0.29 / 2, 2× f8 0.29 / 2.
-                blur_scale: if dark {
-                    BlurScale {
-                        below_2x: 8,
-                        from_2x: 8,
-                    }
-                } else {
-                    BlurScale {
-                        below_2x: 4,
-                        from_2x: 8,
-                    }
-                },
-                ..neutral
-            },
-            // Measured: blur σ 4 pt; the edge light is +96 over the grey, against the
-            // material's +94; the lens reaches ~3.5 pt around 15 pt from the edge.
-            Self::Module => GlassProfile {
-                sigma: Some(4.0),
-                rim: 96.0 / 94.0,
-                // Equivalence: 1× f2 1.08 / 5 fails (σ 4 px is too small), so full resolution
-                // below 2×; 2× f2 0.39 / 2 (f4 1.06 / 5 fails).
-                blur_scale: BlurScale {
-                    below_2x: 1,
-                    from_2x: 2,
-                },
-                ..neutral
-            },
-            // Measured: the notification material (no lens). The shadow is the banners' own:
-            // σ 6 pt, 4 pt lower, black 6 % (notifications.md).
-            Self::Banner => GlassProfile {
-                refraction: 0.0,
-                shadow: GlassShadow {
-                    opacity: 0.063,
-                    sigma: 6.0,
-                    offset_y: 4.0,
-                },
-                // Equivalence: 1× f4 0.27 / 2 (light), 0.32 / 2 (dark); 1.5× f4 0.24 / 2,
-                // 0.27 / 2; 2× f8 0.24 / 2, 0.28 / 2.
-                blur_scale: BlurScale {
-                    below_2x: 4,
-                    from_2x: 8,
-                },
-                ..neutral
-            },
-            // Provisional: a large panel shows a gentler lens over a wider band (a module's fold
-            // over 24 pt reads as a dent on a 600 pt panel); search and launcher blur 8–14 pt
-            // (spotlight.md, launcher.md), within the thick material's 9 ± 1 at the middle. The
-            // shadow is the search panel's: blur 42 pt (σ ≈ 24.7), 20 pt lower, black 25 %.
-            Self::Panel => GlassProfile {
-                sigma: Some(10.0),
-                refraction: 0.6,
-                falloff: 1.5,
-                shadow: GlassShadow {
-                    opacity: 0.25,
-                    sigma: 24.7,
-                    offset_y: 20.0,
-                },
-                // Equivalence, over the thick and the regular material: light 1× f2 0.27 / 2
-                // and 0.30 / 2 (f4 0.41 / 3 on regular), 1.5× f2 0.17 / 2 and 0.30 / 2, 2× f4
-                // 0.21 / 2 and 0.30 / 2; dark (thick's strong tone) 1× f2 0.46 / 3, 1.5× f2
-                // 0.34 / 3, 2× f2 0.35 / 3.
-                blur_scale: if dark {
-                    BlurScale {
-                        below_2x: 2,
-                        from_2x: 2,
-                    }
-                } else {
-                    BlurScale {
-                        below_2x: 2,
-                        from_2x: 4,
-                    }
-                },
-                ..neutral
-            },
-            // Measured: blur σ ≈ 6 pt (the tone is the material's). Provisional: the edge light
-            // and the lens; the modules' lens reaches 30 pt inside, on a 24–36 pt control that
-            // reads as a distortion of everything around it, so half the strength over 0.6 of the
-            // band, a slightly softer edge light, no shadow.
-            Self::Control => GlassProfile {
-                sigma: Some(6.0),
-                refraction: 0.5,
-                falloff: 0.6,
-                rim: 0.85,
-                // Equivalence: light 1× f2 0.40 / 2, 1.5× f2 0.29 / 2, 2× f4 0.27 / 2; dark 1×
-                // f2 0.71 / 3, 1.5× f2 0.47 / 3, 2× f2 0.46 / 3 (f4 0.48 / 4 fails).
-                blur_scale: BlurScale {
-                    below_2x: 2,
-                    from_2x: if dark { 2 } else { 4 },
-                },
-                ..neutral
-            },
-            // Tone measured (nearly opaque), no lens (thick glass). Provisional: the edge light
-            // is fainter than a menu's. The shadow is the Dock label's (the menus').
-            Self::Tooltip => GlassProfile {
-                refraction: 0.0,
-                rim: 0.7,
-                shadow: menu_shadow,
-                // Equivalence (nearly opaque: the blur barely shows): 1× f4 0.21 / 1, 1.5× f4
-                // 0.12 / 1, 2× f8 0.13 / 1.
-                blur_scale: BlurScale {
-                    below_2x: 4,
-                    from_2x: 8,
-                },
-                ..neutral
-            },
-            // Measured: opaque (the material is a flat fill), so the blur does not show; no
-            // lens. The shadow is the alerts': blur 40 pt (σ ≈ 23.6), 10 pt lower, black 30 %.
-            // The parent window's dimming (~40 %) is not part of the glass: the compositor draws
-            // it behind the sheet.
-            Self::Sheet => GlassProfile {
-                sigma: Some(13.0),
-                refraction: 0.0,
-                shadow: GlassShadow {
-                    opacity: 0.30,
-                    sigma: 23.6,
-                    offset_y: 10.0,
-                },
-                // Equivalence: opaque, the blur does not show (0 / 0 at every factor).
-                blur_scale: BlurScale {
-                    below_2x: 8,
-                    from_2x: 8,
-                },
-                ..neutral
-            },
+            // σ 2 pt: too small to reduce.
+            Amalfi::Clear => BlurScale::FULL,
         }
     }
 }
@@ -407,10 +473,10 @@ pub const SHEET_PARENT_DIM: f32 = 0.4;
 
 /// The width of the lens band on a shape whose smaller side is `thickness` (pixels), for a
 /// lens that samples at most `reach` pixels inside the edge and a profile `falloff`: the
-/// profile's width, narrowed so the lens never samples past the shape's far edge. The
-/// modules' fold samples the background up to 50 pt inside: on the 64 pt modules it fits as
-/// measured, on a 24 pt pill it read the background beyond the pill (the "far too strong"
-/// refraction of #168) and now gets 0.48 of the band.
+/// profile's width, narrowed so the lens never samples past the shape's far edge. A lens that
+/// samples the background up to 50 pt inside fits a 64 pt shape as it is; on a 24 pt pill it
+/// would read the background beyond the pill (the "far too strong" refraction of #168), so it
+/// gets 0.48 of the band there.
 pub fn lens_width(thickness: f32, reach: f32, falloff: f32) -> f32 {
     let falloff = falloff.max(0.0);
     if reach <= 0.0 || thickness <= 0.0 {
@@ -422,7 +488,15 @@ pub fn lens_width(thickness: f32, reach: f32, falloff: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::glass::REFERENCE_GRAY;
+    use crate::glass::{REFERENCE_GRAY, fallback_color, profile_color};
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-4
+    }
+
+    fn close_rgba(a: [f32; 4], b: [f32; 4]) -> bool {
+        a.iter().zip(b).all(|(a, b)| close(*a, b))
+    }
 
     #[test]
     fn every_kind_has_sane_settings_in_both_appearances() {
@@ -431,207 +505,243 @@ mod tests {
             for dark in [false, true] {
                 let p = kind.profile(dark);
                 let label = format!("{kind:?} dark {dark}");
-                if let Some(sigma) = p.sigma {
-                    assert!((1.0..=20.0).contains(&sigma), "{label}: σ {sigma}");
-                }
+                let sigma = p.sigma.unwrap_or(kind.material(dark).sigma);
+                assert!((1.0..=20.0).contains(&sigma), "{label}: σ {sigma}");
+                assert_eq!(kind.material(dark).sigma, sigma, "{label}");
                 assert!((0.0..=1.0).contains(&p.refraction), "{label}");
                 assert!((0.1..=2.0).contains(&p.falloff), "{label}");
-                assert!((0.0..=1.5).contains(&p.rim), "{label}");
-                assert!((0.0..=1.5).contains(&p.line), "{label}");
                 assert!((0.5..=1.5).contains(&p.saturation), "{label}");
                 assert!((0.0..=1.0).contains(&p.tint[3]), "{label}");
                 assert!((0.0..=0.5).contains(&p.shadow.opacity), "{label}");
                 assert!(p.shadow.reach() <= 120.0, "{label}");
+                assert!((0.0..=0.3).contains(&kind.sharp(dark)), "{label}");
             }
         }
         assert_eq!(GlassKind::from_name("default"), None);
     }
 
-    /// The output level of a gray input: the mean of the channels after the material and the
-    /// profile's saturation and tint, in 0-255.
-    fn level(kind: GlassKind, dark: bool, input: [f32; 3]) -> f32 {
-        let material = kind.material(dark).expect("a material of its own");
-        let [r, g, b] = crate::glass::profile_color(&kind.profile(dark), material.transfer(input));
-        (r + g + b) / 3.0 * 255.0
-    }
-
-    /// The three points of GLASS-PROFILES: black, the reference gray (`#7a7b80`), white.
-    fn tone(kind: GlassKind, dark: bool) -> [f32; 3] {
-        [
-            level(kind, dark, [0.0; 3]),
-            level(kind, dark, REFERENCE_GRAY),
-            level(kind, dark, [1.0; 3]),
-        ]
-    }
-
     #[test]
-    fn each_profile_hits_its_three_measured_points() {
+    fn each_kind_uses_its_amalfi_material() {
         use GlassKind::*;
-        // (kind, dark, black, mid-grey, white); the module is the same in both appearances.
-        let measured = [
-            (Dock, true, [12.0, 105.0, 176.0]),
-            (Dock, false, [38.0, 130.0, 229.0]),
-            (Module, true, [32.0, 107.0, 186.0]),
-            (Module, false, [32.0, 107.0, 186.0]),
-            (Control, true, [34.0, 130.0, 185.0]),
-            (Control, false, [133.0, 193.0, 252.0]),
-            (Menu, true, [32.0, 114.0, 121.0]),
-            (Menu, false, [136.0, 201.0, 254.0]),
-            (Popover, true, [25.0, 112.0, 205.0]),
-            (Popover, false, [136.0, 201.0, 254.0]),
-            (Tooltip, true, [40.0, 60.0, 85.0]),
-            (Tooltip, false, [204.0, 223.0, 229.0]),
+        // "Where each material goes" (materials.md): what you read from is thick, light objects
+        // close to content are regular.
+        let table = [
+            (Menu, Amalfi::Thick),
+            (Popover, Amalfi::Thick),
+            (Panel, Amalfi::Thick),
+            (Module, Amalfi::Thick),
+            (Tooltip, Amalfi::Thick),
+            (Sheet, Amalfi::Thick),
+            (Dock, Amalfi::Regular),
+            (Control, Amalfi::Regular),
+            (Banner, Amalfi::Regular),
         ];
-        for (kind, dark, want) in measured {
-            let got = tone(kind, dark);
-            for (g, w) in got.iter().zip(want) {
-                assert!(
-                    (g - w).abs() <= 3.0,
-                    "{kind:?} dark {dark}: {got:?} want {want:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_sheet_is_opaque() {
-        for dark in [false, true] {
-            let [black, mid, white] = tone(GlassKind::Sheet, dark);
-            assert!(
-                (black - mid).abs() < 0.5 && (mid - white).abs() < 0.5,
-                "{dark}"
-            );
-            // The same fill whatever is behind, even a saturated color.
-            let material = GlassKind::Sheet.material(dark).unwrap();
-            assert_eq!(
-                material.transfer([1.0, 0.0, 0.0]),
-                material.transfer([0.0, 0.0, 1.0])
-            );
-        }
-        assert!((SHEET_PARENT_DIM - 0.4).abs() < 1e-6);
-    }
-
-    #[test]
-    fn each_profile_blurs_by_its_measured_sigma() {
-        use GlassKind::*;
-        let sigma = |kind: GlassKind, dark: bool| {
-            kind.profile(dark)
-                .sigma
-                .unwrap_or_else(|| kind.material(dark).unwrap().sigma)
-        };
-        assert_eq!(sigma(Dock, false), 2.8);
-        assert_eq!(sigma(Dock, true), 2.8);
-        assert_eq!(sigma(Module, false), 4.0);
-        assert_eq!(sigma(Control, false), 6.0);
-        assert_eq!(sigma(Menu, true), 8.0);
-        assert_eq!(sigma(Menu, false), 13.0);
-        assert_eq!(sigma(Popover, true), 18.0);
-        assert_eq!(sigma(Popover, false), 13.0);
-        // The material is close to its profile, so a region without the profile blurs alike.
-        for kind in [Dock, Module, Control, Menu, Popover] {
+        assert_eq!(table.len(), GlassKind::ALL.len());
+        for (kind, material) in table {
+            assert_eq!(kind.amalfi(), material, "{kind:?}");
             for dark in [false, true] {
-                let material = kind.material(dark).unwrap();
-                assert!(
-                    (material.sigma - sigma(kind, dark)).abs() < 0.8,
-                    "{kind:?} {dark}"
-                );
+                let spec = material.material(dark);
+                let p = kind.profile(dark);
+                assert_eq!(p.sigma, Some(spec.sigma), "{kind:?}");
+                assert_eq!(p.saturation, spec.saturation, "{kind:?}");
+                assert_eq!(p.tint, spec.tint, "{kind:?}");
+                assert_eq!(p.inside_rim, spec.inside_rim, "{kind:?}");
+                assert_eq!(p.rim_light, spec.rim_light, "{kind:?}");
+                assert_eq!(p.shadow, spec.shadow, "{kind:?}");
+                assert_eq!(p.fallback, spec.fallback, "{kind:?}");
+                // Glass/Regular and Glass/Thick have no lens: the material's transfer is
+                // neutral and nothing refracts.
+                assert_eq!(p.refraction, 0.0, "{kind:?}");
+                let m = kind.material(dark);
+                assert_eq!(m.lens.max_displacement().0, 0.0, "{kind:?}");
+                assert_eq!(m.transfer([0.2, 0.5, 0.9]), [0.2, 0.5, 0.9], "{kind:?}");
             }
         }
     }
 
     #[test]
-    fn the_edge_light_is_the_measured_one_and_strongest_on_modules_and_dock() {
-        use GlassKind::*;
-        // The top row over the grey: material offset times the profile's strength.
-        let top = |kind: GlassKind, dark: bool| {
-            kind.material(dark).unwrap().edge.top.inner[0] * kind.profile(dark).rim
+    fn glass_regular_is_the_token() {
+        for dark in [false, true] {
+            let m = Amalfi::Regular.material(dark);
+            assert_eq!(m.sigma, 6.0);
+            assert_eq!(m.saturation, 1.5);
+            let tint = if dark {
+                [42.0 / 255.0, 43.0 / 255.0, 48.0 / 255.0, 0.6]
+            } else {
+                [1.0, 1.0, 1.0, 0.6]
+            };
+            assert!(close_rgba(m.tint, tint), "{dark}: {:?}", m.tint);
+            // shadows.2: y 4, blur 12 (σ 6), black 12 % in light, 32 % in dark.
+            assert!(close(m.shadow.opacity, if dark { 0.3216 } else { 0.1216 }));
+            assert_eq!((m.shadow.offset_y, m.shadow.sigma), (4.0, 6.0));
+        }
+    }
+
+    #[test]
+    fn glass_thick_is_the_token() {
+        for dark in [false, true] {
+            let m = Amalfi::Thick.material(dark);
+            assert_eq!(m.sigma, 16.0);
+            assert_eq!(m.saturation, 1.5);
+            let tint = if dark {
+                [42.0 / 255.0, 43.0 / 255.0, 48.0 / 255.0, 194.0 / 255.0]
+            } else {
+                [1.0, 1.0, 1.0, 194.0 / 255.0]
+            };
+            assert!(close_rgba(m.tint, tint), "{dark}: {:?}", m.tint);
+            assert!((m.tint[3] - 0.76).abs() < 0.002);
+            // shadows.3: y 12, blur 32 (σ 16), black 18 % in light, 36 % in dark.
+            assert!(close(m.shadow.opacity, if dark { 0.3608 } else { 0.1804 }));
+            assert_eq!((m.shadow.offset_y, m.shadow.sigma), (12.0, 16.0));
+        }
+    }
+
+    #[test]
+    fn glass_clear_is_the_token() {
+        for dark in [false, true] {
+            let m = Amalfi::Clear.material(dark);
+            assert_eq!(m.sigma, 2.0);
+            assert_eq!(m.saturation, 1.0);
+            assert_eq!(m.tint[3], 0.0);
+            assert_eq!(m.shadow, GlassShadow::NONE);
+            assert_eq!(m.shadow.reach(), 0.0);
+        }
+        assert_eq!(Amalfi::Clear.name(), "Glass/Clear");
+    }
+
+    #[test]
+    fn the_rims_are_the_same_on_every_material_and_stronger_in_dark() {
+        for material in Amalfi::ALL {
+            let light = material.material(false);
+            let dark = material.material(true);
+            // Inside rim: 1 pt of black, 12 % in light, 40 % in dark.
+            for (m, alpha) in [(light, 0.1216), (dark, 0.4)] {
+                assert_eq!(m.inside_rim.width, 1.0, "{material:?}");
+                assert_eq!(m.inside_rim.color[..3], [0.0; 3], "{material:?}");
+                assert!(close(m.inside_rim.color[3], alpha), "{material:?}");
+            }
+            // Rim light: an inner shadow (0, 1, blur 1 → σ 0.5) of white, 70 % in light, 22 %
+            // in dark.
+            for (m, alpha) in [(light, 0.702), (dark, 0.2196)] {
+                assert_eq!(m.rim_light.color[..3], [1.0; 3], "{material:?}");
+                assert!(close(m.rim_light.color[3], alpha), "{material:?}");
+                assert_eq!((m.rim_light.offset_y, m.rim_light.sigma), (1.0, 0.5));
+            }
+            assert!(dark.inside_rim.color[3] > light.inside_rim.color[3]);
+            assert!(dark.rim_light.color[3] < light.rim_light.color[3]);
+        }
+    }
+
+    #[test]
+    fn dark_shadows_are_about_twice_as_dense() {
+        for material in [Amalfi::Regular, Amalfi::Thick] {
+            let ratio =
+                material.material(true).shadow.opacity / material.material(false).shadow.opacity;
+            assert!((1.9..=2.7).contains(&ratio), "{material:?}: {ratio}");
+        }
+        // Thick glass floats higher than regular glass.
+        let regular = Amalfi::Regular.material(false).shadow;
+        let thick = Amalfi::Thick.material(false).shadow;
+        assert!(thick.offset_y > regular.offset_y && thick.sigma > regular.sigma);
+        assert!((thick.reach() - (3.0 * 16.0 + 12.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn saturation_and_tint_follow_the_render_order() {
+        // Over the reference gray (nearly neutral) the saturation barely moves the color; the
+        // tint then covers it: 60 % white on regular glass, 76 % on thick.
+        let level = |kind: GlassKind, dark: bool| {
+            let m = kind.material(dark);
+            let [r, g, b] = profile_color(&kind.profile(dark), m.transfer(REFERENCE_GRAY));
+            [r * 255.0, g * 255.0, b * 255.0]
         };
-        assert!((top(Module, false) - 96.0).abs() < 0.5);
-        assert!((top(Module, true) - 96.0).abs() < 0.5);
-        assert!((top(Dock, true) - 41.0).abs() < 0.5, "{}", top(Dock, true));
+        let gray = REFERENCE_GRAY.map(|c| c * 255.0);
+        let l = 0.2126 * gray[0] + 0.7152 * gray[1] + 0.0722 * gray[2];
+        let saturated = gray.map(|c| l + (c - l) * 1.5);
+        for (kind, dark, tint, amount) in [
+            (GlassKind::Dock, false, [255.0; 3], 0.6),
+            (GlassKind::Menu, false, [255.0; 3], 194.0 / 255.0),
+            (GlassKind::Dock, true, [42.0, 43.0, 48.0], 0.6),
+            (GlassKind::Menu, true, [42.0, 43.0, 48.0], 194.0 / 255.0),
+        ] {
+            let got = level(kind, dark);
+            for c in 0..3 {
+                let want = saturated[c] + (tint[c] - saturated[c]) * amount;
+                assert!((got[c] - want).abs() < 0.05, "{kind:?} {dark}: {got:?}");
+            }
+        }
+        // A saturated color gets more vivid before the tint: red stays redder than the gray.
+        let red = profile_color(&GlassKind::Dock.profile(false), [0.8, 0.3, 0.3]);
+        let plain = [0.8_f32, 0.3, 0.3].map(|c| c + (1.0 - c) * 0.6);
+        assert!(red[0] - red[1] > plain[0] - plain[1], "{red:?}");
+    }
+
+    #[test]
+    fn without_blur_the_tint_covers_the_window_surface() {
+        // Reduced transparency: the tint over Surface/Window (#FFFFFF / #1B1C1F), rims and
+        // shadow kept.
+        let regular_light = fallback_color(&GlassKind::Dock.profile(false));
         assert!(
-            (top(Dock, false) - 64.0).abs() < 0.5,
-            "{}",
-            top(Dock, false)
+            regular_light.iter().all(|c| close(*c, 1.0)),
+            "{regular_light:?}"
         );
-        for dark in [false, true] {
-            for weaker in [Dock, Control, Menu, Popover, Tooltip, Sheet, Banner] {
-                assert!(top(weaker, dark) < top(Module, dark), "{weaker:?} {dark}");
-            }
-        }
-    }
-
-    #[test]
-    fn menus_popovers_tooltips_and_sheets_have_a_dark_outline_outside() {
-        use GlassKind::*;
-        for kind in [Menu, Popover, Tooltip, Sheet] {
-            for dark in [false, true] {
-                let edge = kind.material(dark).unwrap().edge;
-                for side in [edge.top, edge.side, edge.bottom] {
-                    assert!(side.outer[0] >= 0.2, "{kind:?} {dark}: {:?}", side.outer);
-                }
-                assert!(kind.profile(dark).line > 0.0);
-            }
-        }
-        // The dark outline is darker than the light one.
-        let outline = |dark| Menu.material(dark).unwrap().edge.top.outer[0];
-        assert!(outline(true) > outline(false));
-    }
-
-    #[test]
-    fn only_thin_glass_refracts() {
-        use GlassKind::*;
-        let lens = |kind: GlassKind, dark: bool| {
-            let (d, at) = kind.material(dark).unwrap().lens.max_displacement();
-            (d * kind.profile(dark).refraction, at)
-        };
-        // The Control Center: up to ~3.5 pt, around 15 pt from the edge.
-        let (d, at) = lens(Module, false);
+        let thick_dark = fallback_color(&GlassKind::Menu.profile(true));
+        let a = 194.0 / 255.0;
+        let want = [
+            (27.0 * (1.0 - a) + 42.0 * a) / 255.0,
+            (28.0 * (1.0 - a) + 43.0 * a) / 255.0,
+            (31.0 * (1.0 - a) + 48.0 * a) / 255.0,
+        ];
         assert!(
-            (d - 3.5).abs() < 0.3 && (at - 15.0).abs() <= 1.0,
-            "{d} {at}"
+            thick_dark.iter().zip(want).all(|(g, w)| close(*g, w)),
+            "{thick_dark:?}"
         );
-        // The Dock: 2-3 pt.
-        for dark in [false, true] {
-            let (d, _) = lens(Dock, dark);
-            assert!((2.0..=3.0).contains(&d), "{d}");
-        }
-        // Gone within ~30 pt on both.
-        for material in [REGULAR_LIGHT, CLEAR_LIGHT, CLEAR_DARK] {
-            assert!(material.lens.inward_reach() <= 30.0);
-            for curve in [material.lens.side, material.lens.top, material.lens.bottom] {
-                let (t, s) = *curve.last().unwrap();
-                assert!(t <= 30.0 && (s - t).abs() < 1e-6);
-            }
-        }
-        // Thin controls refract, less than the modules.
-        let (d, _) = lens(Control, true);
-        assert!(d > 0.0 && d < 3.5);
-        // Thick glass does not.
-        for kind in [Menu, Popover, Tooltip, Sheet, Banner] {
+        let regular_dark = fallback_color(&GlassKind::Banner.profile(true));
+        assert!((regular_dark[0] * 255.0 - (27.0 * 0.4 + 42.0 * 0.6)).abs() < 0.01);
+        for kind in GlassKind::ALL {
             for dark in [false, true] {
-                assert_eq!(kind.profile(dark).refraction, 0.0, "{kind:?}");
+                let p = kind.profile(dark);
+                assert!(p.inside_rim.color[3] > 0.0 && p.rim_light.color[3] > 0.0);
             }
         }
-        assert_eq!(Menu.material(false).unwrap().lens.max_displacement().0, 0.0);
     }
 
     #[test]
-    fn small_controls_refract_less_and_closer_to_the_edge_than_modules() {
-        let control = GlassKind::Control.profile(false);
-        let module = GlassKind::Module.profile(false);
-        assert!(control.refraction < module.refraction);
-        assert!(control.falloff < module.falloff);
-        // Labels and tooltips: no lens at all.
-        assert_eq!(GlassKind::Tooltip.profile(true).refraction, 0.0);
-        // Panels: gentler, over a wider band.
-        let panel = GlassKind::Panel.profile(false);
-        assert!(panel.refraction < 1.0 && panel.falloff > 1.0);
+    fn each_kind_keeps_its_sharp_share() {
+        use GlassKind::*;
+        assert_eq!(Dock.material(false).sharp, 0.28);
+        assert_eq!(Dock.material(true).sharp, 0.28);
+        assert_eq!(Control.material(false).sharp, 0.04);
+        assert_eq!(Module.material(true).sharp, 0.04);
+        assert_eq!(Banner.material(false).sharp, 0.03);
+        assert_eq!(Banner.material(true).sharp, 0.02);
+        for kind in [Menu, Popover, Panel, Tooltip, Sheet] {
+            assert_eq!(kind.material(false).sharp, 0.0, "{kind:?}");
+        }
+        // Only banners never merge.
+        assert_eq!(Banner.material(false).merge_pt, 0.0);
+        assert_eq!(Menu.material(false).merge_pt, MERGE_PT);
+    }
+
+    #[test]
+    fn each_material_blurs_at_its_validated_scale() {
+        // The factors of the equivalence test (#204): thick glass at an eighth, regular glass
+        // at half below 2× and a quarter from 2×.
+        for kind in GlassKind::ALL {
+            for dark in [false, true] {
+                let scale = kind.profile(dark).blur_scale;
+                let want = match kind.amalfi() {
+                    Amalfi::Thick => (8, 8),
+                    _ => (2, 4),
+                };
+                assert_eq!((scale.factor(1.0), scale.factor(2.0)), want, "{kind:?}");
+            }
+        }
     }
 
     #[test]
     fn the_lens_band_fits_the_shape() {
-        // The modules (64 pt, sampling up to 50 pt inside) keep the measured band.
+        // A 64 pt shape (a lens sampling up to 50 pt inside) keeps the whole band.
         assert_eq!(lens_width(64.0, 50.0, 1.0), 1.0);
         // A 24 pt pill: the lens samples at most 24 pt inside, its far edge.
         let pill = lens_width(24.0, 50.0, 1.0);
@@ -645,13 +755,6 @@ mod tests {
         assert!(lens_width(0.0, 50.0, 1.0) > 0.0);
         assert!(lens_width(1.0, 50.0, 1.0) >= 0.05);
         assert_eq!(lens_width(30.0, 0.0, 0.8), 0.8);
-    }
-
-    #[test]
-    fn a_shadow_reaches_three_sigmas_and_its_offset() {
-        let menu = GlassKind::Menu.profile(false).shadow;
-        assert!((menu.reach() - (3.0 * 9.7 + 4.0)).abs() < 1e-4);
-        assert_eq!(GlassShadow::NONE.reach(), 0.0);
-        assert!(GlassKind::Menu.profile(true).shadow.opacity > menu.opacity);
+        assert!((SHEET_PARENT_DIM - 0.4).abs() < 1e-6);
     }
 }

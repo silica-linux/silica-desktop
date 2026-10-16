@@ -1,11 +1,12 @@
-//! Glass: the background behind a surface, blurred and transformed into the material
-//! color, drawn in the regions declared with `silica-glass-v1`.
+//! Glass: the background behind a surface, blurred and drawn as an Amalfi material in the
+//! regions declared with `silica-glass-v1`.
 //!
 //! For every surface with glass: the elements behind it are redrawn into an offscreen
-//! texture (regions plus the blur margin), blurred with a separable Gaussian, mixed with the
-//! measured sharp share, and a `GlassElement` per region draws it with the color matrix and
-//! superellipse corners. The textures are reused while the background does not change.
-//! Parameters from `plan/reference/glass.md` and `menubar.md` (light appearance).
+//! texture (regions plus the blur margin), blurred with a separable Gaussian and mixed with the
+//! kind's sharp share, and a `GlassElement` per group of regions draws it: saturation, tint
+//! fill, inside rim and rim light, the drop shadow outside, corners and merged shapes from the
+//! signed distance. The textures are reused while the background does not change. The
+//! materials are `docs/design/amalfi/materials.md` (`glass_profile`).
 
 use std::cell::RefCell;
 
@@ -41,9 +42,10 @@ pub struct MaterialParams {
     pub merge_pt: f32,
 }
 
-/// The glass edge, measured across the edges of the reference captures on gray
-/// (`xtask/tools/glass_parity.py`): for each orientation (top, sides, bottom) a profile of
-/// offsets inside the shape and the darkening just outside it. The shader picks the
+/// A material's own edge, by orientation (top, sides, bottom): a profile of offsets inside the
+/// shape and the darkening just outside it. Until Amalfi these were the edges measured on the
+/// reference captures (`xtask/tools/glass_parity.py`); the Amalfi materials draw the rims of
+/// their profile instead and have none ([`Edge::NONE`]). The shader picks the
 /// orientation from the shape's own normal (SDF), so corners, tips and the bridges between
 /// merged shapes blend continuously.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,10 +57,9 @@ pub struct Edge {
 
 /// One orientation of the edge.
 /// - `inner[i]`: offset in levels (0–255) of the i-th point inside the edge, relative to the
-///   fill, as measured on the reference gray. Positive offsets are lights: they add the same
-///   amount over darker backgrounds and less over lighter ones (over white the Dock's +61
-///   row is +8, over black +60: glass.md › Luminous edge), scaled by
-///   min(1, (1 − c) / (1 − c_gray)). Negative offsets are shadows: they multiply.
+///   fill over the reference gray. Positive offsets are lights: they add the same amount over
+///   darker backgrounds and less over lighter ones, scaled by min(1, (1 − c) / (1 − c_gray)).
+///   Negative offsets are shadows: they multiply.
 /// - `outer[i]`: alpha of black on the i-th point outside the edge (a dark outline drawn over
 ///   whatever is behind).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,141 +68,22 @@ pub struct EdgeProfile {
     pub outer: [f32; 2],
 }
 
-const fn profile(inner: [f32; 12], outer: [f32; 2]) -> EdgeProfile {
-    EdgeProfile { inner, outer }
+impl EdgeProfile {
+    pub const NONE: Self = Self {
+        inner: [0.0; 12],
+        outer: [0.0; 2],
+    };
 }
 
-const NONE: [f32; 2] = [0.0, 0.0];
-
-/// Dock, light: 1 pt light row on top and at the bottom (+61 over the `#818289` fill, the
-/// same on both sides in the gray capture) with an inner glow, 1 dark pt on the sides
-/// (61 over the fill's 132), nothing outside. Light Dock over grey (silica-reference, glass.md), columns x 1095–1408 and
-/// rows 1380–1410 (medians).
-const DOCK_EDGE: Edge = Edge {
-    top: profile(
-        [61.0, 13.3, 8.0, 5.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-    side: profile(
-        [-71.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-    bottom: profile(
-        [61.0, 13.3, 8.0, 5.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-};
-
-/// Dock, dark: +38 rows on top and at the bottom over the `#6a6a6f` fill, glow, sides 49 over
-/// the fill's 106 (dark Dock over grey, glass.md).
-const DOCK_DARK_EDGE: Edge = Edge {
-    top: profile(
-        [38.0, 8.3, 5.0, 3.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-    side: profile(
-        [-58.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-    bottom: profile(
-        [38.0, 8.3, 5.0, 3.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        NONE,
-    ),
-};
-
-/// Control Center modules (`regular`): a strong light row on top and at the bottom (+94 /
-/// +90 over the `#6a6b70` fill) with a glow over ~6 pt; on the sides the dark line is
-/// **outside** the module (black ~0.63, the "1 pt border sticking out" of
-/// controlcenter.md), nothing inside. Dark modules over grey (glass.md), the middle rows and columns of the
-/// eleven modules (identical in light).
-const REGULAR_EDGE: Edge = Edge {
-    top: profile(
-        [
-            94.0, 22.8, 13.8, 8.4, 5.8, 3.8, 1.1, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        NONE,
-    ),
-    side: profile(
-        [-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.63, 0.0],
-    ),
-    bottom: profile(
-        [
-            90.0, 19.0, 11.0, 7.7, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        NONE,
-    ),
-};
-
-/// Menus, light: a dark outline all around, outside the body (black ~0.2: menubar.md
-/// "outer line ~24 %", 0.16–0.30 over the shadowed gray of the captures), and inside a light
-/// row, stronger at the bottom (+30) than on top (+14) and faint on the sides (+4, then a
-/// slightly darker band of ~3 levels). Light menu over grey (top) and
-/// light Dock context menu (bottom and sides), glass.md and misc.md.
-const MENU_EDGE: Edge = Edge {
-    top: profile(
-        [14.2, 5.7, 4.8, 3.7, 2.8, 1.8, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.2, 0.015],
-    ),
-    side: profile(
-        [
-            3.7, -3.0, -3.0, -3.0, -3.0, -2.0, -2.0, -1.3, -1.0, -0.3, 0.0, 0.0,
-        ],
-        [0.2, 0.015],
-    ),
-    bottom: profile(
-        [30.4, 5.8, 3.1, 2.1, 1.4, 1.4, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.2, 0.015],
-    ),
-};
-
-/// Menus, dark: an almost black outline outside (black ~0.85, menubar.md `#111112` over the
-/// gray), inside +51 on top, +39 at the bottom, +10 on the sides followed by a darker band
-/// (−12 … −4 over 4 pt). Dark menu over grey and dark Dock context menu (glass.md, misc.md).
-const MENU_DARK_EDGE: Edge = Edge {
-    top: profile(
-        [50.9, 6.2, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.85, 0.025],
-    ),
-    side: profile(
-        [
-            9.5, -12.2, -10.8, -9.2, -4.0, -0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        [0.85, 0.025],
-    ),
-    bottom: profile(
-        [38.7, 9.2, 3.3, 2.0, 1.7, 0.7, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.85, 0.025],
-    ),
-};
-
-/// Notifications: the 1 pt row is dark all around and is **outside** the frame (the client
-/// widens the region by 1 pt per side): `#5e6064` on top and `#636367` at the bottom over a
-/// ~`#c0` fill (−98), `#393a3d` on the sides (black ~0.70). Inside, the first row on top and at
-/// the bottom is ~22 levels lighter, absorbed in 2 pt (`d6 c3 c1 bf`). `notifications.md`,
-/// "Banner · material over gray". Not yet in the parity harness.
-const NOTIFICATION_EDGE: Edge = Edge {
-    top: profile(
-        [
-            -98.0, 22.0, 3.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        NONE,
-    ),
-    side: profile(
-        [
-            -135.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        NONE,
-    ),
-    bottom: profile(
-        [
-            -97.0, 22.0, 3.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        NONE,
-    ),
-};
-
 impl Edge {
+    /// No edge of the material's own (Glass/Regular and Glass/Thick draw the Amalfi rims of
+    /// their profile instead).
+    pub const NONE: Self = Self {
+        top: EdgeProfile::NONE,
+        side: EdgeProfile::NONE,
+        bottom: EdgeProfile::NONE,
+    };
+
     /// The three profiles as `mat4`s: inner 0–11 (0–1 levels), outer 0–1 in 12–13.
     fn uniform(&self) -> UniformValue {
         let pack = |p: &EdgeProfile| {
@@ -232,6 +114,13 @@ pub struct Lens {
 }
 
 impl Lens {
+    /// No lens: Glass/Regular and Glass/Thick do not refract.
+    pub const NONE: Self = Self {
+        side: &[],
+        top: &[],
+        bottom: &[],
+    };
+
     /// How far outside the edge it can sample, in points.
     pub fn outward_reach(&self) -> f32 {
         [self.side, self.top, self.bottom]
@@ -278,229 +167,23 @@ impl Lens {
     }
 }
 
-/// Dock background, light: σ 2.5–3.25 pt (2.75 is used), w 0.28, free matrix with
-/// b = (37.3; 39.1; 36.9), fitted on the gray and ramp captures converted to sRGB with their
-/// display profile (`xtask/tools/glass_parity.py`; rmse 1.88, 2.03 with glass.md's matrix).
-pub const CLEAR_LIGHT: MaterialParams = MaterialParams {
-    sigma: 2.75,
-    sharp: 0.28,
-    matrix: [
-        [1.107, -0.331, -0.022],
-        [-0.148, 0.822, 0.068],
-        [-0.152, -0.345, 1.257],
-    ],
-    offset: [37.3 / 255.0, 39.1 / 255.0, 36.9 / 255.0],
-    curve: [[0.0; 3]; 2],
-    lens: DOCK_LENS,
-    edge: DOCK_EDGE,
-    merge_pt: MERGE_PT,
-};
-
-/// Dock background, dark: σ 2.5–3.25 pt (2.875 is used, halfway), w 0.28. The transfer bends
-/// (darker over light backgrounds than a matrix gives): free matrix with b = (11.4; 12.7; 11.9)
-/// and a quadratic term on the luminance, fitted on the sRGB-converted gray and ramp captures
-/// (`xtask/tools/glass_parity.py`; rmse 1.08, 4.7 with glass.md's matrix alone).
-pub const CLEAR_DARK: MaterialParams = MaterialParams {
-    sigma: 2.875,
-    sharp: 0.28,
-    matrix: [
-        [1.157, -0.259, -0.022],
-        [-0.154, 0.858, 0.147],
-        [-0.082, -0.273, 1.215],
-    ],
-    offset: [11.4 / 255.0, 12.7 / 255.0, 11.9 / 255.0],
-    curve: [[-0.232, -0.212, -0.218], [0.0; 3]],
-    lens: DOCK_LENS,
-    edge: DOCK_DARK_EDGE,
-    merge_pt: MERGE_PT,
-};
-
-/// Dock lens (GLASS-PROFILES, silica-reference #97): the glass shows the background 2-3 pt
-/// further inside, at most ~2.5 pt around 12 pt from the edge, and nothing past ~28 pt (the
-/// same on every side: the measurement does not tell the sides apart). Each point is
-/// (distance from the edge, distance the glass samples at).
-const DOCK_LENS: Lens = Lens {
-    side: DOCK_LENS_CURVE,
-    top: DOCK_LENS_CURVE,
-    bottom: DOCK_LENS_CURVE,
-};
-
-const DOCK_LENS_CURVE: &[(f32, f32)] = &[
-    (0.0, 0.0),
-    (4.0, 5.5),
-    (8.0, 10.3),
-    (12.0, 14.5),
-    (16.0, 18.2),
-    (20.0, 21.5),
-    (24.0, 24.7),
-    (28.0, 28.0),
-];
-
-/// Control Center modules, light: σ 4.5 pt, w 0.04, free matrix with b = (34.2; 31.6; 32.0),
-/// fitted on the sRGB-converted gray and ramp captures (`xtask/tools/glass_parity.py`;
-/// rmse 1.41, 2.5 with glass.md's matrix); identical in dark (glass.md, "Control Center").
-pub const REGULAR_LIGHT: MaterialParams = MaterialParams {
-    sigma: 4.5,
-    sharp: 0.04,
-    matrix: [
-        [0.907, -0.248, -0.064],
-        [-0.140, 0.637, 0.110],
-        [-0.166, -0.278, 1.049],
-    ],
-    offset: [34.2 / 255.0, 31.6 / 255.0, 32.0 / 255.0],
-    curve: [[0.0; 3]; 2],
-    lens: LIQUID_LENS,
-    edge: REGULAR_EDGE,
-    merge_pt: MERGE_PT,
-};
-
-/// Control Center modules, dark: the same fit gives the same matrix within 0.004 (rmse 1.41);
-/// edge as in light ("same identical look in light and dark over gray", controlcenter.md).
-pub const REGULAR_DARK: MaterialParams = REGULAR_LIGHT;
-
-/// The lens of the regular glass (GLASS-PROFILES, silica-reference #97): the Control Center
-/// modules show the background up to ~3.5 pt further inside, at the most around 15 pt from the
-/// edge, and nothing past ~30 pt. The same on every side. (The first measurement, which found
-/// a fold of 17-25 pt in the outer 6 pt, read the edge light as displacement.)
-const LIQUID_LENS: Lens = Lens {
-    side: LIQUID_LENS_CURVE,
-    top: LIQUID_LENS_CURVE,
-    bottom: LIQUID_LENS_CURVE,
-};
-
-const LIQUID_LENS_CURVE: &[(f32, f32)] = &[
-    (0.0, 0.0),
-    (5.0, 7.0),
-    (10.0, 13.2),
-    (15.0, 18.5),
-    (20.0, 22.6),
-    (25.0, 26.2),
-    (30.0, 30.0),
-];
-
-/// The color matrix of a tone: saturation 1.75 around the Rec. 709 luminance (the glass
-/// measurements: s 1.65-1.8) with `gain` on gray. Each tone below adds a uniform offset (the
-/// output for black) and a quadratic term so the gray axis also hits the mid-grey and white
-/// outputs of GLASS-PROFILES (silica-reference #97).
-const fn tone_matrix(gain: f32) -> [[f32; 3]; 3] {
-    // gain * ((1 - s) * L + s * I), s = 1.75: the luminance weights L = (0.2126, 0.7152, 0.0722)
-    // times 1 - s = -0.75, plus s on the diagonal.
-    const D: f32 = 1.75;
-    const R: f32 = -0.75 * 0.2126;
-    const G: f32 = -0.75 * 0.7152;
-    const B: f32 = -0.75 * 0.0722;
-    [
-        [gain * (R + D), gain * G, gain * B],
-        [gain * R, gain * (G + D), gain * B],
-        [gain * R, gain * G, gain * (B + D)],
-    ]
+impl MaterialParams {
+    /// An Amalfi material in the glass pass: a blur of σ `sigma` points with the `sharp` share,
+    /// a neutral color transfer (the profile's saturation and tint make the color), no lens and
+    /// no edge of its own (the profile draws the rims), merging within `merge_pt`.
+    pub const fn amalfi(sigma: f64, sharp: f32, merge_pt: f32) -> Self {
+        Self {
+            sigma,
+            sharp,
+            matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            offset: [0.0; 3],
+            curve: [[0.0; 3]; 2],
+            lens: Lens::NONE,
+            edge: Edge::NONE,
+            merge_pt,
+        }
+    }
 }
-
-const fn flat(level: f32) -> [f32; 3] {
-    [level / 255.0; 3]
-}
-
-const NO_LENS: Lens = Lens {
-    side: &[],
-    top: &[],
-    bottom: &[],
-};
-
-/// Menus, light: black 136, `#7a7b80` 201, white 254 (GLASS-PROFILES). The chroma is the
-/// glass family's (saturation 1.75); gain 0.5719 on gray and a −0.1092 quadratic term give the
-/// three points (the earlier parity fit of the captures, 158/203/237, missed black and white
-/// by more than 3 levels). The blur, 13 pt in light, is the profile's. No lens: thick glass
-/// shows none.
-pub const THICK_LIGHT: MaterialParams = MaterialParams {
-    sigma: 13.0,
-    sharp: 0.0,
-    matrix: tone_matrix(0.5719),
-    offset: flat(136.0),
-    curve: [[-0.1092; 3], [0.0; 3]],
-    lens: NO_LENS,
-    edge: MENU_EDGE,
-    merge_pt: MERGE_PT,
-};
-
-/// Menus, dark: black 32, `#7a7b80` 114, white 121 (GLASS-PROFILES); the transfer saturates
-/// early (gain 0.9418, quadratic term −0.5928). Blur 8 pt, the profile's.
-pub const THICK_DARK: MaterialParams = MaterialParams {
-    sigma: 8.0,
-    matrix: tone_matrix(0.9418),
-    offset: flat(32.0),
-    curve: [[-0.5928; 3], [0.0; 3]],
-    edge: MENU_DARK_EDGE,
-    ..THICK_LIGHT
-};
-
-/// Toolbar glass controls, light: black 133, `#7a7b80` 193, white 252 (GLASS-PROFILES); thin
-/// glass, so the lens of the regular glass. Blur ≈ 6 pt.
-pub const CONTROL_LIGHT: MaterialParams = MaterialParams {
-    sigma: 6.0,
-    sharp: 0.04,
-    matrix: tone_matrix(0.4909),
-    offset: flat(133.0),
-    curve: [[-0.0242; 3], [0.0; 3]],
-    lens: LIQUID_LENS,
-    edge: REGULAR_EDGE,
-    merge_pt: MERGE_PT,
-};
-
-/// Toolbar glass controls, dark: black 34, `#7a7b80` 130, white 185.
-pub const CONTROL_DARK: MaterialParams = MaterialParams {
-    matrix: tone_matrix(0.9304),
-    offset: flat(34.0),
-    curve: [[-0.3382; 3], [0.0; 3]],
-    ..CONTROL_LIGHT
-};
-
-/// Popovers, light: the menus' tone (GLASS-PROFILES: "same as menu"), blur 13 pt.
-pub const POPOVER_LIGHT: MaterialParams = THICK_LIGHT;
-
-/// Popovers, dark: black 25, `#7a7b80` 112, white 205; blur 18 pt (wider than the menus').
-pub const POPOVER_DARK: MaterialParams = MaterialParams {
-    sigma: 18.0,
-    matrix: tone_matrix(0.6843),
-    offset: flat(25.0),
-    curve: [[0.0215; 3], [0.0; 3]],
-    ..THICK_DARK
-};
-
-/// Tooltips, light: black 204, `#7a7b80` 223, white 229 (GLASS-PROFILES): almost opaque, the
-/// background only shows through as a few levels. The blur is not measured (hidden by the
-/// opacity): 8 pt.
-pub const TOOLTIP_LIGHT: MaterialParams = MaterialParams {
-    sigma: 8.0,
-    matrix: tone_matrix(0.2021),
-    offset: flat(204.0),
-    curve: [[-0.1041; 3], [0.0; 3]],
-    ..THICK_LIGHT
-};
-
-/// Tooltips, dark: black 40, `#7a7b80` 60, white 85.
-pub const TOOLTIP_DARK: MaterialParams = MaterialParams {
-    matrix: tone_matrix(0.1440),
-    offset: flat(40.0),
-    curve: [[0.0325; 3], [0.0; 3]],
-    edge: MENU_DARK_EDGE,
-    ..TOOLTIP_LIGHT
-};
-
-/// Sheets, light: opaque (GLASS-PROFILES): no background shows through. The fill is the
-/// menus' over the reference gray, 201 (the level itself is not measured).
-pub const SHEET_LIGHT: MaterialParams = MaterialParams {
-    matrix: [[0.0; 3]; 3],
-    offset: flat(201.0),
-    curve: [[0.0; 3]; 2],
-    ..THICK_LIGHT
-};
-
-/// Sheets, dark: opaque, 114 (the menus' over the reference gray).
-pub const SHEET_DARK: MaterialParams = MaterialParams {
-    offset: flat(114.0),
-    edge: MENU_DARK_EDGE,
-    ..SHEET_LIGHT
-};
 
 pub const BLUR_SHADER: &str = include_str!("shaders/blur.frag");
 pub const BLUR_UNIFORMS: [(&str, UniformType); 2] =
@@ -518,7 +201,7 @@ pub const DOWNSAMPLE_UNIFORMS: [(&str, UniformType); 5] = [
     ("mirror", UniformType::_1f),
 ];
 pub const MATERIAL_SHADER: &str = include_str!("shaders/material.frag");
-pub const MATERIAL_UNIFORMS: [(&str, UniformType); 27] = [
+pub const MATERIAL_UNIFORMS: [(&str, UniformType); 33] = [
     ("tex_size", UniformType::_2f),
     ("shapes", UniformType::Matrix4x4),
     ("radii", UniformType::Matrix4x4),
@@ -546,6 +229,12 @@ pub const MATERIAL_UNIFORMS: [(&str, UniformType); 27] = [
     ("saturation", UniformType::_1f),
     ("tint_color", UniformType::_4f),
     ("shadow", UniformType::_3f),
+    ("edge_on", UniformType::_1f),
+    ("inside_rim", UniformType::_4f),
+    ("inside_rim_width", UniformType::_1f),
+    ("rim_light", UniformType::_4f),
+    ("rim_light_shape", UniformType::_2f),
+    ("fallback", UniformType::_4f),
 ];
 
 /// How fast each orientation's edge (top, sides, bottom) fades around a curve: its weight is
@@ -655,6 +344,15 @@ pub fn profile_color(profile: &GlassProfile, [r, g, b]: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// The fill of a profile without blur (the opaque quality level, reduced transparency): its
+/// tint over its fallback surface, `Surface/Window` (the shader's, with `fallback` on).
+pub fn fallback_color(profile: &GlassProfile) -> [f32; 3] {
+    let [tr, tg, tb, amount] = profile.tint;
+    let [r, g, b] = profile.fallback;
+    let tint = |c: f32, t: f32| c + (t - c) * amount;
+    [tint(r, tr), tint(g, tg), tint(b, tb)]
+}
+
 /// How far the lens reaches inside the glass (the last point of the curves), in points: the
 /// normal is computed on corners at least this wide, so that it does not jump on the diagonal
 /// of a right angle.
@@ -666,8 +364,9 @@ fn lens_extent(lens: &Lens) -> f32 {
 }
 
 /// Glass quality levels: full (blurs everything behind), static frosted (only the desktop
-/// wallpaper: recomputed rarely), opaque (the material over the desktop color, without blur).
-/// For weak GPUs (plan, "Risks").
+/// wallpaper: recomputed rarely), opaque (no blur: the Amalfi fallback, each material's tint
+/// over `Surface/Window`, rims and shadow kept). For weak GPUs (plan, "Risks") and for reduced
+/// transparency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlassQuality {
     Full,
@@ -684,50 +383,6 @@ impl GlassQuality {
         }
     }
 }
-
-/// Notification glass, light appearance: banners and Notification Center. Blur σ 10–11 pt
-/// without a sharp component; matrix of the Center's second notification, the most reliable
-/// (rmse 3.5; the card on top of a stack has more offset and less gain). The offset measured
-/// there (141, 139, 139) includes the Center's scrim: here it is recomputed so that over the
-/// reference gray (`#7a7b80`) the fill is that of the isolated banner, `#c0c1c6`. Near the
-/// top and bottom edges a slight horizontal magnification (~4 % at 5–6 pt), invisible under
-/// this blur: no lens (notifications.md, "Banner").
-pub const NOTIFICATION_LIGHT: MaterialParams = MaterialParams {
-    sigma: 10.5,
-    sharp: 0.03,
-    matrix: [
-        [0.632, -0.150, -0.096],
-        [-0.052, 0.469, -0.023],
-        [-0.132, -0.202, 0.731],
-    ],
-    offset: [145.6 / 255.0, 144.6 / 255.0, 145.3 / 255.0],
-    curve: [[0.0; 3]; 2],
-    lens: Lens {
-        side: &[],
-        top: &[],
-        bottom: &[],
-    },
-    edge: NOTIFICATION_EDGE,
-    // Cards separate even a few points apart (Notification Center).
-    merge_pt: 0.0,
-};
-
-/// Notification glass, dark: σ 10.75–11 pt (10.9 is used), w 0.02, matrix of the second
-/// notification (rmse 7.43). As in light the measured offset includes the Center's scrim: here
-/// it is recomputed so that over gray the fill is that of the isolated banner, `#75767b`
-/// (notifications.md, "Color matrix" and "Center"). The dark edge is not measured: as in
-/// light.
-pub const NOTIFICATION_DARK: MaterialParams = MaterialParams {
-    sigma: 10.9,
-    sharp: 0.02,
-    matrix: [
-        [0.757, -0.256, -0.091],
-        [-0.111, 0.512, 0.012],
-        [-0.148, -0.297, 0.857],
-    ],
-    offset: [67.8 / 255.0, 67.0 / 255.0, 67.9 / 255.0],
-    ..NOTIFICATION_LIGHT
-};
 
 /// Gap between two regions of the same material below which they join into a single shape,
 /// like drops (smooth union of the distances, k = 2 · MERGE_PT: two edges at distance g touch
@@ -1235,6 +890,7 @@ impl GlassCache {
                     area,
                     shapes,
                     program: programs.material.clone(),
+                    fallback: cached.quality == GlassQuality::Opaque,
                 })
             })
             .collect())
@@ -1635,6 +1291,11 @@ fn blur(
     )
 }
 
+/// A color with alpha as a `vec4` uniform.
+fn rgba([r, g, b, a]: [f32; 4]) -> UniformValue {
+    UniformValue::_4f(r, g, b, a)
+}
+
 /// A glass region ready to draw.
 #[derive(Debug, Clone)]
 pub struct GlassElement {
@@ -1648,6 +1309,8 @@ pub struct GlassElement {
     /// The regions of the group (same material, at most `MAX_SHAPES`).
     shapes: Vec<PhysicalRegion>,
     program: GlesTexProgram,
+    /// No blur (the opaque quality level): the tint over the profile's fallback surface.
+    fallback: bool,
 }
 
 impl Element for GlassElement {
@@ -1825,21 +1488,39 @@ impl RenderElement<GlesRenderer> for GlassElement {
             Uniform::new("rim", UniformValue::_1f(profile.rim)),
             Uniform::new("line", UniformValue::_1f(profile.line)),
             Uniform::new("saturation", UniformValue::_1f(profile.saturation)),
-            Uniform::new(
-                "tint_color",
-                UniformValue::_4f(
-                    profile.tint[0],
-                    profile.tint[1],
-                    profile.tint[2],
-                    profile.tint[3],
-                ),
-            ),
+            Uniform::new("tint_color", rgba(profile.tint)),
             Uniform::new(
                 "shadow",
                 UniformValue::_3f(
                     profile.shadow.opacity,
                     profile.shadow.sigma * px,
                     profile.shadow.offset_y * px,
+                ),
+            ),
+            Uniform::new(
+                "edge_on",
+                UniformValue::_1f(if edge == Edge::NONE { 0.0 } else { 1.0 }),
+            ),
+            Uniform::new("inside_rim", rgba(profile.inside_rim.color)),
+            Uniform::new(
+                "inside_rim_width",
+                UniformValue::_1f(profile.inside_rim.width * px),
+            ),
+            Uniform::new("rim_light", rgba(profile.rim_light.color)),
+            Uniform::new(
+                "rim_light_shape",
+                UniformValue::_2f(
+                    profile.rim_light.offset_y * px,
+                    profile.rim_light.sigma * px,
+                ),
+            ),
+            Uniform::new(
+                "fallback",
+                UniformValue::_4f(
+                    profile.fallback[0],
+                    profile.fallback[1],
+                    profile.fallback[2],
+                    if self.fallback { 1.0 } else { 0.0 },
                 ),
             ),
         ];
@@ -1968,7 +1649,7 @@ mod tests {
         let region = |rotation: f64| PhysicalRegion {
             rect: Rectangle::new((100, 50).into(), (120, 28).into()),
             radius: 14.0,
-            material: THICK_LIGHT,
+            material: MaterialParams::amalfi(16.0, 0.0, MERGE_PT),
             opacity: 1.0,
             scale: 1.0,
             tip: None,

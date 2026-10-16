@@ -18,8 +18,7 @@
 
 use ossido_render::bar_material::{self, BarPrograms, BarTone};
 use ossido_render::glass::{
-    GlassCache, GlassElement, GlassPrograms, GlassQuality, PhysicalRegion, REGULAR_LIGHT,
-    THICK_DARK, THICK_LIGHT, effective_factor,
+    GlassCache, GlassElement, GlassPrograms, GlassQuality, PhysicalRegion, effective_factor,
 };
 use ossido_render::glass_profile::{BlurScale, GlassKind, GlassProfile};
 use smithay::backend::allocator::Fourcc;
@@ -481,8 +480,7 @@ const SCALES: [f64; 3] = [1.0, 1.5, 2.0];
 const MAX_MEAN: f64 = 1.0;
 const MAX_ANY: u8 = 3;
 
-/// A glass kind as Ossido draws it: its profile and material in an appearance (the panels
-/// take the material the client declares: thick or regular).
+/// A glass kind as Ossido draws it: its Amalfi profile and material in an appearance.
 struct Case {
     name: String,
     profile: GlassProfile,
@@ -494,29 +492,11 @@ fn cases() -> Vec<Case> {
     for kind in GlassKind::ALL {
         for dark in [false, true] {
             let appearance = if dark { "dark" } else { "light" };
-            let profile = kind.profile(dark);
-            match kind.material(dark) {
-                Some(material) => cases.push(Case {
-                    name: format!("{}-{appearance}", kind.name()),
-                    profile,
-                    material,
-                }),
-                None => {
-                    let thick = if dark { THICK_DARK } else { THICK_LIGHT };
-                    let regular = if dark {
-                        ossido_render::glass::REGULAR_DARK
-                    } else {
-                        REGULAR_LIGHT
-                    };
-                    for (label, material) in [("thick", thick), ("regular", regular)] {
-                        cases.push(Case {
-                            name: format!("{}-{label}-{appearance}", kind.name()),
-                            profile,
-                            material,
-                        });
-                    }
-                }
-            }
+            cases.push(Case {
+                name: format!("{}-{appearance}", kind.name()),
+                profile: kind.profile(dark),
+                material: kind.material(dark),
+            });
         }
     }
     cases
@@ -786,7 +766,7 @@ fn scene(gpu: &mut Gpu, scale: f64, dark: bool) -> Scene {
     let case = Case {
         name: "dock".to_owned(),
         profile: GlassKind::Dock.profile(dark),
-        material: GlassKind::Dock.material(dark).unwrap(),
+        material: GlassKind::Dock.material(dark),
     };
     let region = region(&case, scale, case.profile.blur_scale);
     Scene {

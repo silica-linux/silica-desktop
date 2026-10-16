@@ -9,9 +9,7 @@ use ossido_render::animation;
 use ossido_render::border::WindowBorder;
 use ossido_render::corners::{RoundedSurface, WindowSurface};
 use ossido_render::glass::{
-    CLEAR_DARK, CLEAR_LIGHT, GlassCache, GlassElement, GlassQuality, NOTIFICATION_DARK,
-    NOTIFICATION_LIGHT, PhysicalRegion, REGULAR_DARK, REGULAR_LIGHT, THICK_DARK, THICK_LIGHT, Tip,
-    render_to_texture,
+    GlassCache, GlassElement, GlassQuality, PhysicalRegion, Tip, render_to_texture,
 };
 use ossido_render::shadow::WindowShadow;
 use ossido_render::title::Title;
@@ -38,7 +36,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::warn;
 
 use crate::decorations;
-use crate::glass::{Material, Shape, current_regions};
+use crate::glass::{Shape, current_regions};
 
 render_elements! {
     pub OutputElement<=GlesRenderer>;
@@ -1365,19 +1363,9 @@ pub fn output_elements(
                             .to_physical_precise_round(scale),
                     ),
                     radius: region.radius * scale,
-                    // The kind's own tone, edge and lens; the panels take the declared material.
-                    material: region.kind().kind().material(dark).unwrap_or(
-                        match region.material {
-                            Material::Clear if dark => CLEAR_DARK,
-                            Material::Thick if dark => THICK_DARK,
-                            Material::Regular if dark => REGULAR_DARK,
-                            Material::Notification if dark => NOTIFICATION_DARK,
-                            Material::Clear => CLEAR_LIGHT,
-                            Material::Thick => THICK_LIGHT,
-                            Material::Regular => REGULAR_LIGHT,
-                            Material::Notification => NOTIFICATION_LIGHT,
-                        },
-                    ),
+                    // The kind's Amalfi material (the declared material only picks the kind
+                    // when the region declares none).
+                    material: region.kind().kind().material(dark),
                     opacity: region.opacity as f32 * anchor.opacity,
                     scale,
                     tip: match region.shape {

@@ -19,6 +19,7 @@ import '../l10n/l10n.dart';
 import '../system/glass_profile.dart';
 import '../system/system_status.dart';
 import 'glyphs.dart';
+import 'palette.dart';
 
 const Size hudSize = Size(292, 64);
 const double hudMargin = 10;
@@ -172,6 +173,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
         ? hudVanishScale(vanishMs)
         : hudAppearScale(_appear.value);
     final s = widget.system.value;
+    final palette = CcPalette.of(context);
     final volume = _kind == HudKind.volume;
     final keyboard = _kind == HudKind.keyboard;
     final value = switch (_kind) {
@@ -218,7 +220,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       top: 0,
                       bottom: 0,
                       child: ProfiledGlass(
-                        profile: ShellGlassProfile.module,
+                        profile: ShellGlassProfile.control,
                         radius: hudRadius,
                         material: GlassMaterial.regular,
                       ),
@@ -236,7 +238,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                           package: 'silica_ui',
                           fontSize: hudTitleSize,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFFFFFFFF),
+                          color: palette.text,
                         ),
                       ),
                     ),
@@ -245,7 +247,7 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                       top: hudTrackTop,
                       width: hudTrackLength,
                       height: hudTrackHeight,
-                      child: CustomPaint(painter: _HudTrack(value)),
+                      child: CustomPaint(painter: _HudTrack(value, palette)),
                     ),
                     for (var i = 0; i < hudDots; i++)
                       Positioned(
@@ -253,29 +255,23 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
                         top: hudDotsTop,
                         width: 2,
                         height: 2,
-                        child: const ColoredBox(color: hudDot),
+                        child: ColoredBox(
+                          color: palette.light ? palette.hudDot : hudDot,
+                        ),
                       ),
                     Positioned(
                       left: 13,
                       top: hudIconCenterY - 6.5,
                       width: 13,
                       height: 13,
-                      child: Glyph(
-                        small,
-                        color: const Color(0xFFFFFFFF),
-                        size: 13,
-                      ),
+                      child: Glyph(small, color: palette.text, size: 13),
                     ),
                     Positioned(
                       left: 258,
                       top: hudIconCenterY - 8,
                       width: 16,
                       height: 16,
-                      child: Glyph(
-                        large,
-                        color: const Color(0xFFFFFFFF),
-                        size: 16,
-                      ),
+                      child: Glyph(large, color: palette.text, size: 16),
                     ),
                   ],
                 ),
@@ -289,7 +285,8 @@ class _SystemHudState extends State<SystemHud> with TickerProviderStateMixin {
 }
 
 class _HudTrack extends CustomPainter {
-  const _HudTrack(this.value);
+  const _HudTrack(this.value, this.palette);
+  final CcPalette palette;
 
   /// Null: muted, the track stays empty.
   final double? value;
@@ -299,7 +296,7 @@ class _HudTrack extends CustomPainter {
     final radius = Radius.circular(size.height / 2);
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = hudTrackRest,
+      Paint()..color = palette.light ? palette.trackRest : hudTrackRest,
     );
     final v = value;
     if (v == null || v <= 0) return;
@@ -313,10 +310,11 @@ class _HudTrack extends CustomPainter {
         ),
         radius,
       ),
-      Paint()..color = const Color(0xFFFFFFFF),
+      Paint()..color = palette.trackFill,
     );
   }
 
   @override
-  bool shouldRepaint(_HudTrack old) => old.value != value;
+  bool shouldRepaint(_HudTrack old) =>
+      old.value != value || old.palette != palette;
 }

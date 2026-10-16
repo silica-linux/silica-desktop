@@ -43,6 +43,7 @@ import 'glyphs.dart';
 import 'edit.dart';
 import 'hud.dart';
 import 'modules.dart';
+import 'palette.dart';
 
 const double stackWidth = 292;
 const double columnWidth = 140;
@@ -56,7 +57,6 @@ const double pillTop = 40;
 const double pillHeight = 24;
 const double pillShift = 28;
 const Color pillIcon = Color(0xFF6E7CFF);
-const Color pillText = Color(0xFFF0F0F1);
 const double rowHeight = 64;
 const double rowStep = rowHeight + gap;
 const double capsuleRadius = 32;
@@ -81,7 +81,6 @@ const double titleSize = 12.4;
 const double statusMenuTop = 31;
 const double statusMenuRight = 9;
 const double subtitleSize = 11;
-const Color textColor = Color(0xFFFFFFFF);
 
 /// Sliders: 4 pt track, white fill up to `x0 + 10 + v · (L − 20)`, the rest `#7e7f84`;
 /// track from 36 to 255 pt from the module edge, icons at 15 and 260.
@@ -89,7 +88,6 @@ const double trackLeft = 36;
 const double trackLength = 219;
 const double trackHeight = 4;
 const double trackCenter = 42;
-const Color trackRest = Color(0xFF7E7F84);
 
 /// Stack shadow: −10 levels on the left edge, nothing at ~130 pt, ~−12 between the stack
 /// and the right edge of the screen and above: a gaussian of σ ~65 pt of a rectangle going
@@ -171,7 +169,6 @@ double sliderFill(double value, {double length = trackLength}) =>
 const double outputsShift = 44;
 const double outputsCenter = 265.5;
 const double outputsSide = 26;
-const Color outputsFill = Color(0x3DFFFFFF);
 
 /// A module: rectangle relative to the stack and radius.
 @immutable
@@ -213,7 +210,6 @@ TextStyle _text(double size, {FontWeight? weight}) => TextStyle(
   package: 'silica_ui',
   fontSize: size,
   fontWeight: weight,
-  color: textColor,
   height: 14 / size,
 );
 
@@ -580,18 +576,21 @@ class _ControlCenterState extends State<ControlCenter>
   }
 
   late final OverlayEntry _layer = OverlayEntry(
-    builder: (context) => Stack(
-      children: [
-        Positioned.fill(child: _center(context)),
-        if (_wifiMenuRight case final right?)
-          Positioned.fill(child: _wifiMenu(widget.system.value, right)),
-        // The volume and brightness HUD: not with the Center open.
-        Positioned.fill(
-          child: IgnorePointer(
-            child: SystemHud(system: widget.system, suppressed: _open),
+    builder: (context) => DefaultTextStyle.merge(
+      style: CcPalette.of(context).textStyle,
+      child: Stack(
+        children: [
+          Positioned.fill(child: _center(context)),
+          if (_wifiMenuRight case final right?)
+            Positioned.fill(child: _wifiMenu(widget.system.value, right)),
+          // The volume and brightness HUD: not with the Center open.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: SystemHud(system: widget.system, suppressed: _open),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 
@@ -975,7 +974,8 @@ class _ControlCenterState extends State<ControlCenter>
   /// The content of the open detail.
   DetailContent? _detailContent(SystemSnapshot s) {
     final system = widget.system;
-    Widget track(double? v) => CustomPaint(painter: _Track(v));
+    Widget track(double? v) =>
+        CustomPaint(painter: _Track(v, CcPalette.of(context)));
     final l = l10nOf(context);
     return switch (_detail) {
       'wifi' => wifiDetail(
@@ -1362,6 +1362,7 @@ class _Capsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final widget = this;
+    final palette = CcPalette.of(context);
     final hover = ModuleHoverScope.of(context);
     final arrowable = widget.onOpen != null && widget.enabled;
     final capsule = Stack(
@@ -1383,12 +1384,18 @@ class _Capsule extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: widget.active ? discOn : discOff,
+                // Light: the glass is near-white, so the active disc is the accent
+                // with a white glyph; dark: a white disc with the accent glyph.
+                color: widget.active
+                    ? (palette.light ? widget.activeGlyph : discOn)
+                    : discOff,
               ),
               child: Center(
                 child: Glyph(
                   widget.glyph,
-                  color: widget.active ? widget.activeGlyph : glyphOff,
+                  color: widget.active
+                      ? (palette.light ? glyphOff : widget.activeGlyph)
+                      : glyphOff,
                   level: widget.glyphLevel,
                 ),
               ),
@@ -1433,7 +1440,7 @@ class _Capsule extends StatelessWidget {
               child: Opacity(
                 key: const ValueKey('detail chevron'),
                 opacity: hover.progress,
-                child: const Chevron(color: textColor),
+                child: Chevron(color: palette.text),
               ),
             ),
           ),
@@ -1470,7 +1477,6 @@ const double hoverChevronRight = 16;
 /// The change starts after ~50 ms (10 %), is half done at ~150 ms and done at ~300 ms, the
 /// same in and out and for every module.
 const Duration hoverDuration = Duration(milliseconds: 300);
-const Color moduleHoverLift = Color(0x0CFFFFFF);
 
 /// The volume knob (~18 x 14 pt) shows ~330 ms after the pointer enters the module and goes
 /// ~60 ms after it leaves.
@@ -1532,6 +1538,9 @@ class ModuleHoverScope extends InheritedWidget {
 
 /// Wraps a module of the stack: the hover lift over the whole module (its [radius]) and the
 /// scope its content reads.
+/// The hover lift in dark (the light one is in [CcPalette]).
+const Color moduleHoverLift = Color(0x0CFFFFFF);
+
 class _ModuleHover extends StatefulWidget {
   const _ModuleHover({required this.radius, required this.child});
 
@@ -1593,8 +1602,8 @@ class _ModuleHoverState extends State<_ModuleHover>
                   child: DecoratedBox(
                     key: const ValueKey('module hover'),
                     decoration: BoxDecoration(
-                      color: moduleHoverLift.withValues(
-                        alpha: moduleHoverLift.a * _progress,
+                      color: CcPalette.of(context).hoverLift.withValues(
+                        alpha: CcPalette.of(context).hoverLift.a * _progress,
                       ),
                       borderRadius: BorderRadius.circular(widget.radius),
                     ),
@@ -1689,15 +1698,20 @@ class _RoundToggleState extends State<_RoundToggle> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
+    final palette = CcPalette.of(context);
+    // Active: the whole module white with a black glyph in dark; the accent with a white
+    // glyph in light (the glass is near-white there).
     final tile = DecoratedBox(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: widget.active ? discOn : null,
+        color: widget.active ? (palette.light ? glyphOn : discOn) : null,
       ),
       child: Center(
         child: Glyph(
           widget.glyph,
-          color: widget.active ? const Color(0xFF000000) : glyphOff,
+          color: widget.active
+              ? (palette.light ? glyphOff : const Color(0xFF000000))
+              : palette.text,
           size: 24,
         ),
       ),
@@ -1741,8 +1755,6 @@ class _Media extends StatefulWidget {
 const double mediaButtonSide = 30;
 const List<double> mediaButtonCenters = [30, 70, 110];
 const double mediaArtRadius = 8;
-const Color mediaTitle = Color(0xE6FFFFFF);
-const Color mediaSubtitle = Color(0x85FFFFFF);
 const double mediaGlyphActive = 0.52;
 const double mediaGlyphDisabled = 0.35;
 const double mediaGlyphPressed = 0.96;
@@ -1824,7 +1836,7 @@ class _MediaState extends State<_Media> {
             },
             painter: _TransportPainter(
               transport,
-              const Color(0xFFFFFFFF).withValues(alpha: alpha),
+              CcPalette.of(context).text.withValues(alpha: alpha),
             ),
           ),
         ),
@@ -1870,7 +1882,7 @@ class _MediaState extends State<_Media> {
                         style: _text(
                           titleSize,
                           weight: FontWeight.w600,
-                        ).copyWith(color: mediaTitle),
+                        ).copyWith(color: CcPalette.of(context).text),
                       ),
                       if (now.byline.isNotEmpty)
                         Text(
@@ -1880,7 +1892,7 @@ class _MediaState extends State<_Media> {
                           overflow: TextOverflow.ellipsis,
                           style: _text(
                             subtitleSize,
-                          ).copyWith(color: mediaSubtitle),
+                          ).copyWith(color: CcPalette.of(context).secondary),
                         ),
                     ],
                   )
@@ -1932,9 +1944,7 @@ const double nowPlayingButton = 26;
 const List<double> nowPlayingButtonLefts = [148, 204, 260];
 const double nowPlayingButtonTop = 64;
 const Rect nowPlayingProgress = Rect.fromLTWH(140, 102, 154, 12);
-const Color nowPlayingTrack = Color(0xFF232323);
 const Color nowPlayingElapsed = Color(0xFF1482FF);
-const Color nowPlayingTime = Color(0xFFB7B8BE);
 
 /// "01:03", "1:02:03".
 String mediaTime(Duration d) {
@@ -1991,7 +2001,7 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
               },
               painter: _TransportPainter(
                 kind,
-                const Color(0xFFFFFFFF).withValues(
+                CcPalette.of(context).text.withValues(
                   alpha: enabled ? mediaGlyphActive : mediaGlyphDisabled,
                 ),
               ),
@@ -2012,7 +2022,9 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
     final fraction = length > Duration.zero
         ? (position.inMilliseconds / length.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
-    final timeStyle = _text(10).copyWith(color: nowPlayingTime, height: 1.3);
+    final timeStyle = _text(
+      10,
+    ).copyWith(color: CcPalette.of(context).secondary, height: 1.3);
     return Stack(
       children: [
         Positioned(
@@ -2044,7 +2056,7 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
                 style: _text(
                   titleSize,
                   weight: FontWeight.w600,
-                ).copyWith(color: mediaTitle),
+                ).copyWith(color: CcPalette.of(context).text),
               ),
               if (now != null && now.byline.isNotEmpty)
                 Text(
@@ -2052,7 +2064,9 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.ellipsis,
-                  style: _text(subtitleSize).copyWith(color: mediaSubtitle),
+                  style: _text(
+                    subtitleSize,
+                  ).copyWith(color: CcPalette.of(context).secondary),
                 ),
             ],
           ),
@@ -2072,7 +2086,12 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
         _button(_Transport.next, 2, now?.canNext ?? false, _players.next),
         Positioned.fromRect(
           rect: nowPlayingProgress,
-          child: CustomPaint(painter: _ProgressPainter(fraction)),
+          child: CustomPaint(
+            painter: _ProgressPainter(
+              fraction,
+              CcPalette.of(context).nowPlayingTrack,
+            ),
+          ),
         ),
         if (length > Duration.zero)
           Positioned(
@@ -2093,8 +2112,9 @@ class _NowPlayingDetailState extends State<_NowPlayingDetail> {
 }
 
 class _ProgressPainter extends CustomPainter {
-  const _ProgressPainter(this.fraction);
+  const _ProgressPainter(this.fraction, this.rest);
   final double fraction;
+  final Color rest;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2107,7 +2127,7 @@ class _ProgressPainter extends CustomPainter {
       const Radius.circular(2),
     );
     canvas
-      ..drawRRect(track, Paint()..color = nowPlayingTrack)
+      ..drawRRect(track, Paint()..color = rest)
       ..save()
       ..clipRect(Rect.fromLTWH(0, 0, size.width * fraction, size.height))
       ..drawRRect(track, Paint()..color = nowPlayingElapsed)
@@ -2115,7 +2135,8 @@ class _ProgressPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ProgressPainter old) => old.fraction != fraction;
+  bool shouldRepaint(_ProgressPainter old) =>
+      old.fraction != fraction || old.rest != rest;
 }
 
 enum _Transport { previous, play, pause, next }
@@ -2234,7 +2255,7 @@ class _SliderModule extends StatelessWidget {
           top: trackCenter - 8,
           width: 16 + 8,
           height: 16,
-          child: Glyph(low, color: textColor, size: 16),
+          child: Glyph(low, color: CcPalette.of(context).text, size: 16),
         ),
         Positioned(
           left: trackLeft,
@@ -2242,7 +2263,11 @@ class _SliderModule extends StatelessWidget {
           width: _length,
           height: trackHeight,
           child: CustomPaint(
-            painter: _Track(enabled ? value : null, length: _length),
+            painter: _Track(
+              enabled ? value : null,
+              CcPalette.of(context),
+              length: _length,
+            ),
           ),
         ),
         if (onOutputs != null)
@@ -2252,12 +2277,14 @@ class _SliderModule extends StatelessWidget {
             top: trackCenter - outputsSide / 2,
             width: outputsSide,
             height: outputsSide,
-            child: const DecoratedBox(
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: outputsFill,
+                color: CcPalette.of(context).outputsFill,
                 shape: BoxShape.circle,
               ),
-              child: CustomPaint(painter: _OutputsGlyph()),
+              child: CustomPaint(
+                painter: _OutputsGlyph(CcPalette.of(context).text),
+              ),
             ),
           ),
         if (enabled)
@@ -2276,7 +2303,7 @@ class _SliderModule extends StatelessWidget {
           top: trackCenter - 8.5,
           width: 17,
           height: 17,
-          child: Glyph(high, color: textColor, size: 17),
+          child: Glyph(high, color: CcPalette.of(context).text, size: 17),
         ),
       ],
     ),
@@ -2284,7 +2311,8 @@ class _SliderModule extends StatelessWidget {
 }
 
 class _Track extends CustomPainter {
-  const _Track(this.value, {this.length = trackLength});
+  const _Track(this.value, this.palette, {this.length = trackLength});
+  final CcPalette palette;
 
   /// Null: slider not adjustable (only the track, as in the reference).
   final double? value;
@@ -2295,7 +2323,7 @@ class _Track extends CustomPainter {
     final radius = Radius.circular(size.height / 2);
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = trackRest,
+      Paint()..color = palette.trackRest,
     );
     final v = value;
     if (v == null) return;
@@ -2304,23 +2332,25 @@ class _Track extends CustomPainter {
         Rect.fromLTWH(0, 0, sliderFill(v, length: length), size.height),
         radius,
       ),
-      Paint()..color = const Color(0xFFFFFFFF),
+      Paint()..color = palette.trackFill,
     );
   }
 
   @override
-  bool shouldRepaint(_Track old) => old.value != value || old.length != length;
+  bool shouldRepaint(_Track old) =>
+      old.value != value || old.length != length || old.palette != palette;
 }
 
 /// The glyph of the audio outputs circle: a pair of headphones, white, ~13 pt.
 class _OutputsGlyph extends CustomPainter {
-  const _OutputsGlyph();
+  const _OutputsGlyph(this.color);
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final paint = Paint()
-      ..color = const Color(0xFFFFFFFF)
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
       ..strokeCap = StrokeCap.round;
@@ -2331,7 +2361,7 @@ class _OutputsGlyph extends CustomPainter {
       false,
       paint,
     );
-    final fill = Paint()..color = const Color(0xFFFFFFFF);
+    final fill = Paint()..color = color;
     for (final dx in [-5.5, 5.5]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -2344,7 +2374,7 @@ class _OutputsGlyph extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_OutputsGlyph old) => false;
+  bool shouldRepaint(_OutputsGlyph old) => old.color != color;
 }
 
 /// The privacy pill (SH-CC-25): a 24 pt capsule of the modules' glass, centred over the stack;
@@ -2404,7 +2434,7 @@ class _PrivacyPill extends StatelessWidget {
                     style: _text(
                       titleSize,
                       weight: FontWeight.w700,
-                    ).copyWith(color: pillText),
+                    ).copyWith(color: CcPalette.of(context).text),
                   ),
                 ),
               ],
