@@ -233,7 +233,7 @@ class _FaroState extends State<Faro>
   bool _visible = false;
   bool _launcher = false;
 
-  /// The Launcher's list mode (the "…" menu's choice), kept while Faro runs.
+  /// The Launcher's list mode (the "…" menu's choice), remembered in the state folder.
   bool _launcherList = false;
 
   /// The pointer is on the 640 pt frame of the empty panel: the round buttons come out.
@@ -511,6 +511,7 @@ class _FaroState extends State<Faro>
   void initState() {
     super.initState();
     _layer = LayerControl.of(context);
+    _launcherList = _recents.loadList();
     WidgetsBinding.instance.addObserver(this);
     // Dates of the rows ("today, 14:56") in every language of the shell.
     initializeDateFormatting();
@@ -705,6 +706,7 @@ class _FaroState extends State<Faro>
   /// Grid or list: the container morphs between the two sizes.
   void _setLauncherList(bool list) {
     setState(() => _launcherList = list);
+    _recents.saveList(list);
     _springTo(_listMix, list ? 1 : 0, launcherMorphSpring);
   }
 

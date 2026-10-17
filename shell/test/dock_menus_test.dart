@@ -46,9 +46,8 @@ void main() {
       'XDG_CONFIG_DIRS': '${config.path}/system',
     };
     Directory('${config.path}/system/autostart').createSync(recursive: true);
-    File(
-      '${config.path}/system/autostart/agent.desktop',
-    ).writeAsStringSync('[Desktop Entry]\nType=Application\nExec=agent\n');
+    File('${config.path}/system/autostart/agent.desktop')
+        .writeAsStringSync('[Desktop Entry]\nType=Application\nExec=agent\n');
     expect(autostartCommands(env: env), ['agent']);
     expect(opensAtLogin('agent', env: env), isTrue);
     // Off: a user item hides the system one.

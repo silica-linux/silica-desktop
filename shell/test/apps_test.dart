@@ -295,9 +295,8 @@ void main() {
     Directory('${home.path}/Downloads').createSync();
     Directory('${home.path}/Desktop').createSync();
     Directory('${home.path}/.config').createSync();
-    File(
-      '${home.path}/.config/user-dirs.dirs',
-    ).writeAsStringSync('XDG_DOCUMENTS_DIR="\$HOME/Docs"\n');
+    File('${home.path}/.config/user-dirs.dirs')
+        .writeAsStringSync('XDG_DOCUMENTS_DIR="\$HOME/Docs"\n');
     final places = fileManagerPlaces(
       home.path,
       lookupAppLocalizations(const Locale('en')),
@@ -360,9 +359,8 @@ void liveEntriesTests() {
       store.addListener(() {
         if (!changed.isCompleted) changed.complete();
       });
-      File(
-        '${apps.path}/org.mozilla.firefox.desktop',
-      ).writeAsStringSync(firefoxEntry);
+      File('${apps.path}/org.mozilla.firefox.desktop')
+          .writeAsStringSync(firefoxEntry);
       await changed.future.timeout(const Duration(seconds: 5));
       expect(store.entries['org.mozilla.firefox']?.name, 'Firefox');
       expect(

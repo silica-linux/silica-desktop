@@ -541,9 +541,8 @@ class SwitcherPanel extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AmalfiType.bodyEmphasis(
-              color: theme.colors.textPrimary,
-            ).copyWith(fontSize: AmalfiType.bodyEmphasisToken.size * k),
+            style: AmalfiType.bodyEmphasis(color: theme.colors.textPrimary)
+                .copyWith(fontSize: AmalfiType.bodyEmphasisToken.size * k),
           ),
         ),
     ];

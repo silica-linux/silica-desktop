@@ -609,44 +609,45 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     expect(services.sounds, ['screen-capture', 'screen-capture']);
   });
 
-  testWidgets('the thumbnail menu: Save to Documents, Show in the file manager', (
-    tester,
-  ) async {
-    await pumpLayer(
-      tester,
-      entries: {
-        fileManagerId: const DesktopEntry(
-          id: fileManagerId,
-          name: 'Mustache',
-          exec: 'mustache',
-        ),
-      },
-    );
-    await announce(tester);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(
-      find.byKey(const ValueKey('thumbnail')),
-      buttons: kSecondaryButton,
-    );
-    await tester.pump();
-    await tester.tap(find.text('Save to Documents'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(File('${docs.path}/$deskName').existsSync(), isTrue);
-    expect(desk.listSync(), isEmpty);
+  testWidgets(
+    'the thumbnail menu: Save to Documents, Show in the file manager',
+    (tester) async {
+      await pumpLayer(
+        tester,
+        entries: {
+          fileManagerId: const DesktopEntry(
+            id: fileManagerId,
+            name: 'Mustache',
+            exec: 'mustache',
+          ),
+        },
+      );
+      await announce(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(
+        find.byKey(const ValueKey('thumbnail')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pump();
+      await tester.tap(find.text('Save to Documents'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(File('${docs.path}/$deskName').existsSync(), isTrue);
+      expect(desk.listSync(), isEmpty);
 
-    // The next one, shown in the file manager: saved first, then its folder opened.
-    await announce(tester);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(
-      find.byKey(const ValueKey('thumbnail')),
-      buttons: kSecondaryButton,
-    );
-    await tester.pump();
-    await tester.tap(find.text('Show in Mustache'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(File('${desk.path}/$deskName').existsSync(), isTrue);
-    expect(services.launched.last, "mustache '${desk.path}'");
-  });
+      // The next one, shown in the file manager: saved first, then its folder opened.
+      await announce(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(
+        find.byKey(const ValueKey('thumbnail')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pump();
+      await tester.tap(find.text('Show in Mustache'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(File('${desk.path}/$deskName').existsSync(), isTrue);
+      expect(services.launched.last, "mustache '${desk.path}'");
+    },
+  );
 
   testWidgets('dragging the thumbnail: the image follows, a drop moves it', (
     tester,
@@ -1129,48 +1130,49 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   /// The Options menu (the pull-down's own `AmalfiMenu`) and the glass region it declares.
   Finder optionsMenu() => find.byType(AmalfiMenu);
 
-  testWidgets('Options: the pull-down menu is on Ossido glass, above or below', (
-    tester,
-  ) async {
-    await pumpLayer(tester);
-    await send(tester, 'command', 'screenshot.toolbar');
-    await tester.pumpAndSettle();
-    expect(find.byType(AmalfiPullDownButton), findsOneWidget);
-    var button = tester.getRect(find.byKey(const ValueKey('options')));
-    await tester.tap(find.byKey(const ValueKey('options')));
-    await tester.pump(const Duration(milliseconds: 300));
-    var menu = tester.getRect(optionsMenu());
-    // No room below the bar (it sits at the bottom): 4 pt above the button, its left edge on
-    // the button's, at least 200 wide (silica_ui's pull-down).
-    expect(menu.left, button.left);
-    expect(menu.bottom, button.top - AmalfiPopUpButtonMetrics.menuDistance);
-    expect(menu.width, greaterThanOrEqualTo(200));
-    // Thick glass of the `menu` kind with radius 12, declared by the menu itself; Flutter
-    // paints no tint of its own.
-    final glass = tester.widget<Glass>(
-      find.descendant(of: optionsMenu(), matching: find.byType(Glass)).first,
-    );
-    expect(glass.profile, GlassProfile.menu);
-    expect(glass.radius, 12);
-    expect(glass.material, GlassMaterial.thick);
-    expectGlassRegion(tester, 'menu');
-    expectNoFlutterTint(tester);
-    // Bar dragged to the top: there is room below, the menu opens below the button.
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(optionsMenu(), findsNothing);
-    final bar = tester.getRect(find.byType(ShotToolbar));
-    await tester.dragFrom(
-      bar.topLeft + const Offset(282, 24),
-      const Offset(0, -700),
-    );
-    await tester.pump();
-    button = tester.getRect(find.byKey(const ValueKey('options')));
-    await tester.tap(find.byKey(const ValueKey('options')));
-    await tester.pump(const Duration(milliseconds: 300));
-    menu = tester.getRect(optionsMenu());
-    expect(menu.top, button.bottom + AmalfiPopUpButtonMetrics.menuDistance);
-  });
+  testWidgets(
+    'Options: the pull-down menu is on Ossido glass, above or below',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pumpAndSettle();
+      expect(find.byType(AmalfiPullDownButton), findsOneWidget);
+      var button = tester.getRect(find.byKey(const ValueKey('options')));
+      await tester.tap(find.byKey(const ValueKey('options')));
+      await tester.pump(const Duration(milliseconds: 300));
+      var menu = tester.getRect(optionsMenu());
+      // No room below the bar (it sits at the bottom): 4 pt above the button, its left edge on
+      // the button's, at least 200 wide (silica_ui's pull-down).
+      expect(menu.left, button.left);
+      expect(menu.bottom, button.top - AmalfiPopUpButtonMetrics.menuDistance);
+      expect(menu.width, greaterThanOrEqualTo(200));
+      // Thick glass of the `menu` kind with radius 12, declared by the menu itself; Flutter
+      // paints no tint of its own.
+      final glass = tester.widget<Glass>(
+        find.descendant(of: optionsMenu(), matching: find.byType(Glass)).first,
+      );
+      expect(glass.profile, GlassProfile.menu);
+      expect(glass.radius, 12);
+      expect(glass.material, GlassMaterial.thick);
+      expectGlassRegion(tester, 'menu');
+      expectNoFlutterTint(tester);
+      // Bar dragged to the top: there is room below, the menu opens below the button.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(optionsMenu(), findsNothing);
+      final bar = tester.getRect(find.byType(ShotToolbar));
+      await tester.dragFrom(
+        bar.topLeft + const Offset(282, 24),
+        const Offset(0, -700),
+      );
+      await tester.pump();
+      button = tester.getRect(find.byKey(const ValueKey('options')));
+      await tester.tap(find.byKey(const ValueKey('options')));
+      await tester.pump(const Duration(milliseconds: 300));
+      menu = tester.getRect(optionsMenu());
+      expect(menu.top, button.bottom + AmalfiPopUpButtonMetrics.menuDistance);
+    },
+  );
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {
     await pumpLayer(tester);
@@ -1352,9 +1354,8 @@ image/png=missing.desktop;org.example.Viewer.desktop;
   testWidgets('to the clipboard: copied when the thumbnail leaves', (
     tester,
   ) async {
-    File(
-      '${dir.path}/screenshot.json',
-    ).writeAsStringSync(jsonEncode({'destination': 'clipboard'}));
+    File('${dir.path}/screenshot.json')
+        .writeAsStringSync(jsonEncode({'destination': 'clipboard'}));
     await pumpLayer(tester);
     final temp = await announce(tester);
     await tester.pump(const Duration(seconds: 6));
@@ -1371,9 +1372,8 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     File(
       '${config.path}/mimeapps.list',
     ).writeAsStringSync('[Default Applications]\nimage/png=viewer.desktop\n');
-    File(
-      '${dir.path}/screenshot.json',
-    ).writeAsStringSync(jsonEncode({'destination': 'app:viewer'}));
+    File('${dir.path}/screenshot.json')
+        .writeAsStringSync(jsonEncode({'destination': 'app:viewer'}));
     await pumpLayer(
       tester,
       env: {'HOME': dir.path, 'XDG_CONFIG_HOME': config.path},

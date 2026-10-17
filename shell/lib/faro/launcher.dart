@@ -239,6 +239,29 @@ class RecentApps {
     }
   }
 
+  File get _viewFile => File('${_file.parent.path}/launcher-view.json');
+
+  /// The Launcher's view, remembered between sessions: true for the list, false for the grid.
+  bool loadList() {
+    try {
+      return jsonDecode(_viewFile.readAsStringSync()) == 'list';
+    } on FileSystemException {
+      // Never chosen: the grid.
+    } on FormatException {
+      // Broken file: the grid.
+    }
+    return false;
+  }
+
+  void saveList(bool list) {
+    try {
+      _viewFile.parent.createSync(recursive: true);
+      _viewFile.writeAsStringSync(jsonEncode(list ? 'list' : 'grid'));
+    } on FileSystemException {
+      // Without a writable state the choice is not remembered.
+    }
+  }
+
   /// Forgets the recent apps (logo menu › Recent Items › Clear Menu).
   void clear() {
     try {

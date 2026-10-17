@@ -118,19 +118,16 @@ void main() {
     expect(ShellNotification.fromDBus('x'), isNull);
   });
 
-  test(
-    'the Center groups by app, from the most recent, without the transient ones',
-    () {
-      final groups = groupNotifications([
-        note(1, minute: 1),
-        note(2, app: 'Messages', minute: 2),
-        note(3, minute: 3),
-        note(4, minute: 4, transient: true),
-      ]);
-      expect([for (final g in groups) g.key], ['Mail', 'Messages']);
-      expect([for (final n in groups.first.items) n.id], [3, 1]);
-    },
-  );
+  test('the Center groups by app, from the most recent, without the transient ones', () {
+    final groups = groupNotifications([
+      note(1, minute: 1),
+      note(2, app: 'Messages', minute: 2),
+      note(3, minute: 3),
+      note(4, minute: 4, transient: true),
+    ]);
+    expect([for (final g in groups) g.key], ['Mail', 'Messages']);
+    expect([for (final n in groups.first.items) n.id], [3, 1]);
+  });
 
   test('the banner entrance is the measured exponential, tau 71 ms', () {
     expect(bannerEnterOffset(0), bannerEnterDistance);

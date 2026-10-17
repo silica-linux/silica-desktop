@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +16,14 @@ const entries = {
 };
 
 void main() {
+  late RecentApps state;
+
+  setUp(() {
+    final dir = Directory.systemTemp.createTempSync('faro-state');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    state = RecentApps(env: {'HOME': dir.path});
+  });
+
   Future<void> open(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;
@@ -24,6 +34,7 @@ void main() {
         child: Faro(
           entries: entries,
           startOpen: true,
+          recents: state,
           folders: FolderIndex.empty,
         ),
       ),
@@ -147,6 +158,24 @@ void main() {
     continuous(rects, step: 60);
     expect(rects.last.size, const Size(640, 560));
     expect(rects.any((r) => r.width > 650 && r.width < 840), isTrue);
+  });
+
+  testWidgets('the grid or list choice is remembered (#185)', (tester) async {
+    await open(tester);
+    await cmd1(tester);
+    await settle(tester);
+    expect(state.loadList(), isFalse);
+    await tester.tap(find.byKey(const ValueKey('launcher more')));
+    await tester.pump();
+    await tester.tap(find.text('as List'));
+    await settle(tester);
+    expect(state.loadList(), isTrue);
+    // A new Faro (a new session) opens the Launcher as a list.
+    await tester.pumpWidget(const SizedBox());
+    await open(tester);
+    await cmd1(tester);
+    await settle(tester);
+    expect(slot(tester).size, const Size(640, 560));
   });
 
   testWidgets('the Launcher "…" menu declares a compositor glass region', (
