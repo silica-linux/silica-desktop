@@ -10,7 +10,6 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
 use zbus::interface;
 
 use crate::clipboard;
@@ -21,7 +20,7 @@ pub const SHARE_PATH: &str = "/dev/frascella/Silica/Share1";
 pub const SHARE_KEY: &str = "X-Silica-Share";
 
 /// A target of the Share menu.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     /// `copy`, or the desktop entry id of an application (`dev.frascella.Mail`).
     pub id: String,
@@ -219,28 +218,36 @@ pub fn command_lines(exec: &str, uris: &[String]) -> Vec<Vec<String>> {
     vec![line]
 }
 
+/// The Share menu's targets: `copy`, then the applications.
+pub fn targets_for(apps: Vec<ShareApp>) -> Vec<Target> {
+    let mut targets = vec![Target {
+        id: "copy".to_owned(),
+        name: "Copy".to_owned(),
+        icon: String::new(),
+    }];
+    targets.extend(apps.into_iter().map(|a| Target {
+        id: a.id,
+        name: a.name,
+        icon: a.icon,
+    }));
+    targets
+}
+
 pub struct Share;
 
 #[interface(name = "dev.frascella.Silica.Share1")]
 impl Share {
-    /// The targets for `uris`, as JSON: `[{id, name, icon}]`, `copy` first. Empty when
-    /// there is nothing to share.
-    fn targets(&self, uris: Vec<String>) -> String {
+    /// The targets for `uris` as `a(sss)` (id, name, icon), `copy` first. Empty when there is
+    /// nothing to share.
+    fn targets(&self, uris: Vec<String>) -> Vec<(String, String, String)> {
         if uris.is_empty() {
-            return "[]".to_owned();
+            return Vec::new();
         }
         let env = |k: &str| std::env::var(k).ok();
-        let mut targets = vec![Target {
-            id: "copy".to_owned(),
-            name: "Copy".to_owned(),
-            icon: String::new(),
-        }];
-        targets.extend(share_apps(&env).into_iter().map(|a| Target {
-            id: a.id,
-            name: a.name,
-            icon: a.icon,
-        }));
-        serde_json::to_string(&targets).unwrap_or_else(|_| "[]".to_owned())
+        targets_for(share_apps(&env))
+            .into_iter()
+            .map(|t| (t.id, t.name, t.icon))
+            .collect()
     }
 
     /// Shares `uris` with `target` (an id from `Targets`). False if the target is unknown or
@@ -285,6 +292,15 @@ mod tests {
     use super::*;
 
     const MAIL: &str = "[Desktop Entry]\nType=Application\nName=Mail\nIcon=dev.frascella.Mail\nExec=mail --compose %F\nX-Silica-Share=true\n";
+
+    #[test]
+    fn copy_comes_first_then_the_apps() {
+        let app = parse_entry("dev.frascella.Mail", MAIL).expect("opts in");
+        let targets = targets_for(vec![app]);
+        let ids: Vec<&str> = targets.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, ["copy", "dev.frascella.Mail"]);
+        assert_eq!(targets[1].icon, "dev.frascella.Mail");
+    }
 
     #[test]
     fn only_apps_that_opt_in_are_targets() {
