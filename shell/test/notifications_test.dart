@@ -164,7 +164,7 @@ void main() {
     await tester.pump(bannerEnterDuration);
     final card = find.byType(NotificationCard);
     expect(card, findsOneWidget);
-    expect(tester.getTopLeft(card), const Offset(1280 - 16 - 360, 28 + 16));
+    expect(tester.getTopLeft(card), const Offset(1280 - 16 - 360, 32 + 16));
     expect(tester.getSize(card), const Size(360, 76));
     expect(find.text('Titolo 1'), findsOneWidget);
 

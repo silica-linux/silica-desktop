@@ -65,15 +65,15 @@ const double capsuleRadius = 32;
 const double mediaRadius = 36;
 const double sliderRadius = 28;
 
-/// Toggle module: a 36 pt disc at (16, 14) with a 20 pt glyph, the text from x 60.
+/// Toggle module: a 36 pt disc at (16, 14) with a 24 pt glyph, the text from x 60.
 const double disc = 36;
 const double discInset = 16;
 const double discTop = 14;
-const double discGlyph = 20;
+const double discGlyph = 24;
 const double textLeft = 60;
 
 /// The Wi-Fi status menu: 1 pt below the bar, right edge 9 pt beyond the icon.
-const double statusMenuTop = 31;
+const double statusMenuTop = 35;
 const double statusMenuRight = 9;
 
 /// Sliders (`Module/Slider/*`): the track starts at x 40, 220 pt long (172 with the outputs

@@ -105,7 +105,7 @@ String statusSymbol(
 };
 
 /// The side of a status glyph in the bar.
-const double statusGlyph = 16;
+const double statusGlyph = 20;
 
 class StatusIcon extends StatelessWidget {
   const StatusIcon({

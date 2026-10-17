@@ -471,7 +471,7 @@ void main() {
   );
 
   testWidgets(
-    'the bar follows the kit: 28 tall, items 24, mark and glyphs 32 wide',
+    'the bar follows the kit: 32 tall, items 28, mark and glyphs 36 wide',
     (tester) async {
       tester.view.physicalSize = const Size(960, 200);
       tester.view.devicePixelRatio = 1;
@@ -490,22 +490,22 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(barHeight, 28);
-      // The mark's item: x 8, 32 × 24 at y 2 (kit `Silica mark`).
+      expect(barHeight, 32);
+      // The mark's item: x 8, 36 × 28 at y 2 (kit `Silica mark`).
       final mark = find
           .ancestor(
             of: find.byType(SilicaMark),
             matching: find.byType(SizedBox),
           )
           .first;
-      expect(tester.getRect(mark), const Rect.fromLTWH(8, 2, 32, 24));
-      // The app name follows at x 40, its text 8 pt in (kit `App name`), Headline.
+      expect(tester.getRect(mark), const Rect.fromLTWH(8, 2, 36, 28));
+      // The app name follows at x 44, its text 8 pt in (kit `App name`), Headline.
       final name = find.text('Silica');
-      expect(tester.getRect(name).left, 48);
+      expect(tester.getRect(name).left, 52);
       expect(tester.widget<Text>(name).style?.fontWeight, FontWeight.w600);
-      // The clock ends 8 + 32 pt before the right edge (its item, then the control centre).
+      // The clock ends 8 + 36 pt before the right edge (its item, then the control centre).
       final clock = find.text('Fri 16 Oct  09:41');
-      expect(tester.getRect(clock).right, 960 - 8 - 32 - 8);
+      expect(tester.getRect(clock).right, 960 - 8 - 36 - 8);
       expect(
         tester
             .getRect(
@@ -515,7 +515,7 @@ void main() {
             )
             .center
             .dx,
-        960 - 8 - 16,
+        960 - 8 - 18,
       );
       // The bar paints no material: no glass above its items.
       expect(find.byType(Glass), findsNothing);

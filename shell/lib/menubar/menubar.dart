@@ -1,6 +1,6 @@
-// The menu bar (Amalfi, kit `Menu Bar/*`): a 28 pt transparent strip on the wallpaper (no
-// material), 24 pt items at y 2 with their text 8 pt from the edges, the Silica mark and the
-// status glyphs at 16 pt in 32 pt items. Text and glyphs are Text/Primary of the appearance
+// The menu bar (Amalfi, kit `Menu Bar/*`): a 32 pt transparent strip on the wallpaper (no
+// material), 28 pt items at y 2 with their text 8 pt from the edges, the Silica mark and the
+// status glyphs at 20 pt in 36 pt items. Text and glyphs are Text/Primary of the appearance
 // (dark on the light desktop, light on the dark one); the item of an open menu or panel has
 // a translucent white capsule (`Menu Bar/Selection`, radius 12); label and glyph stay Text/Primary. Menus open on
 // press below their title (bar_menu_host.dart) and follow the pointer to the next title.
@@ -36,24 +36,24 @@ import 'menus.dart';
 import 'status_icons.dart';
 import 'window_menu.dart';
 
-const double barHeight = 28;
+const double barHeight = 32;
 
-/// An item: 24 tall, 2 pt from the bar's top and bottom; its text is 8 pt from its edges.
-const double itemHeight = 24;
+/// An item: 28 tall, 2 pt from the bar's top and bottom; its text is 8 pt from its edges.
+const double itemHeight = 28;
 const double itemTop = (barHeight - itemHeight) / 2;
 const double itemPadding = 8;
 
-/// The corner radius of the active item's capsule (`Menu Bar/Selection`: radius 12).
-const double itemRadius = 12;
+/// The corner radius of the active item's capsule (`Menu Bar/Selection`: radius 14).
+const double itemRadius = 14;
 
-/// A status item (a glyph of 16 pt): 32 wide. The Silica mark's item is one too.
-const double statusCell = 32;
+/// A status item (a glyph of 20 pt): 36 wide. The Silica mark's item is one too.
+const double statusCell = 36;
 
 /// The bar's inset from the screen's sides.
 const double barSide = 8;
 
 /// An open menu: its body 4 pt left of the title's item (the text lines up: 4 + 8 inside the
-/// menu), 8 pt below the bar (kit `Menu Bar/Bar/Menu Open`: the menu at y 36).
+/// menu), 8 pt below the bar (the menu at y 40, 4 lower than with the 28 pt bar).
 const double menuLeftOfItem = 4;
 const double menuBelowBar = 8;
 const Duration menuSwitchDelay = Duration(milliseconds: 85);
@@ -1061,7 +1061,7 @@ class _MenuBarState extends State<MenuBar> {
     shell.broadcast('statusmenu', open ? '' : '$key ${rect.right}');
   }
 
-  /// An item's box: 24 tall, with the translucent white capsule (radius 12) while its menu
+  /// An item's box: 28 tall, with the translucent white capsule (radius 14) while its menu
   /// or panel is open (`Menu Bar/Selection`).
   Widget _box({
     Key? key,
@@ -1070,7 +1070,7 @@ class _MenuBarState extends State<MenuBar> {
     required Widget child,
   }) {
     final soft = barSelectionColor(context);
-    // The capsule is 24 tall, but the item takes the bar's whole height: a click anywhere
+    // The capsule is 28 tall, but the item takes the bar's whole height: a click anywhere
     // above or below it counts (silica-desktop#208).
     return SizedBox(
       height: barHeight,

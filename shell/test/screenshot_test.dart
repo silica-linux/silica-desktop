@@ -910,7 +910,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
 
     near(
       find.byKey(const ValueKey('close bar')),
-      const Rect.fromLTWH(8, 8, 32, 32),
+      const Rect.fromLTWH(8, 6, 36, 36),
     );
     final modes = find.byType(AmalfiSegmentedControl);
     expect(modes, findsNWidgets(2));
@@ -968,7 +968,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     },
   );
 
-  testWidgets('⇧⌘5: the close button is the toolbar icon button, 32 pt', (
+  testWidgets('⇧⌘5: the close button is the toolbar icon button, 36 pt', (
     tester,
   ) async {
     await pumpLayer(tester);
@@ -976,7 +976,7 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     await tester.pumpAndSettle();
     expect(find.byType(AmalfiToolbarButton), findsOneWidget);
     final close = tester.getRect(find.byKey(const ValueKey('close bar')));
-    expect(close.size, const Size(32, 32));
+    expect(close.size, const Size(36, 36));
     final bar = tester.getRect(find.byType(ShotToolbar));
     expect(close.center.dy - bar.top, closeTo(24, 0.01));
   });

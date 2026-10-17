@@ -259,7 +259,8 @@ class _ShotToolbarState extends State<ShotToolbar>
                       ),
                       Positioned(
                         left: closeX,
-                        top: barInset,
+                        // The toolbar button is 36 high: centred in the 48 pt bar.
+                        top: barInset - 2,
                         child: AmalfiToolbarButton(
                           key: const ValueKey('close bar'),
                           icon: const AmalfiGlyph(AmalfiGlyphs.xmark),
