@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 use futures_lite::{StreamExt, future};
 use silica_daemon::actions::{ACTIONS_PATH, Actions};
+use silica_daemon::share::{SHARE_PATH, Share};
 use silica_daemon::sound::{SOUND_PATH, Sound, SoundConfig};
 use silica_daemon::{
     AuthConfig, AuthService, ClipboardService, Daemon, SystemConfig, SystemService,
@@ -81,6 +82,8 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
     // Faro's clipboard and actions scopes.
     let clipboard = ClipboardService::serve(connection.clone()).await?;
     connection.object_server().at(ACTIONS_PATH, Actions).await?;
+    // The Share menu of apps: its targets and the sharing.
+    connection.object_server().at(SHARE_PATH, Share).await?;
     // The interface sound effects (the Trash, copies), for apps and the shell.
     connection
         .object_server()

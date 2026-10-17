@@ -10,6 +10,7 @@ pub mod auth;
 pub mod clipboard;
 pub mod notifications;
 pub mod server;
+pub mod share;
 pub mod sound;
 pub mod sun;
 pub mod system;
