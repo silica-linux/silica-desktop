@@ -259,18 +259,14 @@ pub fn thumbnail(root: &Path, uri: &str, size_px: u32) -> Option<PathBuf> {
         img
     };
     let rgba = img.to_rgba8();
-    if write_png(
+    write_png(
         &cached,
         rgba.width(),
         rgba.height(),
         rgba.as_raw(),
         uri,
         mtime,
-    )
-    .is_none()
-    {
-        return None;
-    }
+    )?;
     let _ = fs::remove_file(&failed);
     Some(cached)
 }
