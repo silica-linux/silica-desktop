@@ -70,6 +70,11 @@ fn window_list_focus_move_and_close() {
         (list[1].x, list[1].y),
         (FIRST_WINDOW_AT as i32, FIRST_WINDOW_AT as i32)
     );
+    // The next window cascades by 29 pt (#172).
+    assert_eq!(
+        (list[0].x, list[0].y),
+        (FIRST_WINDOW_AT as i32 + 29, FIRST_WINDOW_AT as i32 + 29)
+    );
 
     let mut client = ossido.client();
     client.call(WINDOW_FOCUS, json!({"id": first_id})).unwrap();

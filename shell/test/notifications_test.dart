@@ -593,6 +593,8 @@ class _Dnd extends ValueNotifier<SystemSnapshot> implements SystemSource {
   @override
   Future<void> setDoNotDisturb(bool enabled) async {}
   @override
+  Future<void> setNightLight(bool enabled) async {}
+  @override
   Future<List<WifiNetwork>> wifiNetworks() async => const [];
   @override
   Future<void> connectWifi(String ssid) async {}

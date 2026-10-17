@@ -10,7 +10,16 @@
 
 mod common;
 
-use common::client::{FIRST_WINDOW_AT, TestWindow};
+/// These tests read pixels at fixed positions: the first window is at (32, 32).
+const AT_32: u32 = 32;
+
+fn start_at_32(name: &str, size: (u32, u32), extra: &[&str]) -> Headless {
+    let mut args = vec!["--window-origin", "32"];
+    args.extend_from_slice(extra);
+    Headless::start_with(name, size, &args)
+}
+
+use common::client::TestWindow;
 use common::{Headless, pixel_in, screenshot};
 use serde_json::json;
 use silica_control::commands::{WINDOW_LIST, WINDOW_MOVE};
@@ -27,7 +36,7 @@ const REFERENCE_MISSING: [f64; 30] = [
 fn window_corners_follow_the_reference() {
     // A green background: the window is red, so its green channel (0, 4 under the light rim)
     // tells covered from uncovered pixels whatever the rim does to the red one.
-    let ossido = Headless::start_with("corners", (640, 400), &["--background", "00ff00"]);
+    let ossido = start_at_32("corners", (640, 400), &["--background", "00ff00"]);
     let _window = TestWindow::open_sized(&ossido.wayland, "corners", (200, 120));
     let shot = screenshot(&ossido);
     // With OSSIDO_SHOTS=<folder> the screenshot is kept, to look at it.
@@ -38,7 +47,7 @@ fn window_corners_follow_the_reference() {
         )
         .unwrap();
     }
-    let at = FIRST_WINDOW_AT;
+    let at = AT_32;
     // The red channel goes from the background (read in the output's corner) to 255 in the window.
     let background = f64::from(pixel_in(&shot, 640, 0, 0)[1]);
     let coverage = |x: u32, y: u32| 1.0 - f64::from(pixel_in(&shot, 640, x, y)[1]) / background;
@@ -124,7 +133,7 @@ fn compare_profile(shot: &[u8], right: u32, y: u32, name: &str) {
 
 #[test]
 fn window_shadows_follow_the_reference() {
-    let ossido = Headless::start_with("shadow", (640, 400), &["--background", REFERENCE_GRAY]);
+    let ossido = start_at_32("shadow", (640, 400), &["--background", REFERENCE_GRAY]);
     let _first = TestWindow::open_sized(&ossido.wayland, "first", (200, 120));
     let _second = TestWindow::open_sized(&ossido.wayland, "second", (200, 120));
     // The second (active) goes to the right; the first stays at (32, 32), inactive.

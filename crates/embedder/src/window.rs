@@ -239,6 +239,9 @@ struct View {
     /// A frame callback asked for the vsync and not yet arrived.
     vsync_requested: bool,
     buffer: Option<Buffer>,
+    /// The pixels of the last presented software frame, to report only what changed
+    /// (`damage.rs`).
+    last_pixels: Vec<u8>,
     /// Software has presented at least one frame (with OpenGL the EGL surface knows).
     presented: bool,
     /// `silica-window-v1`: the window object (created on the first request).
@@ -247,6 +250,8 @@ struct View {
     activated: Option<bool>,
     /// The compositor says the window is maximized (zoomed), from the last configure.
     maximized: bool,
+    /// The compositor says the window is full screen, from the last configure.
+    fullscreen: bool,
     /// The engine has added the view (the main one always): frames and metrics may flow.
     added: bool,
     /// `FlutterEngineAddView` is under way.
@@ -273,10 +278,12 @@ impl View {
             waiting_frame: false,
             vsync_requested: false,
             buffer: None,
+            last_pixels: Vec::new(),
             presented: false,
             appearance: None,
             activated: None,
             maximized: false,
+            fullscreen: false,
             added,
             adding: false,
             open_reply: None,
@@ -837,7 +844,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
         appearance_manager: globals
-            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=3, ())
+            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=4, ())
             .ok(),
         exporter: globals.bind::<ZxdgExporterV2, App, ()>(&qh, 1..=1, ()).ok(),
         _parent_import: parent_import,
@@ -1040,6 +1047,12 @@ impl App {
     /// - `setAppearance {appearance}` (`"system"`, `"light"`, `"dark"`): the app overrides the
     ///   system appearance for everything Ossido draws for this window; answers whether
     ///   Ossido offers it (version 3);
+    /// - `setSizeIncrement {baseWidth, baseHeight, stepWidth, stepHeight}`: interactive resizing
+    ///   snaps the content size to base + n * step (a terminal's cell size, version 4); answers
+    ///   whether Ossido offers it;
+    /// - `setFullscreen {enabled}`: the window fills the display (`set_fullscreen`) or leaves
+    ///   it; the app is told when the compositor changes it on its own with
+    ///   `fullscreenChanged {viewId, enabled}` (Esc, a space change; silica-desktop#173);
     /// - `startMove`: moves the window with the pointer (from the app's toolbar);
     /// - `zoom`: zooms the window (xdg_toplevel `set_maximized`), or puts it back when it is
     ///   zoomed (`unset_maximized`); `minimize`: minimizes it (`set_minimized`). The title
@@ -1129,6 +1142,31 @@ impl App {
                 window.commit();
                 crate::text_input::success(serde_json::json!(true))
             }
+            Some("setSizeIncrement") => {
+                // Interactive resizing in whole steps (version 4): a terminal's cell size.
+                let (Some(manager), args) = (&self.appearance_manager, call.get("args")) else {
+                    return crate::text_input::success(serde_json::json!(false));
+                };
+                if wayland_client::Proxy::version(manager) < 4 {
+                    return crate::text_input::success(serde_json::json!(false));
+                }
+                let side = |key: &str| {
+                    args.and_then(|a| a.get(key))
+                        .and_then(serde_json::Value::as_f64)
+                        .and_then(window_side)
+                        .unwrap_or(0)
+                };
+                let object = view_appearance
+                    .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+                object.set_size_increment(
+                    side("baseWidth"),
+                    side("baseHeight"),
+                    side("stepWidth"),
+                    side("stepHeight"),
+                );
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
             Some("startMove") => {
                 if let Some(seat) = &self.seat {
                     window.move_(seat, self.press_serial);
@@ -1149,6 +1187,21 @@ impl App {
                     }
                     window.commit();
                 }
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("setFullscreen") => {
+                // A slideshow fills the display (xdg_toplevel full screen); the answer says
+                // the window exists. `fullscreenChanged` tells when the compositor leaves it.
+                let enabled = call
+                    .pointer("/args/enabled")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if enabled {
+                    window.set_fullscreen(None);
+                } else {
+                    window.unset_fullscreen();
+                }
+                window.commit();
                 crate::text_input::success(serde_json::json!(true))
             }
             Some("minimize") => {
@@ -2865,7 +2918,14 @@ impl App {
         self.glass.before_present(id, frame.raster_seq);
         let surface = view.surface.wl_surface();
         surface.set_buffer_scale(view.scale.max(1));
-        surface.damage_buffer(0, 0, width, height);
+        // Only the changed rectangle is damaged (silica-desktop#205).
+        let (w, h) = (frame.width as usize, frame.height as usize);
+        if let Some((x, y, dw, dh)) =
+            crate::damage::changed_rect(&view.last_pixels, &frame.pixels, frame.stride, w, h)
+        {
+            surface.damage_buffer(x, y, dw, dh);
+        }
+        crate::damage::remember(&mut view.last_pixels, &frame.pixels, frame.stride, w, h);
         surface.frame(qh, surface.clone());
         if let Err(err) = buffer.attach_to(surface) {
             warn!("buffer attach failed: {err}");
@@ -3028,9 +3088,25 @@ impl WindowHandler for App {
             (Some(w), Some(h)) => (w.get(), h.get()),
             _ => (0, 0),
         };
+        let mut fullscreen_changed = None;
         if let Some(view) = self.views.get_mut(&id) {
             view.activated = Some(configure.is_activated());
             view.maximized = configure.is_maximized();
+            if view.fullscreen != configure.is_fullscreen() {
+                view.fullscreen = configure.is_fullscreen();
+                fullscreen_changed = Some(view.fullscreen);
+            }
+        }
+        if let (Some(enabled), Some(engine)) = (fullscreen_changed, &self.engine)
+            && let Err(err) = engine.send_message(
+                WINDOW_CHANNEL,
+                &crate::drag::call(
+                    "fullscreenChanged",
+                    serde_json::json!({ "viewId": id, "enabled": enabled }),
+                ),
+            )
+        {
+            warn!("fullscreenChanged: {err}");
         }
         self.update_app_active();
         self.configured(id, qh, size);

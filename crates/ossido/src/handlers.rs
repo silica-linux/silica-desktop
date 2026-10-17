@@ -37,8 +37,11 @@ use tracing::{info, trace, warn};
 
 use crate::state::{ClientState, State};
 
+/// A new window opens 4 pt from the left and 4 pt under the top of the usable area, and the
+/// next one cascades by 29 pt (PREVIEW-01; the cascade end is not measured, so it wraps).
+pub const CASCADE_ORIGIN: i32 = 4;
 /// Distance between a window and the next one in the cascade, in logical pixels.
-const CASCADE_STEP: i32 = 32;
+pub const CASCADE_STEP: i32 = 29;
 const CASCADE_SLOTS: u32 = 8;
 
 impl CompositorHandler for State {
@@ -166,7 +169,9 @@ impl XdgShellHandler for State {
             state.states.set(xdg_toplevel::State::Activated);
         });
         let slot = i32::try_from(self.mapped % CASCADE_SLOTS).unwrap_or(0);
-        let offset = CASCADE_STEP.saturating_mul(slot.saturating_add(1));
+        let offset = self
+            .window_origin
+            .saturating_add(self.cascade_step.saturating_mul(slot));
         self.mapped = self.mapped.wrapping_add(1);
 
         let window = Window::new_wayland_window(surface);
@@ -377,6 +382,35 @@ impl XdgShellHandler for State {
             None => {
                 surface.send_pending_configure();
             }
+        }
+    }
+
+    /// The app asks for full screen (a slideshow, #173): the window fills the output.
+    fn fullscreen_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
+    ) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.set_fullscreen_in_place(&window, true));
+        if !matches!(done, Some(Ok(()))) {
+            if let Some(Err(err)) = done {
+                warn!("fullscreen: {err}");
+            }
+            surface.send_pending_configure();
+        }
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.set_fullscreen_in_place(&window, false));
+        if !matches!(done, Some(Ok(()))) {
+            if let Some(Err(err)) = done {
+                warn!("unfullscreen: {err}");
+            }
+            surface.send_pending_configure();
         }
     }
 

@@ -48,6 +48,12 @@ class FakeSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   @override
   Future<void> setDoNotDisturb(bool enabled) async => calls.add('dnd $enabled');
 
+  @override
+  Future<void> setNightLight(bool enabled) async {
+    calls.add('nightlight $enabled');
+    value = value.copyWith(nightLight: enabled);
+  }
+
   List<WifiNetwork> networks = const [
     WifiNetwork(
       ssid: 'Casa',
@@ -403,6 +409,30 @@ void main() {
     await tester.pump();
     expect(system.calls.last, 'output 62');
   });
+
+  testWidgets(
+    'Display detail: the Night Light tile turns the night light on (#121)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final system = FakeSystem(laptop);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ControlCenter(env: noConfig, system: system),
+        ),
+      );
+      await sendCommand(tester, 'controlcenter.toggle');
+      await tester.pumpAndSettle();
+      await tester.tapAt(tester.getCenter(find.text('Display')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Night Light'));
+      await tester.pumpAndSettle();
+      expect(system.calls.last, 'nightlight true');
+      expect(system.value.nightLight, isTrue);
+    },
+  );
 
   testWidgets('Bluetooth detail: the paired devices, a click connects', (
     tester,

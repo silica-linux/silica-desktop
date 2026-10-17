@@ -48,3 +48,27 @@ fn minimize_request_takes_the_window_off_the_screen() {
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(windows(&ossido).iter().all(|w| w.minimized));
 }
+
+#[test]
+fn an_app_can_fill_the_screen_in_place_and_leave_again() {
+    let ossido = Headless::start_with("fullscreen-request", SIZE, &[]);
+    let mut window = TestWindow::open_decorated(&ossido.wayland, "slides", (300, 200));
+    let before = windows(&ossido).remove(0);
+    window.request_fullscreen(true);
+    assert!(window.fullscreen(), "the client is told it is full screen");
+    assert_eq!(
+        window.configured_size(),
+        Some((SIZE.0 as i32, SIZE.1 as i32))
+    );
+    window.commit_frames(1, std::time::Duration::ZERO);
+    let list = windows(&ossido);
+    assert!(list[0].fullscreen);
+    assert_eq!((list[0].x, list[0].y), (0, 0));
+    window.request_fullscreen(false);
+    assert!(!window.fullscreen());
+    window.commit_frames(1, std::time::Duration::ZERO);
+    assert_eq!(window.configured_size(), Some((300, 200)));
+    let after = windows(&ossido).remove(0);
+    assert!(!after.fullscreen);
+    assert_eq!((after.x, after.y), (before.x, before.y));
+}

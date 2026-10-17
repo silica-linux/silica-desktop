@@ -13,6 +13,7 @@ mod app_lifecycle;
 mod appearance;
 mod clipboard;
 mod codec;
+mod damage;
 pub mod dbus;
 mod drag;
 mod ffi;

@@ -10,6 +10,13 @@
 
 mod common;
 
+/// These tests read pixels at fixed positions: the first window is at (32, 32).
+fn start_at_32(name: &str, size: (u32, u32), extra: &[&str]) -> Headless {
+    let mut args = vec!["--window-origin", "32"];
+    args.extend_from_slice(extra);
+    Headless::start_with(name, size, &args)
+}
+
 use common::Headless;
 use common::client::TestWindow;
 use serde_json::Value;
@@ -164,7 +171,7 @@ fn fills_on_gray(name: &str, dark: bool) -> ([u8; 3], [u8; 3]) {
     if dark {
         args.extend(["--appearance", "dark"]);
     }
-    let ossido = Headless::start_with(name, SHOT, &args);
+    let ossido = start_at_32(name, SHOT, &args);
     let size = (200, 100);
     let mut clear = TestWindow::open_pixels(&ossido.wayland, "clear", size, &transparent(size));
     clear
@@ -222,7 +229,7 @@ fn dark_materials_on_the_reference_gray() {
 /// for the regions it declares (silica-window-v1 `set_appearance`).
 #[test]
 fn glass_of_a_dark_window_in_a_light_session_has_the_dark_tone() {
-    let ossido = Headless::start_with("glass-override-dark", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-override-dark", SHOT, &["--background", "7a7b80"]);
     let size = (200, 100);
     let mut thick = TestWindow::open_pixels(&ossido.wayland, "thick", size, &transparent(size));
     thick
@@ -264,7 +271,7 @@ fn normal_cdf(x: f64) -> f64 {
 
 #[test]
 fn regular_glass_blurs_a_stripe_edge_with_sigma_6() {
-    let ossido = Headless::start_with("glass-blur", SHOT, &[]);
+    let ossido = start_at_32("glass-blur", SHOT, &[]);
     let back = (400, 200);
     let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &stripes(back));
     let size = (200, 100);
@@ -313,7 +320,7 @@ fn regular_glass_blurs_a_stripe_edge_with_sigma_6() {
 /// pt down and blurred by 1 pt) on the top inner edge only, nothing outside the shape.
 #[test]
 fn the_rims_are_a_dark_inside_line_and_a_light_top_edge() {
-    let ossido = Headless::start_with("glass-edge", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-edge", SHOT, &["--background", "7a7b80"]);
     // The glass 20 px inside a larger window, so that the window's own shadow is not next to it.
     let size = (340, 120);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "edge", size, &transparent(size));
@@ -374,7 +381,7 @@ fn regular_and_thick_glass_refract_at_the_edge_only() {
     // t - distortion × band × (1 - t / band)², so by about 2.0 px on Regular and 1.1 px on
     // Thick here); the one in the middle stays where it is.
     for (material, low, high) in [(Material::Clear, 1.0, 4.0), (Material::Thick, 0.4, 2.5)] {
-        let ossido = Headless::start_with("glass-refraction", SHOT, &[]);
+        let ossido = start_at_32("glass-refraction", SHOT, &[]);
         let back = (500, 200);
         let mut pixels = Vec::new();
         for _ in 0..back.1 {
@@ -425,7 +432,7 @@ fn regular_and_thick_glass_refract_at_the_edge_only() {
 
 #[test]
 fn glass_quality_levels_choose_what_the_glass_sees() {
-    let ossido = Headless::start_with("glass-quality", SHOT, &[]);
+    let ossido = start_at_32("glass-quality", SHOT, &[]);
     let back = (400, 200);
     let _stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &stripes(back));
     let size = (200, 100);
@@ -472,7 +479,7 @@ fn glass_quality_levels_choose_what_the_glass_sees() {
 fn without_blur_dark_glass_is_its_tint_over_the_window_surface() {
     // Reduced transparency in dark: thick glass is 58 % `#2A2B30` over `#1B1C1F`, whatever is
     // behind (here white).
-    let ossido = Headless::start_with(
+    let ossido = start_at_32(
         "glass-opaque-dark",
         SHOT,
         &["--background", "ffffff", "--appearance", "dark"],
@@ -503,7 +510,7 @@ fn without_blur_dark_glass_is_its_tint_over_the_window_surface() {
 fn the_regular_protocol_material_is_the_thick_glass_of_the_modules() {
     // `regular` without a profile is a Control Center module: Glass/Thick, with its sharp share
     // (0.04) that a flat gray does not show.
-    let ossido = Headless::start_with("glass-module-fill", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-module-fill", SHOT, &["--background", "7a7b80"]);
     let size = (200, 100);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "module", size, &transparent(size));
     glass
@@ -517,7 +524,7 @@ fn the_regular_protocol_material_is_the_thick_glass_of_the_modules() {
 
 #[test]
 fn nearby_regions_of_the_same_glass_merge_like_drops() {
-    let ossido = Headless::start_with("glass-merge", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-merge", SHOT, &["--background", "7a7b80"]);
     let size = (400, 100);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "drops", size, &transparent(size));
     let background = [0x7a_u8, 0x7b, 0x80];
@@ -574,7 +581,7 @@ fn nearby_regions_of_the_same_glass_merge_like_drops() {
 
 #[test]
 fn separate_groups_overlap_without_merging() {
-    let ossido = Headless::start_with("glass-groups", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-groups", SHOT, &["--background", "7a7b80"]);
     let size = (400, 100);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "groups", size, &transparent(size));
     let background = [0x7a_u8, 0x7b, 0x80];
@@ -615,7 +622,7 @@ const TIP_WIDTHS: [u32; 10] = [24, 19, 17, 15, 14, 12, 10, 9, 7, 3];
 fn tip_widths(name: &str, side: &str) -> Vec<u32> {
     // Upward and sideways tips: silica-glass-v1 versions 5 and 6.
     common::client::GLASS_VERSION.with(|v| v.set(6));
-    let ossido = Headless::start_with(name, SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32(name, SHOT, &["--background", "7a7b80"]);
     let size = (300, 300);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
     // Body from (60, 60) to (240, 240); the tip centered on the chosen side at 150.
@@ -698,7 +705,7 @@ fn tips_point_every_way_with_the_same_shape() {
 
 #[test]
 fn a_tip_joins_its_body_in_one_shape() {
-    let ossido = Headless::start_with("glass-tip-join", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-tip-join", SHOT, &["--background", "7a7b80"]);
     let size = (300, 120);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
     // The Dock menu: thick body and its 31 × 10 tip below, centered at x 100.5.
@@ -731,7 +738,7 @@ fn a_tip_joins_its_body_in_one_shape() {
 /// go on into the body, widening, and stuck out of the left side as a wedge.
 #[test]
 fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
-    let ossido = Headless::start_with("glass-tip-corner", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-tip-corner", SHOT, &["--background", "7a7b80"]);
     let size = (240, 120);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "tip", size, &transparent(size));
     glass
@@ -768,7 +775,7 @@ fn a_tip_near_a_corner_does_not_leak_out_of_the_body() {
 #[test]
 fn notification_glass_is_regular_glass_whose_cards_stay_apart() {
     // A banner is Glass/Regular.
-    let ossido = Headless::start_with("glass-notification", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-notification", SHOT, &["--background", "7a7b80"]);
     let size = (344, 91);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
     glass
@@ -810,7 +817,7 @@ fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
     // Like the Control Center modules: regions of the same material far from each other,
     // capsules and rounded rectangles. The rim light sits on the first row of each region's
     // top and the inside rim (darker) on its last row, even far from the center of the group.
-    let ossido = Headless::start_with("glass-group-rim", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-group-rim", SHOT, &["--background", "7a7b80"]);
     let size = (292, 330);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "stack", size, &transparent(size));
     // The Control Center grid: modules 12 pt from each other, with the glass 1 pt wider
@@ -872,7 +879,7 @@ fn every_region_of_a_group_has_its_rim_on_its_own_edge() {
 fn translucent_glass_fades_with_its_panel() {
     // At half opacity the notification glass on the gray is halfway between the background
     // (#7a7b80) and the full fill: a fading panel carries the glass with it.
-    let ossido = Headless::start_with("glass-translucent", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-translucent", SHOT, &["--background", "7a7b80"]);
     let size = (344, 91);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "banner", size, &transparent(size));
     glass
@@ -940,7 +947,7 @@ fn glass_cut_by_the_screen_edge_does_not_blur_in_the_far_side() {
     // black from x 175 on (inside the capture's right margin). The offscreen textures repeat
     // by default: without clamping, the blur at the left edge read the black from the far
     // right of the capture (#168).
-    let ossido = Headless::start_with("glass-edge-clamp", SHOT, &[]);
+    let ossido = start_at_32("glass-edge-clamp", SHOT, &[]);
     let (_back, mut glass) =
         full_screen_glass(&ossido, |x, _| if x < 175 { [255; 3] } else { [0; 3] });
     glass
@@ -970,7 +977,7 @@ fn the_rims_follow_the_end_of_a_capsule_without_an_outline() {
     // the end the inside rim stays inside the shape and nothing is drawn outside it (the
     // measured glass had a dark line outside the sides that once wrapped the whole end, a
     // black crescent, #168).
-    let ossido = Headless::start_with("glass-capsule-end", SHOT, &[]);
+    let ossido = start_at_32("glass-capsule-end", SHOT, &[]);
     let (_back, mut glass) = full_screen_glass(&ossido, |_, _| [0x7a, 0x7b, 0x80]);
     glass
         .set_glass(&[(40 + 100, 40 + 100, 142, 64, 32.0, Material::Regular)])
@@ -1038,7 +1045,7 @@ fn a_profile_applies_to_the_following_regions_until_clear() {
 fn the_compositor_draws_the_profile_shadow_only_when_asked() {
     common::client::GLASS_VERSION.with(|v| v.set(7));
     let below = |name: &str, shadow: Shadow| {
-        let ossido = Headless::start_with(name, SHOT, &[]);
+        let ossido = start_at_32(name, SHOT, &[]);
         let (_back, mut glass) = full_screen_glass(&ossido, |_, _| [0xc0; 3]);
         glass
             .set_glass_with(|g| {
@@ -1078,7 +1085,7 @@ fn turned(c: (f64, f64), degrees: f64, (x, y): (f64, f64)) -> (u32, u32) {
 #[test]
 fn a_rotated_region_turns_its_whole_shape() {
     common::client::GLASS_VERSION.with(|v| v.set(8));
-    let ossido = Headless::start_with("glass-rotated", SHOT, &["--background", "7a7b80"]);
+    let ossido = start_at_32("glass-rotated", SHOT, &["--background", "7a7b80"]);
     let size = (320, 320);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "turned", size, &transparent(size));
     // A 200 × 60 menu glass turned 20° clockwise about its centre (window (160, 160)).
@@ -1142,7 +1149,7 @@ fn a_rotated_region_turns_its_whole_shape() {
 fn a_rotated_region_keeps_its_edge_light_on_its_own_top_edge() {
     common::client::GLASS_VERSION.with(|v| v.set(8));
     // Over black, where the rim light stands out most against the fill.
-    let ossido = Headless::start_with("glass-rotated-edge", SHOT, &["--background", "000000"]);
+    let ossido = start_at_32("glass-rotated-edge", SHOT, &["--background", "000000"]);
     let size = (320, 320);
     let mut glass = TestWindow::open_pixels(&ossido.wayland, "turned", size, &transparent(size));
     // A Control Center module (the rim light on its top edge, none on the sides), turned 60°:

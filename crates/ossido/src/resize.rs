@@ -135,6 +135,72 @@ pub fn edges_at(frame: Rectangle<i32, Logical>, p: Point<f64, Logical>) -> Optio
     edges.any().then_some(edges)
 }
 
+/// Whole steps for the content size (`silica_window_v1.set_size_increment`): the content is
+/// `base + n * step` on each axis with a non-zero step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Increment {
+    pub base: (i32, i32),
+    pub step: (i32, i32),
+}
+
+/// `value` snapped to the nearest `base + n * step` that is within `min` (0: none) and
+/// `max` (0: none); unchanged when `step` is 0 or no step fits.
+fn snap_axis(value: i32, base: i32, step: i32, min: i32, max: i32) -> i32 {
+    if step <= 0 {
+        return value;
+    }
+    let steps = (f64::from(value.saturating_sub(base)) / f64::from(step)).round() as i32;
+    let mut snapped = base.saturating_add(steps.saturating_mul(step));
+    while snapped < min.max(MIN_CONTENT) {
+        snapped = snapped.saturating_add(step);
+    }
+    while max > 0 && snapped > max && snapped.saturating_sub(step) >= min.max(MIN_CONTENT) {
+        snapped = snapped.saturating_sub(step);
+    }
+    snapped
+}
+
+/// [`resized`]'s `frame` with the content snapped to `increment`; the side opposite to the
+/// dragged edge stays where `from` (the frame before the resize) had it.
+pub fn snapped(
+    frame: Rectangle<i32, Logical>,
+    from: Rectangle<i32, Logical>,
+    edges: Edges,
+    bar: i32,
+    increment: Increment,
+    min: Size<i32, Logical>,
+    max: Size<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    let w = if edges.left || edges.right {
+        snap_axis(
+            frame.size.w,
+            increment.base.0,
+            increment.step.0,
+            min.w,
+            max.w,
+        )
+    } else {
+        frame.size.w
+    };
+    let content_h = frame.size.h.saturating_sub(bar);
+    let h = if edges.top || edges.bottom {
+        snap_axis(content_h, increment.base.1, increment.step.1, min.h, max.h).saturating_add(bar)
+    } else {
+        frame.size.h
+    };
+    let x = if edges.left {
+        from.loc.x.saturating_add(from.size.w).saturating_sub(w)
+    } else {
+        frame.loc.x
+    };
+    let y = if edges.top {
+        from.loc.y.saturating_add(from.size.h).saturating_sub(h)
+    } else {
+        frame.loc.y
+    };
+    Rectangle::new((x, y).into(), (w, h).into())
+}
+
 /// The new frame after a pointer movement `delta`, within the content limits (`min` and
 /// `max`, 0 for no limit) and with the bar `bar` on top; the opposite side stays still.
 pub fn resized(
@@ -394,6 +460,14 @@ impl State {
             min,
             max,
         );
+        let frame = match resize
+            .window
+            .toplevel()
+            .and_then(|toplevel| crate::window_appearance::increment_of(toplevel.wl_surface()))
+        {
+            Some(increment) => snapped(frame, resize.frame, resize.edges, bar, increment, min, max),
+            None => frame,
+        };
         let min_h = min.h.max(MIN_CONTENT).saturating_add(bar);
         let frame = below_top(frame, resize.edges, self.usable_area().loc.y, min_h);
         resize.target = Size::from((frame.size.w, frame.size.h.saturating_sub(bar).max(1)));
@@ -618,6 +692,43 @@ mod tests {
         let max = Size::from((1100, 0));
         let r = resized(frame(), right, Point::from((500.0, 0.0)), 0, none, max);
         assert_eq!(r, Rectangle::new((200, 150).into(), (1100, 700).into()));
+    }
+
+    #[test]
+    fn snapping_goes_to_the_nearest_whole_step_and_keeps_the_far_side() {
+        let none = Size::from((0, 0));
+        let inc = Increment {
+            base: (10, 20),
+            step: (7, 14),
+        };
+        let right = Edges {
+            right: true,
+            bottom: true,
+            ..Edges::default()
+        };
+        // 1000x700 content + 52 bar, dragged by (+10, +20).
+        let moved = resized(frame(), right, Point::from((10.0, 20.0)), 0, none, none);
+        let r = snapped(moved, frame(), right, 0, inc, none, none);
+        // 1010 -> 10 + 143 * 7 = 1011; 720 -> 20 + 50 * 14 = 720.
+        assert_eq!(r.size, Size::from((1011, 720)));
+        assert_eq!(r.loc, frame().loc);
+        let left = Edges {
+            left: true,
+            ..Edges::default()
+        };
+        let moved = resized(frame(), left, Point::from((20.0, 0.0)), 0, none, none);
+        let r = snapped(moved, frame(), left, 0, inc, none, none);
+        assert_eq!(r.size.w, 983); // 980 -> 10 + 139 * 7 = 983
+        assert_eq!(r.loc.x + r.size.w, 1200);
+    }
+
+    #[test]
+    fn snapping_respects_the_limits_and_zero_steps() {
+        assert_eq!(snap_axis(100, 0, 0, 0, 0), 100);
+        // The minimum 95 wins over the nearest step (90).
+        assert_eq!(snap_axis(92, 0, 10, 95, 0), 100);
+        // The maximum 95 wins over the nearest step (100).
+        assert_eq!(snap_axis(99, 0, 10, 0, 95), 90);
     }
 
     #[test]

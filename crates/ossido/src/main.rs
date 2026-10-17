@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! ossido [--backend winit|headless|drm] [--size WxH] [--scale N] [--control PORT]
-//!     [--background RRGGBB] [--animation-scale F] [--glass auto|full|frosted|opaque]
+//!     [--background RRGGBB] [--animation-scale F] [--window-origin PT] [--glass auto|full|frosted|opaque]
 //!     [--session-bus] [--logo-key none|rightctrl|rightalt] [--appearance light|dark]
 //!     [--spawn COMMAND]... [--spawn-shell COMMAND]... [--keep-shell COMMAND]...
 //! ```
@@ -81,6 +81,15 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .ok()
                     .filter(|scale| scale.is_finite() && (0.0..=1000.0).contains(scale))
                     .ok_or(format!("invalid animation scale (0–1000): {text}"))?;
+            }
+            "--window-origin" => {
+                let text = value()?;
+                options.window_origin = Some(
+                    text.parse::<i32>()
+                        .ok()
+                        .filter(|n| (0..=1000).contains(n))
+                        .ok_or(format!("invalid window origin (0-1000): {text}"))?,
+                );
             }
             "--glass" => {
                 let text = value()?;
