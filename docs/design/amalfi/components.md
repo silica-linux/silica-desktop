@@ -119,7 +119,7 @@ Read each one from the kit for exact geometry (see README, "How to read the kit"
 | Control Center | Panel; Module: Toggle Off/On/On Hover, Tile, Slider (Display, Sound, Keyboard), Now Playing, Privacy Pill, Edit Button; Detail: Wi-Fi, Wi-Fi Off, Bluetooth, Nearby Sharing, Focus, Display, Sound, Now Playing; Row: Item, Network Secure/Open, Slider, Footer, Section; Status: Wi-Fi, Bluetooth, Battery; Status Menu: Battery | panel 292×484; detail 312 wide; modules 64×64, 140×64, 140×140, 292×64 |
 | Dialogs | Dialog: Save Panel, Open Panel, Generic; Browser; Footer | 600×348, 600×308, 400×432 |
 | Disclosure | Triangle and Button: Collapsed/Expanded × states; Group; Group Header | 24×24; group 280 |
-| Dock | Shelf: Default, With Label; Tile (Rest, Running) per app + Stack, Trash Empty/Full; Separator; Indicator | shelf 528×60; tile 52×60 |
+| Dock | Shelf: Default, With Label; Tile (Rest, Running) per app + Stack, Trash Empty/Full; Separator; Indicator; Label (tooltip) | shelf 528×60; tile 52×60; the label is centred on the hovered icon with its bottom edge 8 pt above the icon's top (not above the shelf), also when magnified (use the magnified icon's top) |
 | Fields | Text Field: Placeholder, Filled, Focused, Disabled, Error × 3 sizes; Secure Field; Text Area; Token Field; Token; Search Field: Empty, Typing, Focused, Disabled × 3 sizes + Token; Inline Button; Clear Button | 200×24/28/32; area 240×88 |
 | Forms | Layout; Section: Profile, Preferences, Validation; Row: Text, Popup, Check, Switch, Help, Error; Footer | 400×496 |
 | Group Boxes | Box: Titled, Titled Disabled, Untitled, Nested | |
