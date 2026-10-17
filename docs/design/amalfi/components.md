@@ -32,10 +32,18 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
   | Mustache, Notes | Tags | the tag's own colour (dot) |
   | Mail | Favourites, Smart Mailboxes, account mailboxes, Search | `Accent/Amalfi` |
   | Mail | On My Mac (local folders) | `Palette/Mare` |
-  | Notes | Folders (including All Notes) | `Palette/Limone` |
+  | Notes | Folders (including All Notes) | `Palette/Limone Scuro` |
   | Notes | Smart Folders | `Accent/Amalfi` (not observed on the reference: fallback) |
   | Generic panels (`Sidebars/Panel`, `Windows/Sidebar Body`) | every section | `Accent/Amalfi` |
   | Settings | tiles keep their own colour, white glyph | — |
+
+  Palette (user decision 2026-10-17): `Palette/Arancia` (light `#F98A17`, dark `#FF9F40`) is the orange; the
+  Orange tag (dots, tag rows, tag colour row in menus, Mustache sidebar, Settings, Customize Folder) uses it,
+  never `Palette/Limone`, which stays the Yellow tag and the decorative yellow. `Palette/Limone Scuro` (light
+  `#A67600`, dark `#FFCF3D`, equal to `Limone` dark) is the glyph yellow: it gives at least 3:1 (WCAG 1.4.11)
+  on the light sidebar `#F5F6F8` (3.73), on the selected capsule (3.12) and on the window `#FFFFFF` (4.03);
+  dark `#FFCF3D` is 10.52 on the sidebar `#232428` and 7.5 on the selected capsule. Use `Limone Scuro`
+  for yellow glyphs and text-sized marks, `Limone` for fills and dots.
 
   The row masters' icon defaults to `Accent/Amalfi`; instances override it per section. Disabled rows use
   `Text/Tertiary`.
