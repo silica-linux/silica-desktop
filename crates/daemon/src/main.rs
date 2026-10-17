@@ -6,6 +6,7 @@ use futures_lite::{StreamExt, future};
 use silica_daemon::actions::{ACTIONS_PATH, Actions};
 use silica_daemon::share::{SHARE_PATH, Share};
 use silica_daemon::sound::{SOUND_PATH, Sound, SoundConfig};
+use silica_daemon::thumbnails::{THUMBNAILS_PATH, Thumbnails};
 use silica_daemon::{
     AuthConfig, AuthService, ClipboardService, Daemon, SystemConfig, SystemService,
 };
@@ -84,6 +85,11 @@ async fn run(address: Option<String>, replace: bool) -> zbus::Result<()> {
     connection.object_server().at(ACTIONS_PATH, Actions).await?;
     // The Share menu of apps: its targets and the sharing.
     connection.object_server().at(SHARE_PATH, Share).await?;
+    // Thumbnails of files for apps and the shell, cached per the freedesktop specification.
+    connection
+        .object_server()
+        .at(THUMBNAILS_PATH, Thumbnails::from_env())
+        .await?;
     // The interface sound effects (the Trash, copies), for apps and the shell.
     connection
         .object_server()
