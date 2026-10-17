@@ -946,6 +946,10 @@ impl State {
 
     /// Gives the focus to a window (or to none) and brings it to the top.
     pub fn focus_window(&mut self, window: Option<Window>) {
+        // Activation leaving the window (or app) an open menu belongs to closes the menu.
+        if !self.transients.is_empty() && self.focused_window() != window {
+            self.dismiss_transients();
+        }
         // A window taking the focus ends the frontmost windowless app (#142).
         if window.is_some() {
             self.set_windowless_front(None);

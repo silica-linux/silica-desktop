@@ -795,6 +795,7 @@ impl State {
 
     /// Opens a view; if it is already open it closes it, if another one is open it switches to this.
     pub fn toggle_view(&mut self, mode: Mode, now: Instant) {
+        self.dismiss_transients();
         if self.panorama_mode() == Some(mode) {
             self.close_panorama(now, None);
         } else {

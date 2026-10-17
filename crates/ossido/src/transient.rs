@@ -404,6 +404,20 @@ impl State {
         }
     }
 
+    /// A change of context (another window activated, the desktop, a space switch, Panorama):
+    /// every open menu, popup and panel ends, the shell with `dismissed`, the apps' popups
+    /// with `popup_done` (#219).
+    pub fn dismiss_transients(&mut self) {
+        self.drop_dead_transients();
+        if self.transients.is_empty() {
+            return;
+        }
+        for transient in std::mem::take(&mut self.transients) {
+            self.end_transient(transient);
+        }
+        self.refresh_pointer();
+    }
+
     fn end_transient(&mut self, transient: Transient) {
         match transient.source {
             Source::Shell { surface, manager } => {

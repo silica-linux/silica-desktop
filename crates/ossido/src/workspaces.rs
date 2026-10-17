@@ -144,6 +144,7 @@ impl State {
         if to == from || to >= self.workspaces.count() {
             return false;
         }
+        self.dismiss_transients();
         let output_width = self
             .space
             .output_geometry(&self.output)

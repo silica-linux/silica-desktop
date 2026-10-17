@@ -22,7 +22,7 @@ use common::Headless;
 use common::client::{APP_ID, PointerLog, TestWindow};
 use serde_json::{Value, json};
 use silica_control::commands::{
-    INPUT_CLICK, INPUT_POINTER_MOVE, INPUT_SCROLL, WINDOW_LIST, WindowInfo,
+    INPUT_CLICK, INPUT_POINTER_MOVE, INPUT_SCROLL, WINDOW_FOCUS, WINDOW_LIST, WindowInfo,
 };
 use silica_protocols::shell::client::silica_shell_manager_v1::{
     self, Outside, Rule, SilicaShellManagerV1,
@@ -310,6 +310,8 @@ enum Act {
     Click((f64, f64), &'static str),
     Scroll((f64, f64)),
     Move((f64, f64)),
+    /// Activates the "back" window through the control channel (no pointer).
+    FocusBack,
 }
 
 /// Opens "back" (app `OTHER_APP` unless `back_app`) and "front" (`OWNER_APP`, on top and
@@ -366,6 +368,17 @@ fn run(name: &str, mode: Mode, back_app: &str, acts: &[Act]) -> Outcome {
             Act::Move(at) => control
                 .call(INPUT_POINTER_MOVE, json!({"x": at.0, "y": at.1}))
                 .unwrap(),
+            Act::FocusBack => {
+                let list: Vec<WindowInfo> =
+                    serde_json::from_value(control.call(WINDOW_LIST, Value::Null).unwrap())
+                        .unwrap();
+                let id = list
+                    .iter()
+                    .find(|w| w.title.as_deref() == Some("back"))
+                    .map(|w| w.id)
+                    .unwrap();
+                control.call(WINDOW_FOCUS, json!({"id": id})).unwrap()
+            }
         };
     }
     let list: Vec<WindowInfo> =
@@ -540,6 +553,26 @@ fn a_panel_never_blocks() {
     assert_eq!(o.dismissed, 1);
     assert_eq!(o.back.presses, 1);
     assert!(o.back_focused && !o.front_focused);
+}
+
+#[test]
+fn activating_another_window_closes_a_menu() {
+    // #219: switching context without the pointer (⌘Tab, a command) ends the menu.
+    let o = run("t-focus-closes", APP_MENU, OTHER_APP, &[Act::FocusBack]);
+    assert_eq!(o.dismissed, 1);
+    assert!(o.back_focused);
+}
+
+#[test]
+fn activating_another_window_closes_a_panel_and_the_dock_menu() {
+    assert_eq!(
+        run("t-focus-panel", PANEL, OTHER_APP, &[Act::FocusBack]).dismissed,
+        1
+    );
+    assert_eq!(
+        run("t-focus-dock", DOCK_MENU, OTHER_APP, &[Act::FocusBack]).dismissed,
+        1
+    );
 }
 
 #[test]
