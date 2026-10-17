@@ -2531,7 +2531,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
         _capsule(
           l10nOf(context).dockRemove,
           at.dx + drag.side / 2,
-          at.dy - _m.labelGap,
+          at.dy - _m.labelGapFor(drag.side),
           1,
         ),
     ];
@@ -2567,7 +2567,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               _capsule(
                 l10nOf(context).dockRemove,
                 ghost.at.dx + ghost.side / 2,
-                ghost.at.dy - _m.labelGap,
+                ghost.at.dy - _m.labelGapFor(ghost.side),
                 1,
               ),
             ],
@@ -2731,10 +2731,10 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   Widget _label(Layout l, int index, double height, double opacity) {
-    final (_, iconTop, _) = iconRect(l, index, height);
+    final (_, iconTop, side) = iconRect(l, index, height);
     // During the bounce the label rises with the icon.
     final iconTopY = iconTop - _bounce(index);
-    final tipY = iconTopY - _m.labelGap;
+    final tipY = iconTopY - _m.labelGapFor(side);
     final style = dockLabelStyle(context);
     final width = dockLabelWidth(_items[index].label, style);
     return Positioned(

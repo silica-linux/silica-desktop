@@ -83,6 +83,22 @@ void main() {
     },
   );
 
+  test('the label ends 8 pt above the icon drawing, magnified or not (#221)', () {
+    const m = DockMetrics();
+    // Kit Dock/Shelf/With Label: the tip is 2 pt above the 64 pt slot (the drawing starts
+    // at 824/1024 of it, about 6 pt in).
+    expect(m.labelGapFor(64), closeTo(8 - 6.25, 1e-9));
+    // Magnified: the gap follows the larger slot's own drawing inset.
+    expect(m.labelGapFor(128), closeTo(8 - 12.5, 1e-9));
+    // The drawing's top minus the tip is always the 8 pt clearance.
+    for (final side in [16.0, 64.0, 100.0]) {
+      expect(
+        side * (1 - 824 / 1024) / 2 + m.labelGapFor(side),
+        closeTo(8, 1e-9),
+      );
+    }
+  });
+
   test(
     'the launch bounce is the measured curve (misc.md), scaled to the Amalfi size',
     () {

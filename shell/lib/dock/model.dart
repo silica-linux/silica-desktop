@@ -131,9 +131,15 @@ class DockMetrics {
   double get dotAbove => (6 * k).roundToDouble();
   double get labelOffset => (12 * k).roundToDouble();
 
-  /// Gap between the top of the icon and the tip of the label or of the menu's arrow
-  /// (the tip is [labelOffset] above the shelf's top).
-  double get labelGap => iconTop + labelOffset;
+  /// Gap between the top of the icon's slot (a canvas of `side`, magnified or not) and the
+  /// tip of the label or of the menu's arrow: the label ends [labelClearance] above where the
+  /// icon's drawing starts (824 of a 1024 grid, centred), not above the shelf. Negative: the
+  /// tip is that much below the top of the slot.
+  double labelGapFor(double side) =>
+      labelClearance - side * (1 - 824 / 1024) / 2;
+
+  /// How far above the icon's drawing the label's bottom edge is.
+  double get labelClearance => 8 * k;
 
   @override
   bool operator ==(Object other) =>
