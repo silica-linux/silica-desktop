@@ -1562,6 +1562,12 @@ abstract class AppLocalizations {
   /// **'Copy to Menu Bar'**
   String get ccCopyToMenuBar;
 
+  /// Control Center module menu: hides the control's status item again
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Menu Bar'**
+  String get ccRemoveFromMenuBar;
+
   /// Control Center detail: opens Settings at Wi-Fi
   ///
   /// In en, this message translates to:

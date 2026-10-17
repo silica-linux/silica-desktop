@@ -32,6 +32,7 @@ import 'package:silica_ui/silica_ui.dart';
 
 import '../l10n/l10n.dart';
 import '../menubar/menubar.dart' show barHeight;
+import '../menubar/menubar_config.dart';
 import '../system/glass_profile.dart';
 import '../system/layer_control.dart';
 import '../system/media.dart';
@@ -1129,8 +1130,18 @@ class _ControlCenterState extends State<ControlCenter>
       size(l.ccSizeMedium, ModuleSize.medium),
       size(l.ccSizeLarge, ModuleSize.large),
       const MenuDivider(),
-      // The menu bar can't host Control Center controls yet (#59).
-      MenuAction(l.ccCopyToMenuBar, enabled: false),
+      // Only the controls with a status item can go to the bar; the rest stay disabled.
+      if (menubarShows(readMenubarConfig(widget.env), key))
+        MenuAction(
+          l.ccRemoveFromMenuBar,
+          onSelected: () => setMenubarModule(key, false, widget.env),
+        )
+      else
+        MenuAction(
+          l.ccCopyToMenuBar,
+          enabled: menubarModules.contains(key),
+          onSelected: () => setMenubarModule(key, true, widget.env),
+        ),
       const MenuDivider(),
       MenuAction(l.ccRemove, onSelected: () => _removeModule(key)),
     ];

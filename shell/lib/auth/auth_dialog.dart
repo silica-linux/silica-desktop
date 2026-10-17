@@ -121,15 +121,18 @@ class DBusAuth implements AuthSource {
       .handleError((Object _) {});
 
   @override
-  Stream<AuthRequest> get requested => _signals('Requested')
-      .map((s) => AuthRequest.fromDBus(s.args.firstOrNull))
-      .where((r) => r != null)
-      .cast<AuthRequest>();
+  Stream<AuthRequest> get requested =>
+      _signals('Requested')
+          .map((s) => AuthRequest.fromDBus(s.args.firstOrNull))
+          .where((r) => r != null)
+          .cast<AuthRequest>();
 
   @override
-  Stream<int> get closed => _signals(
-    'Closed',
-  ).map((s) => s.args.firstOrNull).where((id) => id is int).cast<int>();
+  Stream<int> get closed =>
+      _signals('Closed')
+          .map((s) => s.args.firstOrNull)
+          .where((id) => id is int)
+          .cast<int>();
 
   @override
   Future<bool> respond(int id, String user, String password) async {

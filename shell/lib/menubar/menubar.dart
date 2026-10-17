@@ -999,7 +999,7 @@ class _MenuBarState extends State<MenuBar> {
           onTap: () => _toggleStatusMenu('media'),
         ),
       // While a Focus is on, its moon (SH-MB-26); the menu is the Focus panel.
-      if (s.doNotDisturb)
+      if (s.doNotDisturb || config.focus)
         item('dnd', StatusKind.focus, onTap: () => _toggleStatusMenu('dnd')),
       // Bluetooth and Sound when Settings › Menu Bar asks for them (SH-MB-24, SH-MB-25):
       // their menus are the Control Center's detail panels, like Wi-Fi. Sound "when

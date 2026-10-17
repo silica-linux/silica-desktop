@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -819,6 +820,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ccCopyToMenuBar => 'Copy to Menu Bar';
+
+  @override
+  String get ccRemoveFromMenuBar => 'Remove from Menu Bar';
 
   @override
   String get ccWifiSettings => 'Wi-Fi Settings…';

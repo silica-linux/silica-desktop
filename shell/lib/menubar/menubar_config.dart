@@ -2,7 +2,7 @@
 // `$XDG_CONFIG_HOME/silica/menubar.json`:
 //
 //   {"sound": "always" | "active" | "never", "bluetooth": true, "battery": true,
-//    "batteryPercent": false}
+//    "batteryPercent": false, "focus": false}
 //
 // Defaults as on the reference (menubar.md › Status items, INV-A1): Bluetooth not in the bar,
 // Sound "when active", battery shown when there is one. The file is watched: Settings changes
@@ -23,12 +23,17 @@ class MenubarConfig {
     this.bluetooth = false,
     this.battery = true,
     this.batteryPercent = false,
+    this.focus = false,
   });
 
   final SoundItem sound;
   final bool bluetooth;
   final bool battery;
   final bool batteryPercent;
+
+  /// The Focus moon always shown (Control Center › Copy to Menu Bar); otherwise only while a
+  /// Focus is on.
+  final bool focus;
 
   factory MenubarConfig.fromJson(Object? json) {
     if (json is! Map) return const MenubarConfig();
@@ -44,6 +49,7 @@ class MenubarConfig {
       bluetooth: flag('bluetooth', false),
       battery: flag('battery', true),
       batteryPercent: flag('batteryPercent', false),
+      focus: flag('focus', false),
     );
   }
 
@@ -53,10 +59,12 @@ class MenubarConfig {
       other.sound == sound &&
       other.bluetooth == bluetooth &&
       other.battery == battery &&
-      other.batteryPercent == batteryPercent;
+      other.batteryPercent == batteryPercent &&
+      other.focus == focus;
 
   @override
-  int get hashCode => Object.hash(sound, bluetooth, battery, batteryPercent);
+  int get hashCode =>
+      Object.hash(sound, bluetooth, battery, batteryPercent, focus);
 }
 
 /// The configuration file's path.
@@ -75,6 +83,53 @@ MenubarConfig readMenubarConfig([Map<String, String>? env]) {
     return const MenubarConfig();
   } on FormatException {
     return const MenubarConfig();
+  }
+}
+
+/// The Control Center modules that have a status item in the bar, and which ones the bar shows
+/// now (the module menu's Copy to / Remove from Menu Bar, silica-desktop#145). Wi-Fi is always
+/// in the bar and cannot be removed.
+const menubarModules = {'bluetooth', 'sound', 'dnd', 'battery'};
+
+/// Whether the bar shows the status item of Control Center module [id] under [config].
+bool menubarShows(MenubarConfig config, String id) => switch (id) {
+  'bluetooth' => config.bluetooth,
+  'sound' => config.sound == SoundItem.always,
+  'dnd' => config.focus,
+  'battery' => config.battery,
+  _ => false,
+};
+
+/// Shows or hides the status item of module [id] by rewriting `menubar.json` (the other keys
+/// stay as they are, the watcher applies the change). Returns false when it could not write.
+bool setMenubarModule(String id, bool shown, [Map<String, String>? env]) {
+  final key = switch (id) {
+    'bluetooth' => 'bluetooth',
+    'sound' => 'sound',
+    'dnd' => 'focus',
+    'battery' => 'battery',
+    _ => null,
+  };
+  if (key == null) return false;
+  final file = File(menubarConfigPath(env));
+  try {
+    var json = <String, Object?>{};
+    try {
+      final read = jsonDecode(file.readAsStringSync());
+      if (read is Map) json = Map<String, Object?>.from(read);
+    } on FileSystemException {
+      // No file yet: the defaults plus this key.
+    } on FormatException {
+      // Unreadable: start again from the defaults.
+    }
+    json[key] = key == 'sound' ? (shown ? 'always' : 'never') : shown;
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert(json)}\n',
+    );
+    return true;
+  } on FileSystemException {
+    return false;
   }
 }
 

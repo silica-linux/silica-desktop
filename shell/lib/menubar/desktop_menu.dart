@@ -29,9 +29,8 @@ String desktopFolder({Map<String, String>? env, String? userDirs}) {
   String? text = userDirs;
   if (text == null) {
     try {
-      text = File(
-        '${e['XDG_CONFIG_HOME'] ?? '$home/.config'}/user-dirs.dirs',
-      ).readAsStringSync();
+      text = File('${e['XDG_CONFIG_HOME'] ?? '$home/.config'}/user-dirs.dirs')
+          .readAsStringSync();
     } on FileSystemException {
       text = null;
     }

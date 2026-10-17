@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/menubar/menubar.dart';
@@ -8,6 +11,28 @@ import 'package:silica_shell/system/system_status.dart';
 import 'controlcenter_test.dart' show FakeSystem;
 
 void main() {
+  test('Copy to Menu Bar: setMenubarModule keeps the other keys', () {
+    final dir = Directory.systemTemp.createTempSync('mbcfg');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final env = {'XDG_CONFIG_HOME': dir.path};
+    File(menubarConfigPath(env))
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(jsonEncode({'batteryPercent': true, 'x': 1}));
+    expect(menubarShows(readMenubarConfig(env), 'bluetooth'), isFalse);
+    expect(setMenubarModule('bluetooth', true, env), isTrue);
+    expect(setMenubarModule('sound', true, env), isTrue);
+    expect(setMenubarModule('dnd', true, env), isTrue);
+    final c = readMenubarConfig(env);
+    expect(c.batteryPercent, isTrue);
+    expect([
+      for (final m in menubarModules) menubarShows(c, m),
+    ], everyElement(isTrue));
+    expect(jsonDecode(File(menubarConfigPath(env)).readAsStringSync())['x'], 1);
+    expect(setMenubarModule('sound', false, env), isTrue);
+    expect(readMenubarConfig(env).sound, SoundItem.never);
+    expect(setMenubarModule('display', true, env), isFalse);
+  });
+
   test('menubar.json: defaults as on the reference, values read', () {
     expect(MenubarConfig.fromJson(null), const MenubarConfig());
     expect(const MenubarConfig().bluetooth, isFalse);

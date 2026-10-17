@@ -1117,6 +1117,10 @@
   "@ccCopyToMenuBar": {
     "description": "Control Center module menu: also shows the control in the menu bar"
   },
+  "ccRemoveFromMenuBar": "Remove from Menu Bar",
+  "@ccRemoveFromMenuBar": {
+    "description": "Control Center module menu: hides the control's status item again"
+  },
   "ccWifiSettings": "Wi-Fi Settings…",
   "@ccWifiSettings": {
     "description": "Control Center detail: opens Settings at Wi-Fi"

@@ -71,10 +71,20 @@ FolderStyles fakeStyles(
   readMetadata: (path) => gio[path],
 );
 
-typedef _SetC =
-    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint8>, IntPtr, Int32);
-typedef _SetDart =
-    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint8>, int, int);
+typedef _SetC = Int32 Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Uint8>,
+  IntPtr,
+  Int32,
+);
+typedef _SetDart = int Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Uint8>,
+  int,
+  int,
+);
 
 /// Writes an attribute as the file manager would.
 bool setAttribute(String path, String name, String value) {

@@ -137,60 +137,67 @@ void main() {
     expect(maxCanvas, 128);
   });
 
-  test('Dock/Shelf/Default at canvas 60: shelf, tiles, icons, separator, dots', () {
-    final shelfKit = kit('shelf-default');
-    final f = Frames(60);
-    expectRect(
-      f.shelf,
-      frameOf(shelfKit).shift(-frameOf(shelfKit).topLeft),
-      'shelf',
-    );
-    expect(f.shelf.size, const Size(620, 80));
-    expect(f.m.radius, 24);
-    final surface = child(shelfKit, 'Surface');
-    expect(((surface['style'] as Map)['corners'] as Map)['radii'], [
-      24,
-      24,
-      24,
-      24,
-    ]);
-    // The tiles are the Mail/Trash masters; the icon and the dot are inside them.
-    final tileKit = frameOf(kit('tile-running'));
-    expect(tileKit.size, const Size(64, 80));
-    final mailIcon = frameOf(child(kit('tile-running'), 'Icon'));
-    final dotKit = frameOf(child(kit('tile-running'), 'Running dot'));
-    final trashIcon = frameOf(child(kit('tile-trash'), 'Icon'));
-    expect(mailIcon, const Rect.fromLTWH(2, 10, 60, 60));
-    expect(trashIcon, mailIcon, reason: 'places have the same canvas as apps');
-    expect(dotKit, const Rect.fromLTWH(30, 72, 4, 4));
-    expect(frameOf(kit('dot')).size, const Size(4, 4));
-    final sepKit = kit('separator-light');
-    expect(frameOf(sepKit).size, const Size(28, 80));
-    final lineKit = frameOf(child(sepKit, 'Line'));
-    expect(lineKit, const Rect.fromLTWH(14, 10, 1, 60));
+  test(
+    'Dock/Shelf/Default at canvas 60: shelf, tiles, icons, separator, dots',
+    () {
+      final shelfKit = kit('shelf-default');
+      final f = Frames(60);
+      expectRect(
+        f.shelf,
+        frameOf(shelfKit).shift(-frameOf(shelfKit).topLeft),
+        'shelf',
+      );
+      expect(f.shelf.size, const Size(620, 80));
+      expect(f.m.radius, 24);
+      final surface = child(shelfKit, 'Surface');
+      expect(((surface['style'] as Map)['corners'] as Map)['radii'], [
+        24,
+        24,
+        24,
+        24,
+      ]);
+      // The tiles are the Mail/Trash masters; the icon and the dot are inside them.
+      final tileKit = frameOf(kit('tile-running'));
+      expect(tileKit.size, const Size(64, 80));
+      final mailIcon = frameOf(child(kit('tile-running'), 'Icon'));
+      final dotKit = frameOf(child(kit('tile-running'), 'Running dot'));
+      final trashIcon = frameOf(child(kit('tile-trash'), 'Icon'));
+      expect(mailIcon, const Rect.fromLTWH(2, 10, 60, 60));
+      expect(
+        trashIcon,
+        mailIcon,
+        reason: 'places have the same canvas as apps',
+      );
+      expect(dotKit, const Rect.fromLTWH(30, 72, 4, 4));
+      expect(frameOf(kit('dot')).size, const Size(4, 4));
+      final sepKit = kit('separator-light');
+      expect(frameOf(sepKit).size, const Size(28, 80));
+      final lineKit = frameOf(child(sepKit, 'Line'));
+      expect(lineKit, const Rect.fromLTWH(14, 10, 1, 60));
 
-    for (final (i, name) in kitOrder.indexed) {
-      final instance = child(shelfKit, name);
-      final slot = frameOf(instance);
-      expectRect(f.tile(i), slot, 'tile $name');
-      if (name == 'Separator') {
-        expectRect(f.line(i), lineKit.shift(slot.topLeft), 'line');
-        continue;
+      for (final (i, name) in kitOrder.indexed) {
+        final instance = child(shelfKit, name);
+        final slot = frameOf(instance);
+        expectRect(f.tile(i), slot, 'tile $name');
+        if (name == 'Separator') {
+          expectRect(f.line(i), lineKit.shift(slot.topLeft), 'line');
+          continue;
+        }
+        expectRect(f.icon(i), mailIcon.shift(slot.topLeft), 'icon $name');
+        // Places draw on the same canvas as apps: the drawing's canvas is the kit's 60 square.
+        expectRect(f.drawn(i), mailIcon.shift(slot.topLeft), 'canvas $name');
+        if (kitItems[i].running) {
+          expectRect(f.dot(i), dotKit.shift(slot.topLeft), 'dot $name');
+        }
       }
-      expectRect(f.icon(i), mailIcon.shift(slot.topLeft), 'icon $name');
-      // Places draw on the same canvas as apps: the drawing's canvas is the kit's 60 square.
-      expectRect(f.drawn(i), mailIcon.shift(slot.topLeft), 'canvas $name');
-      if (kitItems[i].running) {
-        expectRect(f.dot(i), dotKit.shift(slot.topLeft), 'dot $name');
-      }
-    }
-    // Icons are centred in their tile, both ways.
-    final icon = f.icon(0);
-    expect(icon.center.dx, f.tile(0).center.dx);
-    expect(icon.center.dy, f.shelf.center.dy);
-    // The bottom of the shelf is 4 pt above the screen bottom.
-    expect(200 - (f.origin.dy + f.shelf.height), 4);
-  });
+      // Icons are centred in their tile, both ways.
+      final icon = f.icon(0);
+      expect(icon.center.dx, f.tile(0).center.dx);
+      expect(icon.center.dy, f.shelf.center.dy);
+      // The bottom of the shelf is 4 pt above the screen bottom.
+      expect(200 - (f.origin.dy + f.shelf.height), 4);
+    },
+  );
 
   for (final canvas in [16.0, 128.0]) {
     test('scaling at canvas ${canvas.round()} follows k = canvas / 60', () {
@@ -278,9 +285,8 @@ void main() {
       expect(text.left, textKit.left);
       expect(text.width, textKit.width);
       // The outline: body 64 x 28 and an arrow whose tip is at the bottom of the 34 frame.
-      final path = const DockArrowBorder(
-        radius: 8,
-      ).getOuterPath(Offset.zero & master.size);
+      final path = const DockArrowBorder(radius: 8)
+          .getOuterPath(Offset.zero & master.size);
       expect(path.getBounds().left, 0);
       expect(path.getBounds().right, 64);
       // The kit's own outline reaches y 33.2 at the rounded tip (radius 2).
