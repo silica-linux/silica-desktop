@@ -287,6 +287,8 @@ class DesktopEntryStore extends ChangeNotifier {
         if (now.length != _watched.length || !now.every(_watched.containsKey)) {
           _watch();
           _schedule();
+        } else if (_unwatchable.isNotEmpty) {
+          _poll();
         }
       });
     }
@@ -299,6 +301,9 @@ class DesktopEntryStore extends ChangeNotifier {
   final Map<String, DesktopEntry> _live = {};
   late final Map<String, DesktopEntry> entries = UnmodifiableMapView(_live);
   final Map<String, StreamSubscription<FileSystemEvent>> _watched = {};
+  // Folders inotify refused (the per-user instance or watch limit is spent, ENOSPC): they are
+  // read again on every [rescan] tick instead, so installs still show up.
+  final Set<String> _unwatchable = {};
   Timer? _timer;
   Timer? _reload;
   bool _disposed = false;
@@ -318,11 +323,38 @@ class DesktopEntryStore extends ChangeNotifier {
       try {
         _watched[path] = Directory(path)
             .watch(recursive: true)
-            .listen((_) => _schedule(), onError: (Object _) {});
+            .listen(
+              (_) => _schedule(),
+              onError: (Object _) {
+                _watched.remove(path)?.cancel();
+                _unwatchable.add(path);
+              },
+            );
+        _unwatchable.remove(path);
       } on FileSystemException {
-        // Not watchable: the periodic look still notices folders appearing.
+        // Not watchable: the periodic look reads the folder instead.
+        _unwatchable.add(path);
       }
     }
+  }
+
+  String _signature(Map<String, DesktopEntry> entries) =>
+      (entries.values
+              .map((e) => '${e.id}\u0000${e.name}\u0000${e.exec}')
+              .toList()
+            ..sort())
+          .join('\u0001');
+
+  /// Polling fallback for folders that cannot be watched: reloads and tells listeners only when
+  /// something changed.
+  void _poll() {
+    if (_disposed) return;
+    final fresh = loadDesktopEntries(env: _env, locale: locale);
+    if (_signature(fresh) == _signature(_live)) return;
+    _live
+      ..clear()
+      ..addAll(fresh);
+    notifyListeners();
   }
 
   void _schedule() {
