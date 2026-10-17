@@ -2185,6 +2185,8 @@ impl App {
             }
         } else if windowless {
             self.show_window();
+        } else {
+            self.activate_main();
         }
         self.send_app("reopen", serde_json::json!({ "windowless": windowless }));
     }
@@ -2206,6 +2208,28 @@ impl App {
         {
             warn!("open window timer: {err}");
             self.show_window();
+        }
+    }
+
+    /// A reopen with the window already on screen (the Dock, a second launch): it comes to
+    /// the front, focused, as Ossido does for `set_hidden(0)`. Without this a window behind
+    /// other windows stays where it is and the launch seems to do nothing.
+    fn activate_main(&mut self) {
+        if self.hidden_since.is_some() {
+            return;
+        }
+        let Some(manager) = &self.appearance_manager else {
+            return;
+        };
+        if let Some(View {
+            surface: Shell::Window(window),
+            appearance,
+            ..
+        }) = self.views.get_mut(&MAIN_VIEW)
+        {
+            let object = appearance
+                .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+            object.set_hidden(0);
         }
     }
 

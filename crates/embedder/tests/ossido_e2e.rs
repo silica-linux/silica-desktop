@@ -691,6 +691,39 @@ fn uncovered(main: &WindowInfo, other: &WindowInfo) -> (i32, i32) {
 
 /// Several windows in one process (#146): F2 opens a second view in its own xdg_toplevel,
 /// both draw, a tap closes it from the app, its close button closes it through the app.
+/// Launching a running app again, with its windows on screen, brings its main window to the
+/// front and gives it the focus (the second launch hands over and exits).
+#[test]
+fn a_second_launch_brings_the_main_window_forward() {
+    let mut args = size_args((300, 200));
+    args.push("--multi-window".to_owned());
+    let session = Session::start_with("relaunch-raises", (800, 600), 1, &args);
+    let main = wait_for("the main window at 300 x 200", || {
+        Some(session.window()).filter(|w| (w.width, w.height) == (300, 200))
+    });
+    let mut client = session.client();
+    client.call(INPUT_KEY, json!({"key": "F2"})).unwrap();
+    let second = second_window(&session);
+    let focused = |id: u64| {
+        app_windows(&session)
+            .iter()
+            .any(|w| w.id == id && w.focused)
+    };
+    assert!(
+        wait_until(|| focused(second.id)),
+        "the second window has the focus"
+    );
+    let mut again = spawn_embedder(&session.dir, &session.wayland, &args);
+    assert!(
+        wait_until(|| again.try_wait().unwrap().is_some()),
+        "the second launch did not hand over"
+    );
+    assert!(
+        wait_until(|| focused(main.id)),
+        "the second launch did not bring the main window forward"
+    );
+}
+
 fn second_window_opens_draws_and_closes(name: &str, renderer: &[&str]) {
     let mut args = size_args((300, 200));
     args.push("--multi-window".to_owned());
