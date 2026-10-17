@@ -95,13 +95,18 @@ How an app presents its window to Ossido. Everything is per toplevel (the surfac
 `xdg_toplevel` role) and double-buffered: it becomes current at the next `wl_surface.commit`.
 
 - `silica_window_manager_v1.get_window(id, surface)`: one window object per surface (a second
-  one is the `already_has_window` error). Version 3 is the current one; a client may bind any
+  one is the `already_has_window` error). Version 4 is the current one; a client may bind any
   version, and the requests of the later ones are simply not available to it.
 - `silica_window_v1.set_full_size_content(toolbar_height)`: the app draws its own toolbar
   (unified with the title bar); Ossido only draws the window buttons over it, centred in
   `toolbar_height` (0: Ossido's own bar; clamped to 200).
 - `silica_window_v1.set_hidden(hidden)` (version 2): takes the window off the screen without
   closing it (the app keeps running with no window, #142). Applied at once.
+- `silica_window_v1.set_size_increment(base_width, base_height, step_width, step_height)`
+  (version 4): interactive resizing snaps the content size to `base + n * step` per axis (the
+  nearest `n` within the minimum and maximum size); a step of 0 leaves the axis free. A
+  terminal asks for its cell size (terminal.md TE-01, #18). Dart: `silica/window` ›
+  `setSizeIncrement {baseWidth, baseHeight, stepWidth, stepHeight}`.
 - `silica_window_v1.set_appearance(appearance)` (version 3): `system` (0, the default), `light`
   (1) or `dark` (2). The window overrides the system appearance, as `NSWindow.appearance`
   does on macOS, for everything Ossido draws for it: the traffic lights (TL-GLASS dark or

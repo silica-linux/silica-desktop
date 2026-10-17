@@ -13,7 +13,7 @@
     the content, at the top left, vertically centered in the toolbar height.
   </description>
 
-  <interface name="silica_window_manager_v1" version="3">
+  <interface name="silica_window_manager_v1" version="4">
     <description summary="creates the window object of a surface"/>
 
     <request name="destroy" type="destructor">
@@ -33,7 +33,7 @@
     </request>
   </interface>
 
-  <interface name="silica_window_v1" version="3">
+  <interface name="silica_window_v1" version="4">
     <description summary="appearance of a window">
       The state is double-buffered: it becomes current on the next wl_surface.commit.
     </description>
@@ -83,6 +83,20 @@
         back where it was, focused. Applied at once, not on the next commit.
       </description>
       <arg name="hidden" type="uint"/>
+    </request>
+
+    <request name="set_size_increment" since="4">
+      <description summary="resize in whole steps">
+        Interactive resizing snaps the content size (the surface's window geometry, in logical
+        pixels) to base + n * step on each axis, with the nearest n that respects the minimum
+        and maximum size. A terminal asks for its cell size (base: the padding). A step of 0
+        leaves that axis free; all steps 0 goes back to free resizing. Double-buffered,
+        applied on the next wl_surface.commit.
+      </description>
+      <arg name="base_width" type="uint"/>
+      <arg name="base_height" type="uint"/>
+      <arg name="step_width" type="uint"/>
+      <arg name="step_height" type="uint"/>
     </request>
   </interface>
 </protocol>

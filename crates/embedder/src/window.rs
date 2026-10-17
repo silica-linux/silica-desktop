@@ -832,7 +832,7 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         modifiers: Modifiers::default(),
         text_input: TextInput::default(),
         appearance_manager: globals
-            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=3, ())
+            .bind::<SilicaWindowManagerV1, App, ()>(&qh, 1..=4, ())
             .ok(),
         exporter: globals.bind::<ZxdgExporterV2, App, ()>(&qh, 1..=1, ()).ok(),
         _parent_import: parent_import,
@@ -1035,6 +1035,9 @@ impl App {
     /// - `setAppearance {appearance}` (`"system"`, `"light"`, `"dark"`): the app overrides the
     ///   system appearance for everything Ossido draws for this window; answers whether
     ///   Ossido offers it (version 3);
+    /// - `setSizeIncrement {baseWidth, baseHeight, stepWidth, stepHeight}`: interactive resizing
+    ///   snaps the content size to base + n * step (a terminal's cell size, version 4); answers
+    ///   whether Ossido offers it;
     /// - `startMove`: moves the window with the pointer (from the app's toolbar);
     /// - `zoom`: zooms the window (xdg_toplevel `set_maximized`), or puts it back when it is
     ///   zoomed (`unset_maximized`); `minimize`: minimizes it (`set_minimized`). The title
@@ -1121,6 +1124,31 @@ impl App {
                 let object = view_appearance
                     .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
                 object.set_appearance(appearance);
+                window.commit();
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("setSizeIncrement") => {
+                // Interactive resizing in whole steps (version 4): a terminal's cell size.
+                let (Some(manager), args) = (&self.appearance_manager, call.get("args")) else {
+                    return crate::text_input::success(serde_json::json!(false));
+                };
+                if wayland_client::Proxy::version(manager) < 4 {
+                    return crate::text_input::success(serde_json::json!(false));
+                }
+                let side = |key: &str| {
+                    args.and_then(|a| a.get(key))
+                        .and_then(serde_json::Value::as_f64)
+                        .and_then(window_side)
+                        .unwrap_or(0)
+                };
+                let object = view_appearance
+                    .get_or_insert_with(|| manager.get_window(window.wl_surface(), &self.qh, ()));
+                object.set_size_increment(
+                    side("baseWidth"),
+                    side("baseHeight"),
+                    side("stepWidth"),
+                    side("stepHeight"),
+                );
                 window.commit();
                 crate::text_input::success(serde_json::json!(true))
             }

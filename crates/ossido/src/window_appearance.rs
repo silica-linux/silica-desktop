@@ -27,6 +27,8 @@ pub struct AppearanceState {
     pub toolbar_height: u32,
     /// `None` follows the system (`set_appearance(system)`).
     pub dark: Option<bool>,
+    /// Interactive resizing in whole steps (`set_size_increment`): base and step, per axis.
+    pub increment: Option<crate::resize::Increment>,
 }
 
 impl Cacheable for AppearanceState {
@@ -61,6 +63,17 @@ pub fn override_of(surface: &WlSurface) -> Option<bool> {
     })
 }
 
+/// The step sizes the surface asked for (`set_size_increment`), if any.
+pub fn increment_of(surface: &WlSurface) -> Option<crate::resize::Increment> {
+    with_states(surface, |states| {
+        states
+            .cached_state
+            .get::<AppearanceState>()
+            .current()
+            .increment
+    })
+}
+
 /// Whether what Ossido draws for the surface's window is dark: its override, otherwise the
 /// system appearance `system_dark`.
 pub fn surface_dark(surface: &WlSurface, system_dark: bool) -> bool {
@@ -78,7 +91,7 @@ pub struct WindowManagerState;
 
 impl WindowManagerState {
     pub fn new(dh: &DisplayHandle) -> Self {
-        dh.create_global::<State, SilicaWindowManagerV1, _>(3, ());
+        dh.create_global::<State, SilicaWindowManagerV1, _>(4, ());
         Self
     }
 }
@@ -175,6 +188,25 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
                     states.cached_state.get::<AppearanceState>().pending().dark = dark;
                 });
             }
+            silica_window_v1::Request::SetSizeIncrement {
+                base_width,
+                base_height,
+                step_width,
+                step_height,
+            } => {
+                let side = |v: u32| i32::try_from(v).unwrap_or(i32::MAX);
+                let increment = crate::resize::Increment {
+                    base: (side(base_width), side(base_height)),
+                    step: (side(step_width), side(step_height)),
+                };
+                with_states(&surface, |states| {
+                    states
+                        .cached_state
+                        .get::<AppearanceState>()
+                        .pending()
+                        .increment = (increment.step != (0, 0)).then_some(increment);
+                });
+            }
             silica_window_v1::Request::SetHidden { hidden } => {
                 if hidden != 0 {
                     state.hide_window(&surface);
@@ -185,7 +217,9 @@ impl Dispatch<SilicaWindowV1, Weak<WlSurface>> for State {
             silica_window_v1::Request::Destroy => {
                 set(0);
                 with_states(&surface, |states| {
-                    states.cached_state.get::<AppearanceState>().pending().dark = None;
+                    let mut cached = states.cached_state.get::<AppearanceState>();
+                    cached.pending().dark = None;
+                    cached.pending().increment = None;
                 });
                 with_states(&surface, |states| {
                     if let Some(has) = states.data_map.get::<HasWindow>() {
