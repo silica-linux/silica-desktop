@@ -127,107 +127,107 @@ const Map<String, String> noConfig = {
 };
 
 void main() {
-  test('the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch', () {
-    // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
-    // (Wi-Fi at 2254,42 without the privacy pill).
-    final slots = layoutModules(laptop);
-    expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
-    expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-    expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
-    expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
-    expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
-    expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
-    expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
-    expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
-    expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
-    expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
-    expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
-    expect(slots['wifi']!.radius, 32);
-    expect(slots['staging']!.radius, 32);
-    expect(slots['media']!.radius, 36);
-    expect(slots['display']!.radius, 28);
-    // The battery is not in the default; Display is there without a backlight too
-    // (its track then shows no fill, controlcenter.md › sliders).
-    expect(slots.containsKey('battery'), isFalse);
-    final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
-    expect(desktop['display']!.rect.top, 304);
-
-    // A user's arrangement: modules pack in order at the first free spot; the battery
-    // only shows on a machine with one.
-    final mine = layoutModules(laptop, const [
-      CcModule('dark', ModuleSize.small),
-      CcModule('wifi', ModuleSize.medium),
-      CcModule('battery', ModuleSize.medium),
-      CcModule('capture', ModuleSize.small),
-      CcModule('sound', ModuleSize.wide),
-    ]);
-    expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
-    expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
-    expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
-    expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
-    expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
-    final noBattery = layoutModules(const SystemSnapshot(), const [
-      CcModule('battery', ModuleSize.medium),
-    ]);
-    expect(noBattery, isEmpty);
-  });
-
   test(
-    'the panel opens and closes on the measured opacity tables and scale',
+    'the grid follows the measurements: columns at 0 and 152, rows at a 76 pitch',
     () {
-      // controlcenter.md "Animations": the table's first point is one frame (13 ms) earlier
-      // than the spec's t = 0.
-      const open = {
-        0: 0.09,
-        13: 0.16,
-        27: 0.25,
-        53: 0.44,
-        67: 0.53,
-        80: 0.64,
-        107: 0.74,
-        160: 0.91,
-        213: 0.97,
-        267: 0.99,
-      };
-      for (final MapEntry(:key, :value) in open.entries) {
-        expect(
-          openOpacityAt(key + 13.0),
-          closeTo(value, 0.012),
-          reason: '$key ms',
-        );
-      }
-      expect(openOpacityAt(0), 0);
-      expect(openOpacityAt(1000), 1);
-      const close = {
-        0: 0.92,
-        13: 0.86,
-        40: 0.61,
-        53: 0.49,
-        67: 0.38,
-        93: 0.24,
-        120: 0.14,
-        160: 0.07,
-        200: 0.02,
-        280: 0.0,
-      };
-      for (final MapEntry(:key, :value) in close.entries) {
-        expect(
-          closeOpacityAt(key + 13.0),
-          closeTo(value, 0.012),
-          reason: '$key ms',
-        );
-      }
-      expect(closeOpacityAt(0), 1);
-      // Scale: 1.0075 -> 1 in ~107 ms opening, 1 -> 1.0075 in ~120 ms closing; no height spring.
-      expect(panelScaleAt(0, opening: true), closeTo(1.0075, 1e-9));
-      expect(panelScaleAt(107, opening: true), 1);
-      expect(panelScaleAt(500, opening: true), 1);
-      expect(panelScaleAt(0, opening: false), 1);
-      expect(panelScaleAt(120, opening: false), closeTo(1.0075, 1e-9));
-      expect(openDuration, const Duration(milliseconds: 310));
-      expect(closeDuration, const Duration(milliseconds: 293));
+      // The reference's default (INV-A2): the 76 pt pitch from the top-left of the stack
+      // (Wi-Fi at 2254,42 without the privacy pill).
+      final slots = layoutModules(laptop);
+      expect(slots['wifi']!.rect, const Rect.fromLTWH(0, 0, 140, 64));
+      expect(slots['bluetooth']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(slots['media']!.rect, const Rect.fromLTWH(152, 0, 140, 140));
+      expect(slots['nearby']!.rect, const Rect.fromLTWH(0, 152, 140, 64));
+      expect(slots['staging']!.rect, const Rect.fromLTWH(152, 152, 64, 64));
+      expect(slots['mirroring']!.rect, const Rect.fromLTWH(228, 152, 64, 64));
+      expect(slots['dark']!.rect, const Rect.fromLTWH(0, 228, 64, 64));
+      expect(slots['capture']!.rect, const Rect.fromLTWH(76, 228, 64, 64));
+      expect(slots['dnd']!.rect, const Rect.fromLTWH(152, 228, 140, 64));
+      expect(slots['display']!.rect, const Rect.fromLTWH(0, 304, 292, 64));
+      expect(slots['sound']!.rect, const Rect.fromLTWH(0, 380, 292, 64));
+      expect(slots['wifi']!.radius, 32);
+      expect(slots['staging']!.radius, 32);
+      expect(slots['media']!.radius, 36);
+      expect(slots['display']!.radius, 28);
+      // The battery is not in the default; Display is there without a backlight too
+      // (its track then shows no fill, controlcenter.md › sliders).
+      expect(slots.containsKey('battery'), isFalse);
+      final desktop = layoutModules(const SystemSnapshot(audioAvailable: true));
+      expect(desktop['display']!.rect.top, 304);
+
+      // A user's arrangement: modules pack in order at the first free spot; the battery
+      // only shows on a machine with one.
+      final mine = layoutModules(laptop, const [
+        CcModule('dark', ModuleSize.small),
+        CcModule('wifi', ModuleSize.medium),
+        CcModule('battery', ModuleSize.medium),
+        CcModule('capture', ModuleSize.small),
+        CcModule('sound', ModuleSize.wide),
+      ]);
+      expect(mine['dark']!.rect, const Rect.fromLTWH(0, 0, 64, 64));
+      expect(mine['wifi']!.rect, const Rect.fromLTWH(76, 0, 140, 64));
+      expect(mine['battery']!.rect, const Rect.fromLTWH(0, 76, 140, 64));
+      expect(mine['capture']!.rect, const Rect.fromLTWH(228, 0, 64, 64));
+      expect(mine['sound']!.rect, const Rect.fromLTWH(0, 152, 292, 64));
+      final noBattery = layoutModules(const SystemSnapshot(), const [
+        CcModule('battery', ModuleSize.medium),
+      ]);
+      expect(noBattery, isEmpty);
     },
   );
+
+  test('the panel opens and closes on the measured opacity tables and scale', () {
+    // controlcenter.md "Animations": the table's first point is one frame (13 ms) earlier
+    // than the spec's t = 0.
+    const open = {
+      0: 0.09,
+      13: 0.16,
+      27: 0.25,
+      53: 0.44,
+      67: 0.53,
+      80: 0.64,
+      107: 0.74,
+      160: 0.91,
+      213: 0.97,
+      267: 0.99,
+    };
+    for (final MapEntry(:key, :value) in open.entries) {
+      expect(
+        openOpacityAt(key + 13.0),
+        closeTo(value, 0.012),
+        reason: '$key ms',
+      );
+    }
+    expect(openOpacityAt(0), 0);
+    expect(openOpacityAt(1000), 1);
+    const close = {
+      0: 0.92,
+      13: 0.86,
+      40: 0.61,
+      53: 0.49,
+      67: 0.38,
+      93: 0.24,
+      120: 0.14,
+      160: 0.07,
+      200: 0.02,
+      280: 0.0,
+    };
+    for (final MapEntry(:key, :value) in close.entries) {
+      expect(
+        closeOpacityAt(key + 13.0),
+        closeTo(value, 0.012),
+        reason: '$key ms',
+      );
+    }
+    expect(closeOpacityAt(0), 1);
+    // Scale: 1.0075 -> 1 in ~107 ms opening, 1 -> 1.0075 in ~120 ms closing; no height spring.
+    expect(panelScaleAt(0, opening: true), closeTo(1.0075, 1e-9));
+    expect(panelScaleAt(107, opening: true), 1);
+    expect(panelScaleAt(500, opening: true), 1);
+    expect(panelScaleAt(0, opening: false), 1);
+    expect(panelScaleAt(120, opening: false), closeTo(1.0075, 1e-9));
+    expect(openDuration, const Duration(milliseconds: 310));
+    expect(closeDuration, const Duration(milliseconds: 293));
+  });
 
   test(
     'the detail morph is the measured slow-fast-slow curve, no overshoot',
@@ -270,13 +270,16 @@ void main() {
     },
   );
 
-  test('the module hover is the measured curve: 10 % at 50 ms, half at 150, done at 300', () {
-    const c = HoverCurve();
-    expect(hoverDuration, const Duration(milliseconds: 300));
-    expect(c.transform(50 / 300), closeTo(0.1, 1e-9));
-    expect(c.transform(150 / 300), closeTo(0.5, 1e-9));
-    expect(c.transform(1), 1);
-  });
+  test(
+    'the module hover is the measured curve: 10 % at 50 ms, half at 150, done at 300',
+    () {
+      const c = HoverCurve();
+      expect(hoverDuration, const Duration(milliseconds: 300));
+      expect(c.transform(50 / 300), closeTo(0.1, 1e-9));
+      expect(c.transform(150 / 300), closeTo(0.5, 1e-9));
+      expect(c.transform(1), 1);
+    },
+  );
 
   testWidgets('opens from the command, the modules act, Esc closes', (
     tester,

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:silica_shell/faro/faro.dart' show backProgress;
@@ -163,6 +164,40 @@ void main() {
       );
       expect(token.left, 56);
       expect(token.height, 32);
+    },
+  );
+
+  testWidgets(
+    'grid: Down chooses the first icon, arrows move it, Return opens (PA-60)',
+    (tester) async {
+      final launched = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Launcher(
+              entries: entries,
+              recents: const [],
+              onLaunch: (e) => launched.add(e.id),
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final all = launcherApps(entries.values);
+      // Left does nothing before a choice; Return with none opens nothing.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(launched, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(find.text('${all[0].name} — Open'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(launched, [all[1 + gridColumns].id]);
     },
   );
 

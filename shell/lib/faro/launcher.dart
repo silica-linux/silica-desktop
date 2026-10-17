@@ -13,7 +13,8 @@
 // Searching all apps, if the first result starts with the text the field completes it
 // inline ("cal" + "endar — Open") and shows the app icon on the right.
 //
-// Not done (PA-60): keyboard selection in the grid (the list has it).
+// Keyboard (PA-60): in the grid, Down chooses the first icon, the arrows move the blue ring,
+// Return opens it and the field shows "<name> — Open" with the app icon.
 
 import 'dart:convert';
 import 'dart:io';
@@ -318,6 +319,12 @@ class LauncherState extends State<Launcher>
   /// The row chosen in list mode.
   int _selected = 0;
 
+  /// The icon chosen with the keyboard in the grid (PA-60); null until Down is pressed.
+  int? _gridSelected;
+
+  /// The layout of the last build, to scroll the keyboard choice into view.
+  GridLayout? _layout;
+
   /// The "…" menu is open.
   bool _menu = false;
 
@@ -335,7 +342,12 @@ class LauncherState extends State<Launcher>
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() => _selected = 0));
+    _query.addListener(
+      () => setState(() {
+        _selected = 0;
+        _gridSelected = null;
+      }),
+    );
     _scroll.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
@@ -354,6 +366,7 @@ class LauncherState extends State<Launcher>
     setState(() {
       _category = name;
       _selected = 0;
+      _gridSelected = null;
       _query.clear();
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -385,8 +398,21 @@ class LauncherState extends State<Launcher>
         setState(() => _selected = (_selected + 1).clamp(0, apps.length - 1));
       case LogicalKeyboardKey.arrowUp when widget.list && apps.isNotEmpty:
         setState(() => _selected = (_selected - 1).clamp(0, apps.length - 1));
+      case LogicalKeyboardKey.arrowDown when !widget.list && apps.isNotEmpty:
+        _moveGrid(apps.length, _gridSelected == null ? 0 : gridColumns);
+      case LogicalKeyboardKey.arrowUp
+          when !widget.list && _gridSelected != null:
+        _moveGrid(apps.length, -gridColumns);
+      case LogicalKeyboardKey.arrowRight
+          when !widget.list && _gridSelected != null:
+        _moveGrid(apps.length, 1);
+      case LogicalKeyboardKey.arrowLeft
+          when !widget.list && _gridSelected != null:
+        _moveGrid(apps.length, -1);
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
-        if (widget.list && apps.isNotEmpty) {
+        if (!widget.list && _gridSelected != null && apps.isNotEmpty) {
+          widget.onLaunch(apps[_gridSelected!.clamp(0, apps.length - 1)]);
+        } else if (widget.list && apps.isNotEmpty) {
           widget.onLaunch(apps[_selected.clamp(0, apps.length - 1)]);
         } else if (_query.text.trim().isNotEmpty && apps.isNotEmpty) {
           widget.onLaunch(apps.first);
@@ -395,6 +421,25 @@ class LauncherState extends State<Launcher>
         return KeyEventResult.ignored;
     }
     return KeyEventResult.handled;
+  }
+
+  /// Moves the grid's keyboard choice by [delta] (a row is [gridColumns]); it stays inside the
+  /// apps and the grid scrolls to keep it in view. The first Down chooses the first icon.
+  void _moveGrid(int count, int delta) {
+    final next = ((_gridSelected ?? 0) + delta).clamp(0, count - 1);
+    setState(() => _gridSelected = next);
+    if (!_scroll.hasClients) return;
+    final layout = _layout;
+    if (layout == null) return;
+    final top = layout.cell(next).dy;
+    final bottom = top + gridLabelTop + gridLabelHeight + 12;
+    final view = _scroll.position.viewportDimension;
+    final max = _scroll.position.maxScrollExtent;
+    if (top - 12 < _scroll.offset) {
+      _scroll.jumpTo((top - 12).clamp(0, max));
+    } else if (bottom > _scroll.offset + view) {
+      _scroll.jumpTo((bottom - view).clamp(0, max));
+    }
   }
 
   /// Grid opacity after a category change (a gap of ~75 ms, then ~155 ms).
@@ -424,6 +469,7 @@ class LauncherState extends State<Launcher>
       list: list,
       browsing: browsing,
     );
+    _layout = layout;
     final areaTop = layout.areaTop;
     final areaHeight = size.height - areaTop;
     return SizedBox(
@@ -465,7 +511,9 @@ class LauncherState extends State<Launcher>
                 recents,
                 layout,
                 areaHeight,
-                ringFirst: !list && _completion(apps) != null,
+                ringIndex: list
+                    ? null
+                    : _gridSelected ?? (_completion(apps) != null ? 0 : null),
               ),
             ),
           ),
@@ -520,7 +568,17 @@ class LauncherState extends State<Launcher>
 
   Widget _header(List<DesktopEntry> apps, double width) {
     final token = _category;
-    final completion = _completion(apps);
+    // A keyboard choice in the grid shows as "<name> — Open" (PA-60); a typed query keeps its
+    // own completion.
+    final chosen = _gridSelected;
+    final choice =
+        !widget.list &&
+            chosen != null &&
+            chosen < apps.length &&
+            _query.text.isEmpty
+        ? apps[chosen]
+        : null;
+    final completion = choice?.name ?? _completion(apps);
     final fieldStyle = AmalfiType.field(color: _c.text);
     final typed = completion == null
         ? 0.0
@@ -528,7 +586,7 @@ class LauncherState extends State<Launcher>
             text: TextSpan(text: _query.text, style: fieldStyle),
             textDirection: TextDirection.ltr,
           )..layout()).width;
-    final preview = completion == null ? null : iconOf(apps.first);
+    final preview = completion == null ? null : iconOf(choice ?? apps.first);
     return Focus(
       onKeyEvent: (node, event) => _key(node, event, apps),
       child: Stack(
@@ -697,7 +755,7 @@ class LauncherState extends State<Launcher>
     List<DesktopEntry> recents,
     GridLayout layout,
     double areaHeight, {
-    required bool ringFirst,
+    required int? ringIndex,
   }) {
     final children = <Widget>[
       for (final (i, entry) in recents.indexed)
@@ -714,7 +772,7 @@ class LauncherState extends State<Launcher>
         if (widget.list)
           _row(entry, layout.rowY(i), i == _selected, i)
         else
-          _cell(entry, layout.cell(i), ring: ringFirst && i == 0),
+          _cell(entry, layout.cell(i), ring: i == ringIndex),
     ];
     return AmalfiScrollbar(
       child: ScrollConfiguration(

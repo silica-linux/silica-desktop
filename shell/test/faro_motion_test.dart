@@ -33,25 +33,31 @@ void main() {
       },
     );
 
-    test('height: 0.966 → 1 with a +2 pt overshoot on 447 near +133 ms, settled by ~190 ms', () {
-      final s = samples(SpringSimulation(verticalSpring, 432, 447, 0), 400);
-      final high = s.reduce((a, b) => a > b ? a : b);
-      expect(high, closeTo(449, 0.8));
-      expect(s.indexOf(high), inInclusiveRange(110, 155));
-      for (var t = 190; t <= 400; t++) {
-        expect(s[t], closeTo(447, 1), reason: 't = $t ms');
-      }
-    });
+    test(
+      'height: 0.966 → 1 with a +2 pt overshoot on 447 near +133 ms, settled by ~190 ms',
+      () {
+        final s = samples(SpringSimulation(verticalSpring, 432, 447, 0), 400);
+        final high = s.reduce((a, b) => a > b ? a : b);
+        expect(high, closeTo(449, 0.8));
+        expect(s.indexOf(high), inInclusiveRange(110, 155));
+        for (var t = 190; t <= 400; t++) {
+          expect(s[t], closeTo(447, 1), reason: 't = $t ms');
+        }
+      },
+    );
 
-    test('buttons: 146 pt with ~11 pt overshoot ~300 ms after their start, settled by ~590 ms', () {
-      final s = samples(SpringSimulation(buttonsSpring, 0, 146, 0), 800);
-      final high = s.reduce((a, b) => a > b ? a : b);
-      expect(high - 146, closeTo(11, 2));
-      expect(s.indexOf(high), inInclusiveRange(260, 340));
-      for (var t = 590; t <= 800; t++) {
-        expect(s[t], closeTo(146, 1), reason: 't = $t ms');
-      }
-    });
+    test(
+      'buttons: 146 pt with ~11 pt overshoot ~300 ms after their start, settled by ~590 ms',
+      () {
+        final s = samples(SpringSimulation(buttonsSpring, 0, 146, 0), 800);
+        final high = s.reduce((a, b) => a > b ? a : b);
+        expect(high - 146, closeTo(11, 2));
+        expect(s.indexOf(high), inInclusiveRange(260, 340));
+        for (var t = 590; t <= 800; t++) {
+          expect(s[t], closeTo(146, 1), reason: 't = $t ms');
+        }
+      },
+    );
 
     test(
       'engaged field and discs settle by ~630 ms and ~660 ms after they start',
@@ -161,41 +167,44 @@ void main() {
       return mouse;
     }
 
-    testWidgets('hover: after 60 ms the capsule becomes a 384 pt field (settled ~690 ms) and '
-        'four discs (~800 ms)', (tester) async {
-      await open(tester);
-      await tester.pumpAndSettle();
-      final frame = panel();
-      final mouse = await hover(Offset(frame.right - 40, frame.center.dy));
-      await tester.pump();
-      // The 60 ms wait: nothing moves yet.
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(panel().width, 640);
-      expect(button(3), findsNothing);
-      await run(tester, 40);
-      await run(tester, 16);
-      expect(panel().width, lessThan(640));
-      // The discs wait 80 ms more.
-      expect(button(3), findsNothing);
-      await run(tester, 100);
-      expect(button(3), findsOneWidget);
-      // Settled: the field ~690 ms after the pointer entered, the discs ~800 ms.
-      await run(tester, 450);
-      expect(panel().width, closeTo(384, 1.5));
-      await run(tester, 120);
-      final last = tester.getRect(button(3));
-      expect(last.right, closeTo(frame.left + 640, 1.5));
-      expect(
-        tester.getRect(button(1)).left - tester.getRect(button(0)).left,
-        closeTo(64, 0.5),
-      );
-      // The pointer going away does not take them back: they stay while Faro is open.
-      await mouse.moveTo(Offset(frame.center.dx, frame.bottom + 300));
-      await run(tester, 1500);
-      expect(panel().width, closeTo(384, 0.5));
-      expect(button(0), findsOneWidget);
-      await mouse.removePointer();
-    });
+    testWidgets(
+      'hover: after 60 ms the capsule becomes a 384 pt field (settled ~690 ms) and '
+      'four discs (~800 ms)',
+      (tester) async {
+        await open(tester);
+        await tester.pumpAndSettle();
+        final frame = panel();
+        final mouse = await hover(Offset(frame.right - 40, frame.center.dy));
+        await tester.pump();
+        // The 60 ms wait: nothing moves yet.
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(panel().width, 640);
+        expect(button(3), findsNothing);
+        await run(tester, 40);
+        await run(tester, 16);
+        expect(panel().width, lessThan(640));
+        // The discs wait 80 ms more.
+        expect(button(3), findsNothing);
+        await run(tester, 100);
+        expect(button(3), findsOneWidget);
+        // Settled: the field ~690 ms after the pointer entered, the discs ~800 ms.
+        await run(tester, 450);
+        expect(panel().width, closeTo(384, 1.5));
+        await run(tester, 120);
+        final last = tester.getRect(button(3));
+        expect(last.right, closeTo(frame.left + 640, 1.5));
+        expect(
+          tester.getRect(button(1)).left - tester.getRect(button(0)).left,
+          closeTo(64, 0.5),
+        );
+        // The pointer going away does not take them back: they stay while Faro is open.
+        await mouse.moveTo(Offset(frame.center.dx, frame.bottom + 300));
+        await run(tester, 1500);
+        expect(panel().width, closeTo(384, 0.5));
+        expect(button(0), findsOneWidget);
+        await mouse.removePointer();
+      },
+    );
 
     testWidgets('leaving within 60 ms changes nothing', (tester) async {
       await open(tester);

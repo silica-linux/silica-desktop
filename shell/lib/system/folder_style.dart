@@ -178,18 +178,10 @@ FolderIcon? styledFolderIcon(
   return folder;
 }
 
-typedef _GetC = IntPtr Function(
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<Uint8>,
-  IntPtr,
-);
-typedef _GetDart = int Function(
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<Uint8>,
-  int,
-);
+typedef _GetC =
+    IntPtr Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint8>, IntPtr);
+typedef _GetDart =
+    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint8>, int);
 typedef _ErrnoC = Pointer<Int32> Function();
 
 /// `ENOTSUP` (= `EOPNOTSUPP`) on Linux.
