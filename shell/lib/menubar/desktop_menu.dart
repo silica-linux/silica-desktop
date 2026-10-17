@@ -92,10 +92,10 @@ enum DesktopMenuKind {
 }
 
 /// The colour tags, in the order of the file manager's context menu, with the colours of its
-/// dots (Mustache's `menuTagColor`: provisional, as the row's geometry).
+/// dots (Mustache's `menuTagColor`: provisional, as the row's geometry; Orange is `Palette/Arancia` dark).
 const Map<String, Color> desktopTagColors = {
   'red': Color(0xFFFF6663),
-  'orange': Color(0xFFFFA356),
+  'orange': Color(0xFFFF9F40),
   'yellow': Color(0xFFFFD54C),
   'green': Color(0xFF65D27B),
   'blue': Color(0xFF49A0FF),
