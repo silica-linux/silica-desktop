@@ -198,9 +198,10 @@ void main() {
       double r(double v) => (v * k).roundToDouble();
       final f = Frames(canvas);
       final pad = r(8), sep = r(28);
-      final tile = canvas + 4;
+      final tile = canvas + 2 * r(2);
+      final tileH = canvas + 2 * r(10);
       expect(f.shelf.width, 2 * pad + 9 * tile + sep);
-      expect(f.shelf.height, canvas + 20);
+      expect(f.shelf.height, tileH);
       expect(f.m.radius, r(24));
       expect(200 - (f.origin.dy + f.shelf.height), 4);
       for (final (i, name) in kitOrder.indexed) {
@@ -208,13 +209,13 @@ void main() {
           expect(f.tile(i).width, sep);
           expect(f.line(i).left - f.tile(i).left, r(14));
           expect(f.line(i).top, r(10));
-          expect(f.line(i).height, canvas + 20 - 2 * r(10));
+          expect(f.line(i).height, tileH - 2 * r(10));
           continue;
         }
-        // Centred in the tile: 2 pt each side (the tile is canvas + 4); 10k from the top.
+        // Centred in the tile: 2k each side (the tile is canvas + 4k), 10k from the top.
         expectRect(
           f.icon(i),
-          Rect.fromLTWH(f.tile(i).left + 2, r(10), canvas, canvas),
+          Rect.fromLTWH(f.tile(i).left + r(2), r(10), canvas, canvas),
           'icon $name',
         );
         expect(f.tile(i).width, tile);

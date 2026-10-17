@@ -123,47 +123,58 @@ void main() {
     expect(enterProgress(1), 1);
   });
 
-  test(
-    'resizing keeps the icon and the dot in their place in the tile (c 16-128)',
-    () {
-      double? previousGap;
-      for (var c = 16; c <= 128; c++) {
-        final m = DockMetrics(c.toDouble());
-        final k = c / 60;
-        final reason = 'canvas $c';
-        // The icon canvas is centred in the (c + 4) x (c + 20) tile; the dot, drawn at the
-        // tile's centre line, is on the same axis.
-        expect(m.iconLeft + m.canvas / 2, m.tileWidth / 2, reason: reason);
-        expect(m.tileWidth, c + 4, reason: reason);
-        expect(m.tileHeight, c + 20, reason: reason);
-        // One rounding per derived frame: top at 10k, dot centre 6k above the shelf bottom.
-        expect(m.iconTop, (10 * k).roundToDouble(), reason: reason);
-        expect(m.dotAbove, (6 * k).roundToDouble(), reason: reason);
-        // In a laid-out Dock the icon and the dot share the tile's centre.
-        final items = [const Item.app('A', running: true), const Item.app('B')];
-        final l = layout(items, width: 800, height: 200, metrics: m);
-        for (var i = 0; i < items.length; i++) {
-          final (x, _, side) = iconRect(l, i, 200);
-          expect(x + side / 2, l.center(i), reason: reason);
-          expect(
-            l.cells[i].$1 + m.iconLeft + m.canvas / 2,
-            l.center(i),
-            reason: reason,
-          );
-        }
-        // The icon-to-dot distance moves by at most the two roundings (10k and 6k) per step.
-        final gap = (m.tileHeight - m.dotAbove) - (m.iconTop + m.canvas);
-        if (previousGap != null) {
-          expect(
-            (gap - previousGap).abs(),
-            lessThanOrEqualTo(2),
-            reason: reason,
-          );
-        }
-        previousGap = gap;
+  test('resizing keeps the icon and the dot in their place in the tile (c 16-128)', () {
+    double? previousGap;
+    for (var c = 16; c <= 128; c++) {
+      final m = DockMetrics(c.toDouble());
+      final k = c / 60;
+      final reason = 'canvas $c';
+      // The icon canvas is centred in the (c + 4k) x (c + 20k) tile (margins 2k and 10k, each
+      // rounded once); the dot, drawn at the tile's centre line, is on the same axis.
+      expect(m.iconLeft + m.canvas / 2, m.tileWidth / 2, reason: reason);
+      expect(m.iconTop + m.canvas / 2, m.tileHeight / 2, reason: reason);
+      expect(m.tileWidth, c + 2 * (2 * k).roundToDouble(), reason: reason);
+      expect(m.tileHeight, c + 2 * (10 * k).roundToDouble(), reason: reason);
+      // The margins scale with the canvas: never off 2k / 10k by more than a point.
+      expect(
+        (m.tileWidth - c - 4 * k).abs(),
+        lessThanOrEqualTo(1),
+        reason: reason,
+      );
+      expect(
+        (m.tileHeight - c - 20 * k).abs(),
+        lessThanOrEqualTo(1),
+        reason: reason,
+      );
+      // The dot's centre lies inside the margin below the icon, whatever the size.
+      expect(
+        m.tileHeight - m.iconTop - m.canvas,
+        greaterThanOrEqualTo(m.dotAbove),
+        reason: reason,
+      );
+      // One rounding per derived frame: top at 10k, dot centre 6k above the shelf bottom.
+      expect(m.iconTop, (10 * k).roundToDouble(), reason: reason);
+      expect(m.dotAbove, (6 * k).roundToDouble(), reason: reason);
+      // In a laid-out Dock the icon and the dot share the tile's centre.
+      final items = [const Item.app('A', running: true), const Item.app('B')];
+      final l = layout(items, width: 800, height: 200, metrics: m);
+      for (var i = 0; i < items.length; i++) {
+        final (x, _, side) = iconRect(l, i, 200);
+        expect(x + side / 2, l.center(i), reason: reason);
+        expect(
+          l.cells[i].$1 + m.iconLeft + m.canvas / 2,
+          l.center(i),
+          reason: reason,
+        );
       }
-    },
-  );
+      // The icon-to-dot distance moves by at most the two roundings (10k and 6k) per step.
+      final gap = (m.tileHeight - m.dotAbove) - (m.iconTop + m.canvas);
+      if (previousGap != null) {
+        expect((gap - previousGap).abs(), lessThanOrEqualTo(2), reason: reason);
+      }
+      previousGap = gap;
+    }
+  });
 
   test('geometry at 16, 60 and 128 pt', () {
     const small = DockMetrics(16);
@@ -179,7 +190,7 @@ void main() {
         small.dot,
         small.labelOffset,
       ),
-      (20, 36, 0, 2, 6, 7, 30, 3, 3),
+      (18, 22, 0, 2, 6, 7, 16, 3, 3),
     );
     const normal = DockMetrics();
     expect(
@@ -212,7 +223,7 @@ void main() {
         big.dot,
         big.labelOffset,
       ),
-      (132, 148, 0, 132, 17, 51, 60, 106, 9, 26),
+      (136, 170, 0, 136, 17, 51, 60, 128, 9, 26),
     );
     for (final m in [small, normal, big]) {
       final kit = [
@@ -223,7 +234,7 @@ void main() {
       // Tiles + one separator + the padding on both sides.
       final width = 9 * m.tileWidth + m.separatorWidth + 2 * m.shelfPadding;
       expect(l.background.$3, closeTo(width, 0.01));
-      expect(l.background.$4, m.canvas + 20);
+      expect(l.background.$4, m.tileHeight);
       // The first tile starts at the padding.
       expect(l.cells.first.$1 - l.background.$1, closeTo(m.shelfPadding, 0.01));
       expect(m.k, m.canvas / 60);
