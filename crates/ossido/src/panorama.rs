@@ -61,9 +61,14 @@ const PLUS_STROKE: f32 = 1.6;
 
 /// Gap between the arranged windows.
 pub const WINDOW_GAP: f64 = 16.0;
-/// Margins of the window area (provisional: PA-10).
+/// The window area of Panorama (panorama.md › Window layout, PA-10): x 20…(width − 20), from
+/// y 80. It is the same with the compact and the expanded bar (expanding does not re-lay out
+/// the windows): the expanded bar (170 pt) covers the top of the ones laid out under it, as in
+/// the reference.
+const PANORAMA_SIDE: f64 = 20.0;
+const PANORAMA_TOP: f64 = 80.0;
+/// Side margin of the App Exposé area (provisional).
 const MARGIN_SIDE: f64 = 48.0;
-const MARGIN_TOP: f64 = 48.0;
 const MARGIN_BOTTOM: f64 = 24.0;
 
 /// Expanded bar (pointer at the top): 168 pt tall (kit) with ~40 pt of shadow;
@@ -826,11 +831,11 @@ impl State {
         let usable = self.usable_area().to_f64();
         let targets = match mode {
             Mode::Panorama => {
-                let top = output.loc.y + BAR_HEIGHT + MARGIN_TOP;
+                let top = output.loc.y + PANORAMA_TOP;
                 let bottom = usable.loc.y + usable.size.h - MARGIN_BOTTOM;
                 let area = Rectangle::new(
-                    (output.loc.x + MARGIN_SIDE, top).into(),
-                    (output.size.w - 2.0 * MARGIN_SIDE, (bottom - top).max(1.0)).into(),
+                    (output.loc.x + PANORAMA_SIDE, top).into(),
+                    (output.size.w - 2.0 * PANORAMA_SIDE, (bottom - top).max(1.0)).into(),
                 );
                 layout(&frames, area)
             }
