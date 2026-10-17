@@ -2049,6 +2049,12 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 
   /// A file of the stack: the stack closes at once, then the file opens.
+  /// A file dragged out of the open stack: it closes and the drag goes on as a system drag.
+  void _dragFromStack(String path) {
+    _closeStack();
+    SilicaDrag.start([path]);
+  }
+
   void _openFromStack(String path) {
     _closeStack();
     widget.onOpenPath?.call(path);
@@ -2298,6 +2304,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                   progress: progress(),
                   onOpen: (e) => _openFromStack(e.path),
                   onOpenFolder: () => _openFromStack(item.folder ?? ''),
+                  onDragOut: _dragFromStack,
                 ),
               ),
             );
@@ -2323,6 +2330,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
                 progress: progress(),
                 onOpen: (e) => _openFromStack(e.path),
                 onOpenFolder: () => _openFromStack(item.folder ?? ''),
+                onDragOut: _dragFromStack,
               ),
             );
           }

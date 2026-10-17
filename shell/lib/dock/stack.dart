@@ -252,6 +252,48 @@ Size gridPanelSize(int count, double maxHeight) {
   );
 }
 
+/// Lets a stack item be dragged out (SH-DK-27): past [stackDragThreshold] the stack closes and
+/// the drag of the file goes on as a system drag (onto the desktop, a window, the Dock).
+class StackDragSource extends StatefulWidget {
+  const StackDragSource({
+    super.key,
+    required this.path,
+    required this.onDrag,
+    required this.child,
+  });
+
+  final String path;
+
+  /// Called once, when the pointer has moved past the threshold.
+  final ValueChanged<String>? onDrag;
+  final Widget child;
+
+  @override
+  State<StackDragSource> createState() => _StackDragSourceState();
+}
+
+const double stackDragThreshold = 5;
+
+class _StackDragSourceState extends State<StackDragSource> {
+  Offset? _from;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (e) => _from = e.position,
+    onPointerMove: (e) {
+      final from = _from;
+      if (from == null || (e.position - from).distance < stackDragThreshold) {
+        return;
+      }
+      _from = null;
+      widget.onDrag?.call(widget.path);
+    },
+    onPointerUp: (_) => _from = null,
+    onPointerCancel: (_) => _from = null,
+    child: widget.child,
+  );
+}
+
 /// The fan above the icon: `anchor` is the center of the icon in x and the top of the Dock
 /// area in y; `progress` 0–1 opens and closes.
 ///
@@ -266,6 +308,7 @@ class FanStack extends StatefulWidget {
     required this.progress,
     required this.onOpen,
     required this.onOpenFolder,
+    this.onDragOut,
   });
 
   final List<FileSystemEntity> entries;
@@ -273,6 +316,10 @@ class FanStack extends StatefulWidget {
   final double progress;
   final ValueChanged<FileSystemEntity> onOpen;
   final VoidCallback onOpenFolder;
+
+  /// A file or folder of the stack was dragged out: the Dock closes the stack and starts the
+  /// system drag.
+  final ValueChanged<String>? onDragOut;
 
   @override
   State<FanStack> createState() => _FanStackState();
@@ -366,21 +413,26 @@ class _FanStackState extends State<FanStack> {
           child: Transform.rotate(
             angle: slot.angle * progress,
             alignment: Alignment(1 - side / (side + 400), 0),
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              // The current callbacks, not those of the build that made the contents.
-              onTap: () =>
-                  entry == null ? widget.onOpenFolder() : widget.onOpen(entry),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // Each item fades on its own: a single layer over the whole fan would be
-                  // as large as the column on every frame.
-                  Opacity(opacity: labels, child: label),
-                  // 5.5 pt from the icon's frame, the bounding box of the rotated icon.
-                  SizedBox(width: fanLabelGap + (slot.frame - side) / 2),
-                  Opacity(opacity: fade, child: icon),
-                ],
+            child: StackDragSource(
+              path: entry?.path ?? '',
+              onDrag: entry == null ? null : widget.onDragOut,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                // The current callbacks, not those of the build that made the contents.
+                onTap: () => entry == null
+                    ? widget.onOpenFolder()
+                    : widget.onOpen(entry),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Each item fades on its own: a single layer over the whole fan would be
+                    // as large as the column on every frame.
+                    Opacity(opacity: labels, child: label),
+                    // 5.5 pt from the icon's frame, the bounding box of the rotated icon.
+                    SizedBox(width: fanLabelGap + (slot.frame - side) / 2),
+                    Opacity(opacity: fade, child: icon),
+                  ],
+                ),
               ),
             ),
           ),
@@ -616,6 +668,7 @@ class GridStack extends StatefulWidget {
     required this.progress,
     required this.onOpen,
     required this.onOpenFolder,
+    this.onDragOut,
   });
 
   final String title;
@@ -629,6 +682,10 @@ class GridStack extends StatefulWidget {
   final double progress;
   final ValueChanged<FileSystemEntity> onOpen;
   final VoidCallback onOpenFolder;
+
+  /// A file or folder of the stack was dragged out: the Dock closes the stack and starts the
+  /// system drag.
+  final ValueChanged<String>? onDragOut;
 
   @override
   State<GridStack> createState() => _GridStackState();
@@ -752,32 +809,36 @@ class _GridStackState extends State<GridStack> {
   /// capitals from y 109, `#212122`.
   Widget _cell(FileSystemEntity entry) {
     final icon = fileIcon(entry);
-    return GestureDetector(
-      // The current callback, not the one of the build that made the cell.
-      onTap: () => widget.onOpen(entry),
-      child: SizedBox(
-        width: gridCell,
-        height: gridCell,
-        child: Stack(
-          children: [
-            Positioned(
-              key: ValueKey('icon ${entry.path}'),
-              left: (gridCell - gridIconCanvas) / 2,
-              top: gridCanvasTop,
-              width: gridIconCanvas,
-              height: gridIconCanvas,
-              child: icon == null
-                  ? const SizedBox.shrink()
-                  : SilicaIcon(icon, side: gridIconCanvas, dark: false),
-            ),
-            _name(
-              middleEllipsis(
-                fileName(entry.path),
-                gridLabelStyle,
-                gridLabelWidth,
+    return StackDragSource(
+      path: entry.path,
+      onDrag: widget.onDragOut,
+      child: GestureDetector(
+        // The current callback, not the one of the build that made the cell.
+        onTap: () => widget.onOpen(entry),
+        child: SizedBox(
+          width: gridCell,
+          height: gridCell,
+          child: Stack(
+            children: [
+              Positioned(
+                key: ValueKey('icon ${entry.path}'),
+                left: (gridCell - gridIconCanvas) / 2,
+                top: gridCanvasTop,
+                width: gridIconCanvas,
+                height: gridIconCanvas,
+                child: icon == null
+                    ? const SizedBox.shrink()
+                    : SilicaIcon(icon, side: gridIconCanvas, dark: false),
               ),
-            ),
-          ],
+              _name(
+                middleEllipsis(
+                  fileName(entry.path),
+                  gridLabelStyle,
+                  gridLabelWidth,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
