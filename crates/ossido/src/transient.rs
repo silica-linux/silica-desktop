@@ -562,9 +562,7 @@ impl State {
         // submenu opens over its menu, which stays open and grabbed).
         let ancestors = popup_ancestors(&self.popups, &popup);
         self.transients.retain(|t| match &t.source {
-            Source::Popup { popup: p, root: r } => {
-                r != &root || ancestors.contains(p.wl_surface())
-            }
+            Source::Popup { popup: p, root: r } => r != &root || ancestors.contains(p.wl_surface()),
             Source::Shell { .. } => true,
         });
         self.transients.push(Transient {

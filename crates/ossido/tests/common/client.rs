@@ -803,9 +803,9 @@ impl TestWindow {
         positioner.set_anchor_rect(ax, ay, aw as i32, ah as i32);
         positioner.set_anchor(xdg_positioner::Anchor::BottomLeft);
         positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
-        positioner.set_constraint_adjustment(xdg_positioner::ConstraintAdjustment::from_bits_truncate(
-            spec.adjustment,
-        ));
+        positioner.set_constraint_adjustment(
+            xdg_positioner::ConstraintAdjustment::from_bits_truncate(spec.adjustment),
+        );
         let surface = compositor.create_surface(&qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
         let parent = match &self.popup {

@@ -6,6 +6,16 @@
 //! - `openWindow {title, width, height, minWidth?, minHeight?, maxWidth?, maxHeight?,
 //!   kind?, parent?, toolbarHeight?}` → the new view id, once the engine has added the view
 //!   (the app then builds its widgets in `View(view: …)`); null if it could not open;
+//! - `openPopup {parent, width, height, anchorRect: [x, y, w, h], anchor?, gravity?, adjust?,
+//!   grab?}` → the new view id: a menu or popover as its own `xdg_popup` of window (or popup)
+//!   `parent`, so it can extend past the window (silica-desktop#4). It hangs from the
+//!   `anchor` edge or corner of the rectangle (logical pixels in the parent, `bottom-left`
+//!   when missing) and grows towards `gravity` (`bottom-right`); `adjust` lists how Ossido
+//!   keeps it on the output: `slideX`, `slideY`, `flipX`, `flipY` (all four when missing);
+//!   `grab` (true when missing) gives it the pointer and the keyboard, and Ossido closes it
+//!   with `popup_done` on a press outside. The reply is null where popups are not offered
+//!   (no `--multi-window`); `closeWindow {viewId}` closes it, and `windowClosed {viewId}`
+//!   tells the app it is gone, whoever closed it;
 //! - `closeWindow {viewId}`: the window goes away (the main one as its close button does);
 //! - `setTitle {viewId, title}`: the title of a window (the main one also follows
 //!   `SystemChrome.setApplicationSwitcherDescription`);
@@ -121,6 +131,110 @@ impl WindowSpec {
                 .and_then(Value::as_f64)
                 .and_then(toolbar_height)
                 .filter(|h| *h > 0),
+        })
+    }
+}
+
+/// An edge or corner of a rectangle, for `xdg_positioner` anchors and gravities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Center,
+    Top,
+    Bottom,
+    Left,
+    Right,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Edge {
+    /// From the name on `silica/window` (`top-left`, `bottom`, `center`…).
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "center" | "none" => Self::Center,
+            "top" => Self::Top,
+            "bottom" => Self::Bottom,
+            "left" => Self::Left,
+            "right" => Self::Right,
+            "top-left" => Self::TopLeft,
+            "top-right" => Self::TopRight,
+            "bottom-left" => Self::BottomLeft,
+            "bottom-right" => Self::BottomRight,
+            _ => return None,
+        })
+    }
+}
+
+/// `xdg_positioner.constraint_adjustment` bits.
+pub mod adjust {
+    pub const SLIDE_X: u32 = 1;
+    pub const SLIDE_Y: u32 = 2;
+    pub const FLIP_X: u32 = 4;
+    pub const FLIP_Y: u32 = 8;
+}
+
+/// A popup asked by the app with `openPopup`, in logical pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopupSpec {
+    /// The window or popup it hangs from.
+    pub parent: i64,
+    pub size: (u32, u32),
+    /// x, y, width, height in the parent.
+    pub anchor_rect: (i32, i32, i32, i32),
+    pub anchor: Edge,
+    pub gravity: Edge,
+    /// [`adjust`] bits.
+    pub adjust: u32,
+    pub grab: bool,
+}
+
+/// A coordinate asked by the app: finite, kept within ±16384, rounded.
+fn coordinate(value: f64) -> Option<i32> {
+    value
+        .is_finite()
+        .then(|| value.round().clamp(-16384.0, 16384.0) as i32)
+}
+
+impl PopupSpec {
+    /// The popup of an `openPopup` call's arguments; None without a valid size or anchor.
+    pub fn parse(args: &Value) -> Option<Self> {
+        let side = |key: &str| args.get(key).and_then(Value::as_f64).and_then(window_side);
+        let size = side("width").zip(side("height"))?;
+        let rect = args.get("anchorRect")?.as_array()?;
+        let number = |i: usize| rect.get(i).and_then(Value::as_f64).and_then(coordinate);
+        let (x, y) = (number(0)?, number(1)?);
+        // An empty rectangle is a point: the protocol wants at least 1 × 1... it allows 0, but
+        // some anchors then collapse; one pixel is the same to the eye.
+        let (w, h) = (number(2)?.clamp(1, 16384), number(3)?.clamp(1, 16384));
+        let edge = |key: &str, default: Edge| match args.get(key).and_then(Value::as_str) {
+            None => Some(default),
+            Some(name) => Edge::parse(name),
+        };
+        let adjust = match args.get("adjust").and_then(Value::as_array) {
+            None => adjust::SLIDE_X | adjust::SLIDE_Y | adjust::FLIP_X | adjust::FLIP_Y,
+            Some(list) => list.iter().filter_map(Value::as_str).fold(0, |bits, name| {
+                bits | match name {
+                    "slideX" => adjust::SLIDE_X,
+                    "slideY" => adjust::SLIDE_Y,
+                    "flipX" => adjust::FLIP_X,
+                    "flipY" => adjust::FLIP_Y,
+                    _ => 0,
+                }
+            }),
+        };
+        Some(Self {
+            parent: args
+                .get("parent")
+                .and_then(Value::as_i64)
+                .unwrap_or(MAIN_VIEW),
+            size,
+            anchor_rect: (x, y, w, h),
+            anchor: edge("anchor", Edge::BottomLeft)?,
+            gravity: edge("gravity", Edge::BottomRight)?,
+            adjust,
+            grab: args.get("grab").and_then(Value::as_bool).unwrap_or(true),
         })
     }
 }
@@ -373,6 +487,53 @@ impl GlassViews {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_popup_takes_its_anchor_and_defaults() {
+        let spec = PopupSpec::parse(&json!({
+            "parent": 2, "width": 180.4, "height": 90,
+            "anchorRect": [10, 20.6, 50, 0],
+        }))
+        .unwrap();
+        assert_eq!(spec.parent, 2);
+        assert_eq!(spec.size, (180, 90));
+        assert_eq!(spec.anchor_rect, (10, 21, 50, 1));
+        assert_eq!(
+            (spec.anchor, spec.gravity),
+            (Edge::BottomLeft, Edge::BottomRight)
+        );
+        assert_eq!(
+            spec.adjust,
+            adjust::SLIDE_X | adjust::SLIDE_Y | adjust::FLIP_X | adjust::FLIP_Y
+        );
+        assert!(spec.grab);
+        let spec = PopupSpec::parse(&json!({
+            "width": 10, "height": 10, "anchorRect": [0, 0, 5, 5],
+            "anchor": "top-right", "gravity": "left", "adjust": ["flipY", "nonsense"],
+            "grab": false,
+        }))
+        .unwrap();
+        assert_eq!(spec.parent, MAIN_VIEW);
+        assert_eq!((spec.anchor, spec.gravity), (Edge::TopRight, Edge::Left));
+        assert_eq!(spec.adjust, adjust::FLIP_Y);
+        assert!(!spec.grab);
+    }
+
+    #[test]
+    fn a_popup_without_a_valid_size_or_anchor_is_refused() {
+        let ok = json!({"width": 10, "height": 10, "anchorRect": [0, 0, 1, 1]});
+        assert!(PopupSpec::parse(&ok).is_some());
+        for bad in [
+            json!({"height": 10, "anchorRect": [0, 0, 1, 1]}),
+            json!({"width": 0, "height": 10, "anchorRect": [0, 0, 1, 1]}),
+            json!({"width": 10, "height": 10}),
+            json!({"width": 10, "height": 10, "anchorRect": [0, 0, 1]}),
+            json!({"width": 10, "height": 10, "anchorRect": [0, null, 1, 1]}),
+            json!({"width": 10, "height": 10, "anchorRect": [0, 0, 1, 1], "anchor": "up"}),
+        ] {
+            assert_eq!(PopupSpec::parse(&bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn a_close_request_is_answered_once_and_late_answers_are_stale() {

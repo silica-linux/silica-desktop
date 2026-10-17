@@ -14,6 +14,9 @@
 //   itself).
 // - F3 exports the main window for another app (`exportHandle`, xdg-foreign) and shows the
 //   identifier it got ("wayland:<handle>") as the window title, for the tests to read.
+// - F4 opens a popup ([popupSize], [popup], silica-desktop#4) from the main window's right
+//   edge, so it extends past the window: an `xdg_popup` with a grab in its own view. A tap in
+//   it closes it, and so does a press outside it (Ossido's `popup_done`).
 // - `--close=MODE` (a Dart argument, silica-desktop#192) sets how the main window's close
 //   request is answered: `none` listens on no `silica/window` at all (an app on an older
 //   silica_ui), `silent` listens but never answers it (a hung handler), `ask` says it is
@@ -39,6 +42,8 @@ const Size glassSize = Size(40, 20);
 const Color second = Color(0xFF8833AA);
 const String secondTitle = 'Second';
 const Size secondSize = Size(200, 120);
+const Color popup = Color(0xFFEE2288);
+const Size popupSize = Size(120, 80);
 
 /// The `silica/window` channel of the embedder (several windows).
 const MethodChannel windowChannel = MethodChannel(
@@ -71,6 +76,9 @@ class _DemoAppState extends State<DemoApp> {
 
   /// The second window's view, while it is open.
   FlutterView? secondView;
+
+  /// The popup's view, while it is open.
+  FlutterView? popupView;
 
   /// The answer to a main window close request being asked (`--close=ask`).
   Completer<void>? asking;
@@ -111,6 +119,7 @@ class _DemoAppState extends State<DemoApp> {
         return closeMode == 'silent' || closeMode == 'ask';
       case 'windowClosed':
         if (id == secondView?.viewId) setState(() => secondView = null);
+        if (id == popupView?.viewId) setState(() => popupView = null);
     }
     return null;
   }
@@ -130,6 +139,28 @@ class _DemoAppState extends State<DemoApp> {
     setState(() {
       for (final view in views) {
         if (view.viewId == id) secondView = view;
+      }
+    });
+  }
+
+  Future<void> _openPopup() async {
+    if (popupView != null) return;
+    final size =
+        View.of(context).physicalSize / View.of(context).devicePixelRatio;
+    final id = await windowChannel.invokeMethod<Object?>('openPopup', {
+      'parent': 0,
+      'width': popupSize.width,
+      'height': popupSize.height,
+      // A point on the window's right edge, half way down: the popup hangs from it, past
+      // the window.
+      'anchorRect': [size.width - 20, size.height / 2, 1, 1],
+      'adjust': ['slideX', 'slideY'],
+    });
+    if (id is! int || !mounted) return;
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    setState(() {
+      for (final view in views) {
+        if (view.viewId == id) popupView = view;
       }
     });
   }
@@ -168,6 +199,10 @@ class _DemoAppState extends State<DemoApp> {
       _exportWindow();
       return true;
     }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.f4) {
+      _openPopup();
+      return true;
+    }
     return false;
   }
 
@@ -181,12 +216,27 @@ class _DemoAppState extends State<DemoApp> {
   @override
   Widget build(BuildContext context) {
     final view = secondView;
+    final menu = popupView;
     return ViewAnchor(
-      view: view == null
+      view: view == null && menu == null
           ? null
-          : View(
-              view: view,
-              child: SecondWindow(onTap: () => _closeSecond(view.viewId)),
+          : ViewCollection(
+              views: [
+                if (view != null)
+                  View(
+                    view: view,
+                    child: SecondWindow(onTap: () => _closeSecond(view.viewId)),
+                  ),
+                if (menu != null)
+                  View(
+                    view: menu,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _closeSecond(menu.viewId),
+                      child: const ColoredBox(color: popup),
+                    ),
+                  ),
+              ],
             ),
       child: _main(context),
     );

@@ -719,7 +719,10 @@ fn constrained_popup(
         .popup_configures()
         .last()
         .expect("the popup was not configured");
-    ((configure.0, configure.1, configure.2, configure.3), (info.x, info.y))
+    (
+        (configure.0, configure.1, configure.2, configure.3),
+        (info.x, info.y),
+    )
 }
 
 #[test]
@@ -741,8 +744,15 @@ fn an_app_popup_past_the_bottom_edge_flips_above_its_anchor() {
     // above it.
     let (popup, window) = constrained_popup("t-popup-flip", (10, 80, 10, 10), (40, 80), 8);
     assert_eq!((popup.2, popup.3), (40, 80));
-    assert_eq!(popup.1, 80 - 80, "the popup did not flip above the anchor: {popup:?}");
-    assert!(window.1 + popup.1 >= 0, "the flipped popup leaves the output");
+    assert_eq!(
+        popup.1,
+        80 - 80,
+        "the popup did not flip above the anchor: {popup:?}"
+    );
+    assert!(
+        window.1 + popup.1 >= 0,
+        "the flipped popup leaves the output"
+    );
 }
 
 #[test]
