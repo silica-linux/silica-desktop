@@ -73,7 +73,7 @@ void main() {
     double shelfHeight(WidgetTester tester) => tester
         .widgetList<Positioned>(find.byType(Positioned))
         .firstWhere(
-          (p) => p.width != null && p.height != null && p.height! >= 36,
+          (p) => p.width != null && p.height != null && p.height! >= 22,
         )
         .height!;
 
@@ -97,26 +97,26 @@ void main() {
       await mouse.down(start);
       await mouse.moveTo(start - const Offset(0, 10));
       await tester.pump();
-      // Canvas 70: the shelf is canvas + 20, at once (no animation).
-      expect(shelfHeight(tester), 90);
+      // Canvas 70: the shelf is canvas + 20k, at once (no animation).
+      expect(shelfHeight(tester), 94);
       // Continuous but snapped to whole points.
       await mouse.moveTo(start - const Offset(0, 17.4));
       await tester.pump();
-      expect(shelfHeight(tester), 97);
+      expect(shelfHeight(tester), 103);
       // Nothing is saved before the release.
       expect(saved, isEmpty);
       expect(DockOptions.read(env: env).tileSize, 60);
       // Down again, below the starting size.
       await mouse.moveTo(start + const Offset(0, 8));
       await tester.pump();
-      expect(shelfHeight(tester), 72);
+      expect(shelfHeight(tester), 70);
       await mouse.moveTo(start - const Offset(0, 20));
       await tester.pump();
       await mouse.up();
       await tester.pump();
       expect(saved, [80]);
       expect(DockOptions.read(env: env).tileSize, 80);
-      expect(shelfHeight(tester), 100);
+      expect(shelfHeight(tester), 106);
     });
 
     testWidgets('clamped to 16 and 128', (tester) async {
@@ -126,10 +126,10 @@ void main() {
       await mouse.down(start);
       await mouse.moveTo(start - const Offset(0, 300));
       await tester.pump();
-      expect(shelfHeight(tester), 148);
+      expect(shelfHeight(tester), 170);
       await mouse.moveTo(start + const Offset(0, 300));
       await tester.pump();
-      expect(shelfHeight(tester), 36);
+      expect(shelfHeight(tester), 22);
       await mouse.up();
       await tester.pump();
       expect(saved, [16]);

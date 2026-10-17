@@ -78,7 +78,7 @@ double profile(double distance, [double pitch = cellPitch]) {
 
 /// The geometry of one Dock from the side of the icon canvas (whole points, 16-128; the
 /// default is 60). Everything scales by k = canvas / 60 around the kit's values (Dock masters,
-/// Amalfi), rounded to whole points: tile `canvas + 4` x `canvas + 20`, the canvas at (2k, 10k),
+/// Amalfi), rounded to whole points: tile `canvas + 4k` x `canvas + 20k`, the canvas at (2k, 10k),
 /// no gap, padding 8k, radius 24k, separator 28k wide with its line 14k from the left and 10k
 /// from the top and bottom, dot 4k with its centre 6k above the shelf's bottom, label offset 12k.
 @immutable
@@ -91,8 +91,13 @@ class DockMetrics {
   static const DockMetrics standard = DockMetrics();
 
   double get k => canvas / defaultCanvas;
-  double get tileWidth => canvas + 4;
-  double get tileHeight => canvas + 20;
+
+  /// The margin around the canvas scales with it (2k at the sides, 10k above and below),
+  /// rounded once per margin: the same relative place at every size, also while resizing.
+  double get _marginX => (2 * k).roundToDouble();
+  double get _marginY => (10 * k).roundToDouble();
+  double get tileWidth => canvas + 2 * _marginX;
+  double get tileHeight => canvas + 2 * _marginY;
   double get gap => 0;
 
   /// Distance between the centres of two tiles.
@@ -107,10 +112,10 @@ class DockMetrics {
   double get radius => (24 * k).roundToDouble();
 
   /// The canvas in its tile: its distance from the tile's left edge and from the shelf's top.
-  /// Centred in the tile (c + 4 wide for a canvas of c: always 2), not 2k rounded: the icon
-  /// and the dot, which is centred in the tile too, stay on one axis at every size.
-  double get iconLeft => (tileWidth - canvas) / 2;
-  double get iconTop => (10 * k).roundToDouble();
+  /// Centred in the tile: the icon and the dot, which is centred in the tile too, stay on one
+  /// axis at every size.
+  double get iconLeft => _marginX;
+  double get iconTop => _marginY;
   double get separatorWidth => (28 * k).roundToDouble();
 
   /// The separator cell: the item itself.
