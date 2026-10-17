@@ -12,7 +12,9 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 - Content padding: 20 (regular windows), 16 (compact windows and panels), 24 (documents and settings).
 - Sizes are never smaller than macOS (user decision 2026-10-17, readability and accessibility): compare the
   ink, not the box. A symbol of size N draws at most N × 20/24, so a 20 pt icon draws ~17 pt, like macOS.
-  Icons are text in the Silica Symbols font (`tokens.json` › `iconFont`): font size = icon size. No text
+  Icons are text in the Silica Symbols font (`tokens.json` › `iconFont`): font size = icon size.
+  In the Sketch kit the icon text layers use line height N + 1 (16–30 pt) or N + 2 (32–36 pt) to undo Sketch's
+  baseline rounding; frames stay N × N. In code the line box is N: centre the glyph in it. No text
   below 11 pt. Default scale on 1920 × 1200 panels stays 1× (user decision 2026-10-17).
 - Sidebar: width 240 (min 200), horizontal padding 12, row height 32, row pitch 32 (gap 0: selection capsules
   touch, as on macOS), section header 28 tall (text `Sidebar Header` 12/16), 16 above a header (except the
