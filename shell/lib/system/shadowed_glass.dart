@@ -17,6 +17,7 @@ class ShadowedGlass extends StatelessWidget {
     required this.radius,
     this.thick = false,
     this.shadow = true,
+    this.group = 0,
     this.child,
   });
 
@@ -28,6 +29,10 @@ class ShadowedGlass extends StatelessWidget {
 
   /// Whether to draw the drop shadow.
   final bool shadow;
+
+  /// The glass group: Ossido merges glass only within a group, and a higher group sits on top
+  /// of a lower one (see `Glass.group`).
+  final int group;
   final Widget? child;
 
   @override
@@ -37,6 +42,7 @@ class ShadowedGlass extends StatelessWidget {
       profile: profile,
       radius: radius,
       material: thick ? GlassMaterial.thick : GlassMaterial.regular,
+      group: group,
       child: child,
     );
     if (!shadow) return glass;

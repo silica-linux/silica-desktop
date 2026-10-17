@@ -1065,98 +1065,180 @@ class ScreenshotLayerState extends State<ScreenshotLayer>
     return rect.shift(Offset(dx, dy));
   }
 
+  /// Where the Options menu is while it is open (the pull-down's own [AmalfiMenu], in this
+  /// layer's overlay), on the layer; null when it is closed.
+  Rect? _openMenuRect() {
+    Rect? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element.widget is AmalfiMenu) {
+        final box = element.renderObject;
+        if (box is RenderBox && box.attached && box.hasSize) {
+          found = box.localToGlobal(Offset.zero) & box.size;
+        }
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+    return found;
+  }
+
+  /// Whether the pointer is over the Options menu, and where the menu is: worked out after
+  /// each frame while the bar is up (the menu opens and closes under a resting pointer).
+  bool _overMenu = false;
+  Rect? _menuRect;
+
+  bool _menuHolds(Offset pointer) =>
+      _openMenuRect()?.contains(pointer) ?? false;
+
+  bool _syncing = false;
+
+  /// Looks at the Options menu after every frame while the bar is up: the pull-down opens
+  /// and closes it on its own, without building this layer again.
+  void _watchMenu() {
+    if (_syncing) return;
+    _syncing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncing = false;
+      if (!mounted) return;
+      _syncMenu();
+      if (_mode == _Mode.toolbar) _watchMenu();
+    });
+  }
+
+  void _syncMenu() {
+    final pointer = _pointer;
+    final menu = _mode == _Mode.toolbar ? _openMenuRect() : null;
+    final over = menu != null && pointer != null && menu.contains(pointer);
+    if (over != _overMenu || menu != _menuRect) {
+      setState(() {
+        _overMenu = over;
+        _menuRect = menu;
+      });
+    }
+  }
+
   Widget _overlay(Size screen) {
     final theme = AmalfiTheme.of(context);
     final toolbar = _mode == _Mode.toolbar;
     final bar = toolbar ? _barRect(screen) : null;
-    final overBar = bar != null && _pointer != null && bar.contains(_pointer!);
+    // The camera is hidden while the pointer is over the bar or over the Options menu.
+    if (toolbar) _watchMenu();
+    final overBar =
+        bar != null &&
+        _pointer != null &&
+        (bar.contains(_pointer!) || _overMenu);
     final camera = _windowMode || (toolbar && _choice == ToolbarChoice.screen);
     final cursor = overBar || (toolbar && _choice == ToolbarChoice.selection)
         ? MouseCursor.defer
         : SystemMouseCursors.none;
-    // An overlay of its own for the widgets of the layer that need one.
-    return Overlay.wrap(
-      child: Focus(
-        focusNode: _focus,
-        onKeyEvent: _key,
-        child: MouseRegion(
-          cursor: cursor,
-          onHover: (e) => setState(() => _pointer = e.localPosition),
-          child: Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (e) {
-              if (!toolbar) _pointerDown(e.localPosition);
-            },
-            onPointerMove: (e) => _pointerMove(e.localPosition),
-            onPointerUp: (e) {
-              if (!toolbar) _pointerUp(e.localPosition);
-            },
-            child: Stack(
-              children: [
-                // ⇧⌘5, screen or window: a click on the screen captures.
-                if (toolbar && _choice != ToolbarChoice.selection)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      key: const ValueKey('capture area'),
-                      behavior: HitTestBehavior.opaque,
-                      onTapUp: (d) => _choice == ToolbarChoice.screen
-                          ? _capture('screenshot.screen', {}, timed: true)
-                          : _captureWindow(d.localPosition, timed: true),
-                    ),
-                  )
-                else
-                  const Positioned.fill(child: SizedBox.expand()),
-                if (toolbar && _choice == ToolbarChoice.selection)
-                  Positioned.fill(
-                    child: SelectionEditor(
-                      rect: _selection ??= _initialSelection(screen),
-                      onChanged: (r) => setState(() => _selection = r),
-                      onCommitted: (r) {
-                        if (_settings.rememberSelection) {
-                          _changeSettings((s) => s.selection = r);
-                        }
-                      },
-                    ),
-                  ),
-                if (_mode == _Mode.selection)
-                  if (_live case final live?)
-                    Positioned.fill(
-                      child: SelectionFrame(rect: live.rect(option: _option)),
-                    ),
-                if (_pointer case final p? when _mode == _Mode.selection)
-                  ..._crosshair(p),
-                // The target is tinted `Accent/Amalfi` at 50 % (kit `Window tint`, `Screen tint`):
-                // the window under the pointer, or the whole screen when the desktop is the target.
-                if (toolbar && _choice == ToolbarChoice.screen)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: ColoredBox(
-                        key: const ValueKey('screen tint'),
-                        color: targetTint(theme),
+    // An overlay of its own for the widgets of the layer that need one, and the surface that
+    // tells the Options menu (and the other widgets with a `TapRegion`) of a press outside
+    // them: the menu closes when the user goes back to editing the selection (#220).
+    return TapRegionSurface(
+      // The pointer is followed over the Options menu too (it is an entry of the overlay,
+      // not below the region of the layer's content).
+      child: MouseRegion(
+        onHover: (e) => setState(() {
+          _pointer = e.localPosition;
+          _overMenu = toolbar && _menuHolds(e.localPosition);
+        }),
+        child: Overlay.wrap(
+          child: Focus(
+            focusNode: _focus,
+            onKeyEvent: _key,
+            child: MouseRegion(
+              cursor: cursor,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (e) {
+                  if (!toolbar) _pointerDown(e.localPosition);
+                },
+                onPointerMove: (e) => _pointerMove(e.localPosition),
+                onPointerUp: (e) {
+                  if (!toolbar) _pointerUp(e.localPosition);
+                },
+                child: Stack(
+                  children: [
+                    // ⇧⌘5, screen or window: a click on the screen captures.
+                    if (toolbar && _choice != ToolbarChoice.selection)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          key: const ValueKey('capture area'),
+                          behavior: HitTestBehavior.opaque,
+                          onTapUp: (d) => _choice == ToolbarChoice.screen
+                              ? _capture('screenshot.screen', {}, timed: true)
+                              : _captureWindow(d.localPosition, timed: true),
+                        ),
+                      )
+                    else
+                      const Positioned.fill(child: SizedBox.expand()),
+                    if (toolbar && _choice == ToolbarChoice.selection)
+                      Positioned.fill(
+                        child: SelectionEditor(
+                          rect: _selection ??= _initialSelection(screen),
+                          // The glass of the Options menu over the selection is the
+                          // compositor's, behind this layer: the dim leaves it bare.
+                          holes: [
+                            if (_menuRect case final menu?)
+                              RRect.fromRectAndRadius(
+                                menu,
+                                const Radius.circular(AmalfiMenuMetrics.radius),
+                              ),
+                          ],
+                          onChanged: (r) => setState(() => _selection = r),
+                          onCommitted: (r) {
+                            if (_settings.rememberSelection) {
+                              _changeSettings((s) => s.selection = r);
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                  ),
-                if (_pointer case final p?
-                    when _windowMode && !_compositorVeil && !overBar)
-                  Positioned.fromRect(
-                    rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
-                    child: IgnorePointer(
-                      child: ColoredBox(
-                        key: const ValueKey('veil'),
-                        color: targetTint(theme),
+                    if (_mode == _Mode.selection)
+                      if (_live case final live?)
+                        Positioned.fill(
+                          child: SelectionFrame(
+                            rect: live.rect(option: _option),
+                          ),
+                        ),
+                    if (_pointer case final p? when _mode == _Mode.selection)
+                      ..._crosshair(p),
+                    // The target is tinted `Accent/Amalfi` at 50 % (kit `Window tint`, `Screen tint`):
+                    // the window under the pointer, or the whole screen when the desktop is the target.
+                    if (toolbar && _choice == ToolbarChoice.screen)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ColoredBox(
+                            key: const ValueKey('screen tint'),
+                            color: targetTint(theme),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                if (_pointer case final p? when camera && !overBar)
-                  Positioned(
-                    left: p.dx - 16,
-                    top: p.dy - 16,
-                    child: const IgnorePointer(
-                      child: ShotCamera(key: ValueKey('camera')),
-                    ),
-                  ),
-                if (bar != null) ..._toolbar(bar),
-              ],
+                    if (_pointer case final p?
+                        when _windowMode && !_compositorVeil && !overBar)
+                      Positioned.fromRect(
+                        rect: widget.windowAt?.call(p) ?? Offset.zero & screen,
+                        child: IgnorePointer(
+                          child: ColoredBox(
+                            key: const ValueKey('veil'),
+                            color: targetTint(theme),
+                          ),
+                        ),
+                      ),
+                    if (_pointer case final p? when camera && !overBar)
+                      Positioned(
+                        left: p.dx - 16,
+                        top: p.dy - 16,
+                        child: const IgnorePointer(
+                          child: ShotCamera(key: ValueKey('camera')),
+                        ),
+                      ),
+                    if (bar != null) ..._toolbar(bar),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

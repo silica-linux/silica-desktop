@@ -15,12 +15,14 @@
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import '../system/glass_profile.dart';
 import '../system/shadowed_glass.dart';
+import 'toolbar.dart' show ShotGlass;
 
 /// The dim over the screen outside the selection (kit `Selection`: `Dim *`).
 Color selectionDim(AmalfiThemeData theme) => theme.isDark
@@ -226,6 +228,8 @@ class ShotCamera extends StatelessWidget {
       child: ShadowedGlass(
         profile: ShellGlassProfile.control,
         radius: 16,
+        // Its own group: the camera is an element of its own, never part of the bar (#220).
+        group: ShotGlass.camera,
         child: Center(
           child: AmalfiSymbol('camera', size: 16, color: colors.textPrimary),
         ),
@@ -244,9 +248,15 @@ class SelectionEditor extends StatefulWidget {
     required this.rect,
     required this.onChanged,
     required this.onCommitted,
+    this.holes = const [],
   });
 
   final Rect rect;
+
+  /// Where the dim, the border and the handles are not painted: the glass of a menu over the
+  /// selection (the Options menu) is the compositor's, behind this layer's content, so what
+  /// this layer paints over it would dim and cut it (#220).
+  final List<RRect> holes;
   final ValueChanged<Rect> onChanged;
 
   /// A drag ended (the selection to remember).
@@ -372,7 +382,11 @@ class _SelectionEditorState extends State<SelectionEditor> {
             children: [
               Positioned.fill(
                 child: CustomPaint(
-                  painter: _SelectionPainter(r, AmalfiTheme.of(context)),
+                  painter: _SelectionPainter(
+                    r,
+                    AmalfiTheme.of(context),
+                    holes: widget.holes,
+                  ),
                 ),
               ),
               _sizeLabel(r, screen),
@@ -385,15 +399,32 @@ class _SelectionEditorState extends State<SelectionEditor> {
 }
 
 class _SelectionPainter extends CustomPainter {
-  const _SelectionPainter(this.rect, this.theme, {this.handles = true});
+  const _SelectionPainter(
+    this.rect,
+    this.theme, {
+    this.handles = true,
+    this.holes = const [],
+  });
   final Rect rect;
   final AmalfiThemeData theme;
   final bool handles;
+  final List<RRect> holes;
 
   @override
   void paint(Canvas canvas, Size size) {
     final dim = Paint()..color = selectionDim(theme);
     final all = Offset.zero & size;
+    if (holes.isNotEmpty) {
+      final outside = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(all);
+      for (final hole in holes) {
+        outside.addRRect(hole);
+      }
+      canvas
+        ..save()
+        ..clipPath(outside);
+    }
     canvas
       ..drawRect(Rect.fromLTRB(0, 0, all.right, rect.top), dim)
       ..drawRect(Rect.fromLTRB(0, rect.bottom, all.right, all.bottom), dim)
@@ -403,7 +434,11 @@ class _SelectionPainter extends CustomPainter {
         dim,
       );
     paintSelectionBorder(canvas, rect, theme);
-    if (!handles) return;
+    if (handles) _paintHandles(canvas);
+    if (holes.isNotEmpty) canvas.restore();
+  }
+
+  void _paintHandles(Canvas canvas) {
     for (final (at, _) in _SelectionEditorState._handles(rect)) {
       final box = Rect.fromCenter(
         center: at,
@@ -428,7 +463,10 @@ class _SelectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SelectionPainter old) =>
-      old.rect != rect || old.theme != theme || old.handles != handles;
+      old.rect != rect ||
+      old.theme != theme ||
+      old.handles != handles ||
+      !listEquals(old.holes, holes);
 }
 
 /// The selection of ⇧⌘4 while the button is held: the screen outside it dimmed, its 2 pt accent

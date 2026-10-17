@@ -38,6 +38,13 @@ const double toolbarAboveDock = 60 + 16 + 8;
 /// The bar's capsule.
 const double toolbarRadius = 24;
 
+/// The glass groups of the layer (Ossido merges glass only within a group; the menus of
+/// silica_ui take 0 and up): the camera of window mode, under the bar, never melts into it.
+abstract final class ShotGlass {
+  static const int camera = -200;
+  static const int bar = -100;
+}
+
 /// Where the controls sit, from the bar's left edge and top (kit `Bar Capture Screen`).
 const double barInset = 8;
 const double closeX = 8;
@@ -243,6 +250,7 @@ class _ShotToolbarState extends State<ShotToolbar>
               child: ShadowedGlass(
                 profile: ShellGlassProfile.control,
                 radius: toolbarRadius,
+                group: ShotGlass.bar,
                 child: SizedBox.expand(
                   key: const ValueKey('screenshot bar'),
                   child: Stack(
