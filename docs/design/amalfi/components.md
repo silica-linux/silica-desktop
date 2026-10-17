@@ -62,6 +62,48 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 
 Pointers are not part of Amalfi: Silica uses the classic Adwaita cursor theme (user decision 2026-10-16).
 
+### Toolbar width states
+
+Mustache's content toolbar (kit masters `Apps/Mustache/Toolbar/Bar/*`, pieces and menus under
+`Apps/Mustache/Toolbar/*`) never wraps: as it narrows it drops items in a fixed order. W is the width of the
+toolbar right of the sidebar (window width − sidebar; + 240 with the default sidebar).
+
+Item widths: leading 16, Back/Forward 73, 12 to the title, title at least 160, 12 after it, view group 152,
+view pop-up 56 (view glyph + `chevron-up-down` 12), Group 56 (`square-stack` + `chevron-down` 12),
+Share·Tags·Actions 110, Share alone 36, overflow » 36, search circle 36, gaps 8, trailing 16. A state fits when
+W ≥ 289 + its items + gaps (289 = 16 + 73 + 12 + 160 + 12 + 16). With the search field open (240) every
+threshold moves by 240 − 36 = 204. Items come back 8 pt later than they leave (hysteresis); the permanent field
+and Back/Forward have none.
+
+| State (items right of the title) | Leaves below | Comes back at | Search open: leaves below | Comes back at |
+|---|---|---|---|---|
+| Wide: views, Group, Share·Tags·Actions, permanent field | 856 | 856 | — | — |
+| Full: views, Group, Share·Tags·Actions, search | 667 | 675 | 871 | 879 |
+| View group → pop-up | 571 | 579 | 775 | 783 |
+| Tags and Actions → » (Share alone) | 541 | 549 | 745 | 753 |
+| Share → » | 497 | 505 | 701 | 709 |
+| Group → » | 433 | 441 | 637 | 645 |
+| View pop-up → » (title, », search) | 369 | 369 | 573 | 573 |
+| Back/Forward → » (minimum W 284) | 284 | — | below 573 | — |
+
+- Permanent field: width min(320, 160 + 0.75 × (W − 856)); the title takes the rest. Focused or holding text it
+  is at least 240, so between 856 and 870 focusing it collapses the view group.
+- Search open below 573: the title shrinks first (down to 24); below W 352 the field narrows (W − 112, 172 at
+  the minimum).
+- Order never changes: Back/Forward, title, views, Group, Share·Tags·Actions, », search. » sits just before
+  the search item. Overflow menu: text items in bar order, menu buttons as submenus (`Overflow Menu/*`).
+- Crossing a threshold while resizing swaps the layout in one frame; nothing slides.
+- Search circle → field (on release): 36 → 240 in ~160 ms ease-out with most of the distance in the first
+  frame; the items to its left move with it and the view group collapses in one frame during the growth. Focus
+  goes to the field at once; the focus ring fades in over ~170 ms after the width settles. Search mode starts
+  only when text is typed.
+- Collapse (Esc, or a click in the content with an empty field): 240 → 36 in ~190 ms ease-out, the view group
+  returns in one frame. A click on the sidebar background keeps the field open and focused; a field with text
+  stays open without focus (no ring, text secondary); the clear button leaves search.
+- Group, Actions, the view pop-up, » and a long press on Back/Forward open their menu on press; Share and Tags
+  open their popover on release. ⌥ at the press turns the Group menu into the Sort menu. Menus drop below the
+  button; the view pop-up menu puts the current item over the button; the » menu starts on the button row.
+
 ## Component inventory (3015 symbols, every one in Light and Dark)
 
 Names follow `Category/Component/Variant/Size/State/Appearance`. States are always
