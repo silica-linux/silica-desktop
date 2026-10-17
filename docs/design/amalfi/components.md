@@ -160,7 +160,7 @@ and Back/Forward have none.
   36 pt segment. Disabled items show no hover. Inactive window: glyphs and title `Text/Tertiary`; the pointer
   relights a control and a click acts at once (click-through). Hover and press appear in one frame, no fade.
 - Menus show a highlighted row with `Menus/Item/*/Highlighted` (`<menu>/Highlighted`). Submenus (`Submenu/View`,
-  `Group By`, `Open With`, `Sort By`; attached in `Cascade/*`) open to the right overlapping the parent by 8,
+  `Group By`, `Open With`, `Sort By`; attached in `Cascade/*`) open to the right overlapping the parent by 4,
   first row level with the parent item (submenu top = item top − 4); the parent item stays highlighted.
   Open With: the default app with "(default)", separator, other apps, separator, Other….
 
