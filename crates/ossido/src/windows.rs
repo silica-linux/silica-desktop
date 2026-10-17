@@ -339,12 +339,31 @@ impl State {
     }
 
     /// The app shows its hidden window again: back where it was, in the shell's list, focused.
+    /// A window that is not hidden is brought to the front (a minimized one comes out of the
+    /// Dock): the app was opened again while its window sat behind others.
     pub fn show_window(&mut self, surface: &WlSurface) {
         let Some(index) = self
             .hidden
             .iter()
             .position(|(w, _)| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
         else {
+            let minimized = self
+                .minimized
+                .iter()
+                .find(|(w, _)| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+                .map(|(w, _)| w.clone());
+            if let Some(window) = minimized {
+                self.restore_window(&window);
+                return;
+            }
+            let on_screen = self
+                .space
+                .elements()
+                .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+                .cloned();
+            if on_screen.is_some() {
+                self.focus_window(on_screen);
+            }
             return;
         };
         let (window, location) = self.hidden.remove(index);

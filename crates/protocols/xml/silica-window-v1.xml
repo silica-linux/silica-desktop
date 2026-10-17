@@ -80,7 +80,9 @@
         A non-zero hidden takes the window off the screen, out of the window lists and out of
         the focus, as if it were closed, but the app keeps its surface and its state: closing
         an app's last window does not end the app (silica-desktop#142). Zero brings the window
-        back where it was, focused. Applied at once, not on the next commit.
+        back where it was, focused; for a window that is already on screen it raises and focuses
+        it (the app was opened again while the window sat behind others). Applied at once, not
+        on the next commit.
       </description>
       <arg name="hidden" type="uint"/>
     </request>
