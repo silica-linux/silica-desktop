@@ -358,6 +358,32 @@ impl Clipboard {
     async fn changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
+/// Puts a list of files (`file://` URIs) on the clipboard, as a copy in a file manager does:
+/// the share service's `copy` target. False if the list is empty or the source could not start.
+pub fn copy_files(uris: &[String]) -> bool {
+    if uris.is_empty() {
+        return false;
+    }
+    let text = uris.join("\r\n");
+    let entry = Entry {
+        id: 0,
+        kind: Kind::Files,
+        text: text.clone(),
+        image: None,
+        time: now(),
+        data: text.into_bytes(),
+        mime: URI_LIST.to_owned(),
+    };
+    std::thread::Builder::new()
+        .name("clipboard-source".to_owned())
+        .spawn(move || {
+            if let Err(err) = offer(&entry) {
+                eprintln!("silica-daemon: clipboard: {err}");
+            }
+        })
+        .is_ok()
+}
+
 /// Largest PNG [`Clipboard::copy_image`] reads (a full 8K screen fits).
 const MAX_COPIED_IMAGE: u64 = 128 << 20;
 
