@@ -11,13 +11,9 @@ const String svg =
 
 const String folderManifest = '''
 {
-  "format": 1, "id": "folder-generic", "name": "Folder", "kind": "file",
+  "format": 1, "id": "folder-generic", "name": "Folder Generic", "kind": "file",
   "layers": [ { "role": "artwork", "file": "icon.svg" } ],
-  "variants": {
-    "dark": { "artwork": "icon-dark.svg" },
-    "full": { "artwork": "icon-full.svg" },
-    "full-dark": { "artwork": "icon-full-dark.svg" }
-  },
+  "variants": { "full": { "artwork": "icon-full.svg" } },
   "dynamic": null
 }
 ''';
@@ -29,9 +25,9 @@ Directory iconRoot({bool full = true}) {
   File('${dir.path}/icon.json').writeAsStringSync(
     full
         ? folderManifest
-        : folderManifest.replaceAll(RegExp(r'"full[^}]*\}'), '"x": {}'),
+        : folderManifest.replaceAll(RegExp(r'"variants".*\n'), ''),
   );
-  for (final name in ['icon', 'icon-dark', 'icon-full', 'icon-full-dark']) {
+  for (final name in ['icon', 'icon-full']) {
     File('${dir.path}/$name.svg').writeAsStringSync(svg);
   }
   return root;
@@ -63,7 +59,7 @@ void main() {
     expect(folderHasItems(dir.path), isFalse);
   });
 
-  test('the full variant swaps the artwork and keeps id and dark', () {
+  test('the full variant swaps the artwork and keeps the id', () {
     final root = iconRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final env = {'SILICA_ICONS_DIR': root.path};
@@ -71,7 +67,7 @@ void main() {
     final full = fullFolderVariant(plain);
     expect(full.id, 'folder-generic');
     expect(full.layers.single.path, endsWith('/icon-full.svg'));
-    expect(full.layers.single.darkPath, endsWith('/icon-full-dark.svg'));
+    expect(full.layers.single.darkPath, isNull);
     expect(plain.layers.single.path, endsWith('/icon.svg'));
   });
 
