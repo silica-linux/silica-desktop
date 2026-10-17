@@ -10,9 +10,19 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
 - Window: corner 18, toolbar 52, title-only bar 32. Window controls: first dot centre x 26, pitch 23, so the
   group sits at x 18 (or x 19 with a 16 pt dot cell). The vertical centre is the bar's centre.
 - Content padding: 20 (regular windows), 16 (compact windows and panels), 24 (documents and settings).
-- Sidebar: width 240 (min 200), horizontal padding 12, row height 28, row pitch 32 (4 pt gap), section
-  header 28 tall, 16 above a header (except the first, 8), and 8 between the last row of a section and the
-  next header. The selection capsule is the row inset 0 horizontally, radius 8. Row icon 16 at x 12, label at x 36.
+- Sizes are never smaller than macOS (user decision 2026-10-17, readability and accessibility): compare the
+  ink, not the box. A symbol of size N draws at most N × 20/24, so a 20 pt icon draws ~17 pt, like macOS.
+  Icons are text in the Silica Symbols font (`tokens.json` › `iconFont`): font size = icon size. No text
+  below 11 pt. Default scale on 1920 × 1200 panels stays 1× (user decision 2026-10-17).
+- Sidebar: width 240 (min 200), horizontal padding 12, row height 32, row pitch 32 (gap 0: selection capsules
+  touch, as on macOS), section header 28 tall (text `Sidebar Header` 12/16), 16 above a header (except the
+  first, 8), and 8 between the last row of a section and the next header. The selection capsule is the row
+  inset 0 horizontally, radius 8. Row icon 20 at x 12 (y 6), label at x 40 (text `Sidebar` 14/20, selected
+  weight 600). Tag dots are 12 pt circles centred in the icon box.
+- Settings sidebar: the same sidebar as Mustache, Mail and Notes (width 240, rows 32, soft selection
+  capsule, sidebar body under a blur-strip title bar section, one divider at x 239), with the search field and
+  the account block above the rows. Each entry keeps a coloured rounded tile: tile 24 at x 10 (y 4) with a
+  white glyph 16 centred in it, label at x 44 (user decision 2026-10-17).
 - Sidebar in a split title bar (user decision 2026-10-16; Mustache, Mail, Notes and every `Split Toolbar`
   window):
   - the divider between sidebar and content is **one** 1 pt `Line/Separator` at x = sidebar width − 1
@@ -25,18 +35,23 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
     The divider is drawn on top of it.
   - unified title bars (one bar over sidebar and content) keep the opaque bar.
 - Inspector: width 260, padding 16, groups separated by 20.
-- Toolbar items are glass (Glass/Regular), centred at y 10:
-  - single icon button 32 × 32 circle;
-  - action capsules 32 tall, made of 32 pt segments with 1 × 16 separators (Back/Forward 65);
-  - search capsule 32 tall;
+- Toolbar items are glass (Glass/Regular), 36 tall at y 8 in the 52 bar (user decision 2026-10-17; macOS 38):
+  - single icon button 36 × 36 circle, glyph 20;
+  - action capsules 36 tall, made of 36 pt segments with 1 × 16 separators (Back/Forward 73);
+  - search capsule 36 tall, glyph 20;
   - 8 between capsules; trailing padding 16 (user decision 2026-10-16: the kit's "Full Inset 8" windows are defects).
-  Small 24 (segment 24, icon 14), mini 20 (segment 20, icon 12). Amalfi's own sizes: do not copy Silica's
-  measured 37/38 pt values.
+  Small 24 (segment 24, icon 16), mini 20 (segment 20, icon 14).
 - Icon grids (file manager): tile 104 × 104 (icon 64, label below), gap 16, first tile at the content
   padding.
 - Lists and tables: row 28 (regular), 24 (compact), 44 (two-line). Separators are 1 pt Line/Separator,
   inset 16.
 - Calculator keypad: keys 48 × 48 (capsule or circle), gap 8 (pitch 56), padding 16, display height 72.
+  Key labels Inter Semibold: digits 24, AC/C 20, scientific and programmer keys 18. Operators, % and ± are
+  Silica Symbols Semibold 24 (`calc-add`, `calc-subtract`, `calc-multiply`, `calc-divide`, `calc-equal`,
+  `calc-percent`, `calc-plus-minus`; about 17 pt of ink like the digits); backspace `delete-left` Semibold 24
+  (user decision 2026-10-17). History sidebar: runs under the toolbar like every sidebar (blur strip, one
+  divider); each row shows the operation (Callout, secondary) with the result below it (Inter Semibold 16/20),
+  both right-aligned.
 - Terminal: content padding 12, line height 16 (Mono 12/16).
 - Text baselines: put text frames on whole points, with the line height from the text style.
 - Push buttons: the label is centred in the button on both axes (text centre = button centre); the
@@ -54,7 +69,7 @@ Read each one from the kit for exact geometry (see README, "How to read the kit"
 | Family | Components and variants | Sizes (pt) |
 |---|---|---|
 | Alerts | Alert: one / two / three buttons, critical, with field, glass | 280 wide |
-| Buttons | Push: Primary, Secondary, Destructive, Borderless, Glass × 4 sizes × 5 states (200); Icon: Round, Square × 4 sizes × 5 states; Help; Link; Toolbar: Icon, Icon + Label; Gradient add/remove; Pop-up and Pull-down × 4 sizes × 5 states + Open | push 48×20 … 88×32; icon 20–32; toolbar 32×32, 56×44 |
+| Buttons | Push: Primary, Secondary, Destructive, Borderless, Glass × 4 sizes × 5 states (200); Icon: Round, Square × 4 sizes × 5 states; Help; Link; Toolbar: Icon, Icon + Label; Gradient add/remove; Pop-up and Pull-down × 4 sizes × 5 states + Open | push 48×20 … 88×32; icon 20–32; toolbar 36×36, 56×44 |
 | Color Wells | Color Well: Minimal, Default, Expanded × states; Color Panel swatch grid; Swatch Chip; Swatch Row | 44×24, 72×28, 188×28 |
 | Combo Boxes | Combo Box: Small, Regular, Large × Rest/Focused/Disabled + Open; Combo Button | 200×24/28/32 |
 | Control Center | Panel; Module: Toggle Off/On/On Hover, Tile, Slider (Display, Sound, Keyboard), Now Playing, Privacy Pill, Edit Button; Detail: Wi-Fi, Wi-Fi Off, Bluetooth, Nearby Sharing, Focus, Display, Sound, Now Playing; Row: Item, Network Secure/Open, Slider, Footer, Section; Status: Wi-Fi, Bluetooth, Battery; Status Menu: Battery | panel 292×484; detail 312 wide; modules 64×64, 140×64, 140×140, 292×64 |
@@ -65,14 +80,14 @@ Read each one from the kit for exact geometry (see README, "How to read the kit"
 | Forms | Layout; Section: Profile, Preferences, Validation; Row: Text, Popup, Check, Switch, Help, Error; Footer | 400×496 |
 | Group Boxes | Box: Titled, Titled Disabled, Untitled, Nested | |
 | Image Wells | Empty (Rest, Drag Over, Disabled), Filled (Rest, Focused, Disabled) × Small/Regular/Large | 72, 120, 168 |
-| Menu Bar | Bar: Closed, Menu Open; Item: Status, Menu, Name, Clock × Rest/Active | 28 tall, items 24 |
+| Menu Bar | Bar: Closed, Menu Open; Item: Status, Menu, Name, Clock × Rest/Active | 32 tall, items 28 at y 2, status glyph 20 (2026-10-17; macOS 30) |
 | Menus | Menu: Simple, Full, Context, Submenu, Cascade; Item: Plain, Shortcut, Submenu, Icon, Destructive, Checkmark × Rest/Highlighted/Checked/Disabled; Header; Separator | items 24 tall; separator 8 |
 | Notifications | Banner: Basic, With Actions, Panel, Panel With Actions; Stack Grouped; Centre Panel; App Icon | 360×76, 360×108; centre 380×416 |
 | Popovers | Popover: Form, List, Text × Top/Bottom/Leading/Trailing × Start/Center/End + Detached; Content | ~204–268 wide |
 | Progress | Bar: Determinate (25/60/100/Disabled), Indeterminate (3 phases) × Small/Regular/Large; Circular; Spinner | bar 4/8 tall; spinner 16/24/32 |
 | Scrollbars | Overlay: Thin, Expanded, Dragging × V/H; Legacy: Rest, Hover, Disabled × V/H; Corner; Area | overlay 12; legacy 16 |
 | Segmented | Action segments (toolbar, glass): Icon 2–5, Text 2–3 × Large/Small × Rest/Hover/Pressed/Disabled/Inactive (240); Control (select one/any): 2–5 Text/Icon × Small/Regular/Large × Rest/Pressed/Disabled (176); Icon Item; Text Item; Align | segments 32 (Large), 24 (Small) |
-| Sidebars | Panel; Row: Plain, Badge × Rest/Hover/Selected/Disabled; Header; Group Open/Closed; Badge; Footer | panel 240; rows 216×28 |
+| Sidebars | Panel; Row: Plain, Badge × Rest/Hover/Selected/Disabled; Header; Group Open/Closed; Badge; Footer | panel 240; rows 216×32, icon 20 |
 | Sliders | Horizontal: Plain, Ticks, Glyphs × states + Dragging; Vertical; Circular dial; Thumb: Round × states, Lens Dragging | 200×20/28/36 |
 | Steppers | Stepper × 4 sizes × Rest/Hover Up/Down/Pressed Up/Down/Disabled/Focused; Value Field; With Field | 16×20 … 28×32 |
 | Titlebars and toolbars | Bar: Unified, Title Only, Compact × Active/Inactive; Section: Sidebar, Content, Inspector, List; Piece (modular): Controls, Title, Title + Subtitle, Title + Document Icon, Nav, Sidebar Toggle, Item Group 2/3/4, Segmented, Segmented 4, Segmented Text, Search, Share, More, Spacer, Add, app pieces; Controls; Dot: Close/Minimise/Zoom × Rest/Hover/Inactive; Title Bar; Toolbar; Tab; Tab Bar | toolbar 52; title-only 32; compact 40 |

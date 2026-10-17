@@ -45,6 +45,10 @@ Render order for Regular and Thick: backdrop → blur → refraction at the edge
 corners. In the compositor (Ossido) the blur is the existing glass pass ([`docs/m2-glass.md`](../../m2-glass.md),
 [`docs/spec/glass.md`](../../spec/glass.md)): reuse its kernel and only change the parameters to these.
 
+In the Sketch kit, light Regular and Thick glass draw the tint as a separate layer (`<name> tint`, style
+`Light/Fill/Glass/Tint` or `Tint Thick`) just above the glass layer: Sketch's glass effect drops a white fill.
+In code the tint is part of the material, as in the render order above.
+
 Fallback when blur is unavailable (software rendering, reduced transparency setting): replace the blur with
 an opaque fill = tint over `Surface/Window`, keep rim and shadow.
 
