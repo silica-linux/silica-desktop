@@ -206,7 +206,7 @@ void main() {
     });
     expect(
       styledFolderIcon('${home.path}/Other', env: env, styles: styles)!.icon.id,
-      'folder',
+      'folder-generic',
     );
     final folder = styledFolderIcon(plain, env: env, styles: styles)!;
     expect(folder.symbol, 'star');

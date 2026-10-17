@@ -308,16 +308,15 @@ List<Item> dockItems(
 
 /// The Dock's folder icon: the full variant when the folder has something inside.
 LayeredIcon? _folderIcon(String folder) {
-  final icon = findSilicaIcon('folder');
+  final icon = findSilicaIcon('folder-generic');
   if (icon == null || !folderHasItems(folder)) return icon;
   return fullFolderVariant(icon);
 }
 
 /// The Dock folder with its own colour or symbol, full or empty; null for a plain folder (the
-/// item keeps the plain silica-icons folder).
+/// item keeps the plain `folder-generic`).
 FolderIcon? _styledFolder(String folder) {
-  final look = folderStyles.look(folder);
-  if (look.symbol == null && look.tint == null) return null;
+  // Special folders (Downloads…) get their symbol from silica-icons even without a style.
   final icon = styledFolderIcon(folder);
   if (icon == null || (icon.symbol == null && icon.tint == null)) return null;
   return folderHasItems(folder) ? fullFolder(icon) : icon;

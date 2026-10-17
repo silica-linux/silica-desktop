@@ -11,7 +11,7 @@ const String svg =
 
 const String folderManifest = '''
 {
-  "format": 1, "id": "folder", "name": "Folder", "kind": "file",
+  "format": 1, "id": "folder-generic", "name": "Folder", "kind": "file",
   "layers": [ { "role": "artwork", "file": "icon.svg" } ],
   "variants": {
     "dark": { "artwork": "icon-dark.svg" },
@@ -24,7 +24,7 @@ const String folderManifest = '''
 
 Directory iconRoot({bool full = true}) {
   final root = Directory.systemTemp.createTempSync('silica-icons-');
-  final dir = Directory('${root.path}/files/folder')
+  final dir = Directory('${root.path}/files/folder-generic')
     ..createSync(recursive: true);
   File('${dir.path}/icon.json').writeAsStringSync(
     full
@@ -67,9 +67,9 @@ void main() {
     final root = iconRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final env = {'SILICA_ICONS_DIR': root.path};
-    final plain = findSilicaIcon('folder', env: env)!;
+    final plain = findSilicaIcon('folder-generic', env: env)!;
     final full = fullFolderVariant(plain);
-    expect(full.id, 'folder');
+    expect(full.id, 'folder-generic');
     expect(full.layers.single.path, endsWith('/icon-full.svg'));
     expect(full.layers.single.darkPath, endsWith('/icon-full-dark.svg'));
     expect(plain.layers.single.path, endsWith('/icon.svg'));
@@ -79,7 +79,7 @@ void main() {
     final root = iconRoot(full: false);
     addTearDown(() => root.deleteSync(recursive: true));
     final plain = findSilicaIcon(
-      'folder',
+      'folder-generic',
       env: {'SILICA_ICONS_DIR': root.path},
     );
     expect(plain, isNotNull);
@@ -90,7 +90,7 @@ void main() {
     final root = iconRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final plain = findSilicaIcon(
-      'folder',
+      'folder-generic',
       env: {'SILICA_ICONS_DIR': root.path},
     )!;
     const tint = Color(0xFF2FB350);
