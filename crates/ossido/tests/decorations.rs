@@ -278,6 +278,31 @@ fn dragging_the_titlebar_moves_the_window() {
     assert_eq!((moved.x, moved.y), (info.x + 40, info.y + 30));
 }
 
+/// The frame never goes above the top of the usable area during the move (#188).
+#[test]
+fn dragging_the_titlebar_up_stops_at_the_top_of_the_usable_area() {
+    let ossido = start("decor-drag-top");
+    let _window = TestWindow::open_decorated(&ossido.wayland, "drag", (240, 140));
+    let info = windows(&ossido).remove(0);
+    let mut client = ossido.client();
+    let (x, y) = (info.x + 150, info.y - 16);
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": x, "y": y}))
+        .unwrap();
+    client
+        .call(INPUT_POINTER_BUTTON, json!({"pressed": true}))
+        .unwrap();
+    client
+        .call(INPUT_POINTER_MOVE, json!({"x": x, "y": 0}))
+        .unwrap();
+    let during = windows(&ossido).remove(0);
+    assert_eq!(during.y, BAR);
+    client
+        .call(INPUT_POINTER_BUTTON, json!({"pressed": false}))
+        .unwrap();
+    assert_eq!(windows(&ossido).remove(0).y, BAR);
+}
+
 #[test]
 fn full_size_content_keeps_only_the_buttons_over_the_app() {
     let ossido = start("decor-full-size");

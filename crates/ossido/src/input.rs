@@ -48,7 +48,9 @@ impl State {
         // Dragging by the bar: the frame follows the grab point.
         if let Some((window, grab)) = self.moving.clone() {
             let bar = decorations::titlebar_height(&window);
-            let frame = (location - grab).to_i32_round::<i32>();
+            let mut frame = (location - grab).to_i32_round::<i32>();
+            // The frame (bar included) never goes above the menu bar while it moves (#188).
+            frame.y = frame.y.max(self.usable_area().loc.y);
             self.space
                 .map_element(window, frame + Point::from((0, bar)), false);
         }
