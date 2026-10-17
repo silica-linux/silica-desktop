@@ -353,8 +353,21 @@ impl State {
         self.focus_window(Some(window));
     }
 
-    /// Full screen on the output, or back to the previous geometry.
+    /// Full screen on the output as a space of its own, or back to the previous geometry.
     pub fn toggle_fullscreen(&mut self, window: &Window) -> Result<(), String> {
+        self.toggle_fullscreen_as(window, true)
+    }
+
+    /// The app asks for full screen or leaves it (`xdg_toplevel.set_fullscreen`, a slideshow,
+    /// #173): the window fills the output where it is, not in a space of its own.
+    pub fn set_fullscreen_in_place(&mut self, window: &Window, on: bool) -> Result<(), String> {
+        if is_fullscreen(window) == on {
+            return Ok(());
+        }
+        self.toggle_fullscreen_as(window, false)
+    }
+
+    fn toggle_fullscreen_as(&mut self, window: &Window, own_space: bool) -> Result<(), String> {
         let toplevel = window.toplevel().ok_or("window without a toplevel")?;
         window
             .user_data()
@@ -408,6 +421,10 @@ impl State {
             });
             toplevel.send_pending_configure();
             self.space.map_element(window.clone(), output.loc, true);
+            if !own_space {
+                self.focus_window(Some(window.clone()));
+                return Ok(());
+            }
             // A full-screen window is a space of its own, right after the one it came from.
             let from = self.window_space(window).unwrap_or(self.workspaces.active);
             match self.insert_space(from.saturating_add(1)) {

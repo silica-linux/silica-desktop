@@ -385,6 +385,35 @@ impl XdgShellHandler for State {
         }
     }
 
+    /// The app asks for full screen (a slideshow, #173): the window fills the output.
+    fn fullscreen_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
+    ) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.set_fullscreen_in_place(&window, true));
+        if !matches!(done, Some(Ok(()))) {
+            if let Some(Err(err)) = done {
+                warn!("fullscreen: {err}");
+            }
+            surface.send_pending_configure();
+        }
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let done = self
+            .window_for(surface.wl_surface())
+            .map(|window| self.set_fullscreen_in_place(&window, false));
+        if !matches!(done, Some(Ok(()))) {
+            if let Some(Err(err)) = done {
+                warn!("unfullscreen: {err}");
+            }
+            surface.send_pending_configure();
+        }
+    }
+
     /// The app minimizes its window (its title bar double click, #169): like the yellow button.
     fn minimize_request(&mut self, surface: ToplevelSurface) {
         if let Some(window) = self.window_for(surface.wl_surface())

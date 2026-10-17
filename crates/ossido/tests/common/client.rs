@@ -75,6 +75,8 @@ struct App {
     configured_resizing: bool,
     /// Whether the last configure carried the `maximized` state.
     configured_maximized: bool,
+    /// Whether the last configure carried the `fullscreen` state.
+    configured_fullscreen: bool,
     /// Configures are not acked until `TestWindow::ack_held` (a slow client).
     hold_acks: bool,
     held: Vec<u32>,
@@ -450,6 +452,12 @@ impl Dispatch<XdgToplevel, ()> for App {
                     .0
                     .iter()
                     .any(|c| u32::from_ne_bytes(*c) == maximized);
+                let fullscreen = xdg_toplevel::State::Fullscreen as u32;
+                state.configured_fullscreen = states
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|c| u32::from_ne_bytes(*c) == fullscreen);
             }
             _ => {}
         }
@@ -1119,6 +1127,25 @@ impl TestWindow {
     pub fn maximized(&mut self) -> bool {
         self.queue.roundtrip(&mut self.app).unwrap();
         self.app.configured_maximized
+    }
+
+    /// Whether the last configure carried the `fullscreen` state.
+    #[allow(dead_code)]
+    pub fn fullscreen(&mut self) -> bool {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.configured_fullscreen
+    }
+
+    /// `xdg_toplevel.set_fullscreen` / `unset_fullscreen`.
+    #[allow(dead_code)]
+    pub fn request_fullscreen(&mut self, on: bool) {
+        let toplevel = self._toplevel.as_ref().unwrap();
+        if on {
+            toplevel.set_fullscreen(None);
+        } else {
+            toplevel.unset_fullscreen();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// `xdg_toplevel.set_maximized` / `unset_maximized`.

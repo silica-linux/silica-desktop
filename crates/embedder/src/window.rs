@@ -250,6 +250,8 @@ struct View {
     activated: Option<bool>,
     /// The compositor says the window is maximized (zoomed), from the last configure.
     maximized: bool,
+    /// The compositor says the window is full screen, from the last configure.
+    fullscreen: bool,
     /// The engine has added the view (the main one always): frames and metrics may flow.
     added: bool,
     /// `FlutterEngineAddView` is under way.
@@ -281,6 +283,7 @@ impl View {
             appearance: None,
             activated: None,
             maximized: false,
+            fullscreen: false,
             added,
             adding: false,
             open_reply: None,
@@ -1038,6 +1041,9 @@ impl App {
     /// - `setSizeIncrement {baseWidth, baseHeight, stepWidth, stepHeight}`: interactive resizing
     ///   snaps the content size to base + n * step (a terminal's cell size, version 4); answers
     ///   whether Ossido offers it;
+    /// - `setFullscreen {enabled}`: the window fills the display (`set_fullscreen`) or leaves
+    ///   it; the app is told when the compositor changes it on its own with
+    ///   `fullscreenChanged {viewId, enabled}` (Esc, a space change; silica-desktop#173);
     /// - `startMove`: moves the window with the pointer (from the app's toolbar);
     /// - `zoom`: zooms the window (xdg_toplevel `set_maximized`), or puts it back when it is
     ///   zoomed (`unset_maximized`); `minimize`: minimizes it (`set_minimized`). The title
@@ -1172,6 +1178,21 @@ impl App {
                     }
                     window.commit();
                 }
+                crate::text_input::success(serde_json::json!(true))
+            }
+            Some("setFullscreen") => {
+                // A slideshow fills the display (xdg_toplevel full screen); the answer says
+                // the window exists. `fullscreenChanged` tells when the compositor leaves it.
+                let enabled = call
+                    .pointer("/args/enabled")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if enabled {
+                    window.set_fullscreen(None);
+                } else {
+                    window.unset_fullscreen();
+                }
+                window.commit();
                 crate::text_input::success(serde_json::json!(true))
             }
             Some("minimize") => {
@@ -3053,9 +3074,25 @@ impl WindowHandler for App {
             (Some(w), Some(h)) => (w.get(), h.get()),
             _ => (0, 0),
         };
+        let mut fullscreen_changed = None;
         if let Some(view) = self.views.get_mut(&id) {
             view.activated = Some(configure.is_activated());
             view.maximized = configure.is_maximized();
+            if view.fullscreen != configure.is_fullscreen() {
+                view.fullscreen = configure.is_fullscreen();
+                fullscreen_changed = Some(view.fullscreen);
+            }
+        }
+        if let (Some(enabled), Some(engine)) = (fullscreen_changed, &self.engine)
+            && let Err(err) = engine.send_message(
+                WINDOW_CHANNEL,
+                &crate::drag::call(
+                    "fullscreenChanged",
+                    serde_json::json!({ "viewId": id, "enabled": enabled }),
+                ),
+            )
+        {
+            warn!("fullscreenChanged: {err}");
         }
         self.update_app_active();
         self.configured(id, qh, size);
