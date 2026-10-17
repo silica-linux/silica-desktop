@@ -145,8 +145,18 @@ and Back/Forward have none.
 - Group, Actions, the view pop-up, » and a long press on Back/Forward open their menu on press; Share and Tags
   open their popover on release. ⌥ at the press turns the Group menu into the Sort menu. Menus drop below the
   button; the view pop-up menu puts the current item over the button; the » menu starts on the button row.
+- Control states (`<item>/Hover`, `/Pressed`, `/Inactive`; Share·Tags·Actions per segment; `Bar/Full/Inactive`):
+  hover is a pill tinted light `#1D1E211A`, dark `#F4F5F71F`, 28 tall inset 4 on a segment of a capsule (in
+  the view group 36 × 28 like the chosen segment) and the whole shape on a single button; the separators beside
+  the hovered or pressed segment are hidden. Pressed tints light `#1D1E2124`, dark `#F4F5F729` over the full
+  36 pt segment. Disabled items show no hover. Inactive window: glyphs and title `Text/Tertiary`; the pointer
+  relights a control and a click acts at once (click-through). Hover and press appear in one frame, no fade.
+- Menus show a highlighted row with `Menus/Item/*/Highlighted` (`<menu>/Highlighted`). Submenus (`Submenu/View`,
+  `Group By`, `Open With`, `Sort By`; attached in `Cascade/*`) open to the right overlapping the parent by 8,
+  first row level with the parent item (submenu top = item top − 4); the parent item stays highlighted.
+  Open With: the default app with "(default)", separator, other apps, separator, Other….
 
-## Component inventory (3015 symbols, every one in Light and Dark)
+## Component inventory (3007 symbols, every one in Light and Dark)
 
 Names follow `Category/Component/Variant/Size/State/Appearance`. States are always
 Rest · Hover · Pressed · Disabled · Focused unless listed. Sizes: Mini 20 · Small 24 · Regular 28 · Large 32.
