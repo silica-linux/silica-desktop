@@ -30,6 +30,8 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 
 /// The longest request or answer line.
 pub const MAX_LINE: usize = 64;
+/// Longest `open` request line (the file list of a second launch).
+pub const MAX_OPEN_LINE: usize = 64 * 1024;
 
 /// The registry folder: `$XDG_RUNTIME_DIR/silica-apps`, or none without a runtime folder.
 pub fn dir() -> Option<PathBuf> {
@@ -130,6 +132,30 @@ pub fn request(path: &Path, line: &str) -> std::io::Result<String> {
     let mut answer = String::new();
     BufReader::new(std::io::Read::take(stream, MAX_LINE as u64)).read_line(&mut answer)?;
     Ok(answer.trim().to_owned())
+}
+
+/// Hands `args` (the files of a second launch) to a running process of `app_id`, preferring
+/// one without windows; true if one took them. The request is `open <JSON array>`.
+pub fn open(app_id: &str, args: &[String]) -> bool {
+    let Some(dir) = dir() else {
+        return false;
+    };
+    let Ok(list) = serde_json::to_string(args) else {
+        return false;
+    };
+    let line = format!("open {list}");
+    if line.len() >= MAX_OPEN_LINE {
+        return false;
+    }
+    let live: Vec<(Instance, String)> = instances(&dir, Some(app_id))
+        .into_iter()
+        .filter_map(|i| request(&i.path, "status").ok().map(|status| (i, status)))
+        .collect();
+    let target = live
+        .iter()
+        .find(|(_, status)| status == "hidden")
+        .or_else(|| live.first());
+    target.is_some_and(|(i, _)| request(&i.path, &line).is_ok_and(|a| a == "ok"))
 }
 
 /// Asks every process of `app_id` to quit; returns how many answered.

@@ -520,6 +520,15 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
         info!("{}: the running process shows its window", options.app_id);
         return Ok(());
     }
+    // Launched again with files (Open With, a share target): the running process opens them.
+    if options.layer.is_none()
+        && !options.helper
+        && !options.dart_args.is_empty()
+        && crate::app_lifecycle::forward_open(&options.app_id, &options.dart_args)
+    {
+        info!("{}: the running process opens the files", options.app_id);
+        return Ok(());
+    }
     // The engine reads these after the renderer is ready: from disk while the GPU starts.
     crate::prefetch::start(
         [
@@ -1815,6 +1824,11 @@ impl App {
                 }
                 Some(Request::Reopen) => {
                     self.reopen();
+                    answer(&stream, "ok");
+                }
+                Some(Request::Open(args)) => {
+                    self.reopen();
+                    self.send_app("open", serde_json::json!({ "args": args }));
                     answer(&stream, "ok");
                 }
                 Some(Request::Quit) => {

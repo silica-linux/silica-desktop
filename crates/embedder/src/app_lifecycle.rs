@@ -17,7 +17,8 @@
 //! The `silica/app` channel (JSONMethodCodec):
 //! - from the app: `setQuitWhenLastWindowCloses {value}`, `setHandlesReopen {value}`,
 //!   `setQuitEnabled {value}`, `openWindow`, `closeWindow`, `quit`, `isHidden`;
-//! - to the app: `lastWindowClosed`, `reopen {windowless}`.
+//! - to the app: `lastWindowClosed`, `reopen {windowless}`, `open {args}` (the files of a
+//!   second launch, `open <JSON array>` on the socket).
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -36,15 +37,23 @@ pub const CHECK_PERIOD: Duration = Duration::from_secs(30);
 const CLIENT_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// A request on the registry socket.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Status,
     Reopen,
     Quit,
+    /// A second launch with arguments (files): they go to this process.
+    Open(Vec<String>),
 }
 
 pub fn parse_request(line: &str) -> Option<Request> {
-    match line.trim() {
+    let line = line.trim();
+    if let Some(list) = line.strip_prefix("open ") {
+        return serde_json::from_str::<Vec<String>>(list)
+            .ok()
+            .map(Request::Open);
+    }
+    match line {
         "status" => Some(Request::Status),
         "reopen" => Some(Request::Reopen),
         "quit" => Some(Request::Quit),
@@ -99,13 +108,19 @@ pub fn forward(app_id: &str) -> bool {
     apps::valid_app_id(app_id) && apps::reopen(app_id, true)
 }
 
+/// A second launch with arguments (files): a running process of `app_id` gets them
+/// (`open`) and this process has nothing to do.
+pub fn forward_open(app_id: &str, args: &[String]) -> bool {
+    apps::valid_app_id(app_id) && apps::open(app_id, args)
+}
+
 /// Reads one request from a registry client (bounded, with a short timeout).
 pub fn read_request(stream: &UnixStream) -> Option<Request> {
     stream.set_nonblocking(false).ok()?;
     stream.set_read_timeout(Some(CLIENT_TIMEOUT)).ok()?;
     stream.set_write_timeout(Some(CLIENT_TIMEOUT)).ok()?;
     let mut line = String::new();
-    BufReader::new(std::io::Read::take(stream, apps::MAX_LINE as u64))
+    BufReader::new(std::io::Read::take(stream, apps::MAX_OPEN_LINE as u64))
         .read_line(&mut line)
         .ok()?;
     parse_request(&line)
@@ -142,6 +157,11 @@ mod tests {
         assert_eq!(parse_request(" reopen "), Some(Request::Reopen));
         assert_eq!(parse_request("quit"), Some(Request::Quit));
         assert_eq!(parse_request("rm -rf"), None);
+        assert_eq!(
+            parse_request("open [\"/home/a/b c.png\"]\n"),
+            Some(Request::Open(vec!["/home/a/b c.png".to_owned()]))
+        );
+        assert_eq!(parse_request("open not-json"), None);
     }
 
     #[test]
