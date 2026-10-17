@@ -49,7 +49,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
 pub const WINDOW: (u32, u32) = (100, 60);
 pub const RED_BGRA: [u8; 4] = [0, 0, 255, 255];
 /// Position of the first window in Ossido's cascade (handlers.rs).
-pub const FIRST_WINDOW_AT: u32 = 32;
+pub const FIRST_WINDOW_AT: u32 = 4;
 
 #[derive(Default)]
 struct App {

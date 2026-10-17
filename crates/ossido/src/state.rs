@@ -204,6 +204,10 @@ pub struct State {
     /// Multiplier of the animation durations; 0 turns them off (`--animation-scale`,
     /// `ui.animation_scale`).
     pub animation_speed: f64,
+    /// Where the first window opens, from the top left of the usable area (`--window-origin`).
+    pub window_origin: i32,
+    /// Distance between a window and the next one in the cascade.
+    pub cascade_step: i32,
     /// Closed windows fading out.
     pub closing: Vec<crate::render::Closing>,
     /// Windows minimizing into the Dock or coming out of it (genie).
@@ -444,6 +448,8 @@ impl State {
             resize_settling: None,
             press_serial: None,
             animation_speed: 1.0,
+            window_origin: crate::handlers::CASCADE_ORIGIN,
+            cascade_step: crate::handlers::CASCADE_STEP,
             closing: Vec::new(),
             genies: Vec::new(),
             minimize_effect: crate::render::MinimizeEffect::Genie,

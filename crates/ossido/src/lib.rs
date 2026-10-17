@@ -99,6 +99,9 @@ pub struct Options {
     pub animation_scale: f64,
     /// Glass quality (`--glass auto|full|frosted|opaque`).
     pub glass: state::GlassSetting,
+    /// Where the first window opens, from the top left of the usable area, in points
+    /// (`--window-origin`, which also sets the cascade step); `None`: 4 pt and 29 pt (handlers.rs).
+    pub window_origin: Option<i32>,
     /// Starts a private session bus with `silica-daemon` (`--session-bus`).
     pub session_bus: bool,
     /// A key acting as Logo (`--logo-key`): nested in another desktop, the combinations with
@@ -121,6 +124,7 @@ impl Default for Options {
             background: state::CLEAR_COLOR,
             animation_scale: 1.0,
             glass: state::GlassSetting::Auto,
+            window_origin: None,
             session_bus: false,
             logo_key: None,
             appearance: None,
@@ -141,6 +145,11 @@ pub fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
     ossido.state.clear_color = options.background;
     ossido.state.animation_speed = options.animation_scale;
     ossido.state.glass_setting = options.glass;
+    if let Some(origin) = options.window_origin {
+        // The cascade step is the origin (32 gives the old (32, 32), (64, 64)… layout).
+        ossido.state.window_origin = origin;
+        ossido.state.cascade_step = origin;
+    }
     ossido.state.appearance = options.appearance;
     ossido.state.logo_key = options.logo_key.unwrap_or(match options.backend {
         BackendKind::Winit => keys::LogoKey::RightCtrl,

@@ -191,8 +191,11 @@ fn the_dark_shadow_is_stronger_than_the_light_one() {
     let mut below = Vec::new();
     for appearance in ["light", "dark"] {
         let ossido = start(&format!("shadow-{appearance}"), appearance);
+        // A first window moves the second one off the screen edge (cascade), so the
+        // shadow beside it is on screen.
+        let _first = TestWindow::open_decorated(&ossido.wayland, "first", (40, 40));
         let _window = TestWindow::open_decorated(&ossido.wayland, "shadow", (240, 140));
-        let info = windows(&ossido).remove(0);
+        let info = windows(&ossido).into_iter().max_by_key(|w| w.x).expect("the second window");
         let shot = shot(&ossido, &format!("appearance-shadow-{appearance}"));
         // Below the window (shadow shifted down) and on the side, over gray.
         let under = rgb(&shot, (info.x + 120, info.y + 140 + 8))[1];
