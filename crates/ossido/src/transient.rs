@@ -242,6 +242,24 @@ fn root_of(popups: &PopupManager, surface: &WlSurface) -> WlSurface {
     current
 }
 
+/// The surfaces of the popups `popup` hangs from, nearest first.
+fn popup_ancestors(popups: &PopupManager, popup: &PopupKind) -> Vec<WlSurface> {
+    let mut found = Vec::new();
+    let parent_of = |popup: &PopupKind| match popup {
+        PopupKind::Xdg(xdg) => xdg.get_parent_surface(),
+        _ => None,
+    };
+    let mut current = parent_of(popup);
+    while let Some(surface) = current {
+        let Some(parent) = popups.find_popup(&surface) else {
+            break;
+        };
+        current = parent_of(&parent);
+        found.push(surface);
+    }
+    found
+}
+
 /// The popup a surface belongs to (up through its subsurfaces), with that popup's root.
 fn popup_root_of(popups: &PopupManager, surface: &WlSurface) -> Option<WlSurface> {
     let mut current = surface.clone();
@@ -503,6 +521,32 @@ impl State {
         }
     }
 
+    /// A popup goes: its grab ends (it is not told, it is gone), and the keyboard it had goes
+    /// to `parent`, the popup or window it hung from.
+    pub fn end_popup_grab(&mut self, gone: &WlSurface, parent: Option<WlSurface>) {
+        let before = self.transients.len();
+        self.transients.retain(
+            |t| !matches!(&t.source, Source::Popup { popup, .. } if popup.wl_surface() == gone),
+        );
+        let had_keyboard = self
+            .seat
+            .get_keyboard()
+            .is_some_and(|keyboard| keyboard.current_focus().is_none_or(|focus| focus == *gone));
+        if had_keyboard
+            && let (Some(keyboard), Some(parent)) = (self.seat.get_keyboard(), parent)
+            && parent.is_alive()
+        {
+            keyboard.set_focus(
+                self,
+                Some(parent),
+                smithay::utils::SERIAL_COUNTER.next_serial(),
+            );
+        }
+        if self.transients.len() != before {
+            self.refresh_pointer();
+        }
+    }
+
     /// An app popup asks for a grab: it is that app's menu (INPUT-01 (a)), modal for the app
     /// and letting clicks through elsewhere; it has the keyboard while open.
     pub fn grab_popup(&mut self, popup: PopupKind) {
@@ -514,8 +558,13 @@ impl State {
             Some(client) => OwnerApp::Client(client.id()),
             None => OwnerApp::None,
         };
+        // A popup replaces the other grabs of its window, except the popups it hangs from (a
+        // submenu opens over its menu, which stays open and grabbed).
+        let ancestors = popup_ancestors(&self.popups, &popup);
         self.transients.retain(|t| match &t.source {
-            Source::Popup { root: r, .. } => r != &root,
+            Source::Popup { popup: p, root: r } => {
+                r != &root || ancestors.contains(p.wl_surface())
+            }
             Source::Shell { .. } => true,
         });
         self.transients.push(Transient {

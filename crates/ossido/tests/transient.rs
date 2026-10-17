@@ -19,7 +19,7 @@ use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 
 use common::Headless;
-use common::client::{APP_ID, PointerLog, TestWindow};
+use common::client::{APP_ID, PointerLog, PopupSpec, TestWindow};
 use serde_json::{Value, json};
 use silica_control::commands::{
     INPUT_CLICK, INPUT_POINTER_MOVE, INPUT_SCROLL, WINDOW_FOCUS, WINDOW_LIST, WindowInfo,
@@ -680,6 +680,115 @@ fn an_app_popup_click_in_another_app_closes_it_and_goes_through() {
     assert!(done, "the popup stayed open");
     assert_eq!(back.presses, 1, "the click did not reach the other app");
     assert!(back_focused);
+}
+
+/// An app popup is kept on the output (#4): the positioner's constraint adjustment moves a
+/// menu that would leave the screen (adjustment bits: 1 slide x, 2 slide y, 4 flip x, 8 flip
+/// y). Returns the popup's configure and the window's origin.
+fn constrained_popup(
+    name: &str,
+    anchor_rect: (i32, i32, u32, u32),
+    size: (u32, u32),
+    adjustment: u32,
+) -> ((i32, i32, i32, i32), (i32, i32)) {
+    let ossido = Headless::start(name);
+    APP_ID.with(|id| *id.borrow_mut() = OWNER_APP.to_owned());
+    let mut window = TestWindow::open(&ossido.wayland, "menu-owner");
+    APP_ID.with(|id| id.borrow_mut().clear());
+    let mut control = ossido.client();
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(control.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let info = list
+        .iter()
+        .find(|w| w.title.as_deref() == Some("menu-owner"))
+        .expect("the window is listed");
+    control
+        .call(
+            INPUT_CLICK,
+            json!({"x": info.x + 10, "y": info.y + 10, "button": "right"}),
+        )
+        .unwrap();
+    window.open_popup(PopupSpec {
+        anchor_rect,
+        size,
+        adjustment,
+        grab: true,
+        nested: false,
+    });
+    let configure = *window
+        .popup_configures()
+        .last()
+        .expect("the popup was not configured");
+    ((configure.0, configure.1, configure.2, configure.3), (info.x, info.y))
+}
+
+#[test]
+fn an_app_popup_past_the_right_edge_slides_back_on_the_output() {
+    // The output is 320 wide: 200 wide from x = 60 of the window does not fit.
+    let (popup, window) = constrained_popup("t-popup-slide", (60, 10, 1, 1), (200, 30), 1);
+    assert_eq!((popup.2, popup.3), (200, 30), "the size changed");
+    assert!(popup.0 < 60, "the popup did not slide left: {popup:?}");
+    assert!(
+        window.0 + popup.0 + popup.2 <= 320,
+        "the popup leaves the output: {popup:?} in a window at {window:?}"
+    );
+    assert!(window.0 + popup.0 >= 0, "the popup slid off the left edge");
+}
+
+#[test]
+fn an_app_popup_past_the_bottom_edge_flips_above_its_anchor() {
+    // 80 tall under an anchor in the lower half of the output does not fit below it, and fits
+    // above it.
+    let (popup, window) = constrained_popup("t-popup-flip", (10, 80, 10, 10), (40, 80), 8);
+    assert_eq!((popup.2, popup.3), (40, 80));
+    assert_eq!(popup.1, 80 - 80, "the popup did not flip above the anchor: {popup:?}");
+    assert!(window.1 + popup.1 >= 0, "the flipped popup leaves the output");
+}
+
+#[test]
+fn an_app_popup_that_fits_stays_where_it_was_asked() {
+    let (popup, _) = constrained_popup("t-popup-fits", (5, 5, 1, 1), (40, 30), 1 | 2 | 4 | 8);
+    assert_eq!(popup, (5, 6, 40, 30));
+}
+
+#[test]
+fn a_submenu_popup_keeps_its_menu_open_and_grabbed() {
+    let ossido = Headless::start("t-popup-nested");
+    APP_ID.with(|id| *id.borrow_mut() = OWNER_APP.to_owned());
+    let mut front = TestWindow::open(&ossido.wayland, "front");
+    APP_ID.with(|id| id.borrow_mut().clear());
+    let mut control = ossido.client();
+    control
+        .call(
+            INPUT_CLICK,
+            json!({"x": 100.0, "y": 100.0, "button": "right"}),
+        )
+        .unwrap();
+    let menu = PopupSpec {
+        anchor_rect: (5, 5, 1, 1),
+        size: (40, 30),
+        adjustment: 0,
+        grab: true,
+        nested: false,
+    };
+    front.open_popup(menu);
+    front.open_popup(PopupSpec {
+        anchor_rect: (30, 5, 1, 1),
+        nested: true,
+        ..menu
+    });
+    assert!(!front.popup_done(), "the submenu closed its menu");
+    // The submenu goes away (the pointer left it): its menu is still grabbed.
+    front.close_child_popup();
+    assert!(!front.popup_done());
+    // A click away from the app ends the menu that is left.
+    control
+        .call(INPUT_CLICK, json!({"x": 300.0, "y": 190.0}))
+        .unwrap();
+    assert!(
+        front.popup_done(),
+        "the menu is no longer grabbed after its submenu closed"
+    );
 }
 
 #[test]
