@@ -308,7 +308,7 @@ List<Item> dockItems(
 
 /// The Dock's folder icon: the full variant when the folder has something inside.
 LayeredIcon? _folderIcon(String folder) {
-  final icon = findSilicaIcon('folder');
+  final icon = findSilicaIcon('folder-generic');
   if (icon == null || !folderHasItems(folder)) return icon;
   return fullFolderVariant(icon);
 }

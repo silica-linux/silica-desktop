@@ -43,8 +43,8 @@ final Map<String, LayeredIcon?> _fullIcons = {};
 
 final RegExp _svgName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.svg$');
 
-/// [icon] with the artwork of its `full` and `full-dark` variants (`variants` of its
-/// `icon.json`); [icon] itself if it has none. Id, kind and dynamic content are kept.
+/// [icon] with the artwork of its `full` variant (`variants` of its `icon.json`; folders have
+/// no dark artwork); [icon] itself if it has none. Id, kind and dynamic content are kept.
 LayeredIcon fullFolderVariant(LayeredIcon icon) {
   if (icon.layers.length != 1) return icon;
   final path = icon.layers.first.path;
@@ -69,13 +69,7 @@ LayeredIcon fullFolderVariant(LayeredIcon icon) {
       full = LayeredIcon(
         id: icon.id,
         kind: icon.kind,
-        layers: [
-          IconLayer(
-            light,
-            darkPath: artwork('full-dark'),
-            shadow: icon.layers.first.shadow,
-          ),
-        ],
+        layers: [IconLayer(light, shadow: icon.layers.first.shadow)],
         dynamic: icon.dynamic,
       );
     }

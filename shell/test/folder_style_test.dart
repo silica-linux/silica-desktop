@@ -22,41 +22,30 @@ const String _generic = '''
   "dynamic": {
     "type": "folder-symbol",
     "symbol": {
-      "box": [353.9, 424.36, 316.19, 316.19],
+      "box": [354, 434, 316, 316],
       "sizes": [ { "min_size": 16, "weight": "regular", "scale": 1 } ]
     },
-    "effect": { "light": { "color": "#1a64c8", "opacity": 0.78 } },
+    "effect": {
+      "color": "#1a64c8", "opacity": 0.78,
+      "highlight": "#ffffff", "highlight_opacity": 0.5, "offset": 4
+    },
     "tint": {
-      "light": { "luminance": [0.35, 0.85], "shade": 0.72, "glow": 0.5 },
+      "luminance": [0.35, 0.85], "shade": 0.72, "glow": 0.5,
       "labels": { "red": "#f2382e", "blue": "#2f7cf6", "green": "#2fb350" }
     },
     "folders": { "MUSIC": "music-note" },
-    "fallback": "folder"
+    "fallback": null
   }
-}
-''';
-
-const String _plain = '''
-{
-  "format": 1, "id": "folder", "name": "Folder", "kind": "file",
-  "layers": [ { "role": "artwork", "file": "icon.svg" } ],
-  "variants": { "full": { "artwork": "icon-full.svg" } },
-  "dynamic": null
 }
 ''';
 
 Directory iconsRoot() {
   final root = Directory.systemTemp.createTempSync('silica-icons-');
-  for (final (id, manifest) in [
-    ('folder-generic', _generic),
-    ('folder', _plain),
-  ]) {
-    final dir = Directory('${root.path}/files/$id')
-      ..createSync(recursive: true);
-    File('${dir.path}/icon.json').writeAsStringSync(manifest);
-    for (final name in ['icon', 'icon-full']) {
-      File('${dir.path}/$name.svg').writeAsStringSync(_svg);
-    }
+  final dir = Directory('${root.path}/files/folder-generic')
+    ..createSync(recursive: true);
+  File('${dir.path}/icon.json').writeAsStringSync(_generic);
+  for (final name in ['icon', 'icon-full']) {
+    File('${dir.path}/$name.svg').writeAsStringSync(_svg);
   }
   final symbols = Directory('${root.path}/symbols/regular')
     ..createSync(recursive: true);
@@ -206,7 +195,7 @@ void main() {
     });
     expect(
       styledFolderIcon('${home.path}/Other', env: env, styles: styles)!.icon.id,
-      'folder',
+      'folder-generic',
     );
     final folder = styledFolderIcon(plain, env: env, styles: styles)!;
     expect(folder.symbol, 'star');
@@ -225,17 +214,16 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     final env = {'SILICA_ICONS_DIR': root.path};
     final generic = findSilicaIcon('folder-generic', env: env)!;
-    final plain = findSilicaIcon('folder', env: env)!;
     final styled = FolderIcon(generic, symbol: 'star');
     final item = Item.app(
       'Progetti',
       folder: '/home/a/Progetti',
-      layered: plain,
+      layered: generic,
       folderIcon: styled,
     );
     expect(item.icon, isA<FolderSource>());
     expect((item.icon! as FolderSource).folder.symbol, 'star');
-    final without = Item.app('Download', folder: '/x', layered: plain);
+    final without = Item.app('Download', folder: '/x', layered: generic);
     expect(without.icon, isA<LayeredSource>());
   });
 }
