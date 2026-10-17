@@ -1140,9 +1140,17 @@ impl App {
             return crate::text_input::success(serde_json::Value::Null);
         }
         if method == Some("popupsAvailable") {
-            // Menus and popovers as their own surfaces need several views (`--multi-window`).
+            // Menus and popovers as their own surfaces need several views (`--multi-window`)
+            // and windows to hang from: a shell layer or the desktop's layer has none.
+            let window = matches!(
+                self.views.get(&MAIN_VIEW),
+                Some(View {
+                    surface: Shell::Window(_),
+                    ..
+                })
+            );
             return crate::text_input::success(serde_json::json!(
-                self.multi_view && self.xdg_shell.is_some()
+                self.multi_view && self.xdg_shell.is_some() && window
             ));
         }
         let Some(View {
