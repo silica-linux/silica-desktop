@@ -804,6 +804,70 @@ fn a_submenu_popup_keeps_its_menu_open_and_grabbed() {
 }
 
 #[test]
+fn a_pointer_over_a_submenu_reaches_it_and_a_click_there_keeps_the_menus_open() {
+    let ossido = Headless::start("t-popup-nested-hit");
+    APP_ID.with(|id| *id.borrow_mut() = OWNER_APP.to_owned());
+    let mut front = TestWindow::open(&ossido.wayland, "front");
+    APP_ID.with(|id| id.borrow_mut().clear());
+    let mut control = ossido.client();
+    let list: Vec<WindowInfo> =
+        serde_json::from_value(control.call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let info = list
+        .iter()
+        .find(|w| w.title.as_deref() == Some("front"))
+        .expect("the window is listed")
+        .clone();
+    control
+        .call(
+            INPUT_CLICK,
+            json!({"x": info.x + 10, "y": info.y + 10, "button": "right"}),
+        )
+        .unwrap();
+    let menu = PopupSpec {
+        anchor_rect: (5, 5, 1, 1),
+        size: (40, 30),
+        adjustment: 0,
+        grab: true,
+        nested: false,
+        transparent: false,
+    };
+    front.open_popup(menu);
+    front.open_popup(PopupSpec {
+        anchor_rect: (30, 5, 1, 1),
+        nested: true,
+        ..menu
+    });
+    let configures = front.popup_configures();
+    let (root, sub) = (
+        configures[configures.len() - 2],
+        configures[configures.len() - 1],
+    );
+    // The middle of the submenu, in the window's coordinates, on the screen.
+    let x = f64::from(info.x + root.0 + sub.0 + sub.2 / 2);
+    let y = f64::from(info.y + root.1 + sub.1 + sub.3 / 2);
+    let before = front.pointer_log();
+    control
+        .call(INPUT_POINTER_MOVE, json!({"x": x, "y": y}))
+        .unwrap();
+    let moved = front.pointer_log();
+    assert!(
+        moved.enters > before.enters,
+        "the pointer did not reach the popups: {configures:?}"
+    );
+    control.call(INPUT_CLICK, json!({"x": x, "y": y})).unwrap();
+    let after = front.pointer_log();
+    assert!(
+        !front.popup_done(),
+        "a click on the submenu closed the menus: {configures:?}"
+    );
+    assert_eq!(
+        after.presses,
+        before.presses + 1,
+        "the press did not reach the submenu"
+    );
+}
+
+#[test]
 fn a_full_screen_dock_with_a_small_region_still_ends_on_a_press_outside() {
     // The Dock's surface is as tall as the screen; only its menu's corner takes the pointer.
     let wide = Mode::V7Wide(OTHER_APP, Rule::Activate, Rule::Pass);
