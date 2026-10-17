@@ -6,8 +6,8 @@ UI kit and this file disagree, this file wins and the kit is fixed later.
 
 ## The idea
 
-- Windows are **flat and opaque**: regions (sidebar, content, inspector, toolbar) separated by 1 pt
-  `Line/Separator` lines. Only the window as a whole has a shadow (`shadows.3`). No glass inside windows
+- Windows are **flat and opaque**: regions (content, inspector, toolbar) separated by 1 pt
+  `Line/Separator` lines; the sidebar has no line and meets the content with a tone step (2026-10-17). Only the window as a whole has a shadow (`shadows.3`). No glass inside windows
   except the **controls** that sit in the toolbar (the blur strip over a sidebar is not glass).
 - Everything that **floats above** windows or the desktop is glass: Dock, menus, popovers, Faro, Control
   Center, notifications, HUDs, tooltips, sheets.
@@ -70,7 +70,7 @@ an opaque fill = tint over `Surface/Window`, keep rim and shadow.
 | HUDs (volume, brightness), Screenshot bar | Regular | capsule / 20 | |
 | Toolbar controls (icon buttons, action segments, search capsule) | Regular | capsule | the toolbar itself is flat (window surface) |
 | Title bar section over a sidebar (split title bars) | **blur strip** (not glass): blur σ 10, tint `Surface/Sidebar` 80 %, no refraction, rim or shadow | — | the sidebar rows scroll under it; see `components.md` › Sidebar in a split title bar |
-| Window, sidebar, inspector, content | **opaque** `Surface/Window` / `Surface/Sidebar` | window 18 | separators 1 pt, inset as in the layout rules |
+| Window, sidebar, inspector, content | **opaque** `Surface/Window` / `Surface/Sidebar` | window 18 | separators 1 pt, inset as in the layout rules; none between sidebar and content |
 | Fields, push buttons, checkboxes, switches at rest | opaque fills (`Surface/Control`, `Accent/Amalfi`) | per control | |
 | Pressed segmented control, dragged slider thumb, dragged switch thumb | Clear (lens) | capsule | see the lens rule |
 | Media overlays (video controls, Quick preview controls) | Clear | capsule | |

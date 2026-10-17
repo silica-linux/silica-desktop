@@ -21,20 +21,61 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
   first, 8), and 8 between the last row of a section and the next header. The selection capsule is the row
   inset 0 horizontally, radius 8. Row icon 20 at x 12 (y 6), label at x 40 (text `Sidebar` 14/20, selected
   weight 600). Tag dots are 12 pt circles centred in the icon box.
+- Sidebar glyph colours (user decision 2026-10-17): glyphs are coloured **by section**, never one colour
+  per item; every row of a section shares its colour, and a row keeps it when selected. Source: our Finder
+  and Mail captures (`mustache.md` MU-10, `mail.md` Sidebar).
+
+  | App | Section | Glyph token |
+  |---|---|---|
+  | Mustache | Pinned (favourites), Recents/Shared | `Accent/Amalfi` |
+  | Mustache | Places (home, volumes, network, Trash) | `Text/Secondary` |
+  | Mustache, Notes | Tags | the tag's own colour (dot) |
+  | Mail | Favourites, Smart Mailboxes, account mailboxes, Search | `Accent/Amalfi` |
+  | Mail | On My Mac (local folders) | `Palette/Mare` |
+  | Notes | Folders (including All Notes) | `Palette/Limone` |
+  | Notes | Smart Folders | `Accent/Amalfi` (not observed on the reference: fallback) |
+  | Generic panels (`Sidebars/Panel`, `Windows/Sidebar Body`) | every section | `Accent/Amalfi` |
+  | Settings | tiles keep their own colour, white glyph | — |
+
+  The row masters' icon defaults to `Accent/Amalfi`; instances override it per section. Disabled rows use
+  `Text/Tertiary`.
+- Sidebar selection (user decision 2026-10-17), the same in every sidebar (Mustache, Mail, Notes, Settings,
+  Calculator, panels):
+
+  | State | Capsule | Glyph | Label |
+  |---|---|---|---|
+  | Selected, active window | `Accent/Amalfi Soft` (light `#0E77E624`, dark `#3D95FF38`) | section colour | `Text/Primary`, weight 600 |
+  | Selected, inactive window | `Surface/Control Pressed` light `#E9ECF0`, `Surface/Control` dark `#3A3B40` | `Text/Secondary` | `Text/Secondary`, weight 600 |
+  | Any row, inactive window | none | `Text/Secondary` | `Text/Secondary` |
+
+  Masters: `Sidebars/Row/{Plain,Badge}/Selected` and `.../Selected Inactive`. Hover has no background on the
+  reference; the kit's hover tint stays a pointer affordance.
+- No divider between sidebar and content (user decision 2026-10-17): the sidebar meets the content with
+  the tone step `Surface/Sidebar` → `Surface/Window`, as on the reference (`windows.md` Sidebar). No line in
+  the body, none across the title bar. Dividers between list and content (Mail, Notes) and before an
+  inspector stay.
+- Sidebar show/hide (⌃⌘S or the toggle; Sketch cannot show it): the sidebar slides in from / out to the
+  leading edge while the content area widens or narrows in step; the toolbar items right of the sidebar
+  move with the content edge; the sidebar toggle stays in place. Hide **240 ms**, show **230 ms** starting
+  ~40 ms after the key, S curve (slow–fast–slow, half way at ~140 ms; use `cubic-bezier(0.42, 0, 0.58, 1)`).
+  Content reflows (icon grid columns) during the slide, not at the end. Source: Mustache measurement
+  (`mustache.md` MU-10, `mustache-spec.md` 2.3). Notes measured ~410 ms for the same transition;
+  Amalfi uses the 240/230 ms values everywhere.
+- Calculator history sidebar: closed, the sidebar toggle sits in the toolbar after the window controls;
+  open, it moves inside the sidebar's title-bar area, right-aligned 8 pt from the sidebar edge, as Mail
+  (toggle 44 × 52 at x = sidebar width − 52: 168 with the 220 pt sidebar).
 - Settings sidebar: the same sidebar as Mustache, Mail and Notes (width 240, rows 32, soft selection
-  capsule, sidebar body under a blur-strip title bar section, one divider at x 239), with the search field and
+  capsule, sidebar body under a blur-strip title bar section, no divider), with the search field and
   the account block above the rows. Each entry keeps a coloured rounded tile: tile 24 at x 10 (y 4) with a
   white glyph 16 centred in it, label at x 44 (user decision 2026-10-17).
 - Sidebar in a split title bar (user decision 2026-10-16; Mustache, Mail, Notes and every `Split Toolbar`
   window):
-  - the divider between sidebar and content is **one** 1 pt `Line/Separator` at x = sidebar width − 1
-    (239), from the window's top edge to its bottom edge: it crosses the title bar. No second line at 240.
+  - no divider between sidebar and content (2026-10-17, replaces the 1 pt line at x 239).
   - the sidebar body runs from y 0, under the title bar; its first row sits where it did (header at y 60,
     i.e. 52 + 8), and the rows scroll **under** the title bar section.
   - the title bar section over the sidebar (`Titlebars/Section/Sidebar`, 240 × 52, controls and sidebar
     toggle on it) is a **blur strip**, not glass: background blur σ 10 pt, saturation 1.0, no refraction,
     no rim, no shadow, tint `Surface/Sidebar` at 80 % (`#F5F6F8CC` light, `#232428CC` dark), no line under it.
-    The divider is drawn on top of it.
   - unified title bars (one bar over sidebar and content) keep the opaque bar.
 - Inspector: width 260, padding 16, groups separated by 20.
 - Toolbar items are glass (Glass/Regular), 36 tall at y 8 in the 52 bar (user decision 2026-10-17; macOS 38):
@@ -51,9 +92,10 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
   Key labels Inter Semibold: digits 24, AC/C 20, scientific and programmer keys 18. Operators, % and ± are
   Silica Symbols Semibold 24 (`calc-add`, `calc-subtract`, `calc-multiply`, `calc-divide`, `calc-equal`,
   `calc-percent`, `calc-plus-minus`; about 17 pt of ink like the digits); backspace `delete-left` Semibold 24
-  (user decision 2026-10-17). History sidebar: runs under the toolbar like every sidebar (blur strip, one
+  (user decision 2026-10-17). History sidebar: runs under the toolbar like every sidebar (blur strip, no
   divider); each row shows the operation (Callout, secondary) with the result below it (Inter Semibold 16/20),
-  both right-aligned.
+  both right-aligned. No divider against the keypad; the sidebar toggle moves into the sidebar
+  when it is open (see Calculator history sidebar above).
 - Terminal: content padding 12, line height 16 (Mono 12/16).
 - Text baselines: put text frames on whole points, with the line height from the text style.
 - Push buttons: the label is centred in the button on both axes (text centre = button centre); the
