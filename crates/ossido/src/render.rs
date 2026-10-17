@@ -54,6 +54,11 @@ render_elements! {
     /// The black band between two scrolling spaces.
     Solid=SolidColorRenderElement,
     /// A space's desktop wallpaper shrunk into its thumbnail in the spaces bar.
+    /// The elements of a window inside a space thumbnail, clipped to its cell (#181).
+    CroppedSurface=CropRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>,
+    CroppedRounded=CropRenderElement<RoundedSurface>,
+    CroppedShader=CropRenderElement<RescaleRenderElement<PixelShaderElement>>,
+    CroppedTexture=CropRenderElement<RescaleRenderElement<TextureRenderElement<GlesTexture>>>,
     Thumbnail=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
     /// A blurred capture: the Panorama wallpaper, the spaces bar material.
     Blurred=ossido_render::backdrop::BlurredElement,
@@ -94,6 +99,32 @@ fn fit_into_thumbnail<E: Element>(
         scale,
         cell,
     )
+}
+
+/// Clips the elements of a window to `cell` (physical pixels): what is left outside, the
+/// shadow included, is not drawn. What the clip does not cover (glass, genies...) is not
+/// part of a window drawn in a thumbnail and is dropped.
+fn crop_window_elements(
+    elements: Vec<OutputElement>,
+    scale: f64,
+    cell: Rectangle<i32, Physical>,
+) -> Vec<OutputElement> {
+    elements
+        .into_iter()
+        .filter_map(|element| match element {
+            OutputElement::Surface(e) => {
+                CropRenderElement::from_element(e, scale, cell).map(OutputElement::CroppedSurface)
+            }
+            OutputElement::Rounded(e) => e.cropped(scale, cell).map(OutputElement::CroppedRounded),
+            OutputElement::Shader(e) => {
+                CropRenderElement::from_element(e, scale, cell).map(OutputElement::CroppedShader)
+            }
+            OutputElement::Texture(e) => {
+                CropRenderElement::from_element(e, scale, cell).map(OutputElement::CroppedTexture)
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// The layers that belong to the space and scroll with it: the wallpaper and the menu bar
@@ -583,6 +614,40 @@ fn window_elements(
     factor: f64,
     buttons: ButtonsLook,
     system_dark: bool,
+    crop: Option<Rectangle<i32, Physical>>,
+) -> Vec<OutputElement> {
+    let elements = window_elements_uncropped(
+        renderer,
+        shaders,
+        (location, geometry),
+        window,
+        output_origin,
+        output_size,
+        scale,
+        offset,
+        factor,
+        buttons,
+        system_dark,
+    );
+    match crop {
+        Some(cell) => crop_window_elements(elements, scale, cell),
+        None => elements,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn window_elements_uncropped(
+    renderer: &mut GlesRenderer,
+    shaders: &ossido_render::Shaders,
+    (location, geometry): (Point<i32, Logical>, Rectangle<i32, Logical>),
+    window: &Window,
+    output_origin: Point<i32, Logical>,
+    output_size: Size<i32, Physical>,
+    scale: f64,
+    offset: Point<i32, Logical>,
+    factor: f64,
+    buttons: ButtonsLook,
+    system_dark: bool,
 ) -> Vec<OutputElement> {
     // Everything drawn for the window (buttons, bar, title, border, shadow) follows the
     // window's own appearance when the app overrides the system's (`silica-window-v1`).
@@ -781,6 +846,7 @@ pub fn snapshot_window(
         1.0,
         ButtonsLook::default(),
         dark,
+        None,
     );
     let bbox = elements
         .iter()
@@ -933,6 +999,7 @@ pub fn output_elements(
                     ..ButtonsLook::default()
                 },
                 context.dark,
+                None,
             ));
         }
         // The close buttons, in front of the thumbnails.
@@ -992,6 +1059,7 @@ pub fn output_elements(
                     factor,
                     ButtonsLook::default(),
                     context.dark,
+                    Some(thumbnail.rect.to_physical_precise_round(scale)),
                 ));
             }
             // The desktop wallpaper, small. The surface element keeps its buffer at the
@@ -1236,6 +1304,7 @@ pub fn output_elements(
             factor,
             buttons,
             context.dark,
+            None,
         ));
         if let Some(toplevel) = window.toplevel()
             && let Some(location) = space.element_location(window)

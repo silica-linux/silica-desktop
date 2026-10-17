@@ -759,3 +759,25 @@ fn the_window_under_the_pointer_gets_the_ring_and_the_title_capsule() {
     let shot = screenshot(&ossido);
     assert!(ring_at(&shot, &right) && !ring_at(&shot, &left));
 }
+
+#[test]
+fn windows_in_a_thumbnail_are_clipped_to_its_cell() {
+    let ossido = Headless::start_with("panorama-thumb-clip", (1280, 800), &[]);
+    // Taller than the output: its thumbnail would spill below the cell.
+    let size = (1100u32, 1500u32);
+    let _tall = TestWindow::open_pixels(&ossido.wayland, "tall", size, &solid(size, GREEN));
+    let mut c = ossido.client();
+    c.call(PANORAMA_TOGGLE, Value::Null).unwrap();
+    c.call(PANORAMA_SPACES_BAR, json!({"enabled": true}))
+        .unwrap();
+    let t = state(&ossido).thumbnails[0];
+    let shot = screenshot(&ossido);
+    let inside = rgb_at(&shot, t.x + t.width / 2.0, t.y + t.height / 2.0);
+    let below = rgb_at(&shot, t.x + t.width / 2.0, t.y + t.height + 6.0);
+    eprintln!("inside {inside:?} below {below:?}");
+    assert!(inside[1] > 150 && inside[0] < 80, "inside: {inside:?}");
+    assert!(
+        !(below[1] > 150 && below[0] < 80),
+        "below the cell: {below:?}"
+    );
+}
