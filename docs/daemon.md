@@ -282,6 +282,24 @@ gdbus call --session -d dev.frascella.Silica -o /dev/frascella/Silica/Sound1 \
   -m dev.frascella.Silica.Sound1.PlaySound trash-empty
 ```
 
+## dev.frascella.Silica.Thumbnails1
+
+`/dev/frascella/Silica/Thumbnails1`. Thumbnails of files for apps and the shell, cached per the
+freedesktop thumbnail specification (`$XDG_CACHE_HOME/thumbnails/{normal 128, large 256, x-large 512,
+xx-large 1024}/<md5 of the URI>.png`, `Thumb::URI` and `Thumb::MTime` text chunks, failures in
+`fail/silica-daemon/`), so other Linux apps share the cache.
+
+- `Thumbnail(s uri, u size_px) -> s path`: the cached PNG in the smallest bucket with an edge of at
+  least `size_px`, generated on a bounded worker pool (not on the bus thread); "" when the file has
+  no thumbnail (unsupported type, folder, unreadable, or a recorded failure): the client keeps the
+  file-type icon. A cached file is reused while its `Thumb::MTime` equals the file's mtime.
+- `Invalidate(as uris)`: forgets the thumbnails of these files in every bucket.
+- Signal `Ready(s uri, u size_px, s path)` after a successful `Thumbnail`.
+
+Generators: PNG, JPEG, GIF (first frame), WebP, BMP, TIFF (EXIF orientation applied), and the first
+page of a PDF through `pdftoppm` when poppler is installed. Not yet: SVG, video, text, the composed
+folder icon.
+
 ## Authentication (polkit agent)
 
 The session's polkit authentication agent (`crates/daemon/src/auth.rs`): when an app asks for

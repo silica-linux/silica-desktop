@@ -164,7 +164,7 @@ fn split_exec(exec: &str) -> Vec<String> {
 }
 
 /// The local path of a `file://` URI (percent-decoded), or the argument itself.
-fn local_path(uri: &str) -> String {
+pub(crate) fn local_path(uri: &str) -> String {
     let Some(rest) = uri.strip_prefix("file://") else {
         return uri.to_owned();
     };

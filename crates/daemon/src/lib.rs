@@ -14,6 +14,7 @@ pub mod share;
 pub mod sound;
 pub mod sun;
 pub mod system;
+pub mod thumbnails;
 
 pub use auth::{AuthConfig, AuthService};
 pub use clipboard::ClipboardService;
