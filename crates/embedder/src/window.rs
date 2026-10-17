@@ -239,6 +239,9 @@ struct View {
     /// A frame callback asked for the vsync and not yet arrived.
     vsync_requested: bool,
     buffer: Option<Buffer>,
+    /// The pixels of the last presented software frame, to report only what changed
+    /// (`damage.rs`).
+    last_pixels: Vec<u8>,
     /// Software has presented at least one frame (with OpenGL the EGL surface knows).
     presented: bool,
     /// `silica-window-v1`: the window object (created on the first request).
@@ -273,6 +276,7 @@ impl View {
             waiting_frame: false,
             vsync_requested: false,
             buffer: None,
+            last_pixels: Vec::new(),
             presented: false,
             appearance: None,
             activated: None,
@@ -2851,7 +2855,14 @@ impl App {
         self.glass.before_present(id, frame.raster_seq);
         let surface = view.surface.wl_surface();
         surface.set_buffer_scale(view.scale.max(1));
-        surface.damage_buffer(0, 0, width, height);
+        // Only the changed rectangle is damaged (silica-desktop#205).
+        let (w, h) = (frame.width as usize, frame.height as usize);
+        if let Some((x, y, dw, dh)) =
+            crate::damage::changed_rect(&view.last_pixels, &frame.pixels, frame.stride, w, h)
+        {
+            surface.damage_buffer(x, y, dw, dh);
+        }
+        crate::damage::remember(&mut view.last_pixels, &frame.pixels, frame.stride, w, h);
         surface.frame(qh, surface.clone());
         if let Err(err) = buffer.attach_to(surface) {
             warn!("buffer attach failed: {err}");
