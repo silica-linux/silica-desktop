@@ -121,8 +121,9 @@ class CrosshairLabel extends StatelessWidget {
             text,
             key: const ValueKey('coordinates'),
             textAlign: TextAlign.center,
-            style: AmalfiType.caption(color: colors.textPrimary)
-                .copyWith(fontWeight: FontWeight.w500),
+            style: AmalfiType.caption(
+              color: colors.textPrimary,
+            ).copyWith(fontWeight: FontWeight.w500),
           ),
         ),
       ),

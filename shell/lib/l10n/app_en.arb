@@ -368,6 +368,10 @@
   "@closeWindow": {
     "description": "File menu"
   },
+  "closeAll": "Close All",
+  "@closeAll": {
+    "description": "File menu"
+  },
   "fullScreen": "Full screen",
   "@fullScreen": {
     "description": "View and Window menus, window popover"

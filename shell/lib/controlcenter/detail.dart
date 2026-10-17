@@ -216,8 +216,9 @@ _Piece _section(String title, {Widget? trailing, VoidCallback? onTap}) => (
               child: Text(
                 title,
                 maxLines: 1,
-                style: AmalfiType.label(color: p.tertiary)
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: AmalfiType.label(
+                  color: p.tertiary,
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             if (trailing != null) trailing,
@@ -684,8 +685,9 @@ DetailContent displayDetail({
               Text(
                 label,
                 maxLines: 1,
-                style: AmalfiType.label(color: p.text)
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: AmalfiType.label(
+                  color: p.text,
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
               Text(
                 subtitle,

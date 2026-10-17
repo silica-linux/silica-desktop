@@ -590,6 +590,12 @@ abstract class AppLocalizations {
   /// **'Close window'**
   String get closeWindow;
 
+  /// File menu
+  ///
+  /// In en, this message translates to:
+  /// **'Close All'**
+  String get closeAll;
+
   /// View and Window menus, window popover
   ///
   /// In en, this message translates to:

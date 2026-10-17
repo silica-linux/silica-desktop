@@ -82,6 +82,7 @@
   "aboutApp": "Informazioni su {app}",
   "quitApp": "Esci da {app}",
   "closeWindow": "Chiudi finestra",
+  "closeAll": "Chiudi tutto",
   "fullScreen": "Schermo intero",
   "minimize": "Riduci",
   "appWindows": "Finestre dell'app",

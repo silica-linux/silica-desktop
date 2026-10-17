@@ -169,6 +169,43 @@ void main() {
       windows.clear();
     });
 
+    test('Close All takes its label and ⌥⌘W from the system (#177)', () {
+      final menus = composeAppMenus(
+        AppMenuState.fromJson({
+          'serial': 1,
+          'model': {
+            'menus': [
+              {
+                'label': 'File',
+                'items': [
+                  {
+                    'id': 9,
+                    'label': '',
+                    'role': 'close_all',
+                    'enabled': true,
+                    'shortcut': {'key': 'W', 'meta': true, 'alt': true},
+                  },
+                ],
+              },
+            ],
+          },
+        }).menus!,
+        appName: 'Notes',
+        windows: const [],
+        focusedWindow: '',
+        actions: AppMenuActions(activate: activated.add, run: ran.add),
+      );
+      final item = menus
+          .firstWhere((m) => m.title == 'File')
+          .entries
+          .whereType<MenuAction>()
+          .single;
+      expect(item.label, englishTexts.closeAll);
+      expect(item.enabled, isTrue);
+      item.onSelected!();
+      expect(activated, [9]);
+    });
+
     test('the bar keeps the app order, drops empty menus, adds Help', () {
       final menus = compose();
       expect(menus.map((m) => m.title), [

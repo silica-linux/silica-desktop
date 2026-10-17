@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -283,6 +282,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get closeWindow => 'Chiudi finestra';
+
+  @override
+  String get closeAll => 'Chiudi tutto';
 
   @override
   String get fullScreen => 'Schermo intero';

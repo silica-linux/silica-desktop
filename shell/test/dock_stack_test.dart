@@ -163,8 +163,9 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('griglia');
     addTearDown(() => dir.deleteSync(recursive: true));
     for (var i = 1; i <= 20; i++) {
-      File('${dir.path}/documento con un nome molto lungo $i.txt')
-          .writeAsStringSync('x');
+      File(
+        '${dir.path}/documento con un nome molto lungo $i.txt',
+      ).writeAsStringSync('x');
     }
     tester.view.physicalSize = const Size(2560, 1440);
     tester.view.devicePixelRatio = 1;
