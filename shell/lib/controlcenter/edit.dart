@@ -308,25 +308,27 @@ class _ControlGalleryState extends State<ControlGallery> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(galleryPad),
-            children: [
-              for (final (category, ids) in sections) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10, top: 6),
-                  child: Text(
-                    _categoryName(l, category),
-                    style: _galleryText(15, weight: FontWeight.w700),
+          child: AmalfiScrollbar(
+            child: ListView(
+              padding: const EdgeInsets.all(galleryPad),
+              children: [
+                for (final (category, ids) in sections) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10, top: 6),
+                    child: Text(
+                      _categoryName(l, category),
+                      style: _galleryText(15, weight: FontWeight.w700),
+                    ),
                   ),
-                ),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 14,
-                  children: [for (final id in ids) _item(l, id)],
-                ),
-                const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 14,
+                    children: [for (final id in ids) _item(l, id)],
+                  ),
+                  const SizedBox(height: 18),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         Padding(

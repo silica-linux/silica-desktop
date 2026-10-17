@@ -178,11 +178,13 @@ class _ForceQuitLayerState extends State<ForceQuitLayer> {
           ),
         ),
       ),
-      child: ListView(
-        key: const ValueKey('force quit list'),
-        padding: const EdgeInsets.all(forceQuitListPadding),
-        itemExtent: forceQuitRow,
-        children: [for (final app in apps) _row(colors, app)],
+      child: AmalfiScrollbar(
+        child: ListView(
+          key: const ValueKey('force quit list'),
+          padding: const EdgeInsets.all(forceQuitListPadding),
+          itemExtent: forceQuitRow,
+          children: [for (final app in apps) _row(colors, app)],
+        ),
       ),
     );
     return Focus(

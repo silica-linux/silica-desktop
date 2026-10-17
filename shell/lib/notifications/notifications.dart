@@ -626,17 +626,19 @@ class _CentrePanel extends StatelessWidget {
                 )
               else
                 Flexible(
-                  child: SingleChildScrollView(
-                    clipBehavior: Clip.none,
-                    padding: const EdgeInsets.fromLTRB(
-                      centreInset,
-                      0,
-                      centreInset,
-                      centreInset,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: children,
+                  child: AmalfiScrollbar(
+                    child: SingleChildScrollView(
+                      clipBehavior: Clip.none,
+                      padding: const EdgeInsets.fromLTRB(
+                        centreInset,
+                        0,
+                        centreInset,
+                        centreInset,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: children,
+                      ),
                     ),
                   ),
                 ),

@@ -742,12 +742,14 @@ class _GridStackState extends State<GridStack> {
                 right: gridRight,
                 top: gridTop,
                 bottom: gridBottom,
-                child: SingleChildScrollView(
-                  child: Wrap(
-                    children: [
-                      for (final entry in widget.entries) _cell(entry),
-                      _openCell(l10n.openFolder, dark),
-                    ],
+                child: AmalfiScrollbar(
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      children: [
+                        for (final entry in widget.entries) _cell(entry),
+                        _openCell(l10n.openFolder, dark),
+                      ],
+                    ),
                   ),
                 ),
               ),

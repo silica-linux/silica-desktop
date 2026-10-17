@@ -775,14 +775,11 @@ class LauncherState extends State<Launcher>
           _cell(entry, layout.cell(i), ring: i == ringIndex),
     ];
     return AmalfiScrollbar(
-      child: ScrollConfiguration(
-        behavior: const _NoBars(),
-        child: SingleChildScrollView(
-          controller: _scroll,
-          child: SizedBox(
-            height: layout.height,
-            child: Stack(clipBehavior: Clip.none, children: children),
-          ),
+      child: SingleChildScrollView(
+        controller: _scroll,
+        child: SizedBox(
+          height: layout.height,
+          child: Stack(clipBehavior: Clip.none, children: children),
         ),
       ),
     );
@@ -984,15 +981,4 @@ class GridLayout {
     final last = rows == 0 ? _listTop : _listTop + (rows - 1) * rowPitch;
     return last - areaTop + gridLabelTop + gridLabelHeight + 24;
   }
-}
-
-class _NoBars extends ScrollBehavior {
-  const _NoBars();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
 }

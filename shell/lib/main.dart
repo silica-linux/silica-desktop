@@ -22,6 +22,7 @@ import 'menubar/menubar.dart';
 import 'notifications/notifications.dart';
 import 'notifications/service.dart';
 import 'system/desktop_entries.dart';
+import 'system/scroll_behavior.dart';
 import 'system/shell_channel.dart';
 import 'forcequit/force_quit.dart';
 import 'screenshot/screenshot.dart';
@@ -126,7 +127,10 @@ class ShellComponent extends StatelessWidget {
             child: child,
           );
     return ShellLocalizations(
-      child: Directionality(textDirection: TextDirection.ltr, child: glass),
+      child: ScrollConfiguration(
+        behavior: const ShellScrollBehavior(),
+        child: Directionality(textDirection: TextDirection.ltr, child: glass),
+      ),
     );
   }
 
