@@ -648,6 +648,7 @@ DetailContent displayDetail({
   required ValueChanged<double> onBrightness,
   required bool dark,
   required VoidCallback onDark,
+  required VoidCallback onNightLight,
   VoidCallback? onSettings,
 }) {
   Widget tile(
@@ -738,14 +739,13 @@ DetailContent displayDetail({
             dark,
             onDark,
           ),
-          // Night Light is not there yet: shown disabled.
           tile(
             displayTileCentres[1],
             GlyphKind.sunSmall,
             l.ccNightLight,
-            l.ccOff,
-            false,
-            null,
+            s.nightLight ? l.ccOn : l.ccOff,
+            s.nightLight,
+            onNightLight,
           ),
         ],
       ),

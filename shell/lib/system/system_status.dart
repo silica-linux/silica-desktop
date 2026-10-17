@@ -35,6 +35,7 @@ class SystemSnapshot {
     this.muted = false,
     this.audioName = '',
     this.doNotDisturb = false,
+    this.nightLight = false,
     this.privacy = const [],
     this.keyboardAvailable = false,
     this.keyboardBrightness = 0,
@@ -71,6 +72,9 @@ class SystemSnapshot {
   final String audioName;
   final bool doNotDisturb;
 
+  /// The night light is enabled (the daemon's `nightlight.enabled`).
+  final bool nightLight;
+
   /// The apps recording with the microphone or the camera, now or recently (the Control
   /// Center's privacy pill); the ones in use first.
   final List<PrivacyUse> privacy;
@@ -101,6 +105,7 @@ class SystemSnapshot {
       muted: flag('audio.muted'),
       audioName: d['audio.name'] is String ? d['audio.name'] as String : '',
       doNotDisturb: flag('dnd'),
+      nightLight: flag('nightlight.enabled'),
       privacy: [
         for (final item
             in d['privacy'] is List ? d['privacy'] as List : const [])
@@ -120,6 +125,7 @@ class SystemSnapshot {
     double? volume,
     bool? muted,
     bool? doNotDisturb,
+    bool? nightLight,
     List<PrivacyUse>? privacy,
     bool? keyboardAvailable,
     double? keyboardBrightness,
@@ -143,6 +149,7 @@ class SystemSnapshot {
     muted: muted ?? this.muted,
     audioName: audioName,
     doNotDisturb: doNotDisturb ?? this.doNotDisturb,
+    nightLight: nightLight ?? this.nightLight,
     privacy: privacy ?? this.privacy,
     keyboardAvailable: keyboardAvailable ?? this.keyboardAvailable,
     keyboardBrightness: keyboardBrightness ?? this.keyboardBrightness,
@@ -289,6 +296,9 @@ abstract class SystemSource implements ValueListenable<SystemSnapshot> {
   Future<void> setVolume(double value);
   Future<void> setMuted(bool muted);
   Future<void> setDoNotDisturb(bool enabled);
+
+  /// Turns the night light on or off (`SetNightLight`; its schedule and temperature stay).
+  Future<void> setNightLight(bool enabled);
 }
 
 /// [SystemSource] over D-Bus.
@@ -382,6 +392,20 @@ class DBusSystem extends ValueNotifier<SystemSnapshot> implements SystemSource {
   Future<void> setDoNotDisturb(bool enabled) {
     value = value.copyWith(doNotDisturb: enabled);
     return _set('SetDoNotDisturb', 'b', enabled);
+  }
+
+  @override
+  Future<void> setNightLight(bool enabled) async {
+    value = value.copyWith(nightLight: enabled);
+    try {
+      await _call('SetNightLight', 'a{sv}', [
+        {'enabled': enabled},
+      ]);
+    } on PlatformException catch (error) {
+      debugPrint('system: SetNightLight: ${error.code}: ${error.message}');
+    } on MissingPluginException {
+      // Outside Silica.
+    }
   }
 
   Future<List<T>> _list<T>(String method, T? Function(Object?) parse) async {
