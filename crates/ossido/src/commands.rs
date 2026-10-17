@@ -933,6 +933,17 @@ impl State {
         {
             return Some(window.clone());
         }
+        // With the keyboard on an app's popup (its open menu) the window is the popup's own:
+        // a press inside the menu must not look like leaving the window, which would end the
+        // menu before the click reaches its item.
+        if let Some(window) = self
+            .popups
+            .find_popup(&focus)
+            .and_then(|popup| smithay::desktop::find_popup_root_surface(&popup).ok())
+            .and_then(|root| self.window_for(&root))
+        {
+            return Some(window);
+        }
         // With the keyboard on a shell component (an open menu of the bar) the active app
         // stays the one on top: the menu commands act on it.
         let on_layer = smithay::desktop::layer_map_for_output(&self.output)
