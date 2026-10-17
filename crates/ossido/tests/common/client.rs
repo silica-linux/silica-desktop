@@ -36,7 +36,7 @@ use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporter
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::ZxdgImportedV2;
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 use wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
-use wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
+use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 use wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
@@ -47,6 +47,21 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
 
 /// Size and color of the client window (ARGB8888 in memory: B, G, R, A).
 pub const WINDOW: (u32, u32) = (100, 60);
+
+/// A popup for [`TestWindow::open_popup`].
+#[derive(Clone, Copy, Default)]
+pub struct PopupSpec {
+    /// x, y, width, height in the parent's coordinates; the popup hangs from its bottom left.
+    pub anchor_rect: (i32, i32, u32, u32),
+    pub size: (u32, u32),
+    /// `xdg_positioner.constraint_adjustment` bits.
+    pub adjustment: u32,
+    pub grab: bool,
+    /// Hangs from the first popup instead of the window.
+    pub nested: bool,
+    /// Drawn transparent (to show the glass declared on it) instead of red.
+    pub transparent: bool,
+}
 pub const RED_BGRA: [u8; 4] = [0, 0, 255, 255];
 /// Position of the first window in Ossido's cascade (handlers.rs).
 pub const FIRST_WINDOW_AT: u32 = 4;
@@ -67,6 +82,8 @@ struct App {
     pointer_log: PointerLog,
     /// Ossido closed the window's popup (`xdg_popup.popup_done`).
     popup_done: bool,
+    /// The `xdg_popup.configure` events, in order: x, y, width, height.
+    popup_configures: Vec<(i32, i32, i32, i32)>,
     configured: bool,
     /// The last size requested by Ossido (`xdg_toplevel.configure`).
     configured_size: Option<(i32, i32)>,
@@ -379,8 +396,15 @@ impl Dispatch<XdgPopup, ()> for App {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_popup::Event::PopupDone = event {
-            state.popup_done = true;
+        match event {
+            xdg_popup::Event::PopupDone => state.popup_done = true,
+            xdg_popup::Event::Configure {
+                x,
+                y,
+                width,
+                height,
+            } => state.popup_configures.push((x, y, width, height)),
+            _ => {}
         }
     }
 }
@@ -484,6 +508,10 @@ pub struct TestWindow {
     xdg_surface: Option<XdgSurface>,
     /// An open popup: its surface, xdg role objects and buffer.
     popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
+    /// A popup hanging from `popup` (a submenu).
+    child_popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
+    /// The glass object of `popup`.
+    popup_glass: Option<SilicaGlassV1>,
     _toplevel: Option<XdgToplevel>,
     _layer: Option<ZwlrLayerSurfaceV1>,
     _decoration: Option<ZxdgToplevelDecorationV1>,
@@ -609,6 +637,8 @@ impl TestWindow {
             surface,
             xdg_surface: Some(xdg_surface),
             popup: None,
+            child_popup: None,
+            popup_glass: None,
             _toplevel: Some(toplevel),
             _layer: None,
             _decoration: decoration,
@@ -709,6 +739,8 @@ impl TestWindow {
             surface,
             xdg_surface: None,
             popup: None,
+            child_popup: None,
+            popup_glass: None,
             _toplevel: None,
             _layer: Some(layer),
             _decoration: None,
@@ -758,6 +790,106 @@ impl TestWindow {
         surface.commit();
         self.queue.roundtrip(&mut self.app).unwrap();
         self.popup = Some((surface, xdg_surface, popup, buffer));
+    }
+
+    /// Opens a popup as `spec` says (the first one hangs from the window, the second from the
+    /// first: a submenu), drawn red. See `popup_configures`.
+    #[allow(dead_code)]
+    pub fn open_popup(&mut self, spec: PopupSpec) {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let qh = self.queue.handle();
+        let compositor = self.app.compositor.clone().expect("wl_compositor");
+        let shm = self.app.shm.clone().expect("wl_shm");
+        let wm_base = self.app.wm_base.clone().expect("xdg_wm_base");
+        let seat = self.app.seat.clone().expect("wl_seat");
+        let (w, h) = spec.size;
+        let positioner = wm_base.create_positioner(&qh, ());
+        positioner.set_size(w as i32, h as i32);
+        let (ax, ay, aw, ah) = spec.anchor_rect;
+        positioner.set_anchor_rect(ax, ay, aw as i32, ah as i32);
+        positioner.set_anchor(xdg_positioner::Anchor::BottomLeft);
+        positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
+        positioner.set_constraint_adjustment(
+            xdg_positioner::ConstraintAdjustment::from_bits_truncate(spec.adjustment),
+        );
+        let surface = compositor.create_surface(&qh, ());
+        let xdg_surface = wm_base.get_xdg_surface(&surface, &qh, ());
+        let parent = match &self.popup {
+            Some((_, parent, _, _)) if spec.nested => parent,
+            _ => self.xdg_surface.as_ref().expect("an xdg window"),
+        };
+        let popup = xdg_surface.get_popup(Some(parent), &positioner, &qh, ());
+        if spec.grab {
+            let serial = self.app.press_serial.expect("no press on the window");
+            popup.grab(&seat, serial);
+        }
+        surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        let fill = if spec.transparent { [0; 4] } else { RED_BGRA };
+        file.write_all(&fill.repeat((w * h) as usize)).unwrap();
+        let pool = shm.create_pool(file.as_fd(), (w * h * 4) as i32, &qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            w as i32,
+            h as i32,
+            (w * 4) as i32,
+            wl_shm::Format::Argb8888,
+            &qh,
+            (),
+        );
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, w as i32, h as i32);
+        surface.commit();
+        self.queue.roundtrip(&mut self.app).unwrap();
+        let opened = (surface, xdg_surface, popup, buffer);
+        if spec.nested {
+            self.child_popup = Some(opened);
+        } else {
+            self.popup = Some(opened);
+        }
+    }
+
+    /// Declares the glass regions of the popup and commits (a menu on compositor glass).
+    #[allow(dead_code)]
+    pub fn set_popup_glass(&mut self, regions: &[Region]) -> Result<(), String> {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .glass
+            .clone()
+            .expect("silica_glass_manager_v1 missing");
+        let surface = self.popup.as_ref().expect("no popup").0.clone();
+        let glass = self
+            .popup_glass
+            .get_or_insert_with(|| manager.get_glass(&surface, &qh, ()));
+        glass.clear();
+        for &(x, y, w, h, radius, material) in regions {
+            glass.add_region(x, y, w, h, radius, material);
+        }
+        surface.commit();
+        self.queue
+            .roundtrip(&mut self.app)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// The `xdg_popup.configure` events so far (x, y, width, height), relative to the parent.
+    #[allow(dead_code)]
+    pub fn popup_configures(&mut self) -> Vec<(i32, i32, i32, i32)> {
+        self.queue.roundtrip(&mut self.app).unwrap();
+        self.app.popup_configures.clone()
+    }
+
+    /// Destroys the nested popup (a submenu closing itself).
+    #[allow(dead_code)]
+    pub fn close_child_popup(&mut self) {
+        if let Some((surface, xdg_surface, popup, _)) = self.child_popup.take() {
+            popup.destroy();
+            xdg_surface.destroy();
+            surface.destroy();
+        }
+        self.queue.roundtrip(&mut self.app).unwrap();
     }
 
     /// Ossido closed the popup.

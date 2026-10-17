@@ -45,16 +45,17 @@ use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
     LayerSurfaceConfigure,
 };
-use smithay_client_toolkit::shell::xdg::XdgShell;
+use smithay_client_toolkit::shell::xdg::popup::{Popup, PopupConfigure, PopupHandler};
 use smithay_client_toolkit::shell::xdg::window::{
     Window, WindowConfigure, WindowDecorations, WindowHandler,
 };
+use smithay_client_toolkit::shell::xdg::{XdgPositioner, XdgShell, XdgSurface};
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{
     delegate_compositor, delegate_data_device, delegate_keyboard, delegate_layer, delegate_output,
-    delegate_pointer, delegate_registry, delegate_seat, delegate_shm, delegate_xdg_shell,
-    delegate_xdg_window, registry_handlers,
+    delegate_pointer, delegate_registry, delegate_seat, delegate_shm, delegate_xdg_popup,
+    delegate_xdg_shell, delegate_xdg_window, registry_handlers,
 };
 use tracing::{debug, info, warn};
 use wayland_client::globals::registry_queue_init;
@@ -70,6 +71,7 @@ use wayland_protocols::xdg::foreign::zv2::client::zxdg_exported_v2::{self, ZxdgE
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::ZxdgExporterV2;
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::{self, ZxdgImportedV2};
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
+use wayland_protocols::xdg::shell::client::xdg_positioner;
 
 use crate::{LayerKeyboard, LayerKind, MultiViewRenderer, Options, Renderer};
 
@@ -84,10 +86,12 @@ struct DragOut {
     action: DndAction,
 }
 
-/// The surface hosting the app: a normal window or a shell layer.
+/// The surface hosting the app: a normal window, a shell layer or a popup (a menu or
+/// popover that can extend past its window, silica-desktop#4).
 enum Shell {
     Window(Window),
     Layer(LayerSurface),
+    Popup(Popup),
 }
 
 impl Shell {
@@ -95,6 +99,7 @@ impl Shell {
         match self {
             Shell::Window(window) => window.wl_surface(),
             Shell::Layer(layer) => layer.wl_surface(),
+            Shell::Popup(popup) => popup.wl_surface(),
         }
     }
 
@@ -102,6 +107,7 @@ impl Shell {
         match self {
             Shell::Window(window) => window.commit(),
             Shell::Layer(layer) => layer.commit(),
+            Shell::Popup(popup) => popup.wl_surface().commit(),
         }
     }
 
@@ -264,6 +270,10 @@ struct View {
     removing: bool,
     /// A shell layer's namespace (`menubar`, `dock`…): Dart picks what to draw by it.
     namespace: Option<String>,
+    /// For a popup, the view it hangs from.
+    popup_parent: Option<i64>,
+    /// For a popup, where Ossido put it: x, y relative to its parent, width, height.
+    popup_placed: Option<(i32, i32, i32, i32)>,
 }
 
 impl View {
@@ -290,7 +300,14 @@ impl View {
             export: None,
             removing: false,
             namespace: None,
+            popup_parent: None,
+            popup_placed: None,
         }
+    }
+
+    /// Whether this view is a popup (a menu), not a window.
+    fn is_popup(&self) -> bool {
+        matches!(self.surface, Shell::Popup(_))
     }
 
     /// The size in physical pixels.
@@ -300,6 +317,38 @@ impl View {
             self.size.0.saturating_mul(scale),
             self.size.1.saturating_mul(scale),
         )
+    }
+}
+
+/// The `xdg_positioner` anchor for an [`views::Edge`].
+fn popup_anchor(edge: views::Edge) -> xdg_positioner::Anchor {
+    use views::Edge;
+    match edge {
+        Edge::Center => xdg_positioner::Anchor::None,
+        Edge::Top => xdg_positioner::Anchor::Top,
+        Edge::Bottom => xdg_positioner::Anchor::Bottom,
+        Edge::Left => xdg_positioner::Anchor::Left,
+        Edge::Right => xdg_positioner::Anchor::Right,
+        Edge::TopLeft => xdg_positioner::Anchor::TopLeft,
+        Edge::TopRight => xdg_positioner::Anchor::TopRight,
+        Edge::BottomLeft => xdg_positioner::Anchor::BottomLeft,
+        Edge::BottomRight => xdg_positioner::Anchor::BottomRight,
+    }
+}
+
+/// The `xdg_positioner` gravity for an [`views::Edge`].
+fn popup_gravity(edge: views::Edge) -> xdg_positioner::Gravity {
+    use views::Edge;
+    match edge {
+        Edge::Center => xdg_positioner::Gravity::None,
+        Edge::Top => xdg_positioner::Gravity::Top,
+        Edge::Bottom => xdg_positioner::Gravity::Bottom,
+        Edge::Left => xdg_positioner::Gravity::Left,
+        Edge::Right => xdg_positioner::Gravity::Right,
+        Edge::TopLeft => xdg_positioner::Gravity::TopLeft,
+        Edge::TopRight => xdg_positioner::Gravity::TopRight,
+        Edge::BottomLeft => xdg_positioner::Gravity::BottomLeft,
+        Edge::BottomRight => xdg_positioner::Gravity::BottomRight,
     }
 }
 
@@ -1001,6 +1050,7 @@ impl App {
         {
             match call.get("method").and_then(serde_json::Value::as_str) {
                 Some("openWindow") => return self.open_view(&call, message.response),
+                Some("openPopup") => return self.open_popup(&call, message.response),
                 Some("exportHandle") => return self.export_handle(&call, message.response),
                 _ => {}
             }
@@ -1088,6 +1138,20 @@ impl App {
                 );
             }
             return crate::text_input::success(serde_json::Value::Null);
+        }
+        if method == Some("popupsAvailable") {
+            // Menus and popovers as their own surfaces need several views (`--multi-window`)
+            // and windows to hang from: a shell layer or the desktop's layer has none.
+            let window = matches!(
+                self.views.get(&MAIN_VIEW),
+                Some(View {
+                    surface: Shell::Window(_),
+                    ..
+                })
+            );
+            return crate::text_input::success(serde_json::json!(
+                self.multi_view && self.xdg_shell.is_some() && window
+            ));
         }
         let Some(View {
             surface: Shell::Window(window),
@@ -1302,17 +1366,42 @@ impl App {
         }
     }
 
+    /// The reply of an `openWindow` / `openPopup` that did not open anything: null.
+    fn refuse_open(&self, reply: Option<ResponseHandle>, why: &str) {
+        warn!("openWindow: {why}");
+        if let (Some(engine), Some(handle)) = (&self.engine, reply)
+            && let Err(err) =
+                engine.respond(handle, &crate::text_input::success(serde_json::Value::Null))
+        {
+            warn!("openWindow reply: {err}");
+        }
+    }
+
+    /// Gives the engine the new view `id` (OpenGL or Vulkan surface) and its glass.
+    fn attach_view(&mut self, id: i64, view: &View) -> Result<(), String> {
+        if let Some(gl) = self.engine.as_ref().and_then(Engine::gl) {
+            gl.add_view(id, view.surface.wl_surface(), view.physical())
+                .map_err(|err| err.to_string())?;
+        }
+        if let Some(vulkan) = self.engine.as_ref().and_then(Engine::vulkan) {
+            vulkan
+                .add_view(id, view.surface.wl_surface())
+                .map_err(|err| err.to_string())?;
+        }
+        self.glass.insert(
+            id,
+            self.glass_manager.clone(),
+            &self.conn,
+            view.surface.wl_surface(),
+        );
+        Ok(())
+    }
+
     /// `openWindow` (several windows, `views.rs`): a new xdg_toplevel and its engine view.
     /// `reply` gets the view id once the engine has added the view, or null.
     fn open_view(&mut self, call: &serde_json::Value, reply: Option<ResponseHandle>) {
         let refuse = |app: &Self, reply: Option<ResponseHandle>, why: &str| {
-            warn!("openWindow: {why}");
-            if let (Some(engine), Some(handle)) = (&app.engine, reply)
-                && let Err(err) =
-                    engine.respond(handle, &crate::text_input::success(serde_json::Value::Null))
-            {
-                warn!("openWindow reply: {err}");
-            }
+            app.refuse_open(reply, why);
         };
         let Some(spec) = call.get("args").and_then(WindowSpec::parse) else {
             return refuse(self, reply, "no valid size");
@@ -1323,7 +1412,7 @@ impl App {
         if self.views.len() > views::MAX_WINDOWS {
             return refuse(self, reply, "too many windows");
         }
-        let (Some(xdg_shell), Some(engine)) = (&self.xdg_shell, &self.engine) else {
+        let (Some(xdg_shell), Some(_)) = (&self.xdg_shell, &self.engine) else {
             return refuse(self, reply, "no xdg shell");
         };
         let id = self.next_view;
@@ -1355,26 +1444,91 @@ impl App {
             view.appearance = Some(object);
         }
         view.surface.commit();
-        if let Some(gl) = engine.gl()
-            && let Err(err) = gl.add_view(id, view.surface.wl_surface(), view.physical())
-        {
-            return refuse(self, reply, &err.to_string());
+        if let Err(err) = self.attach_view(id, &view) {
+            return refuse(self, reply, &err);
         }
-        if let Some(vulkan) = engine.vulkan()
-            && let Err(err) = vulkan.add_view(id, view.surface.wl_surface())
-        {
-            return refuse(self, reply, &err.to_string());
-        }
-        self.glass.insert(
-            id,
-            self.glass_manager.clone(),
-            &self.conn,
-            view.surface.wl_surface(),
-        );
         // The engine gets the view at the window's first configure (`configured`): nothing
         // may be drawn on an xdg surface before it is configured.
         view.open_reply = reply;
         info!("window {id} opened: {:?} {:?}", spec.title, spec.size);
+        self.views.insert(id, view);
+    }
+
+    /// `openPopup` (`views.rs`): a menu or popover as an `xdg_popup` of window `parent`, with
+    /// its own engine view, so it can extend past the window (silica-desktop#4). `reply` gets
+    /// the view id once the engine has added the view, or null.
+    fn open_popup(&mut self, call: &serde_json::Value, reply: Option<ResponseHandle>) {
+        let Some(spec) = call.get("args").and_then(views::PopupSpec::parse) else {
+            return self.refuse_open(reply, "popup: no valid size or anchor");
+        };
+        if !self.multi_view {
+            return self.refuse_open(reply, "popup: the app was not started with --multi-window");
+        }
+        if self.views.len() > views::MAX_WINDOWS {
+            return self.refuse_open(reply, "popup: too many windows");
+        }
+        let Some(xdg_shell) = &self.xdg_shell else {
+            return self.refuse_open(reply, "popup: no xdg shell");
+        };
+        // The parent: a window or a popup that is open and drawn (the compositor wants it
+        // mapped).
+        let parent = match self.views.get(&spec.parent) {
+            Some(View {
+                surface: Shell::Window(window),
+                configured: true,
+                removing: false,
+                ..
+            }) => window.xdg_surface().clone(),
+            Some(View {
+                surface: Shell::Popup(popup),
+                configured: true,
+                removing: false,
+                ..
+            }) => popup.xdg_surface().clone(),
+            _ => return self.refuse_open(reply, "popup: its parent is not an open window"),
+        };
+        let positioner = match XdgPositioner::new(xdg_shell) {
+            Ok(positioner) => positioner,
+            Err(err) => return self.refuse_open(reply, &format!("popup positioner: {err}")),
+        };
+        let (x, y, w, h) = spec.anchor_rect;
+        positioner.set_size(spec.size.0 as i32, spec.size.1 as i32);
+        positioner.set_anchor_rect(x, y, w, h);
+        positioner.set_anchor(popup_anchor(spec.anchor));
+        positioner.set_gravity(popup_gravity(spec.gravity));
+        positioner.set_constraint_adjustment(
+            xdg_positioner::ConstraintAdjustment::from_bits_truncate(spec.adjust),
+        );
+        let surface = self.compositor.create_surface(&self.qh);
+        let popup =
+            match Popup::from_surface(Some(&parent), &positioner, &self.qh, surface, xdg_shell) {
+                Ok(popup) => popup,
+                Err(err) => return self.refuse_open(reply, &format!("popup: {err}")),
+            };
+        if spec.grab
+            && let Some(seat) = &self.seat
+        {
+            popup.xdg_popup().grab(seat, self.input_serial);
+        }
+        let id = self.next_view;
+        self.next_view = self.next_view.saturating_add(1);
+        // The same scale as its window until Ossido tells the popup's own.
+        let scale = self
+            .views
+            .get(&spec.parent)
+            .map_or(1, |parent| parent.scale);
+        let mut view = View::new(Shell::Popup(popup), spec.size, scale, false);
+        view.popup_parent = Some(spec.parent);
+        view.surface.commit();
+        if let Err(err) = self.attach_view(id, &view) {
+            return self.refuse_open(reply, &err);
+        }
+        // Like a window, the engine gets the view at the popup's first configure.
+        view.open_reply = reply;
+        info!(
+            "popup {id} opened: {:?} at {:?}",
+            spec.size, spec.anchor_rect
+        );
         self.views.insert(id, view);
     }
 
@@ -1474,7 +1628,14 @@ impl App {
                     return;
                 }
                 let reply = view.open_reply.take();
-                let value = if added {
+                let value = if let (true, Some((x, y, width, height))) = (added, view.popup_placed)
+                {
+                    // A popup: where Ossido put it, after flipping and sliding it onto the
+                    // output (a popover points its arrow at its anchor from this).
+                    serde_json::json!({
+                        "viewId": id, "x": x, "y": y, "width": width, "height": height,
+                    })
+                } else if added {
                     serde_json::json!(id)
                 } else {
                     serde_json::Value::Null
@@ -1531,6 +1692,7 @@ impl App {
             .iter()
             .filter(|(other, view)| {
                 **other != id
+                    && !view.is_popup()
                     && !view.removing
                     && (**other != MAIN_VIEW || self.hidden_since.is_none())
             })
@@ -1550,6 +1712,13 @@ impl App {
         let Some(view) = self.views.get(&id) else {
             return;
         };
+        // A popup is not a window: closing it leaves the app lifecycle alone.
+        if view.is_popup() {
+            if !view.removing {
+                self.remove_view(id);
+            }
+            return;
+        }
         if view.removing || (id == MAIN_VIEW && self.hidden_since.is_some()) {
             return;
         }
@@ -1579,6 +1748,10 @@ impl App {
     /// Window `id` goes: the engine drops its view first, then the window goes
     /// (`forget_view`).
     fn remove_view(&mut self, id: i64) {
+        // The popups hanging from it go first (a popup is destroyed before its parent).
+        for child in self.popups_of(id) {
+            self.remove_view(child);
+        }
         let Some(view) = self.views.get_mut(&id) else {
             return;
         };
@@ -1594,6 +1767,15 @@ impl App {
             (false, true) => {}
             (false, false) => self.forget_view(id),
         }
+    }
+
+    /// The popups that hang directly from view `id`.
+    fn popups_of(&self, id: i64) -> Vec<i64> {
+        self.views
+            .iter()
+            .filter(|(_, view)| view.popup_parent == Some(id))
+            .map(|(child, _)| *child)
+            .collect()
     }
 
     /// Asks the engine to remove view `id`; `forget_view` follows when it is done.
@@ -1615,6 +1797,9 @@ impl App {
     fn forget_view(&mut self, id: i64) {
         if id == MAIN_VIEW {
             return;
+        }
+        for child in self.popups_of(id) {
+            self.forget_view(child);
         }
         if let Some(gl) = self.engine.as_ref().and_then(Engine::gl) {
             gl.remove_view(id);
@@ -2452,7 +2637,7 @@ impl App {
                         layer.set_keyboard_interactivity(mode);
                         true
                     }
-                    Shell::Window(_) => false,
+                    Shell::Window(_) | Shell::Popup(_) => false,
                 }
             }
             Some("outputSize") => {
@@ -3066,6 +3251,39 @@ impl LayerShellHandler for App {
     }
 }
 
+impl PopupHandler for App {
+    fn configure(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        popup: &Popup,
+        configure: PopupConfigure,
+    ) {
+        let Some(id) = self.view_of(popup.wl_surface()) else {
+            return;
+        };
+        let side = |v: i32| u32::try_from(v).unwrap_or(0);
+        if let Some(view) = self.views.get_mut(&id) {
+            view.popup_placed = Some((
+                configure.position.0,
+                configure.position.1,
+                configure.width,
+                configure.height,
+            ));
+        }
+        self.configured(id, qh, (side(configure.width), side(configure.height)));
+    }
+
+    /// Ossido dismissed the popup (a press outside it, another window taking the focus):
+    /// its view goes, and the app learns it with `windowClosed`.
+    fn done(&mut self, _: &Connection, _: &QueueHandle<Self>, popup: &Popup) {
+        if let Some(id) = self.view_of(popup.wl_surface()) {
+            info!("popup {id} dismissed");
+            self.remove_view(id);
+        }
+    }
+}
+
 impl WindowHandler for App {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
         if let Some(id) = self.view_of(window.wl_surface()) {
@@ -3332,8 +3550,16 @@ impl KeyboardHandler for App {
         for event in self.keys.release_all(micros) {
             self.send_key(&event, None, None);
         }
+        // The keyboard going to one of its popups (a menu) leaves the window active: a menu
+        // does not make its window look inactive.
+        let has_popup = |app: &Self, id: i64| {
+            app.views
+                .values()
+                .any(|view| view.popup_parent == Some(id) && !view.removing)
+        };
         if let (true, Some(id), Some(engine)) =
             (self.multi_view, self.view_of(surface), &self.engine)
+            && !has_popup(self, id)
             && self
                 .views
                 .get(&id)
@@ -3617,6 +3843,7 @@ delegate_pointer!(App);
 delegate_keyboard!(App);
 delegate_xdg_shell!(App);
 delegate_xdg_window!(App);
+delegate_xdg_popup!(App);
 delegate_layer!(App);
 delegate_registry!(App);
 delegate_data_device!(App);

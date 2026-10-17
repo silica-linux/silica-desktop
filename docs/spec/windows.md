@@ -337,6 +337,28 @@ File › New Window, one window per document. The app opts in with the embedder'
 - **Lifecycle:** closing the main window hides it while other windows stay; the last window
   on screen makes the app windowless, or ends it when it quits with its last window.
 
+## Menus and popovers as surfaces of their own
+
+An app's menus, context menus, pop-up buttons and popovers extend past the window's edge
+(silica-desktop#4). In an app started with `--multi-window`, silica_ui opens each as an
+`xdg_popup` of the window (`openPopup` on `silica/window`) drawn by its own engine view:
+
+- **Placement:** the popup hangs from an anchor rectangle of its window (a button, or a point
+  for a context menu) and Ossido keeps it on the output with the positioner's constraint
+  adjustment: a context menu slides back, a pop-up button's menu flips above the button, a
+  submenu flips to the other side, a popover flips or slides along the edge (its arrow follows,
+  from the placement the embedder reports). Submenus are popups of their menu's popup.
+- **Input:** the popup has a grab: a press outside it closes it (`popup_done`), the press goes
+  through to other apps and stops in its own app; a change of context (#219) closes it too. The
+  window it hangs from stays active (not drawn inactive) while the menu has the keyboard.
+- **Glass:** the popup declares its own glass (menu or popover profile); Ossido draws the popup
+  above its window with the glass behind it, so it blurs the window and what is under it, and
+  it follows the window's appearance.
+- **Without it** (an app not started with `--multi-window`, tests, another platform) the menu
+  is drawn inside the window's overlay and clipped at its edge, as before.
+- Not done: the popover's open scale (its surface and glass appear at once), the menu's fade,
+  and popups for the shell's own layers (the menu bar and Dock menus keep their input regions).
+
 ## Not measured yet
 
 - The colour of the shadow at the corners and on short edges.

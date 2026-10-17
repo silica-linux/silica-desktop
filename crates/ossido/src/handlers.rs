@@ -12,7 +12,7 @@ use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
-use smithay::utils::{Logical, Point, Serial};
+use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
@@ -138,6 +138,25 @@ static FALLBACK_CLIENT_STATE: std::sync::LazyLock<CompositorClientState> =
     std::sync::LazyLock::new(CompositorClientState::default);
 
 impl State {
+    /// Where an app popup goes: the positioner's geometry moved back inside the output by its
+    /// constraint adjustment (flip, slide, resize; xdg_positioner), relative to the parent
+    /// surface's geometry, so a menu never leaves the screen.
+    pub(crate) fn popup_geometry(
+        &self,
+        popup: &PopupKind,
+        positioner: PositionerState,
+    ) -> Rectangle<i32, Logical> {
+        let unconstrained = (|| {
+            let root = smithay::desktop::find_popup_root_surface(popup).ok()?;
+            let location = self.space.element_location(&self.window_for(&root)?)?;
+            let mut target = self.space.output_geometry(&self.output)?;
+            target.loc -= smithay::desktop::get_popup_toplevel_coords(popup);
+            target.loc -= location;
+            Some(positioner.get_unconstrained_geometry(target))
+        })();
+        unconstrained.unwrap_or_else(|| positioner.get_geometry())
+    }
+
     pub(crate) fn window_for(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
@@ -192,8 +211,10 @@ impl XdgShellHandler for State {
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
+        let geometry = self.popup_geometry(&PopupKind::from(surface.clone()), positioner);
         surface.with_pending_state(|state| {
-            state.geometry = positioner.get_geometry();
+            state.geometry = geometry;
+            state.positioner = positioner;
         });
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
             warn!("popup not tracked: {err}");
@@ -206,11 +227,19 @@ impl XdgShellHandler for State {
         positioner: PositionerState,
         token: u32,
     ) {
+        let geometry = self.popup_geometry(&PopupKind::from(surface.clone()), positioner);
         surface.with_pending_state(|state| {
-            state.geometry = positioner.get_geometry();
+            state.geometry = geometry;
             state.positioner = positioner;
         });
         surface.send_repositioned(token);
+    }
+
+    /// An app popup is gone (a menu closed): its grab ends, and the keyboard goes back to the
+    /// popup it hung from (a submenu's menu) or to its window, if the popup had it.
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        let gone = surface.wl_surface().clone();
+        self.end_popup_grab(&gone, surface.get_parent_surface());
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {

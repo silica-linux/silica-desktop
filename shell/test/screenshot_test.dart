@@ -15,6 +15,7 @@ import 'package:silica_shell/screenshot/selection.dart';
 import 'package:silica_shell/screenshot/services.dart';
 import 'package:silica_shell/screenshot/toolbar.dart'
     show
+        ShotGlass,
         ShotToolbar,
         actionWidth,
         captureModesX,
@@ -24,6 +25,7 @@ import 'package:silica_shell/screenshot/toolbar.dart'
         toolbarActionSpace;
 import 'package:silica_shell/system/desktop_entries.dart';
 import 'package:silica_shell/system/glass_profile.dart';
+import 'package:silica_shell/system/shadowed_glass.dart';
 import 'package:silica_ui/silica_ui.dart';
 
 import 'glass_backend_probe.dart';
@@ -1171,6 +1173,105 @@ image/png=missing.desktop;org.example.Viewer.desktop;
     menu = tester.getRect(optionsMenu());
     expect(menu.top, button.bottom + AmalfiPopUpButtonMetrics.menuDistance);
   });
+
+  testWidgets(
+    'Options: a press on the selection (or its handles) closes the menu',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pumpAndSettle();
+      for (final press in const [
+        Offset(640, 300), // inside the selection
+        Offset(100, 100), // outside it: a new one
+        Offset(320, 150), // its top left handle
+      ]) {
+        await tester.tap(find.byKey(const ValueKey('options')));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(optionsMenu(), findsOneWidget);
+        // Going back to editing: the press closes the menu (and edits the selection as usual).
+        final gesture = await tester.startGesture(press);
+        await tester.pump(const Duration(milliseconds: 300));
+        await gesture.up();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(optionsMenu(), findsNothing, reason: 'press at $press');
+      }
+    },
+  );
+
+  testWidgets(
+    'window mode: the camera is a glass of its own and hides over the bar and the menu',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pumpAndSettle();
+      await tester.tapAt(modeAt(tester, 1));
+      await tester.pump(const Duration(milliseconds: 600));
+      final camera = find.byKey(const ValueKey('camera'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(300, 200));
+      await mouse.moveTo(const Offset(300, 200));
+      await tester.pump();
+      expect(camera, findsOneWidget);
+
+      // Never merged with the bar: another glass group (Ossido merges within a group).
+      int groupOf(Finder within) => tester
+          .widget<ShadowedGlass>(
+            find
+                .descendant(of: within, matching: find.byType(ShadowedGlass))
+                .first,
+          )
+          .group;
+      expect(groupOf(camera), ShotGlass.camera);
+      expect(groupOf(find.byType(ShotToolbar)), ShotGlass.bar);
+      expect(ShotGlass.camera, lessThan(ShotGlass.bar));
+
+      // On the bar: no camera.
+      final bar = tester.getRect(find.byType(ShotToolbar));
+      await mouse.moveTo(bar.center);
+      await tester.pump();
+      expect(camera, findsNothing);
+      await mouse.moveTo(const Offset(300, 200));
+      await tester.pump();
+      expect(camera, findsOneWidget);
+
+      // On the open Options menu: no camera either; off it, the camera is back.
+      await tester.tap(find.byKey(const ValueKey('options')));
+      await tester.pump(const Duration(milliseconds: 300));
+      final menu = tester.getRect(optionsMenu());
+      await mouse.moveTo(menu.center);
+      await tester.pump();
+      expect(camera, findsNothing);
+      await mouse.moveTo(const Offset(300, 200));
+      await tester.pump();
+      expect(camera, findsOneWidget);
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets(
+    'Options over the selection: the dim, the border and the handles leave the menu bare',
+    (tester) async {
+      await pumpLayer(tester);
+      await send(tester, 'command', 'screenshot.toolbar');
+      await tester.pumpAndSettle();
+      List<RRect> holes() =>
+          tester.widget<SelectionEditor>(find.byType(SelectionEditor)).holes;
+      expect(holes(), isEmpty);
+      await tester.tap(find.byKey(const ValueKey('options')));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      // The menu's glass is the compositor's, behind this layer: nothing this layer paints
+      // may cover it, or the dim would darken it and the selection's border cut it.
+      final menu = tester.getRect(optionsMenu());
+      expect(holes().single.outerRect, menu);
+      expect(holes().single.tlRadius.x, AmalfiMenuMetrics.radius);
+      // Closed: the dim is whole again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      expect(holes(), isEmpty);
+    },
+  );
 
   testWidgets('⇧⌘5 selection: adjusted, remembered, captured', (tester) async {
     await pumpLayer(tester);

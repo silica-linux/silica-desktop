@@ -100,4 +100,39 @@ void main() {
     expect(calls.map((call) => call.method), ['exportHandle', 'setTitle']);
     expect(calls.last.arguments, {'title': 'wayland:h4ndle'});
   });
+
+  testWidgets('F4 asks the embedder for a popup past the window edge', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      ),
+    );
+    await tester.pumpWidget(const DemoApp());
+    await tester.sendKeyEvent(LogicalKeyboardKey.f4);
+    await tester.pump();
+    expect(calls.single.method, 'openPopup');
+    final args = calls.single.arguments as Map;
+    expect(args['parent'], 0);
+    expect(args['width'], popupSize.width);
+    expect(args['height'], popupSize.height);
+    final rect = args['anchorRect'] as List;
+    // On the window's right edge: the popup hangs past it.
+    expect(
+      rect[0],
+      greaterThan(
+        tester.view.physicalSize.width / tester.view.devicePixelRatio - 40,
+      ),
+    );
+  });
 }

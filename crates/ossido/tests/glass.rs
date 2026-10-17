@@ -18,7 +18,7 @@ fn start_at_32(name: &str, size: (u32, u32), extra: &[&str]) -> Headless {
 }
 
 use common::Headless;
-use common::client::TestWindow;
+use common::client::{PopupSpec, TestWindow};
 use serde_json::Value;
 use silica_control::commands::{GLASS_LIST, WINDOW_LIST};
 use silica_protocols::glass::client::silica_glass_v1::{Material, Profile, Shadow, Side};
@@ -50,6 +50,79 @@ fn regions_apply_on_commit_and_are_listed() {
     // Without regions the surface leaves the list.
     window.set_glass(&[]).unwrap();
     assert_eq!(glass_list(&ossido), serde_json::json!([]));
+}
+
+#[test]
+fn a_popup_declares_its_own_glass_above_its_window() {
+    let ossido = Headless::start("glass-popup");
+    let mut window = TestWindow::open(&ossido.wayland, "menu-owner");
+    window.open_popup(PopupSpec {
+        anchor_rect: (10, 10, 1, 1),
+        size: (50, 40),
+        adjustment: 0,
+        grab: false,
+        nested: false,
+        transparent: false,
+    });
+    window
+        .set_popup_glass(&[(0, 0, 50, 40, 10.0, Material::Thick)])
+        .unwrap();
+    let configure = *window.popup_configures().last().unwrap();
+    let list = glass_list(&ossido);
+    let entry = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| {
+            s["surface"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("popup of window"))
+        })
+        .unwrap_or_else(|| panic!("the popup's glass is not listed: {list}"));
+    assert_eq!(entry["regions"][0]["width"], 50, "{entry}");
+    assert_eq!(entry["regions"][0]["material"], "thick");
+    // The popup's origin on the screen: its window's content plus its place in it.
+    let windows: Vec<silica_control::commands::WindowInfo> =
+        serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let info = &windows[0];
+    assert_eq!(entry["x"], info.x + configure.0, "{entry} {info:?}");
+    assert_eq!(entry["y"], info.y + configure.1, "{entry} {info:?}");
+}
+
+#[test]
+fn a_popups_glass_blurs_its_window_under_it() {
+    // The glass of a menu sees the window it hangs from, not only what is behind the window.
+    let ossido = start_at_32("glass-popup-pixels", SHOT, &[]);
+    let back = (400, 200);
+    let mut stripes = TestWindow::open_pixels(&ossido.wayland, "stripes", back, &stripes(back));
+    let windows: Vec<silica_control::commands::WindowInfo> =
+        serde_json::from_value(ossido.client().call(WINDOW_LIST, Value::Null).unwrap()).unwrap();
+    let info = windows[0].clone();
+    stripes.open_popup(PopupSpec {
+        anchor_rect: (8, 20, 1, 1),
+        size: (100, 60),
+        adjustment: 0,
+        grab: false,
+        nested: false,
+        transparent: true,
+    });
+    stripes
+        .set_popup_glass(&[(0, 0, 100, 60, 0.0, Material::Thick)])
+        .unwrap();
+    let shot = shot(&ossido, "glass-popup.png");
+    // Black stripe of the window at its local x 24, inside the popup (x 8–107, y 21–80) and
+    // away from the stripe edge at 48 (the blur reaches ~20 px).
+    let at = |x: i32, y: i32| rgb(&shot, (info.x + x) as u32, (info.y + y) as u32);
+    let under_popup = at(20, 50);
+    let beside = at(20, 120);
+    assert!(
+        beside[0] < 8,
+        "the stripe is not black beside the popup: {beside:?}"
+    );
+    assert!(
+        under_popup[0] > 60,
+        "the popup's glass does not show over its window: {under_popup:?}"
+    );
 }
 
 #[test]

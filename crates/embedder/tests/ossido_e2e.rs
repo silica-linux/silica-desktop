@@ -28,6 +28,7 @@ const TAPPED: [u8; 4] = [0xCC, 0x66, 0x33, 0xFF];
 const TYPED: [u8; 4] = [0x33, 0xCC, 0x66, 0xFF];
 const LO_DPI: [u8; 4] = [0xFF, 0x00, 0xFF, 0xFF];
 const HI_DPI: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF];
+const POPUP: [u8; 4] = [0xEE, 0x22, 0x88, 0xFF];
 const APP_ID: &str = "dev.frascella.silica.Flutter";
 const CHILD_ENV: &str = "SILICA_E2E_OSSIDO";
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -843,4 +844,66 @@ fn a_helper_window_with_a_parent_handle_is_attached_to_it() {
     );
     let focused = all_windows(&session).into_iter().find(|w| w.focused);
     assert_eq!(focused.map(|w| w.id), Some(main.id));
+}
+
+/// F4 until the popup is drawn at `at`: the app ignores F4 while it still holds the view of the
+/// popup that just closed (it learns it with `windowClosed`, a moment after the pixel goes).
+fn open_popup(session: &Session, client: &mut Client, at: (u32, u32)) {
+    let found = wait_until(|| {
+        client.call(INPUT_KEY, json!({"key": "F4"})).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        session.pixel(at.0, at.1) == POPUP
+    });
+    assert!(found, "F4 did not open the popup");
+}
+
+/// A menu as its own surface (#4): F4 opens an `xdg_popup` in a second view, hanging from the
+/// main window's right edge, so it is drawn past the window; a tap in it closes it from the
+/// app, and a press outside it makes Ossido dismiss it (`popup_done` → the view goes).
+fn popup_extends_past_its_window(name: &str, renderer: &[&str]) {
+    let mut args = size_args((300, 200));
+    args.push("--multi-window".to_owned());
+    args.extend(renderer.iter().map(|s| (*s).to_owned()));
+    let session = Session::start_with(name, (800, 600), 1, &args);
+    let main = wait_for("the main window at 300 × 200", || {
+        Some(session.window()).filter(|w| (w.width, w.height) == (300, 200))
+    });
+    let mut client = session.client();
+    // The popup hangs from (width - 20, height / 2) of the window: 140 × 80 past the right
+    // edge of the window, 100 below its middle; the window ends at main.x + 300.
+    let past = (main.x as u32 + 300 + 40, main.y as u32 + 100 + 40);
+    open_popup(&session, &mut client, past);
+    // Inside the window too (the popup starts 20 px before its edge).
+    session.expect_pixel(main.x as u32 + 290, main.y as u32 + 100 + 40, POPUP);
+
+    // A tap in the popup: the app closes it (closeWindow); the window and the process stay.
+    client
+        .call(INPUT_CLICK, json!({"x": past.0, "y": past.1}))
+        .unwrap();
+    assert!(
+        wait_until(|| session.pixel(past.0, past.1) != POPUP),
+        "the popup was not closed by the app"
+    );
+
+    // Again, and a press outside it (on the desktop, away from the window) dismisses it.
+    open_popup(&session, &mut client, past);
+    client
+        .call(INPUT_CLICK, json!({"x": 700, "y": 550}))
+        .unwrap();
+    assert!(
+        wait_until(|| session.pixel(past.0, past.1) != POPUP),
+        "the popup stayed after a press outside it"
+    );
+    // The popup can open again: the app learned that it was gone.
+    open_popup(&session, &mut client, past);
+}
+
+#[test]
+fn a_popup_extends_past_its_window_in_software() {
+    popup_extends_past_its_window("popup-sw", &[]);
+}
+
+#[test]
+fn a_popup_extends_past_its_window_with_gl() {
+    popup_extends_past_its_window("popup-gl", &["--renderer", "gl"]);
 }
