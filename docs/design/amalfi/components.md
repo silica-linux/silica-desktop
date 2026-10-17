@@ -63,12 +63,23 @@ bar, and then you choose item heights so the centring lands on whole points: 52 
   the body, none across the title bar. Dividers between list and content (Mail, Notes) and before an
   inspector stay.
 - Sidebar show/hide (⌃⌘S or the toggle; Sketch cannot show it): the sidebar slides in from / out to the
-  leading edge while the content area widens or narrows in step; the toolbar items right of the sidebar
-  move with the content edge; the sidebar toggle stays in place. Hide **240 ms**, show **230 ms** starting
-  ~40 ms after the key, S curve (slow–fast–slow, half way at ~140 ms; use `cubic-bezier(0.42, 0, 0.58, 1)`).
-  Content reflows (icon grid columns) during the slide, not at the end. Source: Mustache measurement
-  (`mustache.md` MU-10, `mustache-spec.md` 2.3). Notes measured ~410 ms for the same transition;
-  Amalfi uses the 240/230 ms values everywhere.
+  leading edge while the content area widens or narrows in step. Hide **240 ms**, show **230 ms** starting
+  ~40 ms after the key or the click release, S curve (slow–fast–slow, half way at ~140 ms; use
+  `cubic-bezier(0.42, 0, 0.58, 1)`). Content reflows (icon grid columns) during the slide, not at the end.
+  - Toolbar items have no animation of their own: in every frame each leading item is placed at
+    max(its sidebar-closed x, sidebar edge + its sidebar-open offset). So the item rides the sidebar's
+    trailing edge and stops at its closed slot; nothing jumps, fades or slides on its own timing.
+  - The sidebar toggle is one button in both states and follows the same rule: open, right-aligned in the
+    sidebar's title-bar section (x = sidebar width − 52, slot 44); closed, right after the window controls
+    (x 96). Hiding, it moves left with the sidebar edge and stops at 96; showing, it waits at 96 until the
+    edge reaches it, then rides the edge to its open place.
+  - The title and the other leading items (Back/Forward, a list column's filter) behave the same way; a title
+    that runs out of room is truncated, never pushed off.
+  - Window controls never move. Trailing items (right-aligned groups, search) never slide; if the content
+    width crosses a toolbar width state during the slide, they switch layout in one step.
+  Source: Mustache and Mail measurements (`mustache.md` MU-10 and MU-13, `mail.md` › Sidebar toggle,
+  `mustache-spec.md` 2.3). Notes measured ~410 ms for the same transition; Amalfi uses the 240/230 ms values
+  everywhere.
 - Calculator history sidebar: closed, the sidebar toggle sits in the toolbar after the window controls;
   open, it moves inside the sidebar's title-bar area, right-aligned 8 pt from the sidebar edge, as Mail
   (toggle 44 × 52 at x = sidebar width − 52: 168 with the 220 pt sidebar).
