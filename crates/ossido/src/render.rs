@@ -507,6 +507,9 @@ struct GlassAnchor {
     /// The regions committed with the buffer on screen, when they are not the current ones
     /// (a layer resizing keeps its old buffer and its old glass, `layers::drawn_layer`).
     glass: Option<Vec<crate::glass::GlassRegion>>,
+    /// The surface whose appearance the glass follows, when it is not `surface` itself (an app
+    /// popup follows its window).
+    dark_from: Option<WlSurface>,
 }
 
 /// The window has the active state (focus), even if the configure has not left yet.
@@ -599,6 +602,76 @@ fn shadow_active(active: bool, look: ButtonsLook) -> bool {
     active || look.lifted
 }
 
+/// An app popup of a window (a menu, a popover): drawn above the window, with the glass it
+/// declares in its own surface (silica-desktop#4).
+struct PopupLayer {
+    surface: WlSurface,
+    elements: Vec<OutputElement>,
+    /// Origin of the popup's surface in the output, in physical pixels.
+    origin: Point<i32, Physical>,
+}
+
+/// The popups of `window`, the front one first (a submenu above its menu). `render_location`
+/// is where the window's surface goes (see `window_elements_uncropped`).
+fn popup_layers(
+    renderer: &mut GlesRenderer,
+    window: &Window,
+    render_location: Point<i32, Physical>,
+    scale: f64,
+) -> Vec<PopupLayer> {
+    let Some(toplevel) = window.toplevel() else {
+        return Vec::new();
+    };
+    let depth = |popup: &smithay::desktop::PopupKind| {
+        let mut depth = 0;
+        let mut current = popup.wl_surface().clone();
+        while let Some(parent) =
+            smithay::desktop::PopupManager::popups_for_surface(toplevel.wl_surface())
+                .find(|(p, _)| p.wl_surface() == &current)
+                .and_then(|(p, _)| match p {
+                    smithay::desktop::PopupKind::Xdg(xdg) => xdg.get_parent_surface(),
+                    _ => None,
+                })
+        {
+            depth += 1;
+            current = parent;
+            if depth > 16 {
+                break;
+            }
+        }
+        depth
+    };
+    let mut popups: Vec<_> =
+        smithay::desktop::PopupManager::popups_for_surface(toplevel.wl_surface())
+            .map(|(popup, offset)| (depth(&popup), popup, offset))
+            .collect();
+    popups.sort_by_key(|(depth, _, _)| std::cmp::Reverse(*depth));
+    popups
+        .into_iter()
+        .map(|(_, popup, popup_offset)| {
+            let offset = (window.geometry().loc + popup_offset - popup.geometry().loc)
+                .to_physical_precise_round(scale);
+            let origin = render_location + offset;
+            let elements = render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<_>>(
+                renderer,
+                popup.wl_surface(),
+                origin,
+                scale,
+                1.0,
+                Kind::Unspecified,
+            )
+            .into_iter()
+            .map(OutputElement::Surface)
+            .collect();
+            PopupLayer {
+                surface: popup.wl_surface().clone(),
+                elements,
+                origin,
+            }
+        })
+        .collect()
+}
+
 /// The elements of a window, from the front to the back (surfaces, bar, shadow), moved by
 /// `offset` and scaled by `factor` around the center of the frame.
 #[allow(clippy::too_many_arguments)]
@@ -654,12 +727,24 @@ fn window_elements_uncropped(
     let dark = crate::window_appearance::window_dark(window, system_dark);
     let render_location = (location - window.geometry().loc - output_origin + offset)
         .to_physical_precise_round(scale);
-    let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-        renderer,
-        render_location,
-        scale.into(),
-        1.0,
-    );
+    // The window's own surfaces; its popups are drawn above it with their own glass
+    // (`popup_layers`).
+    let surfaces = match window.toplevel() {
+        Some(toplevel) => render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<_>>(
+            renderer,
+            toplevel.wl_surface(),
+            render_location,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        ),
+        None => window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+            renderer,
+            render_location,
+            scale.into(),
+            1.0,
+        ),
+    };
     // Full screen: no corners, bar, shadow or animation (as in the recordings).
     if crate::windows::is_fullscreen(window) {
         return surfaces.into_iter().map(OutputElement::Surface).collect();
@@ -950,6 +1035,7 @@ pub fn output_elements(
                     origin: location,
                     opacity: alpha,
                     glass: drawn.glass.clone(),
+                    dark_from: None,
                 });
             }
         }
@@ -1292,6 +1378,22 @@ pub fn output_elements(
         let Some(at) = placed(space, window) else {
             continue;
         };
+        // The window's popups above it, each with its own glass behind it.
+        if let Some(toplevel) = window.toplevel() {
+            let render_location = (at.0 - window.geometry().loc - output_origin + offset)
+                .to_physical_precise_round(scale);
+            for layer in popup_layers(renderer, window, render_location, scale) {
+                elements.extend(layer.elements);
+                anchors.push(GlassAnchor {
+                    index: elements.len(),
+                    surface: layer.surface,
+                    origin: layer.origin,
+                    opacity: 1.0,
+                    glass: None,
+                    dark_from: Some(toplevel.wl_surface().clone()),
+                });
+            }
+        }
         elements.extend(window_elements(
             renderer,
             &shaders,
@@ -1316,6 +1418,7 @@ pub fn output_elements(
                     .to_physical_precise_round(scale),
                 opacity: 1.0,
                 glass: None,
+                dark_from: None,
             });
         }
     }
@@ -1435,7 +1538,10 @@ pub fn output_elements(
         let output_rect = Rectangle::from_size(output_size);
         for anchor in anchors.iter().rev() {
             // The glass a window declares follows that window's appearance.
-            let dark = crate::window_appearance::surface_dark(&anchor.surface, context.dark);
+            let dark = crate::window_appearance::surface_dark(
+                anchor.dark_from.as_ref().unwrap_or(&anchor.surface),
+                context.dark,
+            );
             let regions: Vec<PhysicalRegion> = anchor
                 .glass
                 .clone()

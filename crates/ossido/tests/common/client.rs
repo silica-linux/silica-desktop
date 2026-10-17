@@ -49,7 +49,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
 pub const WINDOW: (u32, u32) = (100, 60);
 
 /// A popup for [`TestWindow::open_popup`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct PopupSpec {
     /// x, y, width, height in the parent's coordinates; the popup hangs from its bottom left.
     pub anchor_rect: (i32, i32, u32, u32),
@@ -59,6 +59,8 @@ pub struct PopupSpec {
     pub grab: bool,
     /// Hangs from the first popup instead of the window.
     pub nested: bool,
+    /// Drawn transparent (to show the glass declared on it) instead of red.
+    pub transparent: bool,
 }
 pub const RED_BGRA: [u8; 4] = [0, 0, 255, 255];
 /// Position of the first window in Ossido's cascade (handlers.rs).
@@ -508,6 +510,8 @@ pub struct TestWindow {
     popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
     /// A popup hanging from `popup` (a submenu).
     child_popup: Option<(WlSurface, XdgSurface, XdgPopup, WlBuffer)>,
+    /// The glass object of `popup`.
+    popup_glass: Option<SilicaGlassV1>,
     _toplevel: Option<XdgToplevel>,
     _layer: Option<ZwlrLayerSurfaceV1>,
     _decoration: Option<ZxdgToplevelDecorationV1>,
@@ -634,6 +638,7 @@ impl TestWindow {
             xdg_surface: Some(xdg_surface),
             popup: None,
             child_popup: None,
+            popup_glass: None,
             _toplevel: Some(toplevel),
             _layer: None,
             _decoration: decoration,
@@ -735,6 +740,7 @@ impl TestWindow {
             xdg_surface: None,
             popup: None,
             child_popup: None,
+            popup_glass: None,
             _toplevel: None,
             _layer: Some(layer),
             _decoration: None,
@@ -820,7 +826,8 @@ impl TestWindow {
         surface.commit();
         self.queue.roundtrip(&mut self.app).unwrap();
         let mut file = tempfile::tempfile().unwrap();
-        file.write_all(&RED_BGRA.repeat((w * h) as usize)).unwrap();
+        let fill = if spec.transparent { [0; 4] } else { RED_BGRA };
+        file.write_all(&fill.repeat((w * h) as usize)).unwrap();
         let pool = shm.create_pool(file.as_fd(), (w * h * 4) as i32, &qh, ());
         let buffer = pool.create_buffer(
             0,
@@ -841,6 +848,30 @@ impl TestWindow {
         } else {
             self.popup = Some(opened);
         }
+    }
+
+    /// Declares the glass regions of the popup and commits (a menu on compositor glass).
+    #[allow(dead_code)]
+    pub fn set_popup_glass(&mut self, regions: &[Region]) -> Result<(), String> {
+        let qh = self.queue.handle();
+        let manager = self
+            .app
+            .glass
+            .clone()
+            .expect("silica_glass_manager_v1 missing");
+        let surface = self.popup.as_ref().expect("no popup").0.clone();
+        let glass = self
+            .popup_glass
+            .get_or_insert_with(|| manager.get_glass(&surface, &qh, ()));
+        glass.clear();
+        for &(x, y, w, h, radius, material) in regions {
+            glass.add_region(x, y, w, h, radius, material);
+        }
+        surface.commit();
+        self.queue
+            .roundtrip(&mut self.app)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// The `xdg_popup.configure` events so far (x, y, width, height), relative to the parent.

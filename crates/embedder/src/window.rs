@@ -272,6 +272,8 @@ struct View {
     namespace: Option<String>,
     /// For a popup, the view it hangs from.
     popup_parent: Option<i64>,
+    /// For a popup, where Ossido put it: x, y relative to its parent, width, height.
+    popup_placed: Option<(i32, i32, i32, i32)>,
 }
 
 impl View {
@@ -299,6 +301,7 @@ impl View {
             removing: false,
             namespace: None,
             popup_parent: None,
+            popup_placed: None,
         }
     }
 
@@ -1136,6 +1139,12 @@ impl App {
             }
             return crate::text_input::success(serde_json::Value::Null);
         }
+        if method == Some("popupsAvailable") {
+            // Menus and popovers as their own surfaces need several views (`--multi-window`).
+            return crate::text_input::success(serde_json::json!(
+                self.multi_view && self.xdg_shell.is_some()
+            ));
+        }
         let Some(View {
             surface: Shell::Window(window),
             appearance: view_appearance,
@@ -1611,7 +1620,14 @@ impl App {
                     return;
                 }
                 let reply = view.open_reply.take();
-                let value = if added {
+                let value = if let (true, Some((x, y, width, height))) = (added, view.popup_placed)
+                {
+                    // A popup: where Ossido put it, after flipping and sliding it onto the
+                    // output (a popover points its arrow at its anchor from this).
+                    serde_json::json!({
+                        "viewId": id, "x": x, "y": y, "width": width, "height": height,
+                    })
+                } else if added {
                     serde_json::json!(id)
                 } else {
                     serde_json::Value::Null
@@ -3239,6 +3255,14 @@ impl PopupHandler for App {
             return;
         };
         let side = |v: i32| u32::try_from(v).unwrap_or(0);
+        if let Some(view) = self.views.get_mut(&id) {
+            view.popup_placed = Some((
+                configure.position.0,
+                configure.position.1,
+                configure.width,
+                configure.height,
+            ));
+        }
         self.configured(id, qh, (side(configure.width), side(configure.height)));
     }
 

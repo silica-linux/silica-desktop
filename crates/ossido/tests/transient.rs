@@ -714,6 +714,7 @@ fn constrained_popup(
         adjustment,
         grab: true,
         nested: false,
+        transparent: false,
     });
     let configure = *window
         .popup_configures()
@@ -780,6 +781,7 @@ fn a_submenu_popup_keeps_its_menu_open_and_grabbed() {
         adjustment: 0,
         grab: true,
         nested: false,
+        transparent: false,
     };
     front.open_popup(menu);
     front.open_popup(PopupSpec {

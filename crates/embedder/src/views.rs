@@ -14,8 +14,10 @@
 //!   keeps it on the output: `slideX`, `slideY`, `flipX`, `flipY` (all four when missing);
 //!   `grab` (true when missing) gives it the pointer and the keyboard, and Ossido closes it
 //!   with `popup_done` on a press outside. The reply is null where popups are not offered
-//!   (no `--multi-window`); `closeWindow {viewId}` closes it, and `windowClosed {viewId}`
-//!   tells the app it is gone, whoever closed it;
+//!   (no `--multi-window`) and `{viewId, x, y, width, height}` otherwise: where Ossido put it
+//!   (relative to the parent, after flipping and sliding it onto the output);
+//!   `popupsAvailable` answers whether that is offered at all; `closeWindow {viewId}` closes
+//!   it, and `windowClosed {viewId}` tells the app it is gone, whoever closed it;
 //! - `closeWindow {viewId}`: the window goes away (the main one as its close button does);
 //! - `setTitle {viewId, title}`: the title of a window (the main one also follows
 //!   `SystemChrome.setApplicationSwitcherDescription`);

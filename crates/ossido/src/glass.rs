@@ -467,12 +467,29 @@ impl State {
             else {
                 continue;
             };
+            let origin = location - window.geometry().loc;
+            let id = Self::window_id(window).unwrap_or_default();
+            // The popups of the window (menus, popovers) declare their own glass, drawn above
+            // the window.
+            for (popup, offset) in
+                smithay::desktop::PopupManager::popups_for_surface(toplevel.wl_surface())
+            {
+                let regions = current_regions(popup.wl_surface());
+                if regions.is_empty() {
+                    continue;
+                }
+                let at = origin + offset - popup.geometry().loc + window.geometry().loc;
+                list.push(GlassSurface {
+                    surface: format!("popup of window {id}"),
+                    x: at.x,
+                    y: at.y,
+                    regions,
+                });
+            }
             let regions = current_regions(toplevel.wl_surface());
             if regions.is_empty() {
                 continue;
             }
-            let origin = location - window.geometry().loc;
-            let id = Self::window_id(window).unwrap_or_default();
             list.push(GlassSurface {
                 surface: format!("window {id}"),
                 x: origin.x,

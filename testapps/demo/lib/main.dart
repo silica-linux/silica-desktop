@@ -156,11 +156,13 @@ class _DemoAppState extends State<DemoApp> {
       'anchorRect': [size.width - 20, size.height / 2, 1, 1],
       'adjust': ['slideX', 'slideY'],
     });
-    if (id is! int || !mounted) return;
+    // {viewId, x, y, width, height}: where Ossido put the popup.
+    final viewId = id is Map ? id['viewId'] : null;
+    if (viewId is! int || !mounted) return;
     final views = WidgetsBinding.instance.platformDispatcher.views;
     setState(() {
       for (final view in views) {
-        if (view.viewId == id) popupView = view;
+        if (view.viewId == viewId) popupView = view;
       }
     });
   }
